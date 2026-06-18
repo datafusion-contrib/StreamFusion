@@ -13,6 +13,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.10.2</junit.version>
+        <arrow.version>18.3.0</arrow.version>
         <!-- Cargo profile whose output dir holds the loadable native library. -->
         <native.profile>debug</native.profile>
     </properties>
@@ -22,6 +23,26 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Arrow on the JVM only fills the C Data Interface structs handed to native code;
+             the data plane itself lives in Rust, so these stay test-scoped for now. -->
+        <dependency>
+            <groupId>org.apache.arrow</groupId>
+            <artifactId>arrow-vector</artifactId>
+            <version>${arrow.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.arrow</groupId>
+            <artifactId>arrow-c-data</artifactId>
+            <version>${arrow.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.arrow</groupId>
+            <artifactId>arrow-memory-unsafe</artifactId>
+            <version>${arrow.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -59,7 +80,8 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
                 <configuration>
-                    <argLine>-Djava.library.path=${project.basedir}/native/target/${native.profile}</argLine>
+                    <!-- Arrow's off-heap allocator needs access to java.nio internals on JDK 17. -->
+                    <argLine>--add-opens=java.base/java.nio=ALL-UNNAMED -Djava.library.path=${project.basedir}/native/target/${native.profile}</argLine>
                 </configuration>
             </plugin>
         </plugins>
