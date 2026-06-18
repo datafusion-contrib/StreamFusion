@@ -28,10 +28,10 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
       int timeColumn,
       int valueColumn,
       int keyColumn,
-      int aggregateKind,
+      int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
-    super("streamfusion-local-window-state", windowMillis, aggregateKind, timeZoneId, batchSize);
+    super("streamfusion-local-window-state", windowMillis, aggregateKinds, timeZoneId, batchSize);
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
     this.keyColumn = keyColumn;
@@ -45,28 +45,30 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
   @Override
   protected void emitClosedWindows(long watermark) {
     boolean keyed = keyColumn >= 0;
+    int aggregates = aggregateCount();
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       Native.flushPartialTumblingAggregator(
           handle, watermark, array.memoryAddress(), schema.memoryAddress());
       try (VectorSchemaRoot result =
           Data.importVectorSchemaRoot(allocator, array, schema, dictionaries)) {
-        BigIntVector key = (BigIntVector) result.getVector("key");
-        BigIntVector partial = (BigIntVector) result.getVector("partial");
+        BigIntVector key = keyed ? (BigIntVector) result.getVector("key") : null;
         BigIntVector sliceEnd = (BigIntVector) result.getVector("slice_end");
+        BigIntVector[] partials = new BigIntVector[aggregates];
+        for (int a = 0; a < aggregates; a++) {
+          partials[a] = (BigIntVector) result.getVector("partial" + a);
+        }
         for (int i = 0; i < result.getRowCount(); i++) {
-          // Local output column order follows the host: [key?, partial, slice_end].
-          GenericRowData row;
+          // Local output column order follows the host: [key?, partial0..partialN-1, slice_end].
+          GenericRowData row = new GenericRowData((keyed ? 1 : 0) + aggregates + 1);
+          int field = 0;
           if (keyed) {
-            row = new GenericRowData(3);
-            row.setField(0, key.get(i));
-            row.setField(1, partial.get(i));
-            row.setField(2, sliceEnd.get(i));
-          } else {
-            row = new GenericRowData(2);
-            row.setField(0, partial.get(i));
-            row.setField(1, sliceEnd.get(i));
+            row.setField(field++, key.get(i));
           }
+          for (int a = 0; a < aggregates; a++) {
+            row.setField(field++, partials[a].get(i));
+          }
+          row.setField(field, sliceEnd.get(i));
           output.collect(new StreamRecord<>(row, sliceEnd.get(i)));
         }
       }

@@ -69,8 +69,8 @@ public class NativeTumblingWindowOperator extends AbstractStreamOperator<RowData
     // This stepping-stone operator only ever sums.
     handle =
         snapshot == null
-            ? Native.createTumblingAggregator(windowMillis, 0)
-            : Native.restoreTumblingAggregator(windowMillis, 0, snapshot);
+            ? Native.createTumblingAggregator(windowMillis, new int[] {0})
+            : Native.restoreTumblingAggregator(windowMillis, new int[] {0}, snapshot);
   }
 
   @Override
@@ -154,7 +154,7 @@ public class NativeTumblingWindowOperator extends AbstractStreamOperator<RowData
       try (VectorSchemaRoot result =
           Data.importVectorSchemaRoot(allocator, array, schema, dictionaries)) {
         BigIntVector windowStart = (BigIntVector) result.getVector("window_start");
-        BigIntVector total = (BigIntVector) result.getVector("total");
+        BigIntVector total = (BigIntVector) result.getVector("result0");
         for (int i = 0; i < result.getRowCount(); i++) {
           GenericRowData row = new GenericRowData(2);
           row.setField(0, windowStart.get(i));

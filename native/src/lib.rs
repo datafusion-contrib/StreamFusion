@@ -13,7 +13,7 @@ use datafusion::physical_expr::expressions::{binary, col, lit};
 use datafusion::prelude::{col as logical_col, lit as logical_lit, SessionContext};
 use datafusion::scalar::ScalarValue;
 use futures::StreamExt;
-use jni::objects::{JByteArray, JClass};
+use jni::objects::{JByteArray, JClass, JIntArray};
 use jni::sys::{jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
 use std::collections::{BTreeMap, HashMap};
@@ -162,15 +162,15 @@ fn scalar_to_i64(scalar: ScalarValue) -> i64 {
 /// and dropped only once a watermark guarantees no earlier data can still arrive.
 struct TumblingAggregator {
     window_millis: i64,
-    aggregate: WindowAggregate,
-    windows: BTreeMap<i64, HashMap<i64, Box<dyn Accumulator>>>,
+    aggregates: Vec<WindowAggregate>,
+    windows: BTreeMap<i64, HashMap<i64, Vec<Box<dyn Accumulator>>>>,
 }
 
 impl TumblingAggregator {
-    fn new(window_millis: i64, kind: i64) -> Self {
+    fn new(window_millis: i64, kinds: Vec<i64>) -> Self {
         TumblingAggregator {
             window_millis,
-            aggregate: WindowAggregate::new(kind),
+            aggregates: kinds.into_iter().map(WindowAggregate::new).collect(),
             windows: BTreeMap::new(),
         }
     }
@@ -179,25 +179,33 @@ impl TumblingAggregator {
         timestamp - timestamp.rem_euclid(self.window_millis)
     }
 
-    fn update(&mut self, batch: &RecordBatch) {
-        let ts = batch
-            .column_by_name("ts")
-            .expect("missing ts column")
-            .as_any()
-            .downcast_ref::<Int64Array>()
-            .expect("ts must be int64");
-        let value = batch
-            .column_by_name("value")
-            .expect("missing value column")
-            .as_any()
-            .downcast_ref::<Int64Array>()
-            .expect("value must be int64");
+    /// The N accumulators (one per aggregate) for a (window, key), created on first touch.
+    fn accumulators(&mut self, window_start: i64, key: i64) -> &mut Vec<Box<dyn Accumulator>> {
+        let aggregates = &self.aggregates;
+        self.windows
+            .entry(window_start)
+            .or_default()
+            .entry(key)
+            .or_insert_with(|| aggregates.iter().map(WindowAggregate::create_accumulator).collect())
+    }
 
-        // Grouping key is optional: window-only aggregations omit it and fall under a single key.
+    /// Windows whose end is at or before the watermark, in ascending order.
+    fn closed_windows(&self, watermark: i64) -> Vec<i64> {
+        self.windows
+            .keys()
+            .copied()
+            .take_while(|start| start + self.window_millis <= watermark)
+            .collect()
+    }
+
+    fn update(&mut self, batch: &RecordBatch) {
+        let ts = column_i64(batch, "ts");
+        let value = column_i64(batch, "value");
         let keys = batch
             .column_by_name("key")
             .map(|column| column.as_any().downcast_ref::<Int64Array>().expect("key must be int64"));
 
+        // Grouping key is optional: window-only aggregations omit it and fall under a single key.
         let mut grouped: HashMap<(i64, i64), Vec<i64>> = HashMap::new();
         for row in 0..batch.num_rows() {
             let window_start = self.window_start(ts.value(row));
@@ -205,149 +213,123 @@ impl TumblingAggregator {
             grouped.entry((window_start, key)).or_default().push(value.value(row));
         }
         for ((window_start, key), values) in grouped {
-            self.accumulator(window_start, key)
-                .update_batch(&[Arc::new(Int64Array::from(values))])
-                .expect("failed to update window");
+            let column: ArrayRef = Arc::new(Int64Array::from(values));
+            for accumulator in self.accumulators(window_start, key) {
+                accumulator.update_batch(std::slice::from_ref(&column)).expect("failed to update");
+            }
         }
     }
 
-    fn accumulator(&mut self, window_start: i64, key: i64) -> &mut Box<dyn Accumulator> {
-        let aggregate = &self.aggregate;
-        self.windows
-            .entry(window_start)
-            .or_default()
-            .entry(key)
-            .or_insert_with(|| aggregate.create_accumulator())
-    }
-
-    /// Finalizes and removes every window whose end is at or before the watermark.
+    /// Finalizes and removes closed windows, emitting `[key, window_start, result0..resultN-1]`.
     fn flush(&mut self, watermark: i64) -> RecordBatch {
-        let closed: Vec<i64> = self
-            .windows
-            .keys()
-            .copied()
-            .take_while(|start| start + self.window_millis <= watermark)
-            .collect();
-
+        let n = self.aggregates.len();
         let mut keys = Vec::new();
         let mut starts = Vec::new();
-        let mut totals = Vec::new();
-        for start in closed {
-            let mut group: Vec<(i64, Box<dyn Accumulator>)> =
+        let mut results: Vec<Vec<i64>> = vec![Vec::new(); n];
+        for start in self.closed_windows(watermark) {
+            let mut group: Vec<(i64, Vec<Box<dyn Accumulator>>)> =
                 self.windows.remove(&start).expect("window present").into_iter().collect();
             group.sort_by_key(|(key, _)| *key);
-            for (key, mut accumulator) in group {
+            for (key, mut accumulators) in group {
                 keys.push(key);
                 starts.push(start);
-                totals.push(scalar_to_i64(accumulator.evaluate().expect("failed to finalize window")));
+                for (i, accumulator) in accumulators.iter_mut().enumerate() {
+                    results[i].push(scalar_to_i64(accumulator.evaluate().expect("failed to finalize")));
+                }
             }
         }
 
-        let schema = Arc::new(Schema::new(vec![
+        let mut fields = vec![
             Field::new("key", DataType::Int64, false),
             Field::new("window_start", DataType::Int64, false),
-            Field::new("total", DataType::Int64, false),
-        ]));
-        RecordBatch::try_new(
-            schema,
-            vec![
-                Arc::new(Int64Array::from(keys)),
-                Arc::new(Int64Array::from(starts)),
-                Arc::new(Int64Array::from(totals)),
-            ],
-        )
-        .expect("failed to build result batch")
+        ];
+        let mut columns: Vec<ArrayRef> =
+            vec![Arc::new(Int64Array::from(keys)), Arc::new(Int64Array::from(starts))];
+        for (i, column) in results.into_iter().enumerate() {
+            fields.push(Field::new(format!("result{i}"), DataType::Int64, false));
+            columns.push(Arc::new(Int64Array::from(column)));
+        }
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build result batch")
     }
 
-    /// Local half of two-phase aggregation: finalizes closed windows to their partial accumulator
-    /// state rather than a final value, emitting `[key, partial, slice_end]`. Single-field partial
-    /// only (sum/min/max/count); `slice_end` is the window end, matching the host's local output.
+    /// Local half of two-phase aggregation: emits each closed window's per-aggregate partial state
+    /// as `[key, partial0..partialN-1, slice_end]`. Single-field partials (sum/min/max/count).
     fn flush_partial(&mut self, watermark: i64) -> RecordBatch {
-        let closed: Vec<i64> = self
-            .windows
-            .keys()
-            .copied()
-            .take_while(|start| start + self.window_millis <= watermark)
-            .collect();
-
+        let n = self.aggregates.len();
         let mut keys = Vec::new();
-        let mut partials = Vec::new();
         let mut slice_ends = Vec::new();
-        for start in closed {
-            let mut group: Vec<(i64, Box<dyn Accumulator>)> =
+        let mut partials: Vec<Vec<i64>> = vec![Vec::new(); n];
+        for start in self.closed_windows(watermark) {
+            let mut group: Vec<(i64, Vec<Box<dyn Accumulator>>)> =
                 self.windows.remove(&start).expect("window present").into_iter().collect();
             group.sort_by_key(|(key, _)| *key);
             let slice_end = start + self.window_millis;
-            for (key, mut accumulator) in group {
-                let state = accumulator.state().expect("state");
+            for (key, mut accumulators) in group {
                 keys.push(key);
-                partials.push(scalar_to_i64(
-                    state.into_iter().next().expect("single-field partial state"),
-                ));
                 slice_ends.push(slice_end);
+                for (i, accumulator) in accumulators.iter_mut().enumerate() {
+                    let state = accumulator.state().expect("state");
+                    partials[i]
+                        .push(scalar_to_i64(state.into_iter().next().expect("single-field partial")));
+                }
             }
         }
 
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("key", DataType::Int64, false),
-            Field::new("partial", DataType::Int64, false),
-            Field::new("slice_end", DataType::Int64, false),
-        ]));
-        RecordBatch::try_new(
-            schema,
-            vec![
-                Arc::new(Int64Array::from(keys)),
-                Arc::new(Int64Array::from(partials)),
-                Arc::new(Int64Array::from(slice_ends)),
-            ],
-        )
-        .expect("failed to build partial batch")
+        let mut fields = vec![Field::new("key", DataType::Int64, false)];
+        let mut columns: Vec<ArrayRef> = vec![Arc::new(Int64Array::from(keys))];
+        for (i, column) in partials.into_iter().enumerate() {
+            fields.push(Field::new(format!("partial{i}"), DataType::Int64, false));
+            columns.push(Arc::new(Int64Array::from(column)));
+        }
+        fields.push(Field::new("slice_end", DataType::Int64, false));
+        columns.push(Arc::new(Int64Array::from(slice_ends)));
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build partial batch")
     }
 
-    /// Global half of two-phase aggregation: merges incoming partials `[key, partial, slice_end]`
-    /// into the accumulator for the window the slice belongs to. A later `flush` finalizes them.
+    /// Global half of two-phase aggregation: merges incoming partials
+    /// `[key, partial0..partialN-1, slice_end]` into the window each slice belongs to.
     fn update_partial(&mut self, batch: &RecordBatch) {
+        let n = self.aggregates.len();
         let keys = batch
             .column_by_name("key")
             .map(|column| column.as_any().downcast_ref::<Int64Array>().expect("key int64"));
-        let partials = batch
-            .column_by_name("partial")
-            .expect("missing partial column")
-            .as_any()
-            .downcast_ref::<Int64Array>()
-            .expect("partial int64");
-        let slice_ends = batch
-            .column_by_name("slice_end")
-            .expect("missing slice_end column")
-            .as_any()
-            .downcast_ref::<Int64Array>()
-            .expect("slice_end int64");
+        let slice_ends = column_i64(batch, "slice_end");
+        let partials: Vec<&Int64Array> =
+            (0..n).map(|i| column_i64(batch, &format!("partial{i}"))).collect();
 
         for row in 0..batch.num_rows() {
             let window_start = slice_ends.value(row) - self.window_millis;
             let key = keys.map_or(0, |column| column.value(row));
-            self.accumulator(window_start, key)
-                .merge_batch(&[Arc::new(Int64Array::from(vec![partials.value(row)]))])
-                .expect("failed to merge partial");
+            for (i, accumulator) in self.accumulators(window_start, key).iter_mut().enumerate() {
+                accumulator
+                    .merge_batch(&[Arc::new(Int64Array::from(vec![partials[i].value(row)]))])
+                    .expect("failed to merge partial");
+            }
         }
     }
 
-    /// Serializes every open window's partial accumulator state as an Arrow batch (one row per
-    /// window: the window start followed by the accumulator's state columns) encoded with Arrow
-    /// IPC. This carries arbitrary accumulator state, not just a single value, so aggregates with
-    /// multi-field state checkpoint through the same path.
+    /// Serializes every open window's accumulator state as an Arrow batch (one row per (window,
+    /// key): window start, key, then every accumulator's state fields in order), encoded with Arrow
+    /// IPC. Carries arbitrary multi-aggregate, multi-field state through one path.
     fn snapshot(&mut self) -> Vec<u8> {
-        let state_fields = self.aggregate.state_fields();
+        let state_fields: Vec<Field> =
+            self.aggregates.iter().flat_map(WindowAggregate::state_fields).collect();
 
         let mut starts: Vec<i64> = Vec::new();
         let mut keys: Vec<i64> = Vec::new();
         let mut state_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); state_fields.len()];
         for (start, group) in self.windows.iter_mut() {
-            for (key, accumulator) in group.iter_mut() {
+            for (key, accumulators) in group.iter_mut() {
                 starts.push(*start);
                 keys.push(*key);
-                for (column, scalar) in accumulator.state().expect("state").into_iter().enumerate() {
-                    state_columns[column].push(scalar);
+                let mut column = 0;
+                for accumulator in accumulators.iter_mut() {
+                    for scalar in accumulator.state().expect("state") {
+                        state_columns[column].push(scalar);
+                        column += 1;
+                    }
                 }
             }
         }
@@ -358,9 +340,8 @@ impl TumblingAggregator {
         ];
         fields.extend(state_fields.iter().cloned());
 
-        let mut columns: Vec<ArrayRef> = Vec::with_capacity(fields.len());
-        columns.push(Arc::new(Int64Array::from(starts)));
-        columns.push(Arc::new(Int64Array::from(keys)));
+        let mut columns: Vec<ArrayRef> =
+            vec![Arc::new(Int64Array::from(starts)), Arc::new(Int64Array::from(keys))];
         for (index, scalars) in state_columns.into_iter().enumerate() {
             columns.push(if scalars.is_empty() {
                 new_empty_array(state_fields[index].data_type())
@@ -381,8 +362,10 @@ impl TumblingAggregator {
         buffer
     }
 
-    fn restore(window_millis: i64, kind: i64, bytes: &[u8]) -> Self {
-        let mut aggregator = TumblingAggregator::new(window_millis, kind);
+    fn restore(window_millis: i64, kinds: Vec<i64>, bytes: &[u8]) -> Self {
+        let mut aggregator = TumblingAggregator::new(window_millis, kinds);
+        let field_counts: Vec<usize> =
+            aggregator.aggregates.iter().map(|a| a.state_fields().len()).collect();
         let reader = arrow::ipc::reader::StreamReader::try_new(bytes, None)
             .expect("failed to open snapshot reader");
         for batch in reader {
@@ -391,16 +374,30 @@ impl TumblingAggregator {
                 batch.column(0).as_any().downcast_ref::<Int64Array>().expect("window_start int64");
             let keys = batch.column(1).as_any().downcast_ref::<Int64Array>().expect("key int64");
             for row in 0..batch.num_rows() {
-                let state: Vec<ArrayRef> =
-                    (2..batch.num_columns()).map(|column| batch.column(column).slice(row, 1)).collect();
-                aggregator
-                    .accumulator(starts.value(row), keys.value(row))
-                    .merge_batch(&state)
-                    .expect("failed to restore window");
+                let mut column = 2;
+                for (i, accumulator) in
+                    aggregator.accumulators(starts.value(row), keys.value(row)).iter_mut().enumerate()
+                {
+                    let count = field_counts[i];
+                    let state: Vec<ArrayRef> =
+                        (column..column + count).map(|c| batch.column(c).slice(row, 1)).collect();
+                    accumulator.merge_batch(&state).expect("failed to restore window");
+                    column += count;
+                }
             }
         }
         aggregator
     }
+}
+
+/// Downcasts a named int64 column, with a clear message if it is missing or the wrong type.
+fn column_i64<'a>(batch: &'a RecordBatch, name: &str) -> &'a Int64Array {
+    batch
+        .column_by_name(name)
+        .unwrap_or_else(|| panic!("missing column {name}"))
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap_or_else(|| panic!("column {name} must be int64"))
 }
 
 /// The native data plane runs stateful operators as asynchronous plans, so the work is driven on a
@@ -707,12 +704,21 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_tumblingSum<'
 /// owns native state that lives across calls; the JVM must release it with the matching close.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTumblingAggregator<'local>(
-    _env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
     window_millis: jlong,
-    aggregate_kind: jint,
+    aggregate_kinds: JIntArray<'local>,
 ) -> jlong {
-    Box::into_raw(Box::new(TumblingAggregator::new(window_millis, aggregate_kind as i64))) as jlong
+    let kinds = read_kinds(&env, &aggregate_kinds);
+    Box::into_raw(Box::new(TumblingAggregator::new(window_millis, kinds))) as jlong
+}
+
+/// Reads a JVM int[] of aggregate kinds into a Vec.
+fn read_kinds(env: &JNIEnv, kinds: &JIntArray) -> Vec<i64> {
+    let length = env.get_array_length(kinds).expect("failed to read kinds length");
+    let mut buffer = vec![0i32; length as usize];
+    env.get_int_array_region(kinds, 0, &mut buffer).expect("failed to read kinds");
+    buffer.into_iter().map(i64::from).collect()
 }
 
 /// Folds a batch from the JVM into the aggregator's open windows. Produces no output; results are
@@ -809,13 +815,10 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTumbli
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     window_millis: jlong,
-    aggregate_kind: jint,
+    aggregate_kinds: JIntArray<'local>,
     snapshot: JByteArray<'local>,
 ) -> jlong {
+    let kinds = read_kinds(&env, &aggregate_kinds);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read snapshot");
-    Box::into_raw(Box::new(TumblingAggregator::restore(
-        window_millis,
-        aggregate_kind as i64,
-        &bytes,
-    ))) as jlong
+    Box::into_raw(Box::new(TumblingAggregator::restore(window_millis, kinds, &bytes))) as jlong
 }

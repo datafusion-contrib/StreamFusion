@@ -46,8 +46,8 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
   private final String stateName;
   private final String timeZoneId;
   private final int batchSize;
+  private final int[] aggregateKinds;
   protected final long windowMillis;
-  protected final int aggregateKind;
 
   private transient ZoneId zone;
   private transient List<RowData> buffer;
@@ -57,12 +57,17 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
   protected transient long handle;
 
   protected NativeWindowOperatorBase(
-      String stateName, long windowMillis, int aggregateKind, String timeZoneId, int batchSize) {
+      String stateName, long windowMillis, int[] aggregateKinds, String timeZoneId, int batchSize) {
     this.stateName = stateName;
     this.windowMillis = windowMillis;
-    this.aggregateKind = aggregateKind;
+    this.aggregateKinds = aggregateKinds;
     this.timeZoneId = timeZoneId;
     this.batchSize = batchSize;
+  }
+
+  /** Number of aggregates this window computes. */
+  protected final int aggregateCount() {
+    return aggregateKinds.length;
   }
 
   /** Feeds the buffered rows to the native aggregator. Called when the batch fills or fires. */
@@ -86,8 +91,8 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
     }
     handle =
         snapshot == null
-            ? Native.createTumblingAggregator(windowMillis, aggregateKind)
-            : Native.restoreTumblingAggregator(windowMillis, aggregateKind, snapshot);
+            ? Native.createTumblingAggregator(windowMillis, aggregateKinds)
+            : Native.restoreTumblingAggregator(windowMillis, aggregateKinds, snapshot);
   }
 
   @Override
@@ -176,11 +181,13 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
   }
 
   /**
-   * Emits the final per-window rows the watermark has closed: {@code [key?, total, window_start,
-   * window_end]}. Shared by the single-phase and global operators, which both produce finals.
+   * Emits the final per-window rows the watermark has closed:
+   * {@code [key?, agg0..aggN-1, window_start, window_end]} — the host's column order. Shared by the
+   * single-phase and global operators, which both produce finals.
    */
   protected final void emitFinal(long watermark, int keyColumn) {
     boolean keyed = keyColumn >= 0;
+    int aggregates = aggregateCount();
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       Native.flushTumblingAggregator(
@@ -189,24 +196,22 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
           Data.importVectorSchemaRoot(allocator, array, schema, dictionaries)) {
         BigIntVector key = keyed ? (BigIntVector) result.getVector("key") : null;
         BigIntVector windowStart = (BigIntVector) result.getVector("window_start");
-        BigIntVector total = (BigIntVector) result.getVector("total");
+        BigIntVector[] results = new BigIntVector[aggregates];
+        for (int a = 0; a < aggregates; a++) {
+          results[a] = (BigIntVector) result.getVector("result" + a);
+        }
         for (int i = 0; i < result.getRowCount(); i++) {
           long start = windowStart.get(i);
-          TimestampData windowStartTs = TimestampData.fromLocalDateTime(toLocal(start));
-          TimestampData windowEndTs = TimestampData.fromLocalDateTime(toLocal(start + windowMillis));
-          GenericRowData row;
+          GenericRowData row = new GenericRowData((keyed ? 1 : 0) + aggregates + 2);
+          int field = 0;
           if (keyed) {
-            row = new GenericRowData(4);
-            row.setField(0, key.get(i));
-            row.setField(1, total.get(i));
-            row.setField(2, windowStartTs);
-            row.setField(3, windowEndTs);
-          } else {
-            row = new GenericRowData(3);
-            row.setField(0, total.get(i));
-            row.setField(1, windowStartTs);
-            row.setField(2, windowEndTs);
+            row.setField(field++, key.get(i));
           }
+          for (int a = 0; a < aggregates; a++) {
+            row.setField(field++, results[a].get(i));
+          }
+          row.setField(field++, TimestampData.fromLocalDateTime(toLocal(start)));
+          row.setField(field, TimestampData.fromLocalDateTime(toLocal(start + windowMillis)));
           output.collect(new StreamRecord<>(row, start));
         }
       }

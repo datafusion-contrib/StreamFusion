@@ -19,10 +19,11 @@ public class NativeWindowAggregateOperator extends NativeWindowOperatorBase {
       int timeColumn,
       int valueColumn,
       int keyColumn,
-      int aggregateKind,
+      int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
-    super("streamfusion-window-aggregate-state", windowMillis, aggregateKind, timeZoneId, batchSize);
+    super(
+        "streamfusion-window-aggregate-state", windowMillis, aggregateKinds, timeZoneId, batchSize);
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
     this.keyColumn = keyColumn;

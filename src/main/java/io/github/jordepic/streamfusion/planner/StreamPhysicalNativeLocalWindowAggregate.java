@@ -21,7 +21,7 @@ public class StreamPhysicalNativeLocalWindowAggregate extends SingleRel
   private final int timeColumn;
   private final int valueColumn;
   private final int keyColumn;
-  private final int aggregateKind;
+  private final int[] aggregateKinds;
 
   public StreamPhysicalNativeLocalWindowAggregate(
       RelOptCluster cluster,
@@ -32,14 +32,14 @@ public class StreamPhysicalNativeLocalWindowAggregate extends SingleRel
       int timeColumn,
       int valueColumn,
       int keyColumn,
-      int aggregateKind) {
+      int[] aggregateKinds) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.windowMillis = windowMillis;
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
     this.keyColumn = keyColumn;
-    this.aggregateKind = aggregateKind;
+    this.aggregateKinds = aggregateKinds;
   }
 
   @Override
@@ -63,7 +63,7 @@ public class StreamPhysicalNativeLocalWindowAggregate extends SingleRel
         timeColumn,
         valueColumn,
         keyColumn,
-        aggregateKind);
+        aggregateKinds);
   }
 
   @Override
@@ -77,6 +77,6 @@ public class StreamPhysicalNativeLocalWindowAggregate extends SingleRel
         timeColumn,
         valueColumn,
         keyColumn,
-        aggregateKind);
+        aggregateKinds);
   }
 }

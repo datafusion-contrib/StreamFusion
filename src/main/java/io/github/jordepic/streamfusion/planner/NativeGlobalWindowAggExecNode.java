@@ -25,9 +25,9 @@ public class NativeGlobalWindowAggExecNode extends ExecNodeBase<RowData>
 
   private final long windowMillis;
   private final int keyColumn;
-  private final int partialColumn;
+  private final int[] partialColumns;
   private final int sliceEndColumn;
-  private final int aggregateKind;
+  private final int[] aggregateKinds;
 
   public NativeGlobalWindowAggExecNode(
       ReadableConfig tableConfig,
@@ -36,9 +36,9 @@ public class NativeGlobalWindowAggExecNode extends ExecNodeBase<RowData>
       String description,
       long windowMillis,
       int keyColumn,
-      int partialColumn,
+      int[] partialColumns,
       int sliceEndColumn,
-      int aggregateKind) {
+      int[] aggregateKinds) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-global-window-aggregate_1"),
@@ -48,9 +48,9 @@ public class NativeGlobalWindowAggExecNode extends ExecNodeBase<RowData>
         description);
     this.windowMillis = windowMillis;
     this.keyColumn = keyColumn;
-    this.partialColumn = partialColumn;
+    this.partialColumns = partialColumns;
     this.sliceEndColumn = sliceEndColumn;
-    this.aggregateKind = aggregateKind;
+    this.aggregateKinds = aggregateKinds;
   }
 
   @Override
@@ -64,7 +64,7 @@ public class NativeGlobalWindowAggExecNode extends ExecNodeBase<RowData>
         input,
         createTransformationMeta(TRANSFORMATION, config),
         new NativeGlobalWindowAggregateOperator(
-            windowMillis, keyColumn, partialColumn, sliceEndColumn, aggregateKind, timeZoneId,
+            windowMillis, keyColumn, partialColumns, sliceEndColumn, aggregateKinds, timeZoneId,
             BATCH_SIZE),
         InternalTypeInfo.of(getOutputType()),
         input.getParallelism(),

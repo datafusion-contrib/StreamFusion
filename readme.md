@@ -15,7 +15,7 @@ otherwise it runs on Flink unchanged.
 | Operator | Accelerated | Terms |
 |---|---|---|
 | Projection | Demo only | Single integer input column; the projection is exactly `col * 2`. (A proof of the projection path, not a general projection yet.) |
-| Tumbling window aggregate | Yes | Event-time `TUMBLE` over a local-time-zone (rowtime) attribute; a single integer value column; one of `SUM` / `MIN` / `MAX` / `COUNT` / `AVG`; grouped by the window, optionally plus a single integer key; a single aggregate call. `AVG` follows Flink's integer-division semantics for integer inputs. |
+| Tumbling window aggregate | Yes | Event-time `TUMBLE` over a local-time-zone (rowtime) attribute; one or more aggregates over the same bigint value column — `SUM` / `MIN` / `MAX` / `COUNT` (and `AVG` only as a lone aggregate); grouped by the window, optionally plus a single integer key. `AVG` follows Flink's integer-division semantics. |
 
 Two-phase (local + global) tumbling aggregation is accelerated too: the native
 local pre-aggregate emits partial state, the host shuffles by key, and the
@@ -31,5 +31,5 @@ needs `ONE_PHASE`.
 
 - SQL filters (a native filter exists but is not yet wired into planning)
 - Hopping, session, and cumulative windows
-- More than one grouping key, non-integer keys, multiple aggregates per window, or non-integer value columns
+- More than one grouping key, non-integer keys, aggregates over different value columns, `COUNT(*)`, or non-integer value columns
 - Two-phase `AVG` (multi-field partial state)

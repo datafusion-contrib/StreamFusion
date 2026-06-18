@@ -100,6 +100,24 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
+  void multiAggregateMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT window_start, window_end, SUM(`value`) AS s, COUNT(`value`) AS c, MAX(`value`) AS m "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void twoPhaseMultiAggregateMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentTwoPhase,
+        "SELECT k, window_start, window_end, SUM(`value`) AS s, COUNT(`value`) AS c "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY k, window_start, window_end");
+  }
+
+  @Test
   void twoPhaseTumblingCountMatchesHost() throws Exception {
     // COUNT exercises the local=count / global=sum split.
     NativeParity.assertParity(

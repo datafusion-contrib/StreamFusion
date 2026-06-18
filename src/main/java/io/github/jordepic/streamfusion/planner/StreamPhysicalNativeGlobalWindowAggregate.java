@@ -19,9 +19,9 @@ public class StreamPhysicalNativeGlobalWindowAggregate extends SingleRel
   private final RelDataType outputRowType;
   private final long windowMillis;
   private final int keyColumn;
-  private final int partialColumn;
+  private final int[] partialColumns;
   private final int sliceEndColumn;
-  private final int aggregateKind;
+  private final int[] aggregateKinds;
 
   public StreamPhysicalNativeGlobalWindowAggregate(
       RelOptCluster cluster,
@@ -30,16 +30,16 @@ public class StreamPhysicalNativeGlobalWindowAggregate extends SingleRel
       RelDataType outputRowType,
       long windowMillis,
       int keyColumn,
-      int partialColumn,
+      int[] partialColumns,
       int sliceEndColumn,
-      int aggregateKind) {
+      int[] aggregateKinds) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.windowMillis = windowMillis;
     this.keyColumn = keyColumn;
-    this.partialColumn = partialColumn;
+    this.partialColumns = partialColumns;
     this.sliceEndColumn = sliceEndColumn;
-    this.aggregateKind = aggregateKind;
+    this.aggregateKinds = aggregateKinds;
   }
 
   @Override
@@ -61,9 +61,9 @@ public class StreamPhysicalNativeGlobalWindowAggregate extends SingleRel
         outputRowType,
         windowMillis,
         keyColumn,
-        partialColumn,
+        partialColumns,
         sliceEndColumn,
-        aggregateKind);
+        aggregateKinds);
   }
 
   @Override
@@ -75,8 +75,8 @@ public class StreamPhysicalNativeGlobalWindowAggregate extends SingleRel
         getRelDetailedDescription(),
         windowMillis,
         keyColumn,
-        partialColumn,
+        partialColumns,
         sliceEndColumn,
-        aggregateKind);
+        aggregateKinds);
   }
 }

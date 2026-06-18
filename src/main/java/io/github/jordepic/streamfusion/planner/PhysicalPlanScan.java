@@ -73,16 +73,16 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             WindowAggregateMatcher.timeColumn(agg.windowing()),
             WindowAggregateMatcher.valueColumn(agg.aggCalls()),
             WindowAggregateMatcher.keyColumn(agg.grouping()),
-            WindowAggregateMatcher.aggregateKind(agg.aggCalls()));
+            WindowAggregateMatcher.kinds(agg.aggCalls()));
       }
     }
 
     if (current instanceof StreamPhysicalLocalWindowAggregate) {
       StreamPhysicalLocalWindowAggregate agg = (StreamPhysicalLocalWindowAggregate) current;
-      // Single-field partial only (no AVG): the local emits one partial column.
+      // Single-field partials only (no AVG): the local emits one partial column per aggregate.
       if (WindowAggregateMatcher.matches(
               agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType())
-          && WindowAggregateMatcher.aggregateKind(agg.aggCalls()) != WindowAggregateMatcher.KIND_AVG) {
+          && !WindowAggregateMatcher.containsAvg(agg.aggCalls())) {
         substitutions++;
         return new StreamPhysicalNativeLocalWindowAggregate(
             agg.getCluster(),
@@ -93,7 +93,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             WindowAggregateMatcher.timeColumn(agg.windowing()),
             WindowAggregateMatcher.valueColumn(agg.aggCalls()),
             WindowAggregateMatcher.keyColumn(agg.grouping()),
-            WindowAggregateMatcher.aggregateKind(agg.aggCalls()));
+            WindowAggregateMatcher.kinds(agg.aggCalls()));
       }
     }
 
@@ -108,9 +108,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             agg.getRowType(),
             GlobalWindowAggregateMatcher.windowMillis(agg),
             GlobalWindowAggregateMatcher.keyColumn(agg),
-            GlobalWindowAggregateMatcher.partialColumn(agg),
+            GlobalWindowAggregateMatcher.partialColumns(agg),
             GlobalWindowAggregateMatcher.sliceEndColumn(agg),
-            GlobalWindowAggregateMatcher.aggregateKind(agg));
+            GlobalWindowAggregateMatcher.kinds(agg));
       }
     }
     return current;

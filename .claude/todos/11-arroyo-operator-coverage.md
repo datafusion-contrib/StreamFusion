@@ -10,7 +10,7 @@ is picked up. Operators are in `~/data/arroyo/crates/arroyo-worker/src/arrow/`.
 ## Aggregating windows
 - [x] Tumbling aggregate (sum/min/max/count/avg), 0–1 int key
 - [x] Two-phase tumbling (sum/min/max/count)
-- [ ] Multiple aggregates per window (e.g. `SUM(a), COUNT(a)`) — next
+- [x] Multiple aggregates per window over one value column (one- and two-phase)
 - [ ] Hopping / sliding window (`sliding_aggregating_window.rs`)
 - [ ] Session window (`session_aggregating_window.rs`) — dynamic merge on gap
 - [ ] Wider value/key types beyond int (ticket 04)
