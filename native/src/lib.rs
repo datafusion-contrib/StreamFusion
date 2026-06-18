@@ -2,14 +2,17 @@ use arrow::array::{make_array, Array, Int32Array, Int64Array, RecordBatch, Struc
 use arrow::compute::concat_batches;
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema};
-use datafusion::logical_expr::Operator;
+use datafusion::functions_aggregate::sum::sum_udaf;
+use datafusion::logical_expr::{Accumulator, Operator};
+use datafusion::physical_expr::aggregate::{AggregateExprBuilder, AggregateFunctionExpr};
 use datafusion::physical_expr::expressions::{binary, col, lit};
 use datafusion::prelude::{col as logical_col, lit as logical_lit, SessionContext};
+use datafusion::scalar::ScalarValue;
 use futures::StreamExt;
 use jni::objects::{JByteArray, JClass};
 use jni::sys::{jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, OnceLock};
 use tokio::runtime::Runtime;
 
@@ -39,18 +42,44 @@ fn export_record_batch(batch: RecordBatch, array_address: jlong, schema_address:
     }
 }
 
-/// Event-time tumbling-window sum that holds open windows across batches. Mirrors the upstream
-/// streaming engine's window operator: windows are keyed by their start in an ordered map, each
-/// incoming batch folds into the running per-window totals, and a window is emitted and dropped
-/// only once a watermark guarantees no earlier data can still arrive.
+/// Builds the per-window aggregate. A SUM over an int64 `value` column, driven through DataFusion's
+/// accumulator machinery rather than hand-rolled arithmetic, so the same incremental, mergeable
+/// state model extends to other aggregates and to multi-phase aggregation later.
+fn build_aggregate() -> AggregateFunctionExpr {
+    let schema = Arc::new(Schema::new(vec![Field::new("value", DataType::Int64, true)]));
+    let value = col("value", &schema).expect("value column");
+    AggregateExprBuilder::new(sum_udaf(), vec![value])
+        .schema(schema)
+        .alias("total")
+        .build()
+        .expect("failed to build aggregate")
+}
+
+fn scalar_to_i64(scalar: ScalarValue) -> i64 {
+    match scalar {
+        ScalarValue::Int64(Some(value)) => value,
+        ScalarValue::Int64(None) => 0,
+        other => panic!("unexpected aggregate result: {other:?}"),
+    }
+}
+
+/// Event-time tumbling-window aggregation that holds open windows across batches. Mirrors the
+/// upstream streaming engine's window operator: windows are keyed by their start in an ordered map,
+/// each holding an incremental accumulator that folds in matching rows, and a window is finalized
+/// and dropped only once a watermark guarantees no earlier data can still arrive.
 struct TumblingAggregator {
     window_millis: i64,
-    totals: BTreeMap<i64, i64>,
+    aggregate: AggregateFunctionExpr,
+    windows: BTreeMap<i64, Box<dyn Accumulator>>,
 }
 
 impl TumblingAggregator {
     fn new(window_millis: i64) -> Self {
-        TumblingAggregator { window_millis, totals: BTreeMap::new() }
+        TumblingAggregator { window_millis, aggregate: build_aggregate(), windows: BTreeMap::new() }
+    }
+
+    fn window_start(&self, timestamp: i64) -> i64 {
+        timestamp - timestamp.rem_euclid(self.window_millis)
     }
 
     fn update(&mut self, batch: &RecordBatch) {
@@ -66,16 +95,29 @@ impl TumblingAggregator {
             .as_any()
             .downcast_ref::<Int64Array>()
             .expect("value must be int64");
+
+        let mut grouped: HashMap<i64, Vec<i64>> = HashMap::new();
         for row in 0..batch.num_rows() {
-            let window_start = ts.value(row) - ts.value(row).rem_euclid(self.window_millis);
-            *self.totals.entry(window_start).or_insert(0) += value.value(row);
+            grouped.entry(self.window_start(ts.value(row))).or_default().push(value.value(row));
+        }
+        for (window_start, values) in grouped {
+            self.accumulator(window_start)
+                .update_batch(&[Arc::new(Int64Array::from(values))])
+                .expect("failed to update window");
         }
     }
 
-    /// Emits and removes every window whose end is at or before the watermark.
+    fn accumulator(&mut self, window_start: i64) -> &mut Box<dyn Accumulator> {
+        let aggregate = &self.aggregate;
+        self.windows
+            .entry(window_start)
+            .or_insert_with(|| aggregate.create_accumulator().expect("failed to create accumulator"))
+    }
+
+    /// Finalizes and removes every window whose end is at or before the watermark.
     fn flush(&mut self, watermark: i64) -> RecordBatch {
         let closed: Vec<i64> = self
-            .totals
+            .windows
             .keys()
             .copied()
             .take_while(|start| start + self.window_millis <= watermark)
@@ -84,8 +126,9 @@ impl TumblingAggregator {
         let mut starts = Vec::with_capacity(closed.len());
         let mut totals = Vec::with_capacity(closed.len());
         for start in closed {
+            let mut accumulator = self.windows.remove(&start).expect("window present");
             starts.push(start);
-            totals.push(self.totals.remove(&start).expect("window present"));
+            totals.push(scalar_to_i64(accumulator.evaluate().expect("failed to finalize window")));
         }
 
         let schema = Arc::new(Schema::new(vec![
@@ -99,24 +142,31 @@ impl TumblingAggregator {
         .expect("failed to build result batch")
     }
 
-    /// Serializes the open windows as a flat sequence of (start, total) little-endian i64 pairs.
-    fn snapshot(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(self.totals.len() * 16);
-        for (start, total) in &self.totals {
+    /// Serializes each open window's partial accumulator state as (start, partial) i64 pairs. A
+    /// sum's partial state is a single int64, so the checkpoint stays a flat pair sequence.
+    fn snapshot(&mut self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.windows.len() * 16);
+        let starts: Vec<i64> = self.windows.keys().copied().collect();
+        for start in starts {
+            let state = self.windows.get_mut(&start).expect("window present").state().expect("state");
+            let partial = scalar_to_i64(state.into_iter().next().expect("sum state"));
             bytes.extend_from_slice(&start.to_le_bytes());
-            bytes.extend_from_slice(&total.to_le_bytes());
+            bytes.extend_from_slice(&partial.to_le_bytes());
         }
         bytes
     }
 
     fn restore(window_millis: i64, bytes: &[u8]) -> Self {
-        let mut totals = BTreeMap::new();
+        let mut aggregator = TumblingAggregator::new(window_millis);
         for pair in bytes.chunks_exact(16) {
             let start = i64::from_le_bytes(pair[0..8].try_into().expect("8 bytes"));
-            let total = i64::from_le_bytes(pair[8..16].try_into().expect("8 bytes"));
-            totals.insert(start, total);
+            let partial = i64::from_le_bytes(pair[8..16].try_into().expect("8 bytes"));
+            aggregator
+                .accumulator(start)
+                .merge_batch(&[Arc::new(Int64Array::from(vec![partial]))])
+                .expect("failed to restore window");
         }
-        TumblingAggregator { window_millis, totals }
+        aggregator
     }
 }
 
@@ -480,7 +530,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTumbl
     _class: JClass<'local>,
     handle: jlong,
 ) -> jbyteArray {
-    let aggregator = unsafe { &*(handle as *const TumblingAggregator) };
+    let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
     env.byte_array_from_slice(&aggregator.snapshot())
         .expect("failed to allocate snapshot array")
         .into_raw()
