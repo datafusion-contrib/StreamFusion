@@ -13,6 +13,7 @@ import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.BigIntVector;
+import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
@@ -46,6 +47,7 @@ public class NativeWindowAggregateOperator extends AbstractStreamOperator<RowDat
   private final long windowMillis;
   private final int timeColumn;
   private final int valueColumn;
+  private final int keyColumn;
   private final int aggregateKind;
   private final String timeZoneId;
   private final int batchSize;
@@ -60,12 +62,14 @@ public class NativeWindowAggregateOperator extends AbstractStreamOperator<RowDat
       long windowMillis,
       int timeColumn,
       int valueColumn,
+      int keyColumn,
       int aggregateKind,
       String timeZoneId,
       int batchSize) {
     this.windowMillis = windowMillis;
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
+    this.keyColumn = keyColumn;
     this.aggregateKind = aggregateKind;
     this.timeZoneId = timeZoneId;
     this.batchSize = batchSize;
@@ -141,23 +145,29 @@ public class NativeWindowAggregateOperator extends AbstractStreamOperator<RowDat
     if (buffer.isEmpty()) {
       return;
     }
-    try (BigIntVector ts = new BigIntVector("ts", allocator);
-        BigIntVector value = new BigIntVector("value", allocator);
+    boolean keyed = keyColumn >= 0;
+    BigIntVector ts = new BigIntVector("ts", allocator);
+    BigIntVector value = new BigIntVector("value", allocator);
+    BigIntVector key = keyed ? new BigIntVector("key", allocator) : null;
+    List<FieldVector> vectors = keyed ? List.of(ts, value, key) : List.of(ts, value);
+    try (VectorSchemaRoot root = new VectorSchemaRoot(vectors);
         ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       ts.allocateNew(buffer.size());
       value.allocateNew(buffer.size());
+      if (keyed) {
+        key.allocateNew(buffer.size());
+      }
       for (int i = 0; i < buffer.size(); i++) {
         RowData row = buffer.get(i);
         ts.set(i, row.getTimestamp(timeColumn, TIMESTAMP_PRECISION).getMillisecond());
         value.set(i, row.getLong(valueColumn));
+        if (keyed) {
+          key.set(i, row.getLong(keyColumn));
+        }
       }
-      ts.setValueCount(buffer.size());
-      value.setValueCount(buffer.size());
-      try (VectorSchemaRoot root = new VectorSchemaRoot(List.of(ts, value))) {
-        root.setRowCount(buffer.size());
-        Data.exportVectorSchemaRoot(allocator, root, dictionaries, array, schema);
-      }
+      root.setRowCount(buffer.size());
+      Data.exportVectorSchemaRoot(allocator, root, dictionaries, array, schema);
       Native.updateTumblingAggregator(handle, array.memoryAddress(), schema.memoryAddress());
     }
     buffer.clear();
@@ -174,17 +184,29 @@ public class NativeWindowAggregateOperator extends AbstractStreamOperator<RowDat
           handle, watermark, array.memoryAddress(), schema.memoryAddress());
       try (VectorSchemaRoot result =
           Data.importVectorSchemaRoot(allocator, array, schema, dictionaries)) {
+        boolean keyed = keyColumn >= 0;
+        BigIntVector key = keyed ? (BigIntVector) result.getVector("key") : null;
         BigIntVector windowStart = (BigIntVector) result.getVector("window_start");
         BigIntVector total = (BigIntVector) result.getVector("total");
         for (int i = 0; i < result.getRowCount(); i++) {
           long start = windowStart.get(i);
-          // Output schema is [total, window_start, window_end]. The window bounds are emitted as
-          // local wall-clock timestamps in the session zone, matching how the host renders the
-          // boundaries of an event-time (local-time-zone) window.
-          GenericRowData row = new GenericRowData(3);
-          row.setField(0, total.get(i));
-          row.setField(1, TimestampData.fromLocalDateTime(toLocal(start)));
-          row.setField(2, TimestampData.fromLocalDateTime(toLocal(start + windowMillis)));
+          // Output column order follows the host: [grouping key, aggregate, window_start,
+          // window_end]; the window bounds are local wall-clock timestamps in the session zone.
+          TimestampData windowStartTs = TimestampData.fromLocalDateTime(toLocal(start));
+          TimestampData windowEndTs = TimestampData.fromLocalDateTime(toLocal(start + windowMillis));
+          GenericRowData row;
+          if (keyed) {
+            row = new GenericRowData(4);
+            row.setField(0, key.get(i));
+            row.setField(1, total.get(i));
+            row.setField(2, windowStartTs);
+            row.setField(3, windowEndTs);
+          } else {
+            row = new GenericRowData(3);
+            row.setField(0, total.get(i));
+            row.setField(1, windowStartTs);
+            row.setField(2, windowEndTs);
+          }
           output.collect(new StreamRecord<>(row, start));
         }
       }

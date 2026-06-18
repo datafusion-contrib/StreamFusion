@@ -17,9 +17,9 @@ class NativeWindowAggregateOperatorTest {
   // Input schema [value, rt]; output schema [total, window_start, window_end].
   @Test
   void emitsWindowAggregateRowsOnWatermarks() throws Exception {
-    // UTC so the emitted window bounds stay on the epoch millis this test asserts.
+    // No grouping key (-1); UTC so the emitted window bounds stay on the epoch millis asserted here.
     NativeWindowAggregateOperator operator =
-        new NativeWindowAggregateOperator(1000, 1, 0, 0, "UTC", 8);
+        new NativeWindowAggregateOperator(1000, 1, 0, -1, 0, "UTC", 8);
     try (OneInputStreamOperatorTestHarness<RowData, RowData> harness =
         new OneInputStreamOperatorTestHarness<>(operator)) {
       harness.open();

@@ -1,7 +1,13 @@
 # Wider input schemas: types, multiple columns, grouping keys
 
-**Status:** open
+**Status:** partial — a single integer grouping key is supported; the rest remain
 **Source:** running theme across the operator/matcher work
+
+## Done
+The window operator is keyed by `(window, key)` and supports one integer
+grouping key in addition to the window (`GROUP BY k, window_start, window_end`),
+matching the host's per-key results and output column order. Remaining below:
+additional/non-integer keys, multiple aggregates, and non-integer value columns.
 
 ## Problem
 The native operators assume a narrow shape: a single int value column, and

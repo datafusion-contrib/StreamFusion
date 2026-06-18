@@ -30,6 +30,7 @@ public class NativeWindowAggExecNode extends ExecNodeBase<RowData>
   private final long windowMillis;
   private final int timeColumn;
   private final int valueColumn;
+  private final int keyColumn;
   private final int aggregateKind;
 
   public NativeWindowAggExecNode(
@@ -40,6 +41,7 @@ public class NativeWindowAggExecNode extends ExecNodeBase<RowData>
       long windowMillis,
       int timeColumn,
       int valueColumn,
+      int keyColumn,
       int aggregateKind) {
     super(
         ExecNodeContext.newNodeId(),
@@ -51,6 +53,7 @@ public class NativeWindowAggExecNode extends ExecNodeBase<RowData>
     this.windowMillis = windowMillis;
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
+    this.keyColumn = keyColumn;
     this.aggregateKind = aggregateKind;
   }
 
@@ -65,7 +68,7 @@ public class NativeWindowAggExecNode extends ExecNodeBase<RowData>
         input,
         createTransformationMeta(TRANSFORMATION, config),
         new NativeWindowAggregateOperator(
-            windowMillis, timeColumn, valueColumn, aggregateKind, timeZoneId, BATCH_SIZE),
+            windowMillis, timeColumn, valueColumn, keyColumn, aggregateKind, timeZoneId, BATCH_SIZE),
         InternalTypeInfo.of(getOutputType()),
         input.getParallelism(),
         false);
