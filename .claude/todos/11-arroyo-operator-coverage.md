@@ -13,7 +13,8 @@ is picked up. Operators are in `~/data/arroyo/crates/arroyo-worker/src/arrow/`.
 - [x] Multiple aggregates per window over one value column (one- and two-phase)
 - [x] Hopping / sliding window — one-phase (multi-window assignment); two-phase
       slice-sharing is a follow-up (ticket 13)
-- [ ] Session window (`session_aggregating_window.rs`) — dynamic merge on gap
+- [x] Session window (`session_aggregating_window.rs`) — dynamic merge on gap,
+      including late elements that bridge two open sessions (ticket 14)
 - [ ] Wider value/key types beyond int (ticket 04)
 
 ## Other stateful operators

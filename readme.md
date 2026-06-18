@@ -17,6 +17,7 @@ otherwise it runs on Flink unchanged.
 | Projection | Demo only | Single integer input column; the projection is exactly `col * 2`. (A proof of the projection path, not a general projection yet.) |
 | Tumbling window aggregate | Yes | Event-time `TUMBLE` over a local-time-zone (rowtime) attribute; one or more aggregates over the same bigint or double value column — `SUM` / `MIN` / `MAX` / `COUNT` (and `AVG` only as a lone aggregate); grouped by the window, optionally plus a single integer key. `AVG` follows Flink's integer-division semantics and so stays bigint-only. Double values are accelerated on the one-phase path only. |
 | Hopping window aggregate | One-phase only | Same as tumbling, with `HOP`. Each row is assigned to its overlapping windows. Under default (two-phase) planning the host uses slice-sharing, which is not yet native, so set `table.optimizer.agg-phase-strategy = ONE_PHASE` for `HOP`. |
+| Session window aggregate | Yes | Same aggregate/key/value terms as tumbling, with `SESSION` (optionally `PARTITION BY` a single bigint key). Each element opens a gap-wide window; overlapping or touching windows merge, including when a late element bridges two open sessions. Always single-phase (the host never splits sessions), so no `ONE_PHASE` is needed. |
 
 Two-phase (local + global) tumbling aggregation is accelerated too: the native
 local pre-aggregate emits partial state, the host shuffles by key, and the
@@ -31,7 +32,7 @@ needs `ONE_PHASE`.
 ### Not yet accelerated (falls back to Flink)
 
 - SQL filters (a native filter exists but is not yet wired into planning)
-- Session and cumulative windows; two-phase (slice-sharing) hopping windows
+- Cumulative windows; two-phase (slice-sharing) hopping windows
 - More than one grouping key, non-integer keys, aggregates over different value columns, `COUNT(*)`, or value columns that are neither bigint nor double
 - Two-phase (local + global) aggregation over a double value column
 - Two-phase `AVG` (multi-field partial state)
