@@ -5,8 +5,10 @@ import java.util.List;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Calc;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowAggregate;
 import org.apache.flink.table.planner.plan.optimize.program.FlinkOptimizeProgram;
+import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.flink.table.planner.plan.optimize.program.StreamOptimizeContext;
 
 /**
@@ -38,6 +40,13 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       changed |= rewritten != input;
     }
     RelNode current = changed ? node.copy(node.getTraitSet(), inputs) : node;
+
+    // Native operators emit insert-only rows; substituting into a retracting or updating stream
+    // would drop changelog semantics, so only insert-only nodes are eligible.
+    if (!(current instanceof StreamPhysicalRel)
+        || !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) current)) {
+      return current;
+    }
 
     if (current instanceof StreamPhysicalCalc && DoublingCalcMatcher.matches((Calc) current)) {
       substitutions++;

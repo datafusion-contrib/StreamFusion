@@ -1,7 +1,14 @@
 # Changelog / retract (RowKind) support
 
-**Status:** open
+**Status:** partial — safety gate done; emitting retractions remains
 **Source:** research findings §6 (open question #3); v1 is append-only
+
+## Done
+The substitution now refuses any node that is not insert-only
+(`ChangelogPlanUtils.isInsertOnly` in the optimizer stage), so a retracting or
+updating stream is left to the host instead of being silently mishandled.
+Correctness is protected; the rest below is about *supporting* retractions
+natively rather than declining them.
 
 ## Problem
 Everything so far assumes append-only, insert-only streams. Flink's planner
