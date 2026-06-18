@@ -1,4 +1,4 @@
-use arrow::array::{make_array, Int32Array};
+use arrow::array::{make_array, Array, Int32Array};
 use arrow::ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema};
 use jni::objects::JClass;
 use jni::sys::{jlong, jstring};
@@ -41,4 +41,45 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_sumInt<'local
         .downcast_ref::<Int32Array>()
         .expect("expected an int32 array");
     ints.iter().flatten().map(i64::from).sum()
+}
+
+/// Imports an int32 column from the JVM, rebuilds it into native-owned buffers, and exports the
+/// result back through the C Data Interface into consumer-allocated C structs.
+///
+/// The rebuilt array owns its buffers, so the inbound import is released when this call returns
+/// while the outbound array stays alive until the JVM imports and releases it. This is the shape a
+/// real operator takes: read an input batch, produce a new one.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_roundTrip<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let ffi_array = unsafe {
+        std::ptr::replace(in_array_address as *mut FFI_ArrowArray, FFI_ArrowArray::empty())
+    };
+    let ffi_schema = unsafe {
+        std::ptr::replace(in_schema_address as *mut FFI_ArrowSchema, FFI_ArrowSchema::empty())
+    };
+
+    let mut data = unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
+    data.align_buffers();
+
+    let array = make_array(data);
+    let ints = array
+        .as_any()
+        .downcast_ref::<Int32Array>()
+        .expect("expected an int32 array");
+    let rebuilt = ints.iter().collect::<Int32Array>().to_data();
+
+    let out_array = FFI_ArrowArray::new(&rebuilt);
+    let out_schema =
+        FFI_ArrowSchema::try_from(rebuilt.data_type()).expect("failed to export Arrow schema");
+    unsafe {
+        std::ptr::write(out_array_address as *mut FFI_ArrowArray, out_array);
+        std::ptr::write(out_schema_address as *mut FFI_ArrowSchema, out_schema);
+    }
 }

@@ -19,4 +19,16 @@ public final class Native {
    * @param schemaAddress address of the producer-allocated {@code ArrowSchema} C struct
    */
   public static native long sumInt(long arrayAddress, long schemaAddress);
+
+  /**
+   * Imports an int32 column the JVM exported and exports an equal column back into the
+   * consumer-allocated C structs, exercising both directions of the boundary.
+   *
+   * @param inArrayAddress address of the input {@code ArrowArray} C struct
+   * @param inSchemaAddress address of the input {@code ArrowSchema} C struct
+   * @param outArrayAddress address of the consumer-allocated output {@code ArrowArray} C struct
+   * @param outSchemaAddress address of the consumer-allocated output {@code ArrowSchema} C struct
+   */
+  public static native void roundTrip(
+      long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
 }
