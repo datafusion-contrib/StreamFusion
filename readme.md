@@ -38,3 +38,31 @@ model (a per-slice local, a global that combines each window's slices).
 - More than one grouping key, non-integer keys, aggregates over different value columns, `COUNT(*)`, or value columns that are neither bigint nor double
 - Two-phase (local + global) aggregation over a double value column
 - Two-phase `AVG` (multi-field partial state)
+
+## Related work
+
+Two commercial native Flink accelerators exist, both **closed source**:
+
+- **Iron Vector** (Irontools) — the same stack as us: Rust + Arrow + DataFusion
+  over zero-copy JNI, transparent fallback. It serializes the plan to the native
+  side with [Substrait](https://substrait.io/) and integrates at the
+  StreamTask/subtopology level, exchanging Arrow batches over Flink's network
+  rather than `RowData`. Today it is **stateless only** (projections, filters,
+  expressions); windows, joins, stateful operators, and exactly-once are
+  described as planned. It claims ~97% higher throughput on a stateless ETL
+  pipeline.
+  ([blog](https://irontools.dev/blog/introducing-iron-vector/))
+- **Vera X** (Ververica, the original Flink creators) — a proprietary native
+  vectorized engine with a drop-in compatibility layer and a new state store.
+  It supports stateful workloads and claims 5–10× on Nexmark SQL and ~52% lower
+  resource usage. The implementation (language, columnar library, plan format) is
+  undisclosed.
+  ([blog](https://www.ververica.com/blog/vera-x-introducing-the-first-native-vectorized-apache-flink-engine))
+
+Where StreamFusion differs: it is **open source**, and every substitution is
+gated and verified for identical results against stock Flink by a parity harness
+rather than asserted. It is already native on **stateful windowing** — tumbling,
+hopping, session, and cumulative windows, one- and two-phase — which Iron Vector
+(stateless only) has not yet shipped. It is earlier-stage than Vera X and does not
+match its operator breadth or have published benchmarks, but its acceleration is
+auditable and parity-first by construction.
