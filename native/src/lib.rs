@@ -6,8 +6,8 @@ use datafusion::logical_expr::Operator;
 use datafusion::physical_expr::expressions::{binary, col, lit};
 use datafusion::prelude::{col as logical_col, lit as logical_lit, SessionContext};
 use futures::StreamExt;
-use jni::objects::JClass;
-use jni::sys::{jint, jlong, jstring};
+use jni::objects::{JByteArray, JClass};
+use jni::sys::{jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
@@ -97,6 +97,26 @@ impl TumblingAggregator {
             vec![Arc::new(Int64Array::from(starts)), Arc::new(Int64Array::from(totals))],
         )
         .expect("failed to build result batch")
+    }
+
+    /// Serializes the open windows as a flat sequence of (start, total) little-endian i64 pairs.
+    fn snapshot(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.totals.len() * 16);
+        for (start, total) in &self.totals {
+            bytes.extend_from_slice(&start.to_le_bytes());
+            bytes.extend_from_slice(&total.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn restore(window_millis: i64, bytes: &[u8]) -> Self {
+        let mut totals = BTreeMap::new();
+        for pair in bytes.chunks_exact(16) {
+            let start = i64::from_le_bytes(pair[0..8].try_into().expect("8 bytes"));
+            let total = i64::from_le_bytes(pair[8..16].try_into().expect("8 bytes"));
+            totals.insert(start, total);
+        }
+        TumblingAggregator { window_millis, totals }
     }
 }
 
@@ -451,4 +471,29 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeTumbling
     unsafe {
         drop(Box::from_raw(handle as *mut TumblingAggregator));
     }
+}
+
+/// Serializes the aggregator's open windows so the JVM can store them in a checkpoint.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTumblingAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jbyteArray {
+    let aggregator = unsafe { &*(handle as *const TumblingAggregator) };
+    env.byte_array_from_slice(&aggregator.snapshot())
+        .expect("failed to allocate snapshot array")
+        .into_raw()
+}
+
+/// Rebuilds an aggregator from a snapshot taken by a prior run and returns a fresh handle.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTumblingAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    window_millis: jlong,
+    snapshot: JByteArray<'local>,
+) -> jlong {
+    let bytes = env.convert_byte_array(&snapshot).expect("failed to read snapshot");
+    Box::into_raw(Box::new(TumblingAggregator::restore(window_millis, &bytes))) as jlong
 }

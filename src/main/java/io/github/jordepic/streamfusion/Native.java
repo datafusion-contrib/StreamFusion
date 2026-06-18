@@ -124,4 +124,15 @@ public final class Native {
 
   /** Releases an aggregator handle and its native state. */
   public static native void closeTumblingAggregator(long handle);
+
+  /** Serializes an aggregator's open windows so they can be stored in a checkpoint. */
+  public static native byte[] snapshotTumblingAggregator(long handle);
+
+  /**
+   * Rebuilds an aggregator from a snapshot and returns a fresh handle.
+   *
+   * @param windowMillis window width, supplied again since it is configuration, not state
+   * @param snapshot bytes produced by {@link #snapshotTumblingAggregator(long)}
+   */
+  public static native long restoreTumblingAggregator(long windowMillis, byte[] snapshot);
 }

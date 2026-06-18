@@ -11,6 +11,11 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.api.common.state.ListState;
+import org.apache.flink.api.common.state.ListStateDescriptor;
+import org.apache.flink.api.common.typeinfo.PrimitiveArrayTypeInfo;
+import org.apache.flink.runtime.state.StateInitializationContext;
+import org.apache.flink.runtime.state.StateSnapshotContext;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
@@ -31,16 +36,49 @@ import org.apache.flink.table.data.RowData;
 public class NativeTumblingWindowOperator extends AbstractStreamOperator<RowData>
     implements OneInputStreamOperator<RowData, RowData> {
 
+  private static final String STATE_NAME = "streamfusion-window-state";
+
   private final long windowMillis;
   private final int batchSize;
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient List<RowData> buffer;
   private transient long handle;
+  private transient ListState<byte[]> windowState;
 
   public NativeTumblingWindowOperator(long windowMillis, int batchSize) {
     this.windowMillis = windowMillis;
     this.batchSize = batchSize;
+  }
+
+  @Override
+  public void initializeState(StateInitializationContext context) throws Exception {
+    super.initializeState(context);
+    windowState =
+        context
+            .getOperatorStateStore()
+            .getListState(
+                new ListStateDescriptor<>(
+                    STATE_NAME, PrimitiveArrayTypeInfo.BYTE_PRIMITIVE_ARRAY_TYPE_INFO));
+
+    // The native handle owns the window state, so restore it from the checkpoint when present.
+    byte[] snapshot = null;
+    for (byte[] entry : windowState.get()) {
+      snapshot = entry;
+    }
+    handle =
+        snapshot == null
+            ? Native.createTumblingAggregator(windowMillis)
+            : Native.restoreTumblingAggregator(windowMillis, snapshot);
+  }
+
+  @Override
+  public void snapshotState(StateSnapshotContext context) throws Exception {
+    super.snapshotState(context);
+    // Fold buffered rows in first so the snapshot reflects every record seen so far.
+    pushBatch();
+    windowState.clear();
+    windowState.add(Native.snapshotTumblingAggregator(handle));
   }
 
   @Override
@@ -49,7 +87,6 @@ public class NativeTumblingWindowOperator extends AbstractStreamOperator<RowData
     allocator = new RootAllocator();
     dictionaries = new CDataDictionaryProvider();
     buffer = new ArrayList<>(batchSize);
-    handle = Native.createTumblingAggregator(windowMillis);
   }
 
   @Override

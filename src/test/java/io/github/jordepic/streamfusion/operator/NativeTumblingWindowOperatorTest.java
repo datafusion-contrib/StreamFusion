@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.ArrayList;
 import java.util.List;
+import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
@@ -34,6 +35,30 @@ class NativeTumblingWindowOperatorTest {
 
       // Window [1000, 2000) accumulated 3 + 4 across two batches; [2000, 3000) holds 5.
       assertEquals(List.of(window(1000, 7), window(2000, 5)), collectWindows(harness));
+    }
+  }
+
+  @Test
+  void restoresOpenWindowStateFromCheckpoint() throws Exception {
+    OperatorSubtaskState snapshot;
+    try (OneInputStreamOperatorTestHarness<RowData, RowData> harness =
+        new OneInputStreamOperatorTestHarness<>(new NativeTumblingWindowOperator(1000, 8))) {
+      harness.open();
+      // Lands in the still-open window [1000, 2000); not yet flushed to native (buffered).
+      harness.processElement(new StreamRecord<>(event(1500, 4)));
+      snapshot = harness.snapshot(1L, 1L);
+    }
+
+    try (OneInputStreamOperatorTestHarness<RowData, RowData> restored =
+        new OneInputStreamOperatorTestHarness<>(new NativeTumblingWindowOperator(1000, 8))) {
+      restored.initializeState(snapshot);
+      restored.open();
+      // Same window gets more data after restore.
+      restored.processElement(new StreamRecord<>(event(1700, 6)));
+      restored.processWatermark(new Watermark(3000));
+
+      // The restored partial total (4) combines with post-restore data (6).
+      assertEquals(List.of(window(1000, 10)), collectWindows(restored));
     }
   }
 
