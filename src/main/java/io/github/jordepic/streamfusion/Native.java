@@ -49,4 +49,23 @@ public final class Native {
    */
   public static native void doubleColumn(
       long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
+
+  /**
+   * Runs a filter as a full plan over a batch the JVM exported, keeping rows whose int32 column
+   * exceeds {@code threshold}, and writes the surviving column into the consumer-allocated C
+   * structs. Native execution is async, so this drives the plan to completion on the native
+   * runtime.
+   *
+   * @param inArrayAddress address of the input {@code ArrowArray} C struct
+   * @param inSchemaAddress address of the input {@code ArrowSchema} C struct
+   * @param outArrayAddress address of the consumer-allocated output {@code ArrowArray} C struct
+   * @param outSchemaAddress address of the consumer-allocated output {@code ArrowSchema} C struct
+   * @param threshold rows are kept when the column value is strictly greater than this
+   */
+  public static native void filterGreaterThan(
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress,
+      int threshold);
 }

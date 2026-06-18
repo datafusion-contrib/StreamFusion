@@ -48,4 +48,41 @@ class OperatorBridgeTest {
       }
     }
   }
+
+  @Test
+  void nativeFilterDropsRowsThroughStreamingPlan() {
+    int[] values = {1, 2, 3, 4, 5};
+    int[] expected = {3, 4, 5};
+    try (BufferAllocator allocator = new RootAllocator();
+        IntVector vector = new IntVector("c0", allocator);
+        CDataDictionaryProvider provider = new CDataDictionaryProvider();
+        ArrowArray inArray = ArrowArray.allocateNew(allocator);
+        ArrowSchema inSchema = ArrowSchema.allocateNew(allocator);
+        ArrowArray outArray = ArrowArray.allocateNew(allocator);
+        ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+
+      vector.allocateNew(values.length);
+      for (int i = 0; i < values.length; i++) {
+        vector.set(i, values[i]);
+      }
+      vector.setValueCount(values.length);
+
+      Data.exportVector(allocator, vector, provider, inArray, inSchema);
+
+      Native.filterGreaterThan(
+          inArray.memoryAddress(),
+          inSchema.memoryAddress(),
+          outArray.memoryAddress(),
+          outSchema.memoryAddress(),
+          2);
+
+      try (FieldVector imported = Data.importVector(allocator, outArray, outSchema, provider)) {
+        IntVector result = (IntVector) imported;
+        assertEquals(expected.length, result.getValueCount());
+        for (int i = 0; i < expected.length; i++) {
+          assertEquals(expected[i], result.get(i));
+        }
+      }
+    }
+  }
 }

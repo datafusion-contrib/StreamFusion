@@ -1,10 +1,13 @@
 use arrow::array::{make_array, Array, Int32Array, RecordBatch};
+use arrow::compute::concat_batches;
 use arrow::datatypes::{Field, Schema};
 use arrow::ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema};
 use datafusion::logical_expr::Operator;
 use datafusion::physical_expr::expressions::{binary, col, lit};
+use datafusion::prelude::{col as logical_col, lit as logical_lit, SessionContext};
+use futures::StreamExt;
 use jni::objects::JClass;
-use jni::sys::{jlong, jstring};
+use jni::sys::{jint, jlong, jstring};
 use jni::JNIEnv;
 use std::sync::{Arc, OnceLock};
 use tokio::runtime::Runtime;
@@ -151,6 +154,64 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_doubleColumn<
         .expect("failed to realize projected column");
 
     let out_data = projected.to_data();
+    let out_array = FFI_ArrowArray::new(&out_data);
+    let out_schema =
+        FFI_ArrowSchema::try_from(out_data.data_type()).expect("failed to export Arrow schema");
+    unsafe {
+        std::ptr::write(out_array_address as *mut FFI_ArrowArray, out_array);
+        std::ptr::write(out_schema_address as *mut FFI_ArrowSchema, out_schema);
+    }
+}
+
+/// Runs a filter as a full DataFusion plan over a batch from the JVM, keeping rows whose int32
+/// column exceeds `threshold`, and exports the surviving column back.
+///
+/// Unlike a bare expression, a plan executes asynchronously and yields a stream of batches, so a
+/// control-plane thread blocks on the shared runtime and pulls that stream to completion. This is
+/// the drive model every stateful operator will use; a filter is the simplest plan that exercises
+/// it because it actually changes the row count.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_filterGreaterThan<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+    threshold: jint,
+) {
+    let ffi_array = unsafe {
+        std::ptr::replace(in_array_address as *mut FFI_ArrowArray, FFI_ArrowArray::empty())
+    };
+    let ffi_schema = unsafe {
+        std::ptr::replace(in_schema_address as *mut FFI_ArrowSchema, FFI_ArrowSchema::empty())
+    };
+
+    let field = Field::try_from(&ffi_schema).expect("failed to import Arrow field");
+    let schema = Arc::new(Schema::new(vec![field]));
+    let column_name = schema.field(0).name().clone();
+
+    let mut data = unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
+    data.align_buffers();
+    let batch =
+        RecordBatch::try_new(schema.clone(), vec![make_array(data)]).expect("failed to build batch");
+
+    let result = runtime().block_on(async move {
+        let ctx = SessionContext::new();
+        let frame = ctx
+            .read_batch(batch)
+            .expect("failed to read batch")
+            .filter(logical_col(&column_name).gt(logical_lit(threshold)))
+            .expect("failed to build filter");
+        let mut stream = frame.execute_stream().await.expect("failed to execute plan");
+        let mut batches = Vec::new();
+        while let Some(batch) = stream.next().await {
+            batches.push(batch.expect("failed to pull batch"));
+        }
+        concat_batches(&schema, &batches).expect("failed to assemble result")
+    });
+
+    let out_data = result.column(0).to_data();
     let out_array = FFI_ArrowArray::new(&out_data);
     let out_schema =
         FFI_ArrowSchema::try_from(out_data.data_type()).expect("failed to export Arrow schema");
