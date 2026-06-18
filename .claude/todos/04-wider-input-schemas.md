@@ -6,8 +6,12 @@
 ## Done
 The window operator is keyed by `(window, key)` and supports one integer
 grouping key in addition to the window (`GROUP BY k, window_start, window_end`),
-matching the host's per-key results and output column order. Remaining below:
-additional/non-integer keys, multiple aggregates, and non-integer value columns.
+matching the host's per-key results and output column order. Multiple aggregates
+per window are supported. The native engine is value-type agnostic; bigint and
+double value columns are wired through (double on the one-phase path only —
+two-phase double partials are not yet wired through the merge). Remaining below:
+additional/non-integer keys, more value types (decimal, etc.), and double
+through the two-phase split.
 
 ## Problem
 The native operators assume a narrow shape: a single int value column, and
