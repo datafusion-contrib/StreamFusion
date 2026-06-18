@@ -2,8 +2,10 @@ use arrow::array::{make_array, Array, Int32Array, Int64Array, RecordBatch, Struc
 use arrow::compute::concat_batches;
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema};
+use datafusion::functions_aggregate::count::count_udaf;
+use datafusion::functions_aggregate::min_max::{max_udaf, min_udaf};
 use datafusion::functions_aggregate::sum::sum_udaf;
-use datafusion::logical_expr::{Accumulator, Operator};
+use datafusion::logical_expr::{Accumulator, AggregateUDF, Operator};
 use datafusion::physical_expr::aggregate::{AggregateExprBuilder, AggregateFunctionExpr};
 use datafusion::physical_expr::expressions::{binary, col, lit};
 use datafusion::prelude::{col as logical_col, lit as logical_lit, SessionContext};
@@ -42,15 +44,23 @@ fn export_record_batch(batch: RecordBatch, array_address: jlong, schema_address:
     }
 }
 
-/// Builds the per-window aggregate. A SUM over an int64 `value` column, driven through DataFusion's
-/// accumulator machinery rather than hand-rolled arithmetic, so the same incremental, mergeable
-/// state model extends to other aggregates and to multi-phase aggregation later.
-fn build_aggregate() -> AggregateFunctionExpr {
+/// Builds the per-window aggregate over an int64 `value` column, selected by kind, driven through
+/// DataFusion's accumulator machinery rather than hand-rolled arithmetic. These all reduce an int64
+/// column to a single int64 with single-scalar partial state, so they share one state and output
+/// shape; aggregates with wider output or multi-field state are a later step.
+fn build_aggregate(kind: i64) -> AggregateFunctionExpr {
+    let function: Arc<AggregateUDF> = match kind {
+        0 => sum_udaf(),
+        1 => min_udaf(),
+        2 => max_udaf(),
+        3 => count_udaf(),
+        other => panic!("unsupported aggregate kind: {other}"),
+    };
     let schema = Arc::new(Schema::new(vec![Field::new("value", DataType::Int64, true)]));
     let value = col("value", &schema).expect("value column");
-    AggregateExprBuilder::new(sum_udaf(), vec![value])
+    AggregateExprBuilder::new(function, vec![value])
         .schema(schema)
-        .alias("total")
+        .alias("result")
         .build()
         .expect("failed to build aggregate")
 }
@@ -74,8 +84,12 @@ struct TumblingAggregator {
 }
 
 impl TumblingAggregator {
-    fn new(window_millis: i64) -> Self {
-        TumblingAggregator { window_millis, aggregate: build_aggregate(), windows: BTreeMap::new() }
+    fn new(window_millis: i64, kind: i64) -> Self {
+        TumblingAggregator {
+            window_millis,
+            aggregate: build_aggregate(kind),
+            windows: BTreeMap::new(),
+        }
     }
 
     fn window_start(&self, timestamp: i64) -> i64 {
@@ -156,8 +170,8 @@ impl TumblingAggregator {
         bytes
     }
 
-    fn restore(window_millis: i64, bytes: &[u8]) -> Self {
-        let mut aggregator = TumblingAggregator::new(window_millis);
+    fn restore(window_millis: i64, kind: i64, bytes: &[u8]) -> Self {
+        let mut aggregator = TumblingAggregator::new(window_millis, kind);
         for pair in bytes.chunks_exact(16) {
             let start = i64::from_le_bytes(pair[0..8].try_into().expect("8 bytes"));
             let partial = i64::from_le_bytes(pair[8..16].try_into().expect("8 bytes"));
@@ -477,8 +491,9 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTumblin
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
     window_millis: jlong,
+    aggregate_kind: jint,
 ) -> jlong {
-    Box::into_raw(Box::new(TumblingAggregator::new(window_millis))) as jlong
+    Box::into_raw(Box::new(TumblingAggregator::new(window_millis, aggregate_kind as i64))) as jlong
 }
 
 /// Folds a batch from the JVM into the aggregator's open windows. Produces no output; results are
@@ -542,8 +557,13 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTumbli
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     window_millis: jlong,
+    aggregate_kind: jint,
     snapshot: JByteArray<'local>,
 ) -> jlong {
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read snapshot");
-    Box::into_raw(Box::new(TumblingAggregator::restore(window_millis, &bytes))) as jlong
+    Box::into_raw(Box::new(TumblingAggregator::restore(
+        window_millis,
+        aggregate_kind as i64,
+        &bytes,
+    ))) as jlong
 }

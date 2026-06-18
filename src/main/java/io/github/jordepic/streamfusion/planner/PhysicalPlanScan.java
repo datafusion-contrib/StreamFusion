@@ -59,7 +59,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
           aggregate.getRowType(),
           WindowAggregateMatcher.windowMillis(aggregate),
           WindowAggregateMatcher.timeColumn(aggregate),
-          WindowAggregateMatcher.valueColumn(aggregate));
+          WindowAggregateMatcher.valueColumn(aggregate),
+          WindowAggregateMatcher.aggregateKind(aggregate));
     }
     return current;
   }

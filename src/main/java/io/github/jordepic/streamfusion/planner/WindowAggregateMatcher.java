@@ -8,9 +8,10 @@ import org.apache.flink.table.planner.plan.logical.WindowingStrategy;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowAggregate;
 
 /**
- * Recognizes the one window aggregation the native operator implements: an event-time tumbling
- * window with a single {@code SUM} and no extra grouping keys. Matching only this shape keeps
- * results identical and lets every other windowing fall back to the host engine.
+ * Recognizes the window aggregations the native operator implements: an event-time tumbling window
+ * with no extra grouping keys and a single aggregate over one column that reduces an int column to
+ * an int ({@code SUM}, {@code MIN}, {@code MAX}, {@code COUNT}). Matching only these keeps results
+ * identical and lets every other windowing fall back to the host engine.
  */
 final class WindowAggregateMatcher {
 
@@ -28,7 +29,27 @@ final class WindowAggregateMatcher {
       return false;
     }
     AggregateCall call = aggregate.aggCalls().apply(0);
-    return call.getAggregation().getKind() == SqlKind.SUM && call.getArgList().size() == 1;
+    return call.getArgList().size() == 1 && aggregateKind(call.getAggregation().getKind()) >= 0;
+  }
+
+  /** Native code for the aggregate, or -1 if unsupported. Mirrors the kinds in {@code Native}. */
+  private static int aggregateKind(SqlKind kind) {
+    switch (kind) {
+      case SUM:
+        return 0;
+      case MIN:
+        return 1;
+      case MAX:
+        return 2;
+      case COUNT:
+        return 3;
+      default:
+        return -1;
+    }
+  }
+
+  static int aggregateKind(StreamPhysicalWindowAggregate aggregate) {
+    return aggregateKind(aggregate.aggCalls().apply(0).getAggregation().getKind());
   }
 
   static long windowMillis(StreamPhysicalWindowAggregate aggregate) {

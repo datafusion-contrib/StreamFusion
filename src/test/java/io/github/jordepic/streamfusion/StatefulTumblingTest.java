@@ -21,7 +21,7 @@ class StatefulTumblingTest {
     try (BufferAllocator allocator = new RootAllocator();
         CDataDictionaryProvider provider = new CDataDictionaryProvider()) {
 
-      long handle = Native.createTumblingAggregator(1000);
+      long handle = Native.createTumblingAggregator(1000, 0); // SUM
       try {
         // First batch lands rows in windows 0 and 1000.
         update(allocator, provider, handle, new long[] {0, 500, 1000}, new long[] {1, 2, 3});

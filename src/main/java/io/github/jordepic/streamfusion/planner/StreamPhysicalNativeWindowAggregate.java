@@ -23,6 +23,7 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
   private final long windowMillis;
   private final int timeColumn;
   private final int valueColumn;
+  private final int aggregateKind;
 
   public StreamPhysicalNativeWindowAggregate(
       RelOptCluster cluster,
@@ -31,12 +32,14 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
       RelDataType outputRowType,
       long windowMillis,
       int timeColumn,
-      int valueColumn) {
+      int valueColumn,
+      int aggregateKind) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.windowMillis = windowMillis;
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
+    this.aggregateKind = aggregateKind;
   }
 
   @Override
@@ -52,7 +55,14 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
     return new StreamPhysicalNativeWindowAggregate(
-        getCluster(), traitSet, inputs.get(0), outputRowType, windowMillis, timeColumn, valueColumn);
+        getCluster(),
+        traitSet,
+        inputs.get(0),
+        outputRowType,
+        windowMillis,
+        timeColumn,
+        valueColumn,
+        aggregateKind);
   }
 
   @Override
@@ -64,6 +74,7 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
         getRelDetailedDescription(),
         windowMillis,
         timeColumn,
-        valueColumn);
+        valueColumn,
+        aggregateKind);
   }
 }

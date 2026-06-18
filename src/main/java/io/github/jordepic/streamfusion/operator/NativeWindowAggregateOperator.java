@@ -43,6 +43,7 @@ public class NativeWindowAggregateOperator extends AbstractStreamOperator<RowDat
   private final long windowMillis;
   private final int timeColumn;
   private final int valueColumn;
+  private final int aggregateKind;
   private final int batchSize;
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
@@ -51,10 +52,11 @@ public class NativeWindowAggregateOperator extends AbstractStreamOperator<RowDat
   private transient ListState<byte[]> windowState;
 
   public NativeWindowAggregateOperator(
-      long windowMillis, int timeColumn, int valueColumn, int batchSize) {
+      long windowMillis, int timeColumn, int valueColumn, int aggregateKind, int batchSize) {
     this.windowMillis = windowMillis;
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
+    this.aggregateKind = aggregateKind;
     this.batchSize = batchSize;
   }
 
@@ -73,8 +75,8 @@ public class NativeWindowAggregateOperator extends AbstractStreamOperator<RowDat
     }
     handle =
         snapshot == null
-            ? Native.createTumblingAggregator(windowMillis)
-            : Native.restoreTumblingAggregator(windowMillis, snapshot);
+            ? Native.createTumblingAggregator(windowMillis, aggregateKind)
+            : Native.restoreTumblingAggregator(windowMillis, aggregateKind, snapshot);
   }
 
   @Override

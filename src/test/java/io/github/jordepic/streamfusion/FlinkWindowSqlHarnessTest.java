@@ -21,18 +21,48 @@ import org.junit.jupiter.api.Test;
 
 class FlinkWindowSqlHarnessTest {
 
-  private static final String WINDOW_SQL =
-      "SELECT window_start, window_end, SUM(`value`) AS total "
-          + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
-          + "GROUP BY window_start, window_end";
+  @Test
+  void routesTumblingSumToNative() throws Exception {
+    // Per window: [0,1k)=1+2, [1k,2k)=3+4, [2k,3k)=5.
+    assertRoutesToNative("SUM(`value`)", List.of(3L, 5L, 7L));
+  }
 
   @Test
-  void routesTumblingWindowSqlToNative() throws Exception {
+  void routesTumblingMaxToNative() throws Exception {
+    // Per window: [0,1k)=max(1,2), [1k,2k)=max(3,4), [2k,3k)=max(5).
+    assertRoutesToNative("MAX(`value`)", List.of(2L, 4L, 5L));
+  }
+
+  private static void assertRoutesToNative(String aggregate, List<Long> expectedSorted)
+      throws Exception {
+    StreamTableEnvironment tEnv = environmentWithSource();
+    PhysicalPlanScan scan = NativePlanner.install(tEnv);
+
+    TableResult result =
+        tEnv.executeSql(
+            "SELECT window_start, window_end, "
+                + aggregate
+                + " AS agg "
+                + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+                + "GROUP BY window_start, window_end");
+
+    List<Long> values = new ArrayList<>();
+    try (CloseableIterator<Row> rows = result.collect()) {
+      while (rows.hasNext()) {
+        values.add((Long) rows.next().getField(2));
+      }
+    }
+    values.sort(null);
+
+    assertTrue(scan.substitutions() > 0, "window aggregate was not routed to native execution");
+    assertEquals(expectedSorted, values);
+  }
+
+  private static StreamTableEnvironment environmentWithSource() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
     tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
-    PhysicalPlanScan scan = NativePlanner.install(tEnv);
 
     DataStream<Row> source =
         env.fromData(
@@ -55,18 +85,6 @@ class FlinkWindowSqlHarnessTest {
             .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
             .watermark("rt", "SOURCE_WATERMARK()")
             .build());
-
-    TableResult result = tEnv.executeSql(WINDOW_SQL);
-    List<Long> totals = new ArrayList<>();
-    try (CloseableIterator<Row> rows = result.collect()) {
-      while (rows.hasNext()) {
-        totals.add((Long) rows.next().getField(2));
-      }
-    }
-    totals.sort(null);
-
-    // Bounded source emits a final watermark closing every window: [0,1k)=3, [1k,2k)=7, [2k,3k)=5.
-    assertEquals(List.of(3L, 5L, 7L), totals);
-    assertTrue(scan.substitutions() > 0, "window aggregate was not routed to native execution");
+    return tEnv;
   }
 }
