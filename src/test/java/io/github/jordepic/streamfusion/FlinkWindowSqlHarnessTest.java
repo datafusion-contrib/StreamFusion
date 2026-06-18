@@ -82,6 +82,34 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
+  void twoKeyTumblingMatchesHost() throws Exception {
+    // GROUP BY two bigint keys plus the window: the native composite key must match the host.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT k, g, window_start, window_end, SUM(`value`) AS s, COUNT(`value`) AS c "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY k, g, window_start, window_end");
+  }
+
+  @Test
+  void twoKeySessionMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT k, g, window_start, window_end, SUM(`value`) AS s "
+            + "FROM TABLE(SESSION(TABLE src PARTITION BY (k, g), DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY k, g, window_start, window_end");
+  }
+
+  @Test
+  void twoPhaseTwoKeyTumblingMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentTwoPhase,
+        "SELECT k, g, window_start, window_end, SUM(`value`) AS s "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY k, g, window_start, window_end");
+  }
+
+  @Test
   void keyedTumblingSumMatchesHost() throws Exception {
     NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentWithSource,
@@ -298,17 +326,18 @@ class FlinkWindowSqlHarnessTest {
     DataStream<Row> source =
         env.fromData(
                 Types.ROW_NAMED(
-                    new String[] {"k", "value", "ts", "amount", "qty"},
+                    new String[] {"k", "value", "ts", "amount", "qty", "g"},
                     Types.LONG,
                     Types.LONG,
                     Types.LONG,
                     Types.DOUBLE,
-                    Types.INT),
-                Row.of(7L, 1L, 0L, 1.5, 10),
-                Row.of(7L, 2L, 500L, 2.5, 20),
-                Row.of(9L, 3L, 600L, 3.0, 30),
-                Row.of(7L, 4L, 1500L, 4.5, 40),
-                Row.of(9L, 5L, 2500L, 5.5, 50))
+                    Types.INT,
+                    Types.LONG),
+                Row.of(7L, 1L, 0L, 1.5, 10, 100L),
+                Row.of(7L, 2L, 500L, 2.5, 20, 100L),
+                Row.of(9L, 3L, 600L, 3.0, 30, 200L),
+                Row.of(7L, 4L, 1500L, 4.5, 40, 100L),
+                Row.of(9L, 5L, 2500L, 5.5, 50, 200L))
             .assignTimestampsAndWatermarks(
                 WatermarkStrategy.<Row>forMonotonousTimestamps()
                     .withTimestampAssigner((row, ts) -> (Long) row.getField(2)));
@@ -322,6 +351,7 @@ class FlinkWindowSqlHarnessTest {
             .column("ts", DataTypes.BIGINT())
             .column("amount", DataTypes.DOUBLE())
             .column("qty", DataTypes.INT())
+            .column("g", DataTypes.BIGINT())
             .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
             .watermark("rt", "SOURCE_WATERMARK()")
             .build());

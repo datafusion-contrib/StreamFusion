@@ -24,7 +24,7 @@ public class NativeGlobalWindowAggExecNode extends ExecNodeBase<RowData>
   private static final String TRANSFORMATION = "native-global-window-aggregate";
 
   private final long windowMillis;
-  private final int keyColumn;
+  private final int[] keyColumns;
   private final long slideMillis;
   private final int[] partialColumns;
   private final int sliceEndColumn;
@@ -37,7 +37,7 @@ public class NativeGlobalWindowAggExecNode extends ExecNodeBase<RowData>
       String description,
       long windowMillis,
       long slideMillis,
-      int keyColumn,
+      int[] keyColumns,
       int[] partialColumns,
       int sliceEndColumn,
       int[] aggregateKinds) {
@@ -50,7 +50,7 @@ public class NativeGlobalWindowAggExecNode extends ExecNodeBase<RowData>
         description);
     this.windowMillis = windowMillis;
     this.slideMillis = slideMillis;
-    this.keyColumn = keyColumn;
+    this.keyColumns = keyColumns;
     this.partialColumns = partialColumns;
     this.sliceEndColumn = sliceEndColumn;
     this.aggregateKinds = aggregateKinds;
@@ -69,7 +69,7 @@ public class NativeGlobalWindowAggExecNode extends ExecNodeBase<RowData>
         new NativeGlobalWindowAggregateOperator(
             windowMillis,
             slideMillis,
-            keyColumn,
+            keyColumns,
             partialColumns,
             sliceEndColumn,
             aggregateKinds,

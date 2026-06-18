@@ -200,8 +200,7 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
    * the single-phase and local operators, which both consume raw input.
    */
   protected final void updateRaw(
-      List<RowData> rows, int timeColumn, int valueColumn, int keyColumn) {
-    boolean keyed = keyColumn >= 0;
+      List<RowData> rows, int timeColumn, int valueColumn, int[] keyColumns) {
     BigIntVector ts = new BigIntVector("ts", allocator);
     FieldVector value;
     if (valueType == TYPE_DOUBLE) {
@@ -211,8 +210,14 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
     } else {
       value = new BigIntVector("value", allocator);
     }
-    BigIntVector key = keyed ? new BigIntVector("key", allocator) : null;
-    List<FieldVector> vectors = keyed ? List.of(ts, value, key) : List.of(ts, value);
+    BigIntVector[] keys = new BigIntVector[keyColumns.length];
+    List<FieldVector> vectors = new ArrayList<>();
+    vectors.add(ts);
+    vectors.add(value);
+    for (int j = 0; j < keyColumns.length; j++) {
+      keys[j] = new BigIntVector("key" + j, allocator);
+      vectors.add(keys[j]);
+    }
     try (VectorSchemaRoot root = new VectorSchemaRoot(vectors);
         ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
@@ -226,8 +231,8 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
         } else {
           ((BigIntVector) value).setSafe(i, row.getLong(valueColumn));
         }
-        if (keyed) {
-          key.setSafe(i, row.getLong(keyColumn));
+        for (int j = 0; j < keyColumns.length; j++) {
+          keys[j].setSafe(i, row.getLong(keyColumns[j]));
         }
       }
       root.setRowCount(rows.size());
@@ -253,15 +258,17 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
    * carries the window end explicitly (windows of the same start can differ by it), so every window
    * operator — single-phase, global, and session — shares this path.
    */
-  protected final void emitFinal(long watermark, int keyColumn) {
-    boolean keyed = keyColumn >= 0;
+  protected final void emitFinal(long watermark, int keyCount) {
     int aggregates = aggregateCount();
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       flushHandle(watermark, array.memoryAddress(), schema.memoryAddress());
       try (VectorSchemaRoot result =
           Data.importVectorSchemaRoot(allocator, array, schema, dictionaries)) {
-        BigIntVector key = keyed ? (BigIntVector) result.getVector("key") : null;
+        BigIntVector[] keys = new BigIntVector[keyCount];
+        for (int j = 0; j < keyCount; j++) {
+          keys[j] = (BigIntVector) result.getVector("key" + j);
+        }
         BigIntVector windowStart = (BigIntVector) result.getVector("window_start");
         BigIntVector windowEnd = (BigIntVector) result.getVector("window_end");
         FieldVector[] results = new FieldVector[aggregates];
@@ -271,10 +278,10 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
         for (int i = 0; i < result.getRowCount(); i++) {
           long start = windowStart.get(i);
           long end = windowEnd.get(i);
-          GenericRowData row = new GenericRowData((keyed ? 1 : 0) + aggregates + 2);
+          GenericRowData row = new GenericRowData(keyCount + aggregates + 2);
           int field = 0;
-          if (keyed) {
-            row.setField(field++, key.get(i));
+          for (int j = 0; j < keyCount; j++) {
+            row.setField(field++, keys[j].get(i));
           }
           for (int a = 0; a < aggregates; a++) {
             row.setField(field++, readScalar(results[a], i));

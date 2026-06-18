@@ -29,7 +29,7 @@ public class NativeSessionWindowAggExecNode extends ExecNodeBase<RowData>
   private final long gapMillis;
   private final int timeColumn;
   private final int valueColumn;
-  private final int keyColumn;
+  private final int[] keyColumns;
   private final int valueType;
   private final int[] aggregateKinds;
 
@@ -41,7 +41,7 @@ public class NativeSessionWindowAggExecNode extends ExecNodeBase<RowData>
       long gapMillis,
       int timeColumn,
       int valueColumn,
-      int keyColumn,
+      int[] keyColumns,
       int valueType,
       int[] aggregateKinds) {
     super(
@@ -54,7 +54,7 @@ public class NativeSessionWindowAggExecNode extends ExecNodeBase<RowData>
     this.gapMillis = gapMillis;
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
-    this.keyColumn = keyColumn;
+    this.keyColumns = keyColumns;
     this.valueType = valueType;
     this.aggregateKinds = aggregateKinds;
   }
@@ -73,7 +73,7 @@ public class NativeSessionWindowAggExecNode extends ExecNodeBase<RowData>
             gapMillis,
             timeColumn,
             valueColumn,
-            keyColumn,
+            keyColumns,
             valueType,
             aggregateKinds,
             timeZoneId,

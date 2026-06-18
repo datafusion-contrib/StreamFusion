@@ -39,13 +39,13 @@ final class GlobalWindowAggregateMatcher {
     }
     int[] grouping = aggregate.grouping();
     RelDataType inputType = aggregate.getInput().getRowType();
-    if (grouping.length > 1 || aggregate.aggCalls().isEmpty()) {
+    if (aggregate.aggCalls().isEmpty()) {
       return false;
     }
-    if (grouping.length == 1
-        && inputType.getFieldList().get(grouping[0]).getType().getSqlTypeName()
-            != SqlTypeName.BIGINT) {
-      return false;
+    for (int column : grouping) {
+      if (inputType.getFieldList().get(column).getType().getSqlTypeName() != SqlTypeName.BIGINT) {
+        return false;
+      }
     }
     for (int i = 0; i < aggregate.aggCalls().size(); i++) {
       AggregateCall call = aggregate.aggCalls().apply(i);
@@ -78,9 +78,8 @@ final class GlobalWindowAggregateMatcher {
         : ((TumblingWindowSpec) spec).getSize().toMillis();
   }
 
-  static int keyColumn(StreamPhysicalGlobalWindowAggregate aggregate) {
-    int[] grouping = aggregate.grouping();
-    return grouping.length == 1 ? grouping[0] : -1;
+  static int[] keyColumns(StreamPhysicalGlobalWindowAggregate aggregate) {
+    return aggregate.grouping();
   }
 
   static int[] partialColumns(StreamPhysicalGlobalWindowAggregate aggregate) {

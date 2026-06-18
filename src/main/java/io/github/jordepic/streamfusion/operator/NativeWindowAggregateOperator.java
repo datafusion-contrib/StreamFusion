@@ -16,7 +16,7 @@ public class NativeWindowAggregateOperator extends NativeWindowOperatorBase {
   private final boolean cumulative;
   private final int timeColumn;
   private final int valueColumn;
-  private final int keyColumn;
+  private final int[] keyColumns;
 
   public NativeWindowAggregateOperator(
       boolean cumulative,
@@ -24,7 +24,7 @@ public class NativeWindowAggregateOperator extends NativeWindowOperatorBase {
       long slideMillis,
       int timeColumn,
       int valueColumn,
-      int keyColumn,
+      int[] keyColumns,
       int valueType,
       int[] aggregateKinds,
       String timeZoneId,
@@ -40,7 +40,7 @@ public class NativeWindowAggregateOperator extends NativeWindowOperatorBase {
     this.cumulative = cumulative;
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
-    this.keyColumn = keyColumn;
+    this.keyColumns = keyColumns;
   }
 
   @Override
@@ -60,11 +60,11 @@ public class NativeWindowAggregateOperator extends NativeWindowOperatorBase {
 
   @Override
   protected void pushBatch(List<RowData> rows) {
-    updateRaw(rows, timeColumn, valueColumn, keyColumn);
+    updateRaw(rows, timeColumn, valueColumn, keyColumns);
   }
 
   @Override
   protected void emitClosedWindows(long watermark) {
-    emitFinal(watermark, keyColumn);
+    emitFinal(watermark, keyColumns.length);
   }
 }

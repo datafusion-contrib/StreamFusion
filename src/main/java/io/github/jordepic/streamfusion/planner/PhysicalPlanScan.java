@@ -74,7 +74,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             WindowAggregateMatcher.windowSlide(agg.windowing()),
             WindowAggregateMatcher.timeColumn(agg.windowing()),
             WindowAggregateMatcher.valueColumn(agg.aggCalls()),
-            WindowAggregateMatcher.keyColumn(agg.grouping()),
+            WindowAggregateMatcher.keyColumns(agg.grouping()),
             WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType()),
             WindowAggregateMatcher.kinds(agg.aggCalls()));
       }
@@ -89,7 +89,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             WindowAggregateMatcher.gapMillis(agg.windowing()),
             WindowAggregateMatcher.timeColumn(agg.windowing()),
             WindowAggregateMatcher.valueColumn(agg.aggCalls()),
-            WindowAggregateMatcher.keyColumn(agg.grouping()),
+            WindowAggregateMatcher.keyColumns(agg.grouping()),
             WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType()),
             WindowAggregateMatcher.kinds(agg.aggCalls()));
       }
@@ -125,7 +125,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             WindowAggregateMatcher.sliceSize(agg.windowing()),
             WindowAggregateMatcher.timeColumn(agg.windowing()),
             WindowAggregateMatcher.valueColumn(agg.aggCalls()),
-            WindowAggregateMatcher.keyColumn(agg.grouping()),
+            WindowAggregateMatcher.keyColumns(agg.grouping()),
             kinds);
       }
     }
@@ -141,7 +141,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             agg.getRowType(),
             GlobalWindowAggregateMatcher.windowMillis(agg),
             GlobalWindowAggregateMatcher.slideMillis(agg),
-            GlobalWindowAggregateMatcher.keyColumn(agg),
+            GlobalWindowAggregateMatcher.keyColumns(agg),
             GlobalWindowAggregateMatcher.partialColumns(agg),
             GlobalWindowAggregateMatcher.sliceEndColumn(agg),
             GlobalWindowAggregateMatcher.kinds(agg));

@@ -26,7 +26,7 @@ public class NativeLocalWindowAggExecNode extends ExecNodeBase<RowData>
   private final long windowMillis;
   private final int timeColumn;
   private final int valueColumn;
-  private final int keyColumn;
+  private final int[] keyColumns;
   private final int[] aggregateKinds;
 
   public NativeLocalWindowAggExecNode(
@@ -37,7 +37,7 @@ public class NativeLocalWindowAggExecNode extends ExecNodeBase<RowData>
       long windowMillis,
       int timeColumn,
       int valueColumn,
-      int keyColumn,
+      int[] keyColumns,
       int[] aggregateKinds) {
     super(
         ExecNodeContext.newNodeId(),
@@ -49,7 +49,7 @@ public class NativeLocalWindowAggExecNode extends ExecNodeBase<RowData>
     this.windowMillis = windowMillis;
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
-    this.keyColumn = keyColumn;
+    this.keyColumns = keyColumns;
     this.aggregateKinds = aggregateKinds;
   }
 
@@ -68,7 +68,7 @@ public class NativeLocalWindowAggExecNode extends ExecNodeBase<RowData>
             windowMillis,
             timeColumn,
             valueColumn,
-            keyColumn,
+            keyColumns,
             aggregateKinds,
             timeZoneId,
             BATCH_SIZE),

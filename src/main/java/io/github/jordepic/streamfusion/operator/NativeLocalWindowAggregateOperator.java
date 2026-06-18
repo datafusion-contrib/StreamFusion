@@ -21,14 +21,14 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
 
   private final int timeColumn;
   private final int valueColumn;
-  private final int keyColumn;
+  private final int[] keyColumns;
 
   public NativeLocalWindowAggregateOperator(
       long windowMillis,
       long slideMillis,
       int timeColumn,
       int valueColumn,
-      int keyColumn,
+      int[] keyColumns,
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
@@ -43,17 +43,17 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
         batchSize);
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
-    this.keyColumn = keyColumn;
+    this.keyColumns = keyColumns;
   }
 
   @Override
   protected void pushBatch(List<RowData> rows) {
-    updateRaw(rows, timeColumn, valueColumn, keyColumn);
+    updateRaw(rows, timeColumn, valueColumn, keyColumns);
   }
 
   @Override
   protected void emitClosedWindows(long watermark) {
-    boolean keyed = keyColumn >= 0;
+    int keyCount = keyColumns.length;
     int aggregates = aggregateCount();
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
@@ -61,18 +61,21 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
           handle, watermark, array.memoryAddress(), schema.memoryAddress());
       try (VectorSchemaRoot result =
           Data.importVectorSchemaRoot(allocator, array, schema, dictionaries)) {
-        BigIntVector key = keyed ? (BigIntVector) result.getVector("key") : null;
+        BigIntVector[] keys = new BigIntVector[keyCount];
+        for (int j = 0; j < keyCount; j++) {
+          keys[j] = (BigIntVector) result.getVector("key" + j);
+        }
         BigIntVector sliceEnd = (BigIntVector) result.getVector("slice_end");
         BigIntVector[] partials = new BigIntVector[aggregates];
         for (int a = 0; a < aggregates; a++) {
           partials[a] = (BigIntVector) result.getVector("partial" + a);
         }
         for (int i = 0; i < result.getRowCount(); i++) {
-          // Local output column order follows the host: [key?, partial0..partialN-1, slice_end].
-          GenericRowData row = new GenericRowData((keyed ? 1 : 0) + aggregates + 1);
+          // Local output column order follows the host: [key0..key{n-1}, partial0.., slice_end].
+          GenericRowData row = new GenericRowData(keyCount + aggregates + 1);
           int field = 0;
-          if (keyed) {
-            row.setField(field++, key.get(i));
+          for (int j = 0; j < keyCount; j++) {
+            row.setField(field++, keys[j].get(i));
           }
           for (int a = 0; a < aggregates; a++) {
             row.setField(field++, partials[a].get(i));

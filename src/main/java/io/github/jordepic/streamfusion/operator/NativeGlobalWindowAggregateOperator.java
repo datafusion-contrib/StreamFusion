@@ -18,14 +18,14 @@ import org.apache.flink.table.data.RowData;
  */
 public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBase {
 
-  private final int keyColumn;
+  private final int[] keyColumns;
   private final int[] partialColumns;
   private final int sliceEndColumn;
 
   public NativeGlobalWindowAggregateOperator(
       long windowMillis,
       long slideMillis,
-      int keyColumn,
+      int[] keyColumns,
       int[] partialColumns,
       int sliceEndColumn,
       int[] aggregateKinds,
@@ -40,16 +40,19 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
         aggregateKinds,
         timeZoneId,
         batchSize);
-    this.keyColumn = keyColumn;
+    this.keyColumns = keyColumns;
     this.partialColumns = partialColumns;
     this.sliceEndColumn = sliceEndColumn;
   }
 
   @Override
   protected void pushBatch(List<RowData> rows) {
-    boolean keyed = keyColumn >= 0;
+    int keyCount = keyColumns.length;
     int aggregates = partialColumns.length;
-    BigIntVector key = keyed ? new BigIntVector("key", allocator) : null;
+    BigIntVector[] keys = new BigIntVector[keyCount];
+    for (int j = 0; j < keyCount; j++) {
+      keys[j] = new BigIntVector("key" + j, allocator);
+    }
     BigIntVector[] partials = new BigIntVector[aggregates];
     for (int a = 0; a < aggregates; a++) {
       partials[a] = new BigIntVector("partial" + a, allocator);
@@ -57,7 +60,7 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
     BigIntVector sliceEnd = new BigIntVector("slice_end", allocator);
 
     List<FieldVector> vectors = new ArrayList<>();
-    if (keyed) {
+    for (BigIntVector key : keys) {
       vectors.add(key);
     }
     for (BigIntVector partial : partials) {
@@ -68,7 +71,7 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
     try (VectorSchemaRoot root = new VectorSchemaRoot(vectors);
         ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      if (keyed) {
+      for (BigIntVector key : keys) {
         key.allocateNew(rows.size());
       }
       for (BigIntVector partial : partials) {
@@ -77,8 +80,8 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
       sliceEnd.allocateNew(rows.size());
       for (int i = 0; i < rows.size(); i++) {
         RowData row = rows.get(i);
-        if (keyed) {
-          key.set(i, row.getLong(keyColumn));
+        for (int j = 0; j < keyCount; j++) {
+          keys[j].set(i, row.getLong(keyColumns[j]));
         }
         for (int a = 0; a < aggregates; a++) {
           partials[a].set(i, row.getLong(partialColumns[a]));
@@ -93,6 +96,6 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
 
   @Override
   protected void emitClosedWindows(long watermark) {
-    emitFinal(watermark, keyColumn);
+    emitFinal(watermark, keyColumns.length);
   }
 }

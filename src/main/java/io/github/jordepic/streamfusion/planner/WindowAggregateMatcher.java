@@ -125,12 +125,7 @@ final class WindowAggregateMatcher {
         != LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
       return false;
     }
-    if (grouping.length > 1 || aggCalls.isEmpty()) {
-      return false;
-    }
-    if (grouping.length == 1
-        && inputType.getFieldList().get(grouping[0]).getType().getSqlTypeName()
-            != SqlTypeName.BIGINT) {
+    if (aggCalls.isEmpty() || !allBigintKeys(grouping, inputType)) {
       return false;
     }
 
@@ -225,8 +220,19 @@ final class WindowAggregateMatcher {
     return aggCalls.apply(0).getArgList().get(0);
   }
 
-  static int keyColumn(int[] grouping) {
-    return grouping.length == 1 ? grouping[0] : -1;
+  /** The grouping key columns (zero or more); the native side keys windows by their composite. */
+  static int[] keyColumns(int[] grouping) {
+    return grouping;
+  }
+
+  /** True if every grouping column is a bigint (the only key type supported so far). */
+  private static boolean allBigintKeys(int[] grouping, RelDataType inputType) {
+    for (int column : grouping) {
+      if (inputType.getFieldList().get(column).getType().getSqlTypeName() != SqlTypeName.BIGINT) {
+        return false;
+      }
+    }
+    return true;
   }
 
   static int[] kinds(scala.collection.Seq<AggregateCall> aggCalls) {
