@@ -31,4 +31,16 @@ public final class Native {
    */
   public static native void roundTrip(
       long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
+
+  /**
+   * Applies the first stateless operator, a projection that doubles an int32 column, to a batch the
+   * JVM exported, writing the produced column back into the consumer-allocated C structs.
+   *
+   * @param inArrayAddress address of the input {@code ArrowArray} C struct
+   * @param inSchemaAddress address of the input {@code ArrowSchema} C struct
+   * @param outArrayAddress address of the consumer-allocated output {@code ArrowArray} C struct
+   * @param outSchemaAddress address of the consumer-allocated output {@code ArrowSchema} C struct
+   */
+  public static native void doubleColumn(
+      long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
 }

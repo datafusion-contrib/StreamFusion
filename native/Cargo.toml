@@ -10,3 +10,4 @@ crate-type = ["cdylib"]
 [dependencies]
 jni = "0.21"
 arrow = { version = "58", features = ["ffi"] }
+datafusion = "53.1.0"

@@ -1,8 +1,12 @@
-use arrow::array::{make_array, Array, Int32Array};
+use arrow::array::{make_array, Array, Int32Array, RecordBatch};
+use arrow::datatypes::{Field, Schema};
 use arrow::ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema};
+use datafusion::logical_expr::Operator;
+use datafusion::physical_expr::expressions::{binary, col, lit};
 use jni::objects::JClass;
 use jni::sys::{jlong, jstring};
 use jni::JNIEnv;
+use std::sync::Arc;
 
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_version<'local>(
@@ -78,6 +82,55 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_roundTrip<'lo
     let out_array = FFI_ArrowArray::new(&rebuilt);
     let out_schema =
         FFI_ArrowSchema::try_from(rebuilt.data_type()).expect("failed to export Arrow schema");
+    unsafe {
+        std::ptr::write(out_array_address as *mut FFI_ArrowArray, out_array);
+        std::ptr::write(out_schema_address as *mut FFI_ArrowSchema, out_schema);
+    }
+}
+
+/// Runs the first stateless operator over a batch from the JVM: a projection that doubles a single
+/// int32 column, evaluated through DataFusion's expression engine exactly as Arroyo drives one
+/// (evaluate the physical expression against the batch, then realize the column).
+///
+/// The fixed `column * 2` expression stands in until the planner feeds real expressions; the point
+/// is that genuine engine logic now executes over JVM-owned columnar data and produces a batch back
+/// across the same boundary.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_doubleColumn<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let ffi_array = unsafe {
+        std::ptr::replace(in_array_address as *mut FFI_ArrowArray, FFI_ArrowArray::empty())
+    };
+    let ffi_schema = unsafe {
+        std::ptr::replace(in_schema_address as *mut FFI_ArrowSchema, FFI_ArrowSchema::empty())
+    };
+
+    let field = Field::try_from(&ffi_schema).expect("failed to import Arrow field");
+    let schema = Arc::new(Schema::new(vec![field]));
+
+    let mut data = unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
+    data.align_buffers();
+    let batch =
+        RecordBatch::try_new(schema.clone(), vec![make_array(data)]).expect("failed to build batch");
+
+    let column = col(schema.field(0).name(), &schema).expect("failed to resolve column");
+    let expr = binary(column, Operator::Multiply, lit(2i32), &schema).expect("failed to build expr");
+    let projected = expr
+        .evaluate(&batch)
+        .expect("failed to evaluate projection")
+        .into_array(batch.num_rows())
+        .expect("failed to realize projected column");
+
+    let out_data = projected.to_data();
+    let out_array = FFI_ArrowArray::new(&out_data);
+    let out_schema =
+        FFI_ArrowSchema::try_from(out_data.data_type()).expect("failed to export Arrow schema");
     unsafe {
         std::ptr::write(out_array_address as *mut FFI_ArrowArray, out_array);
         std::ptr::write(out_schema_address as *mut FFI_ArrowSchema, out_schema);
