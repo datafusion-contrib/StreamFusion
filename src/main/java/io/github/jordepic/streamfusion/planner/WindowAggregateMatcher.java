@@ -23,7 +23,6 @@ import org.apache.flink.table.types.logical.LogicalTypeRoot;
  */
 final class WindowAggregateMatcher {
 
-  static final int KIND_SUM = 0;
   static final int KIND_AVG = 4;
 
   private WindowAggregateMatcher() {}
@@ -155,13 +154,9 @@ final class WindowAggregateMatcher {
         return false;
       }
       // AVG has multi-field partial state, so it is only supported as a lone aggregate; and the
-      // native AVG is integer-division, so it only applies to a bigint value.
+      // native AVG is integer-division, so it only applies to a bigint value (this also keeps AVG
+      // off int, whose truncating average is not yet wired).
       if (kind == KIND_AVG && (multiple || valueType != SqlTypeName.BIGINT)) {
-        return false;
-      }
-      // SUM and AVG diverge from Flink over a 32-bit int (DataFusion widens to int64 and never
-      // wraps at 2^31; integer AVG truncates), so only MIN/MAX/COUNT are safe over INTEGER.
-      if (valueType == SqlTypeName.INTEGER && (kind == KIND_SUM || kind == KIND_AVG)) {
         return false;
       }
     }

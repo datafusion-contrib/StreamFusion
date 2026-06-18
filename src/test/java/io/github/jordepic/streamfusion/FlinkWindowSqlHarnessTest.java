@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 class FlinkWindowSqlHarnessTest {
 
   @Test
-  void intValueAggregateFallsBackToHost() throws Exception {
+  void intAvgFallsBackToHost() throws Exception {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
@@ -50,19 +50,20 @@ class FlinkWindowSqlHarnessTest {
 
     TableResult result =
         tEnv.executeSql(
-            "SELECT window_start, window_end, SUM(`value`) AS total "
+            "SELECT window_start, window_end, AVG(`value`) AS mean "
                 + "FROM TABLE(TUMBLE(TABLE ints, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
                 + "GROUP BY window_start, window_end");
-    List<Long> totals = new ArrayList<>();
+    List<Long> avgs = new ArrayList<>();
     try (CloseableIterator<Row> rows = result.collect()) {
       while (rows.hasNext()) {
-        totals.add(((Number) rows.next().getField(2)).longValue());
+        avgs.add(((Number) rows.next().getField(2)).longValue());
       }
     }
 
-    // The int value column is not natively supported, so it must run on the host, not crash.
-    assertEquals(0, scan.substitutions(), "int value column should fall back");
-    assertEquals(List.of(3L), totals);
+    // Integer AVG over an int column is not natively supported (its truncating average is not yet
+    // wired), so it must run on the host, not crash. The host returns the integer-truncated 1.
+    assertEquals(0, scan.substitutions(), "int AVG should fall back");
+    assertEquals(List.of(1L), avgs);
   }
 
   @Test
@@ -228,12 +229,13 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
-  void intValueMinMaxCountMatchesHost() throws Exception {
-    // MIN/MAX/COUNT preserve their semantics over a 32-bit int, so they are parity-safe natively
-    // (SUM/AVG over int would widen/truncate and stay on the host).
+  void intValueAggregatesMatchHost() throws Exception {
+    // SUM/MIN/MAX/COUNT over a 32-bit int. SUM uses the native wrapping int32 accumulator so it
+    // keeps the host's narrow type; AVG over int would truncate and stays on the host.
     NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentWithSource,
-        "SELECT window_start, window_end, MIN(qty) AS lo, MAX(qty) AS hi, COUNT(qty) AS c "
+        "SELECT window_start, window_end, SUM(qty) AS s, MIN(qty) AS lo, MAX(qty) AS hi, "
+            + "COUNT(qty) AS c "
             + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
             + "GROUP BY window_start, window_end");
   }

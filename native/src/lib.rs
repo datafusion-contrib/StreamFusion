@@ -117,17 +117,63 @@ impl Accumulator for IntegerAvgAccumulator {
     }
 }
 
-/// The per-window aggregate. Built-in aggregates come from DataFusion; integer average is a small
-/// custom accumulator so its result matches the host exactly. Both expose mergeable partial state,
-/// so windows accumulate incrementally and checkpoint uniformly.
+/// Sum of an int32 column matching the host engine's semantics: the accumulator is itself int32 and
+/// wraps on overflow (Flink keeps the input type and does not widen, unlike DataFusion's int64 sum),
+/// and the result is null when no non-null value was seen. The two-field partial state (sum, count)
+/// rides the general checkpoint path; the count distinguishes the empty case from a genuine zero.
+#[derive(Debug, Default)]
+struct WrappingIntSumAccumulator {
+    sum: i32,
+    count: i64,
+}
+
+impl Accumulator for WrappingIntSumAccumulator {
+    fn update_batch(&mut self, values: &[ArrayRef]) -> datafusion::common::Result<()> {
+        let array = values[0].as_any().downcast_ref::<Int32Array>().expect("value must be int32");
+        for value in array.iter().flatten() {
+            self.sum = self.sum.wrapping_add(value);
+            self.count += 1;
+        }
+        Ok(())
+    }
+
+    fn merge_batch(&mut self, states: &[ArrayRef]) -> datafusion::common::Result<()> {
+        let sums = states[0].as_any().downcast_ref::<Int32Array>().expect("sum state int32");
+        let counts = states[1].as_any().downcast_ref::<Int64Array>().expect("count state int64");
+        for value in sums.iter().flatten() {
+            self.sum = self.sum.wrapping_add(value);
+        }
+        self.count += counts.iter().flatten().sum::<i64>();
+        Ok(())
+    }
+
+    fn state(&mut self) -> datafusion::common::Result<Vec<ScalarValue>> {
+        Ok(vec![ScalarValue::Int32(Some(self.sum)), ScalarValue::Int64(Some(self.count))])
+    }
+
+    fn evaluate(&mut self) -> datafusion::common::Result<ScalarValue> {
+        Ok(ScalarValue::Int32((self.count != 0).then_some(self.sum)))
+    }
+
+    fn size(&self) -> usize {
+        std::mem::size_of::<Self>()
+    }
+}
+
+/// The per-window aggregate. Built-in aggregates come from DataFusion; integer average and int32 sum
+/// are small custom accumulators so their results match the host exactly. All expose mergeable
+/// partial state, so windows accumulate incrementally and checkpoint uniformly.
 enum WindowAggregate {
     Builtin(AggregateFunctionExpr),
     IntegerAvg,
+    WrappingIntSum,
 }
 
 impl WindowAggregate {
     fn new(kind: i64, value_type: &DataType) -> Self {
         match kind {
+            // SUM over int32 keeps the host's narrow, wrapping semantics rather than widening.
+            0 if *value_type == DataType::Int32 => WindowAggregate::WrappingIntSum,
             0..=3 => WindowAggregate::Builtin(build_builtin(kind, value_type)),
             4 => WindowAggregate::IntegerAvg,
             other => panic!("unsupported aggregate kind: {other}"),
@@ -140,6 +186,7 @@ impl WindowAggregate {
                 aggregate.create_accumulator().expect("failed to create accumulator")
             }
             WindowAggregate::IntegerAvg => Box::<IntegerAvgAccumulator>::default(),
+            WindowAggregate::WrappingIntSum => Box::<WrappingIntSumAccumulator>::default(),
         }
     }
 
@@ -155,6 +202,10 @@ impl WindowAggregate {
                 Field::new("sum", DataType::Int64, true),
                 Field::new("count", DataType::Int64, true),
             ],
+            WindowAggregate::WrappingIntSum => vec![
+                Field::new("sum", DataType::Int32, true),
+                Field::new("count", DataType::Int64, true),
+            ],
         }
     }
 
@@ -163,6 +214,7 @@ impl WindowAggregate {
         match self {
             WindowAggregate::Builtin(aggregate) => aggregate.field().data_type().clone(),
             WindowAggregate::IntegerAvg => DataType::Int64,
+            WindowAggregate::WrappingIntSum => DataType::Int32,
         }
     }
 }
