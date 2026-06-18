@@ -45,3 +45,9 @@ single and multiple aggregates; plus a parallelism > 1 case for the shuffle.
 - Cumulative windows (`CUMULATE`) are also slice-based; this likely generalizes.
 - The one-phase HOP operator already does multi-window assignment, but the
   two-phase path needs the slice combine, which is the harder part.
+- **Arroyo is NOT a usable reference for the Flink intermediate here.** Arroyo's
+  `sliding_aggregating_window.rs` stores raw batches in a tiered structure and
+  re-aggregates per window on advance — it does not produce Flink's
+  slice-partial intermediate. So matching Flink's `[sum$0, count1$1, slice_end]`
+  (and the `count1$1` retraction/emptiness semantics) is reverse-engineering
+  Flink's sliding internals, which is the real parity risk — budget for it.
