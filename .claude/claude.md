@@ -33,3 +33,8 @@ The research directory in this folder includes the learnings of previous session
 repos/techniques. See `.claude/research/flink-arroyo-accelerator-findings.md` for the full architecture
 investigation (planner hook, JNI/Arrow bridge, memory accounting, threading/mailbox model, changelog and
 watermark semantics, type mapping, parity testing, and a risk-first build order).
+
+The todos directory in this folder is effectively a JIRA board of tickets to complete with context on them.
+These can be deleted as soon as tickets get knocked out. As we knock things out, we should add to the "Compatibility
+Chart" section of the readme.md so we know what operators are currently accelerated and the terms under which they
+are.
