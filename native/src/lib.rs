@@ -6,7 +6,20 @@ use datafusion::physical_expr::expressions::{binary, col, lit};
 use jni::objects::JClass;
 use jni::sys::{jlong, jstring};
 use jni::JNIEnv;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use tokio::runtime::Runtime;
+
+/// The native data plane runs stateful operators as asynchronous plans, so the work is driven on a
+/// shared multi-threaded runtime that outlives any single call rather than spun up per batch.
+fn runtime() -> &'static Runtime {
+    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("failed to build the native runtime")
+    })
+}
 
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_version<'local>(
@@ -16,6 +29,16 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_version<'loca
     env.new_string(env!("CARGO_PKG_VERSION"))
         .expect("failed to allocate Java string for version")
         .into_raw()
+}
+
+/// Drives a trivial asynchronous computation to completion on the shared runtime, proving the
+/// blocking pull bridge a JVM thread will use to await native plan execution.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_blockingAnswer<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jlong {
+    runtime().block_on(async { 42 })
 }
 
 /// Imports a single Arrow array exported by the JVM through the C Data Interface and returns the

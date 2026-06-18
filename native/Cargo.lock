@@ -2554,6 +2554,7 @@ dependencies = [
  "arrow",
  "datafusion",
  "jni",
+ "tokio",
 ]
 
 [[package]]

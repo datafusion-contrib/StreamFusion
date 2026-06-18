@@ -13,6 +13,12 @@ public final class Native {
   public static native String version();
 
   /**
+   * Awaits a trivial async computation on the native runtime, proving the blocking bridge a JVM
+   * thread uses to drive native plan execution.
+   */
+  public static native long blockingAnswer();
+
+  /**
    * Sums an int32 column the JVM has exported through the Arrow C Data Interface.
    *
    * @param arrayAddress address of the producer-allocated {@code ArrowArray} C struct
