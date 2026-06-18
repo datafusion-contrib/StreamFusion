@@ -11,8 +11,9 @@ is picked up. Operators are in `~/data/arroyo/crates/arroyo-worker/src/arrow/`.
 - [x] Tumbling aggregate (sum/min/max/count/avg), 0–1 int key
 - [x] Two-phase tumbling (sum/min/max/count)
 - [x] Multiple aggregates per window over one value column (one- and two-phase)
-- [x] Hopping / sliding window — one-phase (multi-window assignment); two-phase
-      slice-sharing is a follow-up (ticket 13)
+- [x] Hopping / sliding window — one-phase (multi-window assignment) and
+      two-phase (slice-sharing, slide divides size). Reverse-engineered from
+      Flink's slicing internals, not Arroyo (see divergences/06).
 - [x] Session window (`session_aggregating_window.rs`) — dynamic merge on gap,
       including late elements that bridge two open sessions (ticket 14)
 - [x] Cumulative window (`CUMULATE`) — one-phase; nested windows sharing a start.
