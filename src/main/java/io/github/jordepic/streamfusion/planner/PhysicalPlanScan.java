@@ -5,6 +5,7 @@ import java.util.List;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Calc;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowAggregate;
 import org.apache.flink.table.planner.plan.optimize.program.FlinkOptimizeProgram;
 import org.apache.flink.table.planner.plan.optimize.program.StreamOptimizeContext;
 
@@ -45,6 +46,20 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
           current.getTraitSet(),
           current.getInputs().get(0),
           current.getRowType());
+    }
+
+    if (current instanceof StreamPhysicalWindowAggregate
+        && WindowAggregateMatcher.matches((StreamPhysicalWindowAggregate) current)) {
+      substitutions++;
+      StreamPhysicalWindowAggregate aggregate = (StreamPhysicalWindowAggregate) current;
+      return new StreamPhysicalNativeWindowAggregate(
+          aggregate.getCluster(),
+          aggregate.getTraitSet(),
+          aggregate.getInputs().get(0),
+          aggregate.getRowType(),
+          WindowAggregateMatcher.windowMillis(aggregate),
+          WindowAggregateMatcher.timeColumn(aggregate),
+          WindowAggregateMatcher.valueColumn(aggregate));
     }
     return current;
   }

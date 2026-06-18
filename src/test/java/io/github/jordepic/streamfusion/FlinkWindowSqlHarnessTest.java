@@ -27,7 +27,7 @@ class FlinkWindowSqlHarnessTest {
           + "GROUP BY window_start, window_end";
 
   @Test
-  void runsTumblingWindowSqlEndToEnd() throws Exception {
+  void routesTumblingWindowSqlToNative() throws Exception {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
@@ -67,8 +67,6 @@ class FlinkWindowSqlHarnessTest {
 
     // Bounded source emits a final watermark closing every window: [0,1k)=3, [1k,2k)=7, [2k,3k)=5.
     assertEquals(List.of(3L, 5L, 7L), totals);
-    assertTrue(
-        scan.operatorTypes().stream().anyMatch(name -> name.contains("WindowAggregate")),
-        "expected a window aggregate node, saw: " + scan.operatorTypes());
+    assertTrue(scan.substitutions() > 0, "window aggregate was not routed to native execution");
   }
 }
