@@ -47,6 +47,7 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
   private final String timeZoneId;
   private final int batchSize;
   private final int[] aggregateKinds;
+  private final long slideMillis;
   protected final long windowMillis;
 
   private transient ZoneId zone;
@@ -57,9 +58,15 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
   protected transient long handle;
 
   protected NativeWindowOperatorBase(
-      String stateName, long windowMillis, int[] aggregateKinds, String timeZoneId, int batchSize) {
+      String stateName,
+      long windowMillis,
+      long slideMillis,
+      int[] aggregateKinds,
+      String timeZoneId,
+      int batchSize) {
     this.stateName = stateName;
     this.windowMillis = windowMillis;
+    this.slideMillis = slideMillis;
     this.aggregateKinds = aggregateKinds;
     this.timeZoneId = timeZoneId;
     this.batchSize = batchSize;
@@ -91,8 +98,8 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
     }
     handle =
         snapshot == null
-            ? Native.createTumblingAggregator(windowMillis, aggregateKinds)
-            : Native.restoreTumblingAggregator(windowMillis, aggregateKinds, snapshot);
+            ? Native.createTumblingAggregator(windowMillis, slideMillis, aggregateKinds)
+            : Native.restoreTumblingAggregator(windowMillis, slideMillis, aggregateKinds, snapshot);
   }
 
   @Override

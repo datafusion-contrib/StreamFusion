@@ -24,13 +24,20 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
 
   public NativeGlobalWindowAggregateOperator(
       long windowMillis,
+      long slideMillis,
       int keyColumn,
       int[] partialColumns,
       int sliceEndColumn,
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
-    super("streamfusion-global-window-state", windowMillis, aggregateKinds, timeZoneId, batchSize);
+    super(
+        "streamfusion-global-window-state",
+        windowMillis,
+        slideMillis,
+        aggregateKinds,
+        timeZoneId,
+        batchSize);
     this.keyColumn = keyColumn;
     this.partialColumns = partialColumns;
     this.sliceEndColumn = sliceEndColumn;

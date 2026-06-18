@@ -4,8 +4,10 @@ import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.flink.table.planner.plan.logical.HoppingWindowSpec;
 import org.apache.flink.table.planner.plan.logical.TimeAttributeWindowingStrategy;
 import org.apache.flink.table.planner.plan.logical.TumblingWindowSpec;
+import org.apache.flink.table.planner.plan.logical.WindowSpec;
 import org.apache.flink.table.planner.plan.logical.WindowingStrategy;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 
@@ -36,7 +38,8 @@ final class WindowAggregateMatcher {
         != LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
       return false;
     }
-    if (!(windowing.getWindow() instanceof TumblingWindowSpec)) {
+    WindowSpec spec = windowing.getWindow();
+    if (!(spec instanceof TumblingWindowSpec) && !(spec instanceof HoppingWindowSpec)) {
       return false;
     }
     if (grouping.length > 1 || aggCalls.isEmpty()) {
@@ -79,8 +82,22 @@ final class WindowAggregateMatcher {
     return false;
   }
 
-  static long windowMillis(WindowingStrategy windowing) {
-    return ((TumblingWindowSpec) windowing.getWindow()).getSize().toMillis();
+  static boolean isTumbling(WindowingStrategy windowing) {
+    return windowing.getWindow() instanceof TumblingWindowSpec;
+  }
+
+  static long windowSize(WindowingStrategy windowing) {
+    WindowSpec spec = windowing.getWindow();
+    return spec instanceof TumblingWindowSpec
+        ? ((TumblingWindowSpec) spec).getSize().toMillis()
+        : ((HoppingWindowSpec) spec).getSize().toMillis();
+  }
+
+  static long windowSlide(WindowingStrategy windowing) {
+    WindowSpec spec = windowing.getWindow();
+    return spec instanceof TumblingWindowSpec
+        ? ((TumblingWindowSpec) spec).getSize().toMillis()
+        : ((HoppingWindowSpec) spec).getSlide().toMillis();
   }
 
   static int timeColumn(WindowingStrategy windowing) {

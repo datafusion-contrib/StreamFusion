@@ -104,10 +104,12 @@ public final class Native {
    * native state that persists across calls and must be released with {@link
    * #closeTumblingAggregator(long)}.
    *
-   * @param windowMillis width of each tumbling window in milliseconds
+   * @param windowMillis window size in milliseconds
+   * @param slideMillis window slide in milliseconds (equal to the size for a tumbling window)
    * @param aggregateKinds one code per aggregate: 0=SUM, 1=MIN, 2=MAX, 3=COUNT, 4=AVG
    */
-  public static native long createTumblingAggregator(long windowMillis, int[] aggregateKinds);
+  public static native long createTumblingAggregator(
+      long windowMillis, long slideMillis, int[] aggregateKinds);
 
   /**
    * Folds a batch (columns {@code ts} and {@code value}) into the aggregator's open windows.
@@ -146,10 +148,11 @@ public final class Native {
   /**
    * Rebuilds an aggregator from a snapshot and returns a fresh handle.
    *
-   * @param windowMillis window width, supplied again since it is configuration, not state
-   * @param aggregateKinds aggregate codes (see {@link #createTumblingAggregator(long, int[])})
+   * @param windowMillis window size, supplied again since it is configuration, not state
+   * @param slideMillis window slide (equal to the size for a tumbling window)
+   * @param aggregateKinds aggregate codes (see {@link #createTumblingAggregator})
    * @param snapshot bytes produced by {@link #snapshotTumblingAggregator(long)}
    */
   public static native long restoreTumblingAggregator(
-      long windowMillis, int[] aggregateKinds, byte[] snapshot);
+      long windowMillis, long slideMillis, int[] aggregateKinds, byte[] snapshot);
 }

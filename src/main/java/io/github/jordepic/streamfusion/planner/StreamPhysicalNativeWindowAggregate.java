@@ -21,6 +21,7 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
 
   private final RelDataType outputRowType;
   private final long windowMillis;
+  private final long slideMillis;
   private final int timeColumn;
   private final int valueColumn;
   private final int keyColumn;
@@ -32,6 +33,7 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
       RelNode input,
       RelDataType outputRowType,
       long windowMillis,
+      long slideMillis,
       int timeColumn,
       int valueColumn,
       int keyColumn,
@@ -39,6 +41,7 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.windowMillis = windowMillis;
+    this.slideMillis = slideMillis;
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
     this.keyColumn = keyColumn;
@@ -63,6 +66,7 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
         inputs.get(0),
         outputRowType,
         windowMillis,
+        slideMillis,
         timeColumn,
         valueColumn,
         keyColumn,
@@ -77,6 +81,7 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
         getRelDetailedDescription(),
         windowMillis,
+        slideMillis,
         timeColumn,
         valueColumn,
         keyColumn,

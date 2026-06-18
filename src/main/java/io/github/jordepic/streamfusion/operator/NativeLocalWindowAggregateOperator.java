@@ -25,13 +25,20 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
 
   public NativeLocalWindowAggregateOperator(
       long windowMillis,
+      long slideMillis,
       int timeColumn,
       int valueColumn,
       int keyColumn,
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
-    super("streamfusion-local-window-state", windowMillis, aggregateKinds, timeZoneId, batchSize);
+    super(
+        "streamfusion-local-window-state",
+        windowMillis,
+        slideMillis,
+        aggregateKinds,
+        timeZoneId,
+        batchSize);
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
     this.keyColumn = keyColumn;

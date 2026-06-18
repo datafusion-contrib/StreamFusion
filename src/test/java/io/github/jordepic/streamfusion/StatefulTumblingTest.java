@@ -21,7 +21,7 @@ class StatefulTumblingTest {
     try (BufferAllocator allocator = new RootAllocator();
         CDataDictionaryProvider provider = new CDataDictionaryProvider()) {
 
-      long handle = Native.createTumblingAggregator(1000, new int[] {0}); // SUM
+      long handle = Native.createTumblingAggregator(1000, 1000, new int[] {0}); // SUM
       try {
         // First batch lands rows in windows 0 and 1000.
         update(allocator, provider, handle, new long[] {0, 500, 1000}, new long[] {1, 2, 3});
@@ -47,7 +47,7 @@ class StatefulTumblingTest {
         CDataDictionaryProvider provider = new CDataDictionaryProvider()) {
 
       // Integer average; its partial state is (sum, count), exercising multi-field checkpoint.
-      long handle = Native.createTumblingAggregator(1000, new int[] {4});
+      long handle = Native.createTumblingAggregator(1000, 1000, new int[] {4});
       byte[] snapshot;
       try {
         update(allocator, provider, handle, new long[] {0, 500}, new long[] {1, 2});
@@ -56,7 +56,7 @@ class StatefulTumblingTest {
         Native.closeTumblingAggregator(handle);
       }
 
-      long restored = Native.restoreTumblingAggregator(1000, new int[] {4}, snapshot);
+      long restored = Native.restoreTumblingAggregator(1000, 1000, new int[] {4}, snapshot);
       try {
         // Same window gets another value: sum 1+2+6=9 over count 3 -> integer avg 3.
         update(allocator, provider, restored, new long[] {700}, new long[] {6});
@@ -72,8 +72,8 @@ class StatefulTumblingTest {
     try (BufferAllocator allocator = new RootAllocator();
         CDataDictionaryProvider provider = new CDataDictionaryProvider()) {
 
-      long local = Native.createTumblingAggregator(1000, new int[] {0}); // SUM
-      long global = Native.createTumblingAggregator(1000, new int[] {0});
+      long local = Native.createTumblingAggregator(1000, 1000, new int[] {0}); // SUM
+      long global = Native.createTumblingAggregator(1000, 1000, new int[] {0});
       try {
         // Local pre-aggregates raw values into per-window partials.
         update(allocator, provider, local, new long[] {0, 500, 1500}, new long[] {1, 2, 3});

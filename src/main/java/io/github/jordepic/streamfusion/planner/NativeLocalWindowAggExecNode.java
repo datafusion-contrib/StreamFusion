@@ -64,7 +64,14 @@ public class NativeLocalWindowAggExecNode extends ExecNodeBase<RowData>
         input,
         createTransformationMeta(TRANSFORMATION, config),
         new NativeLocalWindowAggregateOperator(
-            windowMillis, timeColumn, valueColumn, keyColumn, aggregateKinds, timeZoneId, BATCH_SIZE),
+            windowMillis,
+            windowMillis,
+            timeColumn,
+            valueColumn,
+            keyColumn,
+            aggregateKinds,
+            timeZoneId,
+            BATCH_SIZE),
         InternalTypeInfo.of(getOutputType()),
         input.getParallelism(),
         false);

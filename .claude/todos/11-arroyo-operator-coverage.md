@@ -11,7 +11,8 @@ is picked up. Operators are in `~/data/arroyo/crates/arroyo-worker/src/arrow/`.
 - [x] Tumbling aggregate (sum/min/max/count/avg), 0–1 int key
 - [x] Two-phase tumbling (sum/min/max/count)
 - [x] Multiple aggregates per window over one value column (one- and two-phase)
-- [ ] Hopping / sliding window (`sliding_aggregating_window.rs`)
+- [x] Hopping / sliding window — one-phase (multi-window assignment); two-phase
+      slice-sharing is a follow-up (ticket 13)
 - [ ] Session window (`session_aggregating_window.rs`) — dynamic merge on gap
 - [ ] Wider value/key types beyond int (ticket 04)
 

@@ -162,21 +162,31 @@ fn scalar_to_i64(scalar: ScalarValue) -> i64 {
 /// and dropped only once a watermark guarantees no earlier data can still arrive.
 struct TumblingAggregator {
     window_millis: i64,
+    slide_millis: i64,
     aggregates: Vec<WindowAggregate>,
     windows: BTreeMap<i64, HashMap<i64, Vec<Box<dyn Accumulator>>>>,
 }
 
 impl TumblingAggregator {
-    fn new(window_millis: i64, kinds: Vec<i64>) -> Self {
+    fn new(window_millis: i64, slide_millis: i64, kinds: Vec<i64>) -> Self {
         TumblingAggregator {
             window_millis,
+            slide_millis,
             aggregates: kinds.into_iter().map(WindowAggregate::new).collect(),
             windows: BTreeMap::new(),
         }
     }
 
-    fn window_start(&self, timestamp: i64) -> i64 {
-        timestamp - timestamp.rem_euclid(self.window_millis)
+    /// Every window a timestamp belongs to. For a tumbling window (slide == size) this is one
+    /// window; for a hopping window the timestamp falls in `size / slide` overlapping windows.
+    fn windows_for(&self, timestamp: i64) -> Vec<i64> {
+        let mut starts = Vec::new();
+        let mut start = timestamp - timestamp.rem_euclid(self.slide_millis);
+        while start + self.window_millis > timestamp {
+            starts.push(start);
+            start -= self.slide_millis;
+        }
+        starts
     }
 
     /// The N accumulators (one per aggregate) for a (window, key), created on first touch.
@@ -208,9 +218,10 @@ impl TumblingAggregator {
         // Grouping key is optional: window-only aggregations omit it and fall under a single key.
         let mut grouped: HashMap<(i64, i64), Vec<i64>> = HashMap::new();
         for row in 0..batch.num_rows() {
-            let window_start = self.window_start(ts.value(row));
             let key = keys.map_or(0, |column| column.value(row));
-            grouped.entry((window_start, key)).or_default().push(value.value(row));
+            for window_start in self.windows_for(ts.value(row)) {
+                grouped.entry((window_start, key)).or_default().push(value.value(row));
+            }
         }
         for ((window_start, key), values) in grouped {
             let column: ArrayRef = Arc::new(Int64Array::from(values));
@@ -362,8 +373,8 @@ impl TumblingAggregator {
         buffer
     }
 
-    fn restore(window_millis: i64, kinds: Vec<i64>, bytes: &[u8]) -> Self {
-        let mut aggregator = TumblingAggregator::new(window_millis, kinds);
+    fn restore(window_millis: i64, slide_millis: i64, kinds: Vec<i64>, bytes: &[u8]) -> Self {
+        let mut aggregator = TumblingAggregator::new(window_millis, slide_millis, kinds);
         let field_counts: Vec<usize> =
             aggregator.aggregates.iter().map(|a| a.state_fields().len()).collect();
         let reader = arrow::ipc::reader::StreamReader::try_new(bytes, None)
@@ -707,10 +718,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTumblin
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     window_millis: jlong,
+    slide_millis: jlong,
     aggregate_kinds: JIntArray<'local>,
 ) -> jlong {
     let kinds = read_kinds(&env, &aggregate_kinds);
-    Box::into_raw(Box::new(TumblingAggregator::new(window_millis, kinds))) as jlong
+    Box::into_raw(Box::new(TumblingAggregator::new(window_millis, slide_millis, kinds))) as jlong
 }
 
 /// Reads a JVM int[] of aggregate kinds into a Vec.
@@ -815,10 +827,12 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTumbli
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     window_millis: jlong,
+    slide_millis: jlong,
     aggregate_kinds: JIntArray<'local>,
     snapshot: JByteArray<'local>,
 ) -> jlong {
     let kinds = read_kinds(&env, &aggregate_kinds);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read snapshot");
-    Box::into_raw(Box::new(TumblingAggregator::restore(window_millis, kinds, &bytes))) as jlong
+    Box::into_raw(Box::new(TumblingAggregator::restore(window_millis, slide_millis, kinds, &bytes)))
+        as jlong
 }

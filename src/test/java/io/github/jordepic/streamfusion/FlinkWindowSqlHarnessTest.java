@@ -100,6 +100,25 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
+  void hoppingSumMatchesHost() throws Exception {
+    // One-phase HOP: a row falls in two overlapping 2s windows sliding every 1s.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT window_start, window_end, SUM(`value`) AS s "
+            + "FROM TABLE(HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND, INTERVAL '2' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void keyedHoppingMultiAggregateMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT k, window_start, window_end, SUM(`value`) AS s, COUNT(`value`) AS c "
+            + "FROM TABLE(HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND, INTERVAL '2' SECOND)) "
+            + "GROUP BY k, window_start, window_end");
+  }
+
+  @Test
   void multiAggregateMatchesHost() throws Exception {
     NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentWithSource,
