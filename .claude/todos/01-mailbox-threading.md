@@ -1,7 +1,30 @@
 # Non-blocking integration with the task mailbox
 
-**Status:** reframed after studying prior art — likely a non-divergence; see conclusion
-**Source:** research findings §5 (threading model, open question #2)
+**Status:** DECIDED — do what Flink does (stateful operators run synchronously on
+the mailbox). No async bridge for stateful native operators. Kept as a record
+plus the list of operators that will later need non-blocking work.
+
+## Decision
+Run stateful native operators synchronously on the task (mailbox) thread, with
+bounded per-batch work, exactly as Flink runs its own window/join/aggregate
+operators. This is what our operators already do, so it is not a divergence. We
+deliberately do **not** offload stateful native compute to another thread: it
+has no Flink precedent, `AsyncWaitOperator`'s buffer-and-replay trick is unsafe
+for stateful work (replay double-counts), and Arroyo's async-actor model only
+works because Arroyo owns checkpoint coordination, which we delegate to Flink.
+
+## Operators that WILL need non-blocking work (and the Flink pattern to use)
+Add it only for these, when we build them — not for stateful compute:
+
+- **Native sources** — implement Flink's Source API with availability futures so
+  polling native/columnar input (e.g. Fluss, Iceberg/CDC) never blocks the
+  mailbox. (Own ticket when we add a native source.)
+- **Async lookup join / async table function** — stateless per-row async I/O
+  enrichment. Use `AsyncWaitOperator`'s pattern: ordered in-flight queue,
+  `MailboxExecutor.yield()`/`execute()`, snapshot-and-replay of in-flight inputs.
+  (Arroyo's `lookup_join` is the logic reference.)
+- **Async sinks** — if a native sink flushes asynchronously, use the sink
+  writer's mailbox-based async flush.
 
 ## Where we are
 Every native call runs synchronously on the Flink task (mailbox) thread. For
