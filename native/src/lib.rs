@@ -50,7 +50,16 @@ fn export_record_batch(batch: RecordBatch, array_address: jlong, schema_address:
 /// Builds a built-in aggregate over an int64 `value` column. SUM/MIN/MAX/COUNT all reduce an int64
 /// column to a single int64 with single-scalar partial state, driven through DataFusion's
 /// accumulator machinery.
-fn build_builtin(kind: i64) -> AggregateFunctionExpr {
+/// Maps a value-type code (matching the JVM side) to the Arrow type of the value column.
+fn value_data_type(code: i64) -> DataType {
+    match code {
+        0 => DataType::Int64,
+        1 => DataType::Float64,
+        other => panic!("unsupported value type: {other}"),
+    }
+}
+
+fn build_builtin(kind: i64, value_type: &DataType) -> AggregateFunctionExpr {
     let function: Arc<AggregateUDF> = match kind {
         0 => sum_udaf(),
         1 => min_udaf(),
@@ -58,7 +67,7 @@ fn build_builtin(kind: i64) -> AggregateFunctionExpr {
         3 => count_udaf(),
         other => panic!("unsupported builtin aggregate kind: {other}"),
     };
-    let schema = Arc::new(Schema::new(vec![Field::new("value", DataType::Int64, true)]));
+    let schema = Arc::new(Schema::new(vec![Field::new("value", value_type.clone(), true)]));
     let value = col("value", &schema).expect("value column");
     AggregateExprBuilder::new(function, vec![value])
         .schema(schema)
@@ -116,9 +125,9 @@ enum WindowAggregate {
 }
 
 impl WindowAggregate {
-    fn new(kind: i64) -> Self {
+    fn new(kind: i64, value_type: &DataType) -> Self {
         match kind {
-            0..=3 => WindowAggregate::Builtin(build_builtin(kind)),
+            0..=3 => WindowAggregate::Builtin(build_builtin(kind, value_type)),
             4 => WindowAggregate::IntegerAvg,
             other => panic!("unsupported aggregate kind: {other}"),
         }
@@ -179,11 +188,12 @@ struct TumblingAggregator {
 }
 
 impl TumblingAggregator {
-    fn new(window_millis: i64, slide_millis: i64, kinds: Vec<i64>) -> Self {
+    fn new(window_millis: i64, slide_millis: i64, value_type: i64, kinds: Vec<i64>) -> Self {
+        let value_type = value_data_type(value_type);
         TumblingAggregator {
             window_millis,
             slide_millis,
-            aggregates: kinds.into_iter().map(WindowAggregate::new).collect(),
+            aggregates: kinds.into_iter().map(|kind| WindowAggregate::new(kind, &value_type)).collect(),
             windows: BTreeMap::new(),
         }
     }
@@ -386,8 +396,14 @@ impl TumblingAggregator {
         buffer
     }
 
-    fn restore(window_millis: i64, slide_millis: i64, kinds: Vec<i64>, bytes: &[u8]) -> Self {
-        let mut aggregator = TumblingAggregator::new(window_millis, slide_millis, kinds);
+    fn restore(
+        window_millis: i64,
+        slide_millis: i64,
+        value_type: i64,
+        kinds: Vec<i64>,
+        bytes: &[u8],
+    ) -> Self {
+        let mut aggregator = TumblingAggregator::new(window_millis, slide_millis, value_type, kinds);
         let field_counts: Vec<usize> =
             aggregator.aggregates.iter().map(|a| a.state_fields().len()).collect();
         let reader = arrow::ipc::reader::StreamReader::try_new(bytes, None)
@@ -732,10 +748,16 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTumblin
     _class: JClass<'local>,
     window_millis: jlong,
     slide_millis: jlong,
+    value_type: jint,
     aggregate_kinds: JIntArray<'local>,
 ) -> jlong {
     let kinds = read_kinds(&env, &aggregate_kinds);
-    Box::into_raw(Box::new(TumblingAggregator::new(window_millis, slide_millis, kinds))) as jlong
+    Box::into_raw(Box::new(TumblingAggregator::new(
+        window_millis,
+        slide_millis,
+        value_type as i64,
+        kinds,
+    ))) as jlong
 }
 
 /// Reads a JVM int[] of aggregate kinds into a Vec.
@@ -841,11 +863,17 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTumbli
     _class: JClass<'local>,
     window_millis: jlong,
     slide_millis: jlong,
+    value_type: jint,
     aggregate_kinds: JIntArray<'local>,
     snapshot: JByteArray<'local>,
 ) -> jlong {
     let kinds = read_kinds(&env, &aggregate_kinds);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read snapshot");
-    Box::into_raw(Box::new(TumblingAggregator::restore(window_millis, slide_millis, kinds, &bytes)))
-        as jlong
+    Box::into_raw(Box::new(TumblingAggregator::restore(
+        window_millis,
+        slide_millis,
+        value_type as i64,
+        kinds,
+        &bytes,
+    ))) as jlong
 }

@@ -31,10 +31,12 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
+    // Two-phase is restricted to bigint partials, so the merge accumulators are bigint.
     super(
         "streamfusion-global-window-state",
         windowMillis,
         slideMillis,
+        TYPE_BIGINT,
         aggregateKinds,
         timeZoneId,
         batchSize);

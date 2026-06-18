@@ -14,6 +14,7 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
@@ -43,11 +44,16 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
 
   protected static final int TIMESTAMP_PRECISION = 3;
 
+  /** Value-type codes matching the native side. */
+  protected static final int TYPE_BIGINT = 0;
+  protected static final int TYPE_DOUBLE = 1;
+
   private final String stateName;
   private final String timeZoneId;
   private final int batchSize;
   private final int[] aggregateKinds;
   private final long slideMillis;
+  private final int valueType;
   protected final long windowMillis;
 
   private transient ZoneId zone;
@@ -61,12 +67,14 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
       String stateName,
       long windowMillis,
       long slideMillis,
+      int valueType,
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
     this.stateName = stateName;
     this.windowMillis = windowMillis;
     this.slideMillis = slideMillis;
+    this.valueType = valueType;
     this.aggregateKinds = aggregateKinds;
     this.timeZoneId = timeZoneId;
     this.batchSize = batchSize;
@@ -98,8 +106,9 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
     }
     handle =
         snapshot == null
-            ? Native.createTumblingAggregator(windowMillis, slideMillis, aggregateKinds)
-            : Native.restoreTumblingAggregator(windowMillis, slideMillis, aggregateKinds, snapshot);
+            ? Native.createTumblingAggregator(windowMillis, slideMillis, valueType, aggregateKinds)
+            : Native.restoreTumblingAggregator(
+                windowMillis, slideMillis, valueType, aggregateKinds, snapshot);
   }
 
   @Override
@@ -162,29 +171,39 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
       List<RowData> rows, int timeColumn, int valueColumn, int keyColumn) {
     boolean keyed = keyColumn >= 0;
     BigIntVector ts = new BigIntVector("ts", allocator);
-    BigIntVector value = new BigIntVector("value", allocator);
+    FieldVector value =
+        valueType == TYPE_DOUBLE
+            ? new Float8Vector("value", allocator)
+            : new BigIntVector("value", allocator);
     BigIntVector key = keyed ? new BigIntVector("key", allocator) : null;
     List<FieldVector> vectors = keyed ? List.of(ts, value, key) : List.of(ts, value);
     try (VectorSchemaRoot root = new VectorSchemaRoot(vectors);
         ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      ts.allocateNew(rows.size());
-      value.allocateNew(rows.size());
-      if (keyed) {
-        key.allocateNew(rows.size());
-      }
       for (int i = 0; i < rows.size(); i++) {
         RowData row = rows.get(i);
-        ts.set(i, row.getTimestamp(timeColumn, TIMESTAMP_PRECISION).getMillisecond());
-        value.set(i, row.getLong(valueColumn));
+        ts.setSafe(i, row.getTimestamp(timeColumn, TIMESTAMP_PRECISION).getMillisecond());
+        if (valueType == TYPE_DOUBLE) {
+          ((Float8Vector) value).setSafe(i, row.getDouble(valueColumn));
+        } else {
+          ((BigIntVector) value).setSafe(i, row.getLong(valueColumn));
+        }
         if (keyed) {
-          key.set(i, row.getLong(keyColumn));
+          key.setSafe(i, row.getLong(keyColumn));
         }
       }
       root.setRowCount(rows.size());
       Data.exportVectorSchemaRoot(allocator, root, dictionaries, array, schema);
       Native.updateTumblingAggregator(handle, array.memoryAddress(), schema.memoryAddress());
     }
+  }
+
+  /** Reads a result/partial cell, boxing by the column's type so RowData gets Long or Double. */
+  protected static Object readScalar(FieldVector vector, int row) {
+    if (vector instanceof Float8Vector) {
+      return ((Float8Vector) vector).get(row);
+    }
+    return ((BigIntVector) vector).get(row);
   }
 
   /**
@@ -203,9 +222,9 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
           Data.importVectorSchemaRoot(allocator, array, schema, dictionaries)) {
         BigIntVector key = keyed ? (BigIntVector) result.getVector("key") : null;
         BigIntVector windowStart = (BigIntVector) result.getVector("window_start");
-        BigIntVector[] results = new BigIntVector[aggregates];
+        FieldVector[] results = new FieldVector[aggregates];
         for (int a = 0; a < aggregates; a++) {
-          results[a] = (BigIntVector) result.getVector("result" + a);
+          results[a] = (FieldVector) result.getVector("result" + a);
         }
         for (int i = 0; i < result.getRowCount(); i++) {
           long start = windowStart.get(i);
@@ -215,7 +234,7 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
             row.setField(field++, key.get(i));
           }
           for (int a = 0; a < aggregates; a++) {
-            row.setField(field++, results[a].get(i));
+            row.setField(field++, readScalar(results[a], i));
           }
           row.setField(field++, TimestampData.fromLocalDateTime(toLocal(start)));
           row.setField(field, TimestampData.fromLocalDateTime(toLocal(start + windowMillis)));

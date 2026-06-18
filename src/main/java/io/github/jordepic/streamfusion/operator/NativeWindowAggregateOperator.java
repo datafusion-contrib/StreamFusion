@@ -20,6 +20,7 @@ public class NativeWindowAggregateOperator extends NativeWindowOperatorBase {
       int timeColumn,
       int valueColumn,
       int keyColumn,
+      int valueType,
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
@@ -27,6 +28,7 @@ public class NativeWindowAggregateOperator extends NativeWindowOperatorBase {
         "streamfusion-window-aggregate-state",
         windowMillis,
         slideMillis,
+        valueType,
         aggregateKinds,
         timeZoneId,
         batchSize);

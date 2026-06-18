@@ -106,10 +106,11 @@ public final class Native {
    *
    * @param windowMillis window size in milliseconds
    * @param slideMillis window slide in milliseconds (equal to the size for a tumbling window)
+   * @param valueType value column type: 0=bigint, 1=double
    * @param aggregateKinds one code per aggregate: 0=SUM, 1=MIN, 2=MAX, 3=COUNT, 4=AVG
    */
   public static native long createTumblingAggregator(
-      long windowMillis, long slideMillis, int[] aggregateKinds);
+      long windowMillis, long slideMillis, int valueType, int[] aggregateKinds);
 
   /**
    * Folds a batch (columns {@code ts} and {@code value}) into the aggregator's open windows.
@@ -150,9 +151,10 @@ public final class Native {
    *
    * @param windowMillis window size, supplied again since it is configuration, not state
    * @param slideMillis window slide (equal to the size for a tumbling window)
+   * @param valueType value column type (see {@link #createTumblingAggregator})
    * @param aggregateKinds aggregate codes (see {@link #createTumblingAggregator})
    * @param snapshot bytes produced by {@link #snapshotTumblingAggregator(long)}
    */
   public static native long restoreTumblingAggregator(
-      long windowMillis, long slideMillis, int[] aggregateKinds, byte[] snapshot);
+      long windowMillis, long slideMillis, int valueType, int[] aggregateKinds, byte[] snapshot);
 }

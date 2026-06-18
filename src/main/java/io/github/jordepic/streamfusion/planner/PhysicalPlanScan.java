@@ -74,17 +74,19 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             WindowAggregateMatcher.timeColumn(agg.windowing()),
             WindowAggregateMatcher.valueColumn(agg.aggCalls()),
             WindowAggregateMatcher.keyColumn(agg.grouping()),
+            WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType()),
             WindowAggregateMatcher.kinds(agg.aggCalls()));
       }
     }
 
     if (current instanceof StreamPhysicalLocalWindowAggregate) {
       StreamPhysicalLocalWindowAggregate agg = (StreamPhysicalLocalWindowAggregate) current;
-      // Single-field partials only (no AVG), and tumbling only: two-phase hopping uses slice
-      // sharing, which the local/global operators do not implement.
+      // Single-field partials only (no AVG), tumbling only (two-phase hopping uses slice sharing),
+      // and bigint values only (two-phase double values are not yet wired through the merge).
       if (WindowAggregateMatcher.matches(
               agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType())
           && WindowAggregateMatcher.isTumbling(agg.windowing())
+          && WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType()) == 0
           && !WindowAggregateMatcher.containsAvg(agg.aggCalls())) {
         substitutions++;
         return new StreamPhysicalNativeLocalWindowAggregate(

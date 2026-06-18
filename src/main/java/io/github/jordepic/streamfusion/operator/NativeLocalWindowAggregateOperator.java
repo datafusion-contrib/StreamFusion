@@ -32,10 +32,12 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
+    // Two-phase is restricted to bigint values, so the local always reads a bigint value column.
     super(
         "streamfusion-local-window-state",
         windowMillis,
         slideMillis,
+        TYPE_BIGINT,
         aggregateKinds,
         timeZoneId,
         batchSize);

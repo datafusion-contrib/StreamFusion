@@ -69,8 +69,8 @@ public class NativeTumblingWindowOperator extends AbstractStreamOperator<RowData
     // This stepping-stone operator only ever sums.
     handle =
         snapshot == null
-            ? Native.createTumblingAggregator(windowMillis, windowMillis, new int[] {0})
-            : Native.restoreTumblingAggregator(windowMillis, windowMillis, new int[] {0}, snapshot);
+            ? Native.createTumblingAggregator(windowMillis, windowMillis, 0, new int[] {0})
+            : Native.restoreTumblingAggregator(windowMillis, windowMillis, 0, new int[] {0}, snapshot);
   }
 
   @Override

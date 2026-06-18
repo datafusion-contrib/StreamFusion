@@ -51,11 +51,14 @@ final class WindowAggregateMatcher {
       return false;
     }
 
-    // Every aggregate must read the same single bigint value column and use a supported kind.
+    // Every aggregate must read the same single value column (bigint or double) with a supported
+    // kind.
     int valueColumn = aggCalls.apply(0).getArgList().isEmpty() ? -1 : aggCalls.apply(0).getArgList().get(0);
-    if (valueColumn < 0
-        || inputType.getFieldList().get(valueColumn).getType().getSqlTypeName()
-            != SqlTypeName.BIGINT) {
+    if (valueColumn < 0) {
+      return false;
+    }
+    SqlTypeName valueType = inputType.getFieldList().get(valueColumn).getType().getSqlTypeName();
+    if (valueType != SqlTypeName.BIGINT && valueType != SqlTypeName.DOUBLE) {
       return false;
     }
     boolean multiple = aggCalls.size() > 1;
@@ -65,12 +68,21 @@ final class WindowAggregateMatcher {
       if (call.getArgList().size() != 1 || call.getArgList().get(0) != valueColumn || kind < 0) {
         return false;
       }
-      // AVG has multi-field partial state, so it is only supported as a lone aggregate.
-      if (kind == KIND_AVG && multiple) {
+      // AVG has multi-field partial state, so it is only supported as a lone aggregate; and the
+      // native AVG is integer-division, so it only applies to a bigint value.
+      if (kind == KIND_AVG && (multiple || valueType != SqlTypeName.BIGINT)) {
         return false;
       }
     }
     return true;
+  }
+
+  /** Value-type code matching the native side: 0 = bigint, 1 = double. */
+  static int valueTypeCode(scala.collection.Seq<AggregateCall> aggCalls, RelDataType inputType) {
+    int valueColumn = aggCalls.apply(0).getArgList().get(0);
+    return inputType.getFieldList().get(valueColumn).getType().getSqlTypeName() == SqlTypeName.DOUBLE
+        ? 1
+        : 0;
   }
 
   static boolean containsAvg(scala.collection.Seq<AggregateCall> aggCalls) {
