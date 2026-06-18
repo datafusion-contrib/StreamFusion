@@ -27,25 +27,24 @@
             <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
-        <!-- Arrow on the JVM only fills the C Data Interface structs handed to native code;
-             the data plane itself lives in Rust, so these stay test-scoped for now. -->
+        <!-- Arrow on the JVM is the marshalling glue this library owns: it fills the C Data
+             Interface structs handed to native code and reads results back, so it ships with the
+             library rather than being provided by the host. -->
         <dependency>
             <groupId>org.apache.arrow</groupId>
             <artifactId>arrow-vector</artifactId>
             <version>${arrow.version}</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.arrow</groupId>
             <artifactId>arrow-c-data</artifactId>
             <version>${arrow.version}</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.arrow</groupId>
             <artifactId>arrow-memory-unsafe</artifactId>
             <version>${arrow.version}</version>
-            <scope>test</scope>
+            <scope>runtime</scope>
         </dependency>
         <!-- The host engine supplies coordination and SQL planning; this library plugs into a
              Flink the user already runs, so Flink is provided rather than bundled. Provided
