@@ -302,11 +302,12 @@ impl TumblingAggregator {
         }
     }
 
-    /// Every window a timestamp belongs to, as (start, end) pairs. Tumbling yields one window;
-    /// hopping yields the `size / slide` overlapping windows; cumulative yields the nested windows
+    /// Every window a timestamp belongs to, as (start, end) pairs, appended to `windows` (cleared
+    /// first) so the caller can reuse one buffer across rows. Tumbling yields one window; hopping
+    /// yields the `size / slide` overlapping windows; cumulative yields the nested windows
     /// `[base, base + k*step)` whose end is past the timestamp, all sharing the bucket start.
-    fn windows_for(&self, timestamp: i64) -> Vec<(i64, i64)> {
-        let mut windows = Vec::new();
+    fn windows_for(&self, timestamp: i64, windows: &mut Vec<(i64, i64)>) {
+        windows.clear();
         if self.cumulative {
             let base = timestamp - timestamp.rem_euclid(self.window_millis);
             let mut end = base + self.slide_millis;
@@ -323,7 +324,6 @@ impl TumblingAggregator {
                 start -= self.slide_millis;
             }
         }
-        windows
     }
 
     /// The N accumulators (one per aggregate) for a (window, key), created on first touch. Windows
@@ -353,9 +353,11 @@ impl TumblingAggregator {
         // Group the row positions for each (window, key); the value column is sliced by type-
         // agnostic take, so the accumulators see the value column's own type (int, double, ...).
         let mut grouped: HashMap<(i64, i64, GroupKey), Vec<u32>> = HashMap::new();
+        let mut windows = Vec::new();
         for row in 0..batch.num_rows() {
             let key = read_key(&key_arrays, row);
-            for (start, end) in self.windows_for(ts.value(row)) {
+            self.windows_for(ts.value(row), &mut windows);
+            for &(start, end) in &windows {
                 grouped.entry((start, end, key.clone())).or_default().push(row as u32);
             }
         }

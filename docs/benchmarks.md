@@ -37,13 +37,14 @@ Numbers are only comparable within a machine; record the host (CPU) alongside.
 | Benchmark | Rows/batch | Time/batch | Elements/s | Notes |
 |---|---|---|---|---|
 | `filter/gt_literal` | 4096 | 2.56 µs | ~1.60 Gelem/s | compiled predicate, ~50% selectivity |
-| `tumbling/sum_update_flush` | 4096 | 241 µs | ~17 Melem/s | 16 windows, single key |
+| `tumbling/sum_update_flush` | 4096 | 181 µs | ~22.6 Melem/s | 16 windows, single key |
 
-The ~100× gap between the two is the signal: the filter is a compiled expression plus
-one Arrow kernel, while the tumbling aggregator allocates a `GroupKey`
-(`Vec<ScalarValue>`) per row and hashes it to group — the per-row key cost flagged in
-the [profiling ticket](../.claude/todos/20-profiling-and-benchmarks.md). That is the
-first low-hanging target; benchmark before and after any change to it.
+The gap between the two is the signal: the filter is a compiled expression plus one
+Arrow kernel, while the tumbling aggregator allocates a `GroupKey` (`Vec<ScalarValue>`)
+per row and hashes it to group — the per-row key cost flagged in the [profiling
+ticket](../.claude/todos/20-profiling-and-benchmarks.md). Reusing the per-row window
+buffer (rather than allocating one per row) already cut the tumbling time ~26% (244 →
+181 µs); the remaining per-row key allocation/hashing is the next target.
 
 ## End-to-end parity timing
 

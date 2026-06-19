@@ -41,8 +41,8 @@ vs. Flink fallback, tracked over time so a regression is visible.
   (`Vec<ScalarValue>`, and a `String` per row for string keys) for every row, and
   clones it once per overlapping window. Inherent to keyed aggregation; the standard
   fix (row-format or dictionary-encoded keys) is a later optimization, measure first.
-- **`windows_for` allocates a `Vec` per row** in the update loop (1 entry for tumbling,
-  several for hop/cumulate). Candidate for an iterator/smallvec once benched.
+- **[fixed]** `windows_for` allocated a `Vec` per row in the update loop. Reusing one
+  buffer across rows cut the tumbling bench ~26% (244 → 181 µs / 17 → 22.6 Melem/s).
 - **Not a problem:** the accumulator update is already vectorized — rows are grouped
   per (window, key), then a single `take` + `update_batch` per group, so accumulators
   see batches, not individual rows. Don't "optimize" this without numbers.

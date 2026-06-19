@@ -40,6 +40,20 @@ model (a per-slice local, a global that combines each window's slices).
 - `AVG` over int, and any aggregate over smallint/tinyint/float/decimal — see [docs/aggregate-type-support.md](docs/aggregate-type-support.md)
 - Two-phase `AVG` (multi-field partial state)
 
+## Benchmarks
+
+Each operator is benchmarked in isolation so its acceleration is measured, not asserted,
+and regressions show up commit-to-commit. These are native operator hot loops over an
+in-memory Arrow batch (no JVM bridge, no job scheduling), via Criterion — run with
+`cd native && cargo bench`. Method and the running table: [docs/benchmarks.md](docs/benchmarks.md).
+
+| Operator | Benchmark | Batch | Time | Throughput |
+|---|---|---|---|---|
+| Filter (`WHERE`) | compiled predicate `v > 0`, ~50% pass | 4096 rows | 2.56 µs | ~1.60 Gelem/s |
+| Tumbling window aggregate | `SUM` over 16 windows, single key | 4096 rows | 181 µs | ~22.6 Melem/s |
+
+_Apple M1 Max; numbers are comparable only within a machine._
+
 ## Related work
 
 Two commercial native Flink accelerators exist, both **closed source**:
