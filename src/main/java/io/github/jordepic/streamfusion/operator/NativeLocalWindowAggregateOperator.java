@@ -32,15 +32,15 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
       int valueColumn,
       int[] keyColumns,
       int[] keyTypes,
+      int valueType,
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
-    // Two-phase is restricted to bigint values, so the local always reads a bigint value column.
     super(
         "streamfusion-local-window-state",
         windowMillis,
         slideMillis,
-        TYPE_BIGINT,
+        valueType,
         aggregateKinds,
         timeZoneId,
         batchSize);
@@ -70,9 +70,9 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
           keys[j] = (FieldVector) result.getVector("key" + j);
         }
         BigIntVector sliceEnd = (BigIntVector) result.getVector("slice_end");
-        BigIntVector[] partials = new BigIntVector[aggregates];
+        FieldVector[] partials = new FieldVector[aggregates];
         for (int a = 0; a < aggregates; a++) {
-          partials[a] = (BigIntVector) result.getVector("partial" + a);
+          partials[a] = (FieldVector) result.getVector("partial" + a);
         }
         for (int i = 0; i < result.getRowCount(); i++) {
           // Local output column order follows the host: [key0..key{n-1}, partial0.., slice_end].
@@ -82,7 +82,7 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
             row.setField(field++, boxKey(keys[j], i, keyTypes[j]));
           }
           for (int a = 0; a < aggregates; a++) {
-            row.setField(field++, partials[a].get(i));
+            row.setField(field++, readScalar(partials[a], i));
           }
           row.setField(field, sliceEnd.get(i));
           output.collect(new StreamRecord<>(row, sliceEnd.get(i)));

@@ -417,8 +417,10 @@ impl TumblingAggregator {
         let key_arrays = key_arrays(batch);
         self.key_types = key_types(&key_arrays);
         let slice_ends = column_i64(batch, "slice_end");
-        let partials: Vec<&Int64Array> =
-            (0..n).map(|i| column_i64(batch, &format!("partial{i}"))).collect();
+        // Partials are read as whole columns and merged a row-slice at a time, so any partial type
+        // (int64 sum/count, float64 sum, …) flows through without per-type handling here.
+        let partials: Vec<&ArrayRef> =
+            (0..n).map(|i| batch.column_by_name(&format!("partial{i}")).expect("partial")).collect();
 
         // A slice belongs to `window_millis / slide_millis` windows — one for a tumbling global
         // (slide == size), several for a hopping global where slices are shared across the
@@ -434,7 +436,7 @@ impl TumblingAggregator {
                     self.accumulators(start, end, key.clone()).iter_mut().enumerate()
                 {
                     accumulator
-                        .merge_batch(&[Arc::new(Int64Array::from(vec![partials[i].value(row)]))])
+                        .merge_batch(&[partials[i].slice(row, 1)])
                         .expect("failed to merge partial");
                 }
             }

@@ -29,6 +29,7 @@ public class NativeGlobalWindowAggExecNode extends ExecNodeBase<RowData>
   private final long slideMillis;
   private final int[] partialColumns;
   private final int sliceEndColumn;
+  private final int valueType;
   private final int[] aggregateKinds;
 
   public NativeGlobalWindowAggExecNode(
@@ -41,6 +42,7 @@ public class NativeGlobalWindowAggExecNode extends ExecNodeBase<RowData>
       int[] keyColumns,
       int[] partialColumns,
       int sliceEndColumn,
+      int valueType,
       int[] aggregateKinds) {
     super(
         ExecNodeContext.newNodeId(),
@@ -54,6 +56,7 @@ public class NativeGlobalWindowAggExecNode extends ExecNodeBase<RowData>
     this.keyColumns = keyColumns;
     this.partialColumns = partialColumns;
     this.sliceEndColumn = sliceEndColumn;
+    this.valueType = valueType;
     this.aggregateKinds = aggregateKinds;
   }
 
@@ -74,6 +77,7 @@ public class NativeGlobalWindowAggExecNode extends ExecNodeBase<RowData>
             NativeWindowOperatorBase.keyTypes((RowType) getOutputType(), keyColumns.length),
             partialColumns,
             sliceEndColumn,
+            valueType,
             aggregateKinds,
             timeZoneId,
             BATCH_SIZE),

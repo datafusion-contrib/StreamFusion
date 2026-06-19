@@ -8,6 +8,7 @@ import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.table.data.RowData;
 
@@ -30,15 +31,15 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
       int[] keyTypes,
       int[] partialColumns,
       int sliceEndColumn,
+      int valueType,
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
-    // Two-phase is restricted to bigint partials, so the merge accumulators are bigint.
     super(
         "streamfusion-global-window-state",
         windowMillis,
         slideMillis,
-        TYPE_BIGINT,
+        valueType,
         aggregateKinds,
         timeZoneId,
         batchSize);
@@ -46,6 +47,14 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
     this.keyTypes = keyTypes;
     this.partialColumns = partialColumns;
     this.sliceEndColumn = sliceEndColumn;
+  }
+
+  /**
+   * Whether aggregate {@code a}'s partial rides as a double. Sum/min/max over a double value carry a
+   * double partial; count's partial is always a bigint, as are all partials over a bigint value.
+   */
+  private boolean partialIsDouble(int a) {
+    return valueType == TYPE_DOUBLE && aggregateKinds[a] != KIND_COUNT;
   }
 
   @Override
@@ -56,9 +65,12 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
     for (int j = 0; j < keyCount; j++) {
       keys[j] = newKeyVector("key" + j, keyTypes[j]);
     }
-    BigIntVector[] partials = new BigIntVector[aggregates];
+    FieldVector[] partials = new FieldVector[aggregates];
     for (int a = 0; a < aggregates; a++) {
-      partials[a] = new BigIntVector("partial" + a, allocator);
+      partials[a] =
+          partialIsDouble(a)
+              ? new Float8Vector("partial" + a, allocator)
+              : new BigIntVector("partial" + a, allocator);
     }
     BigIntVector sliceEnd = new BigIntVector("slice_end", allocator);
 
@@ -66,7 +78,7 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
     for (FieldVector key : keys) {
       vectors.add(key);
     }
-    for (BigIntVector partial : partials) {
+    for (FieldVector partial : partials) {
       vectors.add(partial);
     }
     vectors.add(sliceEnd);
@@ -74,9 +86,6 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
     try (VectorSchemaRoot root = new VectorSchemaRoot(vectors);
         ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      for (BigIntVector partial : partials) {
-        partial.allocateNew(rows.size());
-      }
       sliceEnd.allocateNew(rows.size());
       for (int i = 0; i < rows.size(); i++) {
         RowData row = rows.get(i);
@@ -84,7 +93,11 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
           setKey(keys[j], i, row, keyColumns[j], keyTypes[j]);
         }
         for (int a = 0; a < aggregates; a++) {
-          partials[a].set(i, row.getLong(partialColumns[a]));
+          if (partialIsDouble(a)) {
+            ((Float8Vector) partials[a]).setSafe(i, row.getDouble(partialColumns[a]));
+          } else {
+            ((BigIntVector) partials[a]).setSafe(i, row.getLong(partialColumns[a]));
+          }
         }
         sliceEnd.set(i, row.getLong(sliceEndColumn));
       }

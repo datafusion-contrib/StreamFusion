@@ -22,6 +22,7 @@ public class StreamPhysicalNativeGlobalWindowAggregate extends SingleRel
   private final int[] keyColumns;
   private final int[] partialColumns;
   private final int sliceEndColumn;
+  private final int valueType;
   private final int[] aggregateKinds;
 
   public StreamPhysicalNativeGlobalWindowAggregate(
@@ -34,6 +35,7 @@ public class StreamPhysicalNativeGlobalWindowAggregate extends SingleRel
       int[] keyColumns,
       int[] partialColumns,
       int sliceEndColumn,
+      int valueType,
       int[] aggregateKinds) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
@@ -42,6 +44,7 @@ public class StreamPhysicalNativeGlobalWindowAggregate extends SingleRel
     this.keyColumns = keyColumns;
     this.partialColumns = partialColumns;
     this.sliceEndColumn = sliceEndColumn;
+    this.valueType = valueType;
     this.aggregateKinds = aggregateKinds;
   }
 
@@ -67,6 +70,7 @@ public class StreamPhysicalNativeGlobalWindowAggregate extends SingleRel
         keyColumns,
         partialColumns,
         sliceEndColumn,
+        valueType,
         aggregateKinds);
   }
 
@@ -82,6 +86,7 @@ public class StreamPhysicalNativeGlobalWindowAggregate extends SingleRel
         keyColumns,
         partialColumns,
         sliceEndColumn,
+        valueType,
         aggregateKinds);
   }
 }

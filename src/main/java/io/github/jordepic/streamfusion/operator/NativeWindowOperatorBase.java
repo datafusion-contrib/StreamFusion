@@ -55,6 +55,9 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
   protected static final int TYPE_INT = 2;
   protected static final int TYPE_STRING = 3;
 
+  /** Aggregate kind code for COUNT, whose partial is always a bigint regardless of value type. */
+  protected static final int KIND_COUNT = 3;
+
   private final String stateName;
   private final String timeZoneId;
   private final int batchSize;

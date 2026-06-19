@@ -97,9 +97,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
 
     if (current instanceof StreamPhysicalLocalWindowAggregate) {
       StreamPhysicalLocalWindowAggregate agg = (StreamPhysicalLocalWindowAggregate) current;
-      // Tumbling local (single-field partials, no AVG, bigint values — two-phase double is not yet
-      // wired through the merge), or a hopping local that pre-aggregates per slice. The hopping
-      // local also emits the planner's synthetic count1 intermediate column via hoppingLocalKinds.
+      // Tumbling local (single-field partials, no AVG; bigint or double values), or a hopping local
+      // that pre-aggregates per slice (bigint only — its synthetic count1 column rides through
+      // hoppingLocalKinds).
       boolean hopping =
           WindowAggregateMatcher.matchesHoppingLocal(
               agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType());
@@ -109,7 +109,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
                   agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType())
               && WindowAggregateMatcher.isTumbling(agg.windowing())
               && WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType())
-                  == 0
+                  != 2
               && !WindowAggregateMatcher.containsAvg(agg.aggCalls());
       if (tumbling || hopping) {
         substitutions++;
@@ -126,6 +126,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             WindowAggregateMatcher.timeColumn(agg.windowing()),
             WindowAggregateMatcher.valueColumn(agg.aggCalls()),
             WindowAggregateMatcher.keyColumns(agg.grouping()),
+            WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType()),
             kinds);
       }
     }
@@ -144,6 +145,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             GlobalWindowAggregateMatcher.keyColumns(agg),
             GlobalWindowAggregateMatcher.partialColumns(agg),
             GlobalWindowAggregateMatcher.sliceEndColumn(agg),
+            GlobalWindowAggregateMatcher.valueType(agg),
             GlobalWindowAggregateMatcher.kinds(agg));
       }
     }

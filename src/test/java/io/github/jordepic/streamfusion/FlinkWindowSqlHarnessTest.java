@@ -277,6 +277,17 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
+  void twoPhaseDoubleValueMatchesHost() throws Exception {
+    // Default-planned (two-phase) aggregation over a double value: the local emits a double sum
+    // partial alongside a bigint count partial, and the global merges the mixed-type partials.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentTwoPhase,
+        "SELECT window_start, window_end, SUM(amount) AS s, MAX(amount) AS m, COUNT(amount) AS c "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
   void twoPhaseMultiAggregateMatchesHost() throws Exception {
     NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentTwoPhase,

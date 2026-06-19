@@ -55,12 +55,29 @@ final class GlobalWindowAggregateMatcher {
       if (call.getArgList().size() != 1 || kind < 0 || kind == WindowAggregateMatcher.KIND_AVG) {
         return false;
       }
-      if (inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName()
-          != SqlTypeName.BIGINT) {
+      SqlTypeName partialType =
+          inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
+      if (partialType != SqlTypeName.BIGINT && partialType != SqlTypeName.DOUBLE) {
         return false;
       }
     }
     return true;
+  }
+
+  /**
+   * Value-type code (matching the native side) recovered from the partials: double if any partial
+   * is a double (a sum/min/max over a double value), otherwise bigint. Count partials are bigint
+   * either way, so they don't decide it.
+   */
+  static int valueType(StreamPhysicalGlobalWindowAggregate aggregate) {
+    RelDataType inputType = aggregate.getInput().getRowType();
+    for (int i = 0; i < aggregate.aggCalls().size(); i++) {
+      int partial = aggregate.aggCalls().apply(i).getArgList().get(0);
+      if (inputType.getFieldList().get(partial).getType().getSqlTypeName() == SqlTypeName.DOUBLE) {
+        return 1;
+      }
+    }
+    return 0;
   }
 
   /** The full window size in millis (the hopping window's size, not the slice/slide). */
