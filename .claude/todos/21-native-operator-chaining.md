@@ -145,6 +145,21 @@ planner wiring, a deep integration to do carefully:
   both outputs back and assert identical rows. The host baseline pattern is in
   `FlinkParquetSinkSmokeTest`.
 
+## #1 benchmark — done, and it reshapes the priorities
+The Parquet sink benchmark (`ThroughputBenchmark#parquetSinkThroughput`) lands at **0.52×**
+vs the host: a columnar sink fed by a *row* source still pays `RowData → Arrow` at the
+sink, while the host writes `RowData → Parquet` directly. With no compute between source
+and sink, there is nothing to amortize the transpose, so native loses — same lesson as
+filter (0.58×) and tumbling (0.81×).
+
+The data now argues that the **highest-value next build is a columnar *source*** (Parquet
+/Iceberg read as Arrow), not the Kafka source: a columnar source means the data never
+becomes `RowData`, so a Parquet→Parquet job stays columnar end to end (zero transpose)
+while the host round-trips Parquet→RowData→Parquet — the first case expected to cross 1×.
+The native Parquet sink (done) is the second half of that pipeline. Suggest reordering #3
+toward a columnar Parquet source; the Kafka row source remains valuable but only crosses
+1× once chaining lets a transpose-at-source amortize over downstream columnar work.
+
 ## Later phases
 - **Columnar source (Iceberg/Parquet) as Arrow** — a DataFusion scan instead of Flink
   deserializing to `RowData`; turns the source transpose into zero and unlocks

@@ -77,17 +77,21 @@ startup so the measured runs reflect execution.
 |---|---|---|---|---|
 | Filter (`WHERE`) | `SELECT * FROM f WHERE v > 50` | 3.07 M rows/s | 1.79 M rows/s | 0.58× |
 | Tumbling | `SUM` by 1s window | 1.54 M rows/s | 1.24 M rows/s | 0.81× |
+| Parquet sink | `INSERT INTO parquet SELECT *` | 1.18 M rows/s | 0.61 M rows/s | 0.52× |
 
 **Native is currently slower than Flink end to end**, even though the native compute is
-fast in isolation (above). The cost is the per-operator `RowData ↔ Arrow` conversion: a
-single substituted operator converts in and back out, and that round-trip outweighs the
-native saving. The ratio improves with compute intensity (filter 0.58× → tumbling 0.81×),
-which is the tell — the conversion is a fixed per-row tax and only amortizes when more
-work rides on each converted batch.
+fast in isolation (above). The cost is the `RowData ↔ Arrow` conversion: a single
+substituted stage fed by a row source converts in (and back out), and that round-trip
+outweighs the native saving. The ratio improves with compute intensity (filter 0.58× →
+tumbling 0.81×) — the conversion is a fixed per-row tax and only amortizes when more work
+rides on each converted batch.
 
-The implication is architectural, not a tuning knob: substitution pays off when adjacent
-native operators **stay in Arrow** rather than converting at every boundary (native
-operator chaining, and later Arrow over the shuffle — the Iron Vector model). Until then
-these single-operator numbers are expected to sit below 1×; they are the baseline the
-chaining work has to beat. Worth re-running this benchmark whenever the boundary or the
-conversion path changes.
+The Parquet sink (0.52×) is the sharpest lesson: a columnar *sink* fed by a *row* source
+still pays the transpose at the sink, while Flink writes `RowData → Parquet` directly — so
+a columnar sink alone does not win. The decisive case is a **columnar source**: reading
+Parquet/Iceberg as Arrow means the data never becomes `RowData`, so a Parquet→Parquet job
+stays columnar end to end while Flink round-trips through rows. That, plus keeping
+adjacent native operators in Arrow (chaining, then Arrow over the shuffle — the Iron
+Vector model), is where the ratio crosses 1×. Until then these single-stage, row-fed
+numbers are expected below 1×; they are the baseline the columnar-source and chaining work
+must beat. Re-run whenever the boundary or conversion path changes.

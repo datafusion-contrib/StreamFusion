@@ -69,17 +69,22 @@ single slot — run with `SF_BENCHMARK=true mvn test -Dtest=ThroughputBenchmark`
 |---|---|---|---|---|
 | Filter (`WHERE`) | `SELECT * FROM f WHERE v > 50` | 3.07 M rows/s | 1.79 M rows/s | **0.58×** |
 | Tumbling window aggregate | `SUM` by 1s window | 1.54 M rows/s | 1.24 M rows/s | **0.81×** |
+| Parquet sink | `INSERT INTO parquet SELECT *` | 1.18 M rows/s | 0.61 M rows/s | **0.52×** |
 
 **Today, substituting a single operator is slower than Flink, not faster** — and we
 report it rather than hide it. The native compute is quick, but every substituted
-operator converts the whole row `RowData → Arrow` on the way in and back on the way out,
-and for one operator that round-trip costs more than the native execution saves. The
-gap narrows as the operator does more work per converted byte (filter 0.58× → tumbling
-0.81×), which points at the fix: the architecture only pays off when **adjacent native
-operators stay in Arrow** instead of round-tripping at every boundary — keeping columnar
-chains, and eventually exchanging Arrow over the network (the model
-[Iron Vector](#related-work) uses). These per-operator numbers are the precursor to that
-work; the chained numbers are the ones that will justify the project.
+operator (or sink) converts the whole row `RowData → Arrow`, and for one stage fed by a
+row source that round-trip costs more than the native execution saves. The gap narrows
+with work done per converted byte (filter 0.58× → tumbling 0.81×), and the Parquet sink
+(0.52×) makes the lesson concrete: a *columnar sink fed by a row source* still pays the
+transpose at the sink, while Flink writes `RowData → Parquet` directly — so a columnar
+sink alone does not win. The decisive case is a **columnar source**: read Parquet/Iceberg
+as Arrow and the data never becomes `RowData`, so a Parquet→Parquet job stays columnar
+end to end while Flink round-trips through rows. That (and keeping **adjacent native
+operators in Arrow** rather than transposing at each boundary — the
+[Iron Vector](#related-work) model) is where the project crosses 1×. These single-stage,
+row-fed numbers are the precursor; the columnar-source and chained numbers are the ones
+that will justify it.
 
 _Apple M1 Max; numbers are comparable only within a machine._
 

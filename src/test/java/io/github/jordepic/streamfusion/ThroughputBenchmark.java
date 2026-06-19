@@ -2,6 +2,8 @@ package io.github.jordepic.streamfusion;
 
 import io.github.jordepic.streamfusion.planner.NativePlanner;
 import io.github.jordepic.streamfusion.planner.PhysicalPlanScan;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.function.Supplier;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.typeinfo.Types;
@@ -50,6 +52,58 @@ class ThroughputBenchmark {
             + " WITH ('connector' = 'blackhole')",
         "INSERT INTO sink SELECT window_start, window_end, SUM(v) AS total FROM TABLE(TUMBLE(TABLE g,"
             + " DESCRIPTOR(rt), INTERVAL '1' SECOND)) GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void parquetSinkThroughput() throws Exception {
+    double flink = bestOfSink(false);
+    double nativeRun = bestOfSink(true);
+    System.out.printf("%n[benchmark] Parquet sink (INSERT) over %,d rows (best of %d)%n", ROWS, RUNS);
+    System.out.printf("[benchmark]   Flink : %6.3f s  (%,.0f rows/s)%n", flink, ROWS / flink);
+    System.out.printf(
+        "[benchmark]   Native: %6.3f s  (%,.0f rows/s)  %.2fx vs Flink%n",
+        nativeRun, ROWS / nativeRun, flink / nativeRun);
+  }
+
+  private static double bestOfSink(boolean useNative) throws Exception {
+    double best = Double.MAX_VALUE;
+    for (int run = 0; run < WARMUP + RUNS; run++) {
+      double seconds = sinkRunOnce(useNative);
+      if (run >= WARMUP) {
+        best = Math.min(best, seconds);
+      }
+    }
+    return best;
+  }
+
+  /** One INSERT of the generated source into a fresh filesystem Parquet sink, timed to completion. */
+  private static double sinkRunOnce(boolean useNative) throws Exception {
+    Path directory = Files.createTempDirectory("bench-parquet-sink");
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    env.enableCheckpointing(1000); // both the native and host sinks commit files on checkpoint
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    DataStream<Row> source =
+        env.fromSequence(0, ROWS - 1)
+            .map(i -> Row.of(i, (int) (i % 100)))
+            .returns(Types.ROW_NAMED(new String[] {"k", "v"}, Types.LONG, Types.INT));
+    tEnv.createTemporaryView(
+        "s",
+        source,
+        Schema.newBuilder().column("k", DataTypes.BIGINT()).column("v", DataTypes.INT()).build());
+    tEnv.executeSql(
+        "CREATE TABLE pq (k BIGINT, v INT) WITH ('connector' = 'filesystem', 'path' = '"
+            + directory.toUri()
+            + "', 'format' = 'parquet')");
+
+    PhysicalPlanScan scan = useNative ? NativePlanner.install(tEnv) : null;
+    long start = System.nanoTime();
+    tEnv.executeSql("INSERT INTO pq SELECT * FROM s").await();
+    double seconds = (System.nanoTime() - start) / 1e9;
+    if (useNative && scan.substitutions() == 0) {
+      throw new IllegalStateException("native sink did not engage; comparison is moot");
+    }
+    return seconds;
   }
 
   private static void compare(
