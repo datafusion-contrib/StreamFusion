@@ -18,12 +18,10 @@ accumulator; double one-phase only). Remaining below:
   a value-type code each).
 - **`AVG` over int, and `SUM`/`AVG` over smallint/tinyint/float:** need the
   remaining custom truncating/wrapping accumulators to match Flink.
-- **String/other key types:** bigint and int keys are done (composite `Vec<i64>`,
-  int widened in and emitted back as int). String keys need a byte-encoded
-  composite key (the `Vec<i64>` becomes a `Vec<KeyValue>` or row-encoded bytes).
+- **More key types:** bigint/int/string keys are done (the native key is a list
+  of typed scalars). Decimal/timestamp/etc. keys are a matcher gate + a JVM
+  vector each.
 - **Double through the two-phase split** (local/global partials are bigint).
-- **`AVG` over int, and `SUM`/`AVG` over smallint/tinyint/float** (custom
-  truncating/wrapping accumulators).
 
 ## Problem
 The native operators assume a narrow shape: a single int value column, and

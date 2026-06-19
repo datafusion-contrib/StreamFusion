@@ -42,6 +42,7 @@ Notes / divergences this avoids:
   a value-type code).
 - `AVG` over int, and `SUM`/`AVG` over smallint/tinyint/float, await the custom
   accumulators above.
-- Grouping keys: one or more bigint/int keys are supported (int widens into the
-  int64 composite key, emitted back as int). String/other key types are tracked
-  in ticket 04.
+- Grouping keys: one or more bigint/int/string keys are supported. The native
+  composite key is a list of typed scalars; int widens into int64 carriage and is
+  emitted back as int, strings ride as varchar. Other key types (decimal,
+  timestamp, …) fall back; adding them is matcher gate + a JVM vector each.
