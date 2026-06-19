@@ -9,9 +9,10 @@ grouping key in addition to the window (`GROUP BY k, window_start, window_end`),
 matching the host's per-key results and output column order. Multiple aggregates
 per window are supported. The native engine is value-type agnostic; the
 accelerated value types are the parity intersection in
-`docs/aggregate-type-support.md` — all aggregates over bigint/double, and
-`SUM`/`MIN`/`MAX`/`COUNT` over int (`SUM` via a custom wrapping int32
-accumulator; double one-phase only). Remaining below:
+`docs/aggregate-type-support.md` — all aggregates over bigint/double (both one-
+and two-phase), and `SUM`/`MIN`/`MAX`/`COUNT` over int (`SUM` via a custom
+wrapping int32 accumulator; one-phase). Grouping keys may be bigint/int/string.
+Remaining below:
 
 - **More value types via the parity table:** extend `MIN`/`MAX`/`COUNT` to
   smallint/tinyint/float/decimal (mechanical — an Arrow vector class + getter +
@@ -21,7 +22,6 @@ accumulator; double one-phase only). Remaining below:
 - **More key types:** bigint/int/string keys are done (the native key is a list
   of typed scalars). Decimal/timestamp/etc. keys are a matcher gate + a JVM
   vector each.
-- **Double through the two-phase split** (local/global partials are bigint).
 
 ## Problem
 The native operators assume a narrow shape: a single int value column, and

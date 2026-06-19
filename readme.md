@@ -15,7 +15,7 @@ otherwise it runs on Flink unchanged.
 | Operator | Accelerated | Terms |
 |---|---|---|
 | Projection | Demo only | Single integer input column; the projection is exactly `col * 2`. (A proof of the projection path, not a general projection yet.) |
-| Tumbling window aggregate | Yes | Event-time `TUMBLE` over a local-time-zone (rowtime) attribute; one or more aggregates over the same value column — `SUM` / `MIN` / `MAX` / `COUNT` (and `AVG` only as a lone aggregate); grouped by the window, optionally plus one or more bigint/int/string keys. Value-type support is the parity intersection in [docs/aggregate-type-support.md](docs/aggregate-type-support.md): all five over bigint/double, and `SUM`/`MIN`/`MAX`/`COUNT` over int (`SUM` keeps the host's wrapping int semantics). `AVG` follows Flink's integer-division semantics and so stays bigint-only; double values are one-phase only. |
+| Tumbling window aggregate | Yes | Event-time `TUMBLE` over a local-time-zone (rowtime) attribute; one or more aggregates over the same value column — `SUM` / `MIN` / `MAX` / `COUNT` (and `AVG` only as a lone aggregate); grouped by the window, optionally plus one or more bigint/int/string keys. Value-type support is the parity intersection in [docs/aggregate-type-support.md](docs/aggregate-type-support.md): all five over bigint/double, and `SUM`/`MIN`/`MAX`/`COUNT` over int (`SUM` keeps the host's wrapping int semantics). `AVG` follows Flink's integer-division semantics and so stays bigint-only. |
 | Hopping window aggregate | Yes | Same as tumbling, with `HOP`. One-phase assigns each row to its overlapping windows; two-phase (the default plan) pre-aggregates per slice and combines the shared slices of each window, requiring the slide to divide the size (other ratios fall back). |
 | Session window aggregate | Yes | Same aggregate/key/value terms as tumbling, with `SESSION` (optionally `PARTITION BY` one or more bigint keys). Each element opens a gap-wide window; overlapping or touching windows merge, including when a late element bridges two open sessions. Always single-phase (the host never splits sessions), so no `ONE_PHASE` is needed. |
 | Cumulative window aggregate | One-phase only | Same terms as tumbling, with `CUMULATE` (zero offset only). Nested windows share a bucket start and grow by the step up to the max size. Like `HOP`, two-phase slice-sharing is not native, so set `table.optimizer.agg-phase-strategy = ONE_PHASE`. |
@@ -37,7 +37,6 @@ model (a per-slice local, a global that combines each window's slices).
 - Two-phase (slice-sharing) cumulative windows, and two-phase hopping where the slide does not divide the size
 - Grouping keys other than bigint/int/string (e.g. decimal, timestamp), aggregates over different value columns, or `COUNT(*)`
 - `AVG` over int, and any aggregate over smallint/tinyint/float/decimal — see [docs/aggregate-type-support.md](docs/aggregate-type-support.md)
-- Two-phase (local + global) aggregation over a double value column
 - Two-phase `AVG` (multi-field partial state)
 
 ## Related work
