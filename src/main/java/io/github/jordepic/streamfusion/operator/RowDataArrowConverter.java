@@ -1,10 +1,13 @@
 package io.github.jordepic.streamfusion.operator;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.BitVector;
+import org.apache.arrow.vector.DateDayVector;
+import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
@@ -14,10 +17,12 @@ import org.apache.arrow.vector.TimeStampNanoVector;
 import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
+import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
@@ -51,6 +56,8 @@ public final class RowDataArrowConverter {
         case VARCHAR:
         case TIMESTAMP_WITHOUT_TIME_ZONE:
         case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        case DATE:
+        case DECIMAL:
           break;
         default:
           return false;
@@ -185,6 +192,30 @@ public final class RowDataArrowConverter {
         v.setValueCount(n);
         return v;
       }
+      case DATE: {
+        // Flink represents DATE as an int day count, as does Arrow's day-precision date vector.
+        DateDayVector v = new DateDayVector(name, allocator);
+        for (int i = 0; i < n; i++) {
+          if (rows.get(i).isNullAt(column)) v.setNull(i);
+          else v.setSafe(i, rows.get(i).getInt(column));
+        }
+        v.setValueCount(n);
+        return v;
+      }
+      case DECIMAL: {
+        int precision = ((DecimalType) type).getPrecision();
+        int scale = ((DecimalType) type).getScale();
+        DecimalVector v = new DecimalVector(name, allocator, precision, scale);
+        for (int i = 0; i < n; i++) {
+          if (rows.get(i).isNullAt(column)) {
+            v.setNull(i);
+          } else {
+            v.setSafe(i, rows.get(i).getDecimal(column, precision, scale).toBigDecimal());
+          }
+        }
+        v.setValueCount(n);
+        return v;
+      }
       default:
         throw new IllegalArgumentException("unsupported column type: " + type);
     }
@@ -229,6 +260,16 @@ public final class RowDataArrowConverter {
         case TIMESTAMP_WITH_LOCAL_TIME_ZONE: {
           long nanos = ((TimeStampNanoVector) vector).get(i);
           value = TimestampData.fromEpochMillis(nanos / 1_000_000L, (int) (nanos % 1_000_000L));
+          break;
+        }
+        case DATE:
+          value = ((DateDayVector) vector).get(i);
+          break;
+        case DECIMAL: {
+          BigDecimal decimal = ((DecimalVector) vector).getObject(i);
+          value =
+              DecimalData.fromBigDecimal(
+                  decimal, ((DecimalType) type).getPrecision(), ((DecimalType) type).getScale());
           break;
         }
         default:

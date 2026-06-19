@@ -296,6 +296,8 @@ final class FilterCalcMatcher {
         case VARCHAR:
         case TIMESTAMP:
         case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        case DATE:
+        case DECIMAL:
           break;
         default:
           return false;

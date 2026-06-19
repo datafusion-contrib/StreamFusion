@@ -16,8 +16,12 @@ import org.apache.flink.table.types.logical.BooleanType;
 import org.apache.flink.table.types.logical.DoubleType;
 import org.apache.flink.table.types.logical.FloatType;
 import org.apache.flink.table.types.logical.IntType;
+import java.math.BigDecimal;
+import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.types.logical.DateType;
+import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.table.types.logical.TimeType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.SmallIntType;
 import org.apache.flink.table.types.logical.TimestampType;
@@ -28,7 +32,7 @@ import org.junit.jupiter.api.Test;
 
 class RowDataArrowConverterTest {
 
-  private static final int COLUMNS = 9;
+  private static final int COLUMNS = 11;
 
   private static final RowType SCHEMA =
       RowType.of(
@@ -41,9 +45,11 @@ class RowDataArrowConverterTest {
             new DoubleType(),
             new BooleanType(),
             new VarCharType(VarCharType.MAX_LENGTH),
-            new TimestampType(9)
+            new TimestampType(9),
+            new DateType(),
+            new DecimalType(10, 2)
           },
-          new String[] {"a", "b", "c", "d", "e", "f", "g", "h", "i"});
+          new String[] {"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"});
 
   @Test
   void roundTripsEveryColumnTypeAndNulls() {
@@ -58,6 +64,8 @@ class RowDataArrowConverterTest {
     first.setField(7, StringData.fromString("hello"));
     // Sub-millisecond nanos verify the nanosecond round-trip preserves full precision.
     first.setField(8, TimestampData.fromEpochMillis(1234L, 567000));
+    first.setField(9, 18000); // DATE as an epoch-day count
+    first.setField(10, DecimalData.fromBigDecimal(new BigDecimal("123.45"), 10, 2));
 
     // A row that is null in every column exercises the null path on every vector type.
     GenericRowData nulls = new GenericRowData(COLUMNS);
@@ -83,8 +91,8 @@ class RowDataArrowConverterTest {
   @Test
   void reportsUnsupportedSchemas() {
     assertTrue(RowDataArrowConverter.supports(SCHEMA));
-    RowType withDate =
-        RowType.of(new LogicalType[] {new IntType(), new DateType()}, new String[] {"a", "d"});
-    assertFalse(RowDataArrowConverter.supports(withDate));
+    RowType withTime =
+        RowType.of(new LogicalType[] {new IntType(), new TimeType(0)}, new String[] {"a", "t"});
+    assertFalse(RowDataArrowConverter.supports(withTime));
   }
 }
