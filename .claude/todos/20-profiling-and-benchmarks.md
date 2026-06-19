@@ -1,6 +1,9 @@
 # Profiling + benchmark layer (measure as we build)
 
-**Status:** open — needed now, before more operators land.
+**Status:** in progress — Criterion harness landed (item 1 started); native timing
+hook, harness timing, and the remaining benches still open. First numbers in
+[docs/benchmarks.md](../../docs/benchmarks.md) already surfaced the per-row key cost
+in the tumbling aggregator (~100× slower per element than the filter).
 **Source:** every acceleration claim should be measured, not asserted (the README
 already contrasts us with closed engines on exactly this point). We need a standing
 way to benchmark each operator and catch hot-path regressions as we code.
@@ -12,10 +15,11 @@ scale — we need numbers: per-operator throughput (rows/s) and allocations, nat
 vs. Flink fallback, tracked over time so a regression is visible.
 
 ## What to build
-1. **Native micro-benchmarks** (Criterion, in `native/benches/`). One bench per
-   native operator over a synthetic batch: filter-expression eval, tumbling/session
-   update+flush, two-phase local/global. Report rows/s and ns/row. These are the
-   tight loops; Criterion gives stable deltas per commit.
+1. **Native micro-benchmarks** (Criterion, in `native/benches/`). ✅ STARTED —
+   harness in `native/benches/operators.rs` with `filter/gt_literal` and
+   `tumbling/sum_update_flush`, run via `cargo bench`, documented in
+   [docs/benchmarks.md](../../docs/benchmarks.md). Remaining: session and two-phase
+   local/global benches, and committing a results table from a quiet machine.
 2. **A lightweight native timing/counter hook** behind a feature flag — per-operator
    batch count, row count, and wall time, dumpable on close — so we can profile a
    real job without a full tracing dependency. Keep it zero-cost when the flag is off.

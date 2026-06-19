@@ -1630,6 +1630,57 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreSessio
         as jlong
 }
 
+/// Thin wrappers exposing the engine hot paths to the Criterion benchmark harness, without leaking
+/// the JNI internals or the Arrow-FFI plumbing. Not used by the JVM bridge.
+pub mod bench {
+    use super::*;
+
+    /// A filter predicate compiled once (on the first `run`) and reused, as the operator uses it.
+    pub struct Filter(FilterExpression);
+
+    impl Filter {
+        pub fn new(
+            kinds: Vec<i64>,
+            payload: Vec<i64>,
+            child_counts: Vec<i64>,
+            longs: Vec<i64>,
+            doubles: Vec<f64>,
+            strings: Vec<Option<String>>,
+        ) -> Self {
+            Filter(FilterExpression {
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                compiled: None,
+            })
+        }
+
+        pub fn run(&mut self, batch: RecordBatch) -> RecordBatch {
+            self.0.filter(batch)
+        }
+    }
+
+    /// A tumbling-window aggregator driven by `update`/`flush`, as the stateful operator drives it.
+    pub struct Tumbling(TumblingAggregator);
+
+    impl Tumbling {
+        pub fn new(window_millis: i64, value_type: i64, kinds: Vec<i64>) -> Self {
+            Tumbling(TumblingAggregator::new(window_millis, window_millis, false, value_type, kinds))
+        }
+
+        pub fn update(&mut self, batch: &RecordBatch) {
+            self.0.update(batch);
+        }
+
+        pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+            self.0.flush(watermark)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
