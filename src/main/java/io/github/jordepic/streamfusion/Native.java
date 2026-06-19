@@ -124,6 +124,16 @@ public final class Native {
   public static native void writeParquet(long inArrayAddress, long inSchemaAddress, String path);
 
   /**
+   * Copies a directory of Parquet files to another entirely in the columnar form, reading the input
+   * and writing the output without ever materializing rows — a whole Parquet-to-Parquet job run
+   * natively. The basis for fusing a filesystem Parquet source and sink into one columnar stage.
+   *
+   * @param inputDirectory directory of Parquet files to read
+   * @param outputDirectory directory to write Parquet files into
+   */
+  public static native void copyParquet(String inputDirectory, String outputDirectory);
+
+  /**
    * Imports a whole multi-column batch the JVM exported and exports an equal batch back into the
    * consumer-allocated C structs, exercising batch transfer beyond a single column.
    *

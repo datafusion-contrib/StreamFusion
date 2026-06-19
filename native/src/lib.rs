@@ -1302,6 +1302,37 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_writeParquet<
     write_parquet(&batch, &path);
 }
 
+/// Copies a directory of Parquet files to another, entirely in Arrow: DataFusion reads the input as
+/// columnar batches and writes them straight back to Parquet, with no row materialization. This is a
+/// whole `INSERT INTO parquet SELECT * FROM parquet` running natively as one columnar job — the data
+/// is never transposed to rows, so the pipeline stays columnar from source to sink.
+fn copy_parquet(in_dir: &str, out_dir: &str) {
+    runtime().block_on(async {
+        let ctx = SessionContext::new();
+        let frame = ctx
+            .read_parquet(in_dir, datafusion::prelude::ParquetReadOptions::default())
+            .await
+            .expect("failed to read parquet");
+        frame
+            .write_parquet(out_dir, datafusion::dataframe::DataFrameWriteOptions::new(), None)
+            .await
+            .expect("failed to write parquet");
+    });
+}
+
+/// Runs a native Parquet-to-Parquet copy: reads the input directory and writes the output directory.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_copyParquet<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    in_dir: JString<'local>,
+    out_dir: JString<'local>,
+) {
+    let in_dir: String = env.get_string(&in_dir).expect("failed to read in_dir").into();
+    let out_dir: String = env.get_string(&out_dir).expect("failed to read out_dir").into();
+    copy_parquet(&in_dir, &out_dir);
+}
+
 /// Runs an event-time tumbling-window sum over a batch from the JVM: rows are bucketed by the start
 /// of the `window_millis`-wide window their `ts` falls in, and `value` is summed per bucket. This
 /// is the first aggregating operator and the core of the initial target envelope.
@@ -1828,6 +1859,34 @@ mod tests {
         }
         assert_eq!(rows, batch.num_rows());
         assert_eq!(first, values(&batch, 0));
+    }
+
+    // A native Parquet-to-Parquet copy reads an input directory and writes the rows to the output.
+    #[test]
+    fn copies_parquet_directory() {
+        use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+        let batch = sample_batch();
+        let in_dir = std::env::temp_dir().join("streamfusion_copy_in");
+        let out_dir = std::env::temp_dir().join("streamfusion_copy_out");
+        let _ = std::fs::remove_dir_all(&in_dir);
+        let _ = std::fs::remove_dir_all(&out_dir);
+        std::fs::create_dir_all(&in_dir).unwrap();
+        write_parquet(&batch, in_dir.join("data.parquet").to_str().unwrap());
+
+        copy_parquet(in_dir.to_str().unwrap(), out_dir.to_str().unwrap());
+
+        let mut rows = 0usize;
+        for entry in std::fs::read_dir(&out_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().map(|e| e == "parquet").unwrap_or(false) {
+                let file = std::fs::File::open(&path).unwrap();
+                let reader = ParquetRecordBatchReaderBuilder::try_new(file).unwrap().build().unwrap();
+                for read in reader {
+                    rows += read.unwrap().num_rows();
+                }
+            }
+        }
+        assert_eq!(rows, batch.num_rows());
     }
 
     // The compiled predicate is cached after the first batch and reused.
