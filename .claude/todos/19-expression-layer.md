@@ -1,6 +1,13 @@
 # Native expression layer (general RexNode evaluation)
 
-**Status:** open — design ready; build in green, parity-gated stages
+**Status:** in progress — stage 1 native decoder DONE (the `Expr` builder, op codes,
+and a compile-once `createFilterExpression`/`filterExpression`/`closeFilterExpression`
+handle that caches a `PhysicalExpr` and evaluates synchronously; Rust-tested for
+`col > lit` and `a + b > lit`). The encoding follows Comet over Substrait and compiles
+once per operator — see [divergences/07](../../divergences/07-expression-encoding-and-compile-once.md).
+What remains in stage 1: the planner-side `RexNode` encoder and re-routing the existing
+filter through the handle. The compile-once lifecycle came out of the perf sweep in
+ticket 20.
 **Source:** the foundational piece for general projections and richer predicates
 (unblocks equality filters, computed columns, arithmetic/function predicates).
 

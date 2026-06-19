@@ -1,20 +1,25 @@
 use arrow::array::{
-    make_array, new_empty_array, Array, ArrayRef, Int32Array, Int64Array, RecordBatch, StructArray,
-    UInt32Array,
+    make_array, new_empty_array, Array, ArrayRef, BooleanArray, Int32Array, Int64Array, RecordBatch,
+    StructArray, UInt32Array,
 };
-use arrow::compute::{concat_batches, take};
-use arrow::datatypes::{DataType, Field, Schema};
+use arrow::compute::{concat_batches, filter_record_batch, take};
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow::ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema};
+use datafusion::common::DFSchema;
 use datafusion::functions_aggregate::count::count_udaf;
 use datafusion::functions_aggregate::min_max::{max_udaf, min_udaf};
 use datafusion::functions_aggregate::sum::sum_udaf;
+use datafusion::logical_expr::execution_props::ExecutionProps;
 use datafusion::logical_expr::{Accumulator, AggregateUDF, Operator};
 use datafusion::physical_expr::aggregate::{AggregateExprBuilder, AggregateFunctionExpr};
 use datafusion::physical_expr::expressions::{binary, col, lit};
+use datafusion::physical_expr::{create_physical_expr, PhysicalExpr};
 use datafusion::prelude::{col as logical_col, lit as logical_lit, SessionContext};
 use datafusion::scalar::ScalarValue;
 use futures::StreamExt;
-use jni::objects::{JByteArray, JClass, JDoubleArray, JIntArray, JObjectArray, JString};
+use jni::objects::{
+    JByteArray, JClass, JDoubleArray, JIntArray, JLongArray, JObjectArray, JString,
+};
 use jni::sys::{jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
 use std::collections::{BTreeMap, HashMap};
@@ -1153,6 +1158,176 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_filterBatch<'
     export_record_batch(result, out_array_address, out_schema_address);
 }
 
+/// Builds a DataFusion expression from the JVM's pre-order encoding (ticket 19): `kinds`, `payload`,
+/// and `child_counts` describe each node, with literals drawn from the typed pools by `payload`.
+fn build_expr(
+    schema: &SchemaRef,
+    kinds: &[i64],
+    payload: &[i64],
+    child_counts: &[i64],
+    longs: &[i64],
+    doubles: &[f64],
+    strings: &[Option<String>],
+    cursor: &mut usize,
+) -> datafusion::prelude::Expr {
+    let node = *cursor;
+    *cursor += 1;
+    let arg = payload[node] as usize;
+    match kinds[node] {
+        0 => logical_col(schema.field(arg).name()),
+        1 => logical_lit(longs[arg]),
+        2 => logical_lit(doubles[arg]),
+        3 => logical_lit(strings[arg].clone().expect("string literal")),
+        4 => logical_lit(longs[arg] != 0),
+        6 => {
+            let op = payload[node];
+            let count = child_counts[node] as usize;
+            let mut args = Vec::with_capacity(count);
+            for _ in 0..count {
+                args.push(build_expr(
+                    schema,
+                    kinds,
+                    payload,
+                    child_counts,
+                    longs,
+                    doubles,
+                    strings,
+                    cursor,
+                ));
+            }
+            build_call(op, args)
+        }
+        other => panic!("unsupported expression kind: {other}"),
+    }
+}
+
+/// Combines decoded operands by op code: arithmetic, the six comparisons, and AND/OR/NOT.
+fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prelude::Expr {
+    let mut it = args.into_iter();
+    let mut next = || it.next().expect("missing operand");
+    match op {
+        0 => next() + next(),
+        1 => next() - next(),
+        2 => next() * next(),
+        10 => next().gt(next()),
+        11 => next().gt_eq(next()),
+        12 => next().lt(next()),
+        13 => next().lt_eq(next()),
+        14 => next().eq(next()),
+        15 => next().not_eq(next()),
+        20 => next().and(next()),
+        21 => next().or(next()),
+        22 => !next(),
+        other => panic!("unsupported expression op: {other}"),
+    }
+}
+
+/// A compiled filter predicate held across batches: the decoded expression tree plus the physical
+/// expression, which is built once against the first batch's schema and reused for every later
+/// batch. This follows Comet — the plan is compiled once at operator construction, not re-planned
+/// per batch — and evaluates the predicate directly (no per-batch `SessionContext` or async plan).
+struct FilterExpression {
+    kinds: Vec<i64>,
+    payload: Vec<i64>,
+    child_counts: Vec<i64>,
+    longs: Vec<i64>,
+    doubles: Vec<f64>,
+    strings: Vec<Option<String>>,
+    compiled: Option<Arc<dyn PhysicalExpr>>,
+}
+
+impl FilterExpression {
+    /// The physical predicate, decoded and compiled against the schema on first use and cached.
+    fn predicate(&mut self, schema: &SchemaRef) -> Arc<dyn PhysicalExpr> {
+        if let Some(expr) = &self.compiled {
+            return expr.clone();
+        }
+        let mut cursor = 0usize;
+        let logical = build_expr(
+            schema,
+            &self.kinds,
+            &self.payload,
+            &self.child_counts,
+            &self.longs,
+            &self.doubles,
+            &self.strings,
+            &mut cursor,
+        );
+        let df_schema = DFSchema::try_from(schema.as_ref().clone()).expect("failed to build schema");
+        let physical = create_physical_expr(&logical, &df_schema, &ExecutionProps::new())
+            .expect("failed to compile predicate");
+        self.compiled = Some(physical.clone());
+        physical
+    }
+
+    /// Keeps the rows for which the predicate is true; a null result drops the row, as `WHERE` requires.
+    fn filter(&mut self, batch: RecordBatch) -> RecordBatch {
+        let predicate = self.predicate(&batch.schema());
+        let evaluated = predicate
+            .evaluate(&batch)
+            .expect("failed to evaluate predicate")
+            .into_array(batch.num_rows())
+            .expect("failed to materialize predicate");
+        let mask =
+            evaluated.as_any().downcast_ref::<BooleanArray>().expect("predicate must be boolean");
+        filter_record_batch(&batch, mask).expect("failed to filter batch")
+    }
+}
+
+/// Compiles a general predicate expression (the JVM's encoded tree) into a reusable handle. The
+/// handle owns the compiled plan and must be released with `closeFilterExpression`.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createFilterExpression<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    kinds: JIntArray<'local>,
+    payload: JIntArray<'local>,
+    child_counts: JIntArray<'local>,
+    longs: JLongArray<'local>,
+    doubles: JDoubleArray<'local>,
+    strings: JObjectArray<'local>,
+) -> jlong {
+    let expression = FilterExpression {
+        kinds: read_kinds(&env, &kinds),
+        payload: read_kinds(&env, &payload),
+        child_counts: read_kinds(&env, &child_counts),
+        longs: read_longs(&env, &longs),
+        doubles: read_doubles(&env, &doubles),
+        strings: read_strings(&mut env, &strings),
+        compiled: None,
+    };
+    Box::into_raw(Box::new(expression)) as jlong
+}
+
+/// Filters a batch from the JVM through a compiled predicate handle, exporting the surviving rows.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_filterExpression<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let expression = unsafe { &mut *(handle as *mut FilterExpression) };
+    let batch = import_record_batch(in_array_address, in_schema_address);
+    let result = expression.filter(batch);
+    export_record_batch(result, out_array_address, out_schema_address);
+}
+
+/// Releases a compiled predicate handle and its native state.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeFilterExpression<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    unsafe {
+        drop(Box::from_raw(handle as *mut FilterExpression));
+    }
+}
+
 /// Runs an event-time tumbling-window sum over a batch from the JVM: rows are bucketed by the start
 /// of the `window_millis`-wide window their `ts` falls in, and `value` is summed per bucket. This
 /// is the first aggregating operator and the core of the initial target envelope.
@@ -1266,6 +1441,14 @@ fn read_doubles(env: &JNIEnv, values: &JDoubleArray) -> Vec<f64> {
     let length = env.get_array_length(values).expect("failed to read doubles length");
     let mut buffer = vec![0f64; length as usize];
     env.get_double_array_region(values, 0, &mut buffer).expect("failed to read doubles");
+    buffer
+}
+
+/// Reads a JVM long[] into a Vec.
+fn read_longs(env: &JNIEnv, values: &JLongArray) -> Vec<i64> {
+    let length = env.get_array_length(values).expect("failed to read longs length");
+    let mut buffer = vec![0i64; length as usize];
+    env.get_long_array_region(values, 0, &mut buffer).expect("failed to read longs");
     buffer
 }
 
@@ -1502,4 +1685,77 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreSessio
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read snapshot");
     Box::into_raw(Box::new(SessionAggregator::restore(gap_millis, value_type as i64, kinds, &bytes)))
         as jlong
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_batch() -> RecordBatch {
+        let a: ArrayRef = Arc::new(Int64Array::from(vec![1i64, 6, 3, 9]));
+        let b: ArrayRef = Arc::new(Int64Array::from(vec![10i64, 0, 8, 2]));
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("a", DataType::Int64, true),
+                Field::new("b", DataType::Int64, true),
+            ])),
+            vec![a, b],
+        )
+        .unwrap()
+    }
+
+    fn values(batch: &RecordBatch, column: usize) -> Vec<i64> {
+        batch.column(column).as_any().downcast_ref::<Int64Array>().unwrap().values().to_vec()
+    }
+
+    // Decoder over the pre-order encoding: CALL gt ( INPUT_REF a , LIT_LONG 5 ).
+    #[test]
+    fn filters_column_greater_than_literal() {
+        let mut expression = FilterExpression {
+            kinds: vec![6, 0, 1],
+            payload: vec![10, 0, 0],
+            child_counts: vec![2, 0, 0],
+            longs: vec![5],
+            doubles: vec![],
+            strings: vec![],
+            compiled: None,
+        };
+        let out = expression.filter(sample_batch());
+        assert_eq!(values(&out, 0), vec![6, 9]);
+    }
+
+    // Arithmetic inside the predicate: CALL gt ( CALL plus ( INPUT_REF a , INPUT_REF b ) , LIT 10 ).
+    #[test]
+    fn filters_arithmetic_predicate() {
+        let mut expression = FilterExpression {
+            kinds: vec![6, 6, 0, 0, 1],
+            payload: vec![10, 0, 0, 1, 0],
+            child_counts: vec![2, 2, 0, 0, 0],
+            longs: vec![10],
+            doubles: vec![],
+            strings: vec![],
+            compiled: None,
+        };
+        let out = expression.filter(sample_batch());
+        assert_eq!(values(&out, 0), vec![1, 3, 9]);
+    }
+
+    // The compiled predicate is cached after the first batch and reused.
+    #[test]
+    fn compiles_once_and_reuses() {
+        let mut expression = FilterExpression {
+            kinds: vec![6, 0, 1],
+            payload: vec![12, 0, 0],
+            child_counts: vec![2, 0, 0],
+            longs: vec![5],
+            doubles: vec![],
+            strings: vec![],
+            compiled: None,
+        };
+        let first = expression.filter(sample_batch());
+        assert!(expression.compiled.is_some());
+        let second = expression.filter(sample_batch());
+        assert_eq!(values(&first, 0), values(&second, 0));
+        assert_eq!(values(&first, 0), vec![1, 3]);
+    }
 }

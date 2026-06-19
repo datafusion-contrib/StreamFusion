@@ -42,6 +42,7 @@ host — verified by the parity harness.
 - [04 — Synchronous stateful execution](04-synchronous-stateful-execution.md) — runtime model; run on Flink's mailbox, not Arroyo's async actors.
 - [05 — Cumulative windows](05-cumulative-windows.md) — net-new operator neither influence has; built against Flink's semantics alone.
 - [06 — Two-phase slice-sharing](06-two-phase-slice-sharing.md) — hopping's local/global intermediate reverse-engineered from Flink, not Arroyo's raw re-aggregation.
+- [07 — Expression encoding + compile-once](07-expression-encoding-and-compile-once.md) — hand-encoded IR following Comet (not Substrait), compiled once per operator.
 
 ## Known transitional gap (not yet a deliberate divergence)
 

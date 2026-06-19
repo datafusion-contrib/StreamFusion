@@ -100,6 +100,47 @@ public final class Native {
       int[] groups);
 
   /**
+   * Compiles a general predicate expression into a reusable handle. The predicate is the encoded
+   * tree (pre-order parallel arrays — see the expression encoder): {@code kinds} tags each node
+   * (0=input ref, 1=long literal, 2=double literal, 3=string literal, 4=bool literal, 6=call),
+   * {@code payload} carries the column index / op code / literal-pool index, and {@code childCounts}
+   * the operand count of each call; literals are drawn from {@code longs}/{@code doubles}/{@code
+   * strings} by index. The handle compiles the plan once (against the first batch's schema) and
+   * reuses it, and must be released with {@link #closeFilterExpression(long)}.
+   *
+   * <p>Call op codes: 0=+, 1=-, 2=*, 10=&gt;, 11=&gt;=, 12=&lt;, 13=&lt;=, 14==, 15=&lt;&gt;, 20=AND,
+   * 21=OR, 22=NOT.
+   */
+  public static native long createFilterExpression(
+      int[] kinds,
+      int[] payload,
+      int[] childCounts,
+      long[] longs,
+      double[] doubles,
+      String[] strings);
+
+  /**
+   * Filters a batch the JVM exported through a compiled predicate handle, writing the surviving rows
+   * into the consumer-allocated output C structs. A null predicate result drops the row, as SQL
+   * {@code WHERE} requires.
+   *
+   * @param handle a handle from {@link #createFilterExpression}
+   * @param inArrayAddress address of the input {@code ArrowArray} C struct
+   * @param inSchemaAddress address of the input {@code ArrowSchema} C struct
+   * @param outArrayAddress address of the consumer-allocated output {@code ArrowArray} C struct
+   * @param outSchemaAddress address of the consumer-allocated output {@code ArrowSchema} C struct
+   */
+  public static native void filterExpression(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  /** Releases a compiled predicate handle and its native state. */
+  public static native void closeFilterExpression(long handle);
+
+  /**
    * Imports a whole multi-column batch the JVM exported and exports an equal batch back into the
    * consumer-allocated C structs, exercising batch transfer beyond a single column.
    *
