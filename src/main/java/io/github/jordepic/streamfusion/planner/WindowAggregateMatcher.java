@@ -149,9 +149,11 @@ final class WindowAggregateMatcher {
         return false;
       }
       // AVG has multi-field partial state, so it is only supported as a lone aggregate; and the
-      // native AVG is integer-division, so it only applies to a bigint value (this also keeps AVG
-      // off int, whose truncating average is not yet wired).
-      if (kind == KIND_AVG && (multiple || valueType != SqlTypeName.BIGINT)) {
+      // native AVG is integer-division (truncating to the input type), so it only applies to an
+      // integer value — bigint or int, not double.
+      if (kind == KIND_AVG
+          && (multiple
+              || (valueType != SqlTypeName.BIGINT && valueType != SqlTypeName.INTEGER))) {
         return false;
       }
     }

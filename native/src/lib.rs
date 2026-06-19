@@ -77,21 +77,39 @@ fn build_builtin(kind: i64, value_type: &DataType) -> AggregateFunctionExpr {
         .expect("failed to build aggregate")
 }
 
-/// Average of an int64 column matching the host engine's semantics: integer division of the sum by
-/// the count, truncating toward zero (Flink returns the integer type for AVG of integers, not a
-/// float). The two-field partial state (sum, count) rides the general checkpoint path.
-#[derive(Debug, Default)]
+/// Average of an integer column matching the host engine's semantics: the sum accumulates in int64,
+/// then integer division by the count truncates toward zero and the result is cast back to the
+/// input integer type (Flink returns the integer type for AVG of integers, not a float). The
+/// two-field partial state (sum, count) rides the general checkpoint path. `result_type` is the
+/// input integer type (Int64 or Int32).
+#[derive(Debug)]
 struct IntegerAvgAccumulator {
     sum: i64,
     count: i64,
+    result_type: DataType,
+}
+
+impl IntegerAvgAccumulator {
+    fn new(result_type: DataType) -> Self {
+        IntegerAvgAccumulator { sum: 0, count: 0, result_type }
+    }
 }
 
 impl Accumulator for IntegerAvgAccumulator {
     fn update_batch(&mut self, values: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let array = values[0].as_any().downcast_ref::<Int64Array>().expect("value must be int64");
-        for value in array.iter().flatten() {
-            self.sum += value;
-            self.count += 1;
+        // The value column is the input integer type; sum widens to int64 regardless (as Flink does).
+        if self.result_type == DataType::Int32 {
+            let array = values[0].as_any().downcast_ref::<Int32Array>().expect("value must be int32");
+            for value in array.iter().flatten() {
+                self.sum += i64::from(value);
+                self.count += 1;
+            }
+        } else {
+            let array = values[0].as_any().downcast_ref::<Int64Array>().expect("value must be int64");
+            for value in array.iter().flatten() {
+                self.sum += value;
+                self.count += 1;
+            }
         }
         Ok(())
     }
@@ -109,7 +127,12 @@ impl Accumulator for IntegerAvgAccumulator {
     }
 
     fn evaluate(&mut self) -> datafusion::common::Result<ScalarValue> {
-        Ok(ScalarValue::Int64((self.count != 0).then(|| self.sum / self.count)))
+        let average = (self.count != 0).then(|| self.sum / self.count);
+        Ok(if self.result_type == DataType::Int32 {
+            ScalarValue::Int32(average.map(|a| a as i32))
+        } else {
+            ScalarValue::Int64(average)
+        })
     }
 
     fn size(&self) -> usize {
@@ -165,7 +188,7 @@ impl Accumulator for WrappingIntSumAccumulator {
 /// partial state, so windows accumulate incrementally and checkpoint uniformly.
 enum WindowAggregate {
     Builtin(AggregateFunctionExpr),
-    IntegerAvg,
+    IntegerAvg(DataType),
     WrappingIntSum,
 }
 
@@ -175,7 +198,8 @@ impl WindowAggregate {
             // SUM over int32 keeps the host's narrow, wrapping semantics rather than widening.
             0 if *value_type == DataType::Int32 => WindowAggregate::WrappingIntSum,
             0..=3 => WindowAggregate::Builtin(build_builtin(kind, value_type)),
-            4 => WindowAggregate::IntegerAvg,
+            // Integer AVG returns the input integer type (truncating); carry it for the result.
+            4 => WindowAggregate::IntegerAvg(value_type.clone()),
             other => panic!("unsupported aggregate kind: {other}"),
         }
     }
@@ -185,7 +209,9 @@ impl WindowAggregate {
             WindowAggregate::Builtin(aggregate) => {
                 aggregate.create_accumulator().expect("failed to create accumulator")
             }
-            WindowAggregate::IntegerAvg => Box::<IntegerAvgAccumulator>::default(),
+            WindowAggregate::IntegerAvg(result_type) => {
+                Box::new(IntegerAvgAccumulator::new(result_type.clone()))
+            }
             WindowAggregate::WrappingIntSum => Box::<WrappingIntSumAccumulator>::default(),
         }
     }
@@ -198,7 +224,7 @@ impl WindowAggregate {
                 .iter()
                 .map(|field| field.as_ref().clone())
                 .collect(),
-            WindowAggregate::IntegerAvg => vec![
+            WindowAggregate::IntegerAvg(_) => vec![
                 Field::new("sum", DataType::Int64, true),
                 Field::new("count", DataType::Int64, true),
             ],
@@ -213,7 +239,7 @@ impl WindowAggregate {
     fn result_type(&self) -> DataType {
         match self {
             WindowAggregate::Builtin(aggregate) => aggregate.field().data_type().clone(),
-            WindowAggregate::IntegerAvg => DataType::Int64,
+            WindowAggregate::IntegerAvg(result_type) => result_type.clone(),
             WindowAggregate::WrappingIntSum => DataType::Int32,
         }
     }
