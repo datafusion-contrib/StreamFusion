@@ -1686,6 +1686,23 @@ pub mod bench {
             self.0.flush(watermark)
         }
     }
+
+    /// A session-window aggregator driven by `update`/`flush`.
+    pub struct Session(SessionAggregator);
+
+    impl Session {
+        pub fn new(gap_millis: i64, value_type: i64, kinds: Vec<i64>) -> Self {
+            Session(SessionAggregator::new(gap_millis, value_type, kinds))
+        }
+
+        pub fn update(&mut self, batch: &RecordBatch) {
+            self.0.update(batch);
+        }
+
+        pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+            self.0.flush(watermark)
+        }
+    }
 }
 
 #[cfg(test)]

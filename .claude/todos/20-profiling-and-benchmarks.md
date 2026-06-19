@@ -47,7 +47,12 @@ vs. Flink fallback, tracked over time so a regression is visible.
   apply once those have benches.
 - **[fixed]** `windows_for` allocated a `Vec` per row in the update loop. Reusing one
   buffer across rows cut the tumbling bench ~26% (244 → 181 µs / 17 → 22.6 Melem/s).
-- **Not a problem:** the accumulator update is already vectorized — rows are grouped
+- **Session `update` slices one row at a time.** The session bench
+  (`session/sum_keyed_update_flush`) is ~10× slower per element than tumbling because
+  `update` does a `take` per row instead of once per group; batching that slice is the
+  session operator's first target. (Its grouping hash is negligible here, so `ahash` was
+  not applied to it.)
+- **Not a problem:** the tumbling accumulator update is already vectorized — rows are grouped
   per (window, key), then a single `take` + `update_batch` per group, so accumulators
   see batches, not individual rows. Don't "optimize" this without numbers.
 

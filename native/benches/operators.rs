@@ -7,7 +7,7 @@ use std::sync::Arc;
 use arrow::array::{ArrayRef, Int64Array, RecordBatch};
 use arrow::datatypes::{DataType, Field, Schema};
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
-use streamfusion::bench::{Filter, Tumbling};
+use streamfusion::bench::{Filter, Session, Tumbling};
 
 const ROWS: usize = 4096;
 
@@ -103,5 +103,45 @@ fn bench_tumbling_keyed(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_filter, bench_tumbling, bench_tumbling_keyed);
+// Session SUM grouped by a key: each row opens a gap-wide window and merges any it bridges.
+fn bench_session_keyed(c: &mut Criterion) {
+    let gap_millis = 500;
+    let ts: Vec<i64> = (0..ROWS as i64).map(|i| i * 100).collect();
+    let value: Vec<i64> = (0..ROWS as i64).collect();
+    let key: Vec<i64> = (0..ROWS as i64).map(|i| i % 64).collect();
+    let ts_col: ArrayRef = Arc::new(Int64Array::from(ts));
+    let value_col: ArrayRef = Arc::new(Int64Array::from(value));
+    let key_col: ArrayRef = Arc::new(Int64Array::from(key));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("ts", DataType::Int64, true),
+            Field::new("value", DataType::Int64, true),
+            Field::new("key0", DataType::Int64, true),
+        ])),
+        vec![ts_col, value_col, key_col],
+    )
+    .unwrap();
+
+    let mut group = c.benchmark_group("session");
+    group.throughput(Throughput::Elements(ROWS as u64));
+    group.bench_function("sum_keyed_update_flush", |b| {
+        b.iter_batched(
+            || Session::new(gap_millis, 0, vec![0]),
+            |mut aggregator| {
+                aggregator.update(black_box(&batch));
+                black_box(aggregator.flush(i64::MAX));
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_filter,
+    bench_tumbling,
+    bench_tumbling_keyed,
+    bench_session_keyed
+);
 criterion_main!(benches);
