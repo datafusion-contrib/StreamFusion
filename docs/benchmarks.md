@@ -27,6 +27,8 @@ Current benches:
 - `tumbling/sum_update_flush` — a tumbling `SUM` over 16 windows: one `update` of a
   4096-row batch followed by a `flush` of all closed windows, from fresh state each
   iteration.
+- `tumbling/sum_keyed_update_flush` — the same, grouped by a bigint key (64 distinct
+  values), so it exercises the per-row grouping-key path the unkeyed bench does not.
 
 ### Results
 
@@ -37,14 +39,22 @@ Numbers are only comparable within a machine; record the host (CPU) alongside.
 | Benchmark | Rows/batch | Time/batch | Elements/s | Notes |
 |---|---|---|---|---|
 | `filter/gt_literal` | 4096 | 2.56 µs | ~1.60 Gelem/s | compiled predicate, ~50% selectivity |
-| `tumbling/sum_update_flush` | 4096 | 181 µs | ~22.6 Melem/s | 16 windows, single key |
+| `tumbling/sum_update_flush` | 4096 | 171 µs | ~23.9 Melem/s | 16 windows, no key |
+| `tumbling/sum_keyed_update_flush` | 4096 | 323 µs | ~12.7 Melem/s | 16 windows, 64 bigint keys |
 
-The gap between the two is the signal: the filter is a compiled expression plus one
-Arrow kernel, while the tumbling aggregator allocates a `GroupKey` (`Vec<ScalarValue>`)
-per row and hashes it to group — the per-row key cost flagged in the [profiling
-ticket](../.claude/todos/20-profiling-and-benchmarks.md). Reusing the per-row window
-buffer (rather than allocating one per row) already cut the tumbling time ~26% (244 →
-181 µs); the remaining per-row key allocation/hashing is the next target.
+The gap between filter and aggregation is the signal: the filter is a compiled
+expression plus one Arrow kernel, while the tumbling aggregator allocates a `GroupKey`
+(`Vec<ScalarValue>`) per row and hashes it to group — and the keyed case costs ~1.9× the
+unkeyed one for exactly that reason. Two allocation cuts so far:
+
+- reusing the per-row window buffer instead of allocating one per row (~26% off the
+  unkeyed path);
+- moving the row's key into its last window instead of cloning it for every window
+  (~18% off the keyed path, ~6% off the unkeyed).
+
+The remaining per-row `GroupKey` allocation and composite-key hashing is the next
+target (row-format or dictionary-encoded keys) — see the [profiling
+ticket](../.claude/todos/20-profiling-and-benchmarks.md).
 
 ## End-to-end parity timing
 

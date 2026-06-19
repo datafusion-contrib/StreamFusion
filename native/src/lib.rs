@@ -355,10 +355,15 @@ impl TumblingAggregator {
         let mut grouped: HashMap<(i64, i64, GroupKey), Vec<u32>> = HashMap::new();
         let mut windows = Vec::new();
         for row in 0..batch.num_rows() {
-            let key = read_key(&key_arrays, row);
+            let mut key = read_key(&key_arrays, row);
             self.windows_for(ts.value(row), &mut windows);
-            for &(start, end) in &windows {
-                grouped.entry((start, end, key.clone())).or_default().push(row as u32);
+            // Move the row's key into its last window rather than cloning for every one; tumbling has
+            // a single window, so this drops the per-row key clone entirely in the common case.
+            let last = windows.len().saturating_sub(1);
+            for index in 0..windows.len() {
+                let (start, end) = windows[index];
+                let owned = if index == last { std::mem::take(&mut key) } else { key.clone() };
+                grouped.entry((start, end, owned)).or_default().push(row as u32);
             }
         }
         for ((start, end, key), rows) in grouped {

@@ -16,10 +16,11 @@ vs. Flink fallback, tracked over time so a regression is visible.
 
 ## What to build
 1. **Native micro-benchmarks** (Criterion, in `native/benches/`). ✅ STARTED —
-   harness in `native/benches/operators.rs` with `filter/gt_literal` and
-   `tumbling/sum_update_flush`, run via `cargo bench`, documented in
-   [docs/benchmarks.md](../../docs/benchmarks.md). Remaining: session and two-phase
-   local/global benches, and committing a results table from a quiet machine.
+   harness in `native/benches/operators.rs` with `filter/gt_literal`,
+   `tumbling/sum_update_flush`, and `tumbling/sum_keyed_update_flush`, run via
+   `cargo bench`, documented in [docs/benchmarks.md](../../docs/benchmarks.md) and the
+   readme. Remaining: session and two-phase local/global benches, and committing a
+   results table from a quiet machine.
 2. **A lightweight native timing/counter hook** behind a feature flag — per-operator
    batch count, row count, and wall time, dumpable on close — so we can profile a
    real job without a full tracing dependency. Keep it zero-cost when the flag is off.
@@ -38,9 +39,11 @@ vs. Flink fallback, tracked over time so a regression is visible.
   but are superseded (filterBatch) or demos — remove once the planner routes through
   the expression handle.
 - **Per-row key allocation.** The aggregator `update` builds a `GroupKey`
-  (`Vec<ScalarValue>`, and a `String` per row for string keys) for every row, and
-  clones it once per overlapping window. Inherent to keyed aggregation; the standard
-  fix (row-format or dictionary-encoded keys) is a later optimization, measure first.
+  (`Vec<ScalarValue>`, and a `String` per row for string keys) for every row. The
+  per-window *clone* of it is now gone (moved into the last window — ~18% off the keyed
+  bench), but the per-row allocation and composite-key hashing remain. The keyed bench
+  (`tumbling/sum_keyed_update_flush`) costs ~1.9× the unkeyed one; row-format or
+  dictionary-encoded keys are the next target. Measure with that bench.
 - **[fixed]** `windows_for` allocated a `Vec` per row in the update loop. Reusing one
   buffer across rows cut the tumbling bench ~26% (244 → 181 µs / 17 → 22.6 Melem/s).
 - **Not a problem:** the accumulator update is already vectorized — rows are grouped

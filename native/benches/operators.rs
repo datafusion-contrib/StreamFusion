@@ -68,5 +68,40 @@ fn bench_tumbling(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_filter, bench_tumbling);
+// Tumbling SUM grouped by a key column: this is the path that allocates a grouping key per row,
+// so it measures the keyed hot loop the no-key bench above does not.
+fn bench_tumbling_keyed(c: &mut Criterion) {
+    let window_millis = 1000;
+    let ts: Vec<i64> = (0..ROWS as i64).map(|i| (i % 16) * window_millis + (i % window_millis)).collect();
+    let value: Vec<i64> = (0..ROWS as i64).collect();
+    let key: Vec<i64> = (0..ROWS as i64).map(|i| i % 64).collect();
+    let ts_col: ArrayRef = Arc::new(Int64Array::from(ts));
+    let value_col: ArrayRef = Arc::new(Int64Array::from(value));
+    let key_col: ArrayRef = Arc::new(Int64Array::from(key));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("ts", DataType::Int64, true),
+            Field::new("value", DataType::Int64, true),
+            Field::new("key0", DataType::Int64, true),
+        ])),
+        vec![ts_col, value_col, key_col],
+    )
+    .unwrap();
+
+    let mut group = c.benchmark_group("tumbling");
+    group.throughput(Throughput::Elements(ROWS as u64));
+    group.bench_function("sum_keyed_update_flush", |b| {
+        b.iter_batched(
+            || Tumbling::new(window_millis, 0, vec![0]),
+            |mut aggregator| {
+                aggregator.update(black_box(&batch));
+                black_box(aggregator.flush(i64::MAX));
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.finish();
+}
+
+criterion_group!(benches, bench_filter, bench_tumbling, bench_tumbling_keyed);
 criterion_main!(benches);
