@@ -15,6 +15,7 @@ otherwise it runs on Flink unchanged.
 | Operator | Accelerated | Terms |
 |---|---|---|
 | Projection | Demo only | Single integer input column; the projection is exactly `col * 2`. (A proof of the projection path, not a general projection yet.) |
+| Filter (`WHERE`) | Single comparison | A pure filter (identity projection) whose predicate is one comparison of a numeric column against a literal (`>` `>=` `<` `<=` `=` `<>`, either operand order). The whole row is carried through Arrow, so every input column must be a type the [whole-row converter](src/main/java/io/github/jordepic/streamfusion/operator/RowDataArrowConverter.java) handles (the primitives, boolean, string). Compound/non-comparison predicates, projections, and other column types fall back. |
 | Tumbling window aggregate | Yes | Event-time `TUMBLE` over a local-time-zone (rowtime) attribute; one or more aggregates over the same value column — `SUM` / `MIN` / `MAX` / `COUNT` (and `AVG` only as a lone aggregate); grouped by the window, optionally plus one or more bigint/int/string keys. Value-type support is the parity intersection in [docs/aggregate-type-support.md](docs/aggregate-type-support.md): all five over bigint/double, and `SUM`/`MIN`/`MAX`/`COUNT` over int (`SUM` keeps the host's wrapping int semantics, `AVG` its integer-truncating semantics). `AVG` applies only to integer values (bigint/int), never double. |
 | Hopping window aggregate | Yes | Same as tumbling, with `HOP`. One-phase assigns each row to its overlapping windows; two-phase (the default plan) pre-aggregates per slice and combines the shared slices of each window, requiring the slide to divide the size (other ratios fall back). |
 | Session window aggregate | Yes | Same aggregate/key/value terms as tumbling, with `SESSION` (optionally `PARTITION BY` one or more bigint keys). Each element opens a gap-wide window; overlapping or touching windows merge, including when a late element bridges two open sessions. Always single-phase (the host never splits sessions), so no `ONE_PHASE` is needed. |
@@ -33,7 +34,7 @@ model (a per-slice local, a global that combines each window's slices).
 
 ### Not yet accelerated (falls back to Flink)
 
-- SQL filters (a native filter exists but is not yet wired into planning)
+- Compound or non-comparison `WHERE` predicates (only a single column-vs-literal comparison is native); general projections beyond the doubling demo
 - Two-phase (slice-sharing) cumulative windows, and two-phase hopping where the slide does not divide the size
 - Grouping keys other than bigint/int/string (e.g. decimal, timestamp), aggregates over different value columns, or `COUNT(*)`
 - `AVG` over int, and any aggregate over smallint/tinyint/float/decimal — see [docs/aggregate-type-support.md](docs/aggregate-type-support.md)

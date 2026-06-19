@@ -31,7 +31,8 @@ is picked up. Operators are in `~/data/arroyo/crates/arroyo-worker/src/arrow/`.
       async pattern, not the synchronous stateful path
 
 ## Stateless
-- [ ] Filter routed from SQL (ticket 08)
+- [x] Filter routed from SQL — single column-vs-literal comparison, whole-row
+      converter (ticket 18). General predicates/projections remain.
 - [ ] Richer projections (beyond the demo doubling) and expressions
 
 ## Connectors (later)

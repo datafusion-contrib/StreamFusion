@@ -1,6 +1,9 @@
 # Filter (WHERE) routing + whole-row columnar conversion
 
-**Status:** open — design ready; build in green stages
+**Status:** core DONE — whole-row converter (stage 1), native `filterBatch`
+(stage 2), and the operator/planner/matcher (stage 3) all landed and
+parity-verified for a single column-vs-literal comparison. What remains is the
+"Later" list below (general predicates, general projection, more column types).
 **Source:** ticket 08 (filter), and the foundational whole-row conversion that
 keep-chains/native-shuffle (tickets 09/10) also need.
 
