@@ -1278,6 +1278,30 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeFilterEx
     }
 }
 
+/// Encodes a single Arrow batch to a Parquet file. The core of the native columnar sink: the batch
+/// is written in its columnar form directly, skipping the host's row-to-Parquet encoding.
+fn write_parquet(batch: &RecordBatch, path: &str) {
+    let file = std::fs::File::create(path).expect("failed to create parquet file");
+    let mut writer = parquet::arrow::ArrowWriter::try_new(file, batch.schema(), None)
+        .expect("failed to create parquet writer");
+    writer.write(batch).expect("failed to write batch");
+    writer.close().expect("failed to close parquet writer");
+}
+
+/// Writes an Arrow batch the JVM exported to a Parquet file at `path`.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_writeParquet<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    path: JString<'local>,
+) {
+    let batch = import_record_batch(in_array_address, in_schema_address);
+    let path: String = env.get_string(&path).expect("failed to read path").into();
+    write_parquet(&batch, &path);
+}
+
 /// Runs an event-time tumbling-window sum over a batch from the JVM: rows are bucketed by the start
 /// of the `window_millis`-wide window their `ts` falls in, and `value` is summed per bucket. This
 /// is the first aggregating operator and the core of the initial target envelope.
@@ -1781,6 +1805,29 @@ mod tests {
         let kept = out.column(0).as_any().downcast_ref::<Int32Array>().unwrap();
         // 30*2=60 > 50 keeps 30; 2e9*2 overflows int32 to a negative value, excluded.
         assert_eq!(kept.values(), &[30]);
+    }
+
+    // The native sink writes a batch to Parquet; reading it back yields the same rows.
+    #[test]
+    fn writes_and_reads_parquet() {
+        use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+        let batch = sample_batch();
+        let path = std::env::temp_dir().join("streamfusion_parquet_roundtrip.parquet");
+        let path = path.to_str().unwrap();
+        write_parquet(&batch, path);
+
+        let file = std::fs::File::open(path).unwrap();
+        let reader = ParquetRecordBatchReaderBuilder::try_new(file).unwrap().build().unwrap();
+        let mut rows = 0usize;
+        let mut first = Vec::new();
+        for read in reader {
+            let read = read.unwrap();
+            let column = read.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+            first.extend_from_slice(column.values());
+            rows += read.num_rows();
+        }
+        assert_eq!(rows, batch.num_rows());
+        assert_eq!(first, values(&batch, 0));
     }
 
     // The compiled predicate is cached after the first batch and reused.

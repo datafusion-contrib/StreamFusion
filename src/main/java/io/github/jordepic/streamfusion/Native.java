@@ -113,6 +113,17 @@ public final class Native {
   public static native void closeFilterExpression(long handle);
 
   /**
+   * Writes an Arrow batch the JVM exported to a Parquet file at {@code path}, encoding it in its
+   * columnar form directly rather than through the host's row-to-Parquet path. The core of the
+   * native columnar sink.
+   *
+   * @param inArrayAddress address of the input {@code ArrowArray} C struct
+   * @param inSchemaAddress address of the input {@code ArrowSchema} C struct
+   * @param path filesystem path of the Parquet file to write
+   */
+  public static native void writeParquet(long inArrayAddress, long inSchemaAddress, String path);
+
+  /**
    * Imports a whole multi-column batch the JVM exported and exports an equal batch back into the
    * consumer-allocated C structs, exercising batch transfer beyond a single column.
    *
