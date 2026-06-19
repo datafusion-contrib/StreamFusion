@@ -90,10 +90,15 @@ sink.
 
 Build order (each green + benchmarked vs Flink):
 1. **Native Parquet sink.** Arrow `RecordBatch` → Parquet via the `parquet` crate (done,
-   round-trip tested), and a Flink sink operator that batches its input to Arrow and writes
-   natively, one file per flush (done, harness-tested). Remaining: checkpoint-aligned commit
-   for exactly-once streaming, planner sink substitution (new — only operators are
-   substituted today), and the benchmark vs Flink's filesystem+parquet sink.
+   round-trip tested); a Flink sink operator that batches its input to Arrow and writes
+   natively (done); exactly-once two-phase commit — in-progress files committed on
+   checkpoint completion, pending files re-committed on recovery (done, harness-tested).
+   Remaining: planner sink substitution (new — only operators are substituted today), and
+   the benchmark vs Flink's filesystem+parquet sink. **Benchmark blocker:** Flink's Parquet
+   writer is built on `parquet-hadoop`, so the baseline needs `hadoop-common` on the
+   classpath (declared `provided` in `flink-parquet`); adding Hadoop is a deliberate
+   dependency decision, and Flink finalizes Parquet files only on checkpoint, so the
+   comparison must run with checkpointing on.
 2. **Native Kafka → Arrow source.** Batch Kafka records, deserialize, transpose to Arrow
    once at the source. Deserialization format is the main scoping fork — the cluster uses
    Avro + schema registry (heavy); a first cut may use a simpler/known schema. This is the
