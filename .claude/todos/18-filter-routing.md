@@ -56,10 +56,16 @@ column vs a numeric literal.
 - Non-identity projections, compound/non-comparison predicates, and unsupported
   column types fall back cleanly. Insert-only gate still applies.
 
+## Done beyond the core
+- Conjunctions of comparisons (AND-flattening), string equality/inequality
+  literals, SEARCH/Sarg expansion (so `BETWEEN`/ranges route), and **column
+  subset/reorder projection alongside the filter** (`SELECT a, c FROM t WHERE …`).
+
 ## Later (separate tickets)
-- General predicate translation (AND/OR/NOT, arithmetic, CAST, functions) — a
+- General predicate translation (OR/NOT, arithmetic, CAST, functions) — a
   Comet-style expression layer (we hand-translate rather than use Substrait; see
-  divergences for the Substrait rationale).
-- General projection (beyond identity); then chaining filter+project+aggregate
+  divergences for the Substrait rationale). This also unlocks equality (`=`),
+  which today constant-folds the column into the projection.
+- General (expression/constant) projection; then chaining filter+project+aggregate
   natively without RowData round-trips (tickets 09/10).
 - Decimal/timestamp/nested column types in the converter.
