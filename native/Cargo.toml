@@ -14,6 +14,8 @@ arrow = { version = "58", features = ["ffi"] }
 datafusion = "53.1.0"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 futures = "0.3"
+# Fast hashing for the per-row grouping map (the same hasher arrow/datafusion use internally).
+ahash = "0.8"
 
 [dev-dependencies]
 criterion = "0.5"

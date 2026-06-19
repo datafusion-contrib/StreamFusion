@@ -40,10 +40,11 @@ vs. Flink fallback, tracked over time so a regression is visible.
   the expression handle.
 - **Per-row key allocation.** The aggregator `update` builds a `GroupKey`
   (`Vec<ScalarValue>`, and a `String` per row for string keys) for every row. The
-  per-window *clone* of it is now gone (moved into the last window — ~18% off the keyed
-  bench), but the per-row allocation and composite-key hashing remain. The keyed bench
-  (`tumbling/sum_keyed_update_flush`) costs ~1.9× the unkeyed one; row-format or
-  dictionary-encoded keys are the next target. Measure with that bench.
+  per-window *clone* is gone (moved into the last window) and the grouping map now uses a
+  fast hash (`ahash`) instead of SipHash, but the per-row `Vec` allocation remains. The
+  keyed bench still costs ~2.4× the unkeyed one; row-format or dictionary-encoded keys are
+  the next target. The same `ahash` swap likely helps the session/partial grouping maps —
+  apply once those have benches.
 - **[fixed]** `windows_for` allocated a `Vec` per row in the update loop. Reusing one
   buffer across rows cut the tumbling bench ~26% (244 → 181 µs / 17 → 22.6 Melem/s).
 - **Not a problem:** the accumulator update is already vectorized — rows are grouped

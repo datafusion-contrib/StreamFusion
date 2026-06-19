@@ -50,8 +50,8 @@ in-memory Arrow batch (no JVM bridge, no job scheduling), via Criterion — run 
 | Operator | Benchmark | Batch | Time | Throughput |
 |---|---|---|---|---|
 | Filter (`WHERE`) | compiled predicate `v > 0`, ~50% pass | 4096 rows | 2.56 µs | ~1.60 Gelem/s |
-| Tumbling window aggregate | `SUM` over 16 windows, no key | 4096 rows | 171 µs | ~23.9 Melem/s |
-| Tumbling window aggregate | `SUM` over 16 windows, 64 bigint keys | 4096 rows | 323 µs | ~12.7 Melem/s |
+| Tumbling window aggregate | `SUM` over 16 windows, no key | 4096 rows | 110 µs | ~37.4 Melem/s |
+| Tumbling window aggregate | `SUM` over 16 windows, 64 bigint keys | 4096 rows | 262 µs | ~15.7 Melem/s |
 
 _Apple M1 Max; numbers are comparable only within a machine._
 

@@ -352,7 +352,7 @@ impl TumblingAggregator {
 
         // Group the row positions for each (window, key); the value column is sliced by type-
         // agnostic take, so the accumulators see the value column's own type (int, double, ...).
-        let mut grouped: HashMap<(i64, i64, GroupKey), Vec<u32>> = HashMap::new();
+        let mut grouped: ahash::HashMap<(i64, i64, GroupKey), Vec<u32>> = ahash::HashMap::default();
         let mut windows = Vec::new();
         for row in 0..batch.num_rows() {
             let mut key = read_key(&key_arrays, row);
