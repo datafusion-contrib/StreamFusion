@@ -89,16 +89,27 @@ Add those deps for the A/B; the native side adds a Kafka→Arrow source and an A
 sink.
 
 Build order (each green + benchmarked vs Flink):
-1. **Native Parquet sink.** Arrow `RecordBatch` → Parquet via the `parquet` crate; a Flink
-   sink that batches its input to Arrow and writes natively. Substituting a sink is new
-   (so far only operators are substituted). Benchmark Arrow-native write vs Flink's
-   filesystem+parquet sink.
+1. **Native Parquet sink.** Arrow `RecordBatch` → Parquet via the `parquet` crate (done,
+   round-trip tested), and a Flink sink operator that batches its input to Arrow and writes
+   natively, one file per flush (done, harness-tested). Remaining: checkpoint-aligned commit
+   for exactly-once streaming, planner sink substitution (new — only operators are
+   substituted today), and the benchmark vs Flink's filesystem+parquet sink.
 2. **Native Kafka → Arrow source.** Batch Kafka records, deserialize, transpose to Arrow
    once at the source. Deserialization format is the main scoping fork — the cluster uses
    Avro + schema registry (heavy); a first cut may use a simpler/known schema. This is the
    single source-side transpose in the row→columnar case.
 3. **Join them.** Kafka → (optional native filter) → Parquet, fully columnar between the
    two transposes; benchmark vs the equivalent Flink job.
+
+## Back burner: a fully native Kafka source (no JNI)
+The Kafka→Arrow source above batches and transposes *on the JVM side*, then hands Arrow
+across JNI. A more efficient endpoint would subscribe to Kafka *in Rust* and build Arrow
+batches natively — no per-record JVM work, no JNI on the hot path — decoding Avro with a
+fast Rust Avro→Arrow library (the ecosystem has efficient ones). The hard part is not the
+I/O but faithfully reproducing the Flink Kafka source's semantics (offset/partition
+assignment, checkpoint-aligned commits, exactly-once, watermark generation); worth doing
+only if we can lift those from Arroyo's Rust Kafka connector rather than reimplement them.
+On the back burner until the JVM-side source and the sink prove the columnar win.
 
 ## Later phases
 - **Columnar source (Iceberg/Parquet) as Arrow** — a DataFusion scan instead of Flink
