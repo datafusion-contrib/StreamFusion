@@ -43,12 +43,16 @@ host — verified by the parity harness.
 - [05 — Cumulative windows](05-cumulative-windows.md) — net-new operator neither influence has; built against Flink's semantics alone.
 - [06 — Two-phase slice-sharing](06-two-phase-slice-sharing.md) — hopping's local/global intermediate reverse-engineered from Flink, not Arroyo's raw re-aggregation.
 - [07 — Expression encoding + compile-once](07-expression-encoding-and-compile-once.md) — hand-encoded IR following Comet (not Substrait), compiled once per operator.
+- [08 — Fused native subtree](08-fused-native-subtree.md) — keep columnar by fusing a native subtree into one operator, since Flink has no columnar exchange framework to lean on like Comet does.
 
 ## Known transitional gap (not yet a deliberate divergence)
 
 We currently substitute native operators individually and transpose Arrow↔RowData
-at each operator boundary. Comet's architecture keeps *full columnar chains*
-native and only transposes at the native↔host edges. We agree with Comet here and
-intend to converge; this is tracked in `.claude/todos/09-acceleration-policy-keep-chains.md`
-and `.claude/todos/10-native-columnar-shuffle.md`, not recorded as a divergence,
-because it is an unfinished optimization rather than a decision to differ.
+at each operator boundary — which the end-to-end benchmark showed makes a single
+substituted operator *slower* than Flink. Comet keeps *full columnar chains* native
+and only transposes at the native↔host edges; we agree with the goal but reach it by
+fusing a native subtree (Flink has no columnar exchange framework to lean on) — see
+[08](08-fused-native-subtree.md) for the mechanism and
+`.claude/todos/21-native-operator-chaining.md` for the phased plan. It stays a tracked
+optimization rather than a divergence in *intent*; only the *mechanism* (fusion vs a
+columnar exchange type) is the recorded divergence.
