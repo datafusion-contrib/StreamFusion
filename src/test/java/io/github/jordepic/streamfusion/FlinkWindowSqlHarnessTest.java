@@ -82,6 +82,16 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
+  void intKeyTumblingMatchesHost() throws Exception {
+    // An int grouping key: keyed natively as int64 but emitted back as INT to match the host.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT qty, window_start, window_end, SUM(`value`) AS s "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY qty, window_start, window_end");
+  }
+
+  @Test
   void twoKeyTumblingMatchesHost() throws Exception {
     // GROUP BY two bigint keys plus the window: the native composite key must match the host.
     NativeParity.assertParity(

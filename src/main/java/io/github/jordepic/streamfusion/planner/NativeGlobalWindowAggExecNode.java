@@ -1,6 +1,7 @@
 package io.github.jordepic.streamfusion.planner;
 
 import io.github.jordepic.streamfusion.operator.NativeGlobalWindowAggregateOperator;
+import io.github.jordepic.streamfusion.operator.NativeWindowOperatorBase;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -70,6 +71,7 @@ public class NativeGlobalWindowAggExecNode extends ExecNodeBase<RowData>
             windowMillis,
             slideMillis,
             keyColumns,
+            NativeWindowOperatorBase.keyTypes((RowType) getOutputType(), keyColumns.length),
             partialColumns,
             sliceEndColumn,
             aggregateKinds,

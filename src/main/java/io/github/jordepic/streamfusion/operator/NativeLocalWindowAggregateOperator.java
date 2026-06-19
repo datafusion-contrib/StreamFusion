@@ -22,6 +22,7 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
   private final int timeColumn;
   private final int valueColumn;
   private final int[] keyColumns;
+  private final int[] keyTypes;
 
   public NativeLocalWindowAggregateOperator(
       long windowMillis,
@@ -29,6 +30,7 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
       int timeColumn,
       int valueColumn,
       int[] keyColumns,
+      int[] keyTypes,
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
@@ -44,11 +46,12 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
     this.keyColumns = keyColumns;
+    this.keyTypes = keyTypes;
   }
 
   @Override
   protected void pushBatch(List<RowData> rows) {
-    updateRaw(rows, timeColumn, valueColumn, keyColumns);
+    updateRaw(rows, timeColumn, valueColumn, keyColumns, keyTypes);
   }
 
   @Override
@@ -75,7 +78,7 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
           GenericRowData row = new GenericRowData(keyCount + aggregates + 1);
           int field = 0;
           for (int j = 0; j < keyCount; j++) {
-            row.setField(field++, keys[j].get(i));
+            row.setField(field++, boxKey(keys[j].get(i), keyTypes[j]));
           }
           for (int a = 0; a < aggregates; a++) {
             row.setField(field++, partials[a].get(i));

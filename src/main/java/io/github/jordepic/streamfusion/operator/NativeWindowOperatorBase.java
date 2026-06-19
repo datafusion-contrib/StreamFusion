@@ -29,6 +29,8 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.TimestampData;
+import org.apache.flink.table.types.logical.LogicalTypeRoot;
+import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Shared scaffolding for the native tumbling-window operators. It owns the native aggregator handle
@@ -200,7 +202,7 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
    * the single-phase and local operators, which both consume raw input.
    */
   protected final void updateRaw(
-      List<RowData> rows, int timeColumn, int valueColumn, int[] keyColumns) {
+      List<RowData> rows, int timeColumn, int valueColumn, int[] keyColumns, int[] keyTypes) {
     BigIntVector ts = new BigIntVector("ts", allocator);
     FieldVector value;
     if (valueType == TYPE_DOUBLE) {
@@ -232,13 +234,40 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
           ((BigIntVector) value).setSafe(i, row.getLong(valueColumn));
         }
         for (int j = 0; j < keyColumns.length; j++) {
-          keys[j].setSafe(i, row.getLong(keyColumns[j]));
+          keys[j].setSafe(i, readKey(row, keyColumns[j], keyTypes[j]));
         }
       }
       root.setRowCount(rows.size());
       Data.exportVectorSchemaRoot(allocator, root, dictionaries, array, schema);
       updateHandle(array.memoryAddress(), schema.memoryAddress());
     }
+  }
+
+  /**
+   * The grouping-key type codes for an aggregate's first {@code keyCount} output columns (the keys
+   * lead the row in the host's order). Bigint and int keys are both carried as int64 natively; the
+   * code records the type to read on input and emit on output.
+   */
+  public static int[] keyTypes(RowType outputType, int keyCount) {
+    int[] types = new int[keyCount];
+    for (int j = 0; j < keyCount; j++) {
+      types[j] =
+          outputType.getTypeAt(j).getTypeRoot() == LogicalTypeRoot.INTEGER ? TYPE_INT : TYPE_BIGINT;
+    }
+    return types;
+  }
+
+  /** Reads a grouping key from the input row, widening an int to long (the native key is int64). */
+  protected static long readKey(RowData row, int column, int keyType) {
+    return keyType == TYPE_INT ? row.getInt(column) : row.getLong(column);
+  }
+
+  /** Boxes a native int64 key back to the emitted column's type (Integer for int, else Long). */
+  protected static Object boxKey(long value, int keyType) {
+    if (keyType == TYPE_INT) {
+      return (int) value;
+    }
+    return value;
   }
 
   /** Reads a result/partial cell, boxing by the column's type so RowData gets Long or Double. */
@@ -258,7 +287,8 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
    * carries the window end explicitly (windows of the same start can differ by it), so every window
    * operator — single-phase, global, and session — shares this path.
    */
-  protected final void emitFinal(long watermark, int keyCount) {
+  protected final void emitFinal(long watermark, int[] keyTypes) {
+    int keyCount = keyTypes.length;
     int aggregates = aggregateCount();
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
@@ -281,7 +311,7 @@ public abstract class NativeWindowOperatorBase extends AbstractStreamOperator<Ro
           GenericRowData row = new GenericRowData(keyCount + aggregates + 2);
           int field = 0;
           for (int j = 0; j < keyCount; j++) {
-            row.setField(field++, keys[j].get(i));
+            row.setField(field++, boxKey(keys[j].get(i), keyTypes[j]));
           }
           for (int a = 0; a < aggregates; a++) {
             row.setField(field++, readScalar(results[a], i));

@@ -43,7 +43,8 @@ final class GlobalWindowAggregateMatcher {
       return false;
     }
     for (int column : grouping) {
-      if (inputType.getFieldList().get(column).getType().getSqlTypeName() != SqlTypeName.BIGINT) {
+      SqlTypeName type = inputType.getFieldList().get(column).getType().getSqlTypeName();
+      if (type != SqlTypeName.BIGINT && type != SqlTypeName.INTEGER) {
         return false;
       }
     }

@@ -125,7 +125,7 @@ final class WindowAggregateMatcher {
         != LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
       return false;
     }
-    if (aggCalls.isEmpty() || !allBigintKeys(grouping, inputType)) {
+    if (aggCalls.isEmpty() || !supportedKeys(grouping, inputType)) {
       return false;
     }
 
@@ -225,10 +225,11 @@ final class WindowAggregateMatcher {
     return grouping;
   }
 
-  /** True if every grouping column is a bigint (the only key type supported so far). */
-  private static boolean allBigintKeys(int[] grouping, RelDataType inputType) {
+  /** True if every grouping column is an integer-family key (bigint or int) the native side keys on. */
+  private static boolean supportedKeys(int[] grouping, RelDataType inputType) {
     for (int column : grouping) {
-      if (inputType.getFieldList().get(column).getType().getSqlTypeName() != SqlTypeName.BIGINT) {
+      SqlTypeName type = inputType.getFieldList().get(column).getType().getSqlTypeName();
+      if (type != SqlTypeName.BIGINT && type != SqlTypeName.INTEGER) {
         return false;
       }
     }

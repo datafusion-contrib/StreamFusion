@@ -19,6 +19,7 @@ import org.apache.flink.table.data.RowData;
 public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBase {
 
   private final int[] keyColumns;
+  private final int[] keyTypes;
   private final int[] partialColumns;
   private final int sliceEndColumn;
 
@@ -26,6 +27,7 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
       long windowMillis,
       long slideMillis,
       int[] keyColumns,
+      int[] keyTypes,
       int[] partialColumns,
       int sliceEndColumn,
       int[] aggregateKinds,
@@ -41,6 +43,7 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
         timeZoneId,
         batchSize);
     this.keyColumns = keyColumns;
+    this.keyTypes = keyTypes;
     this.partialColumns = partialColumns;
     this.sliceEndColumn = sliceEndColumn;
   }
@@ -81,7 +84,7 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
       for (int i = 0; i < rows.size(); i++) {
         RowData row = rows.get(i);
         for (int j = 0; j < keyCount; j++) {
-          keys[j].set(i, row.getLong(keyColumns[j]));
+          keys[j].set(i, readKey(row, keyColumns[j], keyTypes[j]));
         }
         for (int a = 0; a < aggregates; a++) {
           partials[a].set(i, row.getLong(partialColumns[a]));
@@ -96,6 +99,6 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
 
   @Override
   protected void emitClosedWindows(long watermark) {
-    emitFinal(watermark, keyColumns.length);
+    emitFinal(watermark, keyTypes);
   }
 }

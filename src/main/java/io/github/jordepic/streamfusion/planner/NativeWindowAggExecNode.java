@@ -1,6 +1,7 @@
 package io.github.jordepic.streamfusion.planner;
 
 import io.github.jordepic.streamfusion.operator.NativeWindowAggregateOperator;
+import io.github.jordepic.streamfusion.operator.NativeWindowOperatorBase;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -83,6 +84,7 @@ public class NativeWindowAggExecNode extends ExecNodeBase<RowData>
             timeColumn,
             valueColumn,
             keyColumns,
+            NativeWindowOperatorBase.keyTypes((RowType) getOutputType(), keyColumns.length),
             valueType,
             aggregateKinds,
             timeZoneId,

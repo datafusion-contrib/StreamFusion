@@ -15,12 +15,14 @@ public class NativeSessionWindowAggregateOperator extends NativeWindowOperatorBa
   private final int timeColumn;
   private final int valueColumn;
   private final int[] keyColumns;
+  private final int[] keyTypes;
 
   public NativeSessionWindowAggregateOperator(
       long gapMillis,
       int timeColumn,
       int valueColumn,
       int[] keyColumns,
+      int[] keyTypes,
       int valueType,
       int[] aggregateKinds,
       String timeZoneId,
@@ -38,6 +40,7 @@ public class NativeSessionWindowAggregateOperator extends NativeWindowOperatorBa
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
     this.keyColumns = keyColumns;
+    this.keyTypes = keyTypes;
   }
 
   @Override
@@ -72,11 +75,11 @@ public class NativeSessionWindowAggregateOperator extends NativeWindowOperatorBa
 
   @Override
   protected void pushBatch(List<RowData> rows) {
-    updateRaw(rows, timeColumn, valueColumn, keyColumns);
+    updateRaw(rows, timeColumn, valueColumn, keyColumns, keyTypes);
   }
 
   @Override
   protected void emitClosedWindows(long watermark) {
-    emitFinal(watermark, keyColumns.length);
+    emitFinal(watermark, keyTypes);
   }
 }
