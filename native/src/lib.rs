@@ -801,6 +801,45 @@ impl SessionAggregator {
 /// Scalars (rather than int64s) so the key can hold any column type — int/bigint/string/….
 type GroupKey = Vec<ScalarValue>;
 
+/// The partition a key maps to, by a consistent hash of the key values. The hash is internal — it
+/// only distributes rows across partitions and need not match Flink's, because the downstream keyed
+/// consumer is our own native operator that re-groups internally (see todo 10). A fixed-seed hasher
+/// keeps the mapping identical across subtasks/processes.
+fn partition_for_key(key: &GroupKey, num_partitions: usize) -> usize {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hasher);
+    (hasher.finish() % num_partitions as u64) as usize
+}
+
+/// Splits a batch into up to `num_partitions` sub-batches by a consistent hash of the given key
+/// columns, so every row with the same key lands in the same partition. Each sub-batch keeps the
+/// full input schema (a row subset); empty partitions are omitted. This is the by-key split the
+/// columnar shuffle routes to channels.
+fn partition_batch(
+    batch: &RecordBatch,
+    key_columns: &[usize],
+    num_partitions: usize,
+) -> Vec<(usize, RecordBatch)> {
+    let key_arrays: Vec<&ArrayRef> = key_columns.iter().map(|&i| batch.column(i)).collect();
+    let mut rows_by_partition: Vec<Vec<u32>> = vec![Vec::new(); num_partitions];
+    for row in 0..batch.num_rows() {
+        let partition = partition_for_key(&read_key(&key_arrays, row), num_partitions);
+        rows_by_partition[partition].push(row as u32);
+    }
+    let mut out = Vec::new();
+    for (partition, rows) in rows_by_partition.into_iter().enumerate() {
+        if rows.is_empty() {
+            continue;
+        }
+        let indices = UInt32Array::from(rows);
+        let columns: Vec<ArrayRef> =
+            batch.columns().iter().map(|c| take(c, &indices, None).expect("take")).collect();
+        out.push((partition, RecordBatch::try_new(batch.schema(), columns).expect("sub batch")));
+    }
+    out
+}
+
 /// The key columns (`key0`, `key1`, …) present in a batch, in order, as generic arrays. Their count
 /// is the grouping arity; an unkeyed (window-only) aggregation has none.
 fn key_arrays<'a>(batch: &'a RecordBatch) -> Vec<&'a ArrayRef> {
@@ -1984,6 +2023,43 @@ mod tests {
             read,
             write
         );
+    }
+
+    // The by-key split sends every row with the same key to the same partition and preserves all
+    // rows, for any partition count.
+    #[test]
+    fn partitions_a_batch_by_key() {
+        use std::collections::HashMap;
+        let n = 1000usize;
+        let key: ArrayRef = Arc::new(Int64Array::from((0..n as i64).map(|i| i % 37).collect::<Vec<_>>()));
+        let value: ArrayRef = Arc::new(Int64Array::from((0..n as i64).collect::<Vec<_>>()));
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("k", DataType::Int64, true),
+                Field::new("v", DataType::Int64, true),
+            ])),
+            vec![key, value],
+        )
+        .unwrap();
+
+        for num_partitions in [1usize, 3, 8] {
+            let parts = partition_batch(&batch, &[0], num_partitions);
+            let mut rows = 0usize;
+            let mut key_to_partition: HashMap<i64, usize> = HashMap::new();
+            for (partition, sub) in &parts {
+                assert!(*partition < num_partitions);
+                let keys = sub.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+                for i in 0..sub.num_rows() {
+                    // Each key is consistently assigned to one partition.
+                    let prev = key_to_partition.insert(keys.value(i), *partition);
+                    if let Some(p) = prev {
+                        assert_eq!(p, *partition, "key {} split across partitions", keys.value(i));
+                    }
+                }
+                rows += sub.num_rows();
+            }
+            assert_eq!(rows, n, "all rows preserved for {num_partitions} partitions");
+        }
     }
 
     // The Parquet source reads back every batch written across a directory's files.
