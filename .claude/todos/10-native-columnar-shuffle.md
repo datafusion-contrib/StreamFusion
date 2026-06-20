@@ -95,16 +95,19 @@ partitioner at runtime; the split uses our own `hash(key) % numberOfChannels`.
   identical; verify with the parity harness at parallelism > 1.
 
 ## Build slices
-1. **Phase 1**: columnar single-channel keyed exchange (parallelism 1) + route a columnar window
-   onto it; parity-test a `GROUP BY key, window` query at parallelism 1 (columnar source/filter →
-   window). This is also what ticket 21's columnar-windows item is gated on. (Coupled to the
-   window-operator columnar conversion — ticket 21.)
-2. **Phase 2a**: native `partition_batch(batch, key_cols, key_types, num_partitions)` →
-   `Vec<(partition, batch)>` using a consistent hash of the key columns (`% num_partitions`); NO
-   Flink-hash reproduction. Unit-test that the same key always maps to the same partition and that
-   every row's key lands in its sub-batch.
-3. **Phase 2b**: the split operator + custom `StreamPartitioner<ArrowBatch>`; parity-test at
-   parallelism > 1 that the result set equals Flink's (distribution differs, result is identical).
+- **Native by-key split** ✅ DONE — `partition_batch(batch, key_cols, num_partitions)` →
+  `Vec<(partition, batch)>` via a fixed-seed consistent hash (no Flink-hash reproduction). Rust-
+  tested: a key never splits across partitions, all rows preserved, any partition count.
+- **Columnar exchange mechanism** ✅ DONE — `SplitByKeyGroupOperator` (Arrow→Arrow, emits per-channel
+  sub-batches tagged with destination via the native split over JNI) + `ColumnarKeyGroupPartitioner`
+  (`StreamPartitioner<ArrowBatch>` routing by the tag). Harness-tested: key→single channel, rows
+  preserved, partitioner routes by tag.
+- **Planner integration (remaining):** replace a keyed `StreamExecExchange` with the columnar
+  exchange (split operator + `PartitionTransformation` using the partitioner), **coupled to
+  converting the downstream window to `ColumnarInput`** (ticket 21) — a columnar exchange must only
+  ever feed a native columnar window, never a fallen-back Flink one. Parity-test `GROUP BY key,
+  window` at parallelism 1 (single channel) and > 1 (split); the result set equals Flink's even
+  though the distribution differs. This is the end-to-end step that lights up columnar windows.
 
 ## Interaction
 - Enables ticket 09 (a native chain spans a shuffle and stays columnar) and ticket 21's

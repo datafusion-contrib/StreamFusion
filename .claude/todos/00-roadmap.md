@@ -18,10 +18,12 @@ here when the ticket is deleted.
   Parquet sink (row source) 1.05×, bare filter 0.83×.
 
 ## Next, roughly in order
-1. **Columnar shuffle — Arrow across the keyBy/exchange** (ticket 10). The central gate: it
-   unblocks columnar windows AND two-phase local→global staying columnar. Approach (Arroyo):
-   `Message = Data(batch) | Signal(watermark|barrier)`, Arrow IPC on the wire, split a batch by
-   key with `sort_to_indices → take → slice`. Hardest remaining piece.
+1. **Columnar shuffle — Arrow across the keyBy/exchange** (ticket 10). **Mechanism DONE** (native
+   by-key split + `SplitByKeyGroupOperator` + `ColumnarKeyGroupPartitioner`, tested). The hash is a
+   plain consistent hash (no Flink-hash reproduction needed — it only distributes work; the keyed
+   consumer is our own native operator). **Remaining: planner integration** — replace a keyed
+   `StreamExecExchange` with the columnar exchange, coupled to converting the downstream window to
+   `ColumnarInput` (item 2). That end-to-end step lights up columnar windows + columnar two-phase.
 2. **Columnar windows** (ticket 21, gated on #1). Convert the window operators to `Arrow → Arrow`
    + mark `ColumnarInput`/`ColumnarOutput`, so a filter→window chain and the windowed input edge
    stay columnar. Blocked on #1 because windows sit downstream of a keyBy.
