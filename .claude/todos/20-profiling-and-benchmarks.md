@@ -57,6 +57,11 @@ vs. Flink fallback, tracked over time so a regression is visible.
 - **Not a problem:** the tumbling accumulator update is already vectorized — rows are grouped
   per (window, key), then a single `take` + `update_batch` per group, so accumulators
   see batches, not individual rows. Don't "optimize" this without numbers.
+- **Whole-row converter is cell-at-a-time (Java).** `RowDataArrowConverter` reads/writes one
+  cell at a time with per-cell type dispatch; this is the cost of every row↔columnar transpose
+  (ticket 21). A column-vectorized rewrite would speed it up. **Not** a native/JNI candidate —
+  the row side is JVM `RowData`, so the work is irreducibly on the JVM (see ticket 21). Java
+  optimization only; bench the transpose before/after.
 
 ## Acceptance criteria
 - `cargo bench` runs the native operator benches and prints rows/s per operator.

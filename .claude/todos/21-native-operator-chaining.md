@@ -76,6 +76,14 @@ sequence of columnar operators with no per-combination knowledge. See
    by an IPC round-trip. Self-contained, no planner changes. ← first
 2. **Transpose operators.** `RowData → Arrow` (buffer rows, convert via the whole-row
    converter, emit a batch) and `Arrow → RowData` (read a batch back to rows). Harness-tested.
+   **These stay in Java — a native transpose cannot help.** Its row side is JVM `RowData`
+   (read per-cell on the JVM) and `GenericRowData` (allocated on the JVM); native code can do
+   neither, so going to Rust adds a JNI hop per row/field on top of the irreducible JVM access.
+   The columnar half (writing Arrow off-heap from Java) is already cheap. The way to make a
+   boundary native is to remove the row side entirely — a native columnar source/sink (slice 5),
+   not a native transpose. The only transpose lever is Java-side: the converter is cell-at-a-time;
+   a column-vectorized converter would speed it up (Flink's `ArrowUtils` does this but bundles a
+   conflicting Arrow version — why we hand-rolled). Track that as a perf item, not a native one.
 3. **One native operator to `Arrow → Arrow` + `ColumnarRel` + the transition-inserter pass.**
    Refactor the filter to consume/produce `ArrowBatch`; mark it columnar; second pass inserts
    transposes around it. Parity-test a single-filter query — identical results, plan shows
