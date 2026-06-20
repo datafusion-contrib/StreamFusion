@@ -14,13 +14,20 @@ convert; no operator knows anything about its neighbours beyond "is this edge co
 ## What we do
 The same model. Each native operator is **columnar**: it consumes and produces Arrow
 batches (a columnar stream-record type), not `RowData`. Adjacent columnar operators flow
-Arrow straight through — within a chained task Flink passes the batch object directly (no
-serialization); across a network edge the batch is carried by an Arrow IPC serializer. At
-a **rowwise↔columnar boundary** the planner inserts a transpose operator (`RowData →
-Arrow` entering the columnar region, `Arrow → RowData` leaving it). A columnar source
-produces Arrow with no input transpose; a columnar sink consumes Arrow with no output
-transpose. An operator is simply rowwise or columnar — *no further detail about what it is
-adjacent to matters*, and the framework composes them.
+Arrow straight through — within a chained task Flink hands the batch to the next operator
+in-memory (by reference with object reuse, else an in-memory `copy()`); a *byte*
+serializer (Arrow IPC) runs only across a network edge. At a **rowwise↔columnar boundary**
+the planner inserts a transpose operator (`RowData → Arrow` entering the columnar region,
+`Arrow → RowData` leaving it). A columnar source produces Arrow with no input transpose; a
+columnar sink consumes Arrow with no output transpose. An operator is simply rowwise or
+columnar — *no further detail about what it is adjacent to matters*, and the framework
+composes them.
+
+The batch serializer's `copy()` is **identity** (it returns the same batch): our operators
+emit a fresh batch per record and never retain or mutate it after emit, and the serializer
+is used only on native↔native edges, so the general copy contract does not need a real
+clone. This avoids forcing the global object-reuse flag (which would also change the host
+operators' semantics) — a deliberate choice the chained-pass relies on.
 
 Flink has no columnar-execution framework to lean on (its runtime exchanges `RowData`),
 so we provide the two missing pieces ourselves: the columnar stream-record type, and the
@@ -44,8 +51,9 @@ because the planner recognizes the trio.
   only in the transpose operators at region boundaries.
 - The planner inserts a transpose wherever a substituted (columnar) operator meets a
   rowwise one — including at columnar sources/sinks, where there is none to insert.
-- A fused operator that contains a stateful node still owns that node's state/checkpointing
-  ([04](04-synchronous-stateful-execution.md)); columnar flow changes the *edge* type, not
-  the state model.
+- A columnar operator that contains a stateful node still owns that node's
+  state/checkpointing ([04](04-synchronous-stateful-execution.md)); columnar flow changes
+  the *edge* type, not the state model.
 - Arrow across a shuffle (two-phase local→global) is where the columnar record type needs
-  its IPC serializer; within a chained task no serializer is invoked.
+  its IPC byte serializer; within a chained task only an in-memory hand-off (reference or
+  `copy()`) happens, never byte serialization.

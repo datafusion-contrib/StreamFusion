@@ -42,7 +42,47 @@ transition insertion — ourselves.
 *combinations* (source+sink, filter+window, …) into a bespoke fused node per shape is a
 hardcoded replacement rule that does not generalize — a smell. Columnar flow composes any
 sequence of columnar operators with no per-combination knowledge. See
-[divergences/08](../../divergences/08-fused-native-subtree.md).
+[divergences/08](../../divergences/08-columnar-flow-transitions.md).
+
+## Mechanism (validated against Flink 2.2 + Arroyo source)
+- **Zero serialization in a chain.** Chained operators pass the `StreamRecord` value by
+  reference through `ChainingOutput` when object reuse is on; with it off,
+  `CopyingChainingOutput` calls `TypeSerializer.copy()`. The Arrow-batch serializer's real
+  serialize/deserialize is invoked *only* across a network edge — so within a native chain
+  no bytes are ever serialized. Guarantee the chain with a forward partitioner, equal
+  parallelism, `ChainingStrategy.ALWAYS`, and the default slot-sharing group.
+- **Serializer surface.** The columnar record needs a `TypeInformation`/`TypeSerializer`.
+  `copy()` can be identity — our producers emit a fresh batch per record and never retain
+  or mutate it after emit, and the serializer is used only on native↔native edges — and
+  `serialize`/`deserialize` use Arrow IPC, exercised only at a shuffle. (Decide object-reuse
+  vs identity-copy when wiring; identity-copy is safe here and avoids a global flag.)
+- **Two-pass planner.** Pass 1 substitutes and marks native rels `ColumnarRel`. Pass 2
+  walks the rewritten tree and inserts a transpose wherever a `ColumnarRel` and a
+  non-`ColumnarRel` are adjacent (direction by which side is the producer). Logical
+  `RelDataType` is identical across a transpose — only the physical `TypeInformation`
+  (set in `translateToPlanInternal` via `InternalTypeInfo`/a new `ArrowBatchTypeInfo`)
+  differs, and Flink never re-derives the element type from `RelDataType`, so adjacent exec
+  nodes exchanging a non-`RowData` carrier is safe.
+- **Single-operator parity.** `transpose(R→A) → op(A→A) → transpose(A→R)` runs the same two
+  conversions as today's inline operator; only between adjacent native operators do the
+  conversions vanish. So the refactor is behavior-preserving by construction.
+- **Shuffle shape (Arroyo, for the later phase).** Inter-operator message is
+  `Data(batch) | Signal(watermark|barrier|…)`; network uses Arrow IPC; a keyed shuffle
+  splits a batch by key with `sort_to_indices → take → slice` into per-partition batches.
+
+## Build slices (each green)
+1. **`ArrowBatch` record type + `ArrowBatchTypeInfo`/serializer.** Holds a
+   `VectorSchemaRoot`; serializer does Arrow IPC ser/de and identity `copy()`. Unit-tested
+   by an IPC round-trip. Self-contained, no planner changes. ← first
+2. **Transpose operators.** `RowData → Arrow` (buffer rows, convert via the whole-row
+   converter, emit a batch) and `Arrow → RowData` (read a batch back to rows). Harness-tested.
+3. **One native operator to `Arrow → Arrow` + `ColumnarRel` + the transition-inserter pass.**
+   Refactor the filter to consume/produce `ArrowBatch`; mark it columnar; second pass inserts
+   transposes around it. Parity-test a single-filter query — identical results, plan shows
+   `transpose → filter → transpose`.
+4. **Remaining native operators to `Arrow → Arrow`** (windows, sink), so multi-native chains
+   drop the inter-operator conversions.
+5. **Columnar Parquet source**, then **Arrow across the shuffle**.
 
 ## What anchors the columnar region — the source and sink formats
 The conversion is a tax whose *placement* is dictated by the endpoint formats, not by the
