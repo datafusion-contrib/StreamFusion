@@ -64,14 +64,14 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     return producer;
   }
 
-  /** Whether a rel produces Arrow batches (a native columnar operator, or a row→Arrow transpose). */
+  /** Whether a rel produces Arrow batches (a native columnar operator, a columnar source, or a transpose). */
   private static boolean emitsColumnar(RelNode node) {
-    return node instanceof ColumnarRel || node instanceof StreamPhysicalRowDataToArrow;
+    return node instanceof ColumnarOutput;
   }
 
-  /** Whether a rel consumes Arrow batches (a native columnar operator, or an Arrow→row transpose). */
+  /** Whether a rel consumes Arrow batches (a native columnar operator, a columnar sink, or a transpose). */
   private static boolean consumesColumnar(RelNode node) {
-    return node instanceof ColumnarRel || node instanceof StreamPhysicalArrowToRowData;
+    return node instanceof ColumnarInput;
   }
 
   private RelNode rewrite(RelNode node) {

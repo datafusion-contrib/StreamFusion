@@ -6,6 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
@@ -29,6 +33,11 @@ class NativeParquetSinkOperatorTest {
     return row;
   }
 
+  private static ArrowBatch batch(BufferAllocator allocator, RowData... rows) {
+    VectorSchemaRoot root = RowDataArrowConverter.write(List.of(rows), SCHEMA, allocator);
+    return new ArrowBatch(root);
+  }
+
   private static File[] visibleFiles(Path directory) {
     File[] files = directory.toFile().listFiles((dir, name) -> name.endsWith(".parquet"));
     return files == null ? new File[0] : files;
@@ -37,18 +46,19 @@ class NativeParquetSinkOperatorTest {
   @Test
   void commitsFilesOnlyWhenTheCheckpointCompletes() throws Exception {
     Path directory = Files.createTempDirectory("streamfusion-sink");
-    NativeParquetSinkOperator operator =
-        new NativeParquetSinkOperator(SCHEMA, directory.toString(), 2);
-    try (OneInputStreamOperatorTestHarness<RowData, Object> harness =
-        new OneInputStreamOperatorTestHarness<>(operator)) {
+    try (BufferAllocator allocator = new RootAllocator();
+        OneInputStreamOperatorTestHarness<ArrowBatch, Object> harness =
+            new OneInputStreamOperatorTestHarness<>(
+                new NativeParquetSinkOperator(directory.toString()), new ArrowBatchSerializer())) {
+      harness.setup();
       harness.open();
-      for (int i = 0; i < 5; i++) {
-        harness.processElement(new StreamRecord<>(row(i, i * 10)));
-      }
-      // Two batches flushed to in-progress files, but nothing is visible before a checkpoint.
+      // Three batches → three in-progress files, but nothing visible before a checkpoint.
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 10), row(2, 20))));
+      harness.processElement(new StreamRecord<>(batch(allocator, row(3, 30), row(4, 40))));
+      harness.processElement(new StreamRecord<>(batch(allocator, row(5, 50))));
       assertEquals(0, visibleFiles(directory).length, "nothing visible before checkpoint");
 
-      harness.snapshot(1L, 1L); // flushes the remainder and records the in-progress set
+      harness.snapshot(1L, 1L);
       assertEquals(0, visibleFiles(directory).length, "still nothing visible at snapshot");
 
       harness.notifyOfCompletedCheckpoint(1L);
@@ -63,21 +73,22 @@ class NativeParquetSinkOperatorTest {
   void commitsPendingFilesOnRecovery() throws Exception {
     Path directory = Files.createTempDirectory("streamfusion-sink");
     OperatorSubtaskState snapshot;
-    try (OneInputStreamOperatorTestHarness<RowData, Object> harness =
-        new OneInputStreamOperatorTestHarness<>(
-            new NativeParquetSinkOperator(SCHEMA, directory.toString(), 2))) {
+    try (BufferAllocator allocator = new RootAllocator();
+        OneInputStreamOperatorTestHarness<ArrowBatch, Object> harness =
+            new OneInputStreamOperatorTestHarness<>(
+                new NativeParquetSinkOperator(directory.toString()), new ArrowBatchSerializer())) {
+      harness.setup();
       harness.open();
-      for (int i = 0; i < 3; i++) {
-        harness.processElement(new StreamRecord<>(row(i, i * 10)));
-      }
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 10), row(2, 20))));
+      harness.processElement(new StreamRecord<>(batch(allocator, row(3, 30))));
       snapshot = harness.snapshot(1L, 1L); // records the in-progress files; no completion follows
     }
     assertEquals(0, visibleFiles(directory).length, "a crash before completion leaves nothing visible");
 
     // A fresh operator restored from the snapshot commits the files the checkpoint recorded.
-    try (OneInputStreamOperatorTestHarness<RowData, Object> restored =
+    try (OneInputStreamOperatorTestHarness<ArrowBatch, Object> restored =
         new OneInputStreamOperatorTestHarness<>(
-            new NativeParquetSinkOperator(SCHEMA, directory.toString(), 2))) {
+            new NativeParquetSinkOperator(directory.toString()), new ArrowBatchSerializer())) {
       restored.initializeState(snapshot);
       restored.open();
       assertEquals(2, visibleFiles(directory).length, "recovered checkpoint's files are committed");

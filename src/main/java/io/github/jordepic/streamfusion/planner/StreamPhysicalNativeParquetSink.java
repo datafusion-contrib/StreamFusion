@@ -17,7 +17,8 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
  * replaced sink's row type and traits and carries the output path; the native operator writes the
  * incoming rows to Parquet directly. Stateless with respect to event time, so it needs no watermark.
  */
-public class StreamPhysicalNativeParquetSink extends SingleRel implements StreamPhysicalRel {
+public class StreamPhysicalNativeParquetSink extends SingleRel
+    implements StreamPhysicalRel, ColumnarInput {
 
   private final RelDataType outputRowType;
   private final String path;
@@ -56,7 +57,6 @@ public class StreamPhysicalNativeParquetSink extends SingleRel implements Stream
         InputProperty.DEFAULT,
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
         getRelDetailedDescription(),
-        FlinkTypeFactory$.MODULE$.toLogicalRowType(getInput().getRowType()),
         path);
   }
 }

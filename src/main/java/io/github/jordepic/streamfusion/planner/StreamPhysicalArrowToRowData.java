@@ -17,7 +17,8 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
  * pass where a rowwise operator consumes from a columnar one. The logical row type is unchanged —
  * only the physical carrier returns to rows.
  */
-public class StreamPhysicalArrowToRowData extends SingleRel implements StreamPhysicalRel {
+public class StreamPhysicalArrowToRowData extends SingleRel
+    implements StreamPhysicalRel, ColumnarInput {
 
   public StreamPhysicalArrowToRowData(RelOptCluster cluster, RelTraitSet traitSet, RelNode input) {
     super(cluster, traitSet, input);

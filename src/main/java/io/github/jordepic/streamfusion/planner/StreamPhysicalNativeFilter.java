@@ -18,7 +18,8 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
  * encoded predicate expression the operator compiles and applies. Stateless, so it needs no
  * watermark.
  */
-public class StreamPhysicalNativeFilter extends SingleRel implements StreamPhysicalRel, ColumnarRel {
+public class StreamPhysicalNativeFilter extends SingleRel
+    implements StreamPhysicalRel, ColumnarInput, ColumnarOutput {
 
   private final RelDataType outputRowType;
   private final int[] projection;
