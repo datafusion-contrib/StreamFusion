@@ -1,7 +1,14 @@
 # When to accelerate: keep columnar chains, avoid lone islands
 
-**Status:** open (design / policy)
+**Status:** open (design / policy) — now benchmark-informed.
 **Source:** user direction; inspiration from DataFusion Comet
+
+**Update:** the "keep columnar chains" *mechanism* is built (ticket 21: columnar flow with
+transposes only at boundaries). What remains here is the *policy*: release benchmarks show a lone
+stateless island with row endpoints on both sides runs < 1× (bare filter 0.83×), while operators
+doing real columnar work win (tumbling 1.21×, columnar copy 3.19×). Decide whether the planner
+should *refuse* to substitute an operator that would be an isolated island between two row
+endpoints (no adjacent native op, no columnar endpoint), since it cannot beat Flink there.
 
 ## Problem
 Today the planner substitutes each supported operator independently. Every

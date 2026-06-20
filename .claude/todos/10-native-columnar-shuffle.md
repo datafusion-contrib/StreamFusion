@@ -1,7 +1,21 @@
 # Native columnar shuffle: keep Arrow across the exchange
 
-**Status:** open (design)
+**Status:** open (design) — now the central gate (see [00-roadmap](00-roadmap.md) #1).
 **Source:** user direction — "I don't want to transpose all the time"
+
+## Why this is the gate now
+The columnar-flow mechanism (ticket 21) is built and proven for shuffle-free segments
+(`ArrowBatch` edges, transpose operators, transition pass). The remaining big unlock is
+carrying `ArrowBatch` across a keyed exchange. It blocks **two things**: keeping two-phase
+local→global columnar, and making the **window operators** columnar at all (they sit downstream
+of a keyBy, so their input edge is an exchange — ticket 21 windows are gated here).
+
+## Approach to use (validated against Arroyo)
+Arroyo's pattern, to adapt: inter-operator message is `Data(RecordBatch) | Signal(watermark |
+barrier | …)`; the network edge serializes batches with **Arrow IPC**; a keyed shuffle splits a
+batch by key with `sort_to_indices → take → slice` into one sub-batch per destination partition,
+then sends each. Our `ArrowBatchSerializer` already does the IPC half (it is invoked exactly on a
+non-chained/network edge). The new work is the by-key batch partitioner on the columnar stream.
 
 ## Problem
 When a shuffle sits between two native operators (e.g. two-phase aggregation:
