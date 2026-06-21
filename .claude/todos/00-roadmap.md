@@ -24,10 +24,10 @@ here when the ticket is deleted.
    consistent hash (no Flink-hash reproduction — it only distributes work; the keyed consumer is our
    own native operator). **Blocked on columnar watermarks:** the planner wiring to connect them
    (drop the keyed exchange, route the window through the columnar operator) can't trigger because a
-   windowed query's watermark arrives via a *rowwise* watermark-assigner (transposes the columnar
-   source back to rows) or `SOURCE_WATERMARK()` (source must emit watermarks — ours doesn't). So the
-   **next required piece is a columnar watermark-assigner or source watermark emission** (ticket 10);
-   then the drafted window wiring lights up and is parity-tested over a columnar Parquet source.
+   windowed query's watermark arrives via a *rowwise* `WatermarkAssignerOperator` (transposes the
+   columnar source back to rows). Flink's filesystem source does **not** emit watermarks (verified:
+   no `SupportsWatermarkPushDown`), so the Flink-faithful fix is a **columnar watermark-assigner**
+   (the Arrow→Arrow analog of Flink's operator), not source-emitted watermarks (ticket 10). Deferred.
 2. **Parquet sink file coalescing** (ticket 22). The sink writes one file per batch; buffer and
    roll by size/row-count so output file count is independent of read-batch size. Independent of
    the shuffle; improves output quality and throughput.
@@ -37,7 +37,9 @@ here when the ticket is deleted.
 4. **Wider value/key types** (ticket 04): SMALLINT/TINYINT/FLOAT `SUM`/`AVG`, DECIMAL/TIMESTAMP
    grouping keys, multiple value columns, `COUNT(*)`.
 5. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
-   filesystems (`hdfs:`/`s3:`) for the native source/sink; currently `file:` only.
+   filesystems (`hdfs:`/`s3:`) for the native source/sink; currently `file:` only. **Deferred by
+   direction until generalized operator support lands** — broaden what we can run (items 3–4 and the
+   ticket 11 operators) before broadening where we read/write.
 6. **Operator-level perf** (ticket 20 backlog): Java column-vectorized whole-row converter (the
    transpose is cell-at-a-time), per-row `GroupKey` allocation in aggregators, session `update`
    one-row `take` batching.

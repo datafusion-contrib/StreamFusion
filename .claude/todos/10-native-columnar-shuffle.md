@@ -104,21 +104,22 @@ partitioner at runtime; the split uses our own `hash(key) % numberOfChannels`.
   preserved, partitioner routes by tag.
 - **Columnar window operator** ✅ DONE (ticket 21) — `NativeColumnarWindowAggregateOperator`
   consumes Arrow batches and produces identical window aggregates; harness-verified.
-- **Planner integration (remaining) — blocked on columnar watermarks.** Wiring was drafted (a
-  `columnar` flag on the window exec node that drops the keyed exchange and does the split/partition
-  itself, a `ColumnarInput` window rel, and a rewrite that goes columnar when the window's input is
-  an exchange over a columnar source) but **reverted unbuilt**, because it cannot trigger end to end
-  yet:
-  - A windowed SQL query needs watermarks on the source. Flink realizes that as **either** a rowwise
-    `StreamPhysicalWatermarkAssigner` between source and window (which transposes the columnar source
-    back to rows — breaks the chain) **or** `SOURCE_WATERMARK()` (which needs the source to *emit*
-    watermarks — our native Parquet source doesn't, and the filesystem connector may not support it).
-  - **Prerequisite: columnar watermark handling** — either a columnar watermark-assigner operator
-    (Arrow→Arrow, computes the watermark from the time column without transposing) or the native
-    source emitting watermarks (e.g. `Watermark.MAX` at end-of-input for a bounded read, which fires
-    every window at the end — correct final results for a bounded job). With that, the window's input
-    edge stays columnar and the drafted wiring triggers; then parity-test `GROUP BY key, window` over
-    a columnar Parquet source at parallelism 1 (single channel) and > 1 (split).
+- **Planner integration (remaining) — blocked on a columnar watermark-assigner.** Wiring was drafted
+  (a `columnar` flag on the window exec node that drops the keyed exchange and does the
+  split/partition itself, a `ColumnarInput` window rel, and a rewrite that goes columnar when the
+  window's input is an exchange over a columnar source) but **reverted unbuilt**, because it cannot
+  trigger end to end yet, and the fix must stay Flink-faithful:
+  - **A Flink Parquet/filesystem source does not emit watermarks.** Verified: `FileSystemTableSource`
+    implements projection/limit/partition/filter/metadata pushdown but **not** `SupportsWatermarkPushDown`,
+    and no `flink-connectors/` source implements it. A windowed filesystem query's `WATERMARK FOR rt
+    AS <expr>` is realized as a separate **rowwise `WatermarkAssignerOperator`** between source and
+    window. So making our native source emit watermarks would diverge from Flink — do not do it.
+  - **Prerequisite: a columnar watermark-assigner** — the Arrow→Arrow analog of Flink's
+    `WatermarkAssignerOperator` (`flink-table-runtime/.../operators/wmassigners/`): compute the
+    watermark from the time column and pass batches through, so the columnar chain reaches the window
+    without transposing. With it, the window's input edge stays columnar and the drafted wiring
+    triggers; then parity-test `GROUP BY key, window` over a columnar Parquet source at parallelism 1
+    (single channel) and > 1 (split).
 
 ## Interaction
 - Enables ticket 09 (a native chain spans a shuffle and stays columnar) and ticket 21's
