@@ -92,8 +92,11 @@ run with `cd native && cargo bench`. Method and running table:
 | Filter (`WHERE`) | compiled predicate `v > 0`, ~50% pass | 4096 rows | 2.56 µs | ~1.60 Gelem/s |
 | Tumbling window aggregate | `SUM` over 16 windows, no key | 4096 rows | 110 µs | ~37.4 Melem/s |
 | Tumbling window aggregate | `SUM` over 16 windows, 64 bigint keys | 4096 rows | 262 µs | ~15.7 Melem/s |
+| Session window aggregate | `SUM`, 64 bigint keys, 500 ms gap | 4096 rows | 2.70 ms | ~1.5 Melem/s |
 
-The native compute itself is fast (a filter clears ~1.6 G elements/s).
+The native compute itself is fast (a filter clears ~1.6 G elements/s). The session
+aggregate is the outlier at ~1.5 Melem/s — its merge-on-overlap over a per-key
+`BTreeMap` of open sessions is far heavier than the aligned-window fold.
 
 ### End to end vs. Flink
 
@@ -149,8 +152,9 @@ Two commercial native Flink accelerators exist, both **closed source**:
 
 Where StreamFusion differs: it is **open source**, and every substitution is
 gated and verified for identical results against stock Flink by a parity harness
-rather than asserted. It is already native on **stateful windowing** — tumbling,
-hopping, session, and cumulative windows, one- and two-phase — which Iron Vector
-(stateless only) has not yet shipped. It is earlier-stage than Vera X and does not
+rather than asserted. It is already native on **stateful windowing** — tumbling and
+hopping (one- and two-phase), session, and cumulative windows — and event-time
+interval joins, which Iron Vector (stateless only) has not yet shipped. It is
+earlier-stage than Vera X and does not
 match its operator breadth or have published benchmarks, but its acceleration is
 auditable and parity-first by construction.
