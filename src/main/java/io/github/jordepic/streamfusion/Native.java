@@ -299,6 +299,32 @@ public final class Native {
       long windowMillis, long slideMillis, int valueType, int[] aggregateKinds, byte[] snapshot);
 
   /**
+   * Creates an event-time OVER aggregator (RANGE between unbounded preceding and current row),
+   * returning an opaque handle released with {@link #closeOverAggregator}.
+   *
+   * @param valueType value column type (see {@link #createTumblingAggregator})
+   * @param aggregateKinds aggregate codes (see {@link #createTumblingAggregator})
+   */
+  public static native long createOverAggregator(int valueType, int[] aggregateKinds);
+
+  /**
+   * Folds a batch of complete rows ({@code rt}, {@code value}) into the running accumulators and
+   * exports the per-row aggregate columns ({@code result0..}) in input order.
+   */
+  public static native void updateOverAggregator(
+      long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
+
+  /** Releases an OVER aggregator handle. */
+  public static native void closeOverAggregator(long handle);
+
+  /** Serializes an OVER aggregator's running state so it can be stored in a checkpoint. */
+  public static native byte[] snapshotOverAggregator(long handle);
+
+  /** Rebuilds an OVER aggregator from a snapshot and returns a fresh handle. */
+  public static native long restoreOverAggregator(
+      int valueType, int[] aggregateKinds, byte[] snapshot);
+
+  /**
    * Creates a stateful cumulative-window aggregator and returns an opaque handle. Cumulative windows
    * are nested windows of {@code stepMillis} growing up to {@code maxSizeMillis}, all sharing a
    * start. It shares the aligned-window engine — {@link #updateTumblingAggregator}, {@link

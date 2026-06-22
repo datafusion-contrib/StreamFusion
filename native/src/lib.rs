@@ -662,6 +662,54 @@ impl OverAggregator {
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build over result batch")
     }
+
+    /// Serializes the running accumulators (one row of partial state) for a checkpoint.
+    fn snapshot(&mut self) -> Vec<u8> {
+        let state_fields: Vec<Field> =
+            self.aggregates.iter().flat_map(WindowAggregate::state_fields).collect();
+        let mut state_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); state_fields.len()];
+        let mut column = 0;
+        for accumulator in self.accumulators.iter_mut() {
+            for scalar in accumulator.state().expect("state") {
+                state_columns[column].push(scalar);
+                column += 1;
+            }
+        }
+        let columns: Vec<ArrayRef> = state_columns
+            .into_iter()
+            .enumerate()
+            .map(|(index, scalars)| scalars_to_array(scalars, state_fields[index].data_type()))
+            .collect();
+        let batch = RecordBatch::try_new(Arc::new(Schema::new(state_fields)), columns)
+            .expect("failed to build over snapshot batch");
+        let mut buffer = Vec::new();
+        let mut writer = arrow::ipc::writer::StreamWriter::try_new(&mut buffer, &batch.schema())
+            .expect("failed to open over snapshot writer");
+        writer.write(&batch).expect("failed to write over snapshot");
+        writer.finish().expect("failed to finish over snapshot");
+        drop(writer);
+        buffer
+    }
+
+    fn restore(value_type: i64, kinds: Vec<i64>, bytes: &[u8]) -> Self {
+        let mut aggregator = OverAggregator::new(value_type, kinds);
+        let field_counts: Vec<usize> =
+            aggregator.aggregates.iter().map(|a| a.state_fields().len()).collect();
+        let reader = arrow::ipc::reader::StreamReader::try_new(bytes, None)
+            .expect("failed to open over snapshot reader");
+        for batch in reader {
+            let batch = batch.expect("failed to read over snapshot");
+            let mut column = 0;
+            for (i, accumulator) in aggregator.accumulators.iter_mut().enumerate() {
+                let count = field_counts[i];
+                let state: Vec<ArrayRef> =
+                    (column..column + count).map(|c| batch.column(c).slice(0, 1)).collect();
+                accumulator.merge_batch(&state).expect("failed to restore over accumulator");
+                column += count;
+            }
+        }
+        aggregator
+    }
 }
 
 /// One open session for a key: its end (the latest element's timestamp plus the gap) and the
@@ -2117,6 +2165,75 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreCumula
         kinds,
         &bytes,
     ))) as jlong
+}
+
+/// Creates a stateful OVER aggregator (event-time RANGE unbounded preceding) and returns a handle.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createOverAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    value_type: jint,
+    aggregate_kinds: JIntArray<'local>,
+) -> jlong {
+    let kinds = read_kinds(&env, &aggregate_kinds);
+    Box::into_raw(Box::new(OverAggregator::new(value_type as i64, kinds))) as jlong
+}
+
+/// Folds a batch of complete rows (`rt` + `value`) into the running accumulators and exports the
+/// per-row aggregate columns `[result0..]` (input row order) for the JVM to zip onto its rows.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateOverAggregator<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let aggregator = unsafe { &mut *(handle as *mut OverAggregator) };
+    let batch = import_record_batch(in_array_address, in_schema_address);
+    let result = aggregator.update(&batch);
+    export_record_batch(result, out_array_address, out_schema_address);
+}
+
+/// Releases the OVER aggregator and its native state.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeOverAggregator<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    unsafe {
+        drop(Box::from_raw(handle as *mut OverAggregator));
+    }
+}
+
+/// Serializes the OVER aggregator's running state so the JVM can store it in a checkpoint.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotOverAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jbyteArray {
+    let aggregator = unsafe { &mut *(handle as *mut OverAggregator) };
+    env.byte_array_from_slice(&aggregator.snapshot())
+        .expect("failed to allocate over snapshot array")
+        .into_raw()
+}
+
+/// Rebuilds an OVER aggregator from a snapshot taken by a prior run and returns a fresh handle.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreOverAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    value_type: jint,
+    aggregate_kinds: JIntArray<'local>,
+    snapshot: JByteArray<'local>,
+) -> jlong {
+    let kinds = read_kinds(&env, &aggregate_kinds);
+    let bytes = env.convert_byte_array(&snapshot).expect("failed to read over snapshot");
+    Box::into_raw(Box::new(OverAggregator::restore(value_type as i64, kinds, &bytes))) as jlong
 }
 
 /// Creates a stateful session-window aggregator and returns an opaque handle. As with the tumbling
