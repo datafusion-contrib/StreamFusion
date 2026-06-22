@@ -52,20 +52,42 @@ class NativeParquetSinkOperatorTest {
                 new NativeParquetSinkOperator(directory.toString()), new ArrowBatchSerializer())) {
       harness.setup();
       harness.open();
-      // Three batches → three in-progress files, but nothing visible before a checkpoint.
+      // Three batches coalesce into one open file (the default target is far higher); nothing is
+      // visible before a checkpoint.
       harness.processElement(new StreamRecord<>(batch(allocator, row(1, 10), row(2, 20))));
       harness.processElement(new StreamRecord<>(batch(allocator, row(3, 30), row(4, 40))));
       harness.processElement(new StreamRecord<>(batch(allocator, row(5, 50))));
       assertEquals(0, visibleFiles(directory).length, "nothing visible before checkpoint");
 
-      harness.snapshot(1L, 1L);
+      harness.snapshot(1L, 1L); // closes the open file and records it
       assertEquals(0, visibleFiles(directory).length, "still nothing visible at snapshot");
 
       harness.notifyOfCompletedCheckpoint(1L);
-      assertEquals(3, visibleFiles(directory).length, "all recorded files committed on completion");
+      assertEquals(1, visibleFiles(directory).length, "the coalesced file is committed on completion");
       for (File file : visibleFiles(directory)) {
         assertTrue(file.length() > 0, "committed parquet file should be non-empty");
       }
+    }
+  }
+
+  @Test
+  void rollsANewFileWhenTheRowTargetIsReached() throws Exception {
+    Path directory = Files.createTempDirectory("streamfusion-sink");
+    try (BufferAllocator allocator = new RootAllocator();
+        OneInputStreamOperatorTestHarness<ArrowBatch, Object> harness =
+            new OneInputStreamOperatorTestHarness<>(
+                new NativeParquetSinkOperator(directory.toString(), 2), new ArrowBatchSerializer())) {
+      harness.setup();
+      harness.open();
+      // Target is 2 rows: the first batch (2 rows) fills a file and rolls; the next two batches fill
+      // a second file (1 + 2 rows) and roll again — so the row count drives files, not the batches.
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 10), row(2, 20))));
+      harness.processElement(new StreamRecord<>(batch(allocator, row(3, 30))));
+      harness.processElement(new StreamRecord<>(batch(allocator, row(4, 40), row(5, 50))));
+
+      harness.snapshot(1L, 1L);
+      harness.notifyOfCompletedCheckpoint(1L);
+      assertEquals(2, visibleFiles(directory).length, "two files rolled at the row target");
     }
   }
 
@@ -81,17 +103,17 @@ class NativeParquetSinkOperatorTest {
       harness.open();
       harness.processElement(new StreamRecord<>(batch(allocator, row(1, 10), row(2, 20))));
       harness.processElement(new StreamRecord<>(batch(allocator, row(3, 30))));
-      snapshot = harness.snapshot(1L, 1L); // records the in-progress files; no completion follows
+      snapshot = harness.snapshot(1L, 1L); // closes and records the open file; no completion follows
     }
     assertEquals(0, visibleFiles(directory).length, "a crash before completion leaves nothing visible");
 
-    // A fresh operator restored from the snapshot commits the files the checkpoint recorded.
+    // A fresh operator restored from the snapshot commits the file the checkpoint recorded.
     try (OneInputStreamOperatorTestHarness<ArrowBatch, Object> restored =
         new OneInputStreamOperatorTestHarness<>(
             new NativeParquetSinkOperator(directory.toString()), new ArrowBatchSerializer())) {
       restored.initializeState(snapshot);
       restored.open();
-      assertEquals(2, visibleFiles(directory).length, "recovered checkpoint's files are committed");
+      assertEquals(1, visibleFiles(directory).length, "recovered checkpoint's file is committed");
     }
   }
 }

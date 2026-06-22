@@ -2696,6 +2696,75 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_writeParquet<
     write_parquet(&batch, &path);
 }
 
+/// A Parquet sink that holds one open `ArrowWriter` across many batches, so the output file count is
+/// decoupled from the input batch size: the JVM rolls a file by closing this handle when its row
+/// target is reached (and on checkpoint), not once per batch. The writer is created lazily from the
+/// first batch's schema; an empty file (closed before any batch) writes a valid header-only Parquet.
+struct ParquetSink {
+    path: String,
+    writer: Option<parquet::arrow::ArrowWriter<std::fs::File>>,
+}
+
+impl ParquetSink {
+    fn new(path: String) -> ParquetSink {
+        ParquetSink { path, writer: None }
+    }
+
+    fn write(&mut self, batch: RecordBatch) {
+        if self.writer.is_none() {
+            let file = std::fs::File::create(&self.path).expect("failed to create parquet file");
+            self.writer = Some(
+                parquet::arrow::ArrowWriter::try_new(file, batch.schema(), None)
+                    .expect("failed to create parquet writer"),
+            );
+        }
+        self.writer.as_mut().unwrap().write(&batch).expect("failed to write batch");
+    }
+
+    fn close(self) {
+        if let Some(writer) = self.writer {
+            writer.close().expect("failed to close parquet writer");
+        }
+    }
+}
+
+/// Opens a Parquet file for writing and returns an opaque handle. Batches are appended with
+/// `parquetWriterWrite`; the file is finalized (and the handle released) by `closeParquetWriter`.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createParquetWriter<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+) -> jlong {
+    let path: String = env.get_string(&path).expect("failed to read path").into();
+    Box::into_raw(Box::new(ParquetSink::new(path))) as jlong
+}
+
+/// Appends an Arrow batch the JVM exported to the open file behind `handle`.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_parquetWriterWrite<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+) {
+    let sink = unsafe { &mut *(handle as *mut ParquetSink) };
+    let batch = import_record_batch(in_array_address, in_schema_address);
+    sink.write(batch);
+}
+
+/// Finalizes the Parquet file (writes its footer) and releases the writer handle.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeParquetWriter<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    let sink = unsafe { Box::from_raw(handle as *mut ParquetSink) };
+    sink.close();
+}
+
 /// A reader over a directory of Parquet files, yielding one Arrow batch at a time. Chains each
 /// file's synchronous batch reader in a deterministic (sorted) order — no async stream, so the
 /// handle is sound to hold across JNI calls and pull from one batch per call.
@@ -2789,7 +2858,8 @@ impl ParquetSource {
                 parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(file)
                     .expect("failed to open parquet reader")
                     // Larger batches than the 1024 default cut per-batch overhead (each batch is a
-                    // C Data hop and, at the sink, a file); 8192 balances that against batch memory.
+                    // C Data hop); 8192 balances that against batch memory. The sink coalesces
+                    // batches into size-targeted files, so this no longer drives the output file count.
                     .with_batch_size(8192)
                     .build()
                     .expect("failed to build parquet reader"),

@@ -160,6 +160,29 @@ public final class Native {
   public static native void writeParquet(long inArrayAddress, long inSchemaAddress, String path);
 
   /**
+   * Opens a Parquet file for writing and returns an opaque handle. Batches are appended with {@link
+   * #parquetWriterWrite}; the file is finalized (footer written) and the handle released by {@link
+   * #closeParquetWriter}. One open writer takes many batches before it is closed, so the sink rolls
+   * a file on its own row/size target rather than once per batch.
+   *
+   * @param path filesystem path of the Parquet file to write
+   */
+  public static native long createParquetWriter(String path);
+
+  /**
+   * Appends an Arrow batch the JVM exported to the open file behind {@code handle}.
+   *
+   * @param handle a handle from {@link #createParquetWriter}
+   * @param inArrayAddress address of the input {@code ArrowArray} C struct
+   * @param inSchemaAddress address of the input {@code ArrowSchema} C struct
+   */
+  public static native void parquetWriterWrite(
+      long handle, long inArrayAddress, long inSchemaAddress);
+
+  /** Finalizes the Parquet file (writes its footer) and releases the writer handle. */
+  public static native void closeParquetWriter(long handle);
+
+  /**
    * Opens a directory of Parquet files for reading and returns an opaque handle. The handle yields
    * batches one at a time via {@link #nextBatch} and must be released with {@link #closeParquet}.
    *

@@ -26,12 +26,16 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
 /**
- * Native columnar sink: writes each incoming Arrow batch to a Parquet file natively, so a columnar
- * producer feeds it without converting to rows. Each batch becomes one file.
+ * Native columnar sink: writes incoming Arrow batches to Parquet files natively, so a columnar
+ * producer feeds it without converting to rows. Batches are coalesced into one open Parquet file and
+ * a new file is rolled only when a row target is reached (or on checkpoint), so the output file
+ * count tracks total size rather than the upstream batch size — small read batches no longer produce
+ * a file each.
  *
- * <p>Files are committed exactly once via two-phase commit, mirroring the host's file sink: a write
- * produces an in-progress file, the in-progress set is checkpointed, and a file is renamed to its
- * visible name only once the checkpoint that recorded it completes. Pending files restored from a
+ * <p>Files are committed exactly once via two-phase commit, mirroring the host's file sink: writing
+ * fills an in-progress file, the closed in-progress set is checkpointed, and a file is renamed to
+ * its visible name only once the checkpoint that recorded it completes. A checkpoint closes the
+ * currently open file so its rows are durable in the recorded set. Pending files restored from a
  * checkpoint are committed on recovery (the rename is idempotent), so a row appears in the output
  * exactly once across failures.
  */
@@ -40,8 +44,11 @@ public class NativeParquetSinkOperator extends AbstractStreamOperator<Object>
 
   private static final String IN_PROGRESS_PREFIX = "_";
   private static final String IN_PROGRESS_SUFFIX = ".inprogress";
+  /** Default rows per output file: roll once a file holds this many, independent of batch size. */
+  public static final long DEFAULT_TARGET_ROWS = 1_000_000L;
 
   private final String outputDirectory;
+  private final long targetRows;
 
   private transient CDataDictionaryProvider dictionaries;
   private transient int fileCounter;
@@ -49,11 +56,20 @@ public class NativeParquetSinkOperator extends AbstractStreamOperator<Object>
   private transient ListState<String> pendingState;
   // In-progress files awaiting commit, grouped by the checkpoint that recorded them (ascending).
   private transient TreeMap<Long, List<String>> pendingByCheckpoint;
-  // Files written since the last checkpoint, not yet tied to one.
+  // Closed files written since the last checkpoint, not yet tied to one.
   private transient List<String> uncommitted;
+  // The currently open file: a native writer handle (0 = none), its path, and rows written so far.
+  private transient long openWriter;
+  private transient String openPath;
+  private transient long openRows;
 
   public NativeParquetSinkOperator(String outputDirectory) {
+    this(outputDirectory, DEFAULT_TARGET_ROWS);
+  }
+
+  public NativeParquetSinkOperator(String outputDirectory, long targetRows) {
     this.outputDirectory = outputDirectory;
+    this.targetRows = targetRows;
   }
 
   @Override
@@ -69,6 +85,7 @@ public class NativeParquetSinkOperator extends AbstractStreamOperator<Object>
     pendingByCheckpoint = new TreeMap<>();
     uncommitted = new ArrayList<>();
     fileCounter = 0;
+    openWriter = 0;
     pendingState =
         context
             .getOperatorStateStore()
@@ -90,22 +107,44 @@ public class NativeParquetSinkOperator extends AbstractStreamOperator<Object>
     // (buffers associate only within one allocator root).
     BufferAllocator batchAllocator =
         batch.getFieldVectors().isEmpty() ? null : batch.getFieldVectors().get(0).getAllocator();
-    String inProgress =
-        outputDirectory + "/" + IN_PROGRESS_PREFIX + "part-" + subtask + "-" + (fileCounter++)
-            + ".parquet" + IN_PROGRESS_SUFFIX;
+    long rowCount = batch.getRowCount();
+    if (openWriter == 0) {
+      openPath =
+          outputDirectory + "/" + IN_PROGRESS_PREFIX + "part-" + subtask + "-" + (fileCounter++)
+              + ".parquet" + IN_PROGRESS_SUFFIX;
+      openWriter = Native.createParquetWriter(openPath);
+      openRows = 0;
+    }
     try (ArrowArray array = ArrowArray.allocateNew(batchAllocator);
         ArrowSchema schema = ArrowSchema.allocateNew(batchAllocator)) {
       Data.exportVectorSchemaRoot(batchAllocator, batch, dictionaries, array, schema);
-      Native.writeParquet(array.memoryAddress(), schema.memoryAddress(), inProgress);
+      Native.parquetWriterWrite(openWriter, array.memoryAddress(), schema.memoryAddress());
     } finally {
       batch.close();
     }
-    uncommitted.add(inProgress);
+    openRows += rowCount;
+    if (openRows >= targetRows) {
+      closeOpenFile();
+    }
+  }
+
+  /** Finalizes the open file (if any) and queues it for commit at the next checkpoint. */
+  private void closeOpenFile() {
+    if (openWriter == 0) {
+      return;
+    }
+    Native.closeParquetWriter(openWriter);
+    uncommitted.add(openPath);
+    openWriter = 0;
+    openPath = null;
+    openRows = 0;
   }
 
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
+    // Close the open file so its rows are durable in this checkpoint's recorded set.
+    closeOpenFile();
     if (!uncommitted.isEmpty()) {
       pendingByCheckpoint.put(context.getCheckpointId(), new ArrayList<>(uncommitted));
       uncommitted.clear();
@@ -131,6 +170,9 @@ public class NativeParquetSinkOperator extends AbstractStreamOperator<Object>
 
   @Override
   public void close() throws Exception {
+    // Finalize any open file (a no-op if none) so the handle is freed and the file is well-formed;
+    // like the closed files in `uncommitted`, it stays in-progress until a checkpoint commits it.
+    closeOpenFile();
     if (dictionaries != null) {
       dictionaries.close();
     }
