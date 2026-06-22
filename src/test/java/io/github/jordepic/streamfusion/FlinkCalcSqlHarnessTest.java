@@ -42,6 +42,28 @@ class FlinkCalcSqlHarnessTest {
   }
 
   @Test
+  void caseProjectionMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::environment,
+        "SELECT CASE WHEN v > 20 THEN 1 ELSE 0 END FROM f");
+  }
+
+  @Test
+  void caseWithComputedBranchesMatchesHost() throws Exception {
+    // Same-width branches (a column and a computed column); mixed widths need CAST, not yet admitted.
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::environment,
+        "SELECT CASE WHEN s <> 'a' THEN v ELSE v + 1 END FROM f");
+  }
+
+  @Test
+  void caseInFilterMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::environment,
+        "SELECT k FROM f WHERE (CASE WHEN v > 20 THEN 1 ELSE 0 END) = 1");
+  }
+
+  @Test
   void unsupportedProjectionFunctionFallsBack() throws Exception {
     // A function the expression encoder does not admit makes the whole Calc fall back to the host.
     NativeParity.assertFallback(FlinkCalcSqlHarnessTest::environment, "SELECT ABS(v) FROM f");

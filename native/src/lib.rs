@@ -1183,8 +1183,22 @@ fn build_expr(
     }
 }
 
-/// Combines decoded operands by op code: arithmetic, the six comparisons, and AND/OR/NOT.
+/// Combines decoded operands by op code: arithmetic, the six comparisons, AND/OR/NOT, the null
+/// predicates, and searched CASE.
 fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prelude::Expr {
+    if op == 40 {
+        // Searched CASE: [when1, then1, …, else]. The trailing else is the odd operand out.
+        let mut args = args;
+        let else_expr = (args.len() % 2 == 1).then(|| Box::new(args.pop().expect("case else")));
+        let mut when_then = Vec::with_capacity(args.len() / 2);
+        let mut iter = args.into_iter();
+        while let (Some(when), Some(then)) = (iter.next(), iter.next()) {
+            when_then.push((Box::new(when), Box::new(then)));
+        }
+        return datafusion::prelude::Expr::Case(datafusion::logical_expr::Case::new(
+            None, when_then, else_expr,
+        ));
+    }
     let mut it = args.into_iter();
     let mut next = || it.next().expect("missing operand");
     match op {
@@ -1200,6 +1214,8 @@ fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prel
         20 => next().and(next()),
         21 => next().or(next()),
         22 => !next(),
+        30 => next().is_null(),
+        31 => next().is_not_null(),
         other => panic!("unsupported expression op: {other}"),
     }
 }

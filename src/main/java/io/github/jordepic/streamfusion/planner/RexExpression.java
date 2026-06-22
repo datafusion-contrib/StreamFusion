@@ -208,6 +208,8 @@ final class RexExpression {
     List<RexNode> operands = call.getOperands();
     switch (call.getKind()) {
       case NOT:
+      case IS_NULL:
+      case IS_NOT_NULL:
         if (operands.size() != 1) {
           return false;
         }
@@ -223,6 +225,19 @@ final class RexExpression {
         for (int i = 0; i < operands.size() - 1; i++) {
           add(KIND_CALL, op, 2);
         }
+        for (RexNode operand : operands) {
+          if (!emit(operand)) {
+            return false;
+          }
+        }
+        return true;
+      case CASE:
+        // Searched CASE: operands are [when1, then1, …, else] — kept n-ary, the native side pairs
+        // them back into when/then branches with a trailing else.
+        if (operands.isEmpty()) {
+          return false;
+        }
+        add(KIND_CALL, op, operands.size());
         for (RexNode operand : operands) {
           if (!emit(operand)) {
             return false;
@@ -280,6 +295,12 @@ final class RexExpression {
         return 21;
       case NOT:
         return 22;
+      case IS_NULL:
+        return 30;
+      case IS_NOT_NULL:
+        return 31;
+      case CASE:
+        return 40;
       default:
         return -1;
     }

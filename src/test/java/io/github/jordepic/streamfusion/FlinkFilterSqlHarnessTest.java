@@ -102,6 +102,12 @@ class FlinkFilterSqlHarnessTest {
   }
 
   @Test
+  void isNotNullFilterMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkFilterSqlHarnessTest::nullableEnvironment, "SELECT * FROM n WHERE v IS NOT NULL");
+  }
+
+  @Test
   void unsupportedFunctionFallsBack() throws Exception {
     // A function the expression encoder does not admit makes the whole filter fall back to the host.
     NativeParity.assertFallback(
@@ -113,6 +119,23 @@ class FlinkFilterSqlHarnessTest {
     // The row carries a TIMESTAMP column through the whole-row converter while filtering on another.
     NativeParity.assertParity(
         FlinkFilterSqlHarnessTest::timestampEnvironment, "SELECT * FROM g WHERE v > 15");
+  }
+
+  private static TableEnvironment nullableEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    DataStream<Row> source =
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"k", "v"}, Types.LONG, Types.INT),
+            Row.of(1L, 10),
+            Row.of(2L, null),
+            Row.of(3L, 20));
+    tEnv.createTemporaryView(
+        "n",
+        source,
+        Schema.newBuilder().column("k", DataTypes.BIGINT()).column("v", DataTypes.INT()).build());
+    return tEnv;
   }
 
   private static TableEnvironment overflowEnvironment() {

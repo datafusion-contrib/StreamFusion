@@ -72,11 +72,16 @@ project; record any deliberate semantic choice in `divergences/`.
    an un-admitted function falls back. The pure filter-plus-column-subset shape still routes through
    the filter operator (its column-transfer projection avoids evaluating identity exprs) — **unify
    the filter into the Calc later** (the Calc subsumes it; kept separate now to avoid churn/regress).
-3. **Fuse + expand.** Projection+filter are now one native pass (done). Remaining: **widen the
-   admitted op/function set** with parity tests — `/` and `%` (integer-division parity!), `CAST`,
-   string/temporal functions, `CASE`/`COALESCE`, `IS NULL`, etc. Each admitted only once a parity
-   test confirms DataFusion matches Flink; un-admitted ops fall back. This is the long tail toward
-   broad coverage.
+3. **Fuse + expand.** Projection+filter are now one native pass (done). Widening the admitted
+   op/function set with parity tests (each admitted only once a parity test confirms DataFusion
+   matches Flink; un-admitted ops fall back):
+   - ✅ `IS NOT NULL` (op 31) — routes, parity-verified.
+   - **`IS NULL`** — Calcite encodes a bare `IS NULL` as a null `Sarg`/`SEARCH` that `expandSearch`
+     does not turn into an `IS_NULL` call, so it currently falls back. To route it, detect a
+     null-only Sarg in the encoder and emit `IS_NULL`. (`IS NOT NULL` is not Sarg'd, so it routes.)
+   - Remaining: `/` and `%` (integer-division/modulo parity — divergence-prone), `CAST`
+     (overflow/rounding), `CASE`/`COALESCE`, string/temporal functions. The long tail toward broad
+     coverage; each gated by a parity test.
 
 ## Acceptance criteria
 - Existing filter/projection tests pass via the general expression path.
