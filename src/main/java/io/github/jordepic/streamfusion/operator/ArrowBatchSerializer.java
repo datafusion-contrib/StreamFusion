@@ -73,6 +73,10 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
       writer.start();
       writer.writeBatch();
       writer.end();
+    } finally {
+      // Serializing ships the batch onto the network edge — its terminal use on the write side, so
+      // release the off-heap buffers here (the read side allocates a fresh batch on deserialize).
+      batch.root().close();
     }
     byte[] encoded = bytes.toByteArray();
     target.writeInt(encoded.length);

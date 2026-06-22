@@ -30,6 +30,16 @@ multi-field). This is the default planning, so tumbling and hopping window
 aggregation no longer need `ONE_PHASE`. Hopping uses the host's slice-sharing
 model (a per-slice local, a global that combines each window's slices).
 
+When a single-phase window (rowtime over a local-time-zone attribute) sits on a
+columnar producer — e.g. a native Parquet source through a watermark assigner —
+the keyed shuffle before it is kept columnar too: a native exchange splits each
+Arrow batch by the grouping keys and routes it, feeding a columnar window with no
+row transpose anywhere (source → watermark assigner → exchange → window all flow
+Arrow). The shuffle only co-locates each key on a channel — the window re-groups
+by key in operator state — so its hash need not match Flink's. The exchange is
+kept columnar only when its downstream is this native columnar window; otherwise
+the window stays row-fed and the shuffle stays on the host.
+
 ### Global terms (all native execution)
 
 - **Insert-only streams.** Retracting or updating (changelog) streams fall back to Flink.

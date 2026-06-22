@@ -5,6 +5,7 @@ import java.util.List;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Calc;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExchange;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGlobalWindowAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLocalWindowAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
@@ -171,19 +172,56 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       if (WindowAggregateMatcher.matches(
           agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType())) {
         substitutions++;
+        boolean cumulative = WindowAggregateMatcher.isCumulative(agg.windowing());
+        long windowMillis = WindowAggregateMatcher.windowSize(agg.windowing());
+        long slideMillis = WindowAggregateMatcher.windowSlide(agg.windowing());
+        int timeColumn = WindowAggregateMatcher.timeColumn(agg.windowing());
+        int valueColumn = WindowAggregateMatcher.valueColumn(agg.aggCalls());
+        int[] keyColumns = WindowAggregateMatcher.keyColumns(agg.grouping());
+        int valueType =
+            WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType());
+        int[] kinds = WindowAggregateMatcher.kinds(agg.aggCalls());
+        // If the window sits on an exchange over a columnar producer, keep the shuffle columnar: a
+        // native exchange (splitting the batch by the grouping keys) feeds a columnar window with no
+        // row transpose. The exchange only co-locates each key's rows on one channel — the window
+        // re-groups by key itself — so its hash need not match Flink's. Otherwise stay row-fed.
+        RelNode windowInput = agg.getInputs().get(0);
+        if (windowInput instanceof StreamPhysicalExchange
+            && windowInput.getInputs().get(0) instanceof ColumnarOutput) {
+          RelNode columnarExchange =
+              new StreamPhysicalNativeColumnarExchange(
+                  windowInput.getCluster(),
+                  windowInput.getTraitSet(),
+                  windowInput.getInputs().get(0),
+                  windowInput.getRowType(),
+                  keyColumns);
+          return new StreamPhysicalNativeColumnarWindowAggregate(
+              agg.getCluster(),
+              agg.getTraitSet(),
+              columnarExchange,
+              agg.getRowType(),
+              cumulative,
+              windowMillis,
+              slideMillis,
+              timeColumn,
+              valueColumn,
+              keyColumns,
+              valueType,
+              kinds);
+        }
         return new StreamPhysicalNativeWindowAggregate(
             agg.getCluster(),
             agg.getTraitSet(),
             agg.getInputs().get(0),
             agg.getRowType(),
-            WindowAggregateMatcher.isCumulative(agg.windowing()),
-            WindowAggregateMatcher.windowSize(agg.windowing()),
-            WindowAggregateMatcher.windowSlide(agg.windowing()),
-            WindowAggregateMatcher.timeColumn(agg.windowing()),
-            WindowAggregateMatcher.valueColumn(agg.aggCalls()),
-            WindowAggregateMatcher.keyColumns(agg.grouping()),
-            WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType()),
-            WindowAggregateMatcher.kinds(agg.aggCalls()));
+            cumulative,
+            windowMillis,
+            slideMillis,
+            timeColumn,
+            valueColumn,
+            keyColumns,
+            valueType,
+            kinds);
       }
       if (WindowAggregateMatcher.matchesSession(
           agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType())) {

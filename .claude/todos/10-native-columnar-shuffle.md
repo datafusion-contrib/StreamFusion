@@ -1,6 +1,20 @@
 # Native columnar shuffle: keep Arrow across the exchange
 
-**Status:** open (design) — now the central gate (see [00-roadmap](00-roadmap.md) #1).
+**Status:** DONE for the single-phase window case. A native columnar exchange
+(`StreamPhysicalNativeColumnarExchange` + `NativeColumnarExchangeExecNode`) splits each
+batch by key (`SplitByKeyGroupOperator`) and routes it via a `PartitionTransformation` +
+`ColumnarKeyGroupPartitioner`, feeding the columnar window with no row transpose.
+`PhysicalPlanScan` substitutes the exchange + columnar window together when the exchange's
+input is columnar (`FlinkColumnarWindowSqlHarnessTest`: no-key SINGLETON and keyed HASH both
+parity-green). The shuffle uses its own co-locating hash, not Flink's key-group hash — safe
+because the window re-groups in operator state ([divergences/10](../../divergences/10-columnar-exchange-own-hash.md)).
+The `ArrowBatchSerializer` now releases the batch after serializing it onto the network edge
+(the write-side leak this surfaced).
+
+**Remaining:** two-phase local→global columnar (the exchange between a native local and global
+window aggregate); higher-parallelism shuffle coverage (tests are p=1, where the split is one
+channel; multi-channel split is unit-tested in `SplitByKeyGroupOperatorTest`).
+
 **Source:** user direction — "I don't want to transpose all the time"
 
 ## Why this is the gate now

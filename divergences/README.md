@@ -45,6 +45,7 @@ host — verified by the parity harness.
 - [07 — Expression encoding + compile-once](07-expression-encoding-and-compile-once.md) — hand-encoded IR following Comet (not Substrait), compiled once per operator.
 - [08 — Columnar flow with transitions](08-columnar-flow-transitions.md) — keep columnar by tagging operators columnar/rowwise and transposing only at boundaries (following Comet), not by fusing subtrees; Flink lacks the columnar framework so we supply the record type + transition insertion.
 - [09 — Per-batch watermark assignment](09-per-batch-watermark-assignment.md) — the columnar watermark assigner advances the watermark once per Arrow batch (following Arroyo), not per row like Flink; identical results unless a window closes mid-batch on out-of-order data.
+- [10 — Columnar exchange uses its own hash](10-columnar-exchange-own-hash.md) — the keyed columnar shuffle co-locates each key on a channel with an internal hash, not Flink's key-group hash; safe because the downstream native window re-groups by key in operator state and never uses Flink keyed state.
 
 ## Known transitional gap (not yet a deliberate divergence)
 
