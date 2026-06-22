@@ -34,6 +34,15 @@ class FlinkOverAggregateSqlHarnessTest {
   }
 
   @Test
+  void runningAvgMatchesHost() throws Exception {
+    // Flink decomposes AVG into $SUM0/COUNT with a divide above; the OVER routes, the divide runs
+    // on the host (integer `/` is not admitted), and the result matches.
+    NativeParity.assertParity(
+        FlinkOverAggregateSqlHarnessTest::environment,
+        "SELECT v, AVG(v) OVER (ORDER BY rt) AS mean FROM src");
+  }
+
+  @Test
   void partitionedRunningSumMatchesHost() throws Exception {
     // PARTITION BY k: a running SUM per key, shuffled by the host's keyed exchange.
     NativeParity.assertParity(
