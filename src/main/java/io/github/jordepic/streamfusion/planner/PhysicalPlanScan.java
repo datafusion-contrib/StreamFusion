@@ -112,7 +112,11 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) current;
       substitutions++;
       return new StreamPhysicalNativeParquetSource(
-          scan.getCluster(), scan.getTraitSet(), scan.getRowType(), ParquetSourceMatcher.path(scan));
+          scan.getCluster(),
+          scan.getTraitSet(),
+          scan.getRowType(),
+          ParquetSourceMatcher.path(scan),
+          ParquetSourceMatcher.utcTimestamp(scan));
     }
 
     if (current instanceof StreamPhysicalCalc && FilterCalcMatcher.matches((Calc) current)) {

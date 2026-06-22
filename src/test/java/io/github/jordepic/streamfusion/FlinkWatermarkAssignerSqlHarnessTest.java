@@ -21,16 +21,15 @@ class FlinkWatermarkAssignerSqlHarnessTest {
           + "FROM TABLE(TUMBLE(TABLE t, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
           + "GROUP BY window_start, window_end";
 
-  @Disabled(
-      "Routing is correct (native source + watermark assigner + window), but the native Parquet "
-          + "source reads timestamp columns as raw UTC while Flink applies the local time zone, so "
-          + "the window labels differ by the tz offset. Tracked in todos/25-parquet-source-"
-          + "timestamp-timezone.md; re-enable once the source matches Flink's timestamp convention.")
   @Test
   void windowedAggregateOverParquetSourceMatchesHost() throws Exception {
     Path input = Files.createTempDirectory("wm-in");
     writeInput(input);
-    // One-phase keeps a single window-aggregate node above the assigner (cleaner to reason about).
+    // The 2-second watermark delay (see the DDL) keeps every window open until end-of-input MAX, so
+    // no window closes mid-batch — the case where per-batch watermark assignment would diverge from
+    // the host's per-row dropping (divergences/09). This exercises the full columnar pipeline (native
+    // source → native watermark assigner → native window) at true parity, including the source's
+    // timestamp time-zone normalization.
     NativeParity.assertParity(() -> readEnvironment(input), WINDOW_QUERY);
   }
 
@@ -63,7 +62,7 @@ class FlinkWatermarkAssignerSqlHarnessTest {
     tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     tEnv.executeSql(
         "CREATE TABLE t (k BIGINT, v BIGINT, rt TIMESTAMP(3), "
-            + "WATERMARK FOR rt AS rt - INTERVAL '1' SECOND) WITH ('connector' = 'filesystem', "
+            + "WATERMARK FOR rt AS rt - INTERVAL '2' SECOND) WITH ('connector' = 'filesystem', "
             + "'path' = '"
             + directory.toUri()
             + "', 'format' = 'parquet')");

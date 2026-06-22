@@ -23,11 +23,14 @@ public class ParquetArrowSourceFunction implements SourceFunction<ArrowBatch> {
   private final String directory;
   // Output columns by name, in plan order (projection pushdown); empty emits every column.
   private final String[] projection;
+  // The host's utc-timezone setting; decides how timestamp columns are interpreted on read.
+  private final boolean utcTimestamp;
   private volatile boolean running = true;
 
-  public ParquetArrowSourceFunction(String directory, String[] projection) {
+  public ParquetArrowSourceFunction(String directory, String[] projection, boolean utcTimestamp) {
     this.directory = directory;
     this.projection = projection;
+    this.utcTimestamp = utcTimestamp;
   }
 
   @Override
@@ -57,7 +60,7 @@ public class ParquetArrowSourceFunction implements SourceFunction<ArrowBatch> {
         return null;
       }
       VectorSchemaRoot root = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
-      return new ArrowBatch(root);
+      return new ArrowBatch(ParquetSourceTimestamps.normalize(root, allocator, utcTimestamp));
     }
   }
 

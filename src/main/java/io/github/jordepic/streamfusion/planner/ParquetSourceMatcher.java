@@ -31,6 +31,14 @@ final class ParquetSourceMatcher {
     return ParquetTables.localPath(options(scan).get("path"));
   }
 
+  /**
+   * The format's {@code utc-timezone} setting (default false), which decides how the host reader
+   * interprets timestamp columns; the native reader replays the same conversion.
+   */
+  static boolean utcTimestamp(StreamPhysicalTableSourceScan scan) {
+    return Boolean.parseBoolean(options(scan).getOrDefault("utc-timezone", "false"));
+  }
+
   private static Map<String, String> options(StreamPhysicalTableSourceScan scan) {
     try {
       TableSourceTable table = scan.getTable().unwrap(TableSourceTable.class);

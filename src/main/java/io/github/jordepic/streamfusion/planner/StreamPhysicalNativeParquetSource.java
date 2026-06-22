@@ -22,12 +22,18 @@ public class StreamPhysicalNativeParquetSource extends AbstractRelNode
 
   private final RelDataType outputRowType;
   private final String path;
+  private final boolean utcTimestamp;
 
   public StreamPhysicalNativeParquetSource(
-      RelOptCluster cluster, RelTraitSet traitSet, RelDataType outputRowType, String path) {
+      RelOptCluster cluster,
+      RelTraitSet traitSet,
+      RelDataType outputRowType,
+      String path,
+      boolean utcTimestamp) {
     super(cluster, traitSet);
     this.outputRowType = outputRowType;
     this.path = path;
+    this.utcTimestamp = utcTimestamp;
   }
 
   @Override
@@ -42,7 +48,8 @@ public class StreamPhysicalNativeParquetSource extends AbstractRelNode
 
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
-    return new StreamPhysicalNativeParquetSource(getCluster(), traitSet, outputRowType, path);
+    return new StreamPhysicalNativeParquetSource(
+        getCluster(), traitSet, outputRowType, path, utcTimestamp);
   }
 
   @Override
@@ -60,6 +67,7 @@ public class StreamPhysicalNativeParquetSource extends AbstractRelNode
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
         getRelDetailedDescription(),
         path,
-        projection);
+        projection,
+        utcTimestamp);
   }
 }

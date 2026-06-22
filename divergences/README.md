@@ -44,6 +44,7 @@ host — verified by the parity harness.
 - [06 — Two-phase slice-sharing](06-two-phase-slice-sharing.md) — hopping's local/global intermediate reverse-engineered from Flink, not Arroyo's raw re-aggregation.
 - [07 — Expression encoding + compile-once](07-expression-encoding-and-compile-once.md) — hand-encoded IR following Comet (not Substrait), compiled once per operator.
 - [08 — Columnar flow with transitions](08-columnar-flow-transitions.md) — keep columnar by tagging operators columnar/rowwise and transposing only at boundaries (following Comet), not by fusing subtrees; Flink lacks the columnar framework so we supply the record type + transition insertion.
+- [09 — Per-batch watermark assignment](09-per-batch-watermark-assignment.md) — the columnar watermark assigner advances the watermark once per Arrow batch (following Arroyo), not per row like Flink; identical results unless a window closes mid-batch on out-of-order data.
 
 ## Known transitional gap (not yet a deliberate divergence)
 
