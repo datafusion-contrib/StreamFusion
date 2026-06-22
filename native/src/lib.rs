@@ -600,16 +600,17 @@ impl TumblingAggregator {
     }
 }
 
-/// Event-time `OVER (ORDER BY rt RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)` aggregation,
-/// no partition key: one running accumulator set per aggregate that never evicts. Given a batch of
-/// already-complete rows (their rowtime <= the watermark), it folds them in rowtime order and
-/// returns each row's running aggregate. RANGE means rows sharing a rowtime share the post-fold
-/// value, so ties are folded as a group before any of them is read. The accumulator persists across
-/// calls (UNBOUNDED PRECEDING), so a later batch continues the running total. Emits one value per
-/// input row, in the input row order, so the caller can zip it back onto the passed-through columns.
+/// Event-time `OVER (PARTITION BY … ORDER BY rt RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)`
+/// aggregation: one never-evicting running accumulator set per partition key (an empty key, i.e. no
+/// `PARTITION BY`, is the single-group case). Given a batch of already-complete rows (rowtime <= the
+/// watermark), it folds them per key in rowtime order and returns each row's running aggregate. RANGE
+/// means rows sharing a rowtime within a key share the post-fold value, so all rows of an rt group
+/// are folded before any is read. Accumulators persist across calls (UNBOUNDED PRECEDING). Emits one
+/// value per input row, in input order, so the caller can zip it back onto the passed-through columns.
 struct OverAggregator {
     aggregates: Vec<WindowAggregate>,
-    accumulators: Vec<Box<dyn Accumulator>>,
+    keys: HashMap<GroupKey, Vec<Box<dyn Accumulator>>>,
+    key_types: Vec<DataType>,
 }
 
 impl OverAggregator {
@@ -617,37 +618,50 @@ impl OverAggregator {
         let value_type = value_data_type(value_type);
         let aggregates: Vec<WindowAggregate> =
             kinds.into_iter().map(|kind| WindowAggregate::new(kind, &value_type)).collect();
-        let accumulators = aggregates.iter().map(WindowAggregate::create_accumulator).collect();
-        OverAggregator { aggregates, accumulators }
+        OverAggregator { aggregates, keys: HashMap::new(), key_types: Vec::new() }
     }
 
-    /// Folds the batch (`rt` i64 + `value`) into the running accumulators in rowtime order and
-    /// returns `[result0..resultN-1]` per input row, in input order.
+    /// The running accumulators for a key, created on first touch.
+    fn accumulators(&mut self, key: GroupKey) -> &mut Vec<Box<dyn Accumulator>> {
+        let aggregates = &self.aggregates;
+        self.keys
+            .entry(key)
+            .or_insert_with(|| aggregates.iter().map(WindowAggregate::create_accumulator).collect())
+    }
+
+    /// Folds the batch (`rt` i64, `value`, optional `key0..`) into the per-key running accumulators in
+    /// rowtime order and returns `[result0..resultN-1]` per input row, in input order.
     fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
         let rt = column_i64(batch, "rt");
         let value = batch.column_by_name("value").expect("missing value column");
+        let key_arrays = key_arrays(batch);
+        self.key_types = key_types(&key_arrays);
         let n = batch.num_rows();
         let num_agg = self.aggregates.len();
+        let row_keys: Vec<GroupKey> = (0..n).map(|row| read_key(&key_arrays, row)).collect();
 
-        // Process rows in rowtime order, grouping ties (RANGE), but record each row's result at its
-        // original position so the result columns line up with the caller's rows.
         let mut order: Vec<usize> = (0..n).collect();
         order.sort_by_key(|&row| rt.value(row));
-        let mut results: Vec<Vec<ScalarValue>> =
-            vec![vec![ScalarValue::Null; n]; num_agg];
+        let mut results: Vec<Vec<ScalarValue>> = vec![vec![ScalarValue::Null; n]; num_agg];
         let mut start = 0;
         while start < n {
             let mut end = start;
             while end < n && rt.value(order[end]) == rt.value(order[start]) {
                 end += 1;
             }
-            let group: Vec<u32> = order[start..end].iter().map(|&row| row as u32).collect();
-            let values = take(value, &UInt32Array::from(group), None).expect("failed to take values");
-            for (a, accumulator) in self.accumulators.iter_mut().enumerate() {
-                accumulator.update_batch(std::slice::from_ref(&values)).expect("failed to update");
-                let result = accumulator.evaluate().expect("failed to evaluate");
-                for &row in &order[start..end] {
-                    results[a][row] = result.clone();
+            // Fold every row of this rt group into its key before reading any (RANGE: tied rows of a
+            // key share the post-fold value); rows of other keys in the group are independent.
+            for &row in &order[start..end] {
+                let one = take(value, &UInt32Array::from(vec![row as u32]), None)
+                    .expect("failed to take value");
+                for accumulator in self.accumulators(row_keys[row].clone()) {
+                    accumulator.update_batch(std::slice::from_ref(&one)).expect("failed to update");
+                }
+            }
+            for &row in &order[start..end] {
+                let accumulators = self.keys.get_mut(&row_keys[row]).expect("key present");
+                for (a, accumulator) in accumulators.iter_mut().enumerate() {
+                    results[a][row] = accumulator.evaluate().expect("failed to evaluate");
                 }
             }
             start = end;
@@ -663,24 +677,29 @@ impl OverAggregator {
             .expect("failed to build over result batch")
     }
 
-    /// Serializes the running accumulators (one row of partial state) for a checkpoint.
+    /// Serializes the per-key running accumulators (`[key0.., state…]`, one row per key).
     fn snapshot(&mut self) -> Vec<u8> {
         let state_fields: Vec<Field> =
             self.aggregates.iter().flat_map(WindowAggregate::state_fields).collect();
+        let mut keys: Vec<GroupKey> = Vec::new();
         let mut state_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); state_fields.len()];
-        let mut column = 0;
-        for accumulator in self.accumulators.iter_mut() {
-            for scalar in accumulator.state().expect("state") {
-                state_columns[column].push(scalar);
-                column += 1;
+        for (key, accumulators) in self.keys.iter_mut() {
+            keys.push(key.clone());
+            let mut column = 0;
+            for accumulator in accumulators.iter_mut() {
+                for scalar in accumulator.state().expect("state") {
+                    state_columns[column].push(scalar);
+                    column += 1;
+                }
             }
         }
-        let columns: Vec<ArrayRef> = state_columns
-            .into_iter()
-            .enumerate()
-            .map(|(index, scalars)| scalars_to_array(scalars, state_fields[index].data_type()))
-            .collect();
-        let batch = RecordBatch::try_new(Arc::new(Schema::new(state_fields)), columns)
+        let mut fields = key_fields(&self.key_types);
+        let mut columns = key_columns(&keys, &self.key_types);
+        fields.extend(state_fields.iter().cloned());
+        for (index, scalars) in state_columns.into_iter().enumerate() {
+            columns.push(scalars_to_array(scalars, state_fields[index].data_type()));
+        }
+        let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build over snapshot batch");
         let mut buffer = Vec::new();
         let mut writer = arrow::ipc::writer::StreamWriter::try_new(&mut buffer, &batch.schema())
@@ -695,17 +714,24 @@ impl OverAggregator {
         let mut aggregator = OverAggregator::new(value_type, kinds);
         let field_counts: Vec<usize> =
             aggregator.aggregates.iter().map(|a| a.state_fields().len()).collect();
+        let state_field_total: usize = field_counts.iter().sum();
         let reader = arrow::ipc::reader::StreamReader::try_new(bytes, None)
             .expect("failed to open over snapshot reader");
         for batch in reader {
             let batch = batch.expect("failed to read over snapshot");
-            let mut column = 0;
-            for (i, accumulator) in aggregator.accumulators.iter_mut().enumerate() {
-                let count = field_counts[i];
-                let state: Vec<ArrayRef> =
-                    (column..column + count).map(|c| batch.column(c).slice(0, 1)).collect();
-                accumulator.merge_batch(&state).expect("failed to restore over accumulator");
-                column += count;
+            let arity = batch.num_columns() - state_field_total;
+            let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
+            aggregator.key_types = key_types(&key_arrays);
+            for row in 0..batch.num_rows() {
+                let key = read_key(&key_arrays, row);
+                let mut column = arity;
+                for (i, accumulator) in aggregator.accumulators(key).iter_mut().enumerate() {
+                    let count = field_counts[i];
+                    let state: Vec<ArrayRef> =
+                        (column..column + count).map(|c| batch.column(c).slice(row, 1)).collect();
+                    accumulator.merge_batch(&state).expect("failed to restore over accumulator");
+                    column += count;
+                }
             }
         }
         aggregator
@@ -2429,6 +2455,26 @@ mod tests {
         let value2: ArrayRef = Arc::new(Int64Array::from(vec![5i64]));
         let batch2 = RecordBatch::try_new(schema, vec![rt2, value2]).unwrap();
         assert_eq!(values(&over.update(&batch2), 0), vec![105]);
+    }
+
+    // PARTITION BY: each key has its own running SUM; rt ties within a key share the value.
+    #[test]
+    fn over_running_sum_per_partition_key() {
+        let rt: ArrayRef = Arc::new(Int64Array::from(vec![0i64, 0, 1000, 1000, 2000]));
+        let value: ArrayRef = Arc::new(Int64Array::from(vec![10i64, 100, 20, 30, 40]));
+        let key0: ArrayRef = Arc::new(Int64Array::from(vec![1i64, 2, 1, 1, 2]));
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("rt", DataType::Int64, false),
+                Field::new("value", DataType::Int64, true),
+                Field::new("key0", DataType::Int64, false),
+            ])),
+            vec![rt, value, key0],
+        )
+        .unwrap();
+        let mut over = OverAggregator::new(0, vec![0]);
+        // key 1: 10, then (20,30) tie -> 60, 60; key 2: 100, then 140.
+        assert_eq!(values(&over.update(&batch), 0), vec![10, 100, 60, 60, 140]);
     }
 
     // Decoder over the pre-order encoding: CALL gt ( INPUT_REF a , LIT_LONG 5 ).
