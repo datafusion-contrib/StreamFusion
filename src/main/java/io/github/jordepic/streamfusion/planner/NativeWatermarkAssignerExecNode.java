@@ -1,0 +1,63 @@
+package io.github.jordepic.streamfusion.planner;
+
+import io.github.jordepic.streamfusion.operator.ArrowBatch;
+import io.github.jordepic.streamfusion.operator.ArrowBatchTypeInformation;
+import io.github.jordepic.streamfusion.operator.NativeColumnarWatermarkAssignerOperator;
+import java.util.Collections;
+import org.apache.flink.api.dag.Transformation;
+import org.apache.flink.configuration.ReadableConfig;
+import org.apache.flink.table.planner.delegation.PlannerBase;
+import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeBase;
+import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeConfig;
+import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeContext;
+import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
+import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTranslator;
+import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
+import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
+import org.apache.flink.table.types.logical.RowType;
+
+/**
+ * Wraps the columnar native watermark assigner into the plan; it consumes and produces Arrow
+ * batches, forwarding each unchanged while emitting bounded out-of-orderness watermarks.
+ */
+public class NativeWatermarkAssignerExecNode extends ExecNodeBase<ArrowBatch>
+    implements StreamExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch> {
+
+  private static final String TRANSFORMATION = "native-watermark-assigner";
+
+  private final int rowtimeColumn;
+  private final long delayMillis;
+
+  public NativeWatermarkAssignerExecNode(
+      ReadableConfig tableConfig,
+      InputProperty inputProperty,
+      RowType outputType,
+      String description,
+      int rowtimeColumn,
+      long delayMillis) {
+    super(
+        ExecNodeContext.newNodeId(),
+        new ExecNodeContext("stream-exec-native-watermark-assigner_1"),
+        tableConfig,
+        Collections.singletonList(inputProperty),
+        outputType,
+        description);
+    this.rowtimeColumn = rowtimeColumn;
+    this.delayMillis = delayMillis;
+  }
+
+  @Override
+  @SuppressWarnings("unchecked")
+  protected Transformation<ArrowBatch> translateToPlanInternal(
+      PlannerBase planner, ExecNodeConfig config) {
+    Transformation<ArrowBatch> input =
+        (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
+    return ExecNodeUtil.createOneInputTransformation(
+        input,
+        createTransformationMeta(TRANSFORMATION, config),
+        new NativeColumnarWatermarkAssignerOperator(rowtimeColumn, delayMillis),
+        ArrowBatchTypeInformation.INSTANCE,
+        input.getParallelism(),
+        false);
+  }
+}

@@ -10,6 +10,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalL
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWatermarkAssigner;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowAggregate;
 import org.apache.flink.table.planner.plan.optimize.program.FlinkOptimizeProgram;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
@@ -141,6 +142,24 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
           calc.getInputs().get(0),
           calc.getRowType(),
           CalcMatcher.encode(calc));
+    }
+
+    // Substitute a watermark assigner only when its (already-rewritten) input is columnar — i.e. it
+    // sits on a native source/calc. Otherwise it is a pass-through that would be wrapped in two
+    // transposes for no gain, so leave it on the host.
+    if (current instanceof StreamPhysicalWatermarkAssigner
+        && current.getInputs().get(0) instanceof ColumnarOutput) {
+      StreamPhysicalWatermarkAssigner wm = (StreamPhysicalWatermarkAssigner) current;
+      if (WatermarkAssignerMatcher.matches(wm)) {
+        substitutions++;
+        return new StreamPhysicalNativeWatermarkAssigner(
+            wm.getCluster(),
+            wm.getTraitSet(),
+            wm.getInputs().get(0),
+            wm.getRowType(),
+            WatermarkAssignerMatcher.rowtimeColumn(wm),
+            WatermarkAssignerMatcher.delayMillis(wm));
+      }
     }
 
     if (current instanceof StreamPhysicalWindowAggregate) {

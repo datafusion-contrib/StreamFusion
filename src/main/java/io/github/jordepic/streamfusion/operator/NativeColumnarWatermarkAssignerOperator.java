@@ -1,7 +1,8 @@
 package io.github.jordepic.streamfusion.operator;
 
-import org.apache.arrow.vector.TimeStampNanoVector;
+import org.apache.arrow.vector.TimeStampVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.flink.api.common.operators.ProcessingTimeService.ProcessingTimeCallback;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
@@ -57,10 +58,11 @@ public class NativeColumnarWatermarkAssignerOperator extends AbstractStreamOpera
     VectorSchemaRoot root = element.getValue().root();
     int rows = root.getRowCount();
     if (rows > 0) {
-      TimeStampNanoVector rt = (TimeStampNanoVector) root.getVector(rowtimeColumn);
+      TimeStampVector rt = (TimeStampVector) root.getVector(rowtimeColumn);
+      ArrowType.Timestamp type = (ArrowType.Timestamp) rt.getField().getType();
       long maxMillis = Long.MIN_VALUE;
       for (int i = 0; i < rows; i++) {
-        long millis = rt.get(i) / 1_000_000L;
+        long millis = toMillis(rt.get(i), type);
         if (millis > maxMillis) {
           maxMillis = millis;
         }
@@ -73,6 +75,21 @@ public class NativeColumnarWatermarkAssignerOperator extends AbstractStreamOpera
     // does not wait on the periodic timer (matches the host).
     if (currentWatermark - lastWatermark > watermarkInterval) {
       advanceWatermark();
+    }
+  }
+
+  /** Reduces a timestamp in the column's own unit to epoch millis (how watermarks are expressed). */
+  private static long toMillis(long raw, ArrowType.Timestamp type) {
+    switch (type.getUnit()) {
+      case SECOND:
+        return raw * 1_000L;
+      case MILLISECOND:
+        return raw;
+      case MICROSECOND:
+        return raw / 1_000L;
+      case NANOSECOND:
+      default:
+        return raw / 1_000_000L;
     }
   }
 
