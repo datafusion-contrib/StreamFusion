@@ -1,8 +1,14 @@
 # Parquet sink file coalescing
 
-**Status:** open
-**Source:** the columnar-copy profiling (ticket 20/21). The native sink writes **one Parquet
-file per incoming batch**, so the output file count is tied to the upstream batch size — small
+**Status:** done. The sink holds one `ArrowWriter` open across batches via a native writer handle
+(`createParquetWriter` / `parquetWriterWrite` / `closeParquetWriter`) and rolls a file only on a row
+target (`DEFAULT_TARGET_ROWS = 1M`) or on checkpoint. Output file count now tracks total size, not
+batch size. Exactly-once unchanged (checkpoint closes the open file into the recorded set; commit on
+completion; idempotent commit on recovery). Tests: roll-threshold + the existing SQL round-trip
+(proves no rows lost). Below is the original plan, kept for context.
+
+**Source:** the columnar-copy profiling (ticket 20/21). The native sink wrote **one Parquet
+file per incoming batch**, so the output file count was tied to the upstream batch size — small
 batches produce thousands of tiny files (footer/metadata/syscall overhead each, and poor output
 for downstream readers).
 

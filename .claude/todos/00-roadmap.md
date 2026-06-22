@@ -25,23 +25,20 @@ here when the ticket is deleted.
   (its `RowData → Arrow → RowData` round-trip; ticket 21).
 
 ## Next, roughly in order
-1. **Parquet sink file coalescing** (ticket 22). The sink writes one file per batch; buffer and
-   roll by size/row-count so output file count is independent of read-batch size. Independent of
-   the shuffle; improves output quality and throughput.
-2. **Expression layer stages 2–3** (ticket 19): general/computed projection (unblocks the
+1. **Expression layer stages 2–3** (ticket 19): general/computed projection (unblocks the
    constant-folded `=` filter), fuse projection+filter, widen the op set; plus the residual
    narrow-int (`TINYINT`/`SMALLINT`) arithmetic-overflow parity check.
-3. **Wider value/key types** (ticket 04): SMALLINT/TINYINT/FLOAT `SUM`/`AVG`, DECIMAL/TIMESTAMP
+2. **Wider value/key types** (ticket 04): SMALLINT/TINYINT/FLOAT `SUM`/`AVG`, DECIMAL/TIMESTAMP
    grouping keys, multiple value columns, `COUNT(*)`.
-4. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
+3. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
    filesystems (`hdfs:`/`s3:`) for the native source/sink; currently `file:` only. **Deferred by
-   direction until generalized operator support lands** — broaden what we can run (items 2–3 and the
+   direction until generalized operator support lands** — broaden what we can run (items 1–2 and the
    ticket 11 operators) before broadening where we read/write.
-5. **Operator-level perf** (ticket 20 backlog): per-row `GroupKey` allocation in aggregators, session
+4. **Operator-level perf** (ticket 20 backlog): per-row `GroupKey` allocation in aggregators, session
    `update` one-row `take` batching. (The `RowData → Arrow` transpose was made row-major + pre-sized,
    ~25% faster — ticket 28; a native decoder was investigated and rejected on benchmark grounds.)
-6. **Acceleration policy** (ticket 09): now that lone stateless islands measure < 1× (bare filter
-   0.83×), decide whether to refuse substituting an operator that would be an isolated island with
+5. **Acceleration policy** (ticket 09): now that lone stateless islands measure < 1× (bare filter
+   0.75×), decide whether to refuse substituting an operator that would be an isolated island with
    row endpoints on both sides, vs always substitute. Benchmark-informed.
 
 ## Production-readiness (not yet load-bearing)
