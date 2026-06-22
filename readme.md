@@ -60,6 +60,21 @@ stays row-fed and the shuffle stays on the host.
 - `AVG` over int, and any aggregate over smallint/tinyint/float/decimal — see [docs/aggregate-type-support.md](docs/aggregate-type-support.md)
 - Two-phase `AVG` (multi-field partial state)
 
+### Determinism (the one parity caveat)
+
+Results are byte-identical to stock Flink for everything admitted, with a single
+boundary in event-time operators (windows, `OVER`): **late-data dropping on
+out-of-order streams.** A row is dropped when the watermark has already passed its
+window; we replicate Flink's *deterministic* (eager, per-jump) watermark emission
+exactly, slicing batches so a window-closing watermark precedes any row it makes
+late. But Flink *also* emits watermarks on a periodic processing-time timer, which
+makes **Flink itself non-deterministic** there — two runs of the same job can drop
+different rows depending on wall-clock timing. We don't reproduce that
+non-determinism (there is no single correct answer to match); we match the
+deterministic path, which is what governs in-order data and bounded jobs. In-order
+/ monotonic rowtimes — the common case, and every benchmark — have no late rows and
+no divergence at all. Details: [divergences/09](divergences/09-per-batch-watermark-assignment.md).
+
 ## Benchmarks
 
 Two measurements per operator: the native hot loop in isolation, and the whole job
