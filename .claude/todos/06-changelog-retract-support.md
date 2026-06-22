@@ -3,6 +3,14 @@
 **Status:** partial — safety gate done; emitting retractions remains
 **Source:** research findings §6 (open question #3); v1 is append-only
 
+> **Long-term north-star: move beyond append-only.** Everything native today is
+> insert-only. The largest remaining class of operators — non-windowed `GROUP BY`
+> aggregation, regular joins, streaming Top-N, keep-last dedup, temporal joins —
+> is gated entirely on this, *not* on any compute or shuffle gap (the keyed /
+> event-time backbone already exists; see [ticket 26](26-keyed-event-time-operators.md)).
+> Supporting `RowKind` end to end (read retractions, accumulate with retract, emit
+> the correct changelog) is the single biggest unlock left and the long-term goal.
+
 ## Done
 The substitution now refuses any node that is not insert-only
 (`ChangelogPlanUtils.isInsertOnly` in the optimizer stage), so a retracting or
