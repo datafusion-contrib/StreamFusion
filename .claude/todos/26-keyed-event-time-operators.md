@@ -28,7 +28,11 @@ host by `NativeParity`).
       columnar OVER, parity-tested incl. partitioned over a Parquet source). AVG
       works via Flink's `$SUM0`+`COUNT` decomposition (divide on the host). The
       `$SUM0` = SUM mapping holds because an OVER frame is never empty.
-      **Follow-ups:** bounded frames / `ROWS` (needs frame eviction), proctime.
+      **Follow-ups (deferred):** bounded frames / `ROWS` — needs per-frame row removal
+      (the frame slides, so rows leave the bottom): keep the frame's rows per key and
+      recompute per row (works for MIN/MAX; retract is an optimization for SUM/COUNT/AVG
+      only), plus watermark-driven eviction. A sibling operator, not an extension of the
+      unbounded `OverWindowAggregator`. Also: proctime. Deferred in favor of joins.
 - [ ] **Append-only deduplication** — keep-*first*-row
       (`ROW_NUMBER() OVER (PARTITION BY k ORDER BY rt) = 1`). Keyed, insert-only.
       (Keep-*last* is retracting — blocked on ticket 06.)
