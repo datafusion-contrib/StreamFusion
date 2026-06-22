@@ -18,13 +18,15 @@ discipline (matcher admits only what we reproduce exactly; verified against the
 host by `NativeParity`).
 
 ## Directly unlocked — single-input, drop straight into the existing shape
-- [~] **Event-time `OVER` aggregation** — first slice DONE: no `PARTITION BY`,
-      default `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`, SUM/MIN/MAX/COUNT
-      over one bigint/int/double value column (`NativeOverAggregateOperator` +
-      `OverAggregator`, parity-tested in `FlinkOverAggregateSqlHarnessTest`). The
+- [~] **Event-time `OVER` aggregation** — DONE for the default `RANGE BETWEEN
+      UNBOUNDED PRECEDING AND CURRENT ROW` frame, with or without `PARTITION BY`
+      (bigint/int/string keys), SUM/MIN/MAX/COUNT over one bigint/int/double value
+      column (`NativeOverAggregateOperator` + the keyed `OverAggregator`,
+      parity-tested in `FlinkOverAggregateSqlHarnessTest` incl. partitioned). The
       planner's `$SUM0`+`COUNT` decomposition of a user SUM is handled (frame is
-      never empty, so `$SUM0` = SUM). **Follow-ups:** `PARTITION BY` keys (reuse the
-      columnar keyed shuffle), bounded frames / `ROWS`, AVG, proctime.
+      never empty, so `$SUM0` = SUM). Row-fed (the host's keyed exchange co-locates
+      partitions). **Follow-ups:** bounded frames / `ROWS`, AVG, proctime, and a
+      columnar OVER fed by the columnar shuffle (it is row-fed today).
 - [ ] **Append-only deduplication** — keep-*first*-row
       (`ROW_NUMBER() OVER (PARTITION BY k ORDER BY rt) = 1`). Keyed, insert-only.
       (Keep-*last* is retracting — blocked on ticket 06.)
