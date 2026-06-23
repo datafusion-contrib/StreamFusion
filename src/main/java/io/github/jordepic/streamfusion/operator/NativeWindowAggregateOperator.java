@@ -15,7 +15,7 @@ public class NativeWindowAggregateOperator extends NativeWindowOperatorBase {
 
   private final boolean cumulative;
   private final int timeColumn;
-  private final int valueColumn;
+  private final int[] valueColumns;
   private final int[] keyColumns;
   private final int[] keyTypes;
 
@@ -24,10 +24,10 @@ public class NativeWindowAggregateOperator extends NativeWindowOperatorBase {
       long windowMillis,
       long slideMillis,
       int timeColumn,
-      int valueColumn,
+      int[] valueColumns,
       int[] keyColumns,
       int[] keyTypes,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
@@ -35,13 +35,13 @@ public class NativeWindowAggregateOperator extends NativeWindowOperatorBase {
         "streamfusion-window-aggregate-state",
         windowMillis,
         slideMillis,
-        valueType,
+        valueTypes,
         aggregateKinds,
         timeZoneId,
         batchSize);
     this.cumulative = cumulative;
     this.timeColumn = timeColumn;
-    this.valueColumn = valueColumn;
+    this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
     this.keyTypes = keyTypes;
   }
@@ -49,7 +49,7 @@ public class NativeWindowAggregateOperator extends NativeWindowOperatorBase {
   @Override
   protected long createHandle() {
     return cumulative
-        ? Native.createCumulativeAggregator(windowMillis, slideMillis, valueType, aggregateKinds)
+        ? Native.createCumulativeAggregator(windowMillis, slideMillis, valueTypes, aggregateKinds)
         : super.createHandle();
   }
 
@@ -57,13 +57,13 @@ public class NativeWindowAggregateOperator extends NativeWindowOperatorBase {
   protected long restoreHandle(byte[] snapshot) {
     return cumulative
         ? Native.restoreCumulativeAggregator(
-            windowMillis, slideMillis, valueType, aggregateKinds, snapshot)
+            windowMillis, slideMillis, valueTypes, aggregateKinds, snapshot)
         : super.restoreHandle(snapshot);
   }
 
   @Override
   protected void pushBatch(List<RowData> rows) {
-    updateRaw(rows, timeColumn, valueColumn, keyColumns, keyTypes);
+    updateRaw(rows, timeColumn, valueColumns, keyColumns, keyTypes);
   }
 
   @Override

@@ -22,11 +22,11 @@ public abstract class NativeWindowOperatorBase extends NativeRowWindowOperatorCo
       String stateName,
       long windowMillis,
       long slideMillis,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
-    super(stateName, windowMillis, slideMillis, valueType, aggregateKinds, timeZoneId);
+    super(stateName, windowMillis, slideMillis, valueTypes, aggregateKinds, timeZoneId);
     this.batchSize = batchSize;
   }
 

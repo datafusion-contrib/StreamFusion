@@ -24,9 +24,9 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
   private final long windowMillis;
   private final long slideMillis;
   private final int timeColumn;
-  private final int valueColumn;
+  private final int[] valueColumns;
   private final int[] keyColumns;
-  private final int valueType;
+  private final int[] valueTypes;
   private final int[] aggregateKinds;
 
   public StreamPhysicalNativeWindowAggregate(
@@ -38,9 +38,9 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
       long windowMillis,
       long slideMillis,
       int timeColumn,
-      int valueColumn,
+      int[] valueColumns,
       int[] keyColumns,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
@@ -48,9 +48,9 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
     this.windowMillis = windowMillis;
     this.slideMillis = slideMillis;
     this.timeColumn = timeColumn;
-    this.valueColumn = valueColumn;
+    this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
-    this.valueType = valueType;
+    this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
   }
 
@@ -75,9 +75,9 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
         windowMillis,
         slideMillis,
         timeColumn,
-        valueColumn,
+        valueColumns,
         keyColumns,
-        valueType,
+        valueTypes,
         aggregateKinds);
   }
 
@@ -92,9 +92,9 @@ public class StreamPhysicalNativeWindowAggregate extends SingleRel implements St
         windowMillis,
         slideMillis,
         timeColumn,
-        valueColumn,
+        valueColumns,
         keyColumns,
-        valueType,
+        valueTypes,
         aggregateKinds);
   }
 }

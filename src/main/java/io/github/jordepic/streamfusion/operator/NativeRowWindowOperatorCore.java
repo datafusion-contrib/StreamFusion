@@ -24,10 +24,10 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
       String stateName,
       long windowMillis,
       long slideMillis,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds,
       String timeZoneId) {
-    super(stateName, windowMillis, slideMillis, valueType, aggregateKinds, timeZoneId);
+    super(stateName, windowMillis, slideMillis, valueTypes, aggregateKinds, timeZoneId);
   }
 
   /**

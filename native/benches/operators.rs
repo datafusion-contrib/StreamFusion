@@ -47,7 +47,7 @@ fn bench_tumbling(c: &mut Criterion) {
     let batch = RecordBatch::try_new(
         Arc::new(Schema::new(vec![
             Field::new("ts", DataType::Int64, true),
-            Field::new("value", DataType::Int64, true),
+            Field::new("value0", DataType::Int64, true),
         ])),
         vec![ts_col, value_col],
     )
@@ -81,7 +81,7 @@ fn bench_tumbling_keyed(c: &mut Criterion) {
     let batch = RecordBatch::try_new(
         Arc::new(Schema::new(vec![
             Field::new("ts", DataType::Int64, true),
-            Field::new("value", DataType::Int64, true),
+            Field::new("value0", DataType::Int64, true),
             Field::new("key0", DataType::Int64, true),
         ])),
         vec![ts_col, value_col, key_col],
@@ -115,7 +115,7 @@ fn bench_session_keyed(c: &mut Criterion) {
     let batch = RecordBatch::try_new(
         Arc::new(Schema::new(vec![
             Field::new("ts", DataType::Int64, true),
-            Field::new("value", DataType::Int64, true),
+            Field::new("value0", DataType::Int64, true),
             Field::new("key0", DataType::Int64, true),
         ])),
         vec![ts_col, value_col, key_col],

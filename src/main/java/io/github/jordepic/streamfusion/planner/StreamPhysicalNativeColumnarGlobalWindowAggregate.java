@@ -27,7 +27,7 @@ public class StreamPhysicalNativeColumnarGlobalWindowAggregate extends SingleRel
   private final long slideMillis;
   private final boolean cumulative;
   private final int[] keyColumns;
-  private final int valueType;
+  private final int[] valueTypes;
   private final int[] aggregateKinds;
 
   public StreamPhysicalNativeColumnarGlobalWindowAggregate(
@@ -39,7 +39,7 @@ public class StreamPhysicalNativeColumnarGlobalWindowAggregate extends SingleRel
       long slideMillis,
       boolean cumulative,
       int[] keyColumns,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
@@ -47,7 +47,7 @@ public class StreamPhysicalNativeColumnarGlobalWindowAggregate extends SingleRel
     this.slideMillis = slideMillis;
     this.cumulative = cumulative;
     this.keyColumns = keyColumns;
-    this.valueType = valueType;
+    this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
   }
 
@@ -72,7 +72,7 @@ public class StreamPhysicalNativeColumnarGlobalWindowAggregate extends SingleRel
         slideMillis,
         cumulative,
         keyColumns,
-        valueType,
+        valueTypes,
         aggregateKinds);
   }
 
@@ -87,7 +87,7 @@ public class StreamPhysicalNativeColumnarGlobalWindowAggregate extends SingleRel
         slideMillis,
         cumulative,
         keyColumns,
-        valueType,
+        valueTypes,
         aggregateKinds);
   }
 }

@@ -36,8 +36,9 @@ here when the ticket is deleted.
    done (`/` `%`, COALESCE/NULLIF/NULL, narrow-int arithmetic, and the common string/exact-math
    functions, with precision/locale-divergent ones opt-in). Remaining: narrowing/float→int/string
    `CAST`, and any further obscure functions — each parity-gated.
-2. **Wider value/key types** (ticket 04): SMALLINT/TINYINT/FLOAT `SUM`/`AVG`, DECIMAL/TIMESTAMP
-   grouping keys, multiple value columns, `COUNT(*)`.
+2. **Wider value/key types** (ticket 04): value types, multiple value columns, wide grouping keys,
+   and `COUNT(*)` are done. Remaining: DECIMAL value columns, decimal/timestamp grouping keys, and
+   two-phase `COUNT(*)`.
 3. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
    filesystems (`hdfs:`/`s3:`) for the native source/sink; currently `file:` only. **Deferred by
    direction until generalized operator support lands** — broaden what we can run (items 1–2 and the

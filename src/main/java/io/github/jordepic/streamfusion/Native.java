@@ -269,11 +269,13 @@ public final class Native {
    *
    * @param windowMillis window size in milliseconds
    * @param slideMillis window slide in milliseconds (equal to the size for a tumbling window)
-   * @param valueType value column type: 0=bigint, 1=double
+   * @param valueTypes one value-column type per aggregate (0=bigint, 1=double, 2=int, 4=smallint,
+   *     5=tinyint, 6=float), positionally matching {@code aggregateKinds} so each aggregate reads its
+   *     own value column
    * @param aggregateKinds one code per aggregate: 0=SUM, 1=MIN, 2=MAX, 3=COUNT, 4=AVG
    */
   public static native long createTumblingAggregator(
-      long windowMillis, long slideMillis, int valueType, int[] aggregateKinds);
+      long windowMillis, long slideMillis, int[] valueTypes, int[] aggregateKinds);
 
   /**
    * Folds a batch (columns {@code ts} and {@code value}) into the aggregator's open windows.
@@ -314,12 +316,12 @@ public final class Native {
    *
    * @param windowMillis window size, supplied again since it is configuration, not state
    * @param slideMillis window slide (equal to the size for a tumbling window)
-   * @param valueType value column type (see {@link #createTumblingAggregator})
+   * @param valueTypes value-column type per aggregate (see {@link #createTumblingAggregator})
    * @param aggregateKinds aggregate codes (see {@link #createTumblingAggregator})
    * @param snapshot bytes produced by {@link #snapshotTumblingAggregator(long)}
    */
   public static native long restoreTumblingAggregator(
-      long windowMillis, long slideMillis, int valueType, int[] aggregateKinds, byte[] snapshot);
+      long windowMillis, long slideMillis, int[] valueTypes, int[] aggregateKinds, byte[] snapshot);
 
   /**
    * Creates a columnar event-time OVER aggregator (RANGE between unbounded preceding and current
@@ -464,15 +466,15 @@ public final class Native {
    *
    * @param maxSizeMillis the full (maximum) window size in milliseconds
    * @param stepMillis the step between successive cumulative window ends
-   * @param valueType value column type: 0=bigint, 1=double
+   * @param valueTypes value-column type per aggregate (see {@link #createTumblingAggregator})
    * @param aggregateKinds one code per aggregate: 0=SUM, 1=MIN, 2=MAX, 3=COUNT, 4=AVG
    */
   public static native long createCumulativeAggregator(
-      long maxSizeMillis, long stepMillis, int valueType, int[] aggregateKinds);
+      long maxSizeMillis, long stepMillis, int[] valueTypes, int[] aggregateKinds);
 
   /** Rebuilds a cumulative-window aggregator from a snapshot and returns a fresh handle. */
   public static native long restoreCumulativeAggregator(
-      long maxSizeMillis, long stepMillis, int valueType, int[] aggregateKinds, byte[] snapshot);
+      long maxSizeMillis, long stepMillis, int[] valueTypes, int[] aggregateKinds, byte[] snapshot);
 
   /**
    * Creates a stateful session-window aggregator and returns an opaque handle, released with {@link
@@ -480,11 +482,11 @@ public final class Native {
    * there is no fixed size or slide.
    *
    * @param gapMillis the inactivity gap in milliseconds that separates sessions
-   * @param valueType value column type: 0=bigint, 1=double
+   * @param valueTypes value-column type per aggregate (see {@link #createTumblingAggregator})
    * @param aggregateKinds one code per aggregate: 0=SUM, 1=MIN, 2=MAX, 3=COUNT, 4=AVG
    */
   public static native long createSessionAggregator(
-      long gapMillis, int valueType, int[] aggregateKinds);
+      long gapMillis, int[] valueTypes, int[] aggregateKinds);
 
   /**
    * Folds a batch (columns {@code ts}, {@code value}, optional {@code key}) into the aggregator's
@@ -511,10 +513,10 @@ public final class Native {
    * Rebuilds a session aggregator from a snapshot and returns a fresh handle.
    *
    * @param gapMillis the inactivity gap, supplied again since it is configuration, not state
-   * @param valueType value column type (see {@link #createSessionAggregator})
+   * @param valueTypes value-column type per aggregate (see {@link #createSessionAggregator})
    * @param aggregateKinds aggregate codes (see {@link #createSessionAggregator})
    * @param snapshot bytes produced by {@link #snapshotSessionAggregator(long)}
    */
   public static native long restoreSessionAggregator(
-      long gapMillis, int valueType, int[] aggregateKinds, byte[] snapshot);
+      long gapMillis, int[] valueTypes, int[] aggregateKinds, byte[] snapshot);
 }

@@ -68,12 +68,15 @@ Comparisons are width-insensitive and always safe.
   Arrow vector class + getter + a value-type code.
 - `DECIMAL` (all aggregates) stays on the host: precision/scale derivation and the
   decimal Arrow vector path are not yet built.
-- `COUNT(*)` is supported as the sole aggregate (single-phase): the operator
-  synthesizes a non-null value column so the existing COUNT counts every row. Mixed
-  with a value aggregate it needs a second value column (not yet supported), and its
-  two-phase global merge does not match — so under default planning it falls back.
-  The two-phase **local** is restricted to bigint/double value types (the only
-  partials the global merges); narrower types route single-phase only.
+- **Multiple value columns:** each aggregate reads its own value column, so
+  `SUM(a), SUM(b)` over different columns (of different types) is accelerated. The
+  native batch carries one `value{i}` column per aggregate, decoded by a per-aggregate
+  value-type code. Two-phase is admitted when every aggregate's partial is one the
+  global merges (bigint/double); narrower value types route single-phase only.
+- `COUNT(*)` is supported, including alongside value aggregates: it reads a
+  synthesized non-null value column so the existing COUNT counts every row. Its
+  two-phase global merge does not match, so a query containing `COUNT(*)` aggregates
+  single-phase only (the two-phase local is held back to avoid a split aggregation).
 - Grouping keys: one or more bigint/int/string/boolean/date keys are supported.
   The native composite key is a list of typed scalars and the native key path is
   type-general (it reads/rebuilds whatever Arrow type arrives), so widening keys is

@@ -23,9 +23,9 @@ public class StreamPhysicalNativeSessionWindowAggregate extends SingleRel
   private final RelDataType outputRowType;
   private final long gapMillis;
   private final int timeColumn;
-  private final int valueColumn;
+  private final int[] valueColumns;
   private final int[] keyColumns;
-  private final int valueType;
+  private final int[] valueTypes;
   private final int[] aggregateKinds;
 
   public StreamPhysicalNativeSessionWindowAggregate(
@@ -35,17 +35,17 @@ public class StreamPhysicalNativeSessionWindowAggregate extends SingleRel
       RelDataType outputRowType,
       long gapMillis,
       int timeColumn,
-      int valueColumn,
+      int[] valueColumns,
       int[] keyColumns,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.gapMillis = gapMillis;
     this.timeColumn = timeColumn;
-    this.valueColumn = valueColumn;
+    this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
-    this.valueType = valueType;
+    this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
   }
 
@@ -68,9 +68,9 @@ public class StreamPhysicalNativeSessionWindowAggregate extends SingleRel
         outputRowType,
         gapMillis,
         timeColumn,
-        valueColumn,
+        valueColumns,
         keyColumns,
-        valueType,
+        valueTypes,
         aggregateKinds);
   }
 
@@ -83,9 +83,9 @@ public class StreamPhysicalNativeSessionWindowAggregate extends SingleRel
         getRelDetailedDescription(),
         gapMillis,
         timeColumn,
-        valueColumn,
+        valueColumns,
         keyColumns,
-        valueType,
+        valueTypes,
         aggregateKinds);
   }
 }

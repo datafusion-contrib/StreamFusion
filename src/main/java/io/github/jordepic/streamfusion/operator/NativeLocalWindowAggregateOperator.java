@@ -21,7 +21,7 @@ import org.apache.flink.table.data.RowData;
 public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase {
 
   private final int timeColumn;
-  private final int valueColumn;
+  private final int[] valueColumns;
   private final int[] keyColumns;
   private final int[] keyTypes;
 
@@ -29,10 +29,10 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
       long windowMillis,
       long slideMillis,
       int timeColumn,
-      int valueColumn,
+      int[] valueColumns,
       int[] keyColumns,
       int[] keyTypes,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
@@ -40,19 +40,19 @@ public class NativeLocalWindowAggregateOperator extends NativeWindowOperatorBase
         "streamfusion-local-window-state",
         windowMillis,
         slideMillis,
-        valueType,
+        valueTypes,
         aggregateKinds,
         timeZoneId,
         batchSize);
     this.timeColumn = timeColumn;
-    this.valueColumn = valueColumn;
+    this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
     this.keyTypes = keyTypes;
   }
 
   @Override
   protected void pushBatch(List<RowData> rows) {
-    updateRaw(rows, timeColumn, valueColumn, keyColumns, keyTypes);
+    updateRaw(rows, timeColumn, valueColumns, keyColumns, keyTypes);
   }
 
   @Override

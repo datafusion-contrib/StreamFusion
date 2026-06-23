@@ -20,7 +20,8 @@ class NativeWindowAggregateOperatorTest {
     // No grouping key (-1); UTC so the emitted window bounds stay on the epoch millis asserted here.
     NativeWindowAggregateOperator operator =
         new NativeWindowAggregateOperator(
-            false, 1000, 1000, 1, 0, new int[0], new int[0], 0, new int[] {0}, "UTC", 8);
+            false, 1000, 1000, 1, new int[] {0}, new int[0], new int[0], new int[] {0},
+            new int[] {0}, "UTC", 8);
     try (OneInputStreamOperatorTestHarness<RowData, RowData> harness =
         new OneInputStreamOperatorTestHarness<>(operator)) {
       harness.open();

@@ -35,7 +35,8 @@ class NativeColumnarWindowAggregateOperatorTest {
   void emitsWindowAggregatesFromArrowBatches() throws Exception {
     NativeColumnarWindowAggregateOperator operator =
         new NativeColumnarWindowAggregateOperator(
-            false, 1000, 1000, 1, 0, new int[0], new int[0], 0, new int[] {0}, "UTC");
+            false, 1000, 1000, 1, new int[] {0}, new int[0], new int[0], new int[] {0}, new int[] {0},
+            "UTC");
     try (BufferAllocator allocator = new RootAllocator();
         OneInputStreamOperatorTestHarness<ArrowBatch, RowData> harness =
             new OneInputStreamOperatorTestHarness<>(operator, new ArrowBatchSerializer())) {

@@ -19,7 +19,7 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
 
   private final int timeColumn;
-  private final int valueColumn;
+  private final int[] valueColumns;
   private final int[] keyColumns;
   private final int[] keyTypes;
 
@@ -27,21 +27,21 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
       long windowMillis,
       long slideMillis,
       int timeColumn,
-      int valueColumn,
+      int[] valueColumns,
       int[] keyColumns,
       int[] keyTypes,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds,
       String timeZoneId) {
     super(
         "streamfusion-local-window-state",
         windowMillis,
         slideMillis,
-        valueType,
+        valueTypes,
         aggregateKinds,
         timeZoneId);
     this.timeColumn = timeColumn;
-    this.valueColumn = valueColumn;
+    this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
     this.keyTypes = keyTypes;
   }
@@ -49,7 +49,7 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
     try (VectorSchemaRoot in = element.getValue().root()) {
-      updateColumnar(in, timeColumn, valueColumn, keyColumns, keyTypes);
+      updateColumnar(in, timeColumn, valueColumns, keyColumns, keyTypes);
     }
   }
 

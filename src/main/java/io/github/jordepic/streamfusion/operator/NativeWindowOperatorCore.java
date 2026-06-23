@@ -73,7 +73,9 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
   private final String timeZoneId;
   protected final long slideMillis;
   protected final int[] aggregateKinds;
-  protected final int valueType;
+  // One value-column type per aggregate (positionally matching aggregateKinds), so a window can
+  // aggregate over different value columns.
+  protected final int[] valueTypes;
   protected final long windowMillis;
 
   private transient ZoneId zone;
@@ -86,13 +88,13 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
       String stateName,
       long windowMillis,
       long slideMillis,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds,
       String timeZoneId) {
     this.stateName = stateName;
     this.windowMillis = windowMillis;
     this.slideMillis = slideMillis;
-    this.valueType = valueType;
+    this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
     this.timeZoneId = timeZoneId;
   }
@@ -110,13 +112,13 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
 
   /** Creates a fresh native aggregator handle. */
   protected long createHandle() {
-    return Native.createTumblingAggregator(windowMillis, slideMillis, valueType, aggregateKinds);
+    return Native.createTumblingAggregator(windowMillis, slideMillis, valueTypes, aggregateKinds);
   }
 
   /** Restores a native aggregator handle from a checkpoint snapshot. */
   protected long restoreHandle(byte[] snapshot) {
     return Native.restoreTumblingAggregator(
-        windowMillis, slideMillis, valueType, aggregateKinds, snapshot);
+        windowMillis, slideMillis, valueTypes, aggregateKinds, snapshot);
   }
 
   /** Folds an exported batch into the native aggregator. */
@@ -203,13 +205,16 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
    * the single-phase and local operators, which both consume raw input.
    */
   protected final void updateRaw(
-      List<RowData> rows, int timeColumn, int valueColumn, int[] keyColumns, int[] keyTypes) {
+      List<RowData> rows, int timeColumn, int[] valueColumns, int[] keyColumns, int[] keyTypes) {
     BigIntVector ts = new BigIntVector("ts", allocator);
-    FieldVector value = newValueVector();
+    FieldVector[] values = new FieldVector[valueColumns.length];
     FieldVector[] keys = new FieldVector[keyColumns.length];
     List<FieldVector> vectors = new java.util.ArrayList<>();
     vectors.add(ts);
-    vectors.add(value);
+    for (int a = 0; a < valueColumns.length; a++) {
+      values[a] = newValueVector("value" + a, valueTypes[a]);
+      vectors.add(values[a]);
+    }
     for (int j = 0; j < keyColumns.length; j++) {
       keys[j] = newKeyVector("key" + j, keyTypes[j]);
       vectors.add(keys[j]);
@@ -220,10 +225,12 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
       for (int i = 0; i < rows.size(); i++) {
         RowData row = rows.get(i);
         ts.setSafe(i, row.getTimestamp(timeColumn, TIMESTAMP_PRECISION).getMillisecond());
-        if (valueColumn < 0) {
-          ((BigIntVector) value).setSafe(i, 1L); // COUNT(*): a non-null constant counts every row
-        } else {
-          setValue(value, i, row, valueColumn);
+        for (int a = 0; a < valueColumns.length; a++) {
+          if (valueColumns[a] < 0) {
+            ((BigIntVector) values[a]).setSafe(i, 1L); // COUNT(*): a non-null constant counts rows
+          } else {
+            setValue(values[a], i, row, valueColumns[a], valueTypes[a]);
+          }
         }
         for (int j = 0; j < keyColumns.length; j++) {
           setKey(keys[j], i, row, keyColumns[j], keyTypes[j]);
@@ -242,29 +249,35 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
    * native aggregator expects.
    */
   protected final void updateColumnar(
-      VectorSchemaRoot in, int timeColumn, int valueColumn, int[] keyColumns, int[] keyTypes) {
+      VectorSchemaRoot in, int timeColumn, int[] valueColumns, int[] keyColumns, int[] keyTypes) {
     int rows = in.getRowCount();
     BigIntVector ts = new BigIntVector("ts", allocator);
-    FieldVector value = newValueVector();
+    FieldVector[] values = new FieldVector[valueColumns.length];
+    FieldVector[] srcValues = new FieldVector[valueColumns.length];
     FieldVector[] keys = new FieldVector[keyColumns.length];
     List<FieldVector> vectors = new java.util.ArrayList<>();
     vectors.add(ts);
-    vectors.add(value);
+    for (int a = 0; a < valueColumns.length; a++) {
+      values[a] = newValueVector("value" + a, valueTypes[a]);
+      srcValues[a] = valueColumns[a] < 0 ? null : in.getFieldVectors().get(valueColumns[a]);
+      vectors.add(values[a]);
+    }
     for (int j = 0; j < keyColumns.length; j++) {
       keys[j] = newKeyVector("key" + j, keyTypes[j]);
       vectors.add(keys[j]);
     }
     TimeStampNanoVector srcTs = (TimeStampNanoVector) in.getVector(timeColumn);
-    FieldVector srcValue = valueColumn < 0 ? null : in.getFieldVectors().get(valueColumn);
     try (VectorSchemaRoot root = new VectorSchemaRoot(vectors);
         ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       for (int i = 0; i < rows; i++) {
         ts.setSafe(i, srcTs.get(i) / 1_000_000L);
-        if (valueColumn < 0) {
-          ((BigIntVector) value).setSafe(i, 1L); // COUNT(*): a non-null constant counts every row
-        } else {
-          copyValue(value, i, srcValue);
+        for (int a = 0; a < valueColumns.length; a++) {
+          if (valueColumns[a] < 0) {
+            ((BigIntVector) values[a]).setSafe(i, 1L); // COUNT(*): a non-null constant counts rows
+          } else {
+            copyValue(values[a], i, srcValues[a], valueTypes[a]);
+          }
         }
         for (int j = 0; j < keyColumns.length; j++) {
           setKeyFromVector(keys[j], i, in.getFieldVectors().get(keyColumns[j]), keyTypes[j]);
@@ -276,26 +289,26 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
     }
   }
 
-  /** Creates the Arrow vector carrying the value column, matching the native value-type code. */
-  private FieldVector newValueVector() {
+  /** Creates the Arrow vector carrying a value column, matching the native value-type code. */
+  private FieldVector newValueVector(String name, int valueType) {
     switch (valueType) {
       case TYPE_DOUBLE:
-        return new Float8Vector("value", allocator);
+        return new Float8Vector(name, allocator);
       case TYPE_INT:
-        return new IntVector("value", allocator);
+        return new IntVector(name, allocator);
       case TYPE_SMALLINT:
-        return new SmallIntVector("value", allocator);
+        return new SmallIntVector(name, allocator);
       case TYPE_TINYINT:
-        return new TinyIntVector("value", allocator);
+        return new TinyIntVector(name, allocator);
       case TYPE_FLOAT:
-        return new Float4Vector("value", allocator);
+        return new Float4Vector(name, allocator);
       default:
-        return new BigIntVector("value", allocator);
+        return new BigIntVector(name, allocator);
     }
   }
 
   /** Copies row {@code i}'s value from the input row into the value vector. */
-  private void setValue(FieldVector value, int i, RowData row, int column) {
+  private void setValue(FieldVector value, int i, RowData row, int column, int valueType) {
     switch (valueType) {
       case TYPE_DOUBLE:
         ((Float8Vector) value).setSafe(i, row.getDouble(column));
@@ -318,7 +331,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
   }
 
   /** Copies row {@code i}'s value from a source Arrow vector into the value vector. */
-  private void copyValue(FieldVector value, int i, FieldVector source) {
+  private void copyValue(FieldVector value, int i, FieldVector source, int valueType) {
     switch (valueType) {
       case TYPE_DOUBLE:
         ((Float8Vector) value).setSafe(i, ((Float8Vector) source).get(i));

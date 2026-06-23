@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Calc;
+import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExchange;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGlobalWindowAggregate;
@@ -207,10 +208,10 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         long windowMillis = WindowAggregateMatcher.windowSize(agg.windowing());
         long slideMillis = WindowAggregateMatcher.windowSlide(agg.windowing());
         int timeColumn = WindowAggregateMatcher.timeColumn(agg.windowing());
-        int valueColumn = WindowAggregateMatcher.valueColumn(agg.aggCalls());
+        int[] valueColumns = WindowAggregateMatcher.valueColumns(agg.aggCalls());
         int[] keyColumns = WindowAggregateMatcher.keyColumns(agg.grouping());
-        int valueType =
-            WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType());
+        int[] valueTypes =
+            WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType());
         int[] kinds = WindowAggregateMatcher.kinds(agg.aggCalls());
         // If the window sits on an exchange over a columnar producer, keep the shuffle columnar: a
         // native exchange (splitting the batch by the grouping keys) feeds a columnar window with no
@@ -235,9 +236,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
               windowMillis,
               slideMillis,
               timeColumn,
-              valueColumn,
+              valueColumns,
               keyColumns,
-              valueType,
+              valueTypes,
               kinds);
         }
         return new StreamPhysicalNativeWindowAggregate(
@@ -249,9 +250,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             windowMillis,
             slideMillis,
             timeColumn,
-            valueColumn,
+            valueColumns,
             keyColumns,
-            valueType,
+            valueTypes,
             kinds);
       }
       if (WindowAggregateMatcher.matchesSession(
@@ -264,9 +265,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             agg.getRowType(),
             WindowAggregateMatcher.gapMillis(agg.windowing()),
             WindowAggregateMatcher.timeColumn(agg.windowing()),
-            WindowAggregateMatcher.valueColumn(agg.aggCalls()),
+            WindowAggregateMatcher.valueColumns(agg.aggCalls()),
             WindowAggregateMatcher.keyColumns(agg.grouping()),
-            WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType()),
+            WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType()),
             WindowAggregateMatcher.kinds(agg.aggCalls()));
       }
     }
@@ -277,13 +278,12 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       // that pre-aggregates per slice (bigint only — its synthetic count1 column rides through
       // hoppingLocalKinds). COUNT(*) is excluded here: its global merge does not match, and a native
       // local feeding a host global would mismatch — so two-phase COUNT(*) stays wholly on the host.
-      boolean hasValue = WindowAggregateMatcher.valueColumn(agg.aggCalls()) >= 0;
+      boolean hasValue = WindowAggregateMatcher.allValuesPresent(agg.aggCalls());
       // The two-phase global only merges bigint/double partials, so the local (tumbling/cumulative)
       // is restricted to those value types — narrower types route single-phase only. A wider local
       // feeding a host global would mismatch.
-      int localValueType =
-          WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType());
-      boolean mergeableValueType = localValueType == 0 || localValueType == 1;
+      boolean mergeableValueType =
+          WindowAggregateMatcher.allPartialsMergeable(agg.aggCalls(), agg.getInput().getRowType());
       boolean hopping =
           hasValue
               && WindowAggregateMatcher.matchesHoppingLocal(
@@ -313,16 +313,24 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
           return noteDisabled(current, "localWindowAggregate");
         }
         substitutions++;
+        RelDataType localInput = agg.getInput().getRowType();
+        // Hopping carries a trailing synthetic count1 column, so its kinds and value columns get a
+        // matching extra entry (counts rows); tumbling/cumulative use the user aggregates as-is.
         int[] kinds =
             hopping
                 ? WindowAggregateMatcher.hoppingLocalKinds(agg.aggCalls())
                 : WindowAggregateMatcher.kinds(agg.aggCalls());
+        int[] valueColumns =
+            hopping
+                ? WindowAggregateMatcher.hoppingLocalValueColumns(agg.aggCalls())
+                : WindowAggregateMatcher.valueColumns(agg.aggCalls());
+        int[] valueTypes =
+            hopping
+                ? WindowAggregateMatcher.hoppingLocalValueTypes(agg.aggCalls(), localInput)
+                : WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), localInput);
         long sliceSize = WindowAggregateMatcher.sliceSize(agg.windowing());
         int timeColumn = WindowAggregateMatcher.timeColumn(agg.windowing());
-        int valueColumn = WindowAggregateMatcher.valueColumn(agg.aggCalls());
         int[] keyColumns = WindowAggregateMatcher.keyColumns(agg.grouping());
-        int valueType =
-            WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType());
         // A columnar producer feeds a columnar local (Arrow partials out); otherwise row-fed.
         if (agg.getInputs().get(0) instanceof ColumnarOutput) {
           return new StreamPhysicalNativeColumnarLocalWindowAggregate(
@@ -332,9 +340,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
               agg.getRowType(),
               sliceSize,
               timeColumn,
-              valueColumn,
+              valueColumns,
               keyColumns,
-              valueType,
+              valueTypes,
               kinds);
         }
         return new StreamPhysicalNativeLocalWindowAggregate(
@@ -344,9 +352,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             agg.getRowType(),
             sliceSize,
             timeColumn,
-            valueColumn,
+            valueColumns,
             keyColumns,
-            valueType,
+            valueTypes,
             kinds);
       }
     }
@@ -461,7 +469,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         long slideMillis = GlobalWindowAggregateMatcher.slideMillis(agg);
         boolean cumulative = GlobalWindowAggregateMatcher.cumulative(agg);
         int[] keyColumns = GlobalWindowAggregateMatcher.keyColumns(agg);
-        int valueType = GlobalWindowAggregateMatcher.valueType(agg);
+        int[] valueTypes = GlobalWindowAggregateMatcher.valueTypes(agg);
         int[] kinds = GlobalWindowAggregateMatcher.kinds(agg);
         // If the global sits on an exchange over a columnar local, keep the partial shuffle columnar:
         // a native exchange splits the partial batch by key and feeds a columnar global merge, so the
@@ -486,7 +494,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
               slideMillis,
               cumulative,
               keyColumns,
-              valueType,
+              valueTypes,
               kinds);
         }
         return new StreamPhysicalNativeGlobalWindowAggregate(
@@ -500,7 +508,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             keyColumns,
             GlobalWindowAggregateMatcher.partialColumns(agg),
             GlobalWindowAggregateMatcher.sliceEndColumn(agg),
-            valueType,
+            valueTypes,
             kinds);
       }
     }

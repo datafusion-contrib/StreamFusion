@@ -74,8 +74,40 @@ final class WindowAggregateMatcher {
       return false;
     }
     return supportedAggregation(windowing, grouping, aggCalls, inputType)
-        && valueTypeCode(aggCalls, inputType) == 0
+        && allValueTypes(aggCalls, inputType, 0) // bigint values only, matching the global half
         && !containsAvg(aggCalls);
+  }
+
+  /** True if every aggregate's value column has the given native type code. */
+  static boolean allValueTypes(
+      scala.collection.Seq<AggregateCall> aggCalls, RelDataType inputType, int code) {
+    for (int type : valueTypeCodes(aggCalls, inputType)) {
+      if (type != code) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** True if every aggregate reads a real value column (no COUNT(*)). */
+  static boolean allValuesPresent(scala.collection.Seq<AggregateCall> aggCalls) {
+    for (int column : valueColumns(aggCalls)) {
+      if (column < 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** True if every aggregate's partial is one the two-phase global merges (bigint or double). */
+  static boolean allPartialsMergeable(
+      scala.collection.Seq<AggregateCall> aggCalls, RelDataType inputType) {
+    for (int type : valueTypeCodes(aggCalls, inputType)) {
+      if (type != 0 && type != 1) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -88,6 +120,21 @@ final class WindowAggregateMatcher {
     System.arraycopy(user, 0, withCount, 0, user.length);
     withCount[user.length] = aggregateKind(SqlKind.COUNT);
     return withCount;
+  }
+
+  /** Value columns for the hopping local, including the synthetic count1 column (counts rows). */
+  static int[] hoppingLocalValueColumns(scala.collection.Seq<AggregateCall> aggCalls) {
+    int[] user = valueColumns(aggCalls);
+    int[] withCount = java.util.Arrays.copyOf(user, user.length + 1);
+    withCount[user.length] = -1; // the synthetic count1$1 counts rows over the synthesized column
+    return withCount;
+  }
+
+  /** Value-type codes for the hopping local; the trailing synthetic count1 column is a bigint (0). */
+  static int[] hoppingLocalValueTypes(
+      scala.collection.Seq<AggregateCall> aggCalls, RelDataType inputType) {
+    int[] user = valueTypeCodes(aggCalls, inputType);
+    return java.util.Arrays.copyOf(user, user.length + 1); // copyOf pads the new slot with 0 (bigint)
   }
 
   /**
@@ -131,62 +178,43 @@ final class WindowAggregateMatcher {
       return false;
     }
 
-    // Resolve the single value column the aggregates share. COUNT(*) reads no column; if every
-    // aggregate is COUNT(*) the operator synthesizes a non-null value column and counts rows. A
-    // value aggregate mixed with COUNT(*) would need two value columns (not yet supported), as would
-    // aggregates over different columns. See docs/aggregate-type-support.md for the value-type
-    // intersection enforced below.
-    int valueColumn = -1;
-    boolean countStar = false;
+    // Each aggregate reads its own value column (so SUM(a), SUM(b) over different columns is fine),
+    // or none for COUNT(*) (which the operator counts over a synthesized non-null column). The
+    // per-kind value-type gates below enforce the parity intersection in
+    // docs/aggregate-type-support.md.
+    boolean multiple = aggCalls.size() > 1;
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
-      if (aggregateKind(call.getAggregation().getKind()) < 0) {
+      int kind = aggregateKind(call.getAggregation().getKind());
+      if (kind < 0) {
         return false;
       }
       if (call.getArgList().isEmpty()) {
-        countStar = true;
-      } else if (call.getArgList().size() != 1) {
-        return false;
-      } else if (valueColumn < 0) {
-        valueColumn = call.getArgList().get(0);
-      } else if (call.getArgList().get(0) != valueColumn) {
+        continue; // COUNT(*) — only the zero-arg aggregate; the value column is synthesized
+      }
+      if (call.getArgList().size() != 1) {
         return false;
       }
-    }
-    if (valueColumn < 0) {
-      return true; // every aggregate is COUNT(*) — counted over the synthetic value column
-    }
-    if (countStar) {
-      return false; // a value aggregate alongside COUNT(*)
-    }
-    SqlTypeName valueType = inputType.getFieldList().get(valueColumn).getType().getSqlTypeName();
-    if (!supportedValueType(valueType)) {
-      return false;
-    }
-    // SUM and AVG keep the input numeric type, so they are admitted only where a custom native
-    // accumulator reproduces the host exactly: integer SUM/AVG wrap/truncate deterministically, and
-    // float SUM/AVG match the host's 4-byte sum / double-then-narrow average bit-for-bit (same fold
-    // order). DOUBLE rides the builtin sum and a custom double average. See
-    // docs/aggregate-type-support.md.
-    boolean integerType =
-        valueType == SqlTypeName.BIGINT
-            || valueType == SqlTypeName.INTEGER
-            || valueType == SqlTypeName.SMALLINT
-            || valueType == SqlTypeName.TINYINT;
-    boolean sumType = integerType || valueType == SqlTypeName.DOUBLE || valueType == SqlTypeName.FLOAT;
-    boolean avgType = sumType;
-    boolean multiple = aggCalls.size() > 1;
-    for (int i = 0; i < aggCalls.size(); i++) {
-      // Structure (single arg == valueColumn, known kind) is already validated above; here only the
-      // per-kind value-type gates remain.
-      int kind = aggregateKind(aggCalls.apply(i).getAggregation().getKind());
-      if (kind == KIND_SUM && !sumType) {
+      SqlTypeName valueType =
+          inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
+      if (!supportedValueType(valueType)) {
         return false;
       }
-      // AVG has multi-field partial state, so it is only supported as a lone aggregate; every
-      // numeric type has a matching native accumulator (integer truncating, float double-then-
-      // narrow, double).
-      if (kind == KIND_AVG && (multiple || !avgType)) {
+      // SUM/AVG keep the input numeric type, admitted only where a custom native accumulator
+      // reproduces the host exactly (integer SUM/AVG wrap/truncate; float SUM stays 4-byte; float/
+      // double AVG sum in double). MIN/MAX/COUNT are type-preserving and need no such gate.
+      boolean numericSumAvg =
+          valueType == SqlTypeName.BIGINT
+              || valueType == SqlTypeName.INTEGER
+              || valueType == SqlTypeName.SMALLINT
+              || valueType == SqlTypeName.TINYINT
+              || valueType == SqlTypeName.DOUBLE
+              || valueType == SqlTypeName.FLOAT;
+      if (kind == KIND_SUM && !numericSumAvg) {
+        return false;
+      }
+      // AVG has multi-field partial state, so it is only supported as a lone aggregate.
+      if (kind == KIND_AVG && (multiple || !numericSumAvg)) {
         return false;
       }
     }
@@ -203,15 +231,24 @@ final class WindowAggregateMatcher {
   }
 
   /**
-   * Value-type code matching the native side: 0 = bigint, 1 = double, 2 = int, 4 = smallint,
-   * 5 = tinyint, 6 = float (3 is a key-only string code).
+   * Value-type code per aggregate, matching the native side: 0 = bigint, 1 = double, 2 = int,
+   * 4 = smallint, 5 = tinyint, 6 = float (3 is a key-only string code). COUNT(*) gets bigint (0),
+   * the type of its synthesized value column.
    */
-  static int valueTypeCode(scala.collection.Seq<AggregateCall> aggCalls, RelDataType inputType) {
-    int valueColumn = valueColumn(aggCalls);
-    if (valueColumn < 0) {
-      return 0; // COUNT(*): the synthetic value column is a non-null bigint
+  static int[] valueTypeCodes(scala.collection.Seq<AggregateCall> aggCalls, RelDataType inputType) {
+    int[] columns = valueColumns(aggCalls);
+    int[] codes = new int[columns.length];
+    for (int i = 0; i < columns.length; i++) {
+      codes[i] =
+          columns[i] < 0
+              ? 0
+              : typeCode(inputType.getFieldList().get(columns[i]).getType().getSqlTypeName());
     }
-    switch (inputType.getFieldList().get(valueColumn).getType().getSqlTypeName()) {
+    return codes;
+  }
+
+  private static int typeCode(SqlTypeName type) {
+    switch (type) {
       case DOUBLE:
         return 1;
       case INTEGER:
@@ -272,12 +309,14 @@ final class WindowAggregateMatcher {
     return ((TimeAttributeWindowingStrategy) windowing).getTimeAttributeIndex();
   }
 
-  /**
-   * The shared value column the aggregates read, or -1 for COUNT(*) (no column). For a matched
-   * node either every aggregate is COUNT(*) — so the first one is — or they all read this column.
-   */
-  static int valueColumn(scala.collection.Seq<AggregateCall> aggCalls) {
-    return aggCalls.apply(0).getArgList().isEmpty() ? -1 : aggCalls.apply(0).getArgList().get(0);
+  /** The value column each aggregate reads, in order; -1 for COUNT(*) (no column, synthesized). */
+  static int[] valueColumns(scala.collection.Seq<AggregateCall> aggCalls) {
+    int[] columns = new int[aggCalls.size()];
+    for (int i = 0; i < aggCalls.size(); i++) {
+      columns[i] =
+          aggCalls.apply(i).getArgList().isEmpty() ? -1 : aggCalls.apply(i).getArgList().get(0);
+    }
+    return columns;
   }
 
   /** The grouping key columns (zero or more); the native side keys windows by their composite. */

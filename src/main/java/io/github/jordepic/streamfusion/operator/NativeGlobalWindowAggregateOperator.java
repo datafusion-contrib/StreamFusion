@@ -33,7 +33,7 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
       int[] keyTypes,
       int[] partialColumns,
       int sliceEndColumn,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
@@ -41,7 +41,7 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
         "streamfusion-global-window-state",
         windowMillis,
         slideMillis,
-        valueType,
+        valueTypes,
         aggregateKinds,
         timeZoneId,
         batchSize);
@@ -57,7 +57,7 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
   @Override
   protected long createHandle() {
     return cumulative
-        ? Native.createCumulativeAggregator(windowMillis, slideMillis, valueType, aggregateKinds)
+        ? Native.createCumulativeAggregator(windowMillis, slideMillis, valueTypes, aggregateKinds)
         : super.createHandle();
   }
 
@@ -65,7 +65,7 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
   protected long restoreHandle(byte[] snapshot) {
     return cumulative
         ? Native.restoreCumulativeAggregator(
-            windowMillis, slideMillis, valueType, aggregateKinds, snapshot)
+            windowMillis, slideMillis, valueTypes, aggregateKinds, snapshot)
         : super.restoreHandle(snapshot);
   }
 
@@ -74,7 +74,7 @@ public class NativeGlobalWindowAggregateOperator extends NativeWindowOperatorBas
    * double partial; count's partial is always a bigint, as are all partials over a bigint value.
    */
   private boolean partialIsDouble(int a) {
-    return valueType == TYPE_DOUBLE && aggregateKinds[a] != KIND_COUNT;
+    return valueTypes[a] == TYPE_DOUBLE && aggregateKinds[a] != KIND_COUNT;
   }
 
   @Override

@@ -519,6 +519,16 @@ impl WindowAggregate {
     }
 }
 
+/// Builds one aggregate per (kind, value-type code) pair, positionally. Per-aggregate value types
+/// let a single window aggregate compute over different value columns (e.g. `SUM(a), SUM(b)`).
+fn build_aggregates(kinds: &[i64], value_types: &[i64]) -> Vec<WindowAggregate> {
+    kinds
+        .iter()
+        .zip(value_types)
+        .map(|(&kind, &code)| WindowAggregate::new(kind, &value_data_type(code)))
+        .collect()
+}
+
 /// Builds an array from per-row scalars, using the given type for the empty case (where the
 /// element type cannot be inferred from the values).
 fn scalars_to_array(scalars: Vec<ScalarValue>, data_type: &DataType) -> ArrayRef {
@@ -559,15 +569,14 @@ impl TumblingAggregator {
         window_millis: i64,
         slide_millis: i64,
         cumulative: bool,
-        value_type: i64,
+        value_types: Vec<i64>,
         kinds: Vec<i64>,
     ) -> Self {
-        let value_type = value_data_type(value_type);
         TumblingAggregator {
             window_millis,
             slide_millis,
             cumulative,
-            aggregates: kinds.into_iter().map(|kind| WindowAggregate::new(kind, &value_type)).collect(),
+            aggregates: build_aggregates(&kinds, &value_types),
             windows: BTreeMap::new(),
             key_types: Vec::new(),
             current_watermark: i64::MIN,
@@ -618,12 +627,16 @@ impl TumblingAggregator {
 
     fn update(&mut self, batch: &RecordBatch) {
         let ts = column_i64(batch, "ts");
-        let value = batch.column_by_name("value").expect("missing value column");
+        // One value column per aggregate (value0, value1, …), so aggregates can read different
+        // columns. Sliced by type-agnostic take, so each accumulator sees its column's own type.
+        let values: Vec<&ArrayRef> = (0..self.aggregates.len())
+            .map(|i| batch.column_by_name(&format!("value{i}")).expect("missing value column"))
+            .collect();
         let key_arrays = key_arrays(batch);
         self.key_types = key_types(&key_arrays);
 
-        // Group the row positions for each (window, key); the value column is sliced by type-
-        // agnostic take, so the accumulators see the value column's own type (int, double, ...).
+        // Group the row positions for each (window, key); the value columns are sliced by type-
+        // agnostic take, so the accumulators see each column's own type (int, double, ...).
         let mut grouped: ahash::HashMap<(i64, i64, GroupKey), Vec<u32>> = ahash::HashMap::default();
         let mut windows = Vec::new();
         for row in 0..batch.num_rows() {
@@ -643,9 +656,11 @@ impl TumblingAggregator {
             }
         }
         for ((start, end, key), rows) in grouped {
-            let column = take(value, &UInt32Array::from(rows), None).expect("failed to take values");
-            for accumulator in self.accumulators(start, end, key) {
-                accumulator.update_batch(std::slice::from_ref(&column)).expect("failed to update");
+            let indices = UInt32Array::from(rows);
+            let columns: Vec<ArrayRef> =
+                values.iter().map(|v| take(v, &indices, None).expect("failed to take values")).collect();
+            for (i, accumulator) in self.accumulators(start, end, key).iter_mut().enumerate() {
+                accumulator.update_batch(std::slice::from_ref(&columns[i])).expect("failed to update");
             }
         }
     }
@@ -845,12 +860,12 @@ impl TumblingAggregator {
         window_millis: i64,
         slide_millis: i64,
         cumulative: bool,
-        value_type: i64,
+        value_types: Vec<i64>,
         kinds: Vec<i64>,
         bytes: &[u8],
     ) -> Self {
         let mut aggregator =
-            TumblingAggregator::new(window_millis, slide_millis, cumulative, value_type, kinds);
+            TumblingAggregator::new(window_millis, slide_millis, cumulative, value_types, kinds);
         let field_counts: Vec<usize> =
             aggregator.aggregates.iter().map(|a| a.state_fields().len()).collect();
         let state_field_total: usize = field_counts.iter().sum();
@@ -2021,11 +2036,10 @@ struct SessionAggregator {
 }
 
 impl SessionAggregator {
-    fn new(gap_millis: i64, value_type: i64, kinds: Vec<i64>) -> Self {
-        let value_type = value_data_type(value_type);
+    fn new(gap_millis: i64, value_types: Vec<i64>, kinds: Vec<i64>) -> Self {
         SessionAggregator {
             gap_millis,
-            aggregates: kinds.into_iter().map(|kind| WindowAggregate::new(kind, &value_type)).collect(),
+            aggregates: build_aggregates(&kinds, &value_types),
             sessions: HashMap::new(),
             key_types: Vec::new(),
         }
@@ -2033,7 +2047,10 @@ impl SessionAggregator {
 
     fn update(&mut self, batch: &RecordBatch) {
         let ts = column_i64(batch, "ts");
-        let value = batch.column_by_name("value").expect("missing value column");
+        // One value column per aggregate (value0, value1, …); each accumulator reads its own.
+        let values: Vec<&ArrayRef> = (0..self.aggregates.len())
+            .map(|i| batch.column_by_name(&format!("value{i}")).expect("missing value column"))
+            .collect();
         let key_arrays = key_arrays(batch);
         self.key_types = key_types(&key_arrays);
 
@@ -2041,7 +2058,9 @@ impl SessionAggregator {
             let key = read_key(&key_arrays, row);
             let candidate_start = ts.value(row);
             let candidate_end = candidate_start + self.gap_millis;
-            let value = take(value, &UInt32Array::from(vec![row as u32]), None).expect("take value");
+            let row_indices = UInt32Array::from(vec![row as u32]);
+            let row_values: Vec<ArrayRef> =
+                values.iter().map(|v| take(v, &row_indices, None).expect("take value")).collect();
 
             let map = self.sessions.entry(key).or_default();
             // Existing sessions are maximal and pairwise separated, but a `gap`-wide candidate can
@@ -2064,8 +2083,8 @@ impl SessionAggregator {
                 end = end.max(session.end);
                 merge_into(&mut accumulators, session.accumulators);
             }
-            for accumulator in accumulators.iter_mut() {
-                accumulator.update_batch(std::slice::from_ref(&value)).expect("failed to update");
+            for (i, accumulator) in accumulators.iter_mut().enumerate() {
+                accumulator.update_batch(std::slice::from_ref(&row_values[i])).expect("update");
             }
             map.insert(start, Session { end, accumulators });
         }
@@ -2162,8 +2181,8 @@ impl SessionAggregator {
         buffer
     }
 
-    fn restore(gap_millis: i64, value_type: i64, kinds: Vec<i64>, bytes: &[u8]) -> Self {
-        let mut aggregator = SessionAggregator::new(gap_millis, value_type, kinds);
+    fn restore(gap_millis: i64, value_types: Vec<i64>, kinds: Vec<i64>, bytes: &[u8]) -> Self {
+        let mut aggregator = SessionAggregator::new(gap_millis, value_types, kinds);
         let field_counts: Vec<usize> =
             aggregator.aggregates.iter().map(|a| a.state_fields().len()).collect();
         let state_field_total: usize = field_counts.iter().sum();
@@ -2826,9 +2845,9 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createFilterE
     strings: JObjectArray<'local>,
 ) -> jlong {
     let expression = FilterExpression {
-        kinds: read_kinds(&env, &kinds),
-        payload: read_kinds(&env, &payload),
-        child_counts: read_kinds(&env, &child_counts),
+        kinds: read_int_array(&env, &kinds),
+        payload: read_int_array(&env, &payload),
+        child_counts: read_int_array(&env, &child_counts),
         longs: read_longs(&env, &longs),
         doubles: read_doubles(&env, &doubles),
         strings: read_strings(&mut env, &strings),
@@ -2989,13 +3008,13 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createCalcExp
     output_names: JObjectArray<'local>,
 ) -> jlong {
     let expression = CalcExpression {
-        kinds: read_kinds(&env, &kinds),
-        payload: read_kinds(&env, &payload),
-        child_counts: read_kinds(&env, &child_counts),
+        kinds: read_int_array(&env, &kinds),
+        payload: read_int_array(&env, &payload),
+        child_counts: read_int_array(&env, &child_counts),
         longs: read_longs(&env, &longs),
         doubles: read_doubles(&env, &doubles),
         strings: read_strings(&mut env, &strings),
-        projection_roots: read_kinds(&env, &projection_roots).into_iter().map(|r| r as usize).collect(),
+        projection_roots: read_int_array(&env, &projection_roots).into_iter().map(|r| r as usize).collect(),
         condition_root: condition_root as i64,
         output_names: read_strings(&mut env, &output_names)
             .into_iter()
@@ -3305,7 +3324,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_splitByKey<'l
     num_partitions: jint,
 ) -> jlong {
     let batch = import_record_batch(in_array_address, in_schema_address);
-    let keys: Vec<usize> = read_kinds(&env, &key_columns).into_iter().map(|k| k as usize).collect();
+    let keys: Vec<usize> = read_int_array(&env, &key_columns).into_iter().map(|k| k as usize).collect();
     let partitions = partition_batch(&batch, &keys, num_partitions as usize);
     Box::into_raw(Box::new(SplitState { partitions, cursor: 0 })) as jlong
 }
@@ -3407,15 +3426,16 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTumblin
     _class: JClass<'local>,
     window_millis: jlong,
     slide_millis: jlong,
-    value_type: jint,
+    value_types: JIntArray<'local>,
     aggregate_kinds: JIntArray<'local>,
 ) -> jlong {
-    let kinds = read_kinds(&env, &aggregate_kinds);
+    let kinds = read_int_array(&env, &aggregate_kinds);
+    let value_types = read_int_array(&env, &value_types);
     Box::into_raw(Box::new(TumblingAggregator::new(
         window_millis,
         slide_millis,
         false,
-        value_type as i64,
+        value_types,
         kinds,
     ))) as jlong
 }
@@ -3429,24 +3449,25 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createCumulat
     _class: JClass<'local>,
     max_size_millis: jlong,
     step_millis: jlong,
-    value_type: jint,
+    value_types: JIntArray<'local>,
     aggregate_kinds: JIntArray<'local>,
 ) -> jlong {
-    let kinds = read_kinds(&env, &aggregate_kinds);
+    let kinds = read_int_array(&env, &aggregate_kinds);
+    let value_types = read_int_array(&env, &value_types);
     Box::into_raw(Box::new(TumblingAggregator::new(
         max_size_millis,
         step_millis,
         true,
-        value_type as i64,
+        value_types,
         kinds,
     ))) as jlong
 }
 
-/// Reads a JVM int[] of aggregate kinds into a Vec.
-fn read_kinds(env: &JNIEnv, kinds: &JIntArray) -> Vec<i64> {
-    let length = env.get_array_length(kinds).expect("failed to read kinds length");
+/// Reads a JVM int[] (aggregate kinds or per-aggregate value-type codes) into a Vec.
+fn read_int_array(env: &JNIEnv, array: &JIntArray) -> Vec<i64> {
+    let length = env.get_array_length(array).expect("failed to read int array length");
     let mut buffer = vec![0i32; length as usize];
-    env.get_int_array_region(kinds, 0, &mut buffer).expect("failed to read kinds");
+    env.get_int_array_region(array, 0, &mut buffer).expect("failed to read int array");
     buffer.into_iter().map(i64::from).collect()
 }
 
@@ -3578,17 +3599,18 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTumbli
     _class: JClass<'local>,
     window_millis: jlong,
     slide_millis: jlong,
-    value_type: jint,
+    value_types: JIntArray<'local>,
     aggregate_kinds: JIntArray<'local>,
     snapshot: JByteArray<'local>,
 ) -> jlong {
-    let kinds = read_kinds(&env, &aggregate_kinds);
+    let kinds = read_int_array(&env, &aggregate_kinds);
+    let value_types = read_int_array(&env, &value_types);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read snapshot");
     Box::into_raw(Box::new(TumblingAggregator::restore(
         window_millis,
         slide_millis,
         false,
-        value_type as i64,
+        value_types,
         kinds,
         &bytes,
     ))) as jlong
@@ -3601,17 +3623,18 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreCumula
     _class: JClass<'local>,
     max_size_millis: jlong,
     step_millis: jlong,
-    value_type: jint,
+    value_types: JIntArray<'local>,
     aggregate_kinds: JIntArray<'local>,
     snapshot: JByteArray<'local>,
 ) -> jlong {
-    let kinds = read_kinds(&env, &aggregate_kinds);
+    let kinds = read_int_array(&env, &aggregate_kinds);
+    let value_types = read_int_array(&env, &value_types);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read snapshot");
     Box::into_raw(Box::new(TumblingAggregator::restore(
         max_size_millis,
         step_millis,
         true,
-        value_type as i64,
+        value_types,
         kinds,
         &bytes,
     ))) as jlong
@@ -3619,7 +3642,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreCumula
 
 /// Reads a JVM int[] of column indices into a Vec.
 fn read_columns(env: &JNIEnv, columns: &JIntArray) -> Vec<usize> {
-    read_kinds(env, columns).into_iter().map(|c| c as usize).collect()
+    read_int_array(env, columns).into_iter().map(|c| c as usize).collect()
 }
 
 /// Creates a columnar OVER aggregator (event-time RANGE unbounded preceding); it buffers input
@@ -3635,7 +3658,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createOverAgg
     value_column: jint,
     key_columns: JIntArray<'local>,
 ) -> jlong {
-    let kinds = read_kinds(&env, &aggregate_kinds);
+    let kinds = read_int_array(&env, &aggregate_kinds);
     let keys = read_columns(&env, &key_columns);
     Box::into_raw(Box::new(OverWindowAggregator::new(
         value_type as i64,
@@ -3711,7 +3734,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreOverAg
     key_columns: JIntArray<'local>,
     snapshot: JByteArray<'local>,
 ) -> jlong {
-    let kinds = read_kinds(&env, &aggregate_kinds);
+    let kinds = read_int_array(&env, &aggregate_kinds);
     let keys = read_columns(&env, &key_columns);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read over snapshot");
     Box::into_raw(Box::new(OverWindowAggregator::restore(
@@ -3974,11 +3997,12 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createSession
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     gap_millis: jlong,
-    value_type: jint,
+    value_types: JIntArray<'local>,
     aggregate_kinds: JIntArray<'local>,
 ) -> jlong {
-    let kinds = read_kinds(&env, &aggregate_kinds);
-    Box::into_raw(Box::new(SessionAggregator::new(gap_millis, value_type as i64, kinds))) as jlong
+    let kinds = read_int_array(&env, &aggregate_kinds);
+    let value_types = read_int_array(&env, &value_types);
+    Box::into_raw(Box::new(SessionAggregator::new(gap_millis, value_types, kinds))) as jlong
 }
 
 /// Folds a batch from the JVM into the session aggregator, merging sessions as elements bridge them.
@@ -4041,13 +4065,14 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreSessio
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     gap_millis: jlong,
-    value_type: jint,
+    value_types: JIntArray<'local>,
     aggregate_kinds: JIntArray<'local>,
     snapshot: JByteArray<'local>,
 ) -> jlong {
-    let kinds = read_kinds(&env, &aggregate_kinds);
+    let kinds = read_int_array(&env, &aggregate_kinds);
+    let value_types = read_int_array(&env, &value_types);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read snapshot");
-    Box::into_raw(Box::new(SessionAggregator::restore(gap_millis, value_type as i64, kinds, &bytes)))
+    Box::into_raw(Box::new(SessionAggregator::restore(gap_millis, value_types, kinds, &bytes)))
         as jlong
 }
 
@@ -4089,7 +4114,8 @@ pub mod bench {
 
     impl Tumbling {
         pub fn new(window_millis: i64, value_type: i64, kinds: Vec<i64>) -> Self {
-            Tumbling(TumblingAggregator::new(window_millis, window_millis, false, value_type, kinds))
+            let value_types = vec![value_type; kinds.len()];
+            Tumbling(TumblingAggregator::new(window_millis, window_millis, false, value_types, kinds))
         }
 
         pub fn update(&mut self, batch: &RecordBatch) {
@@ -4106,7 +4132,8 @@ pub mod bench {
 
     impl Session {
         pub fn new(gap_millis: i64, value_type: i64, kinds: Vec<i64>) -> Self {
-            Session(SessionAggregator::new(gap_millis, value_type, kinds))
+            let value_types = vec![value_type; kinds.len()];
+            Session(SessionAggregator::new(gap_millis, value_types, kinds))
         }
 
         pub fn update(&mut self, batch: &RecordBatch) {
@@ -4304,7 +4331,7 @@ mod tests {
     #[test]
     fn cumulative_two_phase_merges_nested_windows() {
         // max size 3 s, step 1 s, cumulative, bigint value, SUM.
-        let mut agg = TumblingAggregator::new(3000, 1000, true, 0, vec![0]);
+        let mut agg = TumblingAggregator::new(3000, 1000, true, vec![0], vec![0]);
         let partial = RecordBatch::try_new(
             Arc::new(Schema::new(vec![
                 Field::new("key0", DataType::Int64, false),

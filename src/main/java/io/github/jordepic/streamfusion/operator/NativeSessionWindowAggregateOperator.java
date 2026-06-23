@@ -13,17 +13,17 @@ public class NativeSessionWindowAggregateOperator extends NativeWindowOperatorBa
 
   private final long gapMillis;
   private final int timeColumn;
-  private final int valueColumn;
+  private final int[] valueColumns;
   private final int[] keyColumns;
   private final int[] keyTypes;
 
   public NativeSessionWindowAggregateOperator(
       long gapMillis,
       int timeColumn,
-      int valueColumn,
+      int[] valueColumns,
       int[] keyColumns,
       int[] keyTypes,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds,
       String timeZoneId,
       int batchSize) {
@@ -32,25 +32,25 @@ public class NativeSessionWindowAggregateOperator extends NativeWindowOperatorBa
         "streamfusion-session-aggregate-state",
         0,
         0,
-        valueType,
+        valueTypes,
         aggregateKinds,
         timeZoneId,
         batchSize);
     this.gapMillis = gapMillis;
     this.timeColumn = timeColumn;
-    this.valueColumn = valueColumn;
+    this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
     this.keyTypes = keyTypes;
   }
 
   @Override
   protected long createHandle() {
-    return Native.createSessionAggregator(gapMillis, valueType, aggregateKinds);
+    return Native.createSessionAggregator(gapMillis, valueTypes, aggregateKinds);
   }
 
   @Override
   protected long restoreHandle(byte[] snapshot) {
-    return Native.restoreSessionAggregator(gapMillis, valueType, aggregateKinds, snapshot);
+    return Native.restoreSessionAggregator(gapMillis, valueTypes, aggregateKinds, snapshot);
   }
 
   @Override
@@ -75,7 +75,7 @@ public class NativeSessionWindowAggregateOperator extends NativeWindowOperatorBa
 
   @Override
   protected void pushBatch(List<RowData> rows) {
-    updateRaw(rows, timeColumn, valueColumn, keyColumns, keyTypes);
+    updateRaw(rows, timeColumn, valueColumns, keyColumns, keyTypes);
   }
 
   @Override

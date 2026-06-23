@@ -18,7 +18,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
 
   private final boolean cumulative;
   private final int timeColumn;
-  private final int valueColumn;
+  private final int[] valueColumns;
   private final int[] keyColumns;
   private final int[] keyTypes;
 
@@ -27,22 +27,22 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
       long windowMillis,
       long slideMillis,
       int timeColumn,
-      int valueColumn,
+      int[] valueColumns,
       int[] keyColumns,
       int[] keyTypes,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds,
       String timeZoneId) {
     super(
         "streamfusion-window-aggregate-state",
         windowMillis,
         slideMillis,
-        valueType,
+        valueTypes,
         aggregateKinds,
         timeZoneId);
     this.cumulative = cumulative;
     this.timeColumn = timeColumn;
-    this.valueColumn = valueColumn;
+    this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
     this.keyTypes = keyTypes;
   }
@@ -50,7 +50,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
   @Override
   protected long createHandle() {
     return cumulative
-        ? Native.createCumulativeAggregator(windowMillis, slideMillis, valueType, aggregateKinds)
+        ? Native.createCumulativeAggregator(windowMillis, slideMillis, valueTypes, aggregateKinds)
         : super.createHandle();
   }
 
@@ -58,14 +58,14 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
   protected long restoreHandle(byte[] snapshot) {
     return cumulative
         ? Native.restoreCumulativeAggregator(
-            windowMillis, slideMillis, valueType, aggregateKinds, snapshot)
+            windowMillis, slideMillis, valueTypes, aggregateKinds, snapshot)
         : super.restoreHandle(snapshot);
   }
 
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
     try (VectorSchemaRoot in = element.getValue().root()) {
-      updateColumnar(in, timeColumn, valueColumn, keyColumns, keyTypes);
+      updateColumnar(in, timeColumn, valueColumns, keyColumns, keyTypes);
     }
   }
 

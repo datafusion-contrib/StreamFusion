@@ -352,11 +352,40 @@ class FlinkWindowSqlHarnessTest {
 
   @Test
   void countStarWithValueAggregateMatchesHost() throws Exception {
-    // COUNT(*) alongside a value aggregate needs two value columns; the window aggregate is not yet
-    // admitted for it, so the result must still match the host (via fallback), never a wrong answer.
+    // COUNT(*) alongside a value aggregate: COUNT(*) counts a synthesized column, SUM reads its own.
     NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentWithSource,
         "SELECT window_start, window_end, COUNT(*) AS n, SUM(`value`) AS s "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void multipleValueColumnsMatchHost() throws Exception {
+    // Aggregates over three different value columns of different types, in one window.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT window_start, window_end, SUM(`value`) AS s, MAX(amount) AS m, MIN(qty) AS q "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void keyedMultipleValueColumnsMatchHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT k, window_start, window_end, SUM(`value`) AS s, SUM(amount) AS a, COUNT(*) AS n "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY k, window_start, window_end");
+  }
+
+  @Test
+  void twoPhaseMultipleValueColumnsMatchHost() throws Exception {
+    // Default planning over different mergeable value columns: a bigint SUM and a double SUM, whose
+    // partials (bigint, double) the global merges side by side.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentTwoPhase,
+        "SELECT window_start, window_end, SUM(`value`) AS s, SUM(amount) AS a "
             + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
             + "GROUP BY window_start, window_end");
   }

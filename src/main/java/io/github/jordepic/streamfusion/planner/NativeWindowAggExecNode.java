@@ -32,9 +32,9 @@ public class NativeWindowAggExecNode extends ExecNodeBase<RowData>
   private final long windowMillis;
   private final long slideMillis;
   private final int timeColumn;
-  private final int valueColumn;
+  private final int[] valueColumns;
   private final int[] keyColumns;
-  private final int valueType;
+  private final int[] valueTypes;
   private final int[] aggregateKinds;
 
   public NativeWindowAggExecNode(
@@ -46,9 +46,9 @@ public class NativeWindowAggExecNode extends ExecNodeBase<RowData>
       long windowMillis,
       long slideMillis,
       int timeColumn,
-      int valueColumn,
+      int[] valueColumns,
       int[] keyColumns,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds) {
     super(
         ExecNodeContext.newNodeId(),
@@ -61,9 +61,9 @@ public class NativeWindowAggExecNode extends ExecNodeBase<RowData>
     this.windowMillis = windowMillis;
     this.slideMillis = slideMillis;
     this.timeColumn = timeColumn;
-    this.valueColumn = valueColumn;
+    this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
-    this.valueType = valueType;
+    this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
   }
 
@@ -82,10 +82,10 @@ public class NativeWindowAggExecNode extends ExecNodeBase<RowData>
             windowMillis,
             slideMillis,
             timeColumn,
-            valueColumn,
+            valueColumns,
             keyColumns,
             NativeWindowOperatorBase.keyTypes((RowType) getOutputType(), keyColumns.length),
-            valueType,
+            valueTypes,
             aggregateKinds,
             timeZoneId,
             BATCH_SIZE),

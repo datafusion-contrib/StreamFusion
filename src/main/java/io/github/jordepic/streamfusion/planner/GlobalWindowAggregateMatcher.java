@@ -78,19 +78,22 @@ final class GlobalWindowAggregateMatcher {
   }
 
   /**
-   * Value-type code (matching the native side) recovered from the partials: double if any partial
-   * is a double (a sum/min/max over a double value), otherwise bigint. Count partials are bigint
-   * either way, so they don't decide it.
+   * Value-type code per aggregate (matching the native side), recovered from each partial column:
+   * double (1) for a sum/min/max over a double value, otherwise bigint (0). Counts are bigint. The
+   * partials are positional ({@code [grouping…, partial0..partialN-1, slice_end]}), so the i-th
+   * partial column is the i-th aggregate's.
    */
-  static int valueType(StreamPhysicalGlobalWindowAggregate aggregate) {
+  static int[] valueTypes(StreamPhysicalGlobalWindowAggregate aggregate) {
     RelDataType inputType = aggregate.getInput().getRowType();
-    for (int i = 0; i < aggregate.aggCalls().size(); i++) {
-      int partial = aggregate.aggCalls().apply(i).getArgList().get(0);
-      if (inputType.getFieldList().get(partial).getType().getSqlTypeName() == SqlTypeName.DOUBLE) {
-        return 1;
-      }
+    int base = aggregate.grouping().length;
+    int[] types = new int[aggregate.aggCalls().size()];
+    for (int i = 0; i < types.length; i++) {
+      types[i] =
+          inputType.getFieldList().get(base + i).getType().getSqlTypeName() == SqlTypeName.DOUBLE
+              ? 1
+              : 0;
     }
-    return 0;
+    return types;
   }
 
   /** Whether the global merges a cumulative window (nested windows sharing a bucket start). */

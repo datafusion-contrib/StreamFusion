@@ -25,9 +25,9 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
 
   private final long sliceMillis;
   private final int timeColumn;
-  private final int valueColumn;
+  private final int[] valueColumns;
   private final int[] keyColumns;
-  private final int valueType;
+  private final int[] valueTypes;
   private final int[] aggregateKinds;
 
   public NativeColumnarLocalWindowAggExecNode(
@@ -37,9 +37,9 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
       String description,
       long sliceMillis,
       int timeColumn,
-      int valueColumn,
+      int[] valueColumns,
       int[] keyColumns,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds) {
     super(
         ExecNodeContext.newNodeId(),
@@ -50,9 +50,9 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
         description);
     this.sliceMillis = sliceMillis;
     this.timeColumn = timeColumn;
-    this.valueColumn = valueColumn;
+    this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
-    this.valueType = valueType;
+    this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
   }
 
@@ -70,10 +70,10 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
             sliceMillis,
             sliceMillis,
             timeColumn,
-            valueColumn,
+            valueColumns,
             keyColumns,
             NativeWindowOperatorCore.keyTypes((RowType) getOutputType(), keyColumns.length),
-            valueType,
+            valueTypes,
             aggregateKinds,
             timeZoneId),
         ArrowBatchTypeInformation.INSTANCE,
