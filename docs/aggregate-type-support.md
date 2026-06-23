@@ -51,11 +51,15 @@ result-type coercion lines up with Flink's promotion/wrap behavior on both sides
 Comparisons are width-insensitive and always safe.
 
 ## Status
-- Implemented value types: `BIGINT`, `DOUBLE`, and `INT` — all five aggregates.
-  The native value path is type-general; adding the remaining MIN/MAX/COUNT types
-  (SMALLINT/TINYINT/FLOAT/DECIMAL) is mechanical (an Arrow vector class + getter +
-  a value-type code).
-- `SUM`/`AVG` over smallint/tinyint/float await the custom accumulators above.
+- Implemented value types: `BIGINT`, `DOUBLE`, and `INT` carry all five aggregates;
+  `SMALLINT`, `TINYINT`, and `FLOAT` carry `MIN`/`MAX`/`COUNT` (the type-preserving
+  comparisons/counts, which have no arithmetic to diverge — `MIN`/`MAX` keep the
+  narrow type, `COUNT` is bigint). The native value path is type-general; each narrow
+  type is an Arrow vector class + getter + a value-type code.
+- `SUM`/`AVG` over smallint/tinyint/float stay on the host (a narrow `SUM` keeps the
+  input type and would diverge from DataFusion's widening sum) — they await the custom
+  truncating/wrapping accumulators, the same pattern as the int32 sum.
+- `DECIMAL` (all aggregates) stays on the host: precision/scale derivation is exotic.
 - Grouping keys: one or more bigint/int/string keys are supported. The native
   composite key is a list of typed scalars; int widens into int64 carriage and is
   emitted back as int, strings ride as varchar. Other key types (decimal,

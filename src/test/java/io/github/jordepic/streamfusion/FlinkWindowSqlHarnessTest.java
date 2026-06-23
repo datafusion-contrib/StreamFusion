@@ -289,6 +289,44 @@ class FlinkWindowSqlHarnessTest {
             + "GROUP BY window_start, window_end");
   }
 
+  @Test
+  void smallIntMinMaxCountMatchesHost() throws Exception {
+    // MIN/MAX/COUNT over SMALLINT: type-preserving comparisons/counts, no arithmetic to diverge.
+    assertNarrowAggregatesMatchHost("sm");
+  }
+
+  @Test
+  void tinyIntMinMaxCountMatchesHost() throws Exception {
+    assertNarrowAggregatesMatchHost("tn");
+  }
+
+  @Test
+  void floatMinMaxCountMatchesHost() throws Exception {
+    // FLOAT MIN/MAX keep the 4-byte type (unlike SUM, which Flink would not widen to double).
+    assertNarrowAggregatesMatchHost("fl");
+  }
+
+  @Test
+  void floatSumFallsBack() throws Exception {
+    // SUM over FLOAT keeps the window aggregate on the host: Flink keeps FLOAT, while DataFusion's
+    // sum widens to double. (A trailing projection still routes, so this is a partial fallback.)
+    NativeParity.assertParityWithFallbackReason(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT window_start, window_end, SUM(fl) AS s "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end",
+        "window aggregate");
+  }
+
+  private static void assertNarrowAggregatesMatchHost(String column) throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT window_start, window_end, "
+            + "MIN(" + column + ") AS lo, MAX(" + column + ") AS hi, COUNT(" + column + ") AS c "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
   private static void assertWindowParity(String aggregate) throws Exception {
     NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentWithSource,
@@ -347,19 +385,22 @@ class FlinkWindowSqlHarnessTest {
     DataStream<Row> source =
         env.fromData(
                 Types.ROW_NAMED(
-                    new String[] {"k", "value", "ts", "amount", "qty", "g", "s"},
+                    new String[] {"k", "value", "ts", "amount", "qty", "g", "s", "sm", "tn", "fl"},
                     Types.LONG,
                     Types.LONG,
                     Types.LONG,
                     Types.DOUBLE,
                     Types.INT,
                     Types.LONG,
-                    Types.STRING),
-                Row.of(7L, 1L, 0L, 1.5, 10, 100L, "a"),
-                Row.of(7L, 2L, 500L, 2.5, 20, 100L, "a"),
-                Row.of(9L, 3L, 600L, 3.0, 30, 200L, "b"),
-                Row.of(7L, 4L, 1500L, 4.5, 40, 100L, "a"),
-                Row.of(9L, 5L, 2500L, 5.5, 50, 200L, "b"))
+                    Types.STRING,
+                    Types.SHORT,
+                    Types.BYTE,
+                    Types.FLOAT),
+                Row.of(7L, 1L, 0L, 1.5, 10, 100L, "a", (short) 10, (byte) 1, 1.5f),
+                Row.of(7L, 2L, 500L, 2.5, 20, 100L, "a", (short) 20, (byte) 2, 2.5f),
+                Row.of(9L, 3L, 600L, 3.0, 30, 200L, "b", (short) 30, (byte) 3, 3.5f),
+                Row.of(7L, 4L, 1500L, 4.5, 40, 100L, "a", (short) 40, (byte) 4, 4.5f),
+                Row.of(9L, 5L, 2500L, 5.5, 50, 200L, "b", (short) 50, (byte) 5, 5.5f))
             .assignTimestampsAndWatermarks(
                 WatermarkStrategy.<Row>forMonotonousTimestamps()
                     .withTimestampAssigner((row, ts) -> (Long) row.getField(2)));
@@ -375,6 +416,9 @@ class FlinkWindowSqlHarnessTest {
             .column("qty", DataTypes.INT())
             .column("g", DataTypes.BIGINT())
             .column("s", DataTypes.STRING())
+            .column("sm", DataTypes.SMALLINT())
+            .column("tn", DataTypes.TINYINT())
+            .column("fl", DataTypes.FLOAT())
             .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
             .watermark("rt", "SOURCE_WATERMARK()")
             .build());

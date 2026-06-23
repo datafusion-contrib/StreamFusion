@@ -13,9 +13,12 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
+import org.apache.arrow.vector.SmallIntVector;
 import org.apache.arrow.vector.TimeStampNanoVector;
+import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.state.ListState;
@@ -44,11 +47,18 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
 
   protected static final int TIMESTAMP_PRECISION = 3;
 
-  /** Value-type codes matching the native side. */
+  /**
+   * Value-type codes matching the native side. 0-2 carry every aggregate; the narrow numeric types
+   * 4-6 carry only MIN/MAX/COUNT (their SUM/AVG would diverge from the host's narrow-type arithmetic
+   * — see docs/aggregate-type-support.md). 3 is a key-only string code (never a value type).
+   */
   protected static final int TYPE_BIGINT = 0;
   protected static final int TYPE_DOUBLE = 1;
   protected static final int TYPE_INT = 2;
   protected static final int TYPE_STRING = 3;
+  protected static final int TYPE_SMALLINT = 4;
+  protected static final int TYPE_TINYINT = 5;
+  protected static final int TYPE_FLOAT = 6;
 
   /** Aggregate kind code for COUNT, whose partial is always a bigint regardless of value type. */
   protected static final int KIND_COUNT = 3;
@@ -189,14 +199,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
   protected final void updateRaw(
       List<RowData> rows, int timeColumn, int valueColumn, int[] keyColumns, int[] keyTypes) {
     BigIntVector ts = new BigIntVector("ts", allocator);
-    FieldVector value;
-    if (valueType == TYPE_DOUBLE) {
-      value = new Float8Vector("value", allocator);
-    } else if (valueType == TYPE_INT) {
-      value = new IntVector("value", allocator);
-    } else {
-      value = new BigIntVector("value", allocator);
-    }
+    FieldVector value = newValueVector();
     FieldVector[] keys = new FieldVector[keyColumns.length];
     List<FieldVector> vectors = new java.util.ArrayList<>();
     vectors.add(ts);
@@ -211,13 +214,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
       for (int i = 0; i < rows.size(); i++) {
         RowData row = rows.get(i);
         ts.setSafe(i, row.getTimestamp(timeColumn, TIMESTAMP_PRECISION).getMillisecond());
-        if (valueType == TYPE_DOUBLE) {
-          ((Float8Vector) value).setSafe(i, row.getDouble(valueColumn));
-        } else if (valueType == TYPE_INT) {
-          ((IntVector) value).setSafe(i, row.getInt(valueColumn));
-        } else {
-          ((BigIntVector) value).setSafe(i, row.getLong(valueColumn));
-        }
+        setValue(value, i, row, valueColumn);
         for (int j = 0; j < keyColumns.length; j++) {
           setKey(keys[j], i, row, keyColumns[j], keyTypes[j]);
         }
@@ -238,14 +235,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
       VectorSchemaRoot in, int timeColumn, int valueColumn, int[] keyColumns, int[] keyTypes) {
     int rows = in.getRowCount();
     BigIntVector ts = new BigIntVector("ts", allocator);
-    FieldVector value;
-    if (valueType == TYPE_DOUBLE) {
-      value = new Float8Vector("value", allocator);
-    } else if (valueType == TYPE_INT) {
-      value = new IntVector("value", allocator);
-    } else {
-      value = new BigIntVector("value", allocator);
-    }
+    FieldVector value = newValueVector();
     FieldVector[] keys = new FieldVector[keyColumns.length];
     List<FieldVector> vectors = new java.util.ArrayList<>();
     vectors.add(ts);
@@ -261,13 +251,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       for (int i = 0; i < rows; i++) {
         ts.setSafe(i, srcTs.get(i) / 1_000_000L);
-        if (valueType == TYPE_DOUBLE) {
-          ((Float8Vector) value).setSafe(i, ((Float8Vector) srcValue).get(i));
-        } else if (valueType == TYPE_INT) {
-          ((IntVector) value).setSafe(i, ((IntVector) srcValue).get(i));
-        } else {
-          ((BigIntVector) value).setSafe(i, ((BigIntVector) srcValue).get(i));
-        }
+        copyValue(value, i, srcValue);
         for (int j = 0; j < keyColumns.length; j++) {
           setKeyFromVector(keys[j], i, in.getFieldVectors().get(keyColumns[j]), keyTypes[j]);
         }
@@ -275,6 +259,70 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
       root.setRowCount(rows);
       Data.exportVectorSchemaRoot(allocator, root, dictionaries, array, schema);
       updateHandle(array.memoryAddress(), schema.memoryAddress());
+    }
+  }
+
+  /** Creates the Arrow vector carrying the value column, matching the native value-type code. */
+  private FieldVector newValueVector() {
+    switch (valueType) {
+      case TYPE_DOUBLE:
+        return new Float8Vector("value", allocator);
+      case TYPE_INT:
+        return new IntVector("value", allocator);
+      case TYPE_SMALLINT:
+        return new SmallIntVector("value", allocator);
+      case TYPE_TINYINT:
+        return new TinyIntVector("value", allocator);
+      case TYPE_FLOAT:
+        return new Float4Vector("value", allocator);
+      default:
+        return new BigIntVector("value", allocator);
+    }
+  }
+
+  /** Copies row {@code i}'s value from the input row into the value vector. */
+  private void setValue(FieldVector value, int i, RowData row, int column) {
+    switch (valueType) {
+      case TYPE_DOUBLE:
+        ((Float8Vector) value).setSafe(i, row.getDouble(column));
+        break;
+      case TYPE_INT:
+        ((IntVector) value).setSafe(i, row.getInt(column));
+        break;
+      case TYPE_SMALLINT:
+        ((SmallIntVector) value).setSafe(i, row.getShort(column));
+        break;
+      case TYPE_TINYINT:
+        ((TinyIntVector) value).setSafe(i, row.getByte(column));
+        break;
+      case TYPE_FLOAT:
+        ((Float4Vector) value).setSafe(i, row.getFloat(column));
+        break;
+      default:
+        ((BigIntVector) value).setSafe(i, row.getLong(column));
+    }
+  }
+
+  /** Copies row {@code i}'s value from a source Arrow vector into the value vector. */
+  private void copyValue(FieldVector value, int i, FieldVector source) {
+    switch (valueType) {
+      case TYPE_DOUBLE:
+        ((Float8Vector) value).setSafe(i, ((Float8Vector) source).get(i));
+        break;
+      case TYPE_INT:
+        ((IntVector) value).setSafe(i, ((IntVector) source).get(i));
+        break;
+      case TYPE_SMALLINT:
+        ((SmallIntVector) value).setSafe(i, ((SmallIntVector) source).get(i));
+        break;
+      case TYPE_TINYINT:
+        ((TinyIntVector) value).setSafe(i, ((TinyIntVector) source).get(i));
+        break;
+      case TYPE_FLOAT:
+        ((Float4Vector) value).setSafe(i, ((Float4Vector) source).get(i));
+        break;
+      default:
+        ((BigIntVector) value).setSafe(i, ((BigIntVector) source).get(i));
     }
   }
 
@@ -339,13 +387,22 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
     return value;
   }
 
-  /** Reads a result/partial cell, boxing by the column's type so RowData gets Long or Double. */
+  /** Reads a result/partial cell, boxing by the vector's type so RowData gets the column's type. */
   protected static Object readScalar(FieldVector vector, int row) {
     if (vector instanceof Float8Vector) {
       return ((Float8Vector) vector).get(row);
     }
+    if (vector instanceof Float4Vector) {
+      return ((Float4Vector) vector).get(row);
+    }
     if (vector instanceof IntVector) {
       return ((IntVector) vector).get(row);
+    }
+    if (vector instanceof SmallIntVector) {
+      return ((SmallIntVector) vector).get(row);
+    }
+    if (vector instanceof TinyIntVector) {
+      return ((TinyIntVector) vector).get(row);
     }
     return ((BigIntVector) vector).get(row);
   }

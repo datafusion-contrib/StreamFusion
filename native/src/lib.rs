@@ -67,6 +67,10 @@ fn value_data_type(code: i64) -> DataType {
         0 => DataType::Int64,
         1 => DataType::Float64,
         2 => DataType::Int32,
+        // 3 is reserved for string keys (never a value type); 4/5/6 are the narrow value types.
+        4 => DataType::Int16,
+        5 => DataType::Int8,
+        6 => DataType::Float32,
         other => panic!("unsupported value type: {other}"),
     }
 }

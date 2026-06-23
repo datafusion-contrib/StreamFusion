@@ -68,6 +68,26 @@ final class NativeParity {
   }
 
   /**
+   * Asserts the query still matches the host while a specific operator falls back — a partial
+   * fallback. Unlike {@link #assertFallback}, it allows other operators to route (e.g. a trailing
+   * projection), and verifies both that the result is correct and that some recorded fallback reason
+   * names the operator that stayed on the host.
+   */
+  static void assertParityWithFallbackReason(
+      Supplier<TableEnvironment> environment, String sql, String expectedReason) throws Exception {
+    List<List<Object>> host = collect(environment.get(), sql);
+
+    TableEnvironment nativeEnvironment = environment.get();
+    PhysicalPlanScan scan = NativePlanner.install(nativeEnvironment);
+    List<List<Object>> nativeRows = collect(nativeEnvironment, sql);
+
+    assertEquals(sorted(host), sorted(nativeRows), "native result differs from host");
+    assertTrue(
+        scan.fallbackReasons().stream().anyMatch(r -> r.contains(expectedReason)),
+        "no fallback reason contained \"" + expectedReason + "\"; reasons=" + scan.fallbackReasons());
+  }
+
+  /**
    * Asserts the query routes to native (substitutes at least one operator) without comparing results
    * — for verifying an opt-in {@code allowIncompatible} flag enables native execution of a function
    * whose result is intentionally allowed to differ from the host.

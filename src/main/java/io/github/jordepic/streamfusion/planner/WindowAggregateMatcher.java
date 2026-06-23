@@ -23,6 +23,7 @@ import org.apache.flink.table.types.logical.LogicalTypeRoot;
  */
 final class WindowAggregateMatcher {
 
+  static final int KIND_SUM = 0;
   static final int KIND_AVG = 4;
 
   private WindowAggregateMatcher() {}
@@ -137,16 +138,25 @@ final class WindowAggregateMatcher {
       return false;
     }
     SqlTypeName valueType = inputType.getFieldList().get(valueColumn).getType().getSqlTypeName();
-    if (valueType != SqlTypeName.BIGINT
-        && valueType != SqlTypeName.DOUBLE
-        && valueType != SqlTypeName.INTEGER) {
+    if (!supportedValueType(valueType)) {
       return false;
     }
+    // SUM/AVG keep the input numeric type, so they are admitted only for the types with a
+    // parity-matching native accumulator (bigint/double/int). The narrow numeric types carry
+    // MIN/MAX/COUNT only — type-preserving comparisons and counts with no arithmetic to diverge.
+    boolean arithmeticType =
+        valueType == SqlTypeName.BIGINT
+            || valueType == SqlTypeName.DOUBLE
+            || valueType == SqlTypeName.INTEGER;
     boolean multiple = aggCalls.size() > 1;
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
       int kind = aggregateKind(call.getAggregation().getKind());
       if (call.getArgList().size() != 1 || call.getArgList().get(0) != valueColumn || kind < 0) {
+        return false;
+      }
+      // SUM keeps the input type; only bigint/double/int have a parity-matching native accumulator.
+      if (kind == KIND_SUM && !arithmeticType) {
         return false;
       }
       // AVG has multi-field partial state, so it is only supported as a lone aggregate; and the
@@ -161,7 +171,19 @@ final class WindowAggregateMatcher {
     return true;
   }
 
-  /** Value-type code matching the native side: 0 = bigint, 1 = double, 2 = int. */
+  private static boolean supportedValueType(SqlTypeName type) {
+    return type == SqlTypeName.BIGINT
+        || type == SqlTypeName.DOUBLE
+        || type == SqlTypeName.INTEGER
+        || type == SqlTypeName.SMALLINT
+        || type == SqlTypeName.TINYINT
+        || type == SqlTypeName.FLOAT;
+  }
+
+  /**
+   * Value-type code matching the native side: 0 = bigint, 1 = double, 2 = int, 4 = smallint,
+   * 5 = tinyint, 6 = float (3 is a key-only string code).
+   */
   static int valueTypeCode(scala.collection.Seq<AggregateCall> aggCalls, RelDataType inputType) {
     int valueColumn = aggCalls.apply(0).getArgList().get(0);
     switch (inputType.getFieldList().get(valueColumn).getType().getSqlTypeName()) {
@@ -169,6 +191,12 @@ final class WindowAggregateMatcher {
         return 1;
       case INTEGER:
         return 2;
+      case SMALLINT:
+        return 4;
+      case TINYINT:
+        return 5;
+      case FLOAT:
+        return 6;
       default:
         return 0;
     }

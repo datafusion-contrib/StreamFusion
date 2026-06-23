@@ -11,14 +11,16 @@ per window are supported. The native engine is value-type agnostic; the
 accelerated value types are the parity intersection in
 `docs/aggregate-type-support.md` — all aggregates over bigint/double (both one-
 and two-phase) and over int (one-phase; `SUM` and `AVG` use custom
-wrapping/truncating accumulators). Grouping keys may be bigint/int/string.
-Remaining below:
+wrapping/truncating accumulators), plus `MIN`/`MAX`/`COUNT` over
+smallint/tinyint/float (the type-preserving comparisons/counts; their value
+column rides a narrow Arrow vector decoded by a per-type value-type code).
+Grouping keys may be bigint/int/string. Remaining below:
 
-- **More value types via the parity table:** extend `MIN`/`MAX`/`COUNT` to
-  smallint/tinyint/float/decimal (mechanical — an Arrow vector class + getter +
-  a value-type code each).
 - **`SUM`/`AVG` over smallint/tinyint/float:** need the remaining custom
-  truncating/wrapping accumulators to match Flink.
+  truncating/wrapping accumulators (i16/i8 wrapping sum, float32 sum) to match
+  Flink, which keeps the narrow input type rather than widening.
+- **DECIMAL value columns (all aggregates):** precision/scale derivation is
+  exotic; a matcher gate + a decimal Arrow vector path.
 - **More key types:** bigint/int/string keys are done (the native key is a list
   of typed scalars). Decimal/timestamp/etc. keys are a matcher gate + a JVM
   vector each.
