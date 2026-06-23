@@ -44,10 +44,11 @@ therefore encoded at their declared width (`TINYINT`/`SMALLINT`/`INTEGER`/`BIGIN
 rather than widening to int64. A parity test at the `INT` overflow boundary
 (`v * 2` near `INT_MAX`) confirms native and Flink agree, wrap and all.
 
-Residual: arithmetic *between* narrow-integer columns (`TINYINT`/`SMALLINT`) depends
-on DataFusion's result-type coercion matching Flink's promotion, which is unverified
-(such columns rarely appear in arithmetic, and a narrow literal only arises through a
-`CAST`, which falls back). Comparisons are width-insensitive and always safe.
+Arithmetic *between* narrow-integer columns (`TINYINT`/`SMALLINT`) is now verified to
+match: parity tests that overflow the narrow range (`a + b` with both `TINYINT` = 100,
+`c * c` with `SMALLINT` = 300) route to native and agree with Flink, so DataFusion's
+result-type coercion lines up with Flink's promotion/wrap behavior on both sides.
+Comparisons are width-insensitive and always safe.
 
 ## Status
 - Implemented value types: `BIGINT`, `DOUBLE`, and `INT` — all five aggregates.

@@ -140,6 +140,18 @@ class FlinkCalcSqlHarnessTest {
     NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT k FROM f WHERE v / 3 > 5");
   }
 
+  @Test
+  void tinyintAdditionOverflowMatchesHost() throws Exception {
+    // a + b overflows the i8 range (100 + 100); pins whether the host wraps in TINYINT or promotes.
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::narrowIntEnvironment, "SELECT a + b FROM n");
+  }
+
+  @Test
+  void smallintMultiplyOverflowMatchesHost() throws Exception {
+    // c * c overflows the i16 range (300 * 300); pins SMALLINT arithmetic width.
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::narrowIntEnvironment, "SELECT c * c FROM n");
+  }
+
   private static TableEnvironment environment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
@@ -158,6 +170,27 @@ class FlinkCalcSqlHarnessTest {
             .column("k", DataTypes.BIGINT())
             .column("v", DataTypes.INT())
             .column("s", DataTypes.STRING())
+            .build());
+    return tEnv;
+  }
+
+  private static TableEnvironment narrowIntEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    DataStream<Row> source =
+        env.fromData(
+            Types.ROW_NAMED(
+                new String[] {"a", "b", "c"}, Types.BYTE, Types.BYTE, Types.SHORT),
+            Row.of((byte) 100, (byte) 100, (short) 300),
+            Row.of((byte) 1, (byte) 2, (short) 3));
+    tEnv.createTemporaryView(
+        "n",
+        source,
+        Schema.newBuilder()
+            .column("a", DataTypes.TINYINT())
+            .column("b", DataTypes.TINYINT())
+            .column("c", DataTypes.SMALLINT())
             .build());
     return tEnv;
   }

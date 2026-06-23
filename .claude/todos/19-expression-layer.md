@@ -88,10 +88,14 @@ project; record any deliberate semantic choice in `divergences/`.
      lowers it to the searched `CASE` the host defines it as (`WHEN x IS NOT NULL THEN x … ELSE
      last`), identical first-non-null semantics, no new native op. `NULLIF` rides the same path
      (Calcite lowers it to `CASE … THEN NULL ELSE a`, now that NULL literals are admitted).
-   - Remaining: `/` and `%` (integer-division/modulo parity — divergence-prone: truncation, negative
-     operands, divide-by-zero), narrowing/float→int/string `CAST` (so `COALESCE(s,'x')` with its
-     `CHAR→VARCHAR` cast still falls back), string and temporal functions. The long tail toward broad
-     coverage; each gated by a parity test.
+   - ✅ `/` (op 3) and `%` (op 4) — integer truncation toward zero and modulo sign-of-dividend match
+     Flink on all finite operands (verified with negatives); divide-by-zero fails both sides and the
+     lone `INT_MIN/-1` overflow edge is documented (divergences/07).
+   - ✅ Narrow-int (`TINYINT`/`SMALLINT`) column arithmetic — verified to match on overflow (parity
+     tests `a + b` and `c * c` that overflow the narrow range route and agree; docs/aggregate-type-support).
+   - Remaining: narrowing/float→int/string `CAST` (so `COALESCE(s,'x')` with its `CHAR→VARCHAR` cast
+     still falls back) and string/temporal functions. The long tail toward broad coverage; each gated
+     by a parity test.
 
 ## Acceptance criteria
 - Existing filter/projection tests pass via the general expression path.

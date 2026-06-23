@@ -26,9 +26,9 @@ here when the ticket is deleted.
   round-trip; ticket 21).
 
 ## Next, roughly in order
-1. **Expression layer stages 2–3** (ticket 19): general/computed projection (unblocks the
-   constant-folded `=` filter), fuse projection+filter, widen the op set; plus the residual
-   narrow-int (`TINYINT`/`SMALLINT`) arithmetic-overflow parity check.
+1. **Expression layer stage 3 tail** (ticket 19): general projection, fuse, and most ops are done
+   (incl. `/` `%`, COALESCE/NULLIF/NULL, narrow-int arithmetic verified). Remaining: narrowing/
+   float→int/string `CAST` and string/temporal functions — each parity-gated.
 2. **Wider value/key types** (ticket 04): SMALLINT/TINYINT/FLOAT `SUM`/`AVG`, DECIMAL/TIMESTAMP
    grouping keys, multiple value columns, `COUNT(*)`.
 3. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
