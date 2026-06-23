@@ -557,10 +557,10 @@ final class RexExpression {
    */
   private static int functionOpCode(String name) {
     switch (name.toUpperCase(java.util.Locale.ROOT)) {
-      case "UPPER":
-        return 50;
-      case "LOWER":
-        return 51;
+      // UPPER/LOWER are intentionally absent: native (Rust) case folding diverges from the JVM's
+      // locale-sensitive folding on some characters (e.g. Turkish dotless-i). DataFusion Comet
+      // likewise routes case conversion through the JVM by default, so we fall back rather than risk
+      // a silent non-ASCII divergence — see divergences/07.
       case "CHAR_LENGTH":
       case "CHARACTER_LENGTH":
         return 52;

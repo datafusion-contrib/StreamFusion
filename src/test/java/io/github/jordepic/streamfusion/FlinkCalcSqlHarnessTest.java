@@ -158,23 +158,17 @@ class FlinkCalcSqlHarnessTest {
   }
 
   @Test
-  void upperMatchesHost() throws Exception {
-    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT UPPER(s) FROM f");
-  }
-
-  @Test
-  void lowerMatchesHost() throws Exception {
-    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT LOWER(s) FROM f");
+  void upperFallsBack() throws Exception {
+    // UPPER/LOWER are not admitted: native case folding diverges from the JVM's locale-sensitive
+    // folding on some characters, a silent non-ASCII divergence (Comet routes case conversion
+    // through the JVM by default). So they fall back, naming UPPER.
+    NativeParity.assertFallbackReasonContains(
+        FlinkCalcSqlHarnessTest::environment, "SELECT UPPER(s) FROM f", "UPPER");
   }
 
   @Test
   void charLengthMatchesHost() throws Exception {
     NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT CHAR_LENGTH(s) FROM f");
-  }
-
-  @Test
-  void upperInFilterMatchesHost() throws Exception {
-    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT k FROM f WHERE UPPER(s) = 'B'");
   }
 
   @Test
@@ -283,6 +277,16 @@ class FlinkCalcSqlHarnessTest {
   }
 
   @Test
+  void roundFallsBack() throws Exception {
+    // ROUND on float/double is NOT admitted. Flink rounds via BigDecimal (HALF_UP), which differs
+    // from DataFusion's float-multiply round on input-dependent precision edges; DataFusion Comet
+    // falls back float/double ROUND for the same reason. So we fall back rather than risk a silent
+    // divergence (sampled values happen to agree, but the algorithms differ in general).
+    NativeParity.assertFallbackReasonContains(
+        FlinkCalcSqlHarnessTest::doubleEnvironment, "SELECT ROUND(d, 2) FROM dd", "ROUND");
+  }
+
+  @Test
   void repeatMatchesHost() throws Exception {
     NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT REPEAT(s, 3) FROM f");
   }
@@ -340,6 +344,23 @@ class FlinkCalcSqlHarnessTest {
             .column("v", DataTypes.INT())
             .column("s", DataTypes.STRING())
             .build());
+    return tEnv;
+  }
+
+  private static TableEnvironment doubleEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    DataStream<Row> source =
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"d"}, Types.DOUBLE),
+            Row.of(0.5),
+            Row.of(2.5),
+            Row.of(-2.5),
+            Row.of(2.675),
+            Row.of(-1.4));
+    tEnv.createTemporaryView(
+        "dd", source, Schema.newBuilder().column("d", DataTypes.DOUBLE()).build());
     return tEnv;
   }
 

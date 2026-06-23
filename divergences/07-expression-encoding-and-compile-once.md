@@ -87,15 +87,20 @@ hot-path finding.
 - **`LIKE`/`REPLACE`/`REVERSE`:** `LIKE` maps to DataFusion's `Expr::Like` (case-sensitive, no
   explicit `ESCAPE` — a 3-operand `LIKE … ESCAPE` falls back); `REPLACE(s, from, to)` to `replace`;
   `REVERSE` to `reverse` (cast `Utf8View`→`Utf8` like `SUBSTRING`). ASCII-identical to the host.
-- **String functions (`UPPER`/`LOWER`/`CHAR_LENGTH`):** matched by operator name (Flink delivers
-  them as `OTHER_FUNCTION`) and mapped to DataFusion's `upper`/`lower`/`character_length`. ASCII is
-  bit-identical (verified). Two Unicode edges are *not* reproduced: case folding — Flink's `UPPER`
-  uses Java `String.toUpperCase()` under the JVM default locale, DataFusion uses Rust's
-  locale-independent Unicode mapping, so locale-sensitive letters (e.g. Turkish dotless-i) can
-  differ; and `CHAR_LENGTH` — DataFusion counts Unicode code points while Flink (Java) counts UTF-16
-  code units, so a supplementary character (e.g. an emoji) counts 1 vs 2. Both edges are
-  non-ASCII-only; admitted with the edge flagged here, like integer `/`'s overflow edge. Narrowing
-  these (e.g. a code-unit length) would mean re-implementing Java semantics in Rust and is deferred.
-  **`CONCAT` is *not* admitted:** Flink's `CONCAT` propagates NULL (`CONCAT(null, x) = null`) but
-  DataFusion's `concat` ignores NULL args — a non-ASCII-independent value divergence, so it falls
-  back (asserted by a test) rather than ship a wrong answer.
+- **`CHAR_LENGTH`** maps to DataFusion's `character_length` (Comet marks `Length` compatible). It
+  counts Unicode code points; a supplementary character (e.g. an emoji) is one code point on both
+  sides, so ASCII and BMP text are bit-identical.
+- **`UPPER`/`LOWER` are *not* admitted** (they fall back, asserted by a test). Native (Rust) case
+  folding is locale-independent Unicode, but the JVM's `String.toUpperCase()/toLowerCase()` is
+  locale-sensitive (e.g. Turkish dotless-i), so non-ASCII results can silently differ. DataFusion
+  Comet reached the same conclusion — it routes case conversion through the JVM by default and only
+  uses the native path under an opt-in flag. Until we have that config surface (ticket 09) we fall
+  back rather than ship a silent non-ASCII divergence.
+- **`ROUND` is *not* admitted** (falls back, asserted by a test). Flink rounds float/double via
+  `BigDecimal` (HALF_UP), which operates on the `Double.toString` decimal representation; DataFusion
+  rounds with a binary float multiply (`(x·10^n).round()/10^n`). They agree on sampled values but
+  differ on input-dependent precision edges, so a sample passing does not prove parity. Comet
+  likewise falls back float/double `ROUND` ("does not support Spark's BigDecimal rounding").
+- **`CONCAT` is *not* admitted:** Flink's `CONCAT` propagates NULL (`CONCAT(null, x) = null`) but
+  DataFusion's `concat` ignores NULL args — a value divergence, so it falls back (asserted by a test)
+  rather than ship a wrong answer.
