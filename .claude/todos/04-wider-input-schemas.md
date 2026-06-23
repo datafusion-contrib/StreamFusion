@@ -10,15 +10,16 @@ matching the host's per-key results and output column order. Multiple aggregates
 per window are supported. The native engine is value-type agnostic; the
 accelerated value types are the parity intersection in
 `docs/aggregate-type-support.md` — all aggregates over bigint/double (both one-
-and two-phase) and over int (one-phase; `SUM` and `AVG` use custom
-wrapping/truncating accumulators), plus `MIN`/`MAX`/`COUNT` over
-smallint/tinyint/float (the type-preserving comparisons/counts; their value
-column rides a narrow Arrow vector decoded by a per-type value-type code).
-Grouping keys may be bigint/int/string. Remaining below:
+and two-phase), all aggregates over int/smallint/tinyint (one-phase; `SUM`/`AVG`
+use custom wrapping/truncating accumulators that keep the narrow type, verified at
+the overflow boundary), and `MIN`/`MAX`/`COUNT` over float. Their value column
+rides a narrow Arrow vector decoded by a per-type value-type code. Grouping keys
+may be bigint/int/string. Remaining below:
 
-- **`SUM`/`AVG` over smallint/tinyint/float:** need the remaining custom
-  truncating/wrapping accumulators (i16/i8 wrapping sum, float32 sum) to match
-  Flink, which keeps the narrow input type rather than widening.
+- **`SUM`/`AVG` over float:** deferred — the host accumulates a float sum at
+  4-byte precision (and avg divides in double then narrows), which a native
+  accumulator must reproduce bit-for-bit under the same fold order; needs a
+  reordering-sensitive parity stress test before admitting.
 - **DECIMAL value columns (all aggregates):** precision/scale derivation is
   exotic; a matcher gate + a decimal Arrow vector path.
 - **More key types:** bigint/int/string keys are done (the native key is a list

@@ -141,13 +141,17 @@ final class WindowAggregateMatcher {
     if (!supportedValueType(valueType)) {
       return false;
     }
-    // SUM/AVG keep the input numeric type, so they are admitted only for the types with a
-    // parity-matching native accumulator (bigint/double/int). The narrow numeric types carry
-    // MIN/MAX/COUNT only — type-preserving comparisons and counts with no arithmetic to diverge.
-    boolean arithmeticType =
+    // SUM and AVG keep the input numeric type, so they are admitted only where a custom native
+    // accumulator reproduces the host exactly. Integer SUM/AVG wrap/truncate deterministically, so
+    // they cover the integer widths. FLOAT SUM/AVG stay on the host: the host accumulates a float
+    // sum at 4-byte precision (and avg's float division), which a native sum would have to match
+    // bit-for-bit — deferred (see docs/aggregate-type-support.md). DOUBLE rides the builtin sum.
+    boolean integerType =
         valueType == SqlTypeName.BIGINT
-            || valueType == SqlTypeName.DOUBLE
-            || valueType == SqlTypeName.INTEGER;
+            || valueType == SqlTypeName.INTEGER
+            || valueType == SqlTypeName.SMALLINT
+            || valueType == SqlTypeName.TINYINT;
+    boolean sumType = integerType || valueType == SqlTypeName.DOUBLE;
     boolean multiple = aggCalls.size() > 1;
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
@@ -155,16 +159,13 @@ final class WindowAggregateMatcher {
       if (call.getArgList().size() != 1 || call.getArgList().get(0) != valueColumn || kind < 0) {
         return false;
       }
-      // SUM keeps the input type; only bigint/double/int have a parity-matching native accumulator.
-      if (kind == KIND_SUM && !arithmeticType) {
+      if (kind == KIND_SUM && !sumType) {
         return false;
       }
       // AVG has multi-field partial state, so it is only supported as a lone aggregate; and the
       // native AVG is integer-division (truncating to the input type), so it only applies to an
-      // integer value — bigint or int, not double.
-      if (kind == KIND_AVG
-          && (multiple
-              || (valueType != SqlTypeName.BIGINT && valueType != SqlTypeName.INTEGER))) {
+      // integer value, never float/double.
+      if (kind == KIND_AVG && (multiple || !integerType)) {
         return false;
       }
     }

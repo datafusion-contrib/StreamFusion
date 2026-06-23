@@ -21,18 +21,26 @@ DataFusion: `sum(intN)→Int64`, `sum(floatN)→Float64`, `avg(int)→Float64`,
 | BIGINT  | ✓ | ✓ (custom truncating) | ✓ | ✓ | ✓ |
 | DOUBLE  | ✓ | ✓ | ✓ | ✓ | ✓ |
 | INT     | ✓ (custom wrapping) | ✓ (custom truncating) | ✓ | ✓ | ✓ |
-| SMALLINT / TINYINT | ✗ | ✗ | ✓ | ✓ | ✓ |
+| SMALLINT / TINYINT | ✓ (custom wrapping) | ✓ (custom truncating) | ✓ | ✓ | ✓ |
 | FLOAT (REAL) | ✗ FLOAT≠DOUBLE | ✗ | ✓ | ✓ | ✓ |
-| DECIMAL | ✗ precision rules | ✗ | ✓ | ✓ | ✓ |
+| DECIMAL | ✗ precision rules | ✗ | ✗ | ✗ | ✗ |
 
 Notes / divergences this avoids:
-- **SUM over int** is matched with a custom wrapping int32 accumulator (keeps the
-  narrow type, wraps at 2³¹). The same pattern would extend to smallint/tinyint
-  (i16/i8) — not yet built.
+- **SUM over int/smallint/tinyint** is matched with a custom wrapping accumulator
+  that keeps the narrow type and wraps at the type's width on every step — exactly
+  the host's "store the running sum in the input type, cast back each step"
+  semantics (verified at the overflow boundary by a parity test).
 - **AVG over integers** is DataFusion `Float64`; Flink truncates to the input
-  type. We match this for `BIGINT` and `INT` with a custom accumulator that sums
-  in int64 and casts the truncated result back to the input integer type.
-- **DECIMAL** SUM/AVG precision/scale derivation is exotic; excluded.
+  type. We match this for `BIGINT`/`INT`/`SMALLINT`/`TINYINT` with a custom
+  accumulator that sums in int64 and casts the truncated result back to the input
+  integer type.
+- **SUM/AVG over FLOAT** stays on the host: the host accumulates a float sum at
+  4-byte precision (and avg divides in double then narrows to float), which a
+  native accumulator would have to reproduce bit-for-bit under the same fold
+  order. Deferred until that parity is stress-tested; `MIN`/`MAX`/`COUNT` over
+  float are unaffected (no arithmetic).
+- **DECIMAL** is excluded entirely (even MIN/MAX): precision/scale derivation and
+  the decimal Arrow vector path are not yet built.
 
 ## Predicate arithmetic (filter expressions)
 The native expression engine admits `+`/`-`/`*` in filter predicates. DataFusion
@@ -51,15 +59,13 @@ result-type coercion lines up with Flink's promotion/wrap behavior on both sides
 Comparisons are width-insensitive and always safe.
 
 ## Status
-- Implemented value types: `BIGINT`, `DOUBLE`, and `INT` carry all five aggregates;
-  `SMALLINT`, `TINYINT`, and `FLOAT` carry `MIN`/`MAX`/`COUNT` (the type-preserving
-  comparisons/counts, which have no arithmetic to diverge — `MIN`/`MAX` keep the
-  narrow type, `COUNT` is bigint). The native value path is type-general; each narrow
-  type is an Arrow vector class + getter + a value-type code.
-- `SUM`/`AVG` over smallint/tinyint/float stay on the host (a narrow `SUM` keeps the
-  input type and would diverge from DataFusion's widening sum) — they await the custom
-  truncating/wrapping accumulators, the same pattern as the int32 sum.
-- `DECIMAL` (all aggregates) stays on the host: precision/scale derivation is exotic.
+- `BIGINT`, `DOUBLE`, and `INT` carry all five aggregates. `SMALLINT` and `TINYINT`
+  carry all five too (`SUM`/`AVG` via custom wrapping/truncating accumulators).
+  `FLOAT` carries `MIN`/`MAX`/`COUNT` (its `SUM`/`AVG` are deferred — see above).
+  The native value path is type-general; each narrow type is an Arrow vector class +
+  getter + a value-type code.
+- `DECIMAL` (all aggregates) stays on the host: precision/scale derivation and the
+  decimal Arrow vector path are not yet built.
 - Grouping keys: one or more bigint/int/string keys are supported. The native
   composite key is a list of typed scalars; int widens into int64 carriage and is
   emitted back as int, strings ride as varchar. Other key types (decimal,

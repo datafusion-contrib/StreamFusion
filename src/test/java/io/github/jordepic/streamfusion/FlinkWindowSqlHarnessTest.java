@@ -307,6 +307,41 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
+  void smallIntSumAvgMatchesHost() throws Exception {
+    // SUM/AVG over SMALLINT: the native wrapping sum and truncating avg keep the input type.
+    assertNarrowSumAvgMatchHost("sm");
+  }
+
+  @Test
+  void tinyIntSumAvgMatchesHost() throws Exception {
+    assertNarrowSumAvgMatchHost("tn");
+  }
+
+  @Test
+  void narrowSumWrapsLikeHost() throws Exception {
+    // SUM over narrow ints wraps at the input width on overflow, exactly as the host's cast-back
+    // accumulator does (TINYINT 100+100 → -56; SMALLINT 30000+30000 → -5536).
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::narrowOverflowEnvironment,
+        "SELECT window_start, window_end, SUM(tn) AS st, SUM(sm) AS ss "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  private static void assertNarrowSumAvgMatchHost(String column) throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT window_start, window_end, SUM(" + column + ") AS s "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT window_start, window_end, AVG(" + column + ") AS a "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
   void floatSumFallsBack() throws Exception {
     // SUM over FLOAT keeps the window aggregate on the host: Flink keeps FLOAT, while DataFusion's
     // sum widens to double. (A trailing projection still routes, so this is a partial fallback.)
@@ -372,6 +407,34 @@ class FlinkWindowSqlHarnessTest {
 
   private static TableEnvironment environmentTwoPhase() {
     return buildEnvironment(false);
+  }
+
+  private static TableEnvironment narrowOverflowEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+
+    // Two values per 1s window that overflow the narrow width when summed.
+    DataStream<Row> source =
+        env.fromData(
+                Types.ROW_NAMED(
+                    new String[] {"tn", "sm", "ts"}, Types.BYTE, Types.SHORT, Types.LONG),
+                Row.of((byte) 100, (short) 30000, 0L),
+                Row.of((byte) 100, (short) 30000, 500L))
+            .assignTimestampsAndWatermarks(
+                WatermarkStrategy.<Row>forMonotonousTimestamps()
+                    .withTimestampAssigner((row, ts) -> (Long) row.getField(2)));
+    tEnv.createTemporaryView(
+        "src",
+        source,
+        Schema.newBuilder()
+            .column("tn", DataTypes.TINYINT())
+            .column("sm", DataTypes.SMALLINT())
+            .column("ts", DataTypes.BIGINT())
+            .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
+            .watermark("rt", "SOURCE_WATERMARK()")
+            .build());
+    return tEnv;
   }
 
   private static TableEnvironment buildEnvironment(boolean onePhase) {
