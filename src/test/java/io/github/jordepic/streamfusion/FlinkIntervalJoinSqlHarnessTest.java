@@ -44,7 +44,7 @@ class FlinkIntervalJoinSqlHarnessTest {
         "SELECT * FROM A AS a LEFT JOIN B AS b "
             + "ON a.k = b.k "
             + "AND a.rt BETWEEN b.rt - INTERVAL '1' SECOND AND b.rt + INTERVAL '1' SECOND",
-        "interval join");
+        "interval join: only INNER joins");
   }
 
   @Test

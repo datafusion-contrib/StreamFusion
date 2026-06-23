@@ -492,27 +492,27 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
    * that is not an accelerable candidate (so unrelated host nodes record nothing).
    */
   private static String operatorReason(RelNode node) {
+    if (node instanceof StreamPhysicalOverAggregate) {
+      return OverAggregateMatcher.unsupportedReason((StreamPhysicalOverAggregate) node);
+    }
+    if (node instanceof StreamPhysicalIntervalJoin) {
+      return IntervalJoinMatcher.unsupportedReason((StreamPhysicalIntervalJoin) node);
+    }
+    if (node instanceof StreamPhysicalWindowJoin) {
+      return WindowJoinMatcher.unsupportedReason((StreamPhysicalWindowJoin) node);
+    }
+    if (node instanceof StreamPhysicalGlobalWindowAggregate) {
+      return GlobalWindowAggregateMatcher.unsupportedReason(
+          (StreamPhysicalGlobalWindowAggregate) node);
+    }
+    // The row/local window-aggregate path matches several variants (tumbling/hopping/cumulative
+    // local) with extra gates, so a precise per-condition reason would be unreliable; keep a coarse
+    // operator-level reason naming the requirements.
     if (node instanceof StreamPhysicalWindowAggregate
         || node instanceof StreamPhysicalLocalWindowAggregate) {
       return "window aggregate: needs an event-time TUMBLE/HOP/CUMULATE (zero offset) over a"
           + " local-time-zone rowtime, one bigint/int/double value column with SUM/MIN/MAX/COUNT/AVG,"
           + " and bigint/int/string keys (docs/aggregate-type-support.md)";
-    }
-    if (node instanceof StreamPhysicalGlobalWindowAggregate) {
-      return "global window aggregate: needs a slice-attached TUMBLE/HOP/CUMULATE with a single"
-          + " bigint/double SUM/MIN/MAX/COUNT partial and bigint/int/string keys";
-    }
-    if (node instanceof StreamPhysicalOverAggregate) {
-      return "OVER: only UNBOUNDED PRECEDING..CURRENT ROW over one ascending event-time order,"
-          + " partitioned by bigint/int/string";
-    }
-    if (node instanceof StreamPhysicalIntervalJoin) {
-      return "interval join: needs an INNER equi-join (no residual condition) with event-time"
-          + " interval bounds and bigint/int/string keys";
-    }
-    if (node instanceof StreamPhysicalWindowJoin) {
-      return "window join: needs an INNER equi-join (no residual condition) with event-time"
-          + " window-attached windows on both sides and bigint/int/string keys";
     }
     return null;
   }

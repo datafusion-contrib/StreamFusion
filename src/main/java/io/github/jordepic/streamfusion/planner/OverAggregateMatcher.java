@@ -25,34 +25,43 @@ final class OverAggregateMatcher {
   private OverAggregateMatcher() {}
 
   static boolean matches(StreamPhysicalOverAggregate over) {
+    return unsupportedReason(over) == null;
+  }
+
+  /** The specific reason this OVER is not accelerable, or null if it is. */
+  static String unsupportedReason(StreamPhysicalOverAggregate over) {
     Window window = over.logicWindow();
     if (window.groups.size() != 1) {
-      return false;
+      return "OVER: only a single window group";
     }
     Window.Group group = window.groups.get(0);
     RelDataType inputType = over.getInput().getRowType();
     for (int key : group.keys.toArray()) {
       if (!WindowAggregateMatcher.supportedKeyType(
           inputType.getFieldList().get(key).getType().getSqlTypeName())) {
-        return false; // PARTITION BY only on bigint/int/string
+        return "OVER: PARTITION BY only on bigint/int/string keys";
       }
     }
     if (!(group.lowerBound.isUnbounded() && group.lowerBound.isPreceding())
         || !group.upperBound.isCurrentRow()) {
-      return false; // only the UNBOUNDED PRECEDING .. CURRENT ROW frame
+      return "OVER: only the UNBOUNDED PRECEDING .. CURRENT ROW frame";
     }
     Integer order = orderColumn(group);
     if (order == null
         || !FlinkTypeFactory$.MODULE$.isRowtimeIndicatorType(
             inputType.getFieldList().get(order).getType())) {
-      return false; // exactly one ascending rowtime order column
+      return "OVER: requires exactly one ascending event-time (rowtime) order column";
     }
     // Window functions (ROW_NUMBER) are computed per partition with no value column and use a ROWS
     // frame; aggregates use a RANGE frame over a single shared value column.
     if (allWindowFunctions(group)) {
-      return true;
+      return null;
     }
-    return !group.isRows && valueColumn(group, inputType) != null;
+    if (group.isRows || valueColumn(group, inputType) == null) {
+      return "OVER: aggregates need a RANGE frame over one shared bigint/int/double value column"
+          + " (ROWS frame, AVG, or multiple value columns not supported)";
+    }
+    return null;
   }
 
   /** Whether every aggregate in the group is a supported non-aggregate window function. */

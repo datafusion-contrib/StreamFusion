@@ -21,21 +21,26 @@ final class IntervalJoinMatcher {
   private IntervalJoinMatcher() {}
 
   static boolean matches(StreamPhysicalIntervalJoin join) {
+    return unsupportedReason(join) == null;
+  }
+
+  /** The specific reason this interval join is not accelerable, or null if it is. */
+  static String unsupportedReason(StreamPhysicalIntervalJoin join) {
     JoinSpec joinSpec = ((CommonPhysicalJoin) join).joinSpec();
     if (joinSpec.getJoinType() != FlinkJoinType.INNER) {
-      return false; // outer/semi/anti joins emit nulls or differ — not yet supported
+      return "interval join: only INNER joins (outer/semi/anti emit nulls or differ)";
     }
     int[] leftKeys = joinSpec.getLeftKeys();
     int[] rightKeys = joinSpec.getRightKeys();
     if (leftKeys.length == 0 || leftKeys.length != rightKeys.length) {
-      return false; // need at least one equi-join key
+      return "interval join: needs at least one equi-join key";
     }
     if (joinSpec.getNonEquiCondition().isPresent()) {
-      return false; // a residual filter we would not apply — fall back rather than diverge
+      return "interval join: a residual non-equi condition is not applied";
     }
     for (boolean filterNull : joinSpec.getFilterNulls()) {
       if (!filterNull) {
-        return false; // INNER equi-join drops null keys; the native side relies on that
+        return "interval join: requires null-dropping (INNER) equi keys";
       }
     }
     RelDataType leftType = join.getLeft().getRowType();
@@ -45,11 +50,14 @@ final class IntervalJoinMatcher {
               leftType.getFieldList().get(leftKeys[i]).getType().getSqlTypeName())
           || !WindowAggregateMatcher.supportedKeyType(
               rightType.getFieldList().get(rightKeys[i]).getType().getSqlTypeName())) {
-        return false; // equi-join keys must be bigint/int/string
+        return "interval join: equi-join keys must be bigint/int/string";
       }
     }
     IntervalJoinSpec.WindowBounds bounds = windowBounds(join);
-    return bounds != null && bounds.isEventTime();
+    if (bounds == null || !bounds.isEventTime()) {
+      return "interval join: requires event-time interval bounds (proctime not supported)";
+    }
+    return null;
   }
 
   static int[] leftKeys(StreamPhysicalIntervalJoin join) {

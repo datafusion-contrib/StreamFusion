@@ -24,36 +24,41 @@ final class GlobalWindowAggregateMatcher {
   private GlobalWindowAggregateMatcher() {}
 
   static boolean matches(StreamPhysicalGlobalWindowAggregate aggregate) {
+    return unsupportedReason(aggregate) == null;
+  }
+
+  /** The specific reason this global window aggregate is not accelerable, or null if it is. */
+  static String unsupportedReason(StreamPhysicalGlobalWindowAggregate aggregate) {
     WindowingStrategy windowing = aggregate.windowing();
     if (!(windowing instanceof SliceAttachedWindowingStrategy)) {
-      return false;
+      return "global window aggregate: requires a slice-attached windowing";
     }
     WindowSpec spec = windowing.getWindow();
     if (spec instanceof HoppingWindowSpec) {
       // The global fans each slice into size/slide windows, which requires slide to divide size.
       HoppingWindowSpec hop = (HoppingWindowSpec) spec;
       if (hop.getSize().toMillis() % hop.getSlide().toMillis() != 0) {
-        return false;
+        return "global window aggregate: HOP slide must divide size";
       }
     } else if (spec instanceof CumulativeWindowSpec) {
       // The global fans each slice into the nested windows whose end is a step multiple up to the
       // max size, so the step must divide the max size (Flink guarantees this for CUMULATE).
       CumulativeWindowSpec cum = (CumulativeWindowSpec) spec;
       if (cum.getMaxSize().toMillis() % cum.getStep().toMillis() != 0) {
-        return false;
+        return "global window aggregate: CUMULATE step must divide max size";
       }
     } else if (!(spec instanceof TumblingWindowSpec)) {
-      return false;
+      return "global window aggregate: only TUMBLE/HOP/CUMULATE windows";
     }
     int[] grouping = aggregate.grouping();
     RelDataType inputType = aggregate.getInput().getRowType();
     if (aggregate.aggCalls().isEmpty()) {
-      return false;
+      return "global window aggregate: needs at least one aggregate";
     }
     for (int column : grouping) {
       if (!WindowAggregateMatcher.supportedKeyType(
           inputType.getFieldList().get(column).getType().getSqlTypeName())) {
-        return false;
+        return "global window aggregate: grouping keys must be bigint/int/string";
       }
     }
     for (int i = 0; i < aggregate.aggCalls().size(); i++) {
@@ -61,15 +66,15 @@ final class GlobalWindowAggregateMatcher {
       int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
       // Single-field mergeable partial only: sum (also count's merge), min, max.
       if (call.getArgList().size() != 1 || kind < 0 || kind == WindowAggregateMatcher.KIND_AVG) {
-        return false;
+        return "global window aggregate: only single-field SUM/MIN/MAX/COUNT partials (no AVG)";
       }
       SqlTypeName partialType =
           inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
       if (partialType != SqlTypeName.BIGINT && partialType != SqlTypeName.DOUBLE) {
-        return false;
+        return "global window aggregate: partial columns must be bigint/double";
       }
     }
-    return true;
+    return null;
   }
 
   /**

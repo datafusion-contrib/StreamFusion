@@ -21,28 +21,33 @@ final class WindowJoinMatcher {
   private WindowJoinMatcher() {}
 
   static boolean matches(StreamPhysicalWindowJoin join) {
+    return unsupportedReason(join) == null;
+  }
+
+  /** The specific reason this window join is not accelerable, or null if it is. */
+  static String unsupportedReason(StreamPhysicalWindowJoin join) {
     JoinSpec joinSpec = ((CommonPhysicalJoin) join).joinSpec();
     if (joinSpec.getJoinType() != FlinkJoinType.INNER) {
-      return false;
+      return "window join: only INNER joins (outer/semi/anti emit nulls or differ)";
     }
     int[] leftKeys = joinSpec.getLeftKeys();
     int[] rightKeys = joinSpec.getRightKeys();
     if (leftKeys.length == 0 || leftKeys.length != rightKeys.length) {
-      return false; // need at least one equi-join key
+      return "window join: needs at least one equi-join key";
     }
     if (joinSpec.getNonEquiCondition().isPresent()) {
-      return false; // a residual filter we would not apply — fall back rather than diverge
+      return "window join: a residual non-equi condition is not applied";
     }
     for (boolean filterNull : joinSpec.getFilterNulls()) {
       if (!filterNull) {
-        return false; // INNER equi-join drops null keys; the native side relies on that
+        return "window join: requires null-dropping (INNER) equi keys";
       }
     }
     if (!(join.leftWindowing() instanceof WindowAttachedWindowingStrategy)
         || !(join.rightWindowing() instanceof WindowAttachedWindowingStrategy)
         || !join.leftWindowing().isRowtime()
         || !join.rightWindowing().isRowtime()) {
-      return false; // both sides must carry an event-time, window-attached window
+      return "window join: both sides must carry an event-time, window-attached window";
     }
     RelDataType leftType = join.getLeft().getRowType();
     RelDataType rightType = join.getRight().getRowType();
@@ -51,10 +56,10 @@ final class WindowJoinMatcher {
               leftType.getFieldList().get(leftKeys[i]).getType().getSqlTypeName())
           || !WindowAggregateMatcher.supportedKeyType(
               rightType.getFieldList().get(rightKeys[i]).getType().getSqlTypeName())) {
-        return false; // equi-join keys must be bigint/int/string
+        return "window join: equi-join keys must be bigint/int/string";
       }
     }
-    return true;
+    return null;
   }
 
   static int[] leftKeys(StreamPhysicalWindowJoin join) {
