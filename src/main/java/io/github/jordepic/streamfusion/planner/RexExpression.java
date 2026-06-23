@@ -392,6 +392,10 @@ final class RexExpression {
         return 1;
       case TIMES:
         return 2;
+      case DIVIDE:
+        return 3;
+      case MOD:
+        return 4;
       case GREATER_THAN:
         return 10;
       case GREATER_THAN_OR_EQUAL:

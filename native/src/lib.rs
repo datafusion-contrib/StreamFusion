@@ -2377,6 +2377,8 @@ fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prel
         0 => next() + next(),
         1 => next() - next(),
         2 => next() * next(),
+        3 => next() / next(),
+        4 => next() % next(),
         10 => next().gt(next()),
         11 => next().gt_eq(next()),
         12 => next().lt(next()),

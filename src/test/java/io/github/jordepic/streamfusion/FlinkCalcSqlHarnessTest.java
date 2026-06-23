@@ -116,6 +116,30 @@ class FlinkCalcSqlHarnessTest {
     NativeParity.assertParity(FlinkCalcSqlHarnessTest::nullableEnvironment, "SELECT NULLIF(v, 30) FROM g");
   }
 
+  @Test
+  void integerDivisionMatchesHost() throws Exception {
+    // Integer division truncates toward zero on both sides (Java and Rust agree).
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT v / 3 FROM f");
+  }
+
+  @Test
+  void integerDivisionNegativeMatchesHost() throws Exception {
+    // Negative dividends are where truncation-toward-zero vs floor would diverge; (v - 50) goes
+    // negative for the small rows, so this pins the sign behavior.
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT (v - 50) / 3 FROM f");
+  }
+
+  @Test
+  void moduloMatchesHost() throws Exception {
+    // Modulo takes the sign of the dividend on both sides; the negative dividend pins it.
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT (v - 50) % 7 FROM f");
+  }
+
+  @Test
+  void divisionInFilterMatchesHost() throws Exception {
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT k FROM f WHERE v / 3 > 5");
+  }
+
   private static TableEnvironment environment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);

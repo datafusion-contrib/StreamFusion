@@ -52,3 +52,18 @@ hot-path finding.
   parity test before it is turned on.
 - The handle holds compiled native state and must be released on operator close, like
   the aggregator handles ([04](04-synchronous-stateful-execution.md)).
+
+## Admitted-op semantics notes (parity edges)
+- **Integer `/` and `%`:** DataFusion and Flink (Java) agree for all finite operands —
+  division truncates toward zero and modulo takes the sign of the dividend (verified with
+  negative dividends, not just positives). Two edges are *not* silent divergences:
+  divide-by-zero fails the job on both sides (Flink throws, DataFusion's kernel errors and
+  the operator surfaces it — a query that divides by zero fails either way, never a wrong
+  answer); and the single pathological `INT_MIN / -1` (and `LONG_MIN / -1`) overflow, where
+  Java wraps to `MIN` but DataFusion's checked kernel errors. The latter is the one input we
+  do not reproduce bit-for-bit; it is astronomically rare and fails loudly rather than
+  silently, so we admit `/`/`%` and flag it here rather than forcing a fallback. (Contrast
+  `+ - *`, which use wrapping kernels on both sides and match even on overflow.)
+- **`COALESCE`/`NULLIF`:** lowered on the encoder side to the searched `CASE` the host defines
+  them as, so they inherit `CASE`'s parity exactly rather than relying on a separate native
+  function.
