@@ -24,6 +24,7 @@ import org.apache.flink.table.types.logical.LogicalTypeRoot;
 final class WindowAggregateMatcher {
 
   static final int KIND_SUM = 0;
+  static final int KIND_COUNT = 3;
   static final int KIND_AVG = 4;
 
   private WindowAggregateMatcher() {}

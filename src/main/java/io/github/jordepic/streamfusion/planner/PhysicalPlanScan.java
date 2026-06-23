@@ -276,21 +276,19 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       StreamPhysicalLocalWindowAggregate agg = (StreamPhysicalLocalWindowAggregate) current;
       // Tumbling local (single-field partials, no AVG; bigint or double values), or a hopping local
       // that pre-aggregates per slice (bigint only — its synthetic count1 column rides through
-      // hoppingLocalKinds). COUNT(*) is excluded here: its global merge does not match, and a native
-      // local feeding a host global would mismatch — so two-phase COUNT(*) stays wholly on the host.
-      boolean hasValue = WindowAggregateMatcher.allValuesPresent(agg.aggCalls());
-      // The two-phase global only merges bigint/double partials, so the local (tumbling/cumulative)
-      // is restricted to those value types — narrower types route single-phase only. A wider local
+      // hoppingLocalKinds). The two-phase global only merges bigint/double partials, so the local is
+      // restricted to those value types — narrower types route single-phase only. A wider local
       // feeding a host global would mismatch.
       boolean mergeableValueType =
           WindowAggregateMatcher.allPartialsMergeable(agg.aggCalls(), agg.getInput().getRowType());
+      // Hopping COUNT(*) is excluded: it would also carry the synthetic count1 partial, which the
+      // tumbling/cumulative path (no count1) does not, so a native local could feed a host global.
       boolean hopping =
-          hasValue
+          WindowAggregateMatcher.allValuesPresent(agg.aggCalls())
               && WindowAggregateMatcher.matchesHoppingLocal(
                   agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType());
       boolean tumbling =
           !hopping
-              && hasValue
               && mergeableValueType
               && WindowAggregateMatcher.matches(
                   agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType())
@@ -302,7 +300,6 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       boolean cumulativeLocal =
           !hopping
               && !tumbling
-              && hasValue
               && mergeableValueType
               && WindowAggregateMatcher.matches(
                   agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType())

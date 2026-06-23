@@ -74,9 +74,11 @@ Comparisons are width-insensitive and always safe.
   value-type code. Two-phase is admitted when every aggregate's partial is one the
   global merges (bigint/double); narrower value types route single-phase only.
 - `COUNT(*)` is supported, including alongside value aggregates: it reads a
-  synthesized non-null value column so the existing COUNT counts every row. Its
-  two-phase global merge does not match, so a query containing `COUNT(*)` aggregates
-  single-phase only (the two-phase local is held back to avoid a split aggregation).
+  synthesized non-null value column so the existing COUNT counts every row. Two-phase
+  (default planning) works for tumbling and cumulative — the local counts rows per
+  slice and the global sums the per-slice counts (COUNT's merge is a sum, and the
+  empty-argList COUNT merge is matched positionally). Two-phase hopping `COUNT(*)`
+  falls back (its synthetic count1 partial is not yet handled).
 - Grouping keys: one or more bigint/int/string/boolean/date keys are supported.
   The native composite key is a list of typed scalars and the native key path is
   type-general (it reads/rebuilds whatever Arrow type arrives), so widening keys is

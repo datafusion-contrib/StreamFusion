@@ -340,12 +340,20 @@ class FlinkWindowSqlHarnessTest {
 
   @Test
   void twoPhaseCountStarMatchesHost() throws Exception {
-    // Default planning: COUNT(*)'s global merge does not match, so the window aggregate stays wholly
-    // on the host (the local is held back to avoid a native-local + host-global mismatch). The
-    // result must still match — a regression guard against routing only one half.
+    // Default planning: the native local counts rows per slice (COUNT over a synthesized column),
+    // and the native global sums the per-slice counts (COUNT's merge is a sum).
     NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentTwoPhase,
         "SELECT window_start, window_end, COUNT(*) AS n "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void twoPhaseCountStarWithValueAggregateMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentTwoPhase,
+        "SELECT window_start, window_end, COUNT(*) AS n, SUM(`value`) AS s "
             + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
             + "GROUP BY window_start, window_end");
   }

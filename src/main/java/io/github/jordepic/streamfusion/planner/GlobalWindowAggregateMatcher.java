@@ -61,15 +61,22 @@ final class GlobalWindowAggregateMatcher {
         return "global window aggregate: grouping keys must be bigint/int/string/boolean/date";
       }
     }
+    // Partials are positional ([grouping…, partial0..partialN-1, slice_end]); the i-th partial is
+    // the i-th aggregate's, so the merge agg's own argList is not used to locate it. A COUNT merge
+    // carries an empty argList for COUNT(*) and a single arg for COUNT(col); both sum the partial
+    // counts via the count accumulator, so an empty argList is allowed only for COUNT.
+    int base = aggregate.grouping().length;
     for (int i = 0; i < aggregate.aggCalls().size(); i++) {
       AggregateCall call = aggregate.aggCalls().apply(i);
       int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
       // Single-field mergeable partial only: sum (also count's merge), min, max.
-      if (call.getArgList().size() != 1 || kind < 0 || kind == WindowAggregateMatcher.KIND_AVG) {
+      if (kind < 0 || kind == WindowAggregateMatcher.KIND_AVG || call.getArgList().size() > 1) {
         return "global window aggregate: only single-field SUM/MIN/MAX/COUNT partials (no AVG)";
       }
-      SqlTypeName partialType =
-          inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
+      if (call.getArgList().isEmpty() && kind != WindowAggregateMatcher.KIND_COUNT) {
+        return "global window aggregate: only single-field SUM/MIN/MAX/COUNT partials (no AVG)";
+      }
+      SqlTypeName partialType = inputType.getFieldList().get(base + i).getType().getSqlTypeName();
       if (partialType != SqlTypeName.BIGINT && partialType != SqlTypeName.DOUBLE) {
         return "global window aggregate: partial columns must be bigint/double";
       }
