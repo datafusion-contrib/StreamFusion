@@ -93,6 +93,29 @@ class FlinkCalcSqlHarnessTest {
     NativeParity.assertFallback(FlinkCalcSqlHarnessTest::environment, "SELECT ABS(v) FROM f");
   }
 
+  @Test
+  void isNullFilterMatchesHost() throws Exception {
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::nullableEnvironment, "SELECT k FROM g WHERE s IS NULL");
+  }
+
+  @Test
+  void isNotNullFilterMatchesHost() throws Exception {
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::nullableEnvironment, "SELECT k FROM g WHERE v IS NOT NULL");
+  }
+
+  @Test
+  void coalesceMatchesHost() throws Exception {
+    // COALESCE lowers to CASE in sql-to-rel, so it rides the admitted CASE path (numeric branches,
+    // no cast). The string form COALESCE(s,'x') needs a CHAR→VARCHAR cast, still not admitted.
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::nullableEnvironment, "SELECT COALESCE(v, 0) FROM g");
+  }
+
+  @Test
+  void nullifMatchesHost() throws Exception {
+    // NULLIF lowers to CASE WHEN a = b THEN NULL ELSE a, exercising a NULL literal in a branch.
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::nullableEnvironment, "SELECT NULLIF(v, 30) FROM g");
+  }
+
   private static TableEnvironment environment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
@@ -106,6 +129,28 @@ class FlinkCalcSqlHarnessTest {
             Row.of(4L, 40, "d"));
     tEnv.createTemporaryView(
         "f",
+        source,
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("v", DataTypes.INT())
+            .column("s", DataTypes.STRING())
+            .build());
+    return tEnv;
+  }
+
+  private static TableEnvironment nullableEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    DataStream<Row> source =
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"k", "v", "s"}, Types.LONG, Types.INT, Types.STRING),
+            Row.of(1L, 10, "a"),
+            Row.of(2L, 30, null),
+            Row.of(3L, null, "c"),
+            Row.of(4L, 40, "d"));
+    tEnv.createTemporaryView(
+        "g",
         source,
         Schema.newBuilder()
             .column("k", DataTypes.BIGINT())

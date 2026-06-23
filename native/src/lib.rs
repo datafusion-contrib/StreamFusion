@@ -2303,6 +2303,8 @@ fn build_expr(
         2 => logical_lit(doubles[arg]),
         3 => logical_lit(strings[arg].clone().expect("string literal")),
         4 => logical_lit(longs[arg] != 0),
+        // An untyped NULL; the surrounding expression's coercion (e.g. a CASE branch) types it.
+        5 => datafusion::prelude::Expr::Literal(ScalarValue::Null, None),
         // Narrow integer literals carry their declared width so arithmetic evaluates in the same
         // type as the host (e.g. `int * 2` stays int32 and wraps), not a widened type.
         7 => logical_lit(longs[arg] as i32),

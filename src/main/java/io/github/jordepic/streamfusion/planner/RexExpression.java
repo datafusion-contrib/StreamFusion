@@ -29,6 +29,7 @@ final class RexExpression {
   private static final int KIND_LIT_DOUBLE = 2;
   private static final int KIND_LIT_STRING = 3;
   private static final int KIND_LIT_BOOL = 4;
+  private static final int KIND_LIT_NULL = 5;
   private static final int KIND_CALL = 6;
   // Narrow integer literals keep their declared width (the value still rides in the long pool) so
   // native arithmetic evaluates in the same type as the host rather than a widened one.
@@ -156,6 +157,12 @@ final class RexExpression {
   }
 
   private boolean emitLiteral(RexLiteral literal) {
+    // An untyped NULL (e.g. a NULLIF/CASE `THEN NULL` branch); the surrounding expression's coercion
+    // gives it a type, as it does on the host.
+    if (literal.isNull()) {
+      add(KIND_LIT_NULL, -1, 0);
+      return true;
+    }
     SqlTypeName type = literal.getType().getSqlTypeName();
     switch (type) {
       case TINYINT:
@@ -214,6 +221,9 @@ final class RexExpression {
     if (call.getKind() == SqlKind.CAST) {
       return emitCast(call);
     }
+    if ("COALESCE".equalsIgnoreCase(call.getOperator().getName())) {
+      return emitCoalesceAsCase(call.getOperands());
+    }
     int op = opCode(call.getKind());
     if (op < 0) {
       return false;
@@ -265,6 +275,32 @@ final class RexExpression {
         add(KIND_CALL, op, 2);
         return emit(operands.get(0)) && emit(operands.get(1));
     }
+  }
+
+  /**
+   * Lowers {@code COALESCE(a, b, …, z)} to the searched CASE the host defines it as —
+   * {@code CASE WHEN a IS NOT NULL THEN a WHEN b IS NOT NULL THEN b … ELSE z} — so it rides the
+   * admitted CASE path with identical (first-non-null) semantics. Calcite does not pre-expand
+   * COALESCE here, so we expand it ourselves rather than admit a separate op.
+   */
+  private boolean emitCoalesceAsCase(List<RexNode> operands) {
+    int n = operands.size();
+    if (n < 2) {
+      return false;
+    }
+    // CASE operands are [when1, then1, …, else]; each leading arg becomes an IS NOT NULL guard and
+    // the same arg as its result, with the final arg the else.
+    add(KIND_CALL, opCode(SqlKind.CASE), 2 * (n - 1) + 1);
+    for (int i = 0; i < n - 1; i++) {
+      add(KIND_CALL, opCode(SqlKind.IS_NOT_NULL), 1);
+      if (!emit(operands.get(i))) {
+        return false;
+      }
+      if (!emit(operands.get(i))) {
+        return false;
+      }
+    }
+    return emit(operands.get(n - 1));
   }
 
   /**
