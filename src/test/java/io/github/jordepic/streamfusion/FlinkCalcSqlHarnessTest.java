@@ -172,6 +172,13 @@ class FlinkCalcSqlHarnessTest {
     NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT k FROM f WHERE UPPER(s) = 'B'");
   }
 
+  @Test
+  void concatFallsBack() throws Exception {
+    // Flink's CONCAT propagates NULL (CONCAT(null,x) = null), but DataFusion's `concat` ignores NULL
+    // args — a semantic divergence — so CONCAT is not admitted and the Calc falls back.
+    NativeParity.assertFallback(FlinkCalcSqlHarnessTest::nullableEnvironment, "SELECT CONCAT(s, '!') FROM g");
+  }
+
   private static TableEnvironment environment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);

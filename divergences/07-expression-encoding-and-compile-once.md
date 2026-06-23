@@ -76,3 +76,6 @@ hot-path finding.
   code units, so a supplementary character (e.g. an emoji) counts 1 vs 2. Both edges are
   non-ASCII-only; admitted with the edge flagged here, like integer `/`'s overflow edge. Narrowing
   these (e.g. a code-unit length) would mean re-implementing Java semantics in Rust and is deferred.
+  **`CONCAT` is *not* admitted:** Flink's `CONCAT` propagates NULL (`CONCAT(null, x) = null`) but
+  DataFusion's `concat` ignores NULL args — a non-ASCII-independent value divergence, so it falls
+  back (asserted by a test) rather than ship a wrong answer.
