@@ -224,6 +224,15 @@ final class RexExpression {
     if ("COALESCE".equalsIgnoreCase(call.getOperator().getName())) {
       return emitCoalesceAsCase(call.getOperands());
     }
+    int fnOp = functionOpCode(call.getOperator().getName());
+    if (fnOp >= 0) {
+      // The admitted scalar functions are all unary over a single string argument.
+      if (call.getOperands().size() != 1) {
+        return false;
+      }
+      add(KIND_CALL, fnOp, 1);
+      return emit(call.getOperands().get(0));
+    }
     int op = opCode(call.getKind());
     if (op < 0) {
       return false;
@@ -384,6 +393,25 @@ final class RexExpression {
   }
 
   /** The native op code for a call kind, or -1 if the operation is not admitted. */
+  /**
+   * The op code for an admitted scalar function (matched by name, since Flink delivers them as
+   * {@code OTHER_FUNCTION} calls), or -1. ASCII-equivalent to the host; the Unicode edges (case
+   * folding, code-point vs UTF-16 length) are recorded in divergences/07.
+   */
+  private static int functionOpCode(String name) {
+    switch (name.toUpperCase(java.util.Locale.ROOT)) {
+      case "UPPER":
+        return 50;
+      case "LOWER":
+        return 51;
+      case "CHAR_LENGTH":
+      case "CHARACTER_LENGTH":
+        return 52;
+      default:
+        return -1;
+    }
+  }
+
   private static int opCode(SqlKind kind) {
     switch (kind) {
       case PLUS:

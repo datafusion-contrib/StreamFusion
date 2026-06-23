@@ -152,6 +152,26 @@ class FlinkCalcSqlHarnessTest {
     NativeParity.assertParity(FlinkCalcSqlHarnessTest::narrowIntEnvironment, "SELECT c * c FROM n");
   }
 
+  @Test
+  void upperMatchesHost() throws Exception {
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT UPPER(s) FROM f");
+  }
+
+  @Test
+  void lowerMatchesHost() throws Exception {
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT LOWER(s) FROM f");
+  }
+
+  @Test
+  void charLengthMatchesHost() throws Exception {
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT CHAR_LENGTH(s) FROM f");
+  }
+
+  @Test
+  void upperInFilterMatchesHost() throws Exception {
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT k FROM f WHERE UPPER(s) = 'B'");
+  }
+
   private static TableEnvironment environment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);

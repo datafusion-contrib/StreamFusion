@@ -67,3 +67,12 @@ hot-path finding.
 - **`COALESCE`/`NULLIF`:** lowered on the encoder side to the searched `CASE` the host defines
   them as, so they inherit `CASE`'s parity exactly rather than relying on a separate native
   function.
+- **String functions (`UPPER`/`LOWER`/`CHAR_LENGTH`):** matched by operator name (Flink delivers
+  them as `OTHER_FUNCTION`) and mapped to DataFusion's `upper`/`lower`/`character_length`. ASCII is
+  bit-identical (verified). Two Unicode edges are *not* reproduced: case folding — Flink's `UPPER`
+  uses Java `String.toUpperCase()` under the JVM default locale, DataFusion uses Rust's
+  locale-independent Unicode mapping, so locale-sensitive letters (e.g. Turkish dotless-i) can
+  differ; and `CHAR_LENGTH` — DataFusion counts Unicode code points while Flink (Java) counts UTF-16
+  code units, so a supplementary character (e.g. an emoji) counts 1 vs 2. Both edges are
+  non-ASCII-only; admitted with the edge flagged here, like integer `/`'s overflow edge. Narrowing
+  these (e.g. a code-unit length) would mean re-implementing Java semantics in Rust and is deferred.
