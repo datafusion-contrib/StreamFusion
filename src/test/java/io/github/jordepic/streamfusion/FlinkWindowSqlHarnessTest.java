@@ -14,6 +14,9 @@ import org.junit.jupiter.api.Test;
 
 class FlinkWindowSqlHarnessTest {
 
+  private static final java.time.LocalDate DAY_ONE = java.time.LocalDate.of(2026, 1, 1);
+  private static final java.time.LocalDate DAY_TWO = java.time.LocalDate.of(2026, 1, 2);
+
   @Test
   void intAvgMatchesHost() throws Exception {
     // Integer AVG over an int column: the sum accumulates in bigint, divides truncating toward
@@ -307,6 +310,26 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
+  void booleanKeyTumblingMatchesHost() throws Exception {
+    // A boolean grouping key, carried natively as a bit column and emitted back as boolean.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT b, window_start, window_end, SUM(`value`) AS s, COUNT(`value`) AS c "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY b, window_start, window_end");
+  }
+
+  @Test
+  void dateKeyTumblingMatchesHost() throws Exception {
+    // A DATE grouping key, carried as the epoch-day int in a Date32 column.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT d, window_start, window_end, SUM(`value`) AS s "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY d, window_start, window_end");
+  }
+
+  @Test
   void smallIntSumAvgMatchesHost() throws Exception {
     // SUM/AVG over SMALLINT: the native wrapping sum and truncating avg keep the input type.
     assertNarrowSumAvgMatchHost("sm");
@@ -448,7 +471,9 @@ class FlinkWindowSqlHarnessTest {
     DataStream<Row> source =
         env.fromData(
                 Types.ROW_NAMED(
-                    new String[] {"k", "value", "ts", "amount", "qty", "g", "s", "sm", "tn", "fl"},
+                    new String[] {
+                      "k", "value", "ts", "amount", "qty", "g", "s", "sm", "tn", "fl", "b", "d"
+                    },
                     Types.LONG,
                     Types.LONG,
                     Types.LONG,
@@ -458,12 +483,14 @@ class FlinkWindowSqlHarnessTest {
                     Types.STRING,
                     Types.SHORT,
                     Types.BYTE,
-                    Types.FLOAT),
-                Row.of(7L, 1L, 0L, 1.5, 10, 100L, "a", (short) 10, (byte) 1, 1.5f),
-                Row.of(7L, 2L, 500L, 2.5, 20, 100L, "a", (short) 20, (byte) 2, 2.5f),
-                Row.of(9L, 3L, 600L, 3.0, 30, 200L, "b", (short) 30, (byte) 3, 3.5f),
-                Row.of(7L, 4L, 1500L, 4.5, 40, 100L, "a", (short) 40, (byte) 4, 4.5f),
-                Row.of(9L, 5L, 2500L, 5.5, 50, 200L, "b", (short) 50, (byte) 5, 5.5f))
+                    Types.FLOAT,
+                    Types.BOOLEAN,
+                    Types.LOCAL_DATE),
+                Row.of(7L, 1L, 0L, 1.5, 10, 100L, "a", (short) 10, (byte) 1, 1.5f, true, DAY_ONE),
+                Row.of(7L, 2L, 500L, 2.5, 20, 100L, "a", (short) 20, (byte) 2, 2.5f, true, DAY_ONE),
+                Row.of(9L, 3L, 600L, 3.0, 30, 200L, "b", (short) 30, (byte) 3, 3.5f, false, DAY_TWO),
+                Row.of(7L, 4L, 1500L, 4.5, 40, 100L, "a", (short) 40, (byte) 4, 4.5f, true, DAY_ONE),
+                Row.of(9L, 5L, 2500L, 5.5, 50, 200L, "b", (short) 50, (byte) 5, 5.5f, false, DAY_TWO))
             .assignTimestampsAndWatermarks(
                 WatermarkStrategy.<Row>forMonotonousTimestamps()
                     .withTimestampAssigner((row, ts) -> (Long) row.getField(2)));
@@ -482,6 +509,8 @@ class FlinkWindowSqlHarnessTest {
             .column("sm", DataTypes.SMALLINT())
             .column("tn", DataTypes.TINYINT())
             .column("fl", DataTypes.FLOAT())
+            .column("b", DataTypes.BOOLEAN())
+            .column("d", DataTypes.DATE())
             .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
             .watermark("rt", "SOURCE_WATERMARK()")
             .build());

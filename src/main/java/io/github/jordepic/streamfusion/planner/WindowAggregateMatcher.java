@@ -257,21 +257,31 @@ final class WindowAggregateMatcher {
     return grouping;
   }
 
-  /** True if every grouping column is a key type the native side handles (bigint, int, or string). */
+  /** True if every grouping column is a type the native grouping-key carriage handles. */
   private static boolean supportedKeys(int[] grouping, RelDataType inputType) {
     for (int column : grouping) {
-      if (!supportedKeyType(inputType.getFieldList().get(column).getType().getSqlTypeName())) {
+      if (!supportedGroupingKeyType(inputType.getFieldList().get(column).getType().getSqlTypeName())) {
         return false;
       }
     }
     return true;
   }
 
+  /**
+   * Key types the joins and {@code OVER} carry (bigint/int/string). Window grouping keys carry a
+   * wider set via {@link #supportedGroupingKeyType}; the join/partition paths keep this narrower set
+   * until their wider-key handling is covered.
+   */
   static boolean supportedKeyType(SqlTypeName type) {
     return type == SqlTypeName.BIGINT
         || type == SqlTypeName.INTEGER
         || type == SqlTypeName.VARCHAR
         || type == SqlTypeName.CHAR;
+  }
+
+  /** Grouping-key types a window aggregate carries: the join set plus boolean and date. */
+  static boolean supportedGroupingKeyType(SqlTypeName type) {
+    return supportedKeyType(type) || type == SqlTypeName.BOOLEAN || type == SqlTypeName.DATE;
   }
 
   static int[] kinds(scala.collection.Seq<AggregateCall> aggCalls) {

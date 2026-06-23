@@ -66,7 +66,11 @@ Comparisons are width-insensitive and always safe.
   getter + a value-type code.
 - `DECIMAL` (all aggregates) stays on the host: precision/scale derivation and the
   decimal Arrow vector path are not yet built.
-- Grouping keys: one or more bigint/int/string keys are supported. The native
-  composite key is a list of typed scalars; int widens into int64 carriage and is
-  emitted back as int, strings ride as varchar. Other key types (decimal,
-  timestamp, …) fall back; adding them is matcher gate + a JVM vector each.
+- Grouping keys: one or more bigint/int/string/boolean/date keys are supported.
+  The native composite key is a list of typed scalars and the native key path is
+  type-general (it reads/rebuilds whatever Arrow type arrives), so widening keys is
+  a JVM-side matcher gate + vector carriage per type: int widens into int64 and is
+  emitted back as int, strings ride as varchar, boolean as a bit column, date as the
+  epoch-day Date32. Other key types (decimal, timestamp, …) fall back. (The join and
+  `OVER` partition paths still carry only bigint/int/string until their wider-key
+  handling is covered.)

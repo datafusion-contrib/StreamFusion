@@ -12,6 +12,8 @@ import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.BigIntVector;
+import org.apache.arrow.vector.BitVector;
+import org.apache.arrow.vector.DateDayVector;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
@@ -59,6 +61,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
   protected static final int TYPE_SMALLINT = 4;
   protected static final int TYPE_TINYINT = 5;
   protected static final int TYPE_FLOAT = 6;
+
+  /** Key-only type codes (carried in their natural Arrow type; the native key path is type-general). */
+  protected static final int TYPE_BOOLEAN = 7;
+  protected static final int TYPE_DATE = 8;
 
   /** Aggregate kind code for COUNT, whose partial is always a bigint regardless of value type. */
   protected static final int KIND_COUNT = 3;
@@ -328,11 +334,20 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
 
   /** Copies row {@code i}'s key from a source Arrow vector into the key vector (int widens to int64). */
   private static void setKeyFromVector(FieldVector target, int i, FieldVector source, int keyType) {
-    if (keyType == TYPE_STRING) {
-      ((VarCharVector) target).setSafe(i, ((VarCharVector) source).get(i));
-    } else {
-      long value = keyType == TYPE_INT ? ((IntVector) source).get(i) : ((BigIntVector) source).get(i);
-      ((BigIntVector) target).setSafe(i, value);
+    switch (keyType) {
+      case TYPE_STRING:
+        ((VarCharVector) target).setSafe(i, ((VarCharVector) source).get(i));
+        break;
+      case TYPE_BOOLEAN:
+        ((BitVector) target).setSafe(i, ((BitVector) source).get(i));
+        break;
+      case TYPE_DATE:
+        ((DateDayVector) target).setSafe(i, ((DateDayVector) source).get(i));
+        break;
+      default:
+        long value =
+            keyType == TYPE_INT ? ((IntVector) source).get(i) : ((BigIntVector) source).get(i);
+        ((BigIntVector) target).setSafe(i, value);
     }
   }
 
@@ -352,6 +367,12 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
         case CHAR:
           types[j] = TYPE_STRING;
           break;
+        case BOOLEAN:
+          types[j] = TYPE_BOOLEAN;
+          break;
+        case DATE:
+          types[j] = TYPE_DATE;
+          break;
         default:
           types[j] = TYPE_BIGINT;
       }
@@ -359,32 +380,55 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
     return types;
   }
 
-  /** Creates the Arrow vector carrying a key column: varchar for a string key, else int64. */
+  /** Creates the Arrow vector carrying a key column, in the key's natural type (int/bigint widen). */
   protected final FieldVector newKeyVector(String name, int keyType) {
-    return keyType == TYPE_STRING
-        ? new VarCharVector(name, allocator)
-        : new BigIntVector(name, allocator);
+    switch (keyType) {
+      case TYPE_STRING:
+        return new VarCharVector(name, allocator);
+      case TYPE_BOOLEAN:
+        return new BitVector(name, allocator);
+      case TYPE_DATE:
+        return new DateDayVector(name, allocator);
+      default:
+        return new BigIntVector(name, allocator);
+    }
   }
 
   /** Copies row {@code i}'s key from the input row into the key vector (int keys widen to int64). */
   protected static void setKey(FieldVector vector, int i, RowData row, int column, int keyType) {
-    if (keyType == TYPE_STRING) {
-      ((VarCharVector) vector).setSafe(i, row.getString(column).toBytes());
-    } else {
-      ((BigIntVector) vector).setSafe(i, keyType == TYPE_INT ? row.getInt(column) : row.getLong(column));
+    switch (keyType) {
+      case TYPE_STRING:
+        ((VarCharVector) vector).setSafe(i, row.getString(column).toBytes());
+        break;
+      case TYPE_BOOLEAN:
+        ((BitVector) vector).setSafe(i, row.getBoolean(column) ? 1 : 0);
+        break;
+      case TYPE_DATE:
+        // Flink stores DATE as the epoch-day int; carry it in a Date32 (day) vector.
+        ((DateDayVector) vector).setSafe(i, row.getInt(column));
+        break;
+      default:
+        ((BigIntVector) vector)
+            .setSafe(i, keyType == TYPE_INT ? row.getInt(column) : row.getLong(column));
     }
   }
 
-  /** Boxes a native-produced key cell back to the emitted column's type. */
+  /** Boxes a native-produced key cell back to the emitted column's internal type. */
   protected static Object boxKey(FieldVector vector, int i, int keyType) {
-    if (keyType == TYPE_STRING) {
-      return StringData.fromBytes(((VarCharVector) vector).get(i));
+    switch (keyType) {
+      case TYPE_STRING:
+        return StringData.fromBytes(((VarCharVector) vector).get(i));
+      case TYPE_BOOLEAN:
+        return ((BitVector) vector).get(i) != 0;
+      case TYPE_DATE:
+        return ((DateDayVector) vector).get(i);
+      default:
+        long value = ((BigIntVector) vector).get(i);
+        if (keyType == TYPE_INT) {
+          return (int) value; // separate return: a ternary would promote both arms to long
+        }
+        return value;
     }
-    long value = ((BigIntVector) vector).get(i);
-    if (keyType == TYPE_INT) {
-      return (int) value;
-    }
-    return value;
   }
 
   /** Reads a result/partial cell, boxing by the vector's type so RowData gets the column's type. */

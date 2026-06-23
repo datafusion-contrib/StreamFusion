@@ -56,9 +56,9 @@ final class GlobalWindowAggregateMatcher {
       return "global window aggregate: needs at least one aggregate";
     }
     for (int column : grouping) {
-      if (!WindowAggregateMatcher.supportedKeyType(
+      if (!WindowAggregateMatcher.supportedGroupingKeyType(
           inputType.getFieldList().get(column).getType().getSqlTypeName())) {
-        return "global window aggregate: grouping keys must be bigint/int/string";
+        return "global window aggregate: grouping keys must be bigint/int/string/boolean/date";
       }
     }
     for (int i = 0; i < aggregate.aggCalls().size(); i++) {

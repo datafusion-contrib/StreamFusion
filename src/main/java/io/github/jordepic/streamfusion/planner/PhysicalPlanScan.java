@@ -560,7 +560,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       return "window aggregate: needs an event-time TUMBLE/HOP/CUMULATE (zero offset) over a"
           + " local-time-zone rowtime, one value column whose type matches the aggregate"
           + " (bigint/int/double for SUM/AVG, also smallint/tinyint/float for MIN/MAX/COUNT),"
-          + " and bigint/int/string keys (docs/aggregate-type-support.md)";
+          + " and bigint/int/string/boolean/date keys (docs/aggregate-type-support.md)";
     }
     return null;
   }
