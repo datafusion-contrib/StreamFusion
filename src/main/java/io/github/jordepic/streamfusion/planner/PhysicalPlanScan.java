@@ -458,28 +458,63 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             kinds);
       }
     }
-    // A Calc we reached here is one neither Calc matcher accepted — record why, so a query that does
-    // not accelerate can explain itself (ticket 29) instead of silently falling back.
-    if (current instanceof StreamPhysicalCalc) {
-      noteCalcFallback((Calc) current);
-    }
+    // A recognized operator shape we reached here is one its matcher declined — record why, so a
+    // query that does not accelerate can explain itself (ticket 29) instead of falling back silently.
+    noteFallback(current);
     return current;
   }
 
-  /** Records (and optionally logs) why a Calc fell back to the host. */
-  private void noteCalcFallback(Calc calc) {
+  /** Records (and, under the flag, logs) why a recognized candidate node fell back; no-op otherwise. */
+  private void noteFallback(RelNode node) {
+    String reason =
+        node instanceof StreamPhysicalCalc ? calcReason((Calc) node) : operatorReason(node);
+    if (reason == null) {
+      return;
+    }
+    fallbackReasons.add(reason);
+    if (LOG_FALLBACK_REASONS) {
+      System.err.println("[streamfusion] falls back to host — " + reason);
+    }
+  }
+
+  /** The precise expression reason a Calc fell back, from the encoder. */
+  private static String calcReason(Calc calc) {
     String reason =
         FilterCalcMatcher.convertibleRow(calc.getInput().getRowType())
             ? RexExpression.reasonForCalc(calc)
             : "unsupported input column type";
-    if (reason == null) {
-      reason = "unsupported Calc expression";
+    return "Calc: " + (reason != null ? reason : "unsupported Calc expression");
+  }
+
+  /**
+   * An operator-level reason for the recognized stateful shapes (the matcher already declined, since
+   * a substituted node returns earlier), naming the operator and what it requires; null for any node
+   * that is not an accelerable candidate (so unrelated host nodes record nothing).
+   */
+  private static String operatorReason(RelNode node) {
+    if (node instanceof StreamPhysicalWindowAggregate
+        || node instanceof StreamPhysicalLocalWindowAggregate) {
+      return "window aggregate: needs an event-time TUMBLE/HOP/CUMULATE (zero offset) over a"
+          + " local-time-zone rowtime, one bigint/int/double value column with SUM/MIN/MAX/COUNT/AVG,"
+          + " and bigint/int/string keys (docs/aggregate-type-support.md)";
     }
-    String entry = "Calc: " + reason;
-    fallbackReasons.add(entry);
-    if (LOG_FALLBACK_REASONS) {
-      System.err.println("[streamfusion] falls back to host — " + entry);
+    if (node instanceof StreamPhysicalGlobalWindowAggregate) {
+      return "global window aggregate: needs a slice-attached TUMBLE/HOP/CUMULATE with a single"
+          + " bigint/double SUM/MIN/MAX/COUNT partial and bigint/int/string keys";
     }
+    if (node instanceof StreamPhysicalOverAggregate) {
+      return "OVER: only UNBOUNDED PRECEDING..CURRENT ROW over one ascending event-time order,"
+          + " partitioned by bigint/int/string";
+    }
+    if (node instanceof StreamPhysicalIntervalJoin) {
+      return "interval join: needs an INNER equi-join (no residual condition) with event-time"
+          + " interval bounds and bigint/int/string keys";
+    }
+    if (node instanceof StreamPhysicalWindowJoin) {
+      return "window join: needs an INNER equi-join (no residual condition) with event-time"
+          + " window-attached windows on both sides and bigint/int/string keys";
+    }
+    return null;
   }
 
   /**
