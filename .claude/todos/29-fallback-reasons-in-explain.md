@@ -1,7 +1,27 @@
 # Surface fallback reasons (Comet-style plan explanation)
 
-**Status:** open.
+**Status:** first cut done (Calc/expression path). Remaining: operator-level matchers + Flink explain.
 **Source:** user direction — when a query does not accelerate, the user has no way to see *why*.
+
+## Done (first cut)
+- `RexExpression` captures the first un-admitted node's reason at each reject site (`reject(...)`):
+  unsupported function/operator (names it, e.g. `ABS`, `CONCAT`), literal type, CAST
+  (`source→target, only widening numeric`), SUBSTRING bound, TRIM form. Exposed via
+  `RexExpression.reasonForCalc(calc)`.
+- `PhysicalPlanScan` collects Calc fallbacks into `fallbackReasons()` (a getter alongside
+  `substitutions()`/`operatorTypes()`), prefixed by node (`"Calc: …"`), and — under
+  `-Dstreamfusion.logFallbackReasons=true` — logs each at plan time. This is the analog of Comet's
+  `FALLBACK_REASONS` tag + `COMET_LOG_FALLBACK_REASONS`.
+- `NativeParity.assertFallbackReasonContains(env, sql, reason)`; the ABS/CONCAT/SUBSTRING fallback
+  tests assert the reason names the cause.
+
+## Remaining
+- **Operator-level matchers.** Window/global aggregate, OVER, interval/window join, source, sink
+  decline with a boolean today; thread a reason (coarse is fine: "unsupported windowing", "non-
+  insert-only changelog", "unsupported value type") so non-Calc fallbacks are visible too.
+- **Flink explain integration.** `fallbackReasons()` + the log flag are the surfacing today (Comet's
+  log path). The richer half — annotating the plan that Flink's `explain()`/`EXPLAIN` prints — is
+  still open; investigate whether a `FlinkPhysicalRel` can carry the reason for the explain output.
 
 ## Problem
 Today substitution is silent: a matcher that can't handle a node simply declines, and the operator

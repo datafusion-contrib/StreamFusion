@@ -38,9 +38,9 @@ here when the ticket is deleted.
 4. **Operator-level perf** (ticket 20 backlog): per-row `GroupKey` allocation in aggregators, session
    `update` one-row `take` batching. (The `RowData → Arrow` transpose was made row-major + pre-sized,
    ~25% faster — ticket 28; a native decoder was investigated and rejected on benchmark grounds.)
-5. **Fallback reasons in explain** (ticket 29): substitution is silent today — surface *why* a node
-   fell back (un-admitted op/type, non-literal SUBSTRING bound, …), the way Comet tags nodes and
-   prints them in extended explain. The user-facing half of the acceleration story.
+5. **Fallback reasons in explain** (ticket 29): first cut done — the Calc/expression path records a
+   precise reason (`fallbackReasons()` + `-Dstreamfusion.logFallbackReasons`), the way Comet tags
+   nodes. Remaining: operator-level matchers (window/join/sink) and Flink `explain()` integration.
 6. **Acceleration policy** (ticket 09): now that lone stateless islands measure < 1× (bare filter
    0.75×), decide whether to refuse substituting an operator that would be an isolated island with
    row endpoints on both sides, vs always substitute. Benchmark-informed. Pairs with ticket 29 (the
