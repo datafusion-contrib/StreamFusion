@@ -293,6 +293,19 @@ class FlinkCalcSqlHarnessTest {
   }
 
   @Test
+  void leftRightMatchHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::spacedStringEnvironment, "SELECT LEFT(s, 3), RIGHT(s, 2) FROM ss");
+  }
+
+  @Test
+  void leftNegativeCountFallsBack() throws Exception {
+    // A negative count diverges (Flink empty vs DataFusion drop-from-other-end), so it falls back.
+    NativeParity.assertFallbackReasonContains(
+        FlinkCalcSqlHarnessTest::spacedStringEnvironment, "SELECT LEFT(s, -1) FROM ss", "LEFT");
+  }
+
+  @Test
   void explainAnnotatesAFallbackWithItsReason() {
     // explainSql runs the native planner program, so the appended summary names why ABS fell back.
     String explain = NativePlanner.explain(environment(), "SELECT ABS(v) FROM f");

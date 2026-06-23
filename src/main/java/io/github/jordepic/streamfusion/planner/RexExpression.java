@@ -301,6 +301,12 @@ final class RexExpression {
       add(KIND_CALL, 66, 2);
       return emit(args.get(0)) && emit(args.get(1));
     }
+    if ("LEFT".equalsIgnoreCase(call.getOperator().getName())) {
+      return emitBoundedSubstr(call, 69);
+    }
+    if ("RIGHT".equalsIgnoreCase(call.getOperator().getName())) {
+      return emitBoundedSubstr(call, 70);
+    }
     int fnOp = functionOpCode(call.getOperator().getName());
     if (fnOp >= 0) {
       // The admitted scalar functions are all unary over a single string argument.
@@ -494,6 +500,23 @@ final class RexExpression {
       }
     }
     return true;
+  }
+
+  /**
+   * Emits {@code LEFT}/{@code RIGHT}(s, n) (op {@code op}) admitted only when {@code n} is an integer
+   * literal ≥ 0: Flink returns the empty string for a negative count while DataFusion drops that many
+   * characters from the other end, so a negative or runtime count falls back.
+   */
+  private boolean emitBoundedSubstr(RexCall call, int op) {
+    List<RexNode> args = call.getOperands();
+    if (args.size() != 2) {
+      return reject(call.getOperator().getName() + " requires 2 arguments");
+    }
+    if (!isIntLiteralAtLeast(args.get(1), 0)) {
+      return reject(call.getOperator().getName() + " requires a literal count ≥ 0");
+    }
+    add(KIND_CALL, op, 2);
+    return emit(args.get(0)) && emit(args.get(1));
   }
 
   /** Whether {@code node} is an integer literal whose value is at least {@code min}. */

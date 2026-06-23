@@ -2436,6 +2436,15 @@ fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prel
         65 => datafusion::functions::math::expr_fn::signum(next()),
         66 => datafusion::functions::string::expr_fn::repeat(next(), next()),
         67 => datafusion::functions::string::expr_fn::ascii(next()),
+        // LEFT/RIGHT yield a Utf8View; cast back to Utf8 for the JVM converter.
+        69 => datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
+            Box::new(datafusion::functions::unicode::expr_fn::left(next(), next())),
+            DataType::Utf8,
+        )),
+        70 => datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
+            Box::new(datafusion::functions::unicode::expr_fn::right(next(), next())),
+            DataType::Utf8,
+        )),
         56 => datafusion::prelude::Expr::Like(datafusion::logical_expr::Like::new(
             false,
             Box::new(next()),
