@@ -56,8 +56,18 @@ final class RexExpression {
   private final List<Integer> projectionRoots = new ArrayList<>();
   private int conditionRoot = -1;
   private String[] outputNames = new String[0];
+  // Why the encode declined, set at the first (innermost) un-admitted node; null if it succeeded.
+  private String reason;
 
   private RexExpression() {}
+
+  /** Records the first decline reason and returns false, so callers can {@code return reject(...)}. */
+  private boolean reject(String why) {
+    if (reason == null) {
+      reason = why;
+    }
+    return false;
+  }
 
   /** The encoded expression, or null if {@code node} contains an unsupported operation. */
   static RexExpression encode(RexNode node) {
@@ -71,27 +81,44 @@ final class RexExpression {
    * operation the native engine does not admit, so the Calc falls back to the host.
    */
   static RexExpression encodeCalc(Calc calc) {
-    RexProgram program = calc.getProgram();
     RexExpression encoder = new RexExpression();
+    return encoder.tryEncodeCalc(calc) ? encoder : null;
+  }
+
+  /**
+   * Why {@code calc} cannot be encoded for the native engine (the first un-admitted op/operand), or
+   * null if it can — for surfacing fallback reasons (ticket 29).
+   */
+  static String reasonForCalc(Calc calc) {
+    RexExpression encoder = new RexExpression();
+    return encoder.tryEncodeCalc(calc) ? null : encoder.reasonOrDefault();
+  }
+
+  private boolean tryEncodeCalc(Calc calc) {
+    RexProgram program = calc.getProgram();
     if (program.getCondition() != null) {
       RexNode condition =
           RexUtil.expandSearch(
               calc.getCluster().getRexBuilder(),
               null,
               program.expandLocalRef(program.getCondition()));
-      encoder.conditionRoot = encoder.kinds.size();
-      if (!encoder.emit(condition)) {
-        return null;
+      conditionRoot = kinds.size();
+      if (!emit(condition)) {
+        return false;
       }
     }
     for (RexLocalRef ref : program.getProjectList()) {
-      encoder.projectionRoots.add(encoder.kinds.size());
-      if (!encoder.emit(program.expandLocalRef(ref))) {
-        return null;
+      projectionRoots.add(kinds.size());
+      if (!emit(program.expandLocalRef(ref))) {
+        return false;
       }
     }
-    encoder.outputNames = calc.getRowType().getFieldNames().toArray(new String[0]);
-    return encoder;
+    outputNames = calc.getRowType().getFieldNames().toArray(new String[0]);
+    return true;
+  }
+
+  private String reasonOrDefault() {
+    return reason != null ? reason : "unsupported Calc expression";
   }
 
   /** The pre-order node index of each projection tree's root. */
@@ -153,7 +180,7 @@ final class RexExpression {
     if (node instanceof RexCall) {
       return emitCall((RexCall) node);
     }
-    return false;
+    return reject("unsupported expression node: " + node);
   }
 
   private boolean emitLiteral(RexLiteral literal) {
@@ -213,7 +240,7 @@ final class RexExpression {
           return true;
         }
       default:
-        return false;
+        return reject("unsupported literal type: " + type);
     }
   }
 
@@ -234,14 +261,14 @@ final class RexExpression {
     if (fnOp >= 0) {
       // The admitted scalar functions are all unary over a single string argument.
       if (call.getOperands().size() != 1) {
-        return false;
+        return reject("unsupported arity for " + call.getOperator().getName());
       }
       add(KIND_CALL, fnOp, 1);
       return emit(call.getOperands().get(0));
     }
     int op = opCode(call.getKind());
     if (op < 0) {
-      return false;
+      return reject("unsupported function/operator: " + call.getOperator().getName());
     }
     List<RexNode> operands = call.getOperands();
     switch (call.getKind()) {
@@ -326,12 +353,13 @@ final class RexExpression {
    */
   private boolean emitCast(RexCall call) {
     if (call.getOperands().size() != 1) {
-      return false;
+      return reject("unsupported CAST arity");
     }
-    int target = wideningTargetCode(call.getOperands().get(0).getType().getSqlTypeName(),
-        call.getType().getSqlTypeName());
+    SqlTypeName source = call.getOperands().get(0).getType().getSqlTypeName();
+    SqlTypeName targetType = call.getType().getSqlTypeName();
+    int target = wideningTargetCode(source, targetType);
     if (target < 0) {
-      return false;
+      return reject("unsupported CAST " + source + "→" + targetType + " (only widening numeric)");
     }
     add(KIND_CAST, target, 1);
     return emit(call.getOperands().get(0));
@@ -398,7 +426,6 @@ final class RexExpression {
     }
   }
 
-  /** The native op code for a call kind, or -1 if the operation is not admitted. */
   /**
    * Emits {@code SUBSTRING(s FROM pos [FOR len])} (op 55, 2 or 3 operands → native substr/substring).
    * Admitted only when {@code pos} is an integer literal ≥ 1 and {@code len} (if present) ≥ 0: Flink
@@ -408,13 +435,13 @@ final class RexExpression {
    */
   private boolean emitSubstring(List<RexNode> args) {
     if (args.size() != 2 && args.size() != 3) {
-      return false;
+      return reject("unsupported SUBSTRING arity");
     }
     if (!isIntLiteralAtLeast(args.get(1), 1)) {
-      return false;
+      return reject("SUBSTRING requires a literal start position ≥ 1");
     }
     if (args.size() == 3 && !isIntLiteralAtLeast(args.get(2), 0)) {
-      return false;
+      return reject("SUBSTRING requires a literal length ≥ 0");
     }
     add(KIND_CALL, 55, args.size());
     for (RexNode arg : args) {
@@ -445,12 +472,12 @@ final class RexExpression {
     if (operands.size() != 3
         || !(operands.get(0) instanceof RexLiteral)
         || !(operands.get(1) instanceof RexLiteral)) {
-      return false;
+      return reject("unsupported TRIM form");
     }
     String flag = String.valueOf(((RexLiteral) operands.get(0)).getValue());
     String trimChars = ((RexLiteral) operands.get(1)).getValueAs(String.class);
     if (!"BOTH".equals(flag) || !" ".equals(trimChars)) {
-      return false;
+      return reject("TRIM supports only the default BOTH whitespace trim");
     }
     add(KIND_CALL, 54, 1);
     return emit(operands.get(2));

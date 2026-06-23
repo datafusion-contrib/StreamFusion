@@ -42,6 +42,16 @@ final class NativeParity {
    * wrong native answer.
    */
   static void assertFallback(Supplier<TableEnvironment> environment, String sql) throws Exception {
+    assertFallbackReasonContains(environment, sql, null);
+  }
+
+  /**
+   * Like {@link #assertFallback}, and additionally asserts that some recorded fallback reason
+   * contains {@code expectedReason} (skip the reason check by passing null) — the visibility contract
+   * of ticket 29: a query that does not accelerate must be able to say why.
+   */
+  static void assertFallbackReasonContains(
+      Supplier<TableEnvironment> environment, String sql, String expectedReason) throws Exception {
     List<List<Object>> host = collect(environment.get(), sql);
 
     TableEnvironment nativeEnvironment = environment.get();
@@ -50,6 +60,11 @@ final class NativeParity {
 
     assertEquals(0, scan.substitutions(), "query unexpectedly routed to native");
     assertEquals(sorted(host), sorted(nativeRows), "fallback result differs from host");
+    if (expectedReason != null) {
+      assertTrue(
+          scan.fallbackReasons().stream().anyMatch(r -> r.contains(expectedReason)),
+          "no fallback reason contained \"" + expectedReason + "\"; reasons=" + scan.fallbackReasons());
+    }
   }
 
   private static List<List<Object>> collect(TableEnvironment environment, String sql)

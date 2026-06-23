@@ -32,7 +32,13 @@ import org.apache.flink.table.planner.plan.optimize.program.StreamOptimizeContex
 public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimizeContext> {
 
   private final List<String> operatorTypes = new ArrayList<>();
+  private final List<String> fallbackReasons = new ArrayList<>();
   private int substitutions;
+
+  // When set (-Dstreamfusion.logFallbackReasons=true), each fallback reason is logged at plan time,
+  // mirroring Comet's COMET_LOG_FALLBACK_REASONS. Reasons are always collected for fallbackReasons().
+  private static final boolean LOG_FALLBACK_REASONS =
+      Boolean.getBoolean("streamfusion.logFallbackReasons");
 
   @Override
   public RelNode optimize(RelNode root, StreamOptimizeContext context) {
@@ -452,7 +458,28 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             kinds);
       }
     }
+    // A Calc we reached here is one neither Calc matcher accepted — record why, so a query that does
+    // not accelerate can explain itself (ticket 29) instead of silently falling back.
+    if (current instanceof StreamPhysicalCalc) {
+      noteCalcFallback((Calc) current);
+    }
     return current;
+  }
+
+  /** Records (and optionally logs) why a Calc fell back to the host. */
+  private void noteCalcFallback(Calc calc) {
+    String reason =
+        FilterCalcMatcher.convertibleRow(calc.getInput().getRowType())
+            ? RexExpression.reasonForCalc(calc)
+            : "unsupported input column type";
+    if (reason == null) {
+      reason = "unsupported Calc expression";
+    }
+    String entry = "Calc: " + reason;
+    fallbackReasons.add(entry);
+    if (LOG_FALLBACK_REASONS) {
+      System.err.println("[streamfusion] falls back to host — " + entry);
+    }
   }
 
   /**
@@ -487,5 +514,14 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   /** Number of plan nodes replaced with native operators across optimization passes. */
   public int substitutions() {
     return substitutions;
+  }
+
+  /**
+   * Why candidate nodes fell back to the host (e.g. {@code "Calc: unsupported function/operator:
+   * ABS"}), in traversal order. Collected for visibility into a query that did not accelerate, the
+   * way Comet surfaces fallback reasons in extended explain (ticket 29).
+   */
+  public List<String> fallbackReasons() {
+    return fallbackReasons;
   }
 }

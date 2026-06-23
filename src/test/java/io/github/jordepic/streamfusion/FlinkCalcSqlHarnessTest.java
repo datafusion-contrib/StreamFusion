@@ -89,8 +89,10 @@ class FlinkCalcSqlHarnessTest {
 
   @Test
   void unsupportedProjectionFunctionFallsBack() throws Exception {
-    // A function the expression encoder does not admit makes the whole Calc fall back to the host.
-    NativeParity.assertFallback(FlinkCalcSqlHarnessTest::environment, "SELECT ABS(v) FROM f");
+    // A function the expression encoder does not admit makes the whole Calc fall back, and the
+    // fallback reason names the offending function (ticket 29).
+    NativeParity.assertFallbackReasonContains(
+        FlinkCalcSqlHarnessTest::environment, "SELECT ABS(v) FROM f", "ABS");
   }
 
   @Test
@@ -175,8 +177,9 @@ class FlinkCalcSqlHarnessTest {
   @Test
   void concatFallsBack() throws Exception {
     // Flink's CONCAT propagates NULL (CONCAT(null,x) = null), but DataFusion's `concat` ignores NULL
-    // args — a semantic divergence — so CONCAT is not admitted and the Calc falls back.
-    NativeParity.assertFallback(FlinkCalcSqlHarnessTest::nullableEnvironment, "SELECT CONCAT(s, '!') FROM g");
+    // args — a semantic divergence — so CONCAT is not admitted and the Calc falls back, naming it.
+    NativeParity.assertFallbackReasonContains(
+        FlinkCalcSqlHarnessTest::nullableEnvironment, "SELECT CONCAT(s, '!') FROM g", "CONCAT");
   }
 
   @Test
@@ -214,9 +217,10 @@ class FlinkCalcSqlHarnessTest {
 
   @Test
   void substringRuntimePositionFallsBack() throws Exception {
-    // A non-literal start (column v) can't be range-checked at plan time, so it falls back too.
-    NativeParity.assertFallback(
-        FlinkCalcSqlHarnessTest::environment, "SELECT SUBSTRING(s FROM v) FROM f");
+    // A non-literal start (column v) can't be range-checked at plan time, so it falls back, and the
+    // reason points at SUBSTRING.
+    NativeParity.assertFallbackReasonContains(
+        FlinkCalcSqlHarnessTest::environment, "SELECT SUBSTRING(s FROM v) FROM f", "SUBSTRING");
   }
 
   private static TableEnvironment environment() {
