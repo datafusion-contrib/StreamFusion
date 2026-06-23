@@ -275,17 +275,26 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       StreamPhysicalLocalWindowAggregate agg = (StreamPhysicalLocalWindowAggregate) current;
       // Tumbling local (single-field partials, no AVG; bigint or double values), or a hopping local
       // that pre-aggregates per slice (bigint only — its synthetic count1 column rides through
-      // hoppingLocalKinds).
+      // hoppingLocalKinds). COUNT(*) is excluded here: its global merge does not match, and a native
+      // local feeding a host global would mismatch — so two-phase COUNT(*) stays wholly on the host.
+      boolean hasValue = WindowAggregateMatcher.valueColumn(agg.aggCalls()) >= 0;
+      // The two-phase global only merges bigint/double partials, so the local (tumbling/cumulative)
+      // is restricted to those value types — narrower types route single-phase only. A wider local
+      // feeding a host global would mismatch.
+      int localValueType =
+          WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType());
+      boolean mergeableValueType = localValueType == 0 || localValueType == 1;
       boolean hopping =
-          WindowAggregateMatcher.matchesHoppingLocal(
-              agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType());
+          hasValue
+              && WindowAggregateMatcher.matchesHoppingLocal(
+                  agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType());
       boolean tumbling =
           !hopping
+              && hasValue
+              && mergeableValueType
               && WindowAggregateMatcher.matches(
                   agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType())
               && WindowAggregateMatcher.isTumbling(agg.windowing())
-              && WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType())
-                  != 2
               && !WindowAggregateMatcher.containsAvg(agg.aggCalls());
       // Cumulative local: like the tumbling local (pre-aggregates per slice = step), but a cumulative
       // window. Unlike hopping it carries no synthetic count column, so the partials are the plain
@@ -293,11 +302,11 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       boolean cumulativeLocal =
           !hopping
               && !tumbling
+              && hasValue
+              && mergeableValueType
               && WindowAggregateMatcher.matches(
                   agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType())
               && WindowAggregateMatcher.isCumulative(agg.windowing())
-              && WindowAggregateMatcher.valueTypeCode(agg.aggCalls(), agg.getInput().getRowType())
-                  != 2
               && !WindowAggregateMatcher.containsAvg(agg.aggCalls());
       if (tumbling || hopping || cumulativeLocal) {
         if (!NativeConfig.operatorEnabled("localWindowAggregate")) {

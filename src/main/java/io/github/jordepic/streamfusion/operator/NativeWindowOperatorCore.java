@@ -220,7 +220,11 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
       for (int i = 0; i < rows.size(); i++) {
         RowData row = rows.get(i);
         ts.setSafe(i, row.getTimestamp(timeColumn, TIMESTAMP_PRECISION).getMillisecond());
-        setValue(value, i, row, valueColumn);
+        if (valueColumn < 0) {
+          ((BigIntVector) value).setSafe(i, 1L); // COUNT(*): a non-null constant counts every row
+        } else {
+          setValue(value, i, row, valueColumn);
+        }
         for (int j = 0; j < keyColumns.length; j++) {
           setKey(keys[j], i, row, keyColumns[j], keyTypes[j]);
         }
@@ -251,13 +255,17 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
       vectors.add(keys[j]);
     }
     TimeStampNanoVector srcTs = (TimeStampNanoVector) in.getVector(timeColumn);
-    FieldVector srcValue = in.getFieldVectors().get(valueColumn);
+    FieldVector srcValue = valueColumn < 0 ? null : in.getFieldVectors().get(valueColumn);
     try (VectorSchemaRoot root = new VectorSchemaRoot(vectors);
         ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       for (int i = 0; i < rows; i++) {
         ts.setSafe(i, srcTs.get(i) / 1_000_000L);
-        copyValue(value, i, srcValue);
+        if (valueColumn < 0) {
+          ((BigIntVector) value).setSafe(i, 1L); // COUNT(*): a non-null constant counts every row
+        } else {
+          copyValue(value, i, srcValue);
+        }
         for (int j = 0; j < keyColumns.length; j++) {
           setKeyFromVector(keys[j], i, in.getFieldVectors().get(keyColumns[j]), keyTypes[j]);
         }

@@ -1,7 +1,8 @@
 # Wider input schemas: types, multiple columns, grouping keys
 
-**Status:** partial — all non-decimal numeric value types and wide grouping keys
-land; multiple value columns, `COUNT(*)`, decimal, and decimal/timestamp keys remain
+**Status:** partial — all non-decimal numeric value types, wide grouping keys, and
+single-phase `COUNT(*)` land; multiple value columns, two-phase `COUNT(*)`, decimal,
+and decimal/timestamp keys remain
 **Source:** running theme across the operator/matcher work
 
 ## Done
@@ -17,7 +18,9 @@ wrap/truncate, float 4-byte sum, float/double avg in double), verified at the
 overflow boundary and under float accumulation error. Their value column rides a
 typed Arrow vector decoded by a per-type value-type code. Grouping keys may be
 bigint/int/string/boolean/date (the native key path is type-general, so each is a
-matcher gate + a JVM vector). Remaining below:
+matcher gate + a JVM vector). `COUNT(*)` is supported as the sole aggregate
+(single-phase) by synthesizing a non-null value column the COUNT counts. Remaining
+below:
 
 - **DECIMAL value columns (all aggregates):** precision/scale derivation is
   exotic; a matcher gate + a decimal Arrow vector path.
@@ -25,9 +28,11 @@ matcher gate + a JVM vector). Remaining below:
   timestamp also carries a precision). The join and `OVER` partition paths still
   carry only bigint/int/string — widening them reuses the same machinery once
   covered by tests.
-- **Multiple distinct value columns and `COUNT(*)`:** all aggregates still read a
-  single shared value column. `SUM(a), SUM(b)` and `COUNT(*)` need the native fold
-  to bind each aggregate to its own column (and a row-count path for `COUNT(*)`).
+- **Multiple distinct value columns, mixed `COUNT(*)`, and two-phase `COUNT(*)`:**
+  all aggregates still read a single shared value column (`value`), so `SUM(a),
+  SUM(b)`, `COUNT(*)` next to a value aggregate, and the two-phase `COUNT(*)` global
+  merge fall back. The fix is to bind each aggregate to its own value column through
+  the JNI layer (the create/restore entry points thread a single value type today).
 
 ## Problem
 The native operators assume a narrow shape: a single int value column, and

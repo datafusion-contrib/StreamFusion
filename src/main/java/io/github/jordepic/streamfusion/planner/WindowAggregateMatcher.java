@@ -131,11 +131,33 @@ final class WindowAggregateMatcher {
       return false;
     }
 
-    // Every aggregate must read the same single value column of a supported type with a supported
-    // kind. See docs/aggregate-type-support.md for the parity intersection enforced here.
-    int valueColumn = aggCalls.apply(0).getArgList().isEmpty() ? -1 : aggCalls.apply(0).getArgList().get(0);
+    // Resolve the single value column the aggregates share. COUNT(*) reads no column; if every
+    // aggregate is COUNT(*) the operator synthesizes a non-null value column and counts rows. A
+    // value aggregate mixed with COUNT(*) would need two value columns (not yet supported), as would
+    // aggregates over different columns. See docs/aggregate-type-support.md for the value-type
+    // intersection enforced below.
+    int valueColumn = -1;
+    boolean countStar = false;
+    for (int i = 0; i < aggCalls.size(); i++) {
+      AggregateCall call = aggCalls.apply(i);
+      if (aggregateKind(call.getAggregation().getKind()) < 0) {
+        return false;
+      }
+      if (call.getArgList().isEmpty()) {
+        countStar = true;
+      } else if (call.getArgList().size() != 1) {
+        return false;
+      } else if (valueColumn < 0) {
+        valueColumn = call.getArgList().get(0);
+      } else if (call.getArgList().get(0) != valueColumn) {
+        return false;
+      }
+    }
     if (valueColumn < 0) {
-      return false;
+      return true; // every aggregate is COUNT(*) — counted over the synthetic value column
+    }
+    if (countStar) {
+      return false; // a value aggregate alongside COUNT(*)
     }
     SqlTypeName valueType = inputType.getFieldList().get(valueColumn).getType().getSqlTypeName();
     if (!supportedValueType(valueType)) {
@@ -155,11 +177,9 @@ final class WindowAggregateMatcher {
     boolean avgType = sumType;
     boolean multiple = aggCalls.size() > 1;
     for (int i = 0; i < aggCalls.size(); i++) {
-      AggregateCall call = aggCalls.apply(i);
-      int kind = aggregateKind(call.getAggregation().getKind());
-      if (call.getArgList().size() != 1 || call.getArgList().get(0) != valueColumn || kind < 0) {
-        return false;
-      }
+      // Structure (single arg == valueColumn, known kind) is already validated above; here only the
+      // per-kind value-type gates remain.
+      int kind = aggregateKind(aggCalls.apply(i).getAggregation().getKind());
       if (kind == KIND_SUM && !sumType) {
         return false;
       }
@@ -187,7 +207,10 @@ final class WindowAggregateMatcher {
    * 5 = tinyint, 6 = float (3 is a key-only string code).
    */
   static int valueTypeCode(scala.collection.Seq<AggregateCall> aggCalls, RelDataType inputType) {
-    int valueColumn = aggCalls.apply(0).getArgList().get(0);
+    int valueColumn = valueColumn(aggCalls);
+    if (valueColumn < 0) {
+      return 0; // COUNT(*): the synthetic value column is a non-null bigint
+    }
     switch (inputType.getFieldList().get(valueColumn).getType().getSqlTypeName()) {
       case DOUBLE:
         return 1;
@@ -249,8 +272,12 @@ final class WindowAggregateMatcher {
     return ((TimeAttributeWindowingStrategy) windowing).getTimeAttributeIndex();
   }
 
+  /**
+   * The shared value column the aggregates read, or -1 for COUNT(*) (no column). For a matched
+   * node either every aggregate is COUNT(*) — so the first one is — or they all read this column.
+   */
   static int valueColumn(scala.collection.Seq<AggregateCall> aggCalls) {
-    return aggCalls.apply(0).getArgList().get(0);
+    return aggCalls.apply(0).getArgList().isEmpty() ? -1 : aggCalls.apply(0).getArgList().get(0);
   }
 
   /** The grouping key columns (zero or more); the native side keys windows by their composite. */

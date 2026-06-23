@@ -320,6 +320,48 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
+  void countStarTumblingMatchesHost() throws Exception {
+    // COUNT(*) has no value column; the operator synthesizes a non-null column and counts rows.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT window_start, window_end, COUNT(*) AS n "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void keyedCountStarMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT k, window_start, window_end, COUNT(*) AS n "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY k, window_start, window_end");
+  }
+
+  @Test
+  void twoPhaseCountStarMatchesHost() throws Exception {
+    // Default planning: COUNT(*)'s global merge does not match, so the window aggregate stays wholly
+    // on the host (the local is held back to avoid a native-local + host-global mismatch). The
+    // result must still match — a regression guard against routing only one half.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentTwoPhase,
+        "SELECT window_start, window_end, COUNT(*) AS n "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void countStarWithValueAggregateMatchesHost() throws Exception {
+    // COUNT(*) alongside a value aggregate needs two value columns; the window aggregate is not yet
+    // admitted for it, so the result must still match the host (via fallback), never a wrong answer.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT window_start, window_end, COUNT(*) AS n, SUM(`value`) AS s "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
   void booleanKeyTumblingMatchesHost() throws Exception {
     // A boolean grouping key, carried natively as a bit column and emitted back as boolean.
     NativeParity.assertParity(
@@ -357,6 +399,26 @@ class FlinkWindowSqlHarnessTest {
     NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::narrowOverflowEnvironment,
         "SELECT window_start, window_end, SUM(tn) AS st, SUM(sm) AS ss "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void twoPhaseNarrowSumMatchesHost() throws Exception {
+    // Under default planning the narrow SUM's partial type is not one the global merges, so the
+    // window aggregate must stay on the host — never a native-local + host-global mismatch.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentTwoPhase,
+        "SELECT window_start, window_end, SUM(sm) AS s "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void twoPhaseFloatSumMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentTwoPhase,
+        "SELECT window_start, window_end, SUM(fl) AS s "
             + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
             + "GROUP BY window_start, window_end");
   }
