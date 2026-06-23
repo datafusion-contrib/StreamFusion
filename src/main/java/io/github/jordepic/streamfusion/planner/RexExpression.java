@@ -270,6 +270,25 @@ final class RexExpression {
       }
       return true;
     }
+    if ("POSITION".equalsIgnoreCase(call.getOperator().getName())) {
+      // POSITION(sub IN s) — operands [sub, s]; the native side calls strpos(s, sub).
+      List<RexNode> args = call.getOperands();
+      if (args.size() != 2) {
+        return reject("POSITION requires 2 arguments (no FROM start)");
+      }
+      add(KIND_CALL, 57, 2);
+      return emit(args.get(0)) && emit(args.get(1));
+    }
+    if ("ABS".equalsIgnoreCase(call.getOperator().getName())) {
+      return emitFloatUnary(call, 62);
+    }
+    if ("FLOOR".equalsIgnoreCase(call.getOperator().getName())) {
+      return emitFloatUnary(call, 63);
+    }
+    if ("CEIL".equalsIgnoreCase(call.getOperator().getName())
+        || "CEILING".equalsIgnoreCase(call.getOperator().getName())) {
+      return emitFloatUnary(call, 64);
+    }
     int fnOp = functionOpCode(call.getOperator().getName());
     if (fnOp >= 0) {
       // The admitted scalar functions are all unary over a single string argument.
@@ -512,9 +531,31 @@ final class RexExpression {
         return 52;
       case "REVERSE":
         return 59;
+      case "LTRIM":
+        return 60;
+      case "RTRIM":
+        return 61;
       default:
         return -1;
     }
+  }
+
+  /**
+   * Emits a unary numeric function (op code {@code op}) admitted only over a float/double operand.
+   * Integer cases are excluded: {@code ABS(INT_MIN)} overflows (Java wraps, DataFusion's checked
+   * kernel errors), and {@code FLOOR}/{@code CEIL} on an integer is an identity Flink keeps in the
+   * integer type — both divergence-prone, so they fall back.
+   */
+  private boolean emitFloatUnary(RexCall call, int op) {
+    if (call.getOperands().size() != 1) {
+      return reject(call.getOperator().getName() + ": requires one argument");
+    }
+    SqlTypeName type = call.getOperands().get(0).getType().getSqlTypeName();
+    if (type != SqlTypeName.FLOAT && type != SqlTypeName.REAL && type != SqlTypeName.DOUBLE) {
+      return reject(call.getOperator().getName() + ": only float/double operands admitted");
+    }
+    add(KIND_CALL, op, 1);
+    return emit(call.getOperands().get(0));
   }
 
   private static int opCode(SqlKind kind) {

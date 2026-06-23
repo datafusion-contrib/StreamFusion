@@ -2380,6 +2380,13 @@ fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prel
             a.next().expect("replace to"),
         );
     }
+    if op == 57 {
+        // POSITION(sub IN s): operands arrive [sub, s]; strpos takes (string, substring).
+        let mut a = args.into_iter();
+        let substring = a.next().expect("position substring");
+        let string = a.next().expect("position string");
+        return datafusion::functions::unicode::expr_fn::strpos(string, substring);
+    }
     if op == 55 {
         // SUBSTRING: 2-arg substr(s, pos) or 3-arg substring(s, pos, len). DataFusion's substr
         // yields a Utf8View; cast back to Utf8 so the result is a plain VarChar vector the JVM
@@ -2421,6 +2428,11 @@ fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prel
         51 => datafusion::functions::string::expr_fn::lower(next()),
         52 => datafusion::functions::unicode::expr_fn::character_length(next()),
         54 => datafusion::functions::string::expr_fn::btrim(vec![next()]),
+        60 => datafusion::functions::string::expr_fn::ltrim(vec![next()]),
+        61 => datafusion::functions::string::expr_fn::rtrim(vec![next()]),
+        62 => datafusion::functions::math::expr_fn::abs(next()),
+        63 => datafusion::functions::math::expr_fn::floor(next()),
+        64 => datafusion::functions::math::expr_fn::ceil(next()),
         56 => datafusion::prelude::Expr::Like(datafusion::logical_expr::Like::new(
             false,
             Box::new(next()),

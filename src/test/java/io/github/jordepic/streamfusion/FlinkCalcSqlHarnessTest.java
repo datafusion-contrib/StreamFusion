@@ -95,7 +95,7 @@ class FlinkCalcSqlHarnessTest {
     // A function the expression encoder does not admit makes the whole Calc fall back, and the
     // fallback reason names the offending function (ticket 29).
     NativeParity.assertFallbackReasonContains(
-        FlinkCalcSqlHarnessTest::environment, "SELECT ABS(v) FROM f", "ABS");
+        FlinkCalcSqlHarnessTest::environment, "SELECT MD5(s) FROM f", "MD5");
   }
 
   @Test
@@ -245,6 +245,36 @@ class FlinkCalcSqlHarnessTest {
   @Test
   void reverseMatchesHost() throws Exception {
     NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT REVERSE(s) FROM f");
+  }
+
+  @Test
+  void ltrimRtrimMatchHost() throws Exception {
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::spacedStringEnvironment, "SELECT LTRIM(s), RTRIM(s) FROM ss");
+  }
+
+  @Test
+  void positionMatchesHost() throws Exception {
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT POSITION('c' IN s) FROM f");
+  }
+
+  @Test
+  void absFloatMatchesHost() throws Exception {
+    // ABS over a double expression (the E-notation literal forces DOUBLE; goes negative for some
+    // rows). Integer ABS stays on host (overflow edge).
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT ABS(v - 25.5E0) FROM f");
+  }
+
+  @Test
+  void absIntegerFallsBack() throws Exception {
+    // Integer ABS is not admitted (INT_MIN overflow edge), so it falls back, naming ABS.
+    NativeParity.assertFallbackReasonContains(
+        FlinkCalcSqlHarnessTest::environment, "SELECT ABS(v) FROM f", "ABS");
+  }
+
+  @Test
+  void floorCeilMatchHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::environment, "SELECT FLOOR(v - 25.5E0), CEIL(v - 25.5E0) FROM f");
   }
 
   @Test
