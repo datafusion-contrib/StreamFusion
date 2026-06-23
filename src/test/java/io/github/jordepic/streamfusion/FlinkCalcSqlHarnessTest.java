@@ -312,6 +312,17 @@ class FlinkCalcSqlHarnessTest {
   }
 
   @Test
+  void lpadRpadMatchHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::spacedStringEnvironment, "SELECT LPAD(s, 8, '*'), RPAD(s, 8, '*') FROM ss");
+  }
+
+  @Test
+  void chrMatchesHost() throws Exception {
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT CHR(64 + v) FROM f");
+  }
+
+  @Test
   void leftNegativeCountFallsBack() throws Exception {
     // A negative count diverges (Flink empty vs DataFusion drop-from-other-end), so it falls back.
     NativeParity.assertFallbackReasonContains(

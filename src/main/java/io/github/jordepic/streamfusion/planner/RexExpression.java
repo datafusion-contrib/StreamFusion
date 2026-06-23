@@ -307,6 +307,12 @@ final class RexExpression {
     if ("RIGHT".equalsIgnoreCase(call.getOperator().getName())) {
       return emitBoundedSubstr(call, 70);
     }
+    if ("LPAD".equalsIgnoreCase(call.getOperator().getName())) {
+      return emitPad(call, 82);
+    }
+    if ("RPAD".equalsIgnoreCase(call.getOperator().getName())) {
+      return emitPad(call, 83);
+    }
     int fnOp = functionOpCode(call.getOperator().getName());
     if (fnOp >= 0) {
       // The admitted scalar functions are all unary over a single string argument.
@@ -519,6 +525,31 @@ final class RexExpression {
     return emit(args.get(0)) && emit(args.get(1));
   }
 
+  /**
+   * Emits {@code LPAD}/{@code RPAD}(s, len [, pad]) (op {@code op}) with the length a literal ≥ 0 and
+   * the pad string (if present) a literal — matching DataFusion Comet's scalar-pad constraint and
+   * avoiding the negative/runtime-length edges, the same gating as LEFT/RIGHT/SUBSTRING.
+   */
+  private boolean emitPad(RexCall call, int op) {
+    List<RexNode> args = call.getOperands();
+    if (args.size() != 2 && args.size() != 3) {
+      return reject(call.getOperator().getName() + " requires 2 or 3 arguments");
+    }
+    if (!isIntLiteralAtLeast(args.get(1), 0)) {
+      return reject(call.getOperator().getName() + " requires a literal length ≥ 0");
+    }
+    if (args.size() == 3 && !(args.get(2) instanceof RexLiteral)) {
+      return reject(call.getOperator().getName() + " pad string must be a literal");
+    }
+    add(KIND_CALL, op, args.size());
+    for (RexNode arg : args) {
+      if (!emit(arg)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /** Whether {@code node} is an integer literal whose value is at least {@code min}. */
   private static boolean isIntLiteralAtLeast(RexNode node, long min) {
     if (!(node instanceof RexLiteral)) {
@@ -572,6 +603,8 @@ final class RexExpression {
         return 61;
       case "ASCII":
         return 67;
+      case "CHR":
+        return 81;
       // Transcendental math (EXP/LN/LOG10/SIN/COS/TAN/ASIN/ACOS/ATAN/POWER/SQRT) is intentionally
       // absent: it is not IEEE-correctly-rounded, so the JVM's java.lang.Math and DataFusion's Rust
       // libm differ at the last ULP (verified for TAN/ATAN/ASIN/ACOS). Comet tolerates this; our

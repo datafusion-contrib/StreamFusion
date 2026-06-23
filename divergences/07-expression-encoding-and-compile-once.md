@@ -77,6 +77,8 @@ hot-path finding.
   to DataFusion's `btrim`; `LEADING`/`TRAILING` and custom trim characters fall back (asserted by a
   test). The encoder reads Calcite's three-operand TRIM (flag, trim-chars, source) and only proceeds
   for the `BOTH` + single-space case.
+- **`LPAD`/`RPAD`/`CHR`:** `LPAD`/`RPAD` → `lpad`/`rpad` (cast `Utf8View`→`Utf8`), length a literal
+  ≥ 0 and pad a literal (Comet's scalar-pad constraint); `CHR` → `chr`. Exact, no rounding/case/locale.
 - **`LTRIM`/`RTRIM`/`POSITION`/`REPEAT`/`ABS`/`FLOOR`/`CEIL`/`SIGN`:** `LTRIM`/`RTRIM` default-
   whitespace only (a 2-arg custom-char form falls back); `POSITION(sub IN s)` → `strpos(s, sub)`
   (returns Int32, matching Flink's INT); `REPEAT(s, n)` → `repeat`; `ABS`/`FLOOR`/`CEIL`/`SIGN`
