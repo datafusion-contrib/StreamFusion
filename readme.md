@@ -117,26 +117,29 @@ gives misleading numbers — see [docs/benchmarks.md](docs/benchmarks.md)).
 
 | Operator | Query | Flink | Native | Native vs. Flink |
 |---|---|---|---|---|
-| Parquet copy (columnar source → sink) | `INSERT INTO parquet SELECT * FROM parquet` | 1.32 M rows/s | 3.45 M rows/s | **2.61×** |
+| Parquet copy (columnar source → sink) | `INSERT INTO parquet SELECT * FROM parquet` | 1.35 M rows/s | 6.34 M rows/s | **4.68×** |
+| Parquet sink (row source) | `INSERT INTO parquet SELECT *` | 1.23 M rows/s | 2.76 M rows/s | **2.24×** |
 | Windowed aggregate over a columnar source | `SUM` by 1s window from a Parquet table | 1.80 M rows/s | 3.29 M rows/s | **1.82×** |
 | Interval join (event-time) | `a JOIN b ON a.k=b.k AND a.rt BETWEEN b.rt ± 1s` | 0.37 M rows/s | 0.63 M rows/s | **1.71×** |
 | `OVER` running `SUM` (row source) | `SUM(v) OVER (ORDER BY rt)` | 0.91 M rows/s | 1.42 M rows/s | **1.56×** |
 | Tumbling window aggregate (row source) | `SUM` by 1s window | 1.69 M rows/s | 2.10 M rows/s | **1.24×** |
-| Parquet sink (row source) | `INSERT INTO parquet SELECT *` | 1.15 M rows/s | 1.22 M rows/s | **1.06×** |
 | Filter (`WHERE`) | `SELECT * FROM f WHERE v > 50` | 3.23 M rows/s | 2.41 M rows/s | **0.75×** |
 
 The gain tracks how much of the pipeline stays columnar. The **fully-columnar paths lead**:
-the Parquet copy at **2.61×** (read as Arrow, through the native sink, written as Arrow —
+the Parquet copy at **4.68×** (read as Arrow, through the native sink, written as Arrow —
 never `RowData`, while Flink round-trips every row at both ends), the windowed aggregate over
 a columnar source at **1.82×** (the whole source → watermark assigner → keyed shuffle →
 local/global window pipeline stays Arrow), and the event-time **interval join at 1.71×** (Flink's
 interval join is slow; ours buffers per key and delegates the match to a DataFusion hash join).
-**Row-source ops still pay a `RowData → Arrow` transpose at the input** because the source is a row
-stream, but it is cheaper since the converter was made row-major + pre-sized (~25% faster build —
-[ticket 28](.claude/todos/28-native-row-transpose-and-shuffle.md)): `OVER` running `SUM` rises to
-**1.56×**, tumbling to **1.24×**, and the **Parquet sink crosses 1× to 1.06×**. The lone **stateless
-filter remains below 1× at 0.75×** — a single cheap predicate still cannot earn back the
-`RowData → Arrow → RowData` round-trip. Closing that last gap is the native-operator-chaining work in
+The **Parquet sink reaches 2.24×** even from a row source: it writes Arrow → Parquet natively and
+[coalesces batches into size-targeted files](.claude/todos/22-parquet-sink-file-coalescing.md)
+(rolling on a row target / checkpoint) rather than one file per batch, so per-file footer/syscall
+overhead no longer scales with batch count. **Other row-source ops still pay a `RowData → Arrow`
+transpose at the input**, though it is cheaper since the converter was made row-major + pre-sized
+(~25% faster build — [ticket 28](.claude/todos/28-native-row-transpose-and-shuffle.md)): `OVER`
+running `SUM` lands at **1.56×** and tumbling at **1.24×**. The lone **stateless filter remains below
+1× at 0.75×** — a single cheap predicate cannot earn back the `RowData → Arrow → RowData` round-trip.
+Closing that last gap is the native-operator-chaining work in
 [ticket 21](.claude/todos/21-native-operator-chaining.md): keep Arrow across adjacent native
 operators so the transpose is paid once at the edges, not per operator.
 
