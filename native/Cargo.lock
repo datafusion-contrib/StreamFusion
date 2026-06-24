@@ -1297,6 +1297,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "datafusion-orc"
+version = "0.8.0"
+source = "git+https://github.com/datafusion-contrib/datafusion-orc.git?rev=6c07fa282dc8d62db2aa4ded06ab55485efc811a#6c07fa282dc8d62db2aa4ded06ab55485efc811a"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "datafusion",
+ "futures",
+ "futures-util",
+ "object_store",
+ "orc-rust",
+ "tokio",
+]
+
+[[package]]
 name = "datafusion-physical-expr"
 version = "53.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2911,6 +2926,7 @@ dependencies = [
  "arrow",
  "criterion",
  "datafusion",
+ "datafusion-orc",
  "futures",
  "jni",
  "orc-rust",

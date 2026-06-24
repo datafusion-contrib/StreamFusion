@@ -183,18 +183,19 @@ public final class Native {
   public static native void closeParquetWriter(long handle);
 
   /**
-   * Opens a directory of Parquet files for reading and returns an opaque handle. The handle yields
-   * batches one at a time via {@link #nextBatch} and must be released with {@link #closeSource}.
+   * Opens one Parquet split — the row groups of {@code path} starting within {@code [rangeStart,
+   * rangeStart + rangeLength)} — and returns an opaque handle. Flink's file source enumerates the
+   * directory and assigns each subtask file byte ranges; the handle yields batches one at a time via
+   * {@link #nextBatch} and must be released with {@link #closeSource}.
    *
-   * @param directory directory of Parquet files to read
+   * @param path the Parquet file to read
    * @param projection output column names, in the order the plan expects (honoring projection
    *     pushdown); an empty array emits every column as read
-   * @param subtask this reader's subtask index; it reads the sorted files congruent to it modulo
-   *     {@code numSubtasks}, so a parallel read covers every file once
-   * @param numSubtasks the source parallelism
+   * @param rangeStart first byte of the assigned split
+   * @param rangeLength length of the assigned split in bytes
    */
   public static native long openParquet(
-      String directory, String[] projection, int subtask, int numSubtasks);
+      String path, String[] projection, long rangeStart, long rangeLength);
 
   /**
    * Exports the next Arrow batch from a source handle into the consumer-allocated C structs.
@@ -202,24 +203,27 @@ public final class Native {
    * @param handle a handle from a native file source (e.g. {@link #openParquet})
    * @param outArrayAddress address of the consumer-allocated output {@code ArrowArray} C struct
    * @param outSchemaAddress address of the consumer-allocated output {@code ArrowSchema} C struct
-   * @return true if a batch was produced, false once the directory is exhausted
+   * @return true if a batch was produced, false once the split is exhausted
    */
   public static native boolean nextBatch(long handle, long outArrayAddress, long outSchemaAddress);
 
-  /** Releases a native file source handle (Parquet, Avro, …). */
+  /** Releases a native file source handle (Parquet, ORC, …). */
   public static native void closeSource(long handle);
 
   /**
-   * Opens a single ORC file for reading and returns an opaque handle. ORC is self-describing, so the
-   * reader derives the schema from the file; Flink's file source enumerates the directory and hands us
-   * one file at a time. The handle yields batches one at a time via {@link #nextBatch} and must be
+   * Opens one ORC split — the stripes of {@code path} starting within {@code [rangeStart, rangeStart +
+   * rangeLength)} — and returns an opaque handle. ORC is self-describing, so the reader derives the
+   * schema from the file. The handle yields batches one at a time via {@link #nextBatch} and must be
    * released with {@link #closeSource}.
    *
    * @param path the ORC file to read
    * @param projection output column names, in the order the plan expects (honoring projection
    *     pushdown); an empty array emits every column as read
+   * @param rangeStart first byte of the assigned split
+   * @param rangeLength length of the assigned split in bytes
    */
-  public static native long openOrc(String path, String[] projection);
+  public static native long openOrc(
+      String path, String[] projection, long rangeStart, long rangeLength);
 
   /**
    * Splits a batch the JVM exported by a consistent hash of the {@code keyColumns} into up to {@code
