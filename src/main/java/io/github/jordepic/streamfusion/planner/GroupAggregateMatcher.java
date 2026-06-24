@@ -16,16 +16,16 @@ import scala.collection.Seq;
  * Decides whether a non-windowed {@code GROUP BY} aggregate can run natively, and pulls out the
  * aggregate kinds, value columns/types, and grouping keys the operator needs.
  *
- * <p>Scope of the first changelog-emitting operator: SUM/MIN/MAX/COUNT (no AVG — its multi-field
- * running state is not modelled yet) over bigint/int/double value columns, with any grouping keys
- * and pass-through columns the row/Arrow conversion supports. The caller separately requires the
- * input to be insert-only (append-only), so the count-reaches-zero delete case cannot arise.
+ * <p>Scope: SUM/MIN/MAX/COUNT (no AVG — its multi-field running state is not modelled yet) over
+ * bigint/int/double value columns, with any grouping keys and pass-through columns the row/Arrow
+ * conversion supports. The input may be append-only or a changelog; over a changelog only the
+ * retractable aggregates (SUM/COUNT) are admitted, since MIN/MAX cannot be retracted incrementally.
  */
 final class GroupAggregateMatcher {
 
   private GroupAggregateMatcher() {}
 
-  static boolean matches(StreamPhysicalGroupAggregate agg) {
+  static boolean matches(StreamPhysicalGroupAggregate agg, boolean inputInsertOnly) {
     // The native operator never expires idle keys and suppresses an unchanged result, which matches
     // the host only with state retention off. With a TTL set the host instead refreshes downstream
     // (emitting unchanged updates) and deletes expired keys, so leave it on the host.
@@ -52,6 +52,10 @@ final class GroupAggregateMatcher {
       int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
       if (kind < 0 || kind == WindowAggregateMatcher.KIND_AVG) {
         return false; // SUM/MIN/MAX/COUNT only
+      }
+      // MIN/MAX cannot be retracted incrementally, so they are admitted only over insert-only input.
+      if (!inputInsertOnly && (kind == 1 || kind == 2)) {
+        return false;
       }
       if (call.getArgList().size() > 1) {
         return false;

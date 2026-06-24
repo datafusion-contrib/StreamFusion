@@ -84,8 +84,38 @@ class NativeGroupAggregateOperatorTest {
     }
   }
 
+  // A changelog input consumed by the aggregate: +I/+U accumulate, -U/-D retract; retracting a key's
+  // last record empties its group and emits a DELETE.
+  @Test
+  void consumesRetractingInput() throws Exception {
+    try (OneInputStreamOperatorTestHarness<RowData, RowData> harness =
+        new OneInputStreamOperatorTestHarness<>(operator())) {
+      harness.open();
+      harness.processElement(new StreamRecord<>(row(RowKind.INSERT, 1, 10)));
+      harness.processElement(new StreamRecord<>(row(RowKind.INSERT, 1, 20))); // sum 30
+      harness.processElement(new StreamRecord<>(row(RowKind.UPDATE_BEFORE, 1, 10))); // retract 10
+      harness.processElement(new StreamRecord<>(row(RowKind.DELETE, 1, 20))); // last record gone
+      harness.endInput();
+
+      assertEquals(
+          List.of(
+              change(RowKind.INSERT, 1, 10),
+              change(RowKind.UPDATE_BEFORE, 1, 10),
+              change(RowKind.UPDATE_AFTER, 1, 30),
+              change(RowKind.UPDATE_BEFORE, 1, 30),
+              change(RowKind.UPDATE_AFTER, 1, 20),
+              change(RowKind.DELETE, 1, 20)),
+          collect(harness));
+    }
+  }
+
   private static RowData row(long key, long value) {
+    return row(RowKind.INSERT, key, value);
+  }
+
+  private static RowData row(RowKind kind, long key, long value) {
     GenericRowData row = new GenericRowData(2);
+    row.setRowKind(kind);
     row.setField(0, key);
     row.setField(1, value);
     return row;

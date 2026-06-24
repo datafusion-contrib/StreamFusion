@@ -38,16 +38,22 @@
     columnar source/exchange (no transpose), mirroring the windowed/`OVER` columnar
     operators — the natural perf follow-up, plus the per-row key read (ticket 20).
 
-## Remaining: *consume* a changelog (honor retracting input)
-Everything above emits retractions from insert-only input. The next half is
-honoring them on **input**:
-- Read the input `RowKind` (now carried) and accumulate with retract — a native
-  `retract_batch` path on the accumulators, and the `-D` (count reaches zero)
-  branch the append-only operator can skip today.
-- Drop the insert-only gate on the input edge once an operator can consume a
-  changelog correctly.
-This unlocks the retract-*consuming* operators: a non-windowed `GROUP BY` over a
-retracting source, regular (non-windowed) joins, and streaming Top-N (ticket 11).
+- **Changelog *consumption* — the non-windowed `GROUP BY` aggregate.** The same
+  operator now also honors a retracting input: each input row's `RowKind` selects
+  accumulate (`+I`/`+U`) or retract (`-U`/`-D`); `SUM`/`COUNT` retract (subtract /
+  decrement), a per-key record count drives the `-D` delete when it reaches zero,
+  and a per-aggregate non-null count makes a fully-retracted `SUM` report `NULL`
+  (the host's sum-with-retract). Append-only input is the same path with no
+  retractions. The insert-only gate on its input edge is dropped; `MIN`/`MAX` are
+  admitted only over insert-only input (they can't be retracted incrementally).
+
+## Remaining
+- **`MIN`/`MAX` over a retracting input** — needs a per-key value→count multiset
+  (Arroyo's "Batch" state; Flink's `Max/MinWithRetractAccumulator` uses a `MapView`)
+  to recompute the extreme after a retraction. Today they fall back over a changelog.
+- **Other retract-*consuming* operators** — regular (non-windowed) joins and
+  streaming Top-N (ticket 11). These are new operators; the `RowKind` plumbing and
+  the retract accumulation pattern they need now exist.
 
 ## Problem
 Everything so far assumes append-only, insert-only streams. Flink's planner

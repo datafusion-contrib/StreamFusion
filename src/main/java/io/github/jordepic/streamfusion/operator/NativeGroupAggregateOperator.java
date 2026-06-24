@@ -24,10 +24,13 @@ import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Non-windowed {@code GROUP BY} aggregation: rows in, a changelog of rows out. Input rows are
- * buffered and handed to the native aggregator in batches; each batch returns the changelog rows it
- * produces — an INSERT for a key's first appearance, then UPDATE_BEFORE/UPDATE_AFTER as the result
- * changes — with each row's {@link org.apache.flink.types.RowKind} carried back on the batch's
- * hidden kind column (see {@link RowDataArrowConverter}) and restored onto the emitted row.
+ * buffered and handed to the native aggregator in batches, carrying each row's {@link
+ * org.apache.flink.types.RowKind} so the native side accumulates ({@code +I}/{@code +U}) or retracts
+ * ({@code -U}/{@code -D}); each batch returns the changelog rows it produces — an INSERT for a key's
+ * first appearance, UPDATE_BEFORE/UPDATE_AFTER as the result changes, and DELETE when a key's last
+ * record is retracted — with each row's kind carried back on the batch's hidden kind column (see
+ * {@link RowDataArrowConverter}) and restored onto the emitted row. An append-only input is just the
+ * case where every row accumulates and no group is ever deleted.
  *
  * <p>The per-key running state and the changelog discipline live natively; this layer moves whole
  * rows across the bridge and owns the checkpointed handle. Because emitting a changelog during a
@@ -133,7 +136,8 @@ public class NativeGroupAggregateOperator extends AbstractStreamOperator<RowData
     if (buffer.isEmpty()) {
       return;
     }
-    try (VectorSchemaRoot in = RowDataArrowConverter.write(buffer, inputRowType, allocator);
+    // Carry each input row's RowKind so the native side accumulates (+I/+U) or retracts (-U/-D).
+    try (VectorSchemaRoot in = RowDataArrowConverter.write(buffer, inputRowType, allocator, true);
         ArrowArray inArray = ArrowArray.allocateNew(allocator);
         ArrowSchema inSchema = ArrowSchema.allocateNew(allocator);
         ArrowArray outArray = ArrowArray.allocateNew(allocator);

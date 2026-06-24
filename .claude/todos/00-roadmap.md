@@ -59,14 +59,14 @@ here when the ticket is deleted.
   against Flink's `MemoryManager`.
 - **Mailbox threading** (ticket 01): native execution should integrate with the task mailbox
   (non-blocking), not block the task thread.
-- **Changelog / retract** (ticket 06): changelog *emission* is done — the non-windowed `GROUP BY`
-  aggregate emits a retract changelog from append-only input. *Consuming* a changelog (retracting
-  input) remains, and gates the retract-consuming operators below.
+- **Changelog / retract** (ticket 06): the non-windowed `GROUP BY` aggregate now both emits and
+  consumes a retract changelog (SUM/COUNT retract; MIN/MAX over a changelog and the other
+  retract-consuming operators — regular joins, Top-N — remain).
 
 ## Breadth / longer horizon
 - **Arroyo operator coverage tracker** (ticket 11): append-only dedup, window Top-N, event-time
-  sort remain; regular joins / streaming Top-N and a GROUP BY over a changelog source need
-  retract-*consuming* input (ticket 06). (Two-phase cumulative windows, event-time joins, and the
-  non-windowed GROUP BY aggregate — changelog emission — are now done.)
+  sort remain; regular joins / streaming Top-N still need their own retract-consuming operators
+  (ticket 06). (Two-phase cumulative windows, event-time joins, and the non-windowed GROUP BY
+  aggregate — emitting *and* consuming a changelog — are now done.)
 - **Fully native Kafka source, no JNI** (back burner): subscribe in Rust, decode Avro→Arrow, only if
   the connector semantics can be lifted from Arroyo.

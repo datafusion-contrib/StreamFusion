@@ -1,10 +1,10 @@
 # Arroyo operator coverage — route everything Arroyo supports
 
 **Status:** open (tracking) — all window aggregates, OVER (subset), event-time INNER
-joins, the non-windowed `GROUP BY` aggregate (changelog *emission*, append-only input),
+joins, the non-windowed `GROUP BY` aggregate (changelog emission *and* consumption),
 filter/projection, watermark, shuffle, and Parquet source/sink are done. What remains is
-retract-*consuming* (a `GROUP BY` over a changelog source, regular joins, Top-N — ticket 06's
-input half) or async-gated (lookup join, async UDF — ticket 01), plus OVER/join feature tails.
+the other retract-consuming operators (regular joins, Top-N — ticket 06), MIN/MAX retraction,
+async-gated (lookup join, async UDF — ticket 01), plus OVER/join feature tails.
 **Source:** user direction — "everything Arroyo already supports, routed over"
 
 Goal: reach Flink parity (identical results, verified by the parity harness) for
@@ -39,12 +39,12 @@ is picked up. Operators are in `~/data/arroyo/crates/arroyo-worker/src/arrow/`.
 - [~] Instant join (`instant_join.rs`) — its main use, a windowed equi-join, is covered
       by our window join (INNER, on shared window bounds, divergences/12) via a hash
       join rather than a direct port. The general per-instant primitive is not ported.
-- [x] Non-windowed group aggregation over an **append-only** input
-      (`incremental_aggregator.rs`) — emits the retract changelog (`+I` then `-U`/`+U`,
-      matching the host's per-record `GroupAggFunction`). SUM/MIN/MAX/COUNT (AVG via
-      the host's SUM/COUNT rewrite) over bigint/int/double, any converter-supported
-      keys, global aggregation. *Consuming* retractions (a `GROUP BY` over a changelog
-      source, the `updating_cache` retract path) still needs ticket 06's input half.
+- [x] Non-windowed group aggregation (`incremental_aggregator.rs`) — emits *and*
+      consumes a retract changelog (`+I`/`-U`/`+U`/`-D`, matching the host's per-record
+      `GroupAggFunction`). SUM/COUNT (AVG via the host's SUM/COUNT rewrite) over
+      bigint/int/double retract; MIN/MAX run only over insert-only input. Any
+      converter-supported keys, global aggregation. Remaining: MIN/MAX retraction
+      (per-key value multiset, ticket 06).
 - [ ] Regular (non-windowed) join — the updating join with retract; needs ticket 06
       (consuming retractions).
 - [ ] Lookup join (`lookup_join.rs`) — stateless async enrichment against an external

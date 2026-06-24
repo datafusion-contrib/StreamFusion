@@ -995,6 +995,20 @@ impl RunningAgg {
         }
     }
 
+    /// Reverses one value out of the running state — the changelog retraction of {@link #fold}. Only
+    /// the additive aggregates support it: SUM subtracts, COUNT decrements. MIN/MAX cannot be
+    /// retracted incrementally, so they are never admitted over a retracting input.
+    fn retract(&mut self, value: Num) {
+        use RunningAgg::*;
+        match (self, value) {
+            (SumI64(s), Num::I64(v)) => *s = Some(s.unwrap_or(0).wrapping_sub(v)),
+            (SumI32(s), Num::I32(v)) => *s = Some(s.unwrap_or(0).wrapping_sub(v)),
+            (SumF64(s), Num::F64(v)) => *s = Some(s.unwrap_or(0.0) - v),
+            (Count(c), _) => *c -= 1,
+            _ => unreachable!("aggregate does not support retraction"),
+        }
+    }
+
     /// The current running value (also the checkpointed state).
     fn emit(&self) -> ScalarValue {
         use RunningAgg::*;
@@ -1161,21 +1175,31 @@ impl OverAggregator {
 /// (must match the JVM converter's column name). See divergences/13.
 const ROW_KIND_COLUMN: &str = "$row_kind$";
 
-/// Non-windowed `GROUP BY` aggregation that emits a retract changelog. Holds per-key running state —
-/// no windows, no watermark — and, processing rows in input order like the host's per-record
-/// aggregate, emits INSERT on a key's first row and UPDATE_BEFORE(previous)/UPDATE_AFTER(new)
-/// afterward. The UPDATE_BEFORE is gated on the host's per-node `generate_update_before` flag, and an
-/// update whose result is unchanged is suppressed (matching the host with state retention off). Input
-/// is append-only — every row accumulates — so the DELETE (count reaches zero) branch cannot arise;
-/// honoring retracting input is later work. The emitted batch is `[key0.., result0..]` plus the
-/// `$row_kind$` byte column the boundary uses to carry RowKind.
+/// Per-key state for a `GROUP BY` group: the running aggregates, their per-aggregate non-null input
+/// counts (so a SUM whose last non-null value is retracted reports NULL, as the host does), and the
+/// live record count (reaching zero deletes the group).
+struct GroupKeyState {
+    aggs: Vec<RunningAgg>,
+    non_null: Vec<i64>,
+    records: i64,
+}
+
+/// Non-windowed `GROUP BY` aggregation over a changelog. Holds per-key running state — no windows,
+/// no watermark — and processes a batch in input order like the host's per-record aggregate, so the
+/// emitted change sequence matches byte for byte. Each row's `RowKind` (carried on `$row_kind$`)
+/// selects accumulate (`+I`/`+U`) or retract (`-U`/`-D`); a key's first row inserts, a result change
+/// retracts the previous value then appends the new (the `-U` gated on `generate_update_before`, an
+/// unchanged result suppressed), and a key whose record count reaches zero is deleted (`-D`). Input
+/// may be append-only (then every row accumulates and no group is ever deleted) — the same path.
+/// SUM/COUNT are retractable; MIN/MAX accumulate only and are admitted only over insert-only input.
+/// The emitted batch is `[key0.., result0..]` plus the `$row_kind$` byte column.
 struct GroupAggregator {
     kinds: Vec<i64>,
     value_types: Vec<DataType>,
     value_columns: Vec<i64>,
     key_columns: Vec<usize>,
     generate_update_before: bool,
-    keys: HashMap<GroupKey, Vec<RunningAgg>>,
+    keys: HashMap<GroupKey, GroupKeyState>,
     key_types: Vec<DataType>,
 }
 
@@ -1198,11 +1222,14 @@ impl GroupAggregator {
         }
     }
 
-    /// The per-key running state, created on first touch.
-    fn states(&mut self, key: GroupKey) -> &mut Vec<RunningAgg> {
+    /// The per-key state, created (empty) on first touch.
+    fn state(&mut self, key: GroupKey) -> &mut GroupKeyState {
         let (kinds, value_types) = (&self.kinds, &self.value_types);
-        self.keys.entry(key).or_insert_with(|| {
-            kinds.iter().zip(value_types).map(|(&kind, vt)| RunningAgg::new(kind, vt)).collect()
+        let num_agg = kinds.len();
+        self.keys.entry(key).or_insert_with(|| GroupKeyState {
+            aggs: kinds.iter().zip(value_types).map(|(&kind, vt)| RunningAgg::new(kind, vt)).collect(),
+            non_null: vec![0; num_agg],
+            records: 0,
         })
     }
 
@@ -1214,13 +1241,30 @@ impl GroupAggregator {
             .collect()
     }
 
-    /// Folds the batch's rows (`value0..`, optional `key0..`) into per-key state in input order and
+    /// A key's current output tuple. SUM reports NULL while it has no non-null contributions (the
+    /// host's sum-with-retract); every other aggregate reports its running value directly.
+    fn output_values(&self, key: &GroupKey) -> Vec<ScalarValue> {
+        let state = self.keys.get(key).expect("key present");
+        self.kinds
+            .iter()
+            .enumerate()
+            .map(|(i, &kind)| {
+                if kind == 0 && state.non_null[i] == 0 {
+                    ScalarValue::try_from(&state.aggs[i].result_type()).expect("null scalar")
+                } else {
+                    state.aggs[i].emit()
+                }
+            })
+            .collect()
+    }
+
+    /// Folds the batch's rows into per-key state in input order, honoring each row's `RowKind`, and
     /// returns the changelog rows produced, in emission order.
     fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
         let n = batch.num_rows();
         let num_agg = self.kinds.len();
         // `None` is a COUNT(*) aggregate (no argument column): it counts every row. A present column
-        // counts/folds only non-null rows, matching the host's COUNT(col)/SUM/MIN/MAX null handling.
+        // counts/folds only non-null rows, matching the host's COUNT(col)/SUM null handling.
         let value_columns: Vec<Option<ValueColumn>> = (0..num_agg)
             .map(|i| {
                 if self.value_columns[i] < 0 {
@@ -1243,58 +1287,79 @@ impl GroupAggregator {
             .collect();
         let key_arrays: Vec<&ArrayRef> = self.key_columns.iter().map(|&i| batch.column(i)).collect();
         self.key_types = key_types(&key_arrays);
+        let row_kinds = batch
+            .column_by_name(ROW_KIND_COLUMN)
+            .expect("missing row-kind column")
+            .as_any()
+            .downcast_ref::<Int8Array>()
+            .expect("row kind must be int8");
 
         let mut out_keys: Vec<GroupKey> = Vec::new();
         let mut out_results: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
         let mut out_kinds: Vec<i8> = Vec::new();
+        let mut push = |kind: i8, key: &GroupKey, values: &[ScalarValue]| {
+            out_keys.push(key.clone());
+            for (i, v) in values.iter().enumerate() {
+                out_results[i].push(v.clone());
+            }
+            out_kinds.push(kind);
+        };
 
         for row in 0..n {
             let key = read_key(&key_arrays, row);
-            let first = !self.keys.contains_key(&key);
-            let prev: Vec<ScalarValue> = if first {
-                Vec::new()
-            } else {
-                self.keys.get(&key).unwrap().iter().map(|state| state.emit()).collect()
-            };
+            // RowKind: 0 +I, 1 -U, 2 +U, 3 -D. Update-before/delete retract; insert/update-after add.
+            let retract = row_kinds.value(row) == 1 || row_kinds.value(row) == 3;
+            let exists = self.keys.contains_key(&key);
+            if !exists && retract {
+                continue; // no accumulator for a key's first message being a retraction (host skips it)
+            }
+            let prev = if exists { Some(self.output_values(&key)) } else { None };
             {
-                let states = self.states(key.clone());
-                for (i, state) in states.iter_mut().enumerate() {
+                let state = self.state(key.clone());
+                for i in 0..num_agg {
                     match &value_columns[i] {
-                        // COUNT(*): the value is ignored, so any number drives the count up by one.
-                        None => state.fold(Num::I64(0)),
+                        None => {
+                            if retract {
+                                state.aggs[i].retract(Num::I64(0));
+                            } else {
+                                state.aggs[i].fold(Num::I64(0));
+                            }
+                        }
                         Some(column) => {
                             if let Some(num) = column.at(row) {
-                                state.fold(num);
+                                if retract {
+                                    state.aggs[i].retract(num);
+                                    state.non_null[i] -= 1;
+                                } else {
+                                    state.aggs[i].fold(num);
+                                    state.non_null[i] += 1;
+                                }
                             }
                         }
                     }
                 }
+                state.records += if retract { -1 } else { 1 };
             }
-            let new: Vec<ScalarValue> =
-                self.keys.get(&key).unwrap().iter().map(|state| state.emit()).collect();
 
-            if first {
-                out_keys.push(key);
-                for (i, v) in new.into_iter().enumerate() {
-                    out_results[i].push(v);
-                }
-                out_kinds.push(0); // RowKind INSERT
-            } else if new != prev {
-                // An unchanged result emits nothing (state retention is off).
-                if self.generate_update_before {
-                    out_keys.push(key.clone());
-                    for (i, v) in prev.into_iter().enumerate() {
-                        out_results[i].push(v);
+            if self.keys.get(&key).unwrap().records > 0 {
+                let new = self.output_values(&key);
+                match prev {
+                    None => push(0, &key, &new), // +I — first row for the key
+                    Some(prev) if new != prev => {
+                        if self.generate_update_before {
+                            push(1, &key, &prev); // -U
+                        }
+                        push(2, &key, &new); // +U
                     }
-                    out_kinds.push(1); // RowKind UPDATE_BEFORE
+                    Some(_) => {} // unchanged result — suppressed (state retention off)
                 }
-                out_keys.push(key);
-                for (i, v) in new.into_iter().enumerate() {
-                    out_results[i].push(v);
-                }
-                out_kinds.push(2); // RowKind UPDATE_AFTER
+            } else {
+                // The last record for the key was retracted: delete the group.
+                push(3, &key, &prev.expect("a retraction implies the key existed")); // -D
+                self.keys.remove(&key);
             }
         }
+        drop(push);
 
         let result_types = self.result_types();
         let mut fields = key_fields(&self.key_types);
@@ -1309,23 +1374,33 @@ impl GroupAggregator {
             .expect("failed to build group-by changelog batch")
     }
 
-    /// Serializes the per-key running state (`[key0.., state0..]`, one row per key — the running
-    /// value is itself the checkpointed state, as for OVER).
+    /// Serializes per-key state: `[key0.., records, state0, nonnull0, …]`, one row per key. The raw
+    /// running value (not the NULL-gated output) plus the non-null count and record count are exactly
+    /// what restore needs to resume.
     fn snapshot(&mut self) -> Vec<u8> {
         let result_types = self.result_types();
+        let num_agg = self.kinds.len();
         let mut keys: Vec<GroupKey> = Vec::new();
-        let mut state_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); self.kinds.len()];
-        for (key, states) in self.keys.iter() {
+        let mut records: Vec<i64> = Vec::new();
+        let mut state_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
+        let mut non_null_columns: Vec<Vec<i64>> = vec![Vec::new(); num_agg];
+        for (key, state) in self.keys.iter() {
             keys.push(key.clone());
-            for (i, state) in states.iter().enumerate() {
-                state_columns[i].push(state.emit());
+            records.push(state.records);
+            for i in 0..num_agg {
+                state_columns[i].push(state.aggs[i].emit());
+                non_null_columns[i].push(state.non_null[i]);
             }
         }
         let mut fields = key_fields(&self.key_types);
         let mut columns = key_columns(&keys, &self.key_types);
-        for (i, rt) in result_types.iter().enumerate() {
-            fields.push(Field::new(format!("state{i}"), rt.clone(), true));
-            columns.push(scalars_to_array(std::mem::take(&mut state_columns[i]), rt));
+        fields.push(Field::new("records", DataType::Int64, false));
+        columns.push(Arc::new(Int64Array::from(records)));
+        for i in 0..num_agg {
+            fields.push(Field::new(format!("state{i}"), result_types[i].clone(), true));
+            columns.push(scalars_to_array(std::mem::take(&mut state_columns[i]), &result_types[i]));
+            fields.push(Field::new(format!("nonnull{i}"), DataType::Int64, false));
+            columns.push(Arc::new(Int64Array::from(std::mem::take(&mut non_null_columns[i]))));
         }
         write_ipc(
             &RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
@@ -1345,15 +1420,25 @@ impl GroupAggregator {
             GroupAggregator::new(kinds, value_types, value_columns, key_columns, generate_update_before);
         let num_agg = aggregator.kinds.len();
         for batch in read_ipc(bytes) {
-            let arity = batch.num_columns() - num_agg;
+            // Columns: key0.., records, then (state, nonnull) per aggregate.
+            let arity = batch.num_columns() - 1 - 2 * num_agg;
             let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
             aggregator.key_types = key_types(&key_arrays);
+            let records = column_i64(&batch, "records");
             for row in 0..batch.num_rows() {
                 let key = read_key(&key_arrays, row);
-                for (i, state) in aggregator.states(key).iter_mut().enumerate() {
-                    let scalar = ScalarValue::try_from_array(batch.column(arity + i), row)
+                let state = aggregator.state(key);
+                state.records = records.value(row);
+                for i in 0..num_agg {
+                    let scalar = ScalarValue::try_from_array(batch.column(arity + 1 + 2 * i), row)
                         .expect("group state scalar");
-                    state.restore_value(&scalar);
+                    state.aggs[i].restore_value(&scalar);
+                    state.non_null[i] = batch
+                        .column(arity + 2 + 2 * i)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .expect("nonnull int64")
+                        .value(row);
                 }
             }
         }
@@ -4659,16 +4744,28 @@ mod tests {
         assert_eq!(values(&out, 3), vec![10, 30, 60]); // running SUM
     }
 
-    // A `[key0, value0]` batch (both bigint) for the non-windowed GROUP BY tests.
-    fn group_batch(keys: Vec<i64>, values: Vec<i64>) -> RecordBatch {
+    // A `[key0, value0, $row_kind$]` changelog batch (key/value bigint) for the GROUP BY tests;
+    // `kinds` is the RowKind byte per row (0 +I, 1 -U, 2 +U, 3 -D).
+    fn group_changelog(keys: Vec<i64>, values: Vec<Option<i64>>, kinds: Vec<i8>) -> RecordBatch {
         RecordBatch::try_new(
             Arc::new(Schema::new(vec![
                 Field::new("key0", DataType::Int64, false),
                 Field::new("value0", DataType::Int64, true),
+                Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
             ])),
-            vec![Arc::new(Int64Array::from(keys)), Arc::new(Int64Array::from(values))],
+            vec![
+                Arc::new(Int64Array::from(keys)),
+                Arc::new(Int64Array::from(values)),
+                Arc::new(Int8Array::from(kinds)),
+            ],
         )
         .unwrap()
+    }
+
+    // All-INSERT convenience for the append-only tests.
+    fn group_batch(keys: Vec<i64>, values: Vec<i64>) -> RecordBatch {
+        let kinds = vec![0i8; keys.len()];
+        group_changelog(keys, values.into_iter().map(Some).collect(), kinds)
     }
 
     fn row_kinds(batch: &RecordBatch) -> Vec<i8> {
@@ -4727,6 +4824,47 @@ mod tests {
         let out = restored.update(&group_batch(vec![1], vec![5]));
         assert_eq!(row_kinds(&out), vec![1, 2]); // -U(10), +U(15) — continues from 10
         assert_eq!(values(&out, 1), vec![10, 15]);
+    }
+
+    // Consuming a changelog: a -U input retracts a prior value, updating the running SUM.
+    #[test]
+    fn group_by_retracts_changelog_input() {
+        let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true);
+        // +I 10, +I 20 (sum 30), then -U 10 (retract -> sum 20), all key 1.
+        let out = agg.update(&group_changelog(
+            vec![1, 1, 1],
+            vec![Some(10), Some(20), Some(10)],
+            vec![0, 0, 1],
+        ));
+        assert_eq!(row_kinds(&out), vec![0, 1, 2, 1, 2]);
+        assert_eq!(values(&out, 1), vec![10, 10, 30, 30, 20]); // +I10; -U10/+U30; -U30/+U20
+    }
+
+    // Retracting a key's last record empties the group and emits a DELETE.
+    #[test]
+    fn group_by_deletes_when_last_record_retracted() {
+        let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true);
+        let out = agg.update(&group_changelog(vec![1, 1], vec![Some(10), Some(10)], vec![0, 3]));
+        assert_eq!(row_kinds(&out), vec![0, 3]); // +I(10), then -D(10)
+        assert_eq!(values(&out, 1), vec![10, 10]);
+    }
+
+    // A SUM reports NULL once its last non-null value is retracted while a null-valued row keeps the
+    // group alive — matching the host's sum-with-retract.
+    #[test]
+    fn group_by_sum_is_null_after_last_value_retracted() {
+        let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true);
+        // +I 5, +I NULL (sum still 5, suppressed), -U 5 (no non-null left -> SUM NULL, group alive).
+        let out = agg.update(&group_changelog(
+            vec![1, 1, 1],
+            vec![Some(5), None, Some(5)],
+            vec![0, 0, 1],
+        ));
+        assert_eq!(row_kinds(&out), vec![0, 1, 2]); // +I(5); -U(5)/+U(NULL)
+        let result = out.column(1);
+        assert_eq!(result.len(), 3);
+        assert!(!result.is_null(0) && result.as_any().downcast_ref::<Int64Array>().unwrap().value(0) == 5);
+        assert!(result.is_null(2)); // the +U carries a NULL sum
     }
 
     // A `[k, v, rt]` batch with int64 rowtime (epoch millis) for the interval-join tests.

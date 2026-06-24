@@ -65,6 +65,34 @@ class FlinkGroupAggregateSqlHarnessTest {
   }
 
   @Test
+  void sumOverRetractingInputMatchesHost() throws Exception {
+    // The inner GROUP BY emits a changelog; the outer SUM consumes it (retracting old per-(k,s)
+    // totals and adding new ones). Both route — the outer is the retract-consuming aggregate.
+    NativeParity.assertParity(
+        FlinkGroupAggregateSqlHarnessTest::environment,
+        "SELECT s, SUM(total) AS st FROM "
+            + "(SELECT k, s, SUM(`value`) AS total FROM src GROUP BY k, s) GROUP BY s");
+  }
+
+  @Test
+  void countOverRetractingInputMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkGroupAggregateSqlHarnessTest::environment,
+        "SELECT total, COUNT(*) AS n FROM "
+            + "(SELECT k, SUM(`value`) AS total FROM src GROUP BY k) GROUP BY total");
+  }
+
+  @Test
+  void minOverRetractingInputStaysOnHostButMatches() throws Exception {
+    // MIN cannot be retracted incrementally, so the outer aggregate stays on the host while the
+    // inner (insert-only) one still routes — and the result is unchanged.
+    NativeParity.assertParity(
+        FlinkGroupAggregateSqlHarnessTest::environment,
+        "SELECT s, MIN(total) AS mn FROM "
+            + "(SELECT k, s, SUM(`value`) AS total FROM src GROUP BY k, s) GROUP BY s");
+  }
+
+  @Test
   void stateTtlFallsBackToHost() throws Exception {
     // With idle-state TTL on, the host refreshes and expires keys (emitting unchanged updates and
     // deletes) — semantics the append-only native operator does not reproduce, so it stays on host.
