@@ -49,6 +49,10 @@ here when the ticket is deleted.
 3. **Operator-level perf** (ticket 20 backlog): per-row `GroupKey` allocation in aggregators, session
    `update` one-row `take` batching. (The `RowData → Arrow` transpose was made row-major + pre-sized,
    ~25% faster; a native decoder was investigated and rejected on benchmark grounds — ticket 28.)
+4. **Nexmark benchmark vs Flink** (ticket 30): run the standard q0–q22 Flink SQL suite native-
+   substituted vs stock Flink (release), per-query routed-fraction + fallback reasons + throughput
+   ratio. Use it as the prioritization engine for both coverage (which queries fall back, and why)
+   and perf (which route but trail Flink) — re-run as a regression/impact gate after each change.
 
 ## Production-readiness (not yet load-bearing)
 - **Memory accounting** (ticket 05): native `RootAllocator`s per operator are not accounted
