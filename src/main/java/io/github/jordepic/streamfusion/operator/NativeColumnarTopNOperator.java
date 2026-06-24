@@ -18,11 +18,10 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
 /**
- * Columnar append-only streaming Top-N: the same native ranker as {@link NativeTopNOperator}, fed
- * Arrow batches and emitting Arrow batches directly. The planner substitutes this when the ranker's
- * partitioned input is kept columnar across the exchange, so the changelog flows Arrow with no
- * per-operator transpose. The output batch carries the changelog kind on its {@code $row_kind$}
- * column.
+ * Append-only streaming Top-N, fed Arrow batches and emitting Arrow batches. The changelog flows
+ * Arrow with no per-operator transpose; each partitioned shuffle stays columnar where the input is a
+ * columnar producer, and the row↔Arrow conversion happens only at the host edges. The output batch
+ * carries the changelog kind on its {@code $row_kind$} column.
  */
 public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {

@@ -18,12 +18,11 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
 /**
- * Columnar non-windowed {@code GROUP BY} aggregation: the same native aggregator as {@link
- * NativeGroupAggregateOperator}, but fed Arrow batches and emitting Arrow batches directly instead of
- * transposing rows on each side. The planner substitutes this when the aggregate's keyed input is
- * kept columnar across the exchange, so a native changelog chain pays no per-operator transpose; the
- * row↔Arrow conversion happens only at the host edges (inserted by the transition pass). The output
- * batch carries the changelog kind on its {@code $row_kind$} column.
+ * Non-windowed {@code GROUP BY} aggregation, fed Arrow batches and emitting Arrow batches (the
+ * native kernel reads/writes the row kind on the batch's {@code $row_kind$} column). A native
+ * changelog chain pays no per-operator transpose; the row↔Arrow conversion happens only at the host
+ * edges (inserted by the transition pass), and each keyed shuffle stays columnar where the input is a
+ * columnar producer.
  */
 public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {

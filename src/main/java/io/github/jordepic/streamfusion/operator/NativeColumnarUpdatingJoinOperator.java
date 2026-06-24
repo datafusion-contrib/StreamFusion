@@ -18,10 +18,10 @@ import org.apache.flink.streaming.api.operators.TwoInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
 /**
- * Columnar regular (non-windowed) INNER updating join: the same native joiner as {@link
- * NativeUpdatingJoinOperator}, fed Arrow batches on both inputs and emitting Arrow batches. The
- * planner substitutes this when both keyed inputs are kept columnar across their exchanges, so the
- * changelog flows Arrow with no per-operator transpose. Each input batch is folded into its side and
+ * Regular (non-windowed) INNER updating join, fed Arrow batches on both inputs and emitting Arrow
+ * batches. The changelog flows Arrow with no per-operator transpose; each keyed shuffle stays
+ * columnar where the input is a columnar producer, and the row↔Arrow conversion happens only at the
+ * host edges. Each input batch is folded into its side and
  * the join changelog it produces is emitted immediately (carrying the changelog kind on the output
  * batch's {@code $row_kind$} column); the other side's state is unaffected by the update, so no
  * cross-input buffering is needed.
