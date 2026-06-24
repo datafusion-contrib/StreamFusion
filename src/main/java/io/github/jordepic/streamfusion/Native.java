@@ -446,6 +446,34 @@ public final class Native {
       byte[] snapshot);
 
   /**
+   * Creates a regular (non-windowed) INNER updating joiner and returns an opaque handle. It keeps a
+   * per-side keyed multiset of live rows and, on each input row, emits the join changelog against the
+   * other side (carrying the input row's kind from the trailing {@code $row_kind$} column). The JVM
+   * owns the handle and must release it with {@link #closeUpdatingJoiner}.
+   *
+   * @param leftKeys equi-join key column indices in the left input batch
+   * @param rightKeys equi-join key column indices in the right input batch
+   */
+  public static native long createUpdatingJoiner(int[] leftKeys, int[] rightKeys);
+
+  /** Pushes a left batch, exporting the join changelog (left columns, right columns, row kind). */
+  public static native void pushLeftUpdatingJoiner(
+      long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
+
+  /** Pushes a right batch, exporting the join changelog (left columns, right columns, row kind). */
+  public static native void pushRightUpdatingJoiner(
+      long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
+
+  /** Releases an updating joiner handle. */
+  public static native void closeUpdatingJoiner(long handle);
+
+  /** Serializes an updating joiner's per-side state for a checkpoint. */
+  public static native byte[] snapshotUpdatingJoiner(long handle);
+
+  /** Rebuilds an updating joiner from a snapshot and returns a fresh handle. */
+  public static native long restoreUpdatingJoiner(int[] leftKeys, int[] rightKeys, byte[] snapshot);
+
+  /**
    * Creates an event-time INNER window joiner and returns an opaque handle. It buffers both inputs
    * (whose rows carry matching {@code window_start}/{@code window_end} columns assigned upstream) and
    * joins them per window when the watermark closes it. The JVM owns the handle across calls and must

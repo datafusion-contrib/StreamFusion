@@ -2484,6 +2484,206 @@ impl WindowJoiner {
     }
 }
 
+/// A full input row carried as scalars, used as a multiset key in the updating join's state.
+type JoinRow = Vec<ScalarValue>;
+
+/// Regular (non-windowed) INNER equi-join over a changelog, the "updating join". Unlike the
+/// time-bounded interval/window joins — which buffer a batch and delegate the match to a DataFusion
+/// hash join — this keeps a per-side keyed multiset of live rows and probes it incrementally per
+/// input row, because retract correctness needs per-row counts a batch join does not give. This is
+/// how the standalone streaming engines do it (RisingWave's `JoinHashMap`, Proton's `MemoryHashJoin`;
+/// see divergences/14); INNER needs no match-degree table (only outer/semi/anti would).
+///
+/// On each input row the arriving side emits one output per matching row on the *other* side
+/// (repeated by that row's multiset count), carrying the input row's `RowKind` — so a `+I`/`+U`
+/// produces inserts/update-afters and a `-U`/`-D` produces the matching retractions — then folds the
+/// row into its own side's multiset. State grows until rows are retracted (no time eviction). The
+/// emitted batch is `[left cols.., right cols..]` plus the `$row_kind$` byte column.
+struct UpdatingJoiner {
+    left_keys: Vec<usize>,
+    right_keys: Vec<usize>,
+    left_schema: Option<SchemaRef>,
+    right_schema: Option<SchemaRef>,
+    left_state: HashMap<GroupKey, HashMap<JoinRow, i64>>,
+    right_state: HashMap<GroupKey, HashMap<JoinRow, i64>>,
+}
+
+impl UpdatingJoiner {
+    fn new(left_keys: Vec<usize>, right_keys: Vec<usize>) -> Self {
+        UpdatingJoiner {
+            left_keys,
+            right_keys,
+            left_schema: None,
+            right_schema: None,
+            left_state: HashMap::new(),
+            right_state: HashMap::new(),
+        }
+    }
+
+    /// Reads a batch's data schema (every column except the trailing `$row_kind$`).
+    fn data_schema(batch: &RecordBatch) -> SchemaRef {
+        let arity = batch.num_columns() - 1;
+        Arc::new(Schema::new(
+            batch.schema().fields().iter().take(arity).map(|f| f.as_ref().clone()).collect::<Vec<_>>(),
+        ))
+    }
+
+    /// Folds an input batch into its side and emits the join changelog it produces.
+    fn push(&mut self, batch: &RecordBatch, is_left: bool) -> RecordBatch {
+        let arity = batch.num_columns() - 1;
+        let schema = Self::data_schema(batch);
+        if is_left {
+            self.left_schema = Some(schema);
+        } else {
+            self.right_schema = Some(schema);
+        }
+        let key_indices = if is_left { &self.left_keys } else { &self.right_keys };
+        let key_arrays: Vec<&ArrayRef> = key_indices.iter().map(|&i| batch.column(i)).collect();
+        let data_arrays: Vec<&ArrayRef> = (0..arity).map(|i| batch.column(i)).collect();
+        let row_kinds = batch
+            .column(arity)
+            .as_any()
+            .downcast_ref::<Int8Array>()
+            .expect("row kind must be int8");
+
+        let mut out_rows: Vec<JoinRow> = Vec::new();
+        let mut out_kinds: Vec<i8> = Vec::new();
+
+        for row in 0..batch.num_rows() {
+            let kind = row_kinds.value(row);
+            let retract = kind == 1 || kind == 3;
+            let key = read_key(&key_arrays, row);
+            let full: JoinRow = data_arrays
+                .iter()
+                .map(|a| ScalarValue::try_from_array(a, row).expect("join row scalar"))
+                .collect();
+            // Emit against the other side's current multiset for this key (it is unaffected by the
+            // update to our own side below, so order does not matter).
+            {
+                let other = if is_left { &self.right_state } else { &self.left_state };
+                if let Some(matches) = other.get(&key) {
+                    for (other_row, &count) in matches.iter() {
+                        let output: JoinRow = if is_left {
+                            full.iter().chain(other_row).cloned().collect()
+                        } else {
+                            other_row.iter().chain(&full).cloned().collect()
+                        };
+                        for _ in 0..count.max(0) {
+                            out_rows.push(output.clone());
+                            out_kinds.push(kind);
+                        }
+                    }
+                }
+            }
+            // Fold the row into our own side's multiset.
+            let own = if is_left { &mut self.left_state } else { &mut self.right_state };
+            let bucket = own.entry(key.clone()).or_default();
+            let next = bucket.get(&full).copied().unwrap_or(0) + if retract { -1 } else { 1 };
+            if next <= 0 {
+                bucket.remove(&full);
+            } else {
+                bucket.insert(full, next);
+            }
+            if bucket.is_empty() {
+                own.remove(&key);
+            }
+        }
+
+        if out_rows.is_empty() {
+            return RecordBatch::new_empty(Arc::new(Schema::empty()));
+        }
+        let left_schema = self.left_schema.as_ref().expect("left schema once a pair matched");
+        let right_schema = self.right_schema.as_ref().expect("right schema once a pair matched");
+        let types: Vec<DataType> = left_schema
+            .fields()
+            .iter()
+            .chain(right_schema.fields().iter())
+            .map(|f| f.data_type().clone())
+            .collect();
+        let mut fields: Vec<Field> = (0..types.len())
+            .map(|j| Field::new(format!("c{j}"), types[j].clone(), true))
+            .collect();
+        let mut columns: Vec<ArrayRef> = (0..types.len())
+            .map(|j| scalars_to_array(out_rows.iter().map(|r| r[j].clone()).collect(), &types[j]))
+            .collect();
+        fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
+        columns.push(Arc::new(Int8Array::from(out_kinds)));
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build updating-join changelog batch")
+    }
+
+    /// Serializes one side's multiset as `[data cols.., __count__]` (one row per distinct live row),
+    /// or no bytes when the side has no schema or no rows yet.
+    fn serialize_side(&self, is_left: bool) -> Vec<u8> {
+        let (schema, state) = if is_left {
+            (&self.left_schema, &self.left_state)
+        } else {
+            (&self.right_schema, &self.right_state)
+        };
+        let Some(schema) = schema else { return Vec::new() };
+        let mut rows: Vec<&JoinRow> = Vec::new();
+        let mut counts: Vec<i64> = Vec::new();
+        for bucket in state.values() {
+            for (row, &count) in bucket.iter() {
+                rows.push(row);
+                counts.push(count);
+            }
+        }
+        if rows.is_empty() {
+            return Vec::new();
+        }
+        let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
+        let mut columns: Vec<ArrayRef> = (0..fields.len())
+            .map(|j| {
+                scalars_to_array(rows.iter().map(|r| r[j].clone()).collect(), fields[j].data_type())
+            })
+            .collect();
+        fields.push(Field::new("__count__", DataType::Int64, false));
+        columns.push(Arc::new(Int64Array::from(counts)));
+        write_ipc(&RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("join side"))
+    }
+
+    fn snapshot(&self) -> Vec<u8> {
+        let left = self.serialize_side(true);
+        let right = self.serialize_side(false);
+        let mut out = (left.len() as u32).to_le_bytes().to_vec();
+        out.extend_from_slice(&left);
+        out.extend_from_slice(&right);
+        out
+    }
+
+    fn restore(left_keys: Vec<usize>, right_keys: Vec<usize>, bytes: &[u8]) -> Self {
+        let mut joiner = UpdatingJoiner::new(left_keys, right_keys);
+        let left_len = u32::from_le_bytes(bytes[0..4].try_into().expect("snapshot len")) as usize;
+        joiner.load_side(true, &bytes[4..4 + left_len]);
+        joiner.load_side(false, &bytes[4 + left_len..]);
+        joiner
+    }
+
+    fn load_side(&mut self, is_left: bool, bytes: &[u8]) {
+        for batch in read_ipc_if_present(bytes) {
+            let arity = batch.num_columns() - 1;
+            let schema = Self::data_schema(&batch);
+            let key_indices = if is_left { &self.left_keys } else { &self.right_keys };
+            let key_arrays: Vec<&ArrayRef> = key_indices.iter().map(|&i| batch.column(i)).collect();
+            let counts = column_i64(&batch, "__count__");
+            let state = if is_left { &mut self.left_state } else { &mut self.right_state };
+            for row in 0..batch.num_rows() {
+                let key = read_key(&key_arrays, row);
+                let full: JoinRow = (0..arity)
+                    .map(|i| ScalarValue::try_from_array(batch.column(i), row).expect("join row scalar"))
+                    .collect();
+                state.entry(key).or_default().insert(full, counts.value(row));
+            }
+            if is_left {
+                self.left_schema = Some(schema);
+            } else {
+                self.right_schema = Some(schema);
+            }
+        }
+    }
+}
+
 /// One open session for a key: its end (the latest element's timestamp plus the gap) and the
 /// incremental accumulators folding in its rows. The start is the map key that holds it.
 struct Session {
@@ -4443,6 +4643,94 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreInterv
     ))) as jlong
 }
 
+/// Creates a regular (non-windowed) INNER updating joiner and returns an opaque handle. The key
+/// column indices locate the equi-join key within each side's input batch (whose trailing column is
+/// the `$row_kind$` byte). The JVM owns the handle and must release it with the matching close.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createUpdatingJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    left_keys: JIntArray<'local>,
+    right_keys: JIntArray<'local>,
+) -> jlong {
+    let left = read_columns(&env, &left_keys);
+    let right = read_columns(&env, &right_keys);
+    Box::into_raw(Box::new(UpdatingJoiner::new(left, right))) as jlong
+}
+
+/// Folds a left batch into state and exports the join changelog it produces (left cols, right cols,
+/// then `$row_kind$`).
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftUpdatingJoiner<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let joiner = unsafe { &mut *(handle as *mut UpdatingJoiner) };
+    let result = joiner.push(&import_record_batch(in_array_address, in_schema_address), true);
+    export_record_batch(result, out_array_address, out_schema_address);
+}
+
+/// Folds a right batch into state and exports the join changelog it produces.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightUpdatingJoiner<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let joiner = unsafe { &mut *(handle as *mut UpdatingJoiner) };
+    let result = joiner.push(&import_record_batch(in_array_address, in_schema_address), false);
+    export_record_batch(result, out_array_address, out_schema_address);
+}
+
+/// Serializes the updating joiner's per-side state for a checkpoint.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotUpdatingJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jbyteArray {
+    let joiner = unsafe { &mut *(handle as *mut UpdatingJoiner) };
+    env.byte_array_from_slice(&joiner.snapshot())
+        .expect("failed to allocate updating-join snapshot array")
+        .into_raw()
+}
+
+/// Rebuilds an updating joiner from a snapshot and returns a fresh handle.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreUpdatingJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    left_keys: JIntArray<'local>,
+    right_keys: JIntArray<'local>,
+    snapshot: JByteArray<'local>,
+) -> jlong {
+    let left = read_columns(&env, &left_keys);
+    let right = read_columns(&env, &right_keys);
+    let bytes = env.convert_byte_array(&snapshot).expect("failed to read updating-join snapshot");
+    Box::into_raw(Box::new(UpdatingJoiner::restore(left, right, &bytes))) as jlong
+}
+
+/// Releases an updating joiner handle.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeUpdatingJoiner<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    unsafe {
+        drop(Box::from_raw(handle as *mut UpdatingJoiner));
+    }
+}
+
 /// Creates an event-time INNER window joiner and returns an opaque handle. The key/window column
 /// indices locate the equi-join key and the `window_start`/`window_end` columns within each side's
 /// input batch. The JVM owns the handle across calls and must release it with the matching close.
@@ -5079,6 +5367,73 @@ mod tests {
         let out = restored.update(&group_changelog(vec![1], vec![Some(3)], vec![1]));
         assert_eq!(row_kinds(&out), vec![1, 2]); // -U(3), +U(5)
         assert_eq!(values(&out, 1), vec![3, 5]);
+    }
+
+    // A `[k, v, $row_kind$]` changelog batch (k join key at col 0) for the updating-join tests.
+    fn changelog_join_batch(k: Vec<i64>, v: Vec<i64>, kinds: Vec<i8>) -> RecordBatch {
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("k", DataType::Int64, false),
+                Field::new("v", DataType::Int64, true),
+                Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(k)),
+                Arc::new(Int64Array::from(v)),
+                Arc::new(Int8Array::from(kinds)),
+            ],
+        )
+        .unwrap()
+    }
+
+    // INNER updating join on column 0: a matched pair is emitted when the second side's row arrives,
+    // carrying the arriving row's kind; the output is left columns then right columns.
+    #[test]
+    fn updating_join_emits_matches_with_arriving_kind() {
+        let mut joiner = UpdatingJoiner::new(vec![0], vec![0]);
+        // Buffer a left row (k=1, v=10); no right yet, so nothing emits.
+        assert_eq!(
+            joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true).num_rows(),
+            0
+        );
+        // A right row (k=1, v=100) matches it: emit +I (left ++ right).
+        let out = joiner.push(&changelog_join_batch(vec![1], vec![100], vec![0]), false);
+        assert_eq!(row_kinds(&out), vec![0]);
+        assert_eq!(values(&out, 0), vec![1]); // left k
+        assert_eq!(values(&out, 1), vec![10]); // left v
+        assert_eq!(values(&out, 2), vec![1]); // right k
+        assert_eq!(values(&out, 3), vec![100]); // right v
+        // Retracting the left row emits the matching pair as a retraction.
+        let retract = joiner.push(&changelog_join_batch(vec![1], vec![10], vec![3]), true);
+        assert_eq!(row_kinds(&retract), vec![3]); // -D
+        assert_eq!(values(&retract, 1), vec![10]);
+        assert_eq!(values(&retract, 3), vec![100]);
+    }
+
+    // A left row matches every buffered right row of its key (cartesian per key); different keys
+    // never match.
+    #[test]
+    fn updating_join_is_cartesian_per_key() {
+        let mut joiner = UpdatingJoiner::new(vec![0], vec![0]);
+        joiner.push(&changelog_join_batch(vec![1, 1, 2], vec![100, 200, 300], vec![0, 0, 0]), false);
+        let out = joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true);
+        assert_eq!(out.num_rows(), 2); // matches both k=1 right rows, not the k=2 one
+        let mut right_vs = values(&out, 3);
+        right_vs.sort();
+        assert_eq!(right_vs, vec![100, 200]);
+    }
+
+    // The per-side multiset survives a checkpoint, so a post-restore arrival still finds its match.
+    #[test]
+    fn updating_join_state_survives_snapshot_restore() {
+        let mut joiner = UpdatingJoiner::new(vec![0], vec![0]);
+        joiner.push(&changelog_join_batch(vec![1], vec![100], vec![0]), false); // buffer right
+        let snapshot = joiner.snapshot();
+        let mut restored = UpdatingJoiner::restore(vec![0], vec![0], &snapshot);
+        let out = restored.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true);
+        assert_eq!(out.num_rows(), 1);
+        assert_eq!(values(&out, 1), vec![10]);
+        assert_eq!(values(&out, 3), vec![100]);
     }
 
     // A `[k, v, rt]` batch with int64 rowtime (epoch millis) for the interval-join tests.
