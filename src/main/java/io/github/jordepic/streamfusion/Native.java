@@ -210,6 +210,18 @@ public final class Native {
   public static native void closeSource(long handle);
 
   /**
+   * Opens a single ORC file for reading and returns an opaque handle. ORC is self-describing, so the
+   * reader derives the schema from the file; Flink's file source enumerates the directory and hands us
+   * one file at a time. The handle yields batches one at a time via {@link #nextBatch} and must be
+   * released with {@link #closeSource}.
+   *
+   * @param path the ORC file to read
+   * @param projection output column names, in the order the plan expects (honoring projection
+   *     pushdown); an empty array emits every column as read
+   */
+  public static native long openOrc(String path, String[] projection);
+
+  /**
    * Splits a batch the JVM exported by a consistent hash of the {@code keyColumns} into up to {@code
    * numPartitions} sub-batches (every row with a given key in one partition), returning a handle to
    * pull them with {@link #nextSplit}; released with {@link #closeSplit}. The columnar shuffle's

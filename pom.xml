@@ -84,19 +84,36 @@
             <version>${flink.version}</version>
             <scope>test</scope>
         </dependency>
-        <!-- Defining a filesystem+parquet sink (to exercise native sink substitution, and as the
-             baseline for the throughput comparison) needs the connector and format on the test
-             classpath; Flink's Parquet writer in turn pulls in Hadoop. -->
+        <!-- The native ORC source plugs into Flink's file source for enumeration/split assignment/
+             checkpointing, so the connector is a compile-time dependency (provided at runtime by the
+             Flink distribution, which bundles it). The format jars and Hadoop below stay test-only,
+             used to write the baselines the native readers/writer are compared against. -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-files</artifactId>
             <version>${flink.version}</version>
-            <scope>test</scope>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-parquet</artifactId>
             <version>${flink.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Flink's ORC format, for the host baseline the native ORC source is compared against. -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-orc</artifactId>
+            <version>${flink.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Flink's ORC format pins orc-core 1.5.6, whose generated protobuf code needs protobuf-java
+             2.5.0; Maven otherwise mediates it up to the 4.x another path pulls, which orc 1.5.6's
+             bytecode is incompatible with. Pin it back (test-only) so the host ORC baseline runs. -->
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+            <version>2.5.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>

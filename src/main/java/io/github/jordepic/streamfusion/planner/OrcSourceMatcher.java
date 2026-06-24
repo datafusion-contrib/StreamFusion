@@ -5,12 +5,13 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
 
 /**
- * Recognizes a source the native reader can run: a filesystem connector with the Parquet format,
- * reading from a local path. The read-side mirror of {@link ParquetSinkMatcher}.
+ * Recognizes a source the native reader can run: a filesystem connector with the ORC format, reading
+ * from a local path. ORC files are self-describing, so unlike a text format no schema is passed to the
+ * reader — it derives the columns from each file.
  */
-final class ParquetSourceMatcher {
+final class OrcSourceMatcher {
 
-  private ParquetSourceMatcher() {}
+  private OrcSourceMatcher() {}
 
   static boolean matches(RelNode node) {
     if (!(node instanceof StreamPhysicalTableSourceScan)) {
@@ -19,20 +20,12 @@ final class ParquetSourceMatcher {
     Map<String, String> options = FilesystemTables.options((StreamPhysicalTableSourceScan) node);
     return options != null
         && "filesystem".equals(options.get("connector"))
-        && "parquet".equals(options.get("format"))
+        && "orc".equals(options.get("format"))
         && FilesystemTables.localPath(options.get("path")) != null;
   }
 
   /** The matched source's input directory as a local filesystem path. */
   static String path(StreamPhysicalTableSourceScan scan) {
     return FilesystemTables.localPath(FilesystemTables.options(scan).get("path"));
-  }
-
-  /**
-   * The format's {@code utc-timezone} setting (default false), which decides how the host reader
-   * interprets timestamp columns; the native reader replays the same conversion.
-   */
-  static boolean utcTimestamp(StreamPhysicalTableSourceScan scan) {
-    return Boolean.parseBoolean(FilesystemTables.options(scan).getOrDefault("utc-timezone", "false"));
   }
 }

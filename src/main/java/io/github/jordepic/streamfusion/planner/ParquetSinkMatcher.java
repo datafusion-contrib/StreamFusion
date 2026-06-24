@@ -21,12 +21,12 @@ final class ParquetSinkMatcher {
     return options != null
         && "filesystem".equals(options.get("connector"))
         && "parquet".equals(options.get("format"))
-        && ParquetTables.localPath(options.get("path")) != null;
+        && FilesystemTables.localPath(options.get("path")) != null;
   }
 
   /** The matched sink's output directory as a local filesystem path. */
   static String path(StreamPhysicalSink sink) {
-    return ParquetTables.localPath(options(sink).get("path"));
+    return FilesystemTables.localPath(options(sink).get("path"));
   }
 
   private static Map<String, String> options(StreamPhysicalSink sink) {

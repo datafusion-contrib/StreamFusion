@@ -4008,6 +4008,53 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeParquetW
     sink.close();
 }
 
+/// The sorted committed part files of `dir` assigned to one subtask: the files whose index is
+/// congruent to `subtask` modulo the parallelism, so a parallel read covers every file exactly once
+/// (and `subtask=0, num_subtasks=1` reads them all). Hidden and in-progress files (a leading `.` or
+/// `_`) are skipped — the same convention Flink's filesystem source uses, so this reads a directory
+/// written by any sink regardless of file extension.
+fn shard_directory(dir: &str, subtask: usize, num_subtasks: usize) -> Vec<std::path::PathBuf> {
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
+        .expect("failed to read source directory")
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            let name = path.file_name()?.to_str()?;
+            if path.is_file() && !name.starts_with('.') && !name.starts_with('_') {
+                Some(path)
+            } else {
+                None
+            }
+        })
+        .collect();
+    files.sort();
+    files
+        .into_iter()
+        .enumerate()
+        .filter(|(index, _)| index % num_subtasks == subtask)
+        .map(|(_, path)| path)
+        .collect()
+}
+
+/// Reorders/selects a batch's columns to match the requested projection (by name); identity when no
+/// projection was requested. Shared by the file sources so projection pushdown behaves identically.
+fn project_by_name(batch: RecordBatch, projection: &[String]) -> RecordBatch {
+    if projection.is_empty() {
+        return batch;
+    }
+    let schema = batch.schema();
+    let mut fields = Vec::with_capacity(projection.len());
+    let mut columns = Vec::with_capacity(projection.len());
+    for name in projection {
+        let index = schema
+            .index_of(name)
+            .unwrap_or_else(|_| panic!("projected column {name} not in source file"));
+        fields.push(schema.field(index).clone());
+        columns.push(batch.column(index).clone());
+    }
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+        .expect("failed to project source batch")
+}
+
 /// A native source the JVM pulls one Arrow batch at a time, until the directory is exhausted. The
 /// concrete reader (Parquet, Avro, …) is hidden behind this trait so the file-format readers share
 /// one open/next/close bridge — the bytes are read and decoded directly in the engine, never crossing
@@ -4045,49 +4092,18 @@ impl ParquetSource {
         subtask: usize,
         num_subtasks: usize,
     ) -> ParquetSource {
-        let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
-            .expect("failed to read source directory")
-            .filter_map(|entry| {
-                let path = entry.ok()?.path();
-                // Read every committed part file, skipping hidden and in-progress ones (a leading
-                // `.` or `_`) — the same convention Flink's filesystem source uses, so this reads a
-                // directory written by either sink regardless of file extension.
-                let name = path.file_name()?.to_str()?;
-                if path.is_file() && !name.starts_with('.') && !name.starts_with('_') {
-                    Some(path)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        files.sort();
-        let files = files
-            .into_iter()
-            .enumerate()
-            .filter(|(index, _)| index % num_subtasks == subtask)
-            .map(|(_, path)| path)
-            .collect();
-        ParquetSource { files, next_file: 0, reader: None, projection }
+        ParquetSource {
+            files: shard_directory(dir, subtask, num_subtasks),
+            next_file: 0,
+            reader: None,
+            projection,
+        }
     }
 
     /// Reorders/selects a batch's columns to match the requested projection (by name); identity when
     /// no projection was requested.
     fn project(&self, batch: RecordBatch) -> RecordBatch {
-        if self.projection.is_empty() {
-            return batch;
-        }
-        let schema = batch.schema();
-        let mut fields = Vec::with_capacity(self.projection.len());
-        let mut columns = Vec::with_capacity(self.projection.len());
-        for name in &self.projection {
-            let index = schema
-                .index_of(name)
-                .unwrap_or_else(|_| panic!("projected column {name} not in parquet file"));
-            fields.push(schema.field(index).clone());
-            columns.push(batch.column(index).clone());
-        }
-        RecordBatch::try_new(std::sync::Arc::new(arrow::datatypes::Schema::new(fields)), columns)
-            .expect("failed to project parquet batch")
+        project_by_name(batch, &self.projection)
     }
 
     /// The next batch across all files, or None when every file is exhausted.
@@ -4232,6 +4248,57 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeSource<'
     unsafe {
         drop(Box::from_raw(handle as *mut Box<dyn BatchSource>));
     }
+}
+
+/// A reader over a single ORC file, yielding one Arrow batch at a time. ORC is self-describing — the
+/// file carries its schema — so the reader derives the Arrow schema from it and needs no schema passed
+/// in. Flink's file source enumerates the directory and hands us one file (split) at a time, so this
+/// reads exactly the file it is given.
+struct OrcSource {
+    reader: orc_rust::ArrowReader<std::fs::File>,
+    projection: Vec<String>,
+}
+
+impl OrcSource {
+    fn open(path: &str, projection: Vec<String>) -> OrcSource {
+        let file = std::fs::File::open(path).expect("failed to open orc file");
+        OrcSource {
+            reader: orc_rust::ArrowReaderBuilder::try_new(file)
+                .expect("failed to open orc reader")
+                .with_batch_size(8192)
+                .build(),
+            projection,
+        }
+    }
+
+    fn next(&mut self) -> Option<RecordBatch> {
+        self.reader
+            .next()
+            .map(|batch| project_by_name(batch.expect("failed to read orc batch"), &self.projection))
+    }
+}
+
+impl BatchSource for OrcSource {
+    fn next_batch(&mut self) -> Option<RecordBatch> {
+        self.next()
+    }
+}
+
+/// Opens a single ORC file for reading and returns an opaque handle, released with `closeSource`.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_openOrc<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+    projection: JObjectArray<'local>,
+) -> jlong {
+    let path: String = env.get_string(&path).expect("failed to read path").into();
+    let projection = read_strings(&mut env, &projection)
+        .into_iter()
+        .map(|name| name.expect("projection column name was null"))
+        .collect();
+    let source: Box<dyn BatchSource> = Box::new(OrcSource::open(&path, projection));
+    Box::into_raw(Box::new(source)) as jlong
 }
 
 /// Holds the per-partition sub-batches of one split, pulled out one at a time by the JVM.
