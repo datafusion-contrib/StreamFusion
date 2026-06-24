@@ -7,10 +7,13 @@ import io.github.jordepic.streamfusion.planner.NativePlanner;
 import io.github.jordepic.streamfusion.planner.PhysicalPlanScan;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.types.Row;
+import org.apache.flink.types.RowKind;
 import org.apache.flink.util.CloseableIterator;
 
 /**
@@ -34,6 +37,53 @@ final class NativeParity {
 
     assertTrue(scan.substitutions() > 0, "query did not route to native; parity check is moot");
     assertEquals(sorted(host), sorted(nativeRows), "native result differs from host");
+  }
+
+  /**
+   * Like {@link #assertParity} but for a retracting/updating result: it compares the <em>collapsed</em>
+   * changelog (each emitted row folded into a keyed multiset — added on {@code +I}/{@code +U}, removed
+   * on {@code -U}/{@code -D}) rather than the raw stream of change rows. A two-input changelog operator
+   * (an updating join) emits an interleaving-dependent raw changelog, but the net materialized result
+   * is deterministic, so this verifies it end to end where {@link #assertParity} cannot.
+   */
+  static void assertChangelogParity(Supplier<TableEnvironment> environment, String sql)
+      throws Exception {
+    Map<List<Object>, Long> host = collapsedChangelog(environment.get(), sql);
+
+    TableEnvironment nativeEnvironment = environment.get();
+    PhysicalPlanScan scan = NativePlanner.install(nativeEnvironment);
+    Map<List<Object>, Long> nativeRows = collapsedChangelog(nativeEnvironment, sql);
+
+    assertTrue(scan.substitutions() > 0, "query did not route to native; parity check is moot");
+    assertEquals(host, nativeRows, "collapsed changelog differs from host");
+  }
+
+  /**
+   * Folds a query's emitted changelog into the materialized multiset it represents: each row's fields
+   * mapped to a net count (incremented for insert/update-after, decremented for delete/update-before),
+   * zero-count rows dropped. Order-independent, so it matches regardless of how a changelog interleaves.
+   */
+  private static Map<List<Object>, Long> collapsedChangelog(TableEnvironment environment, String sql)
+      throws Exception {
+    Map<List<Object>, Long> counts = new HashMap<>();
+    try (CloseableIterator<Row> iterator = environment.executeSql(sql).collect()) {
+      while (iterator.hasNext()) {
+        Row row = iterator.next();
+        List<Object> fields = new ArrayList<>(row.getArity());
+        for (int i = 0; i < row.getArity(); i++) {
+          fields.add(row.getField(i));
+        }
+        long delta =
+            row.getKind() == RowKind.DELETE || row.getKind() == RowKind.UPDATE_BEFORE ? -1 : 1;
+        long next = counts.getOrDefault(fields, 0L) + delta;
+        if (next == 0) {
+          counts.remove(fields);
+        } else {
+          counts.put(fields, next);
+        }
+      }
+    }
+    return counts;
   }
 
   /**

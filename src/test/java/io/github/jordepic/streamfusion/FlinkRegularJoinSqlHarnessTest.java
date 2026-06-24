@@ -1,7 +1,6 @@
 package io.github.jordepic.streamfusion;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.jordepic.streamfusion.planner.NativePlanner;
 import io.github.jordepic.streamfusion.planner.PhysicalPlanScan;
@@ -33,18 +32,15 @@ class FlinkRegularJoinSqlHarnessTest {
   }
 
   @Test
-  void innerJoinOfChangelogStreamsRoutes() throws Exception {
+  void innerJoinOfChangelogStreamsMatchesHost() throws Exception {
     // Both sides are GROUP BY results (changelogs); the join consumes and emits retractions. A
     // two-input join's raw changelog is interleaving-dependent (transient pairings vary run to run),
-    // so we only assert it routes natively — the exact retract behavior is pinned deterministically
-    // by NativeUpdatingJoinOperatorTest.
-    assertTrue(
-        substitutions(
-                "SELECT la.k, la.sv, rb.sw FROM "
-                    + "(SELECT k, SUM(v) AS sv FROM A GROUP BY k) la JOIN "
-                    + "(SELECT k, SUM(w) AS sw FROM B GROUP BY k) rb ON la.k = rb.k")
-            > 0,
-        "join over changelog inputs did not route to native");
+    // but its net materialized result is deterministic — so compare the collapsed changelog.
+    NativeParity.assertChangelogParity(
+        FlinkRegularJoinSqlHarnessTest::environment,
+        "SELECT la.k, la.sv, rb.sw FROM "
+            + "(SELECT k, SUM(v) AS sv FROM A GROUP BY k) la JOIN "
+            + "(SELECT k, SUM(w) AS sw FROM B GROUP BY k) rb ON la.k = rb.k");
   }
 
   @Test
