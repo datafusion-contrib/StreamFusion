@@ -1180,6 +1180,19 @@ impl OverAggregator {
 /// (must match the JVM converter's column name). See divergences/13.
 const ROW_KIND_COLUMN: &str = "$row_kind$";
 
+/// The `$row_kind$` byte column if the batch carries one. A columnar batch from an insert-only
+/// producer (a native source/exchange) has none — every row is then an INSERT.
+fn row_kind_column(batch: &RecordBatch) -> Option<&Int8Array> {
+    batch.column_by_name(ROW_KIND_COLUMN).map(|column| {
+        column.as_any().downcast_ref::<Int8Array>().expect("row kind must be int8")
+    })
+}
+
+/// The number of data columns: every column except a trailing `$row_kind$`, if present.
+fn data_arity(batch: &RecordBatch) -> usize {
+    batch.num_columns() - if row_kind_column(batch).is_some() { 1 } else { 0 }
+}
+
 /// Total ordering over f64 so a MIN/MAX value multiset can be a `BTreeMap` (floats compared by
 /// `total_cmp`); a given aggregate's column has no NaN in practice, so the tie-break is moot.
 #[derive(Clone, Copy, PartialEq)]
@@ -1393,12 +1406,7 @@ impl GroupAggregator {
             .collect();
         let key_arrays: Vec<&ArrayRef> = self.key_columns.iter().map(|&i| batch.column(i)).collect();
         self.key_types = key_types(&key_arrays);
-        let row_kinds = batch
-            .column_by_name(ROW_KIND_COLUMN)
-            .expect("missing row-kind column")
-            .as_any()
-            .downcast_ref::<Int8Array>()
-            .expect("row kind must be int8");
+        let row_kinds = row_kind_column(batch);
 
         let mut out_keys: Vec<GroupKey> = Vec::new();
         let mut out_results: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
@@ -1413,8 +1421,9 @@ impl GroupAggregator {
 
         for row in 0..n {
             let key = read_key(&key_arrays, row);
-            // RowKind: 0 +I, 1 -U, 2 +U, 3 -D. Update-before/delete retract; insert/update-after add.
-            let retract = row_kinds.value(row) == 1 || row_kinds.value(row) == 3;
+            // RowKind: 0 +I, 1 -U, 2 +U, 3 -D (absent column ⇒ INSERT). UB/delete retract; I/UA add.
+            let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
+            let retract = kind == 1 || kind == 3;
             let exists = self.keys.contains_key(&key);
             if !exists && retract {
                 continue; // no accumulator for a key's first message being a retraction (host skips it)
@@ -2520,9 +2529,9 @@ impl UpdatingJoiner {
         }
     }
 
-    /// Reads a batch's data schema (every column except the trailing `$row_kind$`).
+    /// Reads a batch's data schema (every column except a trailing `$row_kind$`, if present).
     fn data_schema(batch: &RecordBatch) -> SchemaRef {
-        let arity = batch.num_columns() - 1;
+        let arity = data_arity(batch);
         Arc::new(Schema::new(
             batch.schema().fields().iter().take(arity).map(|f| f.as_ref().clone()).collect::<Vec<_>>(),
         ))
@@ -2530,7 +2539,7 @@ impl UpdatingJoiner {
 
     /// Folds an input batch into its side and emits the join changelog it produces.
     fn push(&mut self, batch: &RecordBatch, is_left: bool) -> RecordBatch {
-        let arity = batch.num_columns() - 1;
+        let arity = data_arity(batch);
         let schema = Self::data_schema(batch);
         if is_left {
             self.left_schema = Some(schema);
@@ -2540,17 +2549,14 @@ impl UpdatingJoiner {
         let key_indices = if is_left { &self.left_keys } else { &self.right_keys };
         let key_arrays: Vec<&ArrayRef> = key_indices.iter().map(|&i| batch.column(i)).collect();
         let data_arrays: Vec<&ArrayRef> = (0..arity).map(|i| batch.column(i)).collect();
-        let row_kinds = batch
-            .column(arity)
-            .as_any()
-            .downcast_ref::<Int8Array>()
-            .expect("row kind must be int8");
+        let row_kinds = row_kind_column(batch);
 
         let mut out_rows: Vec<JoinRow> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
 
         for row in 0..batch.num_rows() {
-            let kind = row_kinds.value(row);
+            // Absent `$row_kind$` (insert-only columnar input) ⇒ every row is an INSERT.
+            let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
             let retract = kind == 1 || kind == 3;
             let key = read_key(&key_arrays, row);
             // INNER equi-join: a null in the join key can never satisfy `a.k = b.k`, so the row
@@ -2667,8 +2673,12 @@ impl UpdatingJoiner {
 
     fn load_side(&mut self, is_left: bool, bytes: &[u8]) {
         for batch in read_ipc_if_present(bytes) {
+            // The snapshot side batch is `[data cols.., __count__]`; the data schema is all but the
+            // trailing count (not a `$row_kind$` column, so `data_schema` does not apply here).
             let arity = batch.num_columns() - 1;
-            let schema = Self::data_schema(&batch);
+            let schema = Arc::new(Schema::new(
+                batch.schema().fields().iter().take(arity).map(|f| f.as_ref().clone()).collect::<Vec<_>>(),
+            ));
             let key_indices = if is_left { &self.left_keys } else { &self.right_keys };
             let key_arrays: Vec<&ArrayRef> = key_indices.iter().map(|&i| batch.column(i)).collect();
             let counts = column_i64(&batch, "__count__");
@@ -2761,7 +2771,7 @@ impl TopNRanker {
     }
 
     fn push(&mut self, batch: &RecordBatch) -> RecordBatch {
-        let arity = batch.num_columns() - 1;
+        let arity = data_arity(batch);
         self.schema = Some(UpdatingJoiner::data_schema(batch));
         let partition_arrays: Vec<&ArrayRef> =
             self.partition_columns.iter().map(|&i| batch.column(i)).collect();
@@ -5537,6 +5547,27 @@ mod tests {
         assert_eq!(row_kinds(&out), vec![0, 1, 2]); // +I, then -U/+U
         assert_eq!(values(&out, 1), vec![1, 1, 2]); // COUNT(*): 1, then 1->2
         assert_eq!(values(&out, 2), vec![10, 10, 15]); // SUM: 10, then 10->15
+    }
+
+    // A columnar input from an insert-only producer has no `$row_kind$` column; every row is then an
+    // INSERT (so the GROUP BY still emits its +I / -U / +U changelog).
+    #[test]
+    fn group_by_treats_absent_row_kind_as_insert() {
+        let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true);
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("key0", DataType::Int64, false),
+                Field::new("value0", DataType::Int64, true),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(vec![1i64, 1])),
+                Arc::new(Int64Array::from(vec![10i64, 20])),
+            ],
+        )
+        .unwrap();
+        let out = agg.update(&batch);
+        assert_eq!(row_kinds(&out), vec![0, 1, 2]); // +I(10); -U(10)/+U(30)
+        assert_eq!(values(&out, 1), vec![10, 10, 30]);
     }
 
     // With the host's update-before flag off, an update emits only the UPDATE_AFTER row.
