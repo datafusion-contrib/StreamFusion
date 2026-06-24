@@ -134,6 +134,40 @@ fn bench_group_by_string_key(c: &mut Criterion) {
     group.finish();
 }
 
+// Decode a batch of raw JSON message bodies (one document per row) into a typed columnar batch —
+// the source-edge work that replaces Flink's per-record document-tree -> RowData materialization.
+fn bench_json_decode(c: &mut Criterion) {
+    use streamfusion::bench::JsonDecode;
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int64, true),
+        Field::new("name", DataType::Utf8, true),
+        Field::new("score", DataType::Float64, true),
+    ]));
+    let docs: Vec<&[u8]> = (0..ROWS)
+        .map(|i| {
+            // One representative shape, varied by index so the decoder does real work each row.
+            Box::leak(
+                format!(r#"{{"id": {i}, "name": "row-{i}", "score": {}.5}}"#, i % 100).into_boxed_str(),
+            )
+            .as_bytes()
+        })
+        .collect();
+    let body: ArrayRef = Arc::new(arrow::array::BinaryArray::from(docs));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)])),
+        vec![body],
+    )
+    .unwrap();
+
+    let decoder = JsonDecode::new(schema);
+    let mut group = c.benchmark_group("json_decode");
+    group.throughput(Throughput::Elements(ROWS as u64));
+    group.bench_function("three_field_object", |b| {
+        b.iter(|| black_box(decoder.decode(black_box(&batch))))
+    });
+    group.finish();
+}
+
 // Session SUM grouped by a key: each row opens a gap-wide window and merges any it bridges.
 fn bench_session_keyed(c: &mut Criterion) {
     let gap_millis = 500;
@@ -288,6 +322,7 @@ criterion_group!(
     bench_tumbling,
     bench_tumbling_keyed,
     bench_group_by_string_key,
+    bench_json_decode,
     bench_session_keyed,
     bench_over,
     bench_interval_join,

@@ -1,7 +1,8 @@
 use arrow::array::{
-    make_array, new_empty_array, Array, ArrayRef, BooleanArray, Float32Array, Int16Array,
-    Int32Array, Int64Array, Int8Array, RecordBatch, StructArray, TimestampMicrosecondArray,
-    TimestampMillisecondArray, TimestampNanosecondArray, UInt32Array,
+    make_array, new_empty_array, Array, ArrayRef, BinaryArray, BooleanArray, Float32Array,
+    Int16Array, Int32Array, Int64Array, Int8Array, LargeBinaryArray, RecordBatch, StringArray,
+    StructArray, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
+    UInt32Array,
 };
 use arrow::compute::{concat_batches, filter_record_batch, take};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
@@ -4110,6 +4111,61 @@ impl ParquetSource {
     }
 }
 
+/// Decodes a column of raw JSON message bodies — one complete document per row, as a source hands
+/// them off untouched — into a typed Arrow batch matching `schema`. This replaces Flink's per-record
+/// `byte[] -> tree -> RowData` materialization with a single batched decode straight to columnar
+/// form, so the row representation never exists on the hot ingest path. The body column may arrive as
+/// binary or string (whichever the source-edge transpose produced for the message bytes).
+struct JsonDecoder {
+    schema: SchemaRef,
+}
+
+impl JsonDecoder {
+    fn new(schema: SchemaRef) -> JsonDecoder {
+        JsonDecoder { schema }
+    }
+
+    /// Decodes the single body column of `bodies` into a batch of the target schema. Each row is a
+    /// complete document, so feeding them one at a time keeps the decoder's record boundaries aligned
+    /// with the input rows; a null body contributes no row.
+    fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
+        let column = bodies.column(0);
+        let row_count = bodies.num_rows();
+        let body = |row: usize| -> Option<&[u8]> {
+            match column.data_type() {
+                DataType::Binary => {
+                    let array = column.as_any().downcast_ref::<BinaryArray>().unwrap();
+                    array.is_valid(row).then(|| array.value(row))
+                }
+                DataType::LargeBinary => {
+                    let array = column.as_any().downcast_ref::<LargeBinaryArray>().unwrap();
+                    array.is_valid(row).then(|| array.value(row))
+                }
+                DataType::Utf8 => {
+                    let array = column.as_any().downcast_ref::<StringArray>().unwrap();
+                    array.is_valid(row).then(|| array.value(row).as_bytes())
+                }
+                other => panic!("unsupported JSON body column type {other:?}"),
+            }
+        };
+
+        let mut decoder = arrow::json::ReaderBuilder::new(self.schema.clone())
+            .with_batch_size(row_count.max(1))
+            .build_decoder()
+            .expect("failed to build JSON decoder");
+        for row in 0..row_count {
+            if let Some(bytes) = body(row) {
+                let consumed = decoder.decode(bytes).expect("failed to decode JSON record");
+                assert_eq!(consumed, bytes.len(), "JSON body was not a single complete document");
+            }
+        }
+        decoder
+            .flush()
+            .expect("failed to flush JSON batch")
+            .unwrap_or_else(|| RecordBatch::new_empty(self.schema.clone()))
+    }
+}
+
 /// Opens a directory of Parquet files for reading and returns an opaque handle, released with
 /// `closeParquet`.
 #[no_mangle]
@@ -5310,6 +5366,19 @@ pub mod bench {
         }
     }
 
+    /// A source-edge JSON decoder (one document per input row -> a typed columnar batch).
+    pub struct JsonDecode(JsonDecoder);
+
+    impl JsonDecode {
+        pub fn new(schema: SchemaRef) -> Self {
+            JsonDecode(JsonDecoder::new(schema))
+        }
+
+        pub fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
+            self.0.decode(bodies)
+        }
+    }
+
     /// A non-windowed GROUP BY aggregator (update emits the changelog), as the operator drives it.
     pub struct GroupBy(GroupAggregator);
 
@@ -5408,6 +5477,61 @@ mod tests {
 
     fn values(batch: &RecordBatch, column: usize) -> Vec<i64> {
         batch.column(column).as_any().downcast_ref::<Int64Array>().unwrap().values().to_vec()
+    }
+
+    fn json_schema() -> SchemaRef {
+        Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, true),
+            Field::new("name", DataType::Utf8, true),
+            Field::new("score", DataType::Float64, true),
+        ]))
+    }
+
+    fn bodies(docs: Vec<Option<&[u8]>>) -> RecordBatch {
+        let column: ArrayRef = Arc::new(BinaryArray::from(docs));
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)])),
+            vec![column],
+        )
+        .unwrap()
+    }
+
+    // Each input row is one complete JSON document; the decoder emits one typed row per document,
+    // matching the target schema's columns and order.
+    #[test]
+    fn json_decode_emits_one_row_per_document() {
+        let batch = bodies(vec![
+            Some(br#"{"id": 1, "name": "a", "score": 1.5}"#),
+            Some(br#"{"id": 2, "name": "b", "score": 2.5}"#),
+        ]);
+        let out = JsonDecoder::new(json_schema()).decode(&batch);
+        assert_eq!(out.num_rows(), 2);
+        assert_eq!(values(&out, 0), vec![1, 2]);
+        let names = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!((names.value(0), names.value(1)), ("a", "b"));
+    }
+
+    // Fields absent from a document and a null body both yield SQL NULLs, not failures.
+    #[test]
+    fn json_decode_tolerates_missing_fields_and_null_bodies() {
+        let batch = bodies(vec![
+            Some(br#"{"id": 1}"#),
+            None,
+            Some(br#"{"id": 3, "name": "c", "score": 9.0}"#),
+        ]);
+        let out = JsonDecoder::new(json_schema()).decode(&batch);
+        // A null body contributes no row; the present documents decode in order.
+        assert_eq!(out.num_rows(), 2);
+        assert_eq!(values(&out, 0), vec![1, 3]);
+        assert!(out.column(1).is_null(0));
+    }
+
+    // An empty input batch flushes to an empty batch of the target schema, not a panic.
+    #[test]
+    fn json_decode_empty_batch_yields_empty() {
+        let out = JsonDecoder::new(json_schema()).decode(&bodies(vec![]));
+        assert_eq!(out.num_rows(), 0);
+        assert_eq!(out.schema(), json_schema());
     }
 
     // OVER (ORDER BY rt RANGE UNBOUNDED PRECEDING) running SUM: ties in rt share the post-fold value,
