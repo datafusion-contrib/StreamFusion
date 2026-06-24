@@ -11,9 +11,11 @@ import org.apache.arrow.c.CDataDictionaryProvider;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
+import java.math.BigDecimal;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.BitVector;
 import org.apache.arrow.vector.DateDayVector;
+import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
@@ -30,9 +32,13 @@ import org.apache.flink.runtime.state.StateInitializationContext;
 import org.apache.flink.runtime.state.StateSnapshotContext;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
+import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
+import org.apache.flink.table.data.TimestampData;
+import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
 
 /**
  * Input-agnostic core of the native window operators: it owns the native aggregator handle and its
@@ -65,6 +71,38 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
   /** Key-only type codes (carried in their natural Arrow type; the native key path is type-general). */
   protected static final int TYPE_BOOLEAN = 7;
   protected static final int TYPE_DATE = 8;
+
+  // Parameterized type codes pack precision/scale into the code so they thread through the existing
+  // int[] without parallel arrays. Timestamp keys ride as int64 nanoseconds (lossless for any Flink
+  // precision); decimal keys/values ride in an Arrow decimal vector of the given precision/scale.
+  protected static final int TYPE_TIMESTAMP_BASE = 1000; // + precision (0..9)
+  protected static final int TYPE_DECIMAL_BASE = 2000; // + precision * 100 + scale
+
+  public static int decimalCode(int precision, int scale) {
+    return TYPE_DECIMAL_BASE + precision * 100 + scale;
+  }
+
+  private static boolean isTimestamp(int code) {
+    return code >= TYPE_TIMESTAMP_BASE && code < TYPE_DECIMAL_BASE;
+  }
+
+  private static int timestampPrecision(int code) {
+    return code - TYPE_TIMESTAMP_BASE;
+  }
+
+  private static boolean isDecimal(int code) {
+    return code >= TYPE_DECIMAL_BASE;
+  }
+
+  private static int decimalPrecision(int code) {
+    return (code - TYPE_DECIMAL_BASE) / 100;
+  }
+
+  private static int decimalScale(int code) {
+    return (code - TYPE_DECIMAL_BASE) % 100;
+  }
+
+  private static final long NANOS_PER_MILLI = 1_000_000L;
 
   /** Aggregate kind code for COUNT, whose partial is always a bigint regardless of value type. */
   protected static final int KIND_COUNT = 3;
@@ -291,6 +329,9 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
 
   /** Creates the Arrow vector carrying a value column, matching the native value-type code. */
   private FieldVector newValueVector(String name, int valueType) {
+    if (isDecimal(valueType)) {
+      return new DecimalVector(name, allocator, decimalPrecision(valueType), decimalScale(valueType));
+    }
     switch (valueType) {
       case TYPE_DOUBLE:
         return new Float8Vector(name, allocator);
@@ -309,6 +350,11 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
 
   /** Copies row {@code i}'s value from the input row into the value vector. */
   private void setValue(FieldVector value, int i, RowData row, int column, int valueType) {
+    if (isDecimal(valueType)) {
+      ((DecimalVector) value)
+          .setSafe(i, row.getDecimal(column, decimalPrecision(valueType), decimalScale(valueType)).toBigDecimal());
+      return;
+    }
     switch (valueType) {
       case TYPE_DOUBLE:
         ((Float8Vector) value).setSafe(i, row.getDouble(column));
@@ -332,6 +378,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
 
   /** Copies row {@code i}'s value from a source Arrow vector into the value vector. */
   private void copyValue(FieldVector value, int i, FieldVector source, int valueType) {
+    if (isDecimal(valueType)) {
+      ((DecimalVector) value).setSafe(i, ((DecimalVector) source).getObject(i));
+      return;
+    }
     switch (valueType) {
       case TYPE_DOUBLE:
         ((Float8Vector) value).setSafe(i, ((Float8Vector) source).get(i));
@@ -355,6 +405,15 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
 
   /** Copies row {@code i}'s key from a source Arrow vector into the key vector (int widens to int64). */
   private static void setKeyFromVector(FieldVector target, int i, FieldVector source, int keyType) {
+    if (isTimestamp(keyType)) {
+      // Columnar timestamps arrive as nanosecond timestamps; carry the nanos as int64.
+      ((BigIntVector) target).setSafe(i, ((TimeStampNanoVector) source).get(i));
+      return;
+    }
+    if (isDecimal(keyType)) {
+      ((DecimalVector) target).setSafe(i, ((DecimalVector) source).getObject(i));
+      return;
+    }
     switch (keyType) {
       case TYPE_STRING:
         ((VarCharVector) target).setSafe(i, ((VarCharVector) source).get(i));
@@ -380,7 +439,8 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
   public static int[] keyTypes(RowType outputType, int keyCount) {
     int[] types = new int[keyCount];
     for (int j = 0; j < keyCount; j++) {
-      switch (outputType.getTypeAt(j).getTypeRoot()) {
+      LogicalType type = outputType.getTypeAt(j);
+      switch (type.getTypeRoot()) {
         case INTEGER:
           types[j] = TYPE_INT;
           break;
@@ -394,6 +454,13 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
         case DATE:
           types[j] = TYPE_DATE;
           break;
+        case TIMESTAMP_WITHOUT_TIME_ZONE:
+        case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+          types[j] = TYPE_TIMESTAMP_BASE + LogicalTypeChecks.getPrecision(type);
+          break;
+        case DECIMAL:
+          types[j] = decimalCode(LogicalTypeChecks.getPrecision(type), LogicalTypeChecks.getScale(type));
+          break;
         default:
           types[j] = TYPE_BIGINT;
       }
@@ -403,6 +470,12 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
 
   /** Creates the Arrow vector carrying a key column, in the key's natural type (int/bigint widen). */
   protected final FieldVector newKeyVector(String name, int keyType) {
+    if (isTimestamp(keyType)) {
+      return new BigIntVector(name, allocator); // carried as int64 nanoseconds
+    }
+    if (isDecimal(keyType)) {
+      return new DecimalVector(name, allocator, decimalPrecision(keyType), decimalScale(keyType));
+    }
     switch (keyType) {
       case TYPE_STRING:
         return new VarCharVector(name, allocator);
@@ -417,6 +490,16 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
 
   /** Copies row {@code i}'s key from the input row into the key vector (int keys widen to int64). */
   protected static void setKey(FieldVector vector, int i, RowData row, int column, int keyType) {
+    if (isTimestamp(keyType)) {
+      TimestampData t = row.getTimestamp(column, timestampPrecision(keyType));
+      ((BigIntVector) vector).setSafe(i, t.getMillisecond() * NANOS_PER_MILLI + t.getNanoOfMillisecond());
+      return;
+    }
+    if (isDecimal(keyType)) {
+      ((DecimalVector) vector)
+          .setSafe(i, row.getDecimal(column, decimalPrecision(keyType), decimalScale(keyType)).toBigDecimal());
+      return;
+    }
     switch (keyType) {
       case TYPE_STRING:
         ((VarCharVector) vector).setSafe(i, row.getString(column).toBytes());
@@ -436,6 +519,15 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
 
   /** Boxes a native-produced key cell back to the emitted column's internal type. */
   protected static Object boxKey(FieldVector vector, int i, int keyType) {
+    if (isTimestamp(keyType)) {
+      long nanos = ((BigIntVector) vector).get(i);
+      return TimestampData.fromEpochMillis(
+          Math.floorDiv(nanos, NANOS_PER_MILLI), (int) Math.floorMod(nanos, NANOS_PER_MILLI));
+    }
+    if (isDecimal(keyType)) {
+      return DecimalData.fromBigDecimal(
+          ((DecimalVector) vector).getObject(i), decimalPrecision(keyType), decimalScale(keyType));
+    }
     switch (keyType) {
       case TYPE_STRING:
         return StringData.fromBytes(((VarCharVector) vector).get(i));
@@ -468,6 +560,11 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
     }
     if (vector instanceof TinyIntVector) {
       return ((TinyIntVector) vector).get(row);
+    }
+    if (vector instanceof DecimalVector) {
+      DecimalVector decimal = (DecimalVector) vector;
+      return DecimalData.fromBigDecimal(
+          decimal.getObject(row), decimal.getPrecision(), decimal.getScale());
     }
     return ((BigIntVector) vector).get(row);
   }

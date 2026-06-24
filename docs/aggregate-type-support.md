@@ -23,7 +23,7 @@ DataFusion: `sum(intN)→Int64`, `sum(floatN)→Float64`, `avg(int)→Float64`,
 | INT     | ✓ (custom wrapping) | ✓ (custom truncating) | ✓ | ✓ | ✓ |
 | SMALLINT / TINYINT | ✓ (custom wrapping) | ✓ (custom truncating) | ✓ | ✓ | ✓ |
 | FLOAT (REAL) | ✓ (custom f32) | ✓ (custom f64→f32) | ✓ | ✓ | ✓ |
-| DECIMAL | ✗ precision rules | ✗ | ✗ | ✗ | ✗ |
+| DECIMAL | ✗ precision rules | ✗ precision rules | ✓ | ✓ | ✓ |
 
 Notes / divergences this avoids:
 - **SUM over int/smallint/tinyint** is matched with a custom wrapping accumulator
@@ -40,8 +40,10 @@ Notes / divergences this avoids:
   narrows the quotient to float (as `FloatAvgAggFunction` does). Both fold in the
   same per-row order as the host, so the result is bit-identical — verified by a
   parity test over values whose float running sum carries rounding error.
-- **DECIMAL** is excluded entirely (even MIN/MAX): precision/scale derivation and
-  the decimal Arrow vector path are not yet built.
+- **DECIMAL** carries `MIN`/`MAX`/`COUNT` (type-preserving comparisons/counts over an
+  Arrow decimal vector of the column's precision/scale). `SUM`/`AVG` over decimal stay
+  on the host: Flink's result precision (`DECIMAL(38, s)`) differs from DataFusion's
+  sum precision derivation.
 
 ## Predicate arithmetic (filter expressions)
 The native expression engine admits `+`/`-`/`*` in filter predicates. DataFusion
@@ -64,10 +66,9 @@ Comparisons are width-insensitive and always safe.
   `FLOAT` — carries all five aggregates, with custom accumulators where DataFusion
   would diverge from the host's type/precision (integer `SUM` wraps, integer `AVG`
   truncates, float `SUM` stays 4-byte, float `AVG` narrows from a double sum, double
-  `AVG` divides in double). The native value path is type-general; each type is an
-  Arrow vector class + getter + a value-type code.
-- `DECIMAL` (all aggregates) stays on the host: precision/scale derivation and the
-  decimal Arrow vector path are not yet built.
+  `AVG` divides in double). `DECIMAL` carries `MIN`/`MAX`/`COUNT` (its `SUM`/`AVG` stay
+  on the host — precision rules). The native value path is type-general; each type is an
+  Arrow vector class + getter + a value-type code (decimal packs precision/scale in).
 - **Multiple value columns:** each aggregate reads its own value column, so
   `SUM(a), SUM(b)` over different columns (of different types) is accelerated. The
   native batch carries one `value{i}` column per aggregate, decoded by a per-aggregate
@@ -79,11 +80,11 @@ Comparisons are width-insensitive and always safe.
   slice and the global sums the per-slice counts (COUNT's merge is a sum, and the
   empty-argList COUNT merge is matched positionally). Two-phase hopping `COUNT(*)`
   falls back (its synthetic count1 partial is not yet handled).
-- Grouping keys: one or more bigint/int/string/boolean/date keys are supported.
+- Grouping keys: bigint/int/string/boolean/date/timestamp/decimal keys are supported.
   The native composite key is a list of typed scalars and the native key path is
   type-general (it reads/rebuilds whatever Arrow type arrives), so widening keys is
   a JVM-side matcher gate + vector carriage per type: int widens into int64 and is
   emitted back as int, strings ride as varchar, boolean as a bit column, date as the
-  epoch-day Date32. Other key types (decimal, timestamp, …) fall back. (The join and
-  `OVER` partition paths still carry only bigint/int/string until their wider-key
-  handling is covered.)
+  epoch-day Date32, timestamp as int64 nanoseconds (boxed back to a timestamp), and
+  decimal in an Arrow decimal column. (The join and `OVER` partition paths still carry
+  only bigint/int/string until their wider-key handling is covered.)

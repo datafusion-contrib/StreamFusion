@@ -16,6 +16,12 @@ class FlinkWindowSqlHarnessTest {
 
   private static final java.time.LocalDate DAY_ONE = java.time.LocalDate.of(2026, 1, 1);
   private static final java.time.LocalDate DAY_TWO = java.time.LocalDate.of(2026, 1, 2);
+  private static final java.time.LocalDateTime T0 = java.time.LocalDateTime.of(2026, 1, 1, 9, 0, 0);
+  private static final java.time.LocalDateTime T1 = java.time.LocalDateTime.of(2026, 1, 1, 9, 0, 1);
+
+  private static java.math.BigDecimal dec(String v) {
+    return new java.math.BigDecimal(v);
+  }
 
   @Test
   void intAvgMatchesHost() throws Exception {
@@ -399,6 +405,46 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
+  void decimalMinMaxCountMatchesHost() throws Exception {
+    // MIN/MAX/COUNT over DECIMAL: type-preserving (same precision/scale), no arithmetic to diverge.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT window_start, window_end, MIN(price) AS lo, MAX(price) AS hi, COUNT(price) AS c "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void decimalSumFallsBack() throws Exception {
+    // SUM over DECIMAL stays on the host: DataFusion's sum precision derivation differs from Flink's.
+    NativeParity.assertParity( // still correct via fallback (a trailing projection may route)
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT window_start, window_end, SUM(price) AS s "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void decimalKeyTumblingMatchesHost() throws Exception {
+    // A DECIMAL grouping key, carried in an Arrow decimal column and emitted back as DecimalData.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT price, window_start, window_end, SUM(`value`) AS s "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY price, window_start, window_end");
+  }
+
+  @Test
+  void timestampKeyTumblingMatchesHost() throws Exception {
+    // A TIMESTAMP grouping key, carried as int64 nanoseconds and emitted back as TimestampData.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithSource,
+        "SELECT tsc, window_start, window_end, SUM(`value`) AS s, COUNT(*) AS n "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY tsc, window_start, window_end");
+  }
+
+  @Test
   void booleanKeyTumblingMatchesHost() throws Exception {
     // A boolean grouping key, carried natively as a bit column and emitted back as boolean.
     NativeParity.assertParity(
@@ -629,7 +675,8 @@ class FlinkWindowSqlHarnessTest {
         env.fromData(
                 Types.ROW_NAMED(
                     new String[] {
-                      "k", "value", "ts", "amount", "qty", "g", "s", "sm", "tn", "fl", "b", "d"
+                      "k", "value", "ts", "amount", "qty", "g", "s", "sm", "tn", "fl", "b", "d",
+                      "price", "tsc"
                     },
                     Types.LONG,
                     Types.LONG,
@@ -642,12 +689,14 @@ class FlinkWindowSqlHarnessTest {
                     Types.BYTE,
                     Types.FLOAT,
                     Types.BOOLEAN,
-                    Types.LOCAL_DATE),
-                Row.of(7L, 1L, 0L, 1.5, 10, 100L, "a", (short) 10, (byte) 1, 1.5f, true, DAY_ONE),
-                Row.of(7L, 2L, 500L, 2.5, 20, 100L, "a", (short) 20, (byte) 2, 2.5f, true, DAY_ONE),
-                Row.of(9L, 3L, 600L, 3.0, 30, 200L, "b", (short) 30, (byte) 3, 3.5f, false, DAY_TWO),
-                Row.of(7L, 4L, 1500L, 4.5, 40, 100L, "a", (short) 40, (byte) 4, 4.5f, true, DAY_ONE),
-                Row.of(9L, 5L, 2500L, 5.5, 50, 200L, "b", (short) 50, (byte) 5, 5.5f, false, DAY_TWO))
+                    Types.LOCAL_DATE,
+                    Types.BIG_DEC,
+                    Types.LOCAL_DATE_TIME),
+                Row.of(7L, 1L, 0L, 1.5, 10, 100L, "a", (short) 10, (byte) 1, 1.5f, true, DAY_ONE, dec("1.10"), T0),
+                Row.of(7L, 2L, 500L, 2.5, 20, 100L, "a", (short) 20, (byte) 2, 2.5f, true, DAY_ONE, dec("2.20"), T0),
+                Row.of(9L, 3L, 600L, 3.0, 30, 200L, "b", (short) 30, (byte) 3, 3.5f, false, DAY_TWO, dec("3.30"), T1),
+                Row.of(7L, 4L, 1500L, 4.5, 40, 100L, "a", (short) 40, (byte) 4, 4.5f, true, DAY_ONE, dec("4.40"), T0),
+                Row.of(9L, 5L, 2500L, 5.5, 50, 200L, "b", (short) 50, (byte) 5, 5.5f, false, DAY_TWO, dec("5.50"), T1))
             .assignTimestampsAndWatermarks(
                 WatermarkStrategy.<Row>forMonotonousTimestamps()
                     .withTimestampAssigner((row, ts) -> (Long) row.getField(2)));
@@ -668,6 +717,8 @@ class FlinkWindowSqlHarnessTest {
             .column("fl", DataTypes.FLOAT())
             .column("b", DataTypes.BOOLEAN())
             .column("d", DataTypes.DATE())
+            .column("price", DataTypes.DECIMAL(10, 2))
+            .column("tsc", DataTypes.TIMESTAMP(3))
             .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
             .watermark("rt", "SOURCE_WATERMARK()")
             .build());

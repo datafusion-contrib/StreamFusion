@@ -228,28 +228,26 @@ final class WindowAggregateMatcher {
         || type == SqlTypeName.INTEGER
         || type == SqlTypeName.SMALLINT
         || type == SqlTypeName.TINYINT
-        || type == SqlTypeName.FLOAT;
+        || type == SqlTypeName.FLOAT
+        || type == SqlTypeName.DECIMAL;
   }
 
   /**
    * Value-type code per aggregate, matching the native side: 0 = bigint, 1 = double, 2 = int,
-   * 4 = smallint, 5 = tinyint, 6 = float (3 is a key-only string code). COUNT(*) gets bigint (0),
-   * the type of its synthesized value column.
+   * 4 = smallint, 5 = tinyint, 6 = float, and a packed code carrying precision/scale for decimal
+   * (3 is a key-only string code). COUNT(*) gets bigint (0), the type of its synthesized column.
    */
   static int[] valueTypeCodes(scala.collection.Seq<AggregateCall> aggCalls, RelDataType inputType) {
     int[] columns = valueColumns(aggCalls);
     int[] codes = new int[columns.length];
     for (int i = 0; i < columns.length; i++) {
-      codes[i] =
-          columns[i] < 0
-              ? 0
-              : typeCode(inputType.getFieldList().get(columns[i]).getType().getSqlTypeName());
+      codes[i] = columns[i] < 0 ? 0 : typeCode(inputType.getFieldList().get(columns[i]).getType());
     }
     return codes;
   }
 
-  private static int typeCode(SqlTypeName type) {
-    switch (type) {
+  private static int typeCode(RelDataType type) {
+    switch (type.getSqlTypeName()) {
       case DOUBLE:
         return 1;
       case INTEGER:
@@ -260,6 +258,9 @@ final class WindowAggregateMatcher {
         return 5;
       case FLOAT:
         return 6;
+      case DECIMAL:
+        return io.github.jordepic.streamfusion.operator.NativeWindowOperatorCore.decimalCode(
+            type.getPrecision(), type.getScale());
       default:
         return 0;
     }
@@ -347,9 +348,18 @@ final class WindowAggregateMatcher {
         || type == SqlTypeName.CHAR;
   }
 
-  /** Grouping-key types a window aggregate carries: the join set plus boolean and date. */
+  /**
+   * Grouping-key types a window aggregate carries: the join set plus boolean, date, timestamp
+   * (carried as int64 nanos), and decimal (an Arrow decimal column). The native key path is
+   * type-general, so these are a JVM-side vector + boxing only.
+   */
   static boolean supportedGroupingKeyType(SqlTypeName type) {
-    return supportedKeyType(type) || type == SqlTypeName.BOOLEAN || type == SqlTypeName.DATE;
+    return supportedKeyType(type)
+        || type == SqlTypeName.BOOLEAN
+        || type == SqlTypeName.DATE
+        || type == SqlTypeName.TIMESTAMP
+        || type == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+        || type == SqlTypeName.DECIMAL;
   }
 
   static int[] kinds(scala.collection.Seq<AggregateCall> aggCalls) {

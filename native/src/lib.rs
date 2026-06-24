@@ -71,6 +71,12 @@ fn value_data_type(code: i64) -> DataType {
         4 => DataType::Int16,
         5 => DataType::Int8,
         6 => DataType::Float32,
+        // Decimal packs precision/scale into the code (2000 + precision*100 + scale), matching the
+        // JVM side, so the per-aggregate value type carries them without a wider signature.
+        c if c >= 2000 => {
+            let packed = c - 2000;
+            DataType::Decimal128((packed / 100) as u8, (packed % 100) as i8)
+        }
         other => panic!("unsupported value type: {other}"),
     }
 }
