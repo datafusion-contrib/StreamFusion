@@ -9,6 +9,12 @@ here when the ticket is deleted.
   tumbling / hopping / session / cumulative window aggregates (one- and two-phase), event-time
   `OVER` aggregation, event-time INNER interval and window joins, Parquet sink (exactly-once),
   Parquet source. Compatibility chart in `readme.md` is the source of truth.
+- **Window aggregate input schemas:** all five aggregates over every non-decimal
+  numeric value type (custom accumulators keep the host's type/precision) plus decimal MIN/MAX/COUNT;
+  multiple value columns (`SUM(a), SUM(b)`); bigint/int/string/boolean/date/timestamp/decimal grouping
+  keys; and `COUNT(*)` (one- and two-phase). Parity matrix in `docs/aggregate-type-support.md`.
+  Decimal `SUM`/`AVG` stay on the host (precision rules). Join/`OVER` partition keys still carry only
+  bigint/int/string (the wider-key carriage exists; admitting it there just needs tests).
 - **Columnar flow, end to end:** `ArrowBatch` stream type + IPC serializer, the two
   transpose operators, the transition-inserter pass, `ColumnarInput`/`ColumnarOutput` markers, a
   **columnar watermark assigner**, and a **columnar keyed shuffle** (native by-key split +
@@ -36,14 +42,11 @@ here when the ticket is deleted.
    done (`/` `%`, COALESCE/NULLIF/NULL, narrow-int arithmetic, and the common string/exact-math
    functions, with precision/locale-divergent ones opt-in). Remaining: narrowing/float→int/string
    `CAST`, and any further obscure functions — each parity-gated.
-2. **Wider value/key types** (ticket 04): value types, multiple value columns, wide grouping keys,
-   and `COUNT(*)` are done. Remaining: DECIMAL value columns, decimal/timestamp grouping keys, and
-   two-phase `COUNT(*)`.
-3. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
+2. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
    filesystems (`hdfs:`/`s3:`) for the native source/sink; currently `file:` only. **Deferred by
-   direction until generalized operator support lands** — broaden what we can run (items 1–2 and the
+   direction until generalized operator support lands** — broaden what we can run (item 1 and the
    ticket 11 operators) before broadening where we read/write.
-4. **Operator-level perf** (ticket 20 backlog): per-row `GroupKey` allocation in aggregators, session
+3. **Operator-level perf** (ticket 20 backlog): per-row `GroupKey` allocation in aggregators, session
    `update` one-row `take` batching. (The `RowData → Arrow` transpose was made row-major + pre-sized,
    ~25% faster; a native decoder was investigated and rejected on benchmark grounds — ticket 28.)
 

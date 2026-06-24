@@ -281,12 +281,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       // feeding a host global would mismatch.
       boolean mergeableValueType =
           WindowAggregateMatcher.allPartialsMergeable(agg.aggCalls(), agg.getInput().getRowType());
-      // Hopping COUNT(*) is excluded: it would also carry the synthetic count1 partial, which the
-      // tumbling/cumulative path (no count1) does not, so a native local could feed a host global.
       boolean hopping =
-          WindowAggregateMatcher.allValuesPresent(agg.aggCalls())
-              && WindowAggregateMatcher.matchesHoppingLocal(
-                  agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType());
+          WindowAggregateMatcher.matchesHoppingLocal(
+              agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType());
       boolean tumbling =
           !hopping
               && mergeableValueType
@@ -311,18 +308,24 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         }
         substitutions++;
         RelDataType localInput = agg.getInput().getRowType();
-        // Hopping carries a trailing synthetic count1 column, so its kinds and value columns get a
-        // matching extra entry (counts rows); tumbling/cumulative use the user aggregates as-is.
+        // Hopping carries a trailing synthetic count1 column for empty-window detection, so its kinds
+        // and value columns get a matching extra entry (counts rows). But the planner only injects it
+        // when the user aggregates don't already provide a row count: a COUNT(*) doubles as count1, so
+        // the local emits no separate column. Detect it by the partial count in the local's output
+        // (its row type is [grouping?, partials.., slice_end]) rather than assuming hopping always
+        // adds one — otherwise a hopping COUNT(*) local emits a column the global does not expect.
+        int partialColumns = agg.getRowType().getFieldCount() - agg.grouping().length - 1;
+        boolean syntheticCount = partialColumns > agg.aggCalls().size();
         int[] kinds =
-            hopping
+            syntheticCount
                 ? WindowAggregateMatcher.hoppingLocalKinds(agg.aggCalls())
                 : WindowAggregateMatcher.kinds(agg.aggCalls());
         int[] valueColumns =
-            hopping
+            syntheticCount
                 ? WindowAggregateMatcher.hoppingLocalValueColumns(agg.aggCalls())
                 : WindowAggregateMatcher.valueColumns(agg.aggCalls());
         int[] valueTypes =
-            hopping
+            syntheticCount
                 ? WindowAggregateMatcher.hoppingLocalValueTypes(agg.aggCalls(), localInput)
                 : WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), localInput);
         long sliceSize = WindowAggregateMatcher.sliceSize(agg.windowing());

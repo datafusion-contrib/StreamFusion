@@ -356,6 +356,27 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
+  void twoPhaseHoppingCountStarMatchesHost() throws Exception {
+    // Default-planned HOP COUNT(*): the user COUNT doubles as the slicing count1 (no separate
+    // synthetic partial), so the native local must not append one — the global sums the per-slice
+    // counts fanned into each window.
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentTwoPhase,
+        "SELECT window_start, window_end, COUNT(*) AS n "
+            + "FROM TABLE(HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND, INTERVAL '2' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void twoPhaseHoppingCountStarWithSumMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentTwoPhase,
+        "SELECT window_start, window_end, COUNT(*) AS n, SUM(`value`) AS s "
+            + "FROM TABLE(HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND, INTERVAL '2' SECOND)) "
+            + "GROUP BY window_start, window_end");
+  }
+
+  @Test
   void twoPhaseCountStarWithValueAggregateMatchesHost() throws Exception {
     NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentTwoPhase,

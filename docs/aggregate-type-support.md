@@ -78,8 +78,10 @@ Comparisons are width-insensitive and always safe.
   synthesized non-null value column so the existing COUNT counts every row. Two-phase
   (default planning) works for tumbling and cumulative — the local counts rows per
   slice and the global sums the per-slice counts (COUNT's merge is a sum, and the
-  empty-argList COUNT merge is matched positionally). Two-phase hopping `COUNT(*)`
-  falls back (its synthetic count1 partial is not yet handled).
+  empty-argList COUNT merge is matched positionally). Hopping two-phase also works:
+  the planner reuses a user `COUNT(*)` as the slicing count1 (emitting no separate
+  synthetic partial), so the local appends one only when the planner actually
+  injected it — detected from the local's partial count.
 - Grouping keys: bigint/int/string/boolean/date/timestamp/decimal keys are supported.
   The native composite key is a list of typed scalars and the native key path is
   type-general (it reads/rebuilds whatever Arrow type arrives), so widening keys is

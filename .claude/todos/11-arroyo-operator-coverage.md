@@ -19,7 +19,9 @@ is picked up. Operators are in `~/data/arroyo/crates/arroyo-worker/src/arrow/`.
 - [x] Cumulative window (`CUMULATE`) — one-phase; nested windows sharing a start.
       Net-new: Arroyo has no cumulative window (see divergences/05). Two-phase
       slice-sharing is done (divergences/06).
-- [ ] Wider value/key types beyond int (ticket 04)
+- [x] Wider value/key types: every non-decimal numeric value type, decimal MIN/MAX/COUNT,
+      multiple value columns, `COUNT(*)`, and bigint/int/string/boolean/date/timestamp/decimal
+      grouping keys (see `docs/aggregate-type-support.md`).
 
 ## Other stateful operators
 - [ ] Updating (non-windowed) group aggregation — emits retractions (needs

@@ -90,16 +90,6 @@ final class WindowAggregateMatcher {
     return true;
   }
 
-  /** True if every aggregate reads a real value column (no COUNT(*)). */
-  static boolean allValuesPresent(scala.collection.Seq<AggregateCall> aggCalls) {
-    for (int column : valueColumns(aggCalls)) {
-      if (column < 0) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   /** True if every aggregate's partial is one the two-phase global merges (bigint or double). */
   static boolean allPartialsMergeable(
       scala.collection.Seq<AggregateCall> aggCalls, RelDataType inputType) {
