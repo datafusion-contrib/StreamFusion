@@ -153,6 +153,7 @@ gives misleading numbers — see [docs/benchmarks.md](docs/benchmarks.md)).
 | `OVER` running `SUM` (row source) | `SUM(v) OVER (ORDER BY rt)` | 0.91 M rows/s | 1.42 M rows/s | **1.56×** |
 | Tumbling window aggregate (row source) | `SUM` by 1s window | 1.69 M rows/s | 2.10 M rows/s | **1.24×** |
 | Filter (`WHERE`) | `SELECT * FROM f WHERE v > 50` | 3.23 M rows/s | 2.41 M rows/s | **0.75×** |
+| Non-windowed `GROUP BY` (row source) | `SUM(v) … GROUP BY k`, 1024 keys | 1.73 M rows/s | 1.33 M rows/s | **0.77×** |
 
 The gain tracks how much of the pipeline stays columnar. The **fully-columnar paths lead**:
 the Parquet copy at **4.68×** (read as Arrow, through the native sink, written as Arrow —
@@ -167,8 +168,16 @@ row-source ops still pay a `RowData → Arrow` transpose at the input**, though 
 converter was made row-major + pre-sized (~25% faster build): `OVER` running `SUM` lands at **1.56×**
 and tumbling at **1.24×**. The lone **stateless filter remains below 1× at 0.75×** — a single cheap
 predicate cannot earn back the `RowData → Arrow → RowData` round-trip; leave it on the host with
-`-Dstreamfusion.operator.filter.enabled=false`. Closing the gap generally is the columnar-flow work:
-keep Arrow across adjacent native operators so the transpose is paid once at the edges, not per
+`-Dstreamfusion.operator.filter.enabled=false`. The **row-fed non-windowed `GROUP BY` is the same
+story at 0.77×**: a per-key `SUM` is cheap, so the input transpose plus the changelog output
+transpose (a retract stream is up to ~2× the input rows) outweighs it, and the per-row key read
+([ticket 20](.claude/todos/20-profiling-and-benchmarks.md)) adds to it. It ships for correctness and
+as the changelog foundation that unlocks the retract-*consuming* operators
+([ticket 06](.claude/todos/06-changelog-retract-support.md)); the path past 1× is a columnar variant
+fed from a columnar source/exchange (no transpose), the same move that put the windowed aggregate and
+`OVER` ahead, and it can be disabled meanwhile with
+`-Dstreamfusion.operator.groupAggregate.enabled=false`. Closing the gap generally is the columnar-flow
+work: keep Arrow across adjacent native operators so the transpose is paid once at the edges, not per
 operator ([divergences/08](divergences/08-columnar-flow-transitions.md)).
 
 _Apple M1 Max; numbers are comparable only within a machine._

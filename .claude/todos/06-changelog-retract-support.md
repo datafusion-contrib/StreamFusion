@@ -27,8 +27,16 @@
   emitting `+I` then `-U`/`+U` per the host's `GroupAggFunction` (per input row, in
   order; `-U` gated on `generateUpdateBefore`; unchanged result suppressed).
   SUM/MIN/MAX/COUNT (AVG via the host's SUM/COUNT rewrite) over bigint/int/double,
-  any converter-supported grouping keys, global aggregation, checkpointed. See the
-  readme compatibility row and the `RowKind` carriage above.
+  any converter-supported grouping keys, global aggregation, checkpointed. Gated to
+  zero idle-state TTL (the host refreshes/expires keys with a TTL; we suppress
+  unchanged results and never expire, which matches only at TTL 0). See the readme
+  compatibility row and the `RowKind` carriage above.
+  - **Perf:** row-fed it is **0.77× vs Flink** — a cheap per-key SUM does not earn
+    back the input transpose plus the up-to-2× changelog output transpose (the same
+    transpose-bound story as the lone filter). It ships for correctness and as the
+    changelog foundation; the path past 1× is a **columnar variant** fed from a
+    columnar source/exchange (no transpose), mirroring the windowed/`OVER` columnar
+    operators — the natural perf follow-up, plus the per-row key read (ticket 20).
 
 ## Remaining: *consume* a changelog (honor retracting input)
 Everything above emits retractions from insert-only input. The next half is

@@ -64,6 +64,42 @@ class FlinkGroupAggregateSqlHarnessTest {
         "SELECT k, AVG(`value`) AS a FROM src GROUP BY k");
   }
 
+  @Test
+  void stateTtlFallsBackToHost() throws Exception {
+    // With idle-state TTL on, the host refreshes and expires keys (emitting unchanged updates and
+    // deletes) — semantics the append-only native operator does not reproduce, so it stays on host.
+    // The minimal source has exactly the grouped/aggregated columns, so the aggregate is the only
+    // routable node and a clean fallback means zero substitutions.
+    NativeParity.assertFallback(
+        () -> {
+          TableEnvironment tEnv = minimalEnvironment();
+          tEnv.getConfig().set("table.exec.state.ttl", "1 h");
+          return tEnv;
+        },
+        "SELECT k, SUM(`value`) AS s FROM kv GROUP BY k");
+  }
+
+  private static TableEnvironment minimalEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+    DataStream<Row> source =
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"k", "value"}, Types.LONG, Types.LONG),
+            Row.of(7L, 1L),
+            Row.of(7L, 2L),
+            Row.of(9L, 3L));
+    tEnv.createTemporaryView(
+        "kv",
+        source,
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("value", DataTypes.BIGINT())
+            .build());
+    return tEnv;
+  }
+
   private static TableEnvironment environment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);

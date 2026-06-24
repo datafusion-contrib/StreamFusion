@@ -68,6 +68,17 @@ class ThroughputBenchmark {
   }
 
   @Test
+  void groupByThroughput() throws Exception {
+    // Non-windowed GROUP BY over an append-only source: SUM per key across a moderate key space, so
+    // most rows update an existing key and emit a -U/+U pair (the changelog work, not just inserts).
+    compare(
+        "Non-windowed GROUP BY (SUM per key)",
+        ThroughputBenchmark::groupByEnvironment,
+        "CREATE TABLE sink (k BIGINT, total BIGINT) WITH ('connector' = 'blackhole')",
+        "INSERT INTO sink SELECT k, SUM(v) AS total FROM g GROUP BY k");
+  }
+
+  @Test
   void intervalJoinThroughput() throws Exception {
     // Event-time INNER interval join, 1:1 on a unique key (bounded output). Exposes the per-batch
     // DataFusion hash-join construction the joiner does on every arriving batch.
@@ -369,6 +380,28 @@ class ThroughputBenchmark {
             .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
             .watermark("rt", "SOURCE_WATERMARK()")
             .build());
+  }
+
+  private static TableEnvironment groupByEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    // One-phase so the plan is a single GROUP BY aggregate (what the native operator substitutes).
+    tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+    // 1024 distinct keys: after the first pass every row revises an existing key, so the steady state
+    // is a -U/+U pair per row — the changelog-emission cost we are measuring.
+    DataStream<Row> source =
+        env.fromSequence(0, ROWS - 1)
+            .map(i -> Row.of(i % 1024, i))
+            .returns(Types.ROW_NAMED(new String[] {"k", "v"}, Types.LONG, Types.LONG));
+    tEnv.createTemporaryView(
+        "g",
+        source,
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("v", DataTypes.BIGINT())
+            .build());
+    return tEnv;
   }
 
   private static TableEnvironment tumblingEnvironment() {
