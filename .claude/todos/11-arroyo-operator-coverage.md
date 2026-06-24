@@ -3,8 +3,8 @@
 **Status:** open (tracking) — all window aggregates, OVER (subset), event-time INNER
 joins, the non-windowed `GROUP BY` aggregate (changelog emission *and* consumption, incl.
 MIN/MAX retraction), filter/projection, watermark, shuffle, and Parquet source/sink are done.
-What remains is the other retract-consuming operators (regular joins, Top-N — ticket 06),
-async-gated (lookup join, async UDF — ticket 01), plus OVER/join feature tails.
+What remains is async-gated (lookup join, async UDF — ticket 01) plus operator feature tails
+(outer/semi/anti joins, rank-number / RANK / retracting-input Top-N, OVER frames).
 **Source:** user direction — "everything Arroyo already supports, routed over"
 
 Goal: reach Flink parity (identical results, verified by the parity harness) for
@@ -48,6 +48,10 @@ is picked up. Operators are in `~/data/arroyo/crates/arroyo-worker/src/arrow/`.
       changelog. Per-side keyed multiset probed incrementally (native, not DataFusion
       delegation — divergences/14); INNER only, equi-key, null keys dropped. Remaining:
       outer/semi/anti, residual non-equi predicate.
+- [x] Streaming Top-N (`ROW_NUMBER`) — append-only, rank ≤ N, rank number not projected;
+      per-partition bounded buffer emitting the insert/delete changelog (divergences/14).
+      Remaining: rank-number output (rank-shift updates), `RANK`/`DENSE_RANK`, an offset,
+      and a retracting input.
 - [ ] Lookup join (`lookup_join.rs`) — stateless async enrichment against an external
       table; uses ticket 01's async pattern, not the synchronous stateful path.
 - [ ] Async UDF (`async_udf.rs`) — async scalar UDF; same async dependency (ticket 01).

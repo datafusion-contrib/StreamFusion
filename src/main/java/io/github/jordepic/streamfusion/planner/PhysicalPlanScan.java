@@ -13,6 +13,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalI
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalJoin;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLocalWindowAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalOverAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRank;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
@@ -160,6 +161,30 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             join.getRowType(),
             RegularJoinMatcher.leftKeys(join),
             RegularJoinMatcher.rightKeys(join));
+      }
+    }
+
+    // An append-only streaming Top-N emits a changelog (it deletes a row when one is displaced), so
+    // it is exempt from the insert-only guard below; it requires an insert-only input (only the
+    // append-only Top-N is implemented).
+    if (current instanceof StreamPhysicalRank) {
+      StreamPhysicalRank rank = (StreamPhysicalRank) current;
+      if (TopNMatcher.matches(rank)
+          && ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) rank.getInput())) {
+        if (!NativeConfig.operatorEnabled("topN")) {
+          return noteDisabled(current, "topN");
+        }
+        substitutions++;
+        return new StreamPhysicalNativeTopN(
+            rank.getCluster(),
+            rank.getTraitSet(),
+            rank.getInput(),
+            rank.getRowType(),
+            TopNMatcher.partitionColumns(rank),
+            TopNMatcher.sortIndices(rank),
+            TopNMatcher.sortAscending(rank),
+            TopNMatcher.sortNullsFirst(rank),
+            TopNMatcher.limit(rank));
       }
     }
 
