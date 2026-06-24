@@ -1157,6 +1157,210 @@ impl OverAggregator {
     }
 }
 
+/// The hidden column carrying a changelog row's `RowKind` as a byte across the row/Arrow boundary
+/// (must match the JVM converter's column name). See divergences/13.
+const ROW_KIND_COLUMN: &str = "$row_kind$";
+
+/// Non-windowed `GROUP BY` aggregation that emits a retract changelog. Holds per-key running state —
+/// no windows, no watermark — and, processing rows in input order like the host's per-record
+/// aggregate, emits INSERT on a key's first row and UPDATE_BEFORE(previous)/UPDATE_AFTER(new)
+/// afterward. The UPDATE_BEFORE is gated on the host's per-node `generate_update_before` flag, and an
+/// update whose result is unchanged is suppressed (matching the host with state retention off). Input
+/// is append-only — every row accumulates — so the DELETE (count reaches zero) branch cannot arise;
+/// honoring retracting input is later work. The emitted batch is `[key0.., result0..]` plus the
+/// `$row_kind$` byte column the boundary uses to carry RowKind.
+struct GroupAggregator {
+    kinds: Vec<i64>,
+    value_types: Vec<DataType>,
+    value_columns: Vec<i64>,
+    key_columns: Vec<usize>,
+    generate_update_before: bool,
+    keys: HashMap<GroupKey, Vec<RunningAgg>>,
+    key_types: Vec<DataType>,
+}
+
+impl GroupAggregator {
+    fn new(
+        kinds: Vec<i64>,
+        value_types: Vec<i64>,
+        value_columns: Vec<i64>,
+        key_columns: Vec<usize>,
+        generate_update_before: bool,
+    ) -> Self {
+        GroupAggregator {
+            value_types: value_types.iter().map(|&code| value_data_type(code)).collect(),
+            kinds,
+            value_columns,
+            key_columns,
+            generate_update_before,
+            keys: HashMap::new(),
+            key_types: Vec::new(),
+        }
+    }
+
+    /// The per-key running state, created on first touch.
+    fn states(&mut self, key: GroupKey) -> &mut Vec<RunningAgg> {
+        let (kinds, value_types) = (&self.kinds, &self.value_types);
+        self.keys.entry(key).or_insert_with(|| {
+            kinds.iter().zip(value_types).map(|(&kind, vt)| RunningAgg::new(kind, vt)).collect()
+        })
+    }
+
+    fn result_types(&self) -> Vec<DataType> {
+        self.kinds
+            .iter()
+            .zip(&self.value_types)
+            .map(|(&kind, vt)| RunningAgg::new(kind, vt).result_type())
+            .collect()
+    }
+
+    /// Folds the batch's rows (`value0..`, optional `key0..`) into per-key state in input order and
+    /// returns the changelog rows produced, in emission order.
+    fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
+        let n = batch.num_rows();
+        let num_agg = self.kinds.len();
+        // `None` is a COUNT(*) aggregate (no argument column): it counts every row. A present column
+        // counts/folds only non-null rows, matching the host's COUNT(col)/SUM/MIN/MAX null handling.
+        let value_columns: Vec<Option<ValueColumn>> = (0..num_agg)
+            .map(|i| {
+                if self.value_columns[i] < 0 {
+                    return None;
+                }
+                let column = batch.column(self.value_columns[i] as usize);
+                Some(match self.value_types[i] {
+                    DataType::Int64 => {
+                        ValueColumn::I64(column.as_any().downcast_ref().expect("int64 value"))
+                    }
+                    DataType::Int32 => {
+                        ValueColumn::I32(column.as_any().downcast_ref().expect("int32 value"))
+                    }
+                    DataType::Float64 => {
+                        ValueColumn::F64(column.as_any().downcast_ref().expect("float64 value"))
+                    }
+                    ref other => panic!("unsupported group-by value type: {other:?}"),
+                })
+            })
+            .collect();
+        let key_arrays: Vec<&ArrayRef> = self.key_columns.iter().map(|&i| batch.column(i)).collect();
+        self.key_types = key_types(&key_arrays);
+
+        let mut out_keys: Vec<GroupKey> = Vec::new();
+        let mut out_results: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
+        let mut out_kinds: Vec<i8> = Vec::new();
+
+        for row in 0..n {
+            let key = read_key(&key_arrays, row);
+            let first = !self.keys.contains_key(&key);
+            let prev: Vec<ScalarValue> = if first {
+                Vec::new()
+            } else {
+                self.keys.get(&key).unwrap().iter().map(|state| state.emit()).collect()
+            };
+            {
+                let states = self.states(key.clone());
+                for (i, state) in states.iter_mut().enumerate() {
+                    match &value_columns[i] {
+                        // COUNT(*): the value is ignored, so any number drives the count up by one.
+                        None => state.fold(Num::I64(0)),
+                        Some(column) => {
+                            if let Some(num) = column.at(row) {
+                                state.fold(num);
+                            }
+                        }
+                    }
+                }
+            }
+            let new: Vec<ScalarValue> =
+                self.keys.get(&key).unwrap().iter().map(|state| state.emit()).collect();
+
+            if first {
+                out_keys.push(key);
+                for (i, v) in new.into_iter().enumerate() {
+                    out_results[i].push(v);
+                }
+                out_kinds.push(0); // RowKind INSERT
+            } else if new != prev {
+                // An unchanged result emits nothing (state retention is off).
+                if self.generate_update_before {
+                    out_keys.push(key.clone());
+                    for (i, v) in prev.into_iter().enumerate() {
+                        out_results[i].push(v);
+                    }
+                    out_kinds.push(1); // RowKind UPDATE_BEFORE
+                }
+                out_keys.push(key);
+                for (i, v) in new.into_iter().enumerate() {
+                    out_results[i].push(v);
+                }
+                out_kinds.push(2); // RowKind UPDATE_AFTER
+            }
+        }
+
+        let result_types = self.result_types();
+        let mut fields = key_fields(&self.key_types);
+        let mut columns = key_columns(&out_keys, &self.key_types);
+        for (i, rt) in result_types.iter().enumerate() {
+            fields.push(Field::new(format!("result{i}"), rt.clone(), true));
+            columns.push(scalars_to_array(std::mem::take(&mut out_results[i]), rt));
+        }
+        fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
+        columns.push(Arc::new(Int8Array::from(out_kinds)));
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build group-by changelog batch")
+    }
+
+    /// Serializes the per-key running state (`[key0.., state0..]`, one row per key — the running
+    /// value is itself the checkpointed state, as for OVER).
+    fn snapshot(&mut self) -> Vec<u8> {
+        let result_types = self.result_types();
+        let mut keys: Vec<GroupKey> = Vec::new();
+        let mut state_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); self.kinds.len()];
+        for (key, states) in self.keys.iter() {
+            keys.push(key.clone());
+            for (i, state) in states.iter().enumerate() {
+                state_columns[i].push(state.emit());
+            }
+        }
+        let mut fields = key_fields(&self.key_types);
+        let mut columns = key_columns(&keys, &self.key_types);
+        for (i, rt) in result_types.iter().enumerate() {
+            fields.push(Field::new(format!("state{i}"), rt.clone(), true));
+            columns.push(scalars_to_array(std::mem::take(&mut state_columns[i]), rt));
+        }
+        write_ipc(
+            &RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+                .expect("failed to build group-by snapshot batch"),
+        )
+    }
+
+    fn restore(
+        kinds: Vec<i64>,
+        value_types: Vec<i64>,
+        value_columns: Vec<i64>,
+        key_columns: Vec<usize>,
+        generate_update_before: bool,
+        bytes: &[u8],
+    ) -> Self {
+        let mut aggregator =
+            GroupAggregator::new(kinds, value_types, value_columns, key_columns, generate_update_before);
+        let num_agg = aggregator.kinds.len();
+        for batch in read_ipc(bytes) {
+            let arity = batch.num_columns() - num_agg;
+            let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
+            aggregator.key_types = key_types(&key_arrays);
+            for row in 0..batch.num_rows() {
+                let key = read_key(&key_arrays, row);
+                for (i, state) in aggregator.states(key).iter_mut().enumerate() {
+                    let scalar = ScalarValue::try_from_array(batch.column(arity + i), row)
+                        .expect("group state scalar");
+                    state.restore_value(&scalar);
+                }
+            }
+        }
+        aggregator
+    }
+}
+
 /// Window-function code: a SQL `OVER` analytic function that is *not* a mergeable aggregate.
 fn is_window_function_kind(kind: i64) -> bool {
     kind >= 10
@@ -3753,6 +3957,101 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreOverAg
     ))) as jlong
 }
 
+/// Creates a non-windowed `GROUP BY` aggregator and returns an opaque handle. The aggregate kinds
+/// and per-aggregate value-type codes are positional; `generate_update_before` is the host's
+/// per-node changelog flag. Grouping keys travel as `key0..` columns on each input batch.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createGroupAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    aggregate_kinds: JIntArray<'local>,
+    value_types: JIntArray<'local>,
+    value_columns: JIntArray<'local>,
+    key_columns: JIntArray<'local>,
+    generate_update_before: jboolean,
+) -> jlong {
+    let kinds = read_int_array(&env, &aggregate_kinds);
+    let value_types = read_int_array(&env, &value_types);
+    let value_columns = read_int_array(&env, &value_columns);
+    let key_columns = read_columns(&env, &key_columns);
+    Box::into_raw(Box::new(GroupAggregator::new(
+        kinds,
+        value_types,
+        value_columns,
+        key_columns,
+        generate_update_before != 0,
+    ))) as jlong
+}
+
+/// Folds an input batch into per-key state and exports the changelog rows it produces (the row kinds
+/// ride the `$row_kind$` column of the result).
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateGroupAggregator<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let aggregator = unsafe { &mut *(handle as *mut GroupAggregator) };
+    let result = aggregator.update(&import_record_batch(in_array_address, in_schema_address));
+    export_record_batch(result, out_array_address, out_schema_address);
+}
+
+/// Serializes the aggregator's per-key state for a checkpoint.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotGroupAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jbyteArray {
+    let aggregator = unsafe { &mut *(handle as *mut GroupAggregator) };
+    env.byte_array_from_slice(&aggregator.snapshot())
+        .expect("failed to allocate group-by snapshot array")
+        .into_raw()
+}
+
+/// Rebuilds a `GROUP BY` aggregator from a snapshot taken by a prior run and returns a fresh handle.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    aggregate_kinds: JIntArray<'local>,
+    value_types: JIntArray<'local>,
+    value_columns: JIntArray<'local>,
+    key_columns: JIntArray<'local>,
+    generate_update_before: jboolean,
+    snapshot: JByteArray<'local>,
+) -> jlong {
+    let kinds = read_int_array(&env, &aggregate_kinds);
+    let value_types = read_int_array(&env, &value_types);
+    let value_columns = read_int_array(&env, &value_columns);
+    let key_columns = read_columns(&env, &key_columns);
+    let bytes = env.convert_byte_array(&snapshot).expect("failed to read group-by snapshot");
+    Box::into_raw(Box::new(GroupAggregator::restore(
+        kinds,
+        value_types,
+        value_columns,
+        key_columns,
+        generate_update_before != 0,
+        &bytes,
+    ))) as jlong
+}
+
+/// Releases the `GROUP BY` aggregator and its native state.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeGroupAggregator<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    unsafe {
+        drop(Box::from_raw(handle as *mut GroupAggregator));
+    }
+}
+
 /// Creates an event-time INNER interval joiner and returns an opaque handle. The key/time column
 /// indices locate the equi-join key and rowtime within each side's input batch; `lower`/`upper` are
 /// the inclusive bounds (millis) on `left.rt - right.rt`. The JVM owns the handle across calls.
@@ -4358,6 +4657,76 @@ mod tests {
         assert_eq!(values(&out, 1), vec![0, 0, 0]); // window_start
         assert_eq!(values(&out, 2), vec![1000, 2000, 3000]); // window_end
         assert_eq!(values(&out, 3), vec![10, 30, 60]); // running SUM
+    }
+
+    // A `[key0, value0]` batch (both bigint) for the non-windowed GROUP BY tests.
+    fn group_batch(keys: Vec<i64>, values: Vec<i64>) -> RecordBatch {
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("key0", DataType::Int64, false),
+                Field::new("value0", DataType::Int64, true),
+            ])),
+            vec![Arc::new(Int64Array::from(keys)), Arc::new(Int64Array::from(values))],
+        )
+        .unwrap()
+    }
+
+    fn row_kinds(batch: &RecordBatch) -> Vec<i8> {
+        batch
+            .column_by_name(ROW_KIND_COLUMN)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<Int8Array>()
+            .unwrap()
+            .values()
+            .to_vec()
+    }
+
+    // GROUP BY changelog: a key's first row emits INSERT(0); a later row that changes the result
+    // emits UPDATE_BEFORE(1)+UPDATE_AFTER(2); a row that leaves the result unchanged emits nothing.
+    #[test]
+    fn group_by_emits_insert_then_update_changelog() {
+        // SUM(bigint) over value column 1, grouping on key column 0, emitting -U.
+        let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true);
+        // keys a,a,b,a with values 1,2,5,0 — the last adds 0, leaving a's sum at 3 (suppressed).
+        let out = agg.update(&group_batch(vec![1, 1, 2, 1], vec![1, 2, 5, 0]));
+        assert_eq!(row_kinds(&out), vec![0, 1, 2, 0]);
+        assert_eq!(values(&out, 0), vec![1, 1, 1, 2]); // key
+        assert_eq!(values(&out, 1), vec![1, 1, 3, 5]); // running sum (prev on -U, new on +U)
+    }
+
+    // COUNT(*) (no argument column) counts every row, alongside a SUM over a value column.
+    #[test]
+    fn group_by_counts_every_row_for_count_star() {
+        // kinds COUNT(*), SUM; COUNT(*) has no column (-1), SUM reads column 1; group on column 0.
+        let mut agg = GroupAggregator::new(vec![3, 0], vec![0, 0], vec![-1, 1], vec![0], true);
+        let out = agg.update(&group_batch(vec![1, 1], vec![10, 5]));
+        assert_eq!(row_kinds(&out), vec![0, 1, 2]); // +I, then -U/+U
+        assert_eq!(values(&out, 1), vec![1, 1, 2]); // COUNT(*): 1, then 1->2
+        assert_eq!(values(&out, 2), vec![10, 10, 15]); // SUM: 10, then 10->15
+    }
+
+    // With the host's update-before flag off, an update emits only the UPDATE_AFTER row.
+    #[test]
+    fn group_by_omits_update_before_when_disabled() {
+        let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], false);
+        let out = agg.update(&group_batch(vec![1, 1], vec![10, 5]));
+        assert_eq!(row_kinds(&out), vec![0, 2]); // +I(10), +U(15)
+        assert_eq!(values(&out, 1), vec![10, 15]);
+    }
+
+    // A checkpoint preserves per-key state: a restored key is not "first", so a new row updates
+    // rather than re-inserting.
+    #[test]
+    fn group_by_survives_snapshot_restore() {
+        let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true);
+        agg.update(&group_batch(vec![1], vec![10]));
+        let snapshot = agg.snapshot();
+        let mut restored =
+            GroupAggregator::restore(vec![0], vec![0], vec![1], vec![0], true, &snapshot);
+        let out = restored.update(&group_batch(vec![1], vec![5]));
+        assert_eq!(row_kinds(&out), vec![1, 2]); // -U(10), +U(15) — continues from 10
+        assert_eq!(values(&out, 1), vec![10, 15]);
     }
 
     // A `[k, v, rt]` batch with int64 rowtime (epoch millis) for the interval-join tests.

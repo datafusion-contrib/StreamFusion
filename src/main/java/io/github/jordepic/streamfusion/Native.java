@@ -364,6 +364,46 @@ public final class Native {
       byte[] snapshot);
 
   /**
+   * Creates a non-windowed {@code GROUP BY} aggregator and returns an opaque handle. Each input batch
+   * folds into per-key state and the aggregator exports the changelog rows it produces, with the row
+   * kinds carried on the {@code $row_kind$} column. Released with {@link #closeGroupAggregator}.
+   *
+   * @param aggregateKinds aggregate codes (see {@link #createTumblingAggregator})
+   * @param valueTypes per-aggregate value-column types (see {@link #createTumblingAggregator})
+   * @param valueColumns per-aggregate value-column index in the input batch ({@code -1} for COUNT(*))
+   * @param keyColumns grouping-key column indices in the input batch (empty for global aggregation)
+   * @param generateUpdateBefore whether to emit an UPDATE_BEFORE row before each UPDATE_AFTER
+   */
+  public static native long createGroupAggregator(
+      int[] aggregateKinds,
+      int[] valueTypes,
+      int[] valueColumns,
+      int[] keyColumns,
+      boolean generateUpdateBefore);
+
+  /**
+   * Folds an input batch into per-key state, exporting the changelog rows it produces (grouping keys,
+   * aggregate results, then the {@code $row_kind$} byte column) into the consumer-allocated C structs.
+   */
+  public static native void updateGroupAggregator(
+      long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
+
+  /** Releases a {@code GROUP BY} aggregator handle. */
+  public static native void closeGroupAggregator(long handle);
+
+  /** Serializes a {@code GROUP BY} aggregator's per-key state for a checkpoint. */
+  public static native byte[] snapshotGroupAggregator(long handle);
+
+  /** Rebuilds a {@code GROUP BY} aggregator from a snapshot and returns a fresh handle. */
+  public static native long restoreGroupAggregator(
+      int[] aggregateKinds,
+      int[] valueTypes,
+      int[] valueColumns,
+      int[] keyColumns,
+      boolean generateUpdateBefore,
+      byte[] snapshot);
+
+  /**
    * Creates an event-time INNER interval joiner and returns an opaque handle. It buffers both inputs
    * per equi-join key and emits a matched pair when the second of its two rows arrives. The JVM owns
    * the handle across calls and must release it with {@link #closeIntervalJoiner}.
