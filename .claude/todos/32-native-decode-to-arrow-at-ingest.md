@@ -1,6 +1,8 @@
 # Native decode-to-Arrow at the ingestion edge (skip RowData on source formats)
 
-**Status:** in progress — research complete; JSON decode kernel landed (Phase 0). File sources next.
+**Status:** in progress — JSON decode kernel landed (Phase 0); ORC + Parquet file sources landed via
+DataFusion's file scan + the framework's split handoff (Phase 1). Streaming decode operator (Phase 2)
+next.
 **Source:** every record we ingest from Kafka (or any non-Parquet source) is decoded on the
 JVM `bytes → GenericRecord/JsonNode/… → RowData` and only *then* transposed to Arrow by our
 source-edge `StreamPhysicalRowDataToArrow`. That row materialization is the single highest-traffic
@@ -181,9 +183,20 @@ The native **decoders** are shared; the two source kinds wrap them differently:
 ## Scope / phasing (easiest → hardest)
 - **Phase 0 — native decode kernels (shared primitives).** Pure-Rust `bytes → Arrow` decoders with
   unit tests + micro-benches, no JVM wiring. **JSON kernel done** (`JsonDecoder`, ~5.3 Melem/s on a
-  three-field object, `json_decode/three_field_object`). CSV/Avro kernels next.
-- **Phase 1 — file sources.** Native JSON/CSV/Avro/ORC file sources (path → Rust, ParquetSource
-  pattern) + matchers + SQL parity vs Flink's filesystem connector. Easiest, no JVM byte path.
+  three-field object, `json_decode/three_field_object`). The streaming path (Phase 2) will reuse it.
+- **Phase 1 — file sources. DONE (ORC + Parquet).** Both read natively through DataFusion's file scan
+  (Parquet via DataFusion's `ParquetSource`, ORC via datafusion-orc's `OrcSource`), with the
+  framework's file source owning enumeration/split-assignment/checkpointing and the native side
+  reading one file's byte range — splittable at row-group/stripe granularity, projection pushed into
+  the decode. The old self-enumerating Parquet source is gone. Parity vs Flink's own readers.
+  - **Avro OCF dropped:** `arrow-avro`'s reader rejects a top-level nullable union, which is exactly
+    what Flink's Avro sink writes, so a Flink-parity test isn't achievable; revisit if arrow-avro gains
+    top-level-union support. (Registry/Kafka Avro is a top-level record and is fine — that's Phase 2.)
+  - **CSV/JSON file sources** remain (text formats: schema must be supplied, decode semantics vs
+    Flink's options need parity-gating) — lower priority than the streaming path.
+  - **Test-baseline note:** flink-orc pins orc-core 1.5.6 (protobuf 2.5) which collides with Arrow's
+    protobuf 4.x; the build pins protobuf 2.5 in test scope so the ORC baseline runs. The native read
+    path never touches orc-core, so this is test-only.
 - **Phase 2 — streaming decode operator.** The `ArrowBatch[bytes] → ArrowBatch[decoded]` operator +
   off-heap Kafka handoff + source-edge planner rule, for JSON/CSV/Avro/Confluent-Avro.
 - **Phase 3 — CDC family.** Body decode + native envelope → `$row_kind$`, reusing changelog operators.

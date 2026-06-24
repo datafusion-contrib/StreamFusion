@@ -8,7 +8,10 @@ here when the ticket is deleted.
 - **Operators, native + identical to Flink:** filter/`WHERE` (via the native expression engine),
   tumbling / hopping / session / cumulative window aggregates (one- and two-phase), event-time
   `OVER` aggregation, event-time INNER interval and window joins, Parquet sink (exactly-once),
-  Parquet source. Compatibility chart in `readme.md` is the source of truth.
+  and Parquet + ORC sources. The sources read through DataFusion's file scan (like comet) with the
+  framework's file source owning enumeration/split-assignment/checkpointing — splittable at
+  row-group/stripe granularity, projection pushed into the decode. Compatibility chart in `readme.md`
+  is the source of truth.
 - **Changelog / retract — done.** `RowKind` crosses the boundary as a four-way byte column
   (divergences/13), and three operators both emit and consume a retract changelog: the non-windowed
   `GROUP BY` aggregate (SUM/COUNT/MIN/MAX retract), the regular (updating) INNER equi-join, and
@@ -62,9 +65,11 @@ here when the ticket is deleted.
    ratio. Use it as the prioritization engine for both coverage (which queries fall back, and why)
    and perf (which route but trail Flink) — re-run as a regression/impact gate after each change.
 5. **Native decode-to-Arrow at ingest** (ticket 32): skip the per-record `RowData` materialization on
-   source formats, two source kinds handled differently. **File sources** (JSON/CSV/Avro/ORC files):
-   hand Rust the path, read+decode directly, no JVM round-trip (ParquetSource pattern) — easiest, do
-   first. **Streaming/Kafka:** keep Flink's connector, pay one off-heap copy into a native decode
+   source formats, two source kinds handled differently. **File sources — done for ORC + Parquet:**
+   read through DataFusion's file scan with the framework's file source owning enumeration/splits/
+   checkpointing, splittable at row-group/stripe granularity, projection pushed down (Avro OCF dropped —
+   arrow-avro can't read Flink's top-level-union output; CSV/JSON files remain, lower priority).
+   **Streaming/Kafka (next):** keep Flink's connector, pay one off-heap copy into a native decode
    operator (arrow-json/csv/avro share one push API; CDC envelopes → our `$row_kind$` changelog;
    protobuf via prost-reflect). JSON decode kernel landed (~5.3 Melem/s). Removing the Kafka copy
    entirely is the fully-native source (ticket 33).
