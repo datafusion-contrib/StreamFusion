@@ -20,25 +20,66 @@ justification is throughput over the shallow path; **benchmark both on the same 
 heap→off-heap copy + JVM Kafka-client overhead + GC it removes vs the rdkafka fetch it adds) before
 committing to the config-translation work.
 
-## Config fidelity — must match Flink's consumer exactly (the hard part of going native)
-Flink builds a `Properties` (user `setProperties` + forced overrides) and the `KafkaPartitionSplitReader`
-uses **manual `assign()` + `seek()` per split — never `subscribe()`/consumer-group rebalance**; the
-enumerator owns assignment, the group id is only for committed-offset reads/commits. A native reader
-must reproduce:
-- **`assign()` + `seek()` to the split's offset** (not subscribe); honor the checkpointed offset on restore.
-- Forced overrides: `enable.auto.commit=false` (offsets live in Flink checkpoints), `auto.offset.reset`
-  = the `OffsetsInitializer` strategy, byte (raw) value/key deserializers, `isolation.level` passed
-  through (read_committed for EOS topics — must match or we read aborted records).
-- **Java consumer config → librdkafka translation**, the real risk: clean 1:1 for bootstrap/group/
-  client.id/enable.auto.commit/auto.offset.reset/isolation.level/fetch.min.bytes; renamed for
-  `fetch.max.wait.ms`→`fetch.wait.max.ms`, `sasl.mechanism`→`sasl.mechanisms`; **no clean mapping** for
-  `sasl.jaas.config` (parse → `sasl.username`/`password` or kerberos keytab/principal) and JKS
-  `ssl.truststore`/`keystore` (→ PEM `ssl.ca.location`/cert/key); `max.poll.records` has no analog.
-  SASL/SSL is where a silent divergence would bite — must be tested against the real Kerberos cluster.
-**Source:** even with native decode (ticket 32), a Kafka pipeline still pays one unavoidable copy —
-Kafka's client lands each message value on the JVM heap, and a moving GC means Rust cannot read it
-in place, so the bytes must be copied off-heap before native decode. The *only* way to remove that
-copy is to consume Kafka in Rust, so the bytes land in Rust-readable memory from the socket onward.
+## Config-parity plan: translate Flink's consumer `Properties` → librdkafka
+Flink hands the reader a `Properties` (user `setProperties` + Flink's forced overrides). The native
+consumer must produce *identical* behavior. A **JVM-side translator** converts it to a librdkafka
+config map (the native side just applies the map) — the JVM is where the inputs live: the raw
+`Properties`, the JAAS string, the `KeyStore` API for cert conversion, and the `OffsetsInitializer`.
+Anything it can't faithfully translate routes that table to the shallow fallback (ticket 32) with a
+logged reason — we never *silently* mis-translate. Cross-referenced against
+`~/data/kafka` (`ConsumerConfig`/`CommonClientConfigs`/`SaslConfigs`/`SslConfigs`) and
+`librdkafka 2.x CONFIGURATION.md`. Four things to get right, ordered by how easy they are to get wrong:
+
+**(1) Default divergence — the subtle trap.** Several keys share a *name* but have *different
+defaults*, so a user relying on the Java default diverges silently if librdkafka uses its own. The
+translator pins Java's default for any such key the user left unset:
+
+| key (same name both sides) | Java default | librdkafka default | risk if unfixed |
+|---|---|---|---|
+| `isolation.level` | `read_uncommitted` | `read_committed` | **native hides uncommitted records / wrong EOS read** |
+| `check.crcs` | `true` | `false` | native skips corruption checks |
+| `allow.auto.create.topics` | `true` | `false` | consumer-side topic auto-create differs |
+| `connections.max.idle.ms` | `540000` | `0` (disabled) | connection lifecycle differs |
+| `metadata.max.age.ms` | `300000` | `900000` | metadata refresh cadence |
+| `socket.connection.setup.timeout.ms` | `10000` | `30000` | connect-failure timing |
+| `reconnect.backoff{,.max}.ms` | `50`/`1000` | `100`/`10000` | reconnect cadence |
+| `send`/`receive.buffer.bytes` | `131072`/`65536` | `0` (OS) | socket buffer sizes |
+
+**(2) Name / value translation.**
+- **1:1 (copy as-is):** `bootstrap.servers`, `group.id`, `group.instance.id`, `client.id`,
+  `client.rack`, `enable.auto.commit`, `fetch.min.bytes`, `fetch.max.bytes`, `max.partition.fetch.bytes`,
+  `max.poll.interval.ms`, `session.timeout.ms`, `heartbeat.interval.ms`, `request.timeout.ms`,
+  `retry.backoff{,.max}.ms`, `metadata.max.age.ms`, `security.protocol`,
+  `sasl.kerberos.{service.name,kinit.cmd,min.time.before.relogin}`, `ssl.{key,keystore}.password`,
+  `ssl.cipher.suites`, `ssl.endpoint.identification.algorithm`.
+- **Renamed:** `fetch.max.wait.ms` → `fetch.wait.max.ms`; `sasl.mechanism` → `sasl.mechanisms`.
+- **Value-mapped:** `auto.offset.reset` (`earliest`→`smallest`, `latest`→`largest`, `none`→`error`;
+  **`by_duration:…` has no analog → fall back**). `partition.assignment.strategy` is irrelevant — we
+  use manual `assign()`.
+
+**(3) Hard gaps — translate JVM-side, else fall back.**
+- **`sasl.jaas.config`** (a JAAS string; librdkafka has no JAAS): parse it — `PlainLoginModule`/SCRAM →
+  `sasl.username`+`sasl.password`; `Krb5LoginModule` (keyTab/principal/serviceName) →
+  `sasl.kerberos.{keytab,principal,service.name}`. A custom/unrecognized `LoginModule` → **fall back**.
+- **JKS/PKCS12 `ssl.truststore.location`/`ssl.keystore.location`** (librdkafka wants PEM): read via
+  `KeyStore`, write temp PEM → `ssl.ca.location` (CA) + `ssl.certificate.location`/`ssl.key.location`
+  (client). `ssl.truststore.type=PEM` maps directly. Conversion failure/unsupported store → **fall back**.
+- **No librdkafka equivalent** → fall back if set to a non-default: `ssl.protocol`,
+  `ssl.enabled.protocols`, `ssl.{key,trust}manager.algorithm` (JSSE-specific), `exclude.internal.topics`.
+- **`max.poll.records`** (Java-only, no analog): honor it as our native batch cap, or ignore (document).
+
+**(4) Flink forced overrides — replicate exactly.** `enable.auto.commit=false` (offsets live in
+checkpoints), `auto.offset.reset` = the `OffsetsInitializer` strategy (mapped per (2)), `client.id` =
+prefix+subtask, partition discovery handled by the enumerator (not the consumer), byte deserializers a
+no-op natively. The model: **manual `assign()` + `seek()` to the split's checkpointed offset, never
+`subscribe()`/group rebalance** (the group id is only for committed-offset reads).
+
+**Architecture.** The translator is JVM-side and emits a flat `Map<String,String>` of librdkafka keys
+(including temp PEM paths) — or a `cannot-translate: <key/reason>` that routes the table to the shallow
+fallback (logged like the expression-layer `fallbackReasons`). Native receives the ready map and
+applies it to rdkafka `ClientConfig`; it stays a dumb applier, and JAAS-parsing / JKS-conversion live
+in the JVM where the libraries are. **Test against the real Kerberos cluster** (CLAUDE.md keytab) —
+SASL/SSL is where a silent divergence bites.
 
 ## Why this is its own ticket (and not just "finish ticket 32")
 Ticket 32 keeps Flink's `KafkaSource` and accepts the one off-heap copy — cheap relative to the
