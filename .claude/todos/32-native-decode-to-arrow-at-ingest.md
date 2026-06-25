@@ -189,9 +189,14 @@ The native **decoders** are shared; the two source kinds wrap them differently:
   framework's file source owning enumeration/split-assignment/checkpointing and the native side
   reading one file's byte range — splittable at row-group/stripe granularity, projection pushed into
   the decode. The old self-enumerating Parquet source is gone. Parity vs Flink's own readers.
-  - **Avro OCF dropped:** `arrow-avro`'s reader rejects a top-level nullable union, which is exactly
-    what Flink's Avro sink writes, so a Flink-parity test isn't achievable; revisit if arrow-avro gains
-    top-level-union support. (Registry/Kafka Avro is a top-level record and is fine — that's Phase 2.)
+  - **Avro OCF dropped:** Flink's Avro sink writes the row as a top-level nullable union
+    (`["null", record]`), and **both** Arrow-bridge Avro readers reject it — arrow-avro at decoder
+    build (`codec.rs`) and DataFusion's at record read (`arrow_array_reader.rs`: "expected avro schema
+    to be a record"). DataFusion's *schema* converter tolerates it (wraps it as a `""` struct field)
+    but its reader does not. Reading Flink-written Avro therefore needs OCF header surgery (rewrite the
+    embedded writer schema to a wrapper record, then unwrap the struct) or an upstream reader that
+    accepts a top-level union — neither worth it now. Registry/Kafka Avro is a top-level record and is
+    fine — that's the streaming path below.
   - **CSV/JSON file sources** remain (text formats: schema must be supplied, decode semantics vs
     Flink's options need parity-gating) — lower priority than the streaming path.
   - **Test-baseline note:** flink-orc pins orc-core 1.5.6 (protobuf 2.5) which collides with Arrow's
