@@ -21,10 +21,10 @@ import org.apache.arrow.memory.RootAllocator;
  * <p>This is independent of memory accounting: limiting/attributing execution memory per operator is a
  * DataFusion memory-pool concern bridged to the framework's memory manager, not the allocator's scope.
  */
-final class NativeAllocator {
+public final class NativeAllocator {
 
-  static final BufferAllocator SHARED = new RootAllocator();
-  static final CDataDictionaryProvider DICTIONARIES = new CDataDictionaryProvider();
+  public static final BufferAllocator SHARED = new RootAllocator();
+  public static final CDataDictionaryProvider DICTIONARIES = new CDataDictionaryProvider();
 
   private NativeAllocator() {}
 }

@@ -495,18 +495,19 @@ public final class Native {
   public static native int pollKafkaBatch(long handle, int maxRecords, long timeoutMillis);
 
   /**
-   * Drains one pending per-partition batch: exports typed Arrow into the consumer C structs and writes
-   * {@code [partition, nextOffset]} into {@code splitMeta} so the JVM can tag it with its split id and
-   * advance that split's checkpoint offset. Returns the decoded row count. Call it {@link
-   * #pollKafkaBatch}'s return-value times.
+   * Drains one pending per-partition batch: exports typed Arrow into the consumer C structs, writes
+   * {@code [partition, nextOffset]} into {@code splitMeta}, and the topic into {@code outTopic[0]} so
+   * the JVM can form the split id and advance that split's checkpoint offset. Returns the decoded row
+   * count. Call it {@link #pollKafkaBatch}'s return-value times.
    *
    * @param handle reader handle from {@link #openKafkaConsumer}
    * @param splitMeta output {@code long[2]}: the partition id and the next offset for that split
+   * @param outTopic output {@code String[1]}: the topic of the drained split
    * @param outArrayAddress address of a consumer {@code ArrowArray} to receive the decoded batch
    * @param outSchemaAddress address of the matching {@code ArrowSchema}
    */
   public static native int drainKafkaSplit(
-      long handle, long[] splitMeta, long outArrayAddress, long outSchemaAddress);
+      long handle, long[] splitMeta, String[] outTopic, long outArrayAddress, long outSchemaAddress);
 
   /** Releases a native Kafka split reader, closing the rdkafka consumer's connections. */
   public static native void closeKafkaConsumer(long handle);

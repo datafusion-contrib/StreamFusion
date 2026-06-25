@@ -236,6 +236,16 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
           scan.getCluster(), scan.getTraitSet(), scan.getRowType(), OrcSourceMatcher.path(scan));
     }
 
+    if (KafkaTables.isNativeKafka(current)) {
+      if (!NativeConfig.operatorEnabled("kafkaSource")) {
+        return noteDisabled(current, "kafkaSource");
+      }
+      StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) current;
+      substitutions++;
+      return new StreamPhysicalNativeKafkaSource(
+          scan.getCluster(), scan.getTraitSet(), scan.getRowType(), FilesystemTables.options(scan));
+    }
+
     if (current instanceof StreamPhysicalCalc && FilterCalcMatcher.matches((Calc) current)) {
       if (!NativeConfig.operatorEnabled("filter")) {
         return noteDisabled(current, "filter");

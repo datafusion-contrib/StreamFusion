@@ -143,8 +143,10 @@ class NativeKafkaSourceTest {
       try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
           ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
         long[] meta = new long[2];
+        String[] topic = new String[1];
         int rows =
-            Native.drainKafkaSplit(handle, meta, outArray.memoryAddress(), outSchema.memoryAddress());
+            Native.drainKafkaSplit(
+                handle, meta, topic, outArray.memoryAddress(), outSchema.memoryAddress());
         checkpoint[0] = meta[1]; // single partition in this test
         try (VectorSchemaRoot out =
             Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries)) {

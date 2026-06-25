@@ -138,14 +138,14 @@
             <version>3.3.4</version>
             <scope>test</scope>
         </dependency>
-        <!-- Kafka ingest benchmark only (opt-in, Docker-gated). The shallow path is measured with the
-             plain Kafka client (what Flink's KafkaSource wraps), and Testcontainers stands up a
-             throwaway broker both paths consume from. Test-scoped — not part of the shipped library. -->
+        <!-- Kafka client classes (TopicPartition etc.) referenced by the native source's split reader.
+             Provided at runtime by the Flink Kafka connector distribution, like flink-connector-kafka
+             above; also used by the opt-in ingest benchmark and integration tests. -->
         <dependency>
             <groupId>org.apache.kafka</groupId>
             <artifactId>kafka-clients</artifactId>
             <version>3.7.1</version>
-            <scope>test</scope>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>

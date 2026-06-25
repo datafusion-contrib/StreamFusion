@@ -4977,26 +4977,30 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pollKafkaBatc
     ) as jint
 }
 
-/// Drains one pending per-partition batch: exports the decoded typed Arrow into the consumer C structs
-/// and writes `[partition, nextOffset]` into `splitMeta` so the JVM can tag it with its split id and
-/// advance that split's checkpoint offset. Returns the decoded row count; call it `pollKafkaBatch`'s
-/// return-value times.
+/// Drains one pending per-partition batch: exports the decoded typed Arrow into the consumer C structs,
+/// writes `[partition, nextOffset]` into `splitMeta`, and the topic into `outTopic[0]`, so the JVM can
+/// form the split id and advance that split's checkpoint offset. Returns the decoded row count; call it
+/// `pollKafkaBatch`'s return-value times.
 #[cfg(feature = "kafka")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_drainKafkaSplit<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     split_meta: JLongArray<'local>,
+    out_topic: JObjectArray<'local>,
     out_array_address: jlong,
     out_schema_address: jlong,
 ) -> jint {
     let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
-    let (_topic, partition, next_offset, batch) =
+    let (topic, partition, next_offset, batch) =
         reader.pending.pop().expect("drainKafkaSplit called with no pending batch");
     let rows = batch.num_rows() as jint;
     env.set_long_array_region(&split_meta, 0, &[partition as i64, next_offset])
         .expect("failed to write split meta");
+    let topic_jstr = env.new_string(&topic).expect("failed to make topic string");
+    env.set_object_array_element(&out_topic, 0, &topic_jstr)
+        .expect("failed to write topic");
     export_record_batch(batch, out_array_address, out_schema_address);
     rows
 }
