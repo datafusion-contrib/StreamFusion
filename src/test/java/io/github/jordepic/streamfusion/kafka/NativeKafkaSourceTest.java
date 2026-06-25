@@ -37,9 +37,9 @@ import org.testcontainers.utility.DockerImageName;
  * reader opened at that reported offset continues with no gap and no overlap — i.e. exactly-once across
  * a simulated checkpoint/restore. Decode is the same native JSON path the shallow operator uses.
  *
- * <p>Opt-in via {@code SF_BENCHMARK=true} (same prerequisites as the ingest benchmark: Docker for
- * Testcontainers Kafka, and a native build with the {@code kafka} cargo feature against a system
- * librdkafka). The default build excludes rdkafka and skips this test.
+ * <p>Opt-in via {@code SF_BENCHMARK=true} (Docker for Testcontainers Kafka, and a native build with
+ * the {@code kafka} cargo feature, which statically links a bundled librdkafka). The default build
+ * excludes rdkafka and skips this test.
  */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class NativeKafkaSourceTest {

@@ -38,11 +38,10 @@ import org.testcontainers.utility.DockerImageName;
  * byte-delivery saving — ~5x here, which is what justifies building the production native source.
  *
  * <p>Opt-in via {@code SF_BENCHMARK=true}; requires Docker (Testcontainers Kafka). The native side
- * needs a system librdkafka and the {@code kafka-bench} cargo feature:
- * {@code PKG_CONFIG_PATH=<dir with zlib.pc+libcurl.pc> SF_BENCHMARK=true mvn test -Pbench
- * -Dnative.cargo.args="build --release --features kafka-bench" -Dtest=KafkaIngestBenchmark}. macOS
- * ships libz/libcurl but not their .pc files — point PKG_CONFIG_PATH at stubs or `brew install zlib
- * curl`. The default build excludes rdkafka, so it needs none of this.
+ * builds with the {@code kafka-bench} cargo feature, which statically links a bundled librdkafka (no
+ * system install): {@code SF_BENCHMARK=true mvn test -Pbench
+ * -Dnative.cargo.args="build --release --features kafka-bench" -Dtest=KafkaIngestBenchmark}. The
+ * default build excludes rdkafka, so it needs none of this.
  */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class KafkaIngestBenchmark {

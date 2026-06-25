@@ -1,11 +1,16 @@
 # Fully native Kafka source (Rust consumer → Arrow, no JVM round-trip)
 
-**Status:** in progress — **two of three layers built and tested; FLIP-27 `Source` wiring remains
-(one design fork to settle).** A benchmark-grade native rdkafka consumer (`Native.benchmarkKafkaConsume`,
-behind the `kafka-bench` cargo feature) was measured head-to-head against the shallow path
-(`KafkaIngestBenchmark`): on 500k three-field JSON messages, **native ~2.7M msgs/s vs shallow ~531k =
-5.08x** (local broker, so the gap is pure JVM-client + off-heap-copy overhead; decode is shared and
-cancels). The 5x justifies building the real source.
+**Status:** DONE (v1) — **all three layers built and green end-to-end.** A `SELECT * FROM <kafka
+table>` routes through the planner to a native FLIP-27 source that consumes + decodes the topic in Rust
+and emits Arrow batches, with checkpointed per-split offsets (exactly-once across restore verified).
+The 5.08x ingest benchmark (`KafkaIngestBenchmark`: 500k three-field JSON msgs, native ~2.7M vs shallow
+~531k msgs/s, local broker) justified building it. Remaining work is hardening, not the core path — see
+"Follow-ups" at the bottom.
+
+**Linking:** rdkafka uses the **bundled static librdkafka** (rdkafka-sys mklove build — needs only a C
+toolchain + make, no system librdkafka, no cmake, no pkg-config), so any dev who clones can build the
+`kafka`/`kafka-bench` features. (Earlier dynamic-linking against a brew librdkafka + stub .pc files is
+gone.) The default build still pulls in no Kafka code at all.
 
 ## Delivered so far
 - **Config translator (JVM, unit-tested).** `kafka.KafkaConfigTranslator`: Flink consumer `Properties`
@@ -20,26 +25,35 @@ cancels). The 5x justifies building the real source.
   (`NativeKafkaSourceTest`) drives open→poll→checkpoint→reopen-at-offset→resume over 5000 msgs and
   asserts **exactly-once across the simulated restore** (every id once, no gap/overlap). (commit c67771b)
 
-## Remaining: the FLIP-27 `Source` wiring — and the design fork to settle first
-`flink-connector-kafka:5.0.0-2.2` is resolvable and targets Flink 2.2.x (dependency added, `provided`).
-Its `KafkaSource.createReader` (line 177) builds a `KafkaSourceReader` whose element type is hardcoded
-`ConsumerRecord<byte[],byte[]>` and whose `RecordEmitter` updates **per-record** offset state. Emitting
-Arrow batches instead means a fully custom `SourceReaderBase` stack (reader + `SplitFetcherManager` +
-`SplitReader<ArrowBatch, KafkaPartitionSplit>` + emitter + split-state), reusing only the
-`KafkaSourceEnumerator` + `KafkaPartitionSplit*Serializer` (coordination/state, not the hot path).
+## FLIP-27 `Source` wiring (built — design **(B) multiplex**, the chosen fork)
+`flink-connector-kafka:5.0.0-2.2` (targets Flink 2.2.x, `provided`) supplies the enumerator + split /
+enum-state serializers, reused verbatim. The element type is `NativeKafkaRecord` (Arrow batch + next
+offset), so emitting Arrow needs a custom `SourceReaderBase` stack — built on the
+`SingleThreadMultiplexSourceReaderBase(Supplier<SplitReader>, …)` constructor (no custom fetcher
+manager needed):
+- `NativeKafkaSplitReader` — **one rdkafka consumer per subtask** (B). `handleSplitsChanges` →
+  `assignKafkaSplits` (full re-`assign()` of the TPL — ground-truthed against rust-rdkafka 0.36.2:
+  `rd_kafka_assign` is the static-assignment replace; `incremental_assign` is the cooperative path we
+  don't use). Each `fetch()` polls once, **buckets by partition**, decodes one Arrow batch per
+  partition, and emits per-split records so each split's offset state advances independently.
+- Offset markers: Flink's enumerator hands `EARLIEST_OFFSET=-2 / LATEST=-1 / COMMITTED=-3` (not concrete
+  offsets) for the reader to resolve; the native side maps them to rdkafka `Offset::Beginning / End /
+  Stored` (a raw `Offset::Offset(-2)` is rejected by librdkafka — the bug that proved this).
+- Poll errors (e.g. transient `AllBrokersDown` while connecting) are logged-and-continued, matching the
+  rdkafka examples (librdkafka reconnects internally); never panic across the FFI.
+- Planner: `KafkaTables` maps a `connector='kafka'`, JSON-value, explicit-topic, supported-startup-mode
+  table whose consumer config **translates** → `StreamPhysicalNativeKafkaSource` (ColumnarOutput) →
+  `NativeKafkaSourceExecNode` (`env.fromSource`). Untranslatable/unsupported tables aren't substituted,
+  so Flink's own Kafka source runs (the fallback). Gated by `NativeConfig.operatorEnabled("kafkaSource")`.
 
-**The fork — how the native consumer maps onto a subtask's splits:**
-- **(A) One consumer per partition-split.** Each `SplitReader` owns one rdkafka consumer for one
-  partition; `fetch()` returns one Arrow batch + that split's next offset; the emitter sets the split
-  state's offset to it. Simple and obviously correct (no cross-partition batch, offset-state is 1:1),
-  but N consumers per subtask and N rdkafka instances.
-- **(B) Multiplex all of a subtask's partitions into one consumer** (what Flink does). Needs native
-  *incremental* assign/seek on `handleSplitsChanges` and per-partition batch splitting so the emitter
-  can update each split's offset state. Most efficient, but more native surface and the batch↔per-record
-  -state impedance to handle carefully.
-
-This intersects the repo principle of *not transposing at edges* (the native reader already produces
-Arrow directly — good); the open question is purely consumer↔split cardinality.
+## Follow-ups (hardening, not core path)
+- **Kerberos/SSL at runtime.** The bundled librdkafka is built without SSL/SASL; the user's cluster is
+  GSSAPI. Add the `ssl` + `gssapi-vendored` rdkafka features (heavier build) so the translator's SASL
+  output is actually honored. Until then SASL tables translate but can't connect natively.
+- **Watermarks/event-time.** The source emits with `noWatermarks()`; per-partition watermarking +
+  idleness (matching Flink's model) is not wired yet.
+- **Specific-offsets / topic-pattern startup**, and `key.format`/multi-format tables → currently fall back.
+- **wakeUp()** is a no-op (bounded poll timeout makes it unnecessary); revisit if poll timeouts grow.
 
 ## Relationship to the shallow path (ticket 32) and the deciding benchmark
 The shallow path (Flink's `KafkaSource` + byte-passthrough deserializer → row→Arrow transpose →

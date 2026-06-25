@@ -104,6 +104,15 @@
             <version>5.0.0-2.2</version>
             <scope>provided</scope>
         </dependency>
+        <!-- The JSON format factory. Flink instantiates the original kafka+json table source during SQL
+             validation (the native node replaces it only at physical-plan time), and the shallow
+             fallback uses it at runtime. Provided at runtime by the Flink distribution. -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-json</artifactId>
+            <version>${flink.version}</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-parquet</artifactId>

@@ -4867,6 +4867,10 @@ impl KafkaSplitReader {
     /// Adds splits (idempotent) and re-assigns the whole set: each newly added partition seeks to its
     /// given start offset, each existing one stays at its tracked next offset. assign() with explicit
     /// offsets both assigns and seeks, so no subscribe/rebalance is involved.
+    ///
+    /// A negative start offset is one of Flink's `KafkaPartitionSplit` markers, which the enumerator
+    /// leaves for the reader to resolve: -2 EARLIEST -> beginning, -1 LATEST -> end, -3 COMMITTED ->
+    /// the group's stored offset. A concrete (>= 0) offset seeks to exactly there.
     fn assign_splits(&mut self, topics: &[String], partitions: &[i64], offsets: &[i64]) {
         use rdkafka::consumer::Consumer;
         use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
@@ -4878,7 +4882,14 @@ impl KafkaSplitReader {
         }
         let mut tpl = TopicPartitionList::new();
         for ((topic, partition), &offset) in &self.next_offsets {
-            tpl.add_partition_offset(topic, *partition, Offset::Offset(offset))
+            let position = match offset {
+                -2 => Offset::Beginning,
+                -1 => Offset::End,
+                -3 => Offset::Stored,
+                concrete if concrete >= 0 => Offset::Offset(concrete),
+                _ => Offset::Beginning,
+            };
+            tpl.add_partition_offset(topic, *partition, position)
                 .expect("failed to add partition offset");
         }
         self.consumer.assign(&tpl).expect("failed to assign partitions");
@@ -4902,7 +4913,11 @@ impl KafkaSplitReader {
                     entry.1 = message.offset() + 1;
                     buffered += 1;
                 }
-                Some(Err(error)) => panic!("kafka consume error: {error}"),
+                // librdkafka surfaces transient connectivity events (e.g. AllBrokersDown while still
+                // connecting) as discrete poll errors; librdkafka reconnects internally, so log and
+                // keep polling (the next poll returns None once drained) — the same log-and-continue
+                // the rdkafka examples use, rather than failing the way a panic across the FFI would.
+                Some(Err(error)) => eprintln!("[streamfusion-kafka] poll error: {error}"),
                 None => break, // poll timeout with nothing pending
             }
         }
@@ -4984,7 +4999,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pollKafkaBatc
 #[cfg(feature = "kafka")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_drainKafkaSplit<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     split_meta: JLongArray<'local>,
