@@ -94,7 +94,7 @@ class NativeKafkaSourceTest {
     }
   }
 
-  /** Opens a native reader assigned to {@code (TOPIC, 0)} at {@code startOffset}. */
+  /** Opens a native reader and assigns it {@code (TOPIC, 0)} starting at {@code startOffset}. */
   private static long open(
       BufferAllocator allocator,
       CDataDictionaryProvider dictionaries,
@@ -123,38 +123,36 @@ class NativeKafkaSourceTest {
           ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
         template.setRowCount(0);
         Data.exportVectorSchemaRoot(allocator, template, dictionaries, array, schema);
-        return Native.openKafkaConsumer(
-            keys,
-            values,
-            new String[] {TOPIC},
-            new long[] {0},
-            new long[] {startOffset},
-            array.memoryAddress(),
-            schema.memoryAddress());
+        long handle =
+            Native.openKafkaConsumer(keys, values, array.memoryAddress(), schema.memoryAddress());
+        Native.assignKafkaSplits(handle, new String[] {TOPIC}, new long[] {0}, new long[] {startOffset});
+        return handle;
       }
     }
   }
 
-  /** Polls one batch, collecting decoded ids and updating {@code checkpoint[0]} to the next offset. */
+  /** Polls a cycle, draining each per-partition batch's ids and the (single) split's next offset. */
   private static void poll(
       long handle,
       BufferAllocator allocator,
       CDataDictionaryProvider dictionaries,
       Set<Long> ids,
       long[] checkpoint) {
-    try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
-        ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      long[] nextOffsets = {checkpoint[0]};
-      int rows =
-          Native.pollKafkaBatch(
-              handle, 1024, 2000, nextOffsets, outArray.memoryAddress(), outSchema.memoryAddress());
-      checkpoint[0] = nextOffsets[0];
-      try (VectorSchemaRoot out =
-          Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries)) {
-        assertEquals(rows, out.getRowCount());
-        BigIntVector id = (BigIntVector) out.getVector("id");
-        for (int i = 0; i < out.getRowCount(); i++) {
-          ids.add(id.get(i));
+    int pending = Native.pollKafkaBatch(handle, 1024, 2000);
+    for (int p = 0; p < pending; p++) {
+      try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
+          ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+        long[] meta = new long[2];
+        int rows =
+            Native.drainKafkaSplit(handle, meta, outArray.memoryAddress(), outSchema.memoryAddress());
+        checkpoint[0] = meta[1]; // single partition in this test
+        try (VectorSchemaRoot out =
+            Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries)) {
+          assertEquals(rows, out.getRowCount());
+          BigIntVector id = (BigIntVector) out.getVector("id");
+          for (int i = 0; i < out.getRowCount(); i++) {
+            ids.add(id.get(i));
+          }
         }
       }
     }

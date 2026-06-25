@@ -4822,37 +4822,31 @@ fn read_string_array(env: &mut JNIEnv, array: &JObjectArray) -> Vec<String> {
     out
 }
 
-/// The production native Kafka consumer for one Flink subtask's assigned splits: an rdkafka
-/// `BaseConsumer` that manually `assign()`s a fixed set of (topic, partition) at explicit starting
-/// offsets — never `subscribe()`/group-rebalance, matching Flink's `KafkaPartitionSplitReader` — polls
-/// payloads straight into an Arrow binary column, and decodes them to typed Arrow in Rust (no JVM heap
-/// byte[], no per-record JNI). It tracks the next offset to consume per partition so the JVM can
-/// checkpoint it; on restore the JVM reopens the reader at those offsets. The librdkafka config is the
-/// map produced by the JVM-side `KafkaConfigTranslator`; this side is a dumb applier.
+/// The production native Kafka consumer for one Flink subtask: a single rdkafka `BaseConsumer` that
+/// multiplexes all of the subtask's assigned partitions (Flink-parity — one consumer, not one per
+/// split). It manually `assign()`s (topic, partition) at explicit offsets and re-assigns as the
+/// enumerator hands over more splits — never `subscribe()`/group-rebalance, matching Flink's
+/// `KafkaPartitionSplitReader`. Each poll buckets messages **by partition** and decodes one typed Arrow
+/// batch per partition, so every split's checkpointed offset advances independently; the decoded
+/// batches sit in `pending` until the JVM drains them into its per-split `RecordsWithSplitIds`. Payloads
+/// go straight from librdkafka into an Arrow builder (no JVM heap byte[], no per-record JNI). The
+/// librdkafka config is the map from the JVM-side `KafkaConfigTranslator`; this side is a dumb applier.
 #[cfg(feature = "kafka")]
 struct KafkaSplitReader {
     consumer: rdkafka::consumer::BaseConsumer,
     decoder: JsonDecoder,
     body_schema: SchemaRef,
-    /// `next_offsets[i]` is the offset the JVM will resume the i-th open-time split from, written back
-    /// after each poll for checkpointing (index-aligned with the partitions the JVM passed at open).
-    next_offsets: Vec<i64>,
-    /// (topic, partition) -> index into `next_offsets`, to attribute each polled message to its split.
-    index_of: HashMap<(String, i32), usize>,
+    /// Next offset to consume per assigned partition — the split's checkpoint position. Re-assigns seek
+    /// existing partitions back here (a no-op) and new ones to their start offset.
+    next_offsets: HashMap<(String, i32), i64>,
+    /// Per-partition decoded batches from the last poll, drained one split at a time by the JVM.
+    pending: Vec<(String, i32, i64, RecordBatch)>,
 }
 
 #[cfg(feature = "kafka")]
 impl KafkaSplitReader {
-    fn open(
-        config: &[(String, String)],
-        topics: &[String],
-        partitions: &[i64],
-        offsets: &[i64],
-        output_schema: SchemaRef,
-    ) -> KafkaSplitReader {
+    fn open(config: &[(String, String)], output_schema: SchemaRef) -> KafkaSplitReader {
         use rdkafka::config::ClientConfig;
-        use rdkafka::consumer::Consumer;
-        use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 
         let mut client = ClientConfig::new();
         for (key, value) in config {
@@ -4860,62 +4854,74 @@ impl KafkaSplitReader {
         }
         let consumer: rdkafka::consumer::BaseConsumer =
             client.create().expect("failed to create kafka consumer");
-
-        // assign() with an explicit per-partition offset both assigns the split and seeks to the
-        // checkpointed position in one step — no subscribe(), no group rebalance.
-        let mut tpl = TopicPartitionList::new();
-        let mut index_of = HashMap::with_capacity(topics.len());
-        for i in 0..topics.len() {
-            let partition = partitions[i] as i32;
-            tpl.add_partition_offset(&topics[i], partition, Offset::Offset(offsets[i]))
-                .expect("failed to add partition offset");
-            index_of.insert((topics[i].clone(), partition), i);
-        }
-        consumer.assign(&tpl).expect("failed to assign partitions");
-
         let body_schema = Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)]));
         KafkaSplitReader {
             consumer,
             decoder: JsonDecoder::new(output_schema),
             body_schema,
-            next_offsets: offsets.to_vec(),
-            index_of,
+            next_offsets: HashMap::new(),
+            pending: Vec::new(),
         }
     }
 
-    /// Polls up to `max_records` messages (or until `timeout` elapses with none pending), decodes the
-    /// batch to typed Arrow, and advances `next_offsets`. Returns the decoded batch (empty if nothing
-    /// was polled within the timeout).
-    fn poll(&mut self, max_records: usize, timeout: std::time::Duration) -> RecordBatch {
+    /// Adds splits (idempotent) and re-assigns the whole set: each newly added partition seeks to its
+    /// given start offset, each existing one stays at its tracked next offset. assign() with explicit
+    /// offsets both assigns and seeks, so no subscribe/rebalance is involved.
+    fn assign_splits(&mut self, topics: &[String], partitions: &[i64], offsets: &[i64]) {
+        use rdkafka::consumer::Consumer;
+        use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
+
+        for i in 0..topics.len() {
+            self.next_offsets
+                .entry((topics[i].clone(), partitions[i] as i32))
+                .or_insert(offsets[i]);
+        }
+        let mut tpl = TopicPartitionList::new();
+        for ((topic, partition), &offset) in &self.next_offsets {
+            tpl.add_partition_offset(topic, *partition, Offset::Offset(offset))
+                .expect("failed to add partition offset");
+        }
+        self.consumer.assign(&tpl).expect("failed to assign partitions");
+    }
+
+    /// Polls up to `max_records` messages, buckets them by partition, and decodes one typed Arrow batch
+    /// per partition into `pending`, advancing each split's next offset. Returns the number of
+    /// per-partition batches now pending (0 on a poll timeout).
+    fn poll(&mut self, max_records: usize, timeout: std::time::Duration) -> usize {
         use arrow::array::BinaryBuilder;
         use rdkafka::message::Message;
 
-        let mut builder = BinaryBuilder::new();
+        let mut builders: HashMap<(String, i32), (BinaryBuilder, i64)> = HashMap::new();
         let mut buffered = 0usize;
         while buffered < max_records {
             match self.consumer.poll(timeout) {
                 Some(Ok(message)) => {
-                    builder.append_value(message.payload().unwrap_or(&[]));
                     let key = (message.topic().to_string(), message.partition());
-                    if let Some(&index) = self.index_of.get(&key) {
-                        self.next_offsets[index] = message.offset() + 1;
-                    }
+                    let entry = builders.entry(key).or_insert_with(|| (BinaryBuilder::new(), 0));
+                    entry.0.append_value(message.payload().unwrap_or(&[]));
+                    entry.1 = message.offset() + 1;
                     buffered += 1;
                 }
                 Some(Err(error)) => panic!("kafka consume error: {error}"),
                 None => break, // poll timeout with nothing pending
             }
         }
-        let body = RecordBatch::try_new(self.body_schema.clone(), vec![Arc::new(builder.finish())])
-            .expect("failed to build kafka body batch");
-        self.decoder.decode(&body)
+        self.pending.clear();
+        for ((topic, partition), (mut builder, next_offset)) in builders {
+            let body = RecordBatch::try_new(self.body_schema.clone(), vec![Arc::new(builder.finish())])
+                .expect("failed to build kafka body batch");
+            let decoded = self.decoder.decode(&body);
+            self.next_offsets.insert((topic.clone(), partition), next_offset);
+            self.pending.push((topic, partition, next_offset, decoded));
+        }
+        self.pending.len()
     }
 }
 
-/// Opens a native Kafka split reader for one subtask's assignment and returns an opaque handle,
-/// released with `closeKafkaConsumer`. `configKeys`/`configValues` are the translated librdkafka
-/// config (applied verbatim); `topics`/`partitions`/`startOffsets` are index-aligned splits, each
-/// assigned and seeked to its starting offset; the schema C structs carry the decoder's output schema.
+/// Opens a native Kafka split reader for one subtask and returns an opaque handle, released with
+/// `closeKafkaConsumer`. `configKeys`/`configValues` are the translated librdkafka config (applied
+/// verbatim); the schema C structs carry the decoder's output schema. Splits are added later via
+/// `assignKafkaSplits` as the enumerator assigns them.
 #[cfg(feature = "kafka")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_openKafkaConsumer<'local>(
@@ -4923,46 +4929,74 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_openKafkaCons
     _class: JClass<'local>,
     config_keys: JObjectArray<'local>,
     config_values: JObjectArray<'local>,
-    topics: JObjectArray<'local>,
-    partitions: JLongArray<'local>,
-    start_offsets: JLongArray<'local>,
     schema_array_address: jlong,
     schema_address: jlong,
 ) -> jlong {
     let keys = read_string_array(&mut env, &config_keys);
     let values = read_string_array(&mut env, &config_values);
     let config: Vec<(String, String)> = keys.into_iter().zip(values).collect();
-    let topics = read_string_array(&mut env, &topics);
-    let partitions = read_longs(&env, &partitions);
-    let offsets = read_longs(&env, &start_offsets);
     let schema = import_record_batch(schema_array_address, schema_address).schema();
-    let reader = KafkaSplitReader::open(&config, &topics, &partitions, &offsets, schema);
+    let reader = KafkaSplitReader::open(&config, schema);
     Box::into_raw(Box::new(reader)) as jlong
 }
 
-/// Polls one batch from the native reader, exporting the decoded typed Arrow into the consumer C
-/// structs and writing each split's next offset into `nextOffsets` (index-aligned with the open-time
-/// splits) for the JVM to checkpoint. Returns the number of decoded rows (0 on a poll timeout).
+/// Adds splits to the reader and re-assigns: `topics`/`partitions`/`startOffsets` are index-aligned;
+/// new partitions seek to their start offset, existing ones keep their tracked position.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_assignKafkaSplits<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    topics: JObjectArray<'local>,
+    partitions: JLongArray<'local>,
+    start_offsets: JLongArray<'local>,
+) {
+    let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
+    let topics = read_string_array(&mut env, &topics);
+    let partitions = read_longs(&env, &partitions);
+    let offsets = read_longs(&env, &start_offsets);
+    reader.assign_splits(&topics, &partitions, &offsets);
+}
+
+/// Polls one cycle, decoding one Arrow batch per partition that had messages. Returns the number of
+/// per-partition batches now pending; the JVM drains each with `drainKafkaSplit`.
 #[cfg(feature = "kafka")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pollKafkaBatch<'local>(
-    env: JNIEnv<'local>,
+    _env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     max_records: jint,
     timeout_ms: jlong,
-    next_offsets: JLongArray<'local>,
+) -> jint {
+    let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
+    reader.poll(
+        max_records as usize,
+        std::time::Duration::from_millis(timeout_ms as u64),
+    ) as jint
+}
+
+/// Drains one pending per-partition batch: exports the decoded typed Arrow into the consumer C structs
+/// and writes `[partition, nextOffset]` into `splitMeta` so the JVM can tag it with its split id and
+/// advance that split's checkpoint offset. Returns the decoded row count; call it `pollKafkaBatch`'s
+/// return-value times.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_drainKafkaSplit<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    split_meta: JLongArray<'local>,
     out_array_address: jlong,
     out_schema_address: jlong,
 ) -> jint {
     let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
-    let batch = reader.poll(
-        max_records as usize,
-        std::time::Duration::from_millis(timeout_ms as u64),
-    );
+    let (_topic, partition, next_offset, batch) =
+        reader.pending.pop().expect("drainKafkaSplit called with no pending batch");
     let rows = batch.num_rows() as jint;
-    env.set_long_array_region(&next_offsets, 0, &reader.next_offsets)
-        .expect("failed to write back next offsets");
+    env.set_long_array_region(&split_meta, 0, &[partition as i64, next_offset])
+        .expect("failed to write split meta");
     export_record_batch(batch, out_array_address, out_schema_address);
     rows
 }

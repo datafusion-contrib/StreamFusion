@@ -459,47 +459,54 @@ public final class Native {
       String brokers, String topic, long schemaArrayAddress, long schemaAddress, long maxMessages);
 
   /**
-   * Opens a native Kafka split reader for one subtask's assigned splits and returns an opaque handle,
-   * released with {@link #closeKafkaConsumer}. The reader manually assigns each (topic, partition) and
-   * seeks to its starting offset — never subscribe/rebalance — mirroring Flink's
-   * {@code KafkaPartitionSplitReader}.
+   * Opens a native Kafka split reader for one subtask and returns an opaque handle, released with
+   * {@link #closeKafkaConsumer}. One rdkafka consumer multiplexes the subtask's partitions; splits are
+   * added later with {@link #assignKafkaSplits} as the enumerator assigns them. The reader manually
+   * assigns + seeks (never subscribe/rebalance), mirroring Flink's {@code KafkaPartitionSplitReader}.
    *
    * @param configKeys translated librdkafka config keys (from {@code KafkaConfigTranslator})
    * @param configValues values index-aligned with {@code configKeys}, applied verbatim
-   * @param topics split topics, index-aligned with {@code partitions}/{@code startOffsets}
-   * @param partitions split partition ids
-   * @param startOffsets offset to assign+seek each split to (its checkpointed resume position)
    * @param schemaArrayAddress address of an exported (empty) {@code ArrowArray} of the decoder's schema
    * @param schemaAddress address of the matching exported {@code ArrowSchema}
    */
   public static native long openKafkaConsumer(
-      String[] configKeys,
-      String[] configValues,
-      String[] topics,
-      long[] partitions,
-      long[] startOffsets,
-      long schemaArrayAddress,
-      long schemaAddress);
+      String[] configKeys, String[] configValues, long schemaArrayAddress, long schemaAddress);
 
   /**
-   * Polls one decoded batch from the reader, exporting typed Arrow into the consumer C structs and
-   * writing each split's next offset into {@code nextOffsets} (index-aligned with the open-time splits)
-   * for the JVM to checkpoint. Returns the decoded row count (0 on a poll timeout).
+   * Adds splits to the reader and re-assigns the consumer: each new partition seeks to its start
+   * offset, each already-assigned one keeps its tracked position. Index-aligned arrays.
+   *
+   * @param handle reader handle from {@link #openKafkaConsumer}
+   * @param topics split topics
+   * @param partitions split partition ids
+   * @param startOffsets offset to assign+seek each new split to (its checkpointed resume position)
+   */
+  public static native void assignKafkaSplits(
+      long handle, String[] topics, long[] partitions, long[] startOffsets);
+
+  /**
+   * Polls one cycle, decoding one Arrow batch per partition that had messages. Returns the number of
+   * per-partition batches now pending; drain each with {@link #drainKafkaSplit}.
    *
    * @param handle reader handle from {@link #openKafkaConsumer}
    * @param maxRecords cap on messages per poll (the native batch size; Java's {@code max.poll.records})
-   * @param timeoutMillis poll timeout; returns an empty batch if nothing arrives within it
-   * @param nextOffsets output: next offset to resume each open-time split from
+   * @param timeoutMillis poll timeout; returns 0 if nothing arrives within it
+   */
+  public static native int pollKafkaBatch(long handle, int maxRecords, long timeoutMillis);
+
+  /**
+   * Drains one pending per-partition batch: exports typed Arrow into the consumer C structs and writes
+   * {@code [partition, nextOffset]} into {@code splitMeta} so the JVM can tag it with its split id and
+   * advance that split's checkpoint offset. Returns the decoded row count. Call it {@link
+   * #pollKafkaBatch}'s return-value times.
+   *
+   * @param handle reader handle from {@link #openKafkaConsumer}
+   * @param splitMeta output {@code long[2]}: the partition id and the next offset for that split
    * @param outArrayAddress address of a consumer {@code ArrowArray} to receive the decoded batch
    * @param outSchemaAddress address of the matching {@code ArrowSchema}
    */
-  public static native int pollKafkaBatch(
-      long handle,
-      int maxRecords,
-      long timeoutMillis,
-      long[] nextOffsets,
-      long outArrayAddress,
-      long outSchemaAddress);
+  public static native int drainKafkaSplit(
+      long handle, long[] splitMeta, long outArrayAddress, long outSchemaAddress);
 
   /** Releases a native Kafka split reader, closing the rdkafka consumer's connections. */
   public static native void closeKafkaConsumer(long handle);
