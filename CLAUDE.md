@@ -5,10 +5,17 @@ We are aiming for IDENTICAL results in stream processing jobs to flink. To start
 oriented streaming sources pop up more and more (see Fluss, for example, or open table CDC), being able to run jobs
 at massive throughput becomes more important.
 
-This project is meant to be open sourced. For each commit, I want small, targeted diffs with a clear purpose. Commit
-messages should be used as the sole source of truth for developer-facing documentation. They should be more
-architectural in nature - do not name specific classes that the average developer does not know off the top of their
-head, but instead concisely explain the "why" of the change and the reasons for our architecture.
+This is an open-source project built for the community, not just for the maintainer. Design and tooling decisions
+must serve any developer who clones the repo: prefer self-contained, portable setups (e.g. a build that needs no
+machine-specific install — see the bundled-static native Kafka linking) over anything that assumes the maintainer's
+environment. Never bake in personal absolute paths, hostnames, credentials, or internal-infrastructure assumptions;
+keep those out of the codebase and tests. When a choice trades convenience-for-me against works-for-everyone, choose
+works-for-everyone.
+
+For each commit, I want small, targeted diffs with a clear purpose. Commit messages should be used as the sole source
+of truth for developer-facing documentation. They should be more architectural in nature - do not name specific
+classes that the average developer does not know off the top of their head, but instead concisely explain the "why"
+of the change and the reasons for our architecture.
 
 When reviewing code, make sure that it follows the existing principles of codebases which we will take influence from:
 - Flink (see ~/data/flink for code)
