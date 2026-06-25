@@ -60,28 +60,45 @@ class KafkaIngestBenchmark {
       String brokers = kafka.getBootstrapServers();
       produce(brokers, MESSAGES);
 
-      double shallow = time(() -> consumeAndDecode(brokers)); // JVM client + heap byte[] + decode
-      double nativeSecs = time(() -> nativeConsumeAndDecode(brokers)); // rdkafka + decode, all native
+      // Profiling mode: loop the native consume so a sampler has a long, stable window over the poll
+      // thread (librdkafka poll + the byte copy) and the Rust decode thread.
+      if ("1".equals(System.getenv("SF_KAFKA_PROFILE"))) {
+        for (int i = 0; i < 30; i++) {
+          nativeConsumeAndDecode(brokers);
+        }
+        return;
+      }
+
+      // SAME harness (plain JVM), both legs decode to Arrow and count IN RUST — no per-batch export to
+      // the JVM, as they'd feed a downstream native operator. The only difference is who polls Kafka:
+      // Java's batch poll vs librdkafka's per-message poll.
+      double shallow = time(() -> consumeAndDecode(brokers)); // Java batch poll -> bytes -> native decode
+      double nativeSecs = time(() -> nativeConsumeAndDecode(brokers)); // rdkafka poll + native decode
 
       System.out.printf(
-          "%n[kafka ingest, %,d three-field JSON msgs]%n"
-              + "  shallow (JVM client + off-heap copy + native decode): %.2fs  =  %,.0f msgs/s%n"
-              + "  native  (rdkafka + native decode):                     %.2fs  =  %,.0f msgs/s%n"
+          "%n[kafka -> Arrow IN RUST, %,d three-field JSON msgs, same plain-JVM harness]%n"
+              + "  shallow (Java batch poll -> native decode): %.2fs  =  %,.0f msgs/s%n"
+              + "  native  (rdkafka poll + native decode):     %.2fs  =  %,.0f msgs/s%n"
               + "  native speedup: %.2fx%n",
-          MESSAGES,
-          shallow,
-          MESSAGES / shallow,
-          nativeSecs,
-          MESSAGES / nativeSecs,
-          shallow / nativeSecs);
+          MESSAGES, shallow, MESSAGES / shallow, nativeSecs, MESSAGES / nativeSecs, shallow / nativeSecs);
     }
   }
 
-  /** Runs {@code work} once to warm up (JIT, page-cache), then again timed; returns the timed seconds. */
-  private static double time(Runnable work) {
-    work.run();
+  /**
+   * Runs {@code work} once to warm up (JIT, page-cache), then again timed; asserts both runs decoded
+   * every message (a run that silently reads nothing would otherwise report an absurd rate) and returns
+   * the timed seconds.
+   */
+  private static double time(java.util.function.LongSupplier work) {
+    long warm = work.getAsLong();
+    if (warm < MESSAGES) {
+      throw new AssertionError("warm-up decoded " + warm + " rows, expected >= " + MESSAGES);
+    }
     long start = System.nanoTime();
-    work.run();
+    long timed = work.getAsLong();
+    if (timed < MESSAGES) {
+      throw new AssertionError("timed run decoded " + timed + " rows, expected >= " + MESSAGES);
+    }
     return (System.nanoTime() - start) / 1e9;
   }
 
@@ -138,7 +155,11 @@ class KafkaIngestBenchmark {
     return rows;
   }
 
-  /** Builds the binary batch of a poll's values, decodes it natively, and returns the decoded rows. */
+  /**
+   * Builds the Arrow binary column of a poll's values and decodes it natively, counting the decoded
+   * rows in Rust (no export back to the JVM) — so the shallow path terminates with Arrow in Rust, the
+   * same as the native consumer.
+   */
   private static long decodeBatch(
       long handle,
       ConsumerRecords<byte[], byte[]> records,
@@ -155,33 +176,29 @@ class KafkaIngestBenchmark {
       VectorSchemaRoot in = new VectorSchemaRoot(List.of(body));
       in.setRowCount(count);
       try (ArrowArray inArray = ArrowArray.allocateNew(allocator);
-          ArrowSchema inSchema = ArrowSchema.allocateNew(allocator);
-          ArrowArray outArray = ArrowArray.allocateNew(allocator);
-          ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+          ArrowSchema inSchema = ArrowSchema.allocateNew(allocator)) {
         Data.exportVectorSchemaRoot(allocator, in, dictionaries, inArray, inSchema);
-        Native.decodeJson(
-            handle,
-            inArray.memoryAddress(),
-            inSchema.memoryAddress(),
-            outArray.memoryAddress(),
-            outSchema.memoryAddress());
-        try (VectorSchemaRoot out =
-            Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries)) {
-          return out.getRowCount();
-        }
+        return Native.decodeJsonCount(handle, inArray.memoryAddress(), inSchema.memoryAddress());
       }
     }
   }
 
-  /** Consumes and decodes the whole topic natively (rdkafka + native decode); returns the row count. */
+  /**
+   * Drives the production split reader (rdkafka poll + background decode thread) over the topic and
+   * counts decoded rows in Rust — terminating with Arrow in Rust, no per-batch JVM export.
+   */
   private static long nativeConsumeAndDecode(String brokers) {
+    String[] keys = {
+      "bootstrap.servers", "group.id", "enable.auto.commit", "fetch.queue.backoff.ms", "check.crcs"
+    };
+    String[] values = {brokers, "bench-native-" + System.nanoTime(), "false", "2", "false"};
     try (BufferAllocator allocator = new RootAllocator();
         CDataDictionaryProvider dictionaries = new CDataDictionaryProvider()) {
       return withExportedSchema(
           allocator,
           dictionaries,
           (arrayAddress, schemaAddress) ->
-              Native.benchmarkKafkaConsume(brokers, TOPIC, arrayAddress, schemaAddress, MESSAGES));
+              Native.benchmarkNativeConsume(keys, values, TOPIC, arrayAddress, schemaAddress, MESSAGES));
     }
   }
 
