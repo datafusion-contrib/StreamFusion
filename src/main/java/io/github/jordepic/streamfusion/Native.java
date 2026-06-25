@@ -443,6 +443,22 @@ public final class Native {
   public static native void closeJsonDecoder(long handle);
 
   /**
+   * Benchmark-only: consume an entire topic with a native rdkafka consumer and decode it to typed
+   * Arrow entirely in native code (payloads go from librdkafka straight into an Arrow builder — no JVM
+   * heap byte[] and no per-record JNI crossing), returning the decoded row count. The JVM times this
+   * one call to compare native consume+decode against the shallow path. Not the production source —
+   * no enumerator/offset/config-fidelity work (see the native-source todo).
+   *
+   * @param brokers bootstrap servers
+   * @param topic topic to consume from the beginning
+   * @param schemaArrayAddress address of an exported (empty) {@code ArrowArray} of the target schema
+   * @param schemaAddress address of the matching exported {@code ArrowSchema}
+   * @param maxMessages stop after consuming this many messages
+   */
+  public static native long benchmarkKafkaConsume(
+      String brokers, String topic, long schemaArrayAddress, long schemaAddress, long maxMessages);
+
+  /**
    * Creates an event-time INNER interval joiner and returns an opaque handle. It buffers both inputs
    * per equi-join key and emits a matched pair when the second of its two rows arrives. The JVM owns
    * the handle across calls and must release it with {@link #closeIntervalJoiner}.

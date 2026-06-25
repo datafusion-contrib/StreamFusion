@@ -19,10 +19,18 @@ datafusion-orc = { git = "https://github.com/datafusion-contrib/datafusion-orc.g
 orc-rust = "0.8"
 parquet = { version = "58", features = ["arrow"] }
 datafusion = "53.1.0"
+# Native Kafka consumer, behind the `kafka-bench` feature so the normal build needs no librdkafka.
+# Dynamic-linked against the system librdkafka (brew install librdkafka) — no cmake/bundled build; the
+# sync BaseConsumer is enough, so tokio/libz default features are off.
+rdkafka = { version = "0.36", default-features = false, features = ["dynamic-linking"], optional = true }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 futures = "0.3"
 # Fast hashing for the per-row grouping map (the same hasher arrow/datafusion use internally).
 ahash = "0.8"
+
+[features]
+# Opt-in: the native Kafka consumer used only by the ingest benchmark (needs a system librdkafka).
+kafka-bench = ["dep:rdkafka"]
 
 [dev-dependencies]
 criterion = "0.5"

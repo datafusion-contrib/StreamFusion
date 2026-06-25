@@ -4809,6 +4809,77 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeJsonDeco
     }
 }
 
+/// Benchmark-only: consume an entire topic with a native (rdkafka) consumer and decode it to typed
+/// Arrow, all in Rust — message payloads go straight from librdkafka into an Arrow binary builder (one
+/// copy, no JVM heap byte[] and no per-record JNI crossing), then through the same `JsonDecoder` the
+/// shallow path uses. Returns the decoded row count; the JVM times this single call to compare native
+/// consume+decode against the shallow path. This is the fast path's measurement, not yet the
+/// production FLIP-27 source (no enumerator/offset/config-fidelity work — see ticket 33).
+#[cfg(feature = "kafka-bench")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_benchmarkKafkaConsume<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    brokers: JString<'local>,
+    topic: JString<'local>,
+    schema_array_address: jlong,
+    schema_address: jlong,
+    max_messages: jlong,
+) -> jlong {
+    use arrow::array::BinaryBuilder;
+    use rdkafka::config::ClientConfig;
+    use rdkafka::consumer::{BaseConsumer, Consumer};
+    use rdkafka::message::Message;
+
+    let brokers: String = env.get_string(&brokers).expect("failed to read brokers").into();
+    let topic: String = env.get_string(&topic).expect("failed to read topic").into();
+    let decoder = JsonDecoder::new(import_record_batch(schema_array_address, schema_address).schema());
+
+    // A fresh group reading from the beginning each run; offsets are not committed (the consumer is
+    // throwaway). This mirrors the manual, non-committing consumption the production source would do.
+    let group = format!("streamfusion-bench-{}", std::process::id());
+    let consumer: BaseConsumer = ClientConfig::new()
+        .set("bootstrap.servers", &brokers)
+        .set("group.id", &group)
+        .set("enable.auto.commit", "false")
+        .set("auto.offset.reset", "earliest")
+        .create()
+        .expect("failed to create kafka consumer");
+    consumer.subscribe(&[&topic]).expect("failed to subscribe");
+
+    let body_field = Field::new("body", DataType::Binary, true);
+    let body_schema = Arc::new(Schema::new(vec![body_field]));
+    let mut builder = BinaryBuilder::new();
+    let mut buffered = 0usize;
+    let mut seen: i64 = 0;
+    let mut rows: i64 = 0;
+    let mut decode = |builder: &mut BinaryBuilder| -> i64 {
+        let batch = RecordBatch::try_new(body_schema.clone(), vec![Arc::new(builder.finish())])
+            .expect("failed to build kafka body batch");
+        decoder.decode(&batch).num_rows() as i64
+    };
+
+    while seen < max_messages {
+        match consumer.poll(std::time::Duration::from_secs(5)) {
+            Some(Ok(message)) => {
+                builder.append_value(message.payload().unwrap_or(&[]));
+                buffered += 1;
+                seen += 1;
+                if buffered >= 8192 {
+                    rows += decode(&mut builder);
+                    buffered = 0;
+                }
+            }
+            Some(Err(error)) => panic!("kafka consume error: {error}"),
+            None => break, // poll timeout: the produced messages are exhausted
+        }
+    }
+    if buffered > 0 {
+        rows += decode(&mut builder);
+    }
+    rows
+}
+
 /// Creates an event-time INNER interval joiner and returns an opaque handle. The key/time column
 /// indices locate the equi-join key and rowtime within each side's input batch; `lower`/`upper` are
 /// the inclusive bounds (millis) on `left.rt - right.rt`. The JVM owns the handle across calls.

@@ -31,12 +31,18 @@ import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * Throughput of the shallow Kafka ingest path — Flink's connector wraps the same Kafka client, so this
- * measures its essence: consume message values (heap {@code byte[]}s), batch them into an Arrow binary
- * column (the heap→off-heap copy a native consumer would avoid), and decode natively to typed Arrow.
- * Decode is shared with the future native path, so the gap between this number and a native rdkafka
- * consumer is the saving that justifies (or not) building one. Opt-in via {@code SF_BENCHMARK=true};
- * requires Docker (Testcontainers Kafka).
+ * Head-to-head Kafka ingest throughput: the shallow path (Flink's connector wraps the same Kafka
+ * client — consume message values as heap {@code byte[]}s, batch them into an Arrow binary column,
+ * decode natively) vs the native path (rdkafka consumes straight into an Arrow builder, no JVM
+ * byte[]/JNI per record, then the same decode). Decode is shared, so the gap is purely the consume +
+ * byte-delivery saving — ~5x here, which is what justifies building the production native source.
+ *
+ * <p>Opt-in via {@code SF_BENCHMARK=true}; requires Docker (Testcontainers Kafka). The native side
+ * needs a system librdkafka and the {@code kafka-bench} cargo feature:
+ * {@code PKG_CONFIG_PATH=<dir with zlib.pc+libcurl.pc> SF_BENCHMARK=true mvn test -Pbench
+ * -Dnative.cargo.args="build --release --features kafka-bench" -Dtest=KafkaIngestBenchmark}. macOS
+ * ships libz/libcurl but not their .pc files — point PKG_CONFIG_PATH at stubs or `brew install zlib
+ * curl`. The default build excludes rdkafka, so it needs none of this.
  */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class KafkaIngestBenchmark {
@@ -48,23 +54,36 @@ class KafkaIngestBenchmark {
   private static final String TOPIC = "bench-json";
 
   @Test
-  void shallowKafkaToArrowDecode() throws Exception {
+  void shallowVsNativeKafkaIngest() throws Exception {
     try (KafkaContainer kafka =
         new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
       kafka.start();
       String brokers = kafka.getBootstrapServers();
       produce(brokers, MESSAGES);
 
-      // Warmup pass (JIT) then a timed pass over the same topic.
-      consumeAndDecode(brokers);
-      long start = System.nanoTime();
-      long rows = consumeAndDecode(brokers);
-      double seconds = (System.nanoTime() - start) / 1e9;
+      double shallow = time(() -> consumeAndDecode(brokers)); // JVM client + heap byte[] + decode
+      double nativeSecs = time(() -> nativeConsumeAndDecode(brokers)); // rdkafka + decode, all native
 
       System.out.printf(
-          "%n[kafka shallow]  %,d msgs decoded in %.2fs  =  %,.0f msgs/s  (%d rows)%n",
-          MESSAGES, seconds, MESSAGES / seconds, rows);
+          "%n[kafka ingest, %,d three-field JSON msgs]%n"
+              + "  shallow (JVM client + off-heap copy + native decode): %.2fs  =  %,.0f msgs/s%n"
+              + "  native  (rdkafka + native decode):                     %.2fs  =  %,.0f msgs/s%n"
+              + "  native speedup: %.2fx%n",
+          MESSAGES,
+          shallow,
+          MESSAGES / shallow,
+          nativeSecs,
+          MESSAGES / nativeSecs,
+          shallow / nativeSecs);
     }
+  }
+
+  /** Runs {@code work} once to warm up (JIT, page-cache), then again timed; returns the timed seconds. */
+  private static double time(Runnable work) {
+    work.run();
+    long start = System.nanoTime();
+    work.run();
+    return (System.nanoTime() - start) / 1e9;
   }
 
   /** Produces MESSAGES three-field JSON documents to the topic. */
@@ -103,7 +122,7 @@ class KafkaIngestBenchmark {
         CDataDictionaryProvider dictionaries = new CDataDictionaryProvider();
         KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(props)) {
       consumer.subscribe(List.of(TOPIC));
-      long handle = createDecoder(allocator, dictionaries);
+      long handle = withExportedSchema(allocator, dictionaries, Native::createJsonDecoder);
       try {
         while (seen < MESSAGES) {
           ConsumerRecords<byte[], byte[]> records = consumer.poll(Duration.ofSeconds(5));
@@ -155,8 +174,26 @@ class KafkaIngestBenchmark {
     }
   }
 
-  /** Creates a native JSON decoder for the {@code id BIGINT, name STRING, score DOUBLE} schema. */
-  private static long createDecoder(BufferAllocator allocator, CDataDictionaryProvider dictionaries) {
+  /** Consumes and decodes the whole topic natively (rdkafka + native decode); returns the row count. */
+  private static long nativeConsumeAndDecode(String brokers) {
+    try (BufferAllocator allocator = new RootAllocator();
+        CDataDictionaryProvider dictionaries = new CDataDictionaryProvider()) {
+      return withExportedSchema(
+          allocator,
+          dictionaries,
+          (arrayAddress, schemaAddress) ->
+              Native.benchmarkKafkaConsume(brokers, TOPIC, arrayAddress, schemaAddress, MESSAGES));
+    }
+  }
+
+  /**
+   * Exports an empty batch of the {@code id BIGINT, name STRING, score DOUBLE} schema into C structs
+   * and invokes {@code use} with their addresses (to create a decoder, or to start a native consume).
+   */
+  private static long withExportedSchema(
+      BufferAllocator allocator,
+      CDataDictionaryProvider dictionaries,
+      java.util.function.LongBinaryOperator use) {
     try (BigIntVector id = new BigIntVector("id", allocator);
         VarCharVector name = new VarCharVector("name", allocator);
         Float8Vector score = new Float8Vector("score", allocator)) {
@@ -169,7 +206,7 @@ class KafkaIngestBenchmark {
           ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
         template.setRowCount(0);
         Data.exportVectorSchemaRoot(allocator, template, dictionaries, array, schema);
-        return Native.createJsonDecoder(array.memoryAddress(), schema.memoryAddress());
+        return use.applyAsLong(array.memoryAddress(), schema.memoryAddress());
       }
     }
   }
