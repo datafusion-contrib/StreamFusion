@@ -94,6 +94,16 @@
             <version>${flink.version}</version>
             <scope>provided</scope>
         </dependency>
+        <!-- FLIP-27 Kafka source: the native source reuses its enumerator, split, and state
+             serializers (coordination/checkpoint state, not the hot path) and swaps only the
+             SplitReader for the native rdkafka one. The 5.0.0-2.2 release targets Flink 2.2.x; provided
+             at runtime by the Flink distribution. -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-kafka</artifactId>
+            <version>5.0.0-2.2</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-parquet</artifactId>

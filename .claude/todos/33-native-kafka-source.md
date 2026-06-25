@@ -1,13 +1,45 @@
 # Fully native Kafka source (Rust consumer → Arrow, no JVM round-trip)
 
-**Status:** open — **justified by benchmark, production build remaining.** A benchmark-grade native
-rdkafka consumer (`Native.benchmarkKafkaConsume`, behind the `kafka-bench` cargo feature) was measured
-head-to-head against the shallow path (`KafkaIngestBenchmark`): on 500k three-field JSON messages,
-**native ~2.7M msgs/s vs shallow ~531k = 5.08x** (local broker, so the gap is pure JVM-client +
-off-heap-copy overhead; decode is shared and cancels). The 5x justifies building the real source. What
-remains is the *production* FLIP-27 source — the benchmark consumer has no enumerator integration,
-offset/checkpoint handling, config fidelity, or fallback. It falls back to ticket 32's shallow path
-when the consumer config can't be translated natively.
+**Status:** in progress — **two of three layers built and tested; FLIP-27 `Source` wiring remains
+(one design fork to settle).** A benchmark-grade native rdkafka consumer (`Native.benchmarkKafkaConsume`,
+behind the `kafka-bench` cargo feature) was measured head-to-head against the shallow path
+(`KafkaIngestBenchmark`): on 500k three-field JSON messages, **native ~2.7M msgs/s vs shallow ~531k =
+5.08x** (local broker, so the gap is pure JVM-client + off-heap-copy overhead; decode is shared and
+cancels). The 5x justifies building the real source.
+
+## Delivered so far
+- **Config translator (JVM, unit-tested).** `kafka.KafkaConfigTranslator`: Flink consumer `Properties`
+  → librdkafka `Map<String,String>`, or a fallback reason. Pins Java defaults for the silent-divergence
+  keys, renames/value-maps, parses PLAIN/SCRAM + Kerberos JAAS, falls back on JKS / unrecognized login
+  modules / no-analog keys. 12 unit tests, no broker. (commit d22a790)
+- **Native split reader (Rust, integration-tested).** `KafkaSplitReader` behind the `kafka` cargo
+  feature (`kafka-bench` now implies it): an rdkafka `BaseConsumer` that manually `assign()`s + seeks a
+  fixed set of (topic, partition) at explicit offsets (never `subscribe()`), polls payloads into an
+  Arrow binary column, decodes to typed Arrow in Rust, and writes back per-split next-offsets each poll.
+  FFI: `openKafkaConsumer` / `pollKafkaBatch` / `closeKafkaConsumer`. An opt-in Testcontainers IT
+  (`NativeKafkaSourceTest`) drives open→poll→checkpoint→reopen-at-offset→resume over 5000 msgs and
+  asserts **exactly-once across the simulated restore** (every id once, no gap/overlap). (commit c67771b)
+
+## Remaining: the FLIP-27 `Source` wiring — and the design fork to settle first
+`flink-connector-kafka:5.0.0-2.2` is resolvable and targets Flink 2.2.x (dependency added, `provided`).
+Its `KafkaSource.createReader` (line 177) builds a `KafkaSourceReader` whose element type is hardcoded
+`ConsumerRecord<byte[],byte[]>` and whose `RecordEmitter` updates **per-record** offset state. Emitting
+Arrow batches instead means a fully custom `SourceReaderBase` stack (reader + `SplitFetcherManager` +
+`SplitReader<ArrowBatch, KafkaPartitionSplit>` + emitter + split-state), reusing only the
+`KafkaSourceEnumerator` + `KafkaPartitionSplit*Serializer` (coordination/state, not the hot path).
+
+**The fork — how the native consumer maps onto a subtask's splits:**
+- **(A) One consumer per partition-split.** Each `SplitReader` owns one rdkafka consumer for one
+  partition; `fetch()` returns one Arrow batch + that split's next offset; the emitter sets the split
+  state's offset to it. Simple and obviously correct (no cross-partition batch, offset-state is 1:1),
+  but N consumers per subtask and N rdkafka instances.
+- **(B) Multiplex all of a subtask's partitions into one consumer** (what Flink does). Needs native
+  *incremental* assign/seek on `handleSplitsChanges` and per-partition batch splitting so the emitter
+  can update each split's offset state. Most efficient, but more native surface and the batch↔per-record
+  -state impedance to handle carefully.
+
+This intersects the repo principle of *not transposing at edges* (the native reader already produces
+Arrow directly — good); the open question is purely consumer↔split cardinality.
 
 ## Relationship to the shallow path (ticket 32) and the deciding benchmark
 The shallow path (Flink's `KafkaSource` + byte-passthrough deserializer → row→Arrow transpose →
