@@ -4674,6 +4674,14 @@ impl CalcExpression {
             fields.push(Field::new(&self.output_names[i], array.data_type().clone(), true));
             columns.push(array);
         }
+        // Carry the changelog tag through: a Calc transforms each row independently (per-row
+        // projection, optional deterministic filter), so a `$row_kind$` column rides through unchanged
+        // — filtered alongside the rows by the condition above. This makes the Calc changelog-safe,
+        // matching the host's per-row Calc over a retracting stream.
+        if let Some(kind) = filtered.column_by_name(ROW_KIND_COLUMN) {
+            fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
+            columns.push(kind.clone());
+        }
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("failed to build output")
     }
 }

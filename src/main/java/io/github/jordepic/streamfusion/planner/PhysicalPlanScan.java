@@ -217,6 +217,45 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       return kafkaDecode(current);
     }
 
+    // A Calc transforms each row independently — a per-row projection plus an optional deterministic
+    // filter — and the native operator carries the `$row_kind$` tag through unchanged, so it is
+    // changelog-safe and (like the GROUP BY/join/Top-N/CDC above) exempt from the insert-only guard
+    // below: it matches the host's Calc over a retracting stream row for row.
+    if (current instanceof StreamPhysicalCalc && FilterCalcMatcher.matches((Calc) current)) {
+      if (!NativeConfig.operatorEnabled("filter")) {
+        return noteDisabled(current, "filter");
+      }
+      Calc calc = (Calc) current;
+      RexExpression condition = FilterCalcMatcher.encodedCondition(calc);
+      substitutions++;
+      return new StreamPhysicalNativeFilter(
+          calc.getCluster(),
+          calc.getTraitSet(),
+          calc.getInputs().get(0),
+          calc.getRowType(),
+          FilterCalcMatcher.projection(calc),
+          condition.kinds(),
+          condition.payload(),
+          condition.childCounts(),
+          condition.longs(),
+          condition.doubles(),
+          condition.strings());
+    }
+
+    if (current instanceof StreamPhysicalCalc && CalcMatcher.matches((Calc) current)) {
+      if (!NativeConfig.operatorEnabled("calc")) {
+        return noteDisabled(current, "calc");
+      }
+      Calc calc = (Calc) current;
+      substitutions++;
+      return new StreamPhysicalNativeCalc(
+          calc.getCluster(),
+          calc.getTraitSet(),
+          calc.getInputs().get(0),
+          calc.getRowType(),
+          CalcMatcher.encode(calc));
+    }
+
     // Native operators emit insert-only rows; substituting into a retracting or updating stream
     // would drop changelog semantics, so only insert-only nodes are eligible.
     if (!(current instanceof StreamPhysicalRel)
@@ -264,41 +303,6 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // and protobuf all route here; CDC changelog formats are handled by the branch above the guard.
     if (KafkaTables.isNativeKafkaDecode(current)) {
       return kafkaDecode(current);
-    }
-
-    if (current instanceof StreamPhysicalCalc && FilterCalcMatcher.matches((Calc) current)) {
-      if (!NativeConfig.operatorEnabled("filter")) {
-        return noteDisabled(current, "filter");
-      }
-      Calc calc = (Calc) current;
-      RexExpression condition = FilterCalcMatcher.encodedCondition(calc);
-      substitutions++;
-      return new StreamPhysicalNativeFilter(
-          calc.getCluster(),
-          calc.getTraitSet(),
-          calc.getInputs().get(0),
-          calc.getRowType(),
-          FilterCalcMatcher.projection(calc),
-          condition.kinds(),
-          condition.payload(),
-          condition.childCounts(),
-          condition.longs(),
-          condition.doubles(),
-          condition.strings());
-    }
-
-    if (current instanceof StreamPhysicalCalc && CalcMatcher.matches((Calc) current)) {
-      if (!NativeConfig.operatorEnabled("calc")) {
-        return noteDisabled(current, "calc");
-      }
-      Calc calc = (Calc) current;
-      substitutions++;
-      return new StreamPhysicalNativeCalc(
-          calc.getCluster(),
-          calc.getTraitSet(),
-          calc.getInputs().get(0),
-          calc.getRowType(),
-          CalcMatcher.encode(calc));
     }
 
     // Substitute a watermark assigner only when its (already-rewritten) input is columnar — i.e. it

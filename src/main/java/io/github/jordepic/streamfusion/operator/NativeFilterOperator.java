@@ -107,9 +107,18 @@ public class NativeFilterOperator extends AbstractStreamOperator<ArrowBatch>
     if (isIdentity(filtered.getFieldVectors().size())) {
       return filtered;
     }
-    List<FieldVector> columns = new ArrayList<>(projection.length);
+    List<FieldVector> columns = new ArrayList<>(projection.length + 1);
     for (int index : projection) {
       TransferPair pair = filtered.getVector(index).getTransferPair(allocator);
+      pair.transfer();
+      columns.add((FieldVector) pair.getTo());
+    }
+    // Carry the changelog tag: if the (filtered) batch has a $row_kind$ column, append it so the
+    // projection stays changelog-safe — the rows were already filtered alongside it. A deterministic
+    // per-row filter + column subset over a retracting stream matches the host's Calc exactly.
+    FieldVector rowKind = filtered.getVector(RowDataArrowConverter.ROW_KIND_COLUMN);
+    if (rowKind != null) {
+      TransferPair pair = rowKind.getTransferPair(allocator);
       pair.transfer();
       columns.add((FieldVector) pair.getTo());
     }
