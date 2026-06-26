@@ -41,6 +41,9 @@ class NativeKafkaSourceSqlHarnessTest {
 
   @Test
   void nativeKafkaSourceReadsTopicThroughSql() throws Exception {
+    // The native rdkafka source is opt-in (off by default); this test builds and exercises it, so it
+    // enables the routing. (A JSON table otherwise takes the shallow decode path.)
+    System.setProperty("streamfusion.operator.kafkaSource.enabled", "true");
     try (KafkaContainer kafka =
         new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
       kafka.start();
@@ -65,6 +68,8 @@ class NativeKafkaSourceSqlHarnessTest {
       for (long i = 0; i < MESSAGES; i++) {
         assertTrue(ids.contains(i), "missing id " + i);
       }
+    } finally {
+      System.clearProperty("streamfusion.operator.kafkaSource.enabled");
     }
   }
 

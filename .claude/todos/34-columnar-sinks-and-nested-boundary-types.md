@@ -13,6 +13,14 @@ the protobuf representation reconciliations remain.
   the batch immediately — true zero-copy still wants direction 1).
 - The protobuf gate is loosened accordingly: nested-message (→ROW), repeated (→ARRAY), and map (→MAP)
   fields of supported scalars now route, parity-tested against Flink (`NativeProtobufDecodeSqlHarnessTest`).
+- **All Kafka format sources now carry complex types**, each parity-tested against Flink for nested
+  ROW/ARRAY/MAP: protobuf, bare-Avro (`NativeAvroDecodeSqlHarnessTest`), JSON
+  (`NativeJsonDecodeSqlHarnessTest`), and CDC/Debezium nested rows (`NativeCdcDecodeSqlHarnessTest`).
+  CSV/raw are flat by nature. To get JSON onto the (nested-capable) shallow decode path, the fully-native
+  rdkafka source is now opt-in/off by default (`operator.kafkaSource.enabled`, also behind the `kafka`
+  cargo feature) — JSON falls through to the decode operator like the other formats. One fix the JSON map
+  case surfaced: `ArrowConversion.toArrowSchema` must force the map key non-null (Flink's data model) or
+  the decoded map is rejected when read back.
 **Source:** the row↔Arrow transpose (`RowDataArrowConverter`) carries only scalar/string/temporal/
 decimal columns; it has no case for `ROW`/`ARRAY`/`MAP`/`VARBINARY`. So any native operator that
 *produces* a nested column cannot hand it back to a rowwise host operator (a sink, `collect()`, or a

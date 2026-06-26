@@ -163,7 +163,9 @@ public final class ArrowConversion {
                   "items",
                   new FieldType(false, ArrowType.Struct.INSTANCE, null),
                   Arrays.asList(
-                      toArrowField("key", mapType.getKeyType()),
+                      // Map keys are non-null in Flink's data model; force it so the decoder builds a
+                      // non-nullable key (a nullable one is rejected when read back as MapData).
+                      toArrowField("key", mapType.getKeyType().copy(false)),
                       toArrowField("value", mapType.getValueType()))));
     }
     return new Field(fieldName, fieldType, children);

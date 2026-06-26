@@ -246,21 +246,20 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
           scan.getCluster(), scan.getTraitSet(), scan.getRowType(), OrcSourceMatcher.path(scan));
     }
 
-    if (KafkaTables.isNativeKafka(current)) {
-      if (!NativeConfig.operatorEnabled("kafkaSource")) {
-        return noteDisabled(current, "kafkaSource");
-      }
+    // The fully-native rdkafka source (Rust owns the consume) is opt-in and off by default — it is
+    // shelved behind the optional `kafka` cargo feature and the shallow decode path below won the
+    // throughput comparison. When explicitly enabled (and built with the feature) it takes the JSON
+    // tables it can run; otherwise the branch is skipped and they fall through to the decode path.
+    if (KafkaTables.isNativeKafka(current) && NativeConfig.operatorEnabled("kafkaSource")) {
       StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) current;
       substitutions++;
       return new StreamPhysicalNativeKafkaSource(
           scan.getCluster(), scan.getTraitSet(), scan.getRowType(), FilesystemTables.options(scan));
     }
 
-    // Shallow native-decode path: Flink's KafkaSource consumes raw bytes, a native operator decodes
-    // them to Arrow (skipping Flink's RowData decode). Handles the insert-only value formats the native
-    // rdkafka source above declines — CSV/raw today (Avro/protobuf decoders exist; planner wiring is a
-    // follow-up). Reached only after that branch, so a JSON table keeps using the native source; CDC
-    // formats are handled by the changelog branch above the guard.
+    // Shallow native-decode path (the default for every value format): Flink's KafkaSource consumes raw
+    // bytes, a native operator decodes them to Arrow, skipping Flink's RowData decode. JSON/CSV/raw/Avro
+    // and protobuf all route here; CDC changelog formats are handled by the branch above the guard.
     if (KafkaTables.isNativeKafkaDecode(current)) {
       return kafkaDecode(current);
     }
