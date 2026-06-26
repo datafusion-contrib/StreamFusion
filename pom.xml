@@ -16,6 +16,8 @@
         <arrow.version>18.3.0</arrow.version>
         <flink.version>2.2.1</flink.version>
         <scala.binary.version>2.12</scala.binary.version>
+        <!-- Matches the protobuf runtime Flink's protobuf format generates code against. -->
+        <protobuf.version>4.32.1</protobuf.version>
         <!-- Native build: debug by default for a fast correctness loop. The `bench` profile flips
              both of these to a release build, which benchmarks must use (debug Rust is far slower). -->
         <native.profile>debug</native.profile>
@@ -137,22 +139,26 @@
             <version>${flink.version}</version>
             <scope>test</scope>
         </dependency>
-        <!-- Flink's ORC format, for the host baseline the native ORC source is compared against. -->
+        <!-- Flink's protobuf format: the host baseline the native protobuf decode is compared against,
+             and its protoc (below) generates the message class a protobuf table names. It needs
+             protobuf-java 4.x, which is incompatible with the orc-core 1.5.6 (protobuf 2.5) that Flink's
+             ORC format drags in — so the ORC host-baseline parity test lives in the orc-baseline module,
+             not here. -->
         <dependency>
             <groupId>org.apache.flink</groupId>
-            <artifactId>flink-orc</artifactId>
+            <artifactId>flink-protobuf</artifactId>
             <version>${flink.version}</version>
             <scope>test</scope>
         </dependency>
-        <!-- Flink's ORC format pins orc-core 1.5.6, whose generated protobuf code needs protobuf-java
-             2.5.0; Maven otherwise mediates it up to the 4.x another path pulls, which orc 1.5.6's
-             bytecode is incompatible with. Pin it back (test-only) so the host ORC baseline runs. -->
         <dependency>
             <groupId>com.google.protobuf</groupId>
             <artifactId>protobuf-java</artifactId>
-            <version>2.5.0</version>
+            <version>${protobuf.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- Hadoop is the filesystem/IO layer Flink's Parquet format reads and writes through; the
+             Parquet baseline tests need it at runtime. (Hadoop 3.3.4 runs fine on protobuf-java 4.x — it
+             was only orc-core 1.5.6, now in the orc-baseline module, that pinned 2.5.) -->
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-common</artifactId>
@@ -183,7 +189,35 @@
     </dependencies>
 
     <build>
+        <extensions>
+            <!-- Resolves the OS classifier for the protoc binary artifact below. -->
+            <extension>
+                <groupId>kr.motd.maven</groupId>
+                <artifactId>os-maven-plugin</artifactId>
+                <version>1.7.1</version>
+            </extension>
+        </extensions>
         <plugins>
+            <!-- Generates the protobuf message class a `protobuf`-format table names (and that the host
+                 baseline parses with), from a test .proto, using the same protoc Flink's format uses. -->
+            <plugin>
+                <groupId>org.xolstice.maven.plugins</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <version>0.6.1</version>
+                <configuration>
+                    <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>generate-test-protobuf</id>
+                        <phase>generate-test-sources</phase>
+                        <goals>
+                            <goal>test-compile</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!-- The native library is the data plane; Maven drives its build so a single
                  `mvn test` exercises the whole JVM<->Rust toolchain. -->
             <plugin>

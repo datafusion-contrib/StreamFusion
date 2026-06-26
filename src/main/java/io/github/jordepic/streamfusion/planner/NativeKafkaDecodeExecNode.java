@@ -37,6 +37,8 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
   private static final int BATCH_SIZE = 8192;
   // The MessageDecoder code for bare Avro (the only routed format whose decode needs a derived schema).
   private static final int BARE_AVRO = 4;
+  // The operator's protobuf sentinel (decoder built from the message-class-name's descriptor).
+  private static final int PROTOBUF = 5;
 
   private final RowType outputType;
   private final Map<String, String> options;
@@ -74,11 +76,19 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
         format == BARE_AVRO
             ? AvroSchemaConverter.convertToSchema(outputType.copy(false)).toString()
             : "";
+    // Protobuf decodes against the descriptor of the generated message class the table names — extracted
+    // by reflection so this carries no compile-time protobuf-java dependency (the class and its runtime
+    // are supplied by the Flink distribution, like the protobuf format itself).
+    String messageClass = options.get("protobuf.message-class-name");
+    byte[] protoDescriptor =
+        format == PROTOBUF ? ProtobufDescriptors.descriptorSet(messageClass) : null;
+    String protoMessageName = format == PROTOBUF ? ProtobufDescriptors.messageName(messageClass) : null;
     DataStream<ArrowBatch> decoded =
         bytes.transform(
             DECODE_TRANSFORMATION,
             ArrowBatchTypeInformation.INSTANCE,
-            new NativeBytesDecodeOperator(outputType, BATCH_SIZE, format, avroSchema, 0, null, null));
+            new NativeBytesDecodeOperator(
+                outputType, BATCH_SIZE, format, avroSchema, 0, protoDescriptor, protoMessageName));
     return decoded.getTransformation();
   }
 }

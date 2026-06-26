@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+// The message a `format = 'protobuf'` Kafka table names via message-class-name in the parity test.
+// java_multiple_files puts Row at the top level so the class name is simply ...proto.Row.
+package streamfusion.test;
+
+option java_package = "io.github.jordepic.streamfusion.proto";
+option java_multiple_files = true;
+
+message Row {
+  int64 id = 1;
+  string name = 2;
+  double score = 3;
+}
