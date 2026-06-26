@@ -52,6 +52,23 @@ columnar type for a streaming source:
    message with `RowKind` set — Debezium, Canal, Maxwell, OGG.
 3. **File bulk** `BulkFormat<RowData, FileSourceSplit>` (file-only, never Kafka) — Parquet, ORC.
 
+**Verified factory inventory (Flink 2.2, `~/data/flink`, 2026-06-26).** A Kafka `value.format`/
+`key.format` accepts *any* `DeserializationFormatFactory` on the classpath; the Kafka connector defines
+none of its own. The complete built-in set, by `factoryIdentifier()`:
+- Plain (append): `json` (flink-json), `csv` (flink-csv), `avro` (flink-avro, **bare** Avro — no
+  framing, schema from the RowType), `avro-confluent` (flink-avro-confluent-registry, **Confluent
+  framing + registry**), `protobuf` (flink-protobuf), `raw` (flink-table-runtime, single column).
+- CDC (changelog): `debezium-json`, `canal-json`, `maxwell-json`, `ogg-json` (flink-json),
+  `debezium-avro-confluent` (flink-avro-confluent-registry).
+- **File-only, NOT Kafka** (these are `*FileFormatFactory`/`BulkReaderFormatFactory`, not
+  `DeserializationFormatFactory`): `parquet`, `orc`, and the file variants of avro/csv/protobuf.
+
+The 11 Kafka formats collapse to **5 underlying wire codecs**: JSON text (`json` + the 4 CDC-JSON, the
+CDC ones add only an envelope), Avro binary (`avro` bare / `avro-confluent` framed / `debezium-avro-
+confluent`), Protobuf, CSV text, Raw. Direct-to-Arrow Rust crates exist for the first four codecs
+(`arrow-json`/`arrow-csv`/`arrow-avro`, all already on the classpath; raw is trivial); **only Protobuf
+and the CDC envelopes have no off-the-shelf Arrow decoder** — those are the real build (see below).
+
 So the interception recipe is the same for every streaming format: take the **`raw` passthrough**
 (each message → a one-column `BYTES` `RowData`;
 `~/data/flink/flink-table/flink-table-runtime/src/main/java/org/apache/flink/formats/raw/RawFormatDeserializationSchema.java`),
@@ -90,31 +107,107 @@ is **ticket 33** (large, deferred until this path proves the copy is the bottlen
 Legend: ✅ ready (decoder exists, version-compatible) · ⚙️ ready decoder + native envelope step ·
 🔧 decoder exists, we write the schema→Arrow mapping · 📁 file/bulk seam (not the Kafka edge).
 
-### JSON — ✅
+**Decoder status (2026-06-26): JSON, CSV, raw, bare-Avro, Confluent-Avro, and Protobuf decoders are all
+BUILT and unit-tested** in `MessageDecoder` (native/src/lib.rs). `createDecoder(format, …)` codes:
+**0 = JSON, 1 = Confluent-Avro, 2 = CSV, 3 = raw, 4 = bare Avro**; Protobuf via `createProtobufDecoder`.
+Remaining: CDC family (Phase 3), and the planner rule that auto-routes a SQL `format=…` table to a
+native decode operator (Phase 2, unbuilt for *every* format — the operators exist + are tested but
+aren't planner-wired yet).
+
+### JSON — ✅ built (format 0)
 - Flink: `~/data/flink/flink-formats/flink-json/src/main/java/org/apache/flink/formats/json/JsonRowDataDeserializationSchema.java`
-- Rust: `~/data/arrow-rs/arrow-json/src/reader/mod.rs` — `Decoder` (`:446`), `decode(&[u8]) -> usize`
-  (`:472`), `flush() -> Option<RecordBatch>` (`:677`). arrow v58 (matches native crate).
+- Rust: `arrow-json` `Decoder` (`decode`/`flush` push API), schema-driven. `JsonDecoder` in lib.rs.
 
-### CSV — ✅
+### CSV — ✅ built (format 2)
 - Flink: `~/data/flink/flink-formats/flink-csv/src/main/java/org/apache/flink/formats/csv/CsvRowDataDeserializationSchema.java`
-- Rust: `~/data/arrow-rs/arrow-csv/src/reader/mod.rs` — `Decoder` (`:600`), `decode` (`:636`),
-  `flush` (`:657`). Same push API as JSON.
+- Rust: `arrow::csv` `Decoder` (same push API as JSON), `with_header(false)`; each message is one record,
+  fed newline-terminated. `CsvDecoder` in lib.rs. (v1 uses default CSV options — delimiter/quote/escape/
+  null-literal parity with Flink's options is a follow-up.)
 
-### Avro — ✅
+### Avro (bare) — ✅ built (format 4)
 - Flink: `~/data/flink/flink-formats/flink-avro/src/main/java/org/apache/flink/formats/avro/AvroRowDataDeserializationSchema.java`
-  (+ `AvroToRowDataConverters.java`, the field-by-field cost we remove).
-- Rust: `~/data/arrow-rs/arrow-avro/src/reader/mod.rs` — `Decoder` (`:642`), `decode` (`:706`),
-  `flush` (`:862`); `ReaderBuilder::build_decoder()` (`:1312`). Full logical-type mapping in
-  `codec.rs`; `examples/decode_kafka_stream.rs` is our exact use case.
+  (+ `AvroToRowDataConverters.java`, the field-by-field cost we remove). Bare datum, **no framing**;
+  reader schema from the table RowType (`AvroSchemaConverter`).
+- Rust: `arrow-avro` has no prefix-free push decoder (`build_decoder` requires a writer-schema store),
+  so we register the reader schema at **synthetic id 0** and **prepend the 5-byte id-0 Confluent header**
+  to each datum — reusing the framed decoder. `decode_avro_body(.., bare=true)`.
 
-### Confluent-Avro — ✅
+### Confluent-Avro — ✅ built (format 1)
 - Flink: `~/data/flink/flink-formats/flink-avro/src/main/java/org/apache/flink/formats/avro/RegistryAvroDeserializationSchema.java`.
 - Rust: same `arrow-avro` `Decoder`; Confluent wire format (`0x00` + 4-byte BE schema id) is built in
   via `Fingerprint::Id` + `SchemaStore` (`~/data/arrow-rs/arrow-avro/src/schema.rs:687`), with
   mid-stream schema switching (`reader/mod.rs:742-770`). Populate `SchemaStore` from the registry
   at plan/open time (registry URLs are in repo `CLAUDE.md`).
 
-### Debezium / Canal / Maxwell / OGG (CDC) — ⚙️ (the standout fit)
+### Debezium / OGG / Maxwell / Canal (CDC JSON) — ✅ all four built (formats 6, 7, 8, 9)
+- **Built (2026-06-26):** `CdcJsonDecoder` (native/src/lib.rs) decodes a CDC envelope straight to a
+  **columnar changelog batch** — physical columns + trailing `$row_kind$` Int8. One arrow-json pass decodes
+  every body's envelope (the pre/post images as nested structs of the physical columns, made nullable; the op
+  field per dialect; unknown envelope fields ignored), then each physical column is gathered with a single
+  `arrow::compute::interleave` choosing the right pre/post-image struct child **per output row** (built per
+  field so the partial-`old` coalesce can pick per field). One unified pre-index/post-index gather model
+  handles all four dialects (and Canal's array fan-out — the indices just point into the flattened list
+  values). RowKind bytes 0/1/2/3 match `RowKind.toByteValue()`. A null body (tombstone) and unknown/skip ops
+  contribute no rows.
+- **`CdcDialect` (4 dialects), via a `CdcSpec` {before_field, after_field, op_field, shape, arrays} + op→action map:**
+  - **Debezium** (code 6): `{before, after, op}`, op `c`/`r`→INSERT, `u`→UB+UA, `d`→DELETE. Shape
+    `BeforeAfter` (full pre/post images; null `before` on u/d skips the record, matching Flink throw +
+    ignore-parse-errors).
+  - **OGG** (7): `{before, after, op_type}`, `I`/`U`/`D`, `T` truncate skipped. Shape `BeforeAfter`.
+  - **Maxwell** (8): `{data, old, type}`, `insert`/`update`/`delete`. Shape `DataOld`: `data` = full
+    post-image, `old` = *partial* pre-image — UPDATE_BEFORE is `coalesce(old, data)` per field; DELETE reads
+    `data` (it holds the deleted row).
+  - **Canal** (9): `{data, old, type}` as **arrays** (`arrays=true`), `INSERT`/`UPDATE`/`DELETE`, `CREATE`
+    (DDL) skipped. Same `DataOld` merge, applied per array element (`data[i]` paired with `old[i]`); a message
+    fans out per element. Envelope images are `List<Struct>`; the gather indexes into the flattened list values.
+  - **Divergence (DataOld):** a field deliberately changed *to* null is indistinguishable from an absent
+    (unchanged) field once arrow-json decodes `old`, so it falls back to `data`; Flink keeps the null
+    (`oldField.findValue` sees JSON key presence). Rare; documented in `CdcShape::DataOld`.
+- All decoded against the exported physical schema via `createDecoder` (no new JNI). Rust tests green:
+  `cdc_debezium_decode_emits_changelog`, `cdc_debezium_skips_tombstone_and_unknown_op`,
+  `cdc_ogg_dialect_uses_op_type`, `cdc_maxwell_merges_partial_old_image`,
+  `cdc_canal_fans_out_arrays_and_merges_old` (49 Rust tests pass).
+- **Strictness = Flink parity (2026-06-26):** the decoder does **not** silently drop bad rows. An unknown op
+  or a null pre-image on an update/delete **fails** (`panic`, the codebase's bad-data convention), matching
+  Flink's default *throw* — so the result is identical (both produce no wrong output), never a silent
+  divergence. Only a tombstone/empty message is skipped (Flink skips those too). Canal `CREATE` (DDL) is the
+  one deliberate skip Flink also makes. Tests: `cdc_unknown_op_fails`, `cdc_debezium_null_before_update_fails`
+  (both `#[should_panic]`).
+- **Planner wiring — identical-or-fall-back (2026-06-26):** the contract is identical results to Flink, so the
+  planner routes a CDC table natively **only when we reproduce Flink exactly**, else it falls back (leaves
+  Flink's own decoder in place). `KafkaTables.isCdcDecode` routes a scan only when **all** hold, else fall back:
+  - format ∈ {debezium-json (6), ogg-json (7)} — the full pre/post-image dialects. **Maxwell (8)/Canal (9)
+    fall back**: their partial-`old` pre-image can't be reproduced bit-identically from the decoded image
+    alone (a field changed *to* null is indistinguishable from an unchanged/absent one once arrow-json
+    decodes `old`; Flink uses raw JSON key-presence). Decoders + unit tests stay (correct for the
+    no-null-change case); just not planner-routed.
+  - `<format>.schema-include` ≠ true (the `{schema, payload}` wrapper isn't handled).
+  - `<format>.ignore-parse-errors` ≠ true (Flink *skips* bad rows then; the native decoder *fails* like
+    Flink's default — we only match the default, so the skip mode falls back).
+  - **all columns physical** (`FilesystemTables.allPhysicalColumns` via the resolved schema) — metadata/
+    computed columns aren't produced by the value decode.
+  A CDC source emits a changelog, so — like the native GROUP BY/join/Top-N — `isCdcDecode` is checked
+  **before** `PhysicalPlanScan`'s insert-only guard; the append decode path (`isNativeKafkaDecode`, codes
+  0/2/3 only) stays below it. Shared `kafkaDecode(...)` helper builds `StreamPhysicalNativeKafkaDecode`. The
+  existing Arrow→RowData transition reads `$row_kind$` back onto each row, so the decode node feeds a correct
+  `RowKind` changelog downstream with **no `RowData` envelope decode**.
+- **End-to-end test:** `NativeCdcDecodeSqlHarnessTest` (SF_BENCHMARK-gated, testcontainers, one Kafka
+  container, a topic per dialect): debezium/ogg use `NativeParity.assertChangelogParity` (route + collapsed
+  changelog matches stock Flink's `*JsonDeserializationSchema`); maxwell/canal use `NativeParity.assertFallback`
+  (asserts the query stays on Flink and still matches Flink's result).
+- **Remaining CDC follow-ups (each would lift one fallback restriction):** (a) **Maxwell/Canal exact parity** —
+  needs JSON key-presence in `old` (a light per-message scan, or carry presence out of the decode) to match
+  Flink's "absent ⇒ copy data, present-null ⇒ keep null"; then route them. (b) **`ignore-parse-errors=true`** —
+  make the decoder *skip* malformed rows (per-record error isolation in the arrow-json feed) instead of
+  failing, so we match Flink's skip mode and can route it. (c) **`schema-include`** (`{schema, payload}`
+  wrapper) + CDC **metadata columns** (ts_ms, source.*) — decode the wrapper / project metadata, then drop
+  those fallback gates. (d) **debezium-avro-confluent** — same envelope shape, Avro decoder inside (arrow-avro
+  against a `ROW<before,after,op>` reader schema). (e) **primary-key/upsert** CDC tables get a
+  `ChangelogNormalize` above the scan — verify/handle the wrapper. (f) Canal uneven `data`/`old` arrays
+  (length mismatch) — current decoder falls back to post-image; reconcile with Flink's `getRow(i)` throw.
+
+#### Original design notes (retained)
+- Flink (all emit a 4-way `RowKind` changelog via the `Collector` variant):
 - Flink (all emit a 4-way `RowKind` changelog via the `Collector` variant):
   - `~/data/flink/flink-formats/flink-json/src/main/java/org/apache/flink/formats/json/debezium/DebeziumJsonDeserializationSchema.java`
     (`deserialize(byte[], Collector)` ~`:130`, sets UPDATE_BEFORE/AFTER/INSERT/DELETE ~`:148-164`)
@@ -126,16 +219,74 @@ Legend: ✅ ready (decoder exists, version-compatible) · ⚙️ ready decoder +
   column** (divergences/13) and feeds the existing native changelog operators (GROUP BY / updating
   join / Top-N). A CDC → native-changelog pipeline then materializes **zero rows** end to end. This
   lands directly on the changelog machinery we already built — highest-value target.
+- **How Flink does it internally (confirmed in source, 2026-06-26):** the CDC format is *not* a new
+  wire decoder — it is a thin layer over the plain decoder. `DebeziumJsonDeserializationSchema`'s ctor
+  builds `createJsonRowType(...)` = `ROW<before: <physical>, after: <physical>, op: STRING, …>` and
+  hands it to a stock `JsonRowDataDeserializationSchema`. `deserialize(byte[], Collector)` then (1)
+  decodes the **whole envelope to a `GenericRowData`** via that inner decoder, (2) reads `op`, pulls the
+  nested `before`/`after` rows, sets `RowKind`, and emits the **physical** row(s): `c`/`r`→after INSERT;
+  `u`→before UPDATE_BEFORE + after UPDATE_AFTER (**one message → two rows**); `d`→before DELETE. So the
+  order is **decode-envelope-to-RowData first, then a cheap envelope→physical transform** — it reuses
+  the JSON/Avro RowData decoder verbatim. (`debezium-avro-confluent` = same shape, Avro decoder inside.)
+- **Rust reference (no standalone crate, but a proven pattern): RisingWave.** `~/data/risingwave`
+  `src/connector/src/parser/{unified/debezium.rs, debezium/*}`: a `ChangeEvent` trait (`op()` +
+  `access_field(before/after)`) and `DebeziumChangeEvent<A>` over a **lazy `Access` accessor** on the
+  parsed JSON/Avro — it does *not* materialize a full envelope row; it reads `op`, then lazily accesses
+  only the needed before/after sub-object, writing columns straight into a chunk builder. Output is a
+  **`StreamChunk` = columnar data chunk + an `Ops` array** (`Op::{Insert,Delete,UpdateInsert,
+  UpdateDelete}`), update→two ops — i.e. the *columnar* form of Flink's RowData+RowKind, exactly our
+  `RecordBatch` + `$row_kind$` column. (Arroyo does the same, serde-struct based, less vectorized.)
+  Both live inside their projects — no `arrow-cdc` crate to drop in; we port the pattern.
+- **Columnar wrinkles a row-at-a-time engine avoids but we must handle:** (a) **update row-doubling** —
+  output row count ≠ input row count, computed per batch then gathered; (b) **nested before/after
+  extraction** — decoding the envelope with `arrow-json` yields `before`/`after` as nested *struct*
+  columns, so building the final top-level columns is a per-row `take`/gather of the right struct's
+  fields by `op`, plus the `$row_kind$` Int8 column. RisingWave sidesteps this by being accessor/row-
+  oriented at parse; our batch decode does struct-column surgery + gather.
 
-### Protobuf — 🔧 (decoder exists; we write the descriptor→Arrow mapping)
-- Flink: `~/data/flink/flink-formats/flink-protobuf/src/main/java/org/apache/flink/formats/protobuf/deserialize/PbRowDataDeserializationSchema.java`
-  — runtime-dynamic (loads the descriptor via `PbFormatUtils.getDescriptor()`).
-- Rust: `~/data/prost` (v0.14.4) decodes the wire format, but is **compile-time codegen only**
-  ("Does not include support for runtime reflection or message descriptors", `README.md:26`) — it
-  does ship `prost-types` (`FileDescriptorSet`). To match Flink's dynamic model use **`prost-reflect`**
-  (`DynamicMessage`, runtime descriptor-driven; mature ecosystem crate, not vendored). No turnkey
-  proto→Arrow batch builder exists anywhere — the **descriptor → Arrow array** construction is the
-  one custom piece (same category as arrow-avro's internals). Bounded build, not a from-scratch decoder.
+### Protobuf — ✅ decoder built (via `ptars`), JVM wiring remains
+- **Flink's wire format = BARE protobuf bytes, NOT Confluent (confirmed in source, 2026-06-26).**
+  `PbRowDataDeserializationSchema.deserialize(byte[])` → `ProtoToRowConverter` → `parseFrom(byte[])` on
+  the **whole** message: no magic byte, no schema id, no message-index varints. The descriptor comes
+  from a **generated Java class** named by the `message-class-name` option (`PbFormatUtils.getDescriptor`
+  → `Class.forName(name).getMethod("getDescriptor")`). **There is no Confluent-protobuf format in OSS
+  Flink** (only `avro-confluent`/`debezium-avro-confluent` are registry-framed). So the earlier
+  "Confluent-registry-driven" plan was wrong for matching Flink — corrected to bare-bytes + descriptor.
+- **A proto→Arrow library DOES exist — `ptars` (`~/data/ptars`, crates.io).** (Earlier note "no turnkey
+  proto→Arrow builder exists anywhere" was wrong.) It converts the protobuf **wire format straight into
+  Arrow arrays** — no per-row `DynamicMessage`, no intermediate value tree — driven by a runtime
+  `prost_reflect::MessageDescriptor`, deriving the batch schema from the descriptor. Entry:
+  `binary_array_to_record_batch_direct(&BinaryArray, &MessageDescriptor, &PtarsConfig) -> RecordBatch`
+  (also `MessageDecoder::new/finish`, `messages_to_record_batch`). Handles nested/repeated/maps/enums/
+  well-known types. `PtarsConfig` knobs: `confluent_wire_policy` (Raw = Flink's bare bytes; Standard/
+  Protobuf strip Confluent framing for the future registry case), `EnumRepr` (Int32/String/Binary),
+  timestamp units.
+- **Rejected `prost-arrow` (`~/data/prost-arrow`).** It's a **compile-time `derive(ToArrow)`** on
+  prost-generated structs — needs the `.proto` at *build* time, so it can't decode a runtime
+  user-supplied schema in a SQL connector. (Also stale, 2024-03.) `ptars`'s runtime/descriptor model is
+  the right fit; `prost` alone is wire-codec/codegen only (no Arrow); Arroyo does proto→`serde_json`→
+  arrow-json (an extra hop); RisingWave hand-rolls DynamicMessage→its columns. ptars is the most direct.
+- **Built (2026-06-26):** `ProtobufDecoder` (native/src/lib.rs) = `prost_reflect::DescriptorPool::decode`
+  of a `FileDescriptorSet` → `MessageDescriptor` → `ptars::binary_array_to_record_batch_direct`; wired as
+  `MessageDecoder::Protobuf`; JNI `createProtobufDecoder(byte[] descriptor, String messageName)`; Java
+  `Native.createProtobufDecoder` declared; Rust unit test green (`protobuf_decode_emits_one_row_per_
+  message`); full `cargo test` (41) + `mvn test` (242) green.
+- **Caveats / remaining:**
+  - **ptars is VENDORED in-tree** at `native/vendor/ptars` (path dep `ptars = { path = "vendor/ptars" }`),
+    Apache-2.0, from upstream `0x26res/ptars` v0.0.17+8 (4adf0b5) with **one local patch: arrow 57.1→58**
+    to match our arrow (compiles clean). Vendored rather than a git/crates.io dep because crates.io ptars
+    is pinned to arrow 57 — keeping the source in-tree makes the repo **self-contained and OSS-portable**
+    (any clone builds it, no fork to track). prost-reflect pinned to ptars' **0.16**. Re-sync from
+    upstream when they ship an arrow-58 release.
+  - **Schema parity vs Flink:** ptars *derives* the Arrow schema from the descriptor; Flink derives the
+    RowType via `PbToRowTypeUtil`. Reconcile edge cases (enum repr — set `EnumRepr` to match Flink;
+    64-bit ints; timestamps/well-known; `oneof`) and either align via `PtarsConfig` or cast/rename to the
+    declared schema. Add a parity test (decode via both, compare) before shipping.
+  - **JVM wiring not done:** serialize the descriptor off the generated message class to a
+    `FileDescriptorSet` at plan/open time, gate `protobuf` in `KafkaTables`/the decode operator, pass
+    `message-class-name`. End-to-end SQL test pending.
+  - ptars also goes the **other way** (`record_batch_to_array`/`MessageEncoder`) — free protobuf *sink*
+    encoding when we need it.
 
 ### Parquet — ✅ already done (📁 file seam)
 - Flink: `~/data/flink/flink-formats/flink-parquet/src/main/java/org/apache/flink/formats/parquet/ParquetFileFormatFactory.java`
@@ -150,9 +301,11 @@ Legend: ✅ ready (decoder exists, version-compatible) · ⚙️ ready decoder +
   implementing `RecordBatchReader` (`src/arrow_reader.rs:39,233,324`; re-export `lib.rs:74`). All
   ORC types/encodings/compression. File reader (correct seam for ORC; parallels our Parquet source).
 
-### Raw — n/a
+### Raw — ✅ built (format 3) — and still the seam for the others
 - `~/data/flink/flink-table/flink-table-runtime/src/main/java/org/apache/flink/formats/raw/RawFormatDeserializationSchema.java`.
-  This is the *seam* (single `BYTES` column) we exploit for the streaming formats, not a decode target.
+- Dual role: (1) the *seam* (single `BYTES` column) we exploit to get every other format's bytes to the
+  native decoder; (2) a decode target in its own right — `RawDecoder` casts the body column to the
+  single declared column type (Binary passthrough, or Binary→Utf8 for a STRING column), 1:1 with rows.
 
 ## Design
 The native **decoders** are shared; the two source kinds wrap them differently:
@@ -202,14 +355,38 @@ The native **decoders** are shared; the two source kinds wrap them differently:
   - **Test-baseline note:** flink-orc pins orc-core 1.5.6 (protobuf 2.5) which collides with Arrow's
     protobuf 4.x; the build pins protobuf 2.5 in test scope so the ORC baseline runs. The native read
     path never touches orc-core, so this is test-only.
-- **Phase 2 — streaming decode operator.** The `ArrowBatch[bytes] → ArrowBatch[decoded]` operator +
-  off-heap Kafka handoff + source-edge planner rule, for JSON/CSV/Avro/Confluent-Avro. This is also
-  the **fallback** the native Kafka source (ticket 33) degrades to, and the **baseline** the native
-  path is benchmarked against — so it is built first regardless. Sub-steps: (2a) the native
-  format-decode operator (reuses the JSON kernel; the shared "format transpose"), (2b) Flink
-  `KafkaSource` + byte-passthrough deserializer + row→Arrow transpose feeding it.
-- **Phase 3 — CDC family.** Body decode + native envelope → `$row_kind$`, reusing changelog operators.
-- **Phase 4 — Protobuf** (`prost-reflect` + descriptor→Arrow).
+- **Phase 2 — streaming decode operator + planner routing. DONE for JSON/CSV/raw (2026-06-26).** The
+  source-level rewrite is built: a Kafka `format=…` scan is substituted (`PhysicalPlanScan`) with
+  `StreamPhysicalNativeKafkaDecode` → `NativeKafkaDecodeExecNode`, which chains **Flink's own
+  `KafkaSource` producing raw value `byte[]`s** (value-only `ByteArrayDeserializer`; Flink owns
+  consume/offsets/checkpoint/auth — `KafkaTables.buildBytesSource`) → **`NativeBytesDecodeOperator`**
+  (batches the bytes, one native decode per batch via the shared `MessageDecoder`) → Arrow. No Flink
+  `RowData` decode. The downstream Arrow→RowData transpose at the collect/sink edge is inserted by the
+  existing transition pass. End-to-end SQL test green (`NativeKafkaDecodeSqlHarnessTest`, a bounded CSV
+  table). Gated by `operator.kafkaDecode.enabled`; ordered after the native-rdkafka-source branch, so a
+  JSON table still uses that (ticket 33) and CSV/raw take the decode path. flink-csv added (provided) so
+  Flink can validate+build the table before substitution (it validates with the format factory even
+  though we replace the decode). **Remaining:** wire Avro (the `AvroSchemaConverter` top-level-union
+  schema handling) and protobuf (reflective descriptor extraction off `message-class-name`) into
+  `decodeFormatCode`/the exec node — the decoders already exist (formats 1/4/Protobuf); only the
+  schema/descriptor extraction at plan time is left. Also: the operator flushes per batch or at
+  end-of-input — an unbounded stream below the batch size needs a time-based flush (latency), a
+  follow-up. (`NativeJsonBytesDecodeOperator` is now superseded by the general `NativeBytesDecodeOperator`
+  — only a benchmark still references the old one.)
+- **Phase 3 — CDC family. DONE for Debezium + OGG JSON (2026-06-26).** `CdcJsonDecoder` decodes the
+  `{before, after, op}` envelope in one arrow-json pass and `interleave`s the right before/after struct
+  child per output row to a columnar changelog (physical columns + `$row_kind$`), updates fanning out to
+  UB+UA — the batch form of RisingWave's row-at-a-time `DebeziumChangeEvent`. Formats 6 (debezium-json) /
+  7 (ogg-json); routed before `PhysicalPlanScan`'s insert-only guard since a CDC source is itself a
+  changelog; Arrow→RowData transition restores each row's `RowKind`. Parity vs Flink's own
+  `DebeziumJsonDeserializationSchema` (`NativeCdcDecodeSqlHarnessTest`). Remaining: Canal/Maxwell
+  (different envelope shapes), debezium-avro-confluent (Avro body), schema-include + metadata, upsert/PK
+  ChangelogNormalize — see the CDC per-format finding above.
+- **Phase 4 — Protobuf. Decoder DONE (2026-06-26)** via `ptars` (wire→Arrow, descriptor-driven) +
+  `prost-reflect` for the runtime descriptor; `MessageDecoder::Protobuf` + `createProtobufDecoder` JNI +
+  Rust test green. Remaining: JVM descriptor-extraction off the message class + planner/operator gating +
+  end-to-end SQL test; Flink schema-mapping parity. (ptars vendored in-tree with the arrow-58 patch —
+  OSS-portable, done.) See the Protobuf finding above.
 - **Later — fully native Kafka source: ticket 33** (removes the off-heap copy entirely).
 
 ## Parity / acceptance

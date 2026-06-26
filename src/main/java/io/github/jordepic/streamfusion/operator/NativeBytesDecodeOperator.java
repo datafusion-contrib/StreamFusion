@@ -21,11 +21,12 @@ import org.apache.flink.table.types.logical.RowType;
  * {@code MessageDecoder}. Replaces Flink's per-record {@code byte[] -> tree -> RowData} materialization
  * with one native decode per batch; the bytes never become a {@code RowData}.
  *
- * <p>{@code format}: 0 = JSON, 1 = Confluent-Avro, 2 = CSV, 3 = raw, 4 = bare Avro, {@link #PROTOBUF} =
- * protobuf. JSON/CSV/raw decode against {@code outputType}; Avro variants against {@code avroSchema}
- * (registered at {@code schemaId} for Confluent, synthetic id 0 for bare); protobuf against
- * {@code protoDescriptor}/{@code protoMessageName}. Stateless across batches; flushes the partial batch
- * at end of input.
+ * <p>{@code format}: 0 = JSON, 1 = Confluent-Avro, 2 = CSV, 3 = raw, 4 = bare Avro, 6 = debezium-json,
+ * 7 = ogg-json, 8 = maxwell-json, 9 = canal-json, {@link #PROTOBUF} = protobuf. JSON/CSV/raw and the CDC
+ * formats decode against {@code outputType} (CDC treats it as the physical columns and appends a
+ * {@code $row_kind$} byte); Avro variants against {@code avroSchema} (registered at {@code schemaId} for
+ * Confluent, synthetic id 0 for bare); protobuf against {@code protoDescriptor}/{@code protoMessageName}.
+ * Stateless across batches; flushes the partial batch at end of input.
  */
 public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<byte[], ArrowBatch>, BoundedOneInput {

@@ -103,9 +103,10 @@ final class KafkaTables {
         POLL_TIMEOUT_MILLIS);
   }
 
-  // --- Shallow decode path (Phase 2): Flink's own KafkaSource consumes raw value bytes, a native
-  // operator decodes them to Arrow. Insert-only formats (JSON/CSV/raw) route via isNativeKafkaDecode.
-  // Avro/protobuf decoders exist but aren't wired into this planner path yet — see ticket 32.
+  // --- Shallow decode path (Phase 2/3): Flink's own KafkaSource consumes raw value bytes, a native
+  // operator decodes them to Arrow. Insert-only formats (JSON/CSV/raw) route via isNativeKafkaDecode;
+  // CDC changelog formats (Debezium/OGG) route via isCdcDecode, gated to the cases reproduced identically
+  // to Flink. Avro/protobuf decoders exist but aren't wired into this planner path yet — see ticket 32.
 
   /** The {@code MessageDecoder} format code for this table's value format, or -1 if not decodable here. */
   static int decodeFormatCode(Map<String, String> options) {
@@ -120,6 +121,14 @@ final class KafkaTables {
         return 2;
       case "raw":
         return 3;
+      case "debezium-json":
+        return 6;
+      case "ogg-json":
+        return 7;
+      case "maxwell-json":
+        return 8;
+      case "canal-json":
+        return 9;
       default:
         return -1; // avro / avro-confluent / protobuf: decoder exists, planner wiring is a follow-up
     }
@@ -140,7 +149,8 @@ final class KafkaTables {
   }
 
   /** Whether the shallow native-decode path can run this scan for an <em>insert-only</em> value format
-   * (JSON/CSV/raw — codes 0/2/3): Flink consumes bytes, the native operator decodes them to Arrow. */
+   * (JSON/CSV/raw — codes 0/2/3): Flink consumes bytes, the native operator decodes them to Arrow. CDC
+   * changelog formats are handled separately by {@link #isCdcDecode}. */
   static boolean isNativeKafkaDecode(RelNode node) {
     if (!(node instanceof StreamPhysicalTableSourceScan)) {
       return false;
@@ -151,6 +161,36 @@ final class KafkaTables {
     }
     int code = decodeFormatCode(options);
     return code == 0 || code == 2 || code == 3;
+  }
+
+  /** Whether this scan is a CDC changelog format the native decode reproduces <em>identically</em> to
+   * Flink. Only Debezium/OGG JSON (full pre/post images) qualify, and only when the table uses the
+   * options whose semantics we match exactly. Anything else — Maxwell/Canal (their partial-{@code old}
+   * merge can't be reproduced from the decoded image alone), a {@code schema-include} wrapper,
+   * {@code ignore-parse-errors} (Flink skips bad rows; the native decoder fails on them like Flink's
+   * default), or metadata/computed columns the value decode doesn't produce — falls back to Flink. See
+   * ticket 32 for the follow-ups that would lift each restriction. */
+  static boolean isCdcDecode(RelNode node) {
+    if (!(node instanceof StreamPhysicalTableSourceScan)) {
+      return false;
+    }
+    StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) node;
+    Map<String, String> options = FilesystemTables.options(scan);
+    if (!decodeCommon(options)) {
+      return false;
+    }
+    int code = decodeFormatCode(options);
+    if (code != 6 && code != 7) {
+      return false; // Debezium/OGG only; Maxwell/Canal partial-old merge isn't bit-identical (ticket 32)
+    }
+    String format = options.getOrDefault("value.format", options.get("format"));
+    if ("true".equalsIgnoreCase(options.get(format + ".schema-include"))) {
+      return false; // the {schema, payload} envelope wrapper isn't handled
+    }
+    if ("true".equalsIgnoreCase(options.get(format + ".ignore-parse-errors"))) {
+      return false; // Flink skips malformed rows; the native decoder fails, matching the default only
+    }
+    return FilesystemTables.allPhysicalColumns(scan); // metadata/computed columns aren't decoded natively
   }
 
   /** Builds Flink's own {@link KafkaSource} producing each record's raw value as a {@code byte[]} (no

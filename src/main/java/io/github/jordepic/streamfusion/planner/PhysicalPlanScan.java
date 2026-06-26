@@ -205,6 +205,16 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       }
     }
 
+    // A CDC changelog source (Debezium/OGG) emits a changelog itself: the native decode operator turns
+    // each message into physical rows carrying their RowKind on $row_kind$ (an update fans out to
+    // UPDATE_BEFORE + UPDATE_AFTER), reproducing Flink's CDC source exactly. Like the GROUP BY/join/Top-N
+    // above, it is therefore exempt from the insert-only guard below. (Append decode formats — JSON via
+    // the native source, CSV/raw via the insert-only decode branch below — are insert-only and handled
+    // after the guard.)
+    if (KafkaTables.isCdcDecode(current)) {
+      return kafkaDecode(current);
+    }
+
     // Native operators emit insert-only rows; substituting into a retracting or updating stream
     // would drop changelog semantics, so only insert-only nodes are eligible.
     if (!(current instanceof StreamPhysicalRel)
@@ -249,7 +259,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // Shallow native-decode path: Flink's KafkaSource consumes raw bytes, a native operator decodes
     // them to Arrow (skipping Flink's RowData decode). Handles the insert-only value formats the native
     // rdkafka source above declines — CSV/raw today (Avro/protobuf decoders exist; planner wiring is a
-    // follow-up). Reached only after that branch, so a JSON table keeps using the native source.
+    // follow-up). Reached only after that branch, so a JSON table keeps using the native source; CDC
+    // formats are handled by the changelog branch above the guard.
     if (KafkaTables.isNativeKafkaDecode(current)) {
       return kafkaDecode(current);
     }
@@ -699,7 +710,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   /**
    * Substitutes a native-decode Kafka source scan with {@link StreamPhysicalNativeKafkaDecode} (Flink's
    * own {@code KafkaSource} produces raw bytes, the native operator decodes them to Arrow), unless the
-   * decode operator is disabled.
+   * decode operator is disabled. Shared by the changelog (CDC) and insert-only decode branches.
    */
   private RelNode kafkaDecode(RelNode current) {
     if (!NativeConfig.operatorEnabled("kafkaDecode")) {

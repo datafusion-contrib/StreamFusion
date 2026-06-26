@@ -3,6 +3,7 @@ package io.github.jordepic.streamfusion.planner;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Map;
+import org.apache.flink.table.catalog.Column;
 import org.apache.flink.table.catalog.ResolvedCatalogBaseTable;
 import org.apache.flink.table.catalog.ResolvedCatalogTable;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
@@ -27,6 +28,29 @@ final class FilesystemTables {
       return ((ResolvedCatalogTable) resolved).getOptions();
     } catch (RuntimeException e) {
       return null;
+    }
+  }
+
+  /**
+   * Whether every column of the matched scan's table is physical — i.e. there are no metadata or
+   * computed columns. A native value decode produces only the physical columns straight from the
+   * message, so a table that adds metadata/computed columns (e.g. CDC source timestamps) must fall back
+   * to Flink, which fills those columns. Returns false if the schema can't be resolved (fail safe).
+   */
+  static boolean allPhysicalColumns(StreamPhysicalTableSourceScan scan) {
+    try {
+      TableSourceTable table = scan.getTable().unwrap(TableSourceTable.class);
+      if (table == null) {
+        return false;
+      }
+      ResolvedCatalogBaseTable<?> resolved = table.contextResolvedTable().getResolvedTable();
+      if (!(resolved instanceof ResolvedCatalogTable)) {
+        return false;
+      }
+      return ((ResolvedCatalogTable) resolved)
+          .getResolvedSchema().getColumns().stream().allMatch(Column::isPhysical);
+    } catch (RuntimeException e) {
+      return false;
     }
   }
 

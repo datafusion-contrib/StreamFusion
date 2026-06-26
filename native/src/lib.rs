@@ -5,7 +5,7 @@ use arrow::array::{
     UInt32Array,
 };
 use arrow::compute::{concat_batches, filter_record_batch, take};
-use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use arrow::datatypes::{DataType, Field, FieldRef, Fields, Schema, SchemaRef};
 use arrow::ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema};
 use datafusion::catalog::memory::MemorySourceConfig;
 use datafusion::common::{DFSchema, JoinSide, JoinType, NullEquality};
@@ -4885,11 +4885,355 @@ fn binary_body(column: &ArrayRef, row: usize) -> Option<&[u8]> {
     }
 }
 
+/// Which CDC changelog JSON dialect an envelope is in. The wire codec is plain JSON either way; the
+/// dialect fixes the two image fields, the operation field, the op-code → action mapping, and how the
+/// pre-image is recovered (see `CdcShape`). Debezium/OGG and Maxwell are scalar (one image per message);
+/// Canal (`data`/`old` arrays — a message fans out per element) is a follow-up.
+#[derive(Clone, Copy)]
+enum CdcDialect {
+    /// Debezium JSON: `{before, after, op}`, op ∈ {`c`/`r` → insert, `u` → update, `d` → delete}.
+    /// Mirrors `DebeziumJsonDeserializationSchema` (`r` is a snapshot read, treated as an insert).
+    Debezium,
+    /// Oracle GoldenGate JSON: `{before, after, op_type}`, op ∈ {`I` → insert, `U` → update,
+    /// `D` → delete, `T` truncate → skipped}. Mirrors `OggJsonDeserializationSchema`.
+    Ogg,
+    /// Maxwell JSON: `{data, old, type}`, type ∈ {`insert`, `update`, `delete`}. `data` is the full
+    /// post-image, `old` a *partial* pre-image (only changed fields); delete carries the row in `data`.
+    /// Mirrors `MaxwellJsonDeserializationSchema`.
+    Maxwell,
+    /// Canal JSON: `{data, old, type}` where `data`/`old` are *arrays* of rows (one message fans out
+    /// per element), type ∈ {`INSERT`, `UPDATE`, `DELETE`, `CREATE` (DDL → skipped)}. Same partial-`old`
+    /// merge as Maxwell, applied per element pair. Mirrors `CanalJsonDeserializationSchema`.
+    Canal,
+}
+
+/// A CDC envelope's change action, before fanning out to physical rows. An update emits two rows
+/// (UPDATE_BEFORE + UPDATE_AFTER); insert/delete emit one.
+enum CdcAction {
+    Insert,
+    Update,
+    Delete,
+}
+
+/// What to do with one envelope row's operation. `Skip` is a deliberate no-op Flink also drops (Canal's
+/// `CREATE` DDL); `Unknown` is an unrecognized op, which Flink *fails the job* on by default — we match
+/// that (rather than silently dropping the row) so the result is identical, and only the planner's
+/// fallback gate lets `ignore-parse-errors` tables (which skip) run on Flink instead.
+enum CdcOp {
+    Change(CdcAction),
+    Skip,
+    Unknown,
+}
+
+/// How a dialect lays out its pre/post images, which determines how UPDATE_BEFORE and DELETE rows are
+/// built.
+#[derive(Clone, Copy, PartialEq)]
+enum CdcShape {
+    /// Debezium/OGG: `before` is the full pre-image and `after` the full post-image. DELETE reads
+    /// `before`; an update's UPDATE_BEFORE is `before` verbatim — a null `before` skips the record
+    /// (Flink throws; we match `ignore-parse-errors`).
+    BeforeAfter,
+    /// Maxwell/Canal: `data` is the full post-image and `old` a *partial* pre-image (only changed
+    /// fields). DELETE reads `data` (it holds the deleted row); an update's UPDATE_BEFORE is
+    /// `coalesce(old, data)` per field — a field absent from `old` is unchanged, so it falls back to
+    /// `data`. (Divergence: a field deliberately changed *to* null can't be told apart from an absent
+    /// one once decoded, so it falls back to `data`; Flink keeps the null. Rare; documented.)
+    DataOld,
+}
+
+/// The fixed per-dialect envelope layout the decoder reads.
+struct CdcSpec {
+    /// JSON field holding the pre-image (`before` / `old`) — envelope column 0.
+    before_field: &'static str,
+    /// JSON field holding the post-image (`after` / `data`) — envelope column 1.
+    after_field: &'static str,
+    /// JSON field holding the operation — envelope column 2.
+    op_field: &'static str,
+    shape: CdcShape,
+    /// Whether the images are JSON *arrays* of rows (Canal) rather than single rows: one message then
+    /// fans out per element, pairing `data[i]` with `old[i]`.
+    arrays: bool,
+}
+
+impl CdcDialect {
+    fn spec(self) -> CdcSpec {
+        match self {
+            CdcDialect::Debezium => CdcSpec {
+                before_field: "before",
+                after_field: "after",
+                op_field: "op",
+                shape: CdcShape::BeforeAfter,
+                arrays: false,
+            },
+            CdcDialect::Ogg => CdcSpec {
+                before_field: "before",
+                after_field: "after",
+                op_field: "op_type",
+                shape: CdcShape::BeforeAfter,
+                arrays: false,
+            },
+            CdcDialect::Maxwell => CdcSpec {
+                before_field: "old",
+                after_field: "data",
+                op_field: "type",
+                shape: CdcShape::DataOld,
+                arrays: false,
+            },
+            CdcDialect::Canal => CdcSpec {
+                before_field: "old",
+                after_field: "data",
+                op_field: "type",
+                shape: CdcShape::DataOld,
+                arrays: true,
+            },
+        }
+    }
+
+    /// Classifies an op string. An unrecognized op is `Unknown` (Flink throws on it by default — see
+    /// `CdcOp`); Canal's `CREATE` is a `Skip` (Flink drops DDL). Mirrors each `*JsonDeserializationSchema`.
+    fn classify(self, op: &str) -> CdcOp {
+        match self {
+            CdcDialect::Debezium => match op {
+                "c" | "r" => CdcOp::Change(CdcAction::Insert),
+                "u" => CdcOp::Change(CdcAction::Update),
+                "d" => CdcOp::Change(CdcAction::Delete),
+                _ => CdcOp::Unknown,
+            },
+            CdcDialect::Ogg => match op {
+                "I" => CdcOp::Change(CdcAction::Insert),
+                "U" => CdcOp::Change(CdcAction::Update),
+                "D" => CdcOp::Change(CdcAction::Delete),
+                _ => CdcOp::Unknown, // including "T" truncate, which Flink treats as an unknown op
+            },
+            CdcDialect::Maxwell => match op {
+                "insert" => CdcOp::Change(CdcAction::Insert),
+                "update" => CdcOp::Change(CdcAction::Update),
+                "delete" => CdcOp::Change(CdcAction::Delete),
+                _ => CdcOp::Unknown,
+            },
+            CdcDialect::Canal => match op {
+                "INSERT" => CdcOp::Change(CdcAction::Insert),
+                "UPDATE" => CdcOp::Change(CdcAction::Update),
+                "DELETE" => CdcOp::Change(CdcAction::Delete),
+                "CREATE" => CdcOp::Skip, // a DDL change event Flink drops
+                _ => CdcOp::Unknown,
+            },
+        }
+    }
+}
+
+/// Appends the output row(s) for one change-event unit (one envelope row, or one array element for
+/// Canal): `before_idx`/`after_idx` are the rows to read in the pre/post-image struct arrays (equal for
+/// scalar dialects; distinct flattened indices for Canal). An update fans out to UPDATE_BEFORE +
+/// UPDATE_AFTER; a `BeforeAfter` dialect with a null pre-image skips the update/delete (Flink throws).
+fn cdc_emit(
+    action: &CdcAction,
+    before_idx: usize,
+    after_idx: usize,
+    shape: CdcShape,
+    before: &StructArray,
+    out: &mut Vec<(i8, usize, usize, RowSource)>,
+) {
+    // Debezium/OGG fail the job on a null pre-image for an update/delete (Flink's REPLICA_IDENTITY
+    // error); we match that rather than silently dropping the row, so the result is identical.
+    match action {
+        CdcAction::Insert => out.push((0, before_idx, after_idx, RowSource::After)),
+        CdcAction::Update => {
+            let before_source = match shape {
+                CdcShape::BeforeAfter if !before.is_valid(before_idx) => {
+                    panic!("CDC UPDATE has a null \"before\"/pre-image (REPLICA IDENTITY not FULL?)")
+                }
+                CdcShape::BeforeAfter => RowSource::Before,
+                CdcShape::DataOld => RowSource::Coalesce,
+            };
+            out.push((1, before_idx, after_idx, before_source));
+            out.push((2, before_idx, after_idx, RowSource::After));
+        }
+        CdcAction::Delete => match shape {
+            CdcShape::BeforeAfter if !before.is_valid(before_idx) => {
+                panic!("CDC DELETE has a null \"before\"/pre-image (REPLICA IDENTITY not FULL?)")
+            }
+            CdcShape::BeforeAfter => out.push((3, before_idx, after_idx, RowSource::Before)),
+            // Maxwell/Canal: the deleted row lives in the post-image (`data`).
+            CdcShape::DataOld => out.push((3, before_idx, after_idx, RowSource::After)),
+        },
+    }
+}
+
+/// Which image an output row reads its columns from. `Coalesce` (Maxwell/Canal UPDATE_BEFORE) reads the
+/// pre-image where that field is present and falls back to the post-image otherwise — a per-field choice,
+/// so it can't share one gather index across columns.
+#[derive(Clone, Copy)]
+enum RowSource {
+    /// The pre-image (`before` / `old`), envelope column 0.
+    Before,
+    /// The post-image (`after` / `data`), envelope column 1.
+    After,
+    /// Per field: pre-image where present, else post-image.
+    Coalesce,
+}
+
+/// Decodes a scalar CDC changelog JSON format (Debezium/OGG/Maxwell) straight to a columnar changelog
+/// batch: the physical columns plus a trailing `$row_kind$` byte, with one input message fanning out to
+/// 0–2 output rows (an update becomes UPDATE_BEFORE + UPDATE_AFTER; a tombstone/empty message, zero).
+/// An unknown op or a null pre-image on an update/delete *fails* (Flink's default throw), never a silent
+/// drop — the planner only routes here when `ignore-parse-errors` is off, so failing matches Flink.
+/// This mirrors Flink's `*JsonDeserializationSchema` — decode the envelope to a row, then emit the
+/// physical row(s) by op with a `RowKind` — but vectorized: every body's envelope is decoded in one
+/// `arrow-json` pass, then each physical column is gathered with a single `interleave` choosing the
+/// right pre/post-image struct child per output row. RisingWave's row-at-a-time `DebeziumChangeEvent`
+/// (`access_field(before/after)` + an `Ops` array) is the reference; this is its batch form, where
+/// `$row_kind$` is our columnar `RowKind` (divergences/13). It feeds the existing native changelog
+/// operators, so a CDC → GROUP BY/join/Top-N pipeline materializes zero rows end to end.
+struct CdcJsonDecoder {
+    /// The envelope `arrow-json` decodes into: the pre/post images as nested structs of the physical
+    /// columns (made nullable, since the absent side / unchanged fields are null), plus the op field as
+    /// Utf8. Envelope fields not in this schema (`source`, `ts_ms`, `database`, …) are ignored by arrow-json.
+    envelope: SchemaRef,
+    /// Output schema: the physical columns (nullable) + trailing `$row_kind$` Int8.
+    output: SchemaRef,
+    /// Number of physical columns (envelope/output arity excludes op and `$row_kind$`).
+    arity: usize,
+    dialect: CdcDialect,
+}
+
+impl CdcJsonDecoder {
+    fn new(physical: SchemaRef, dialect: CdcDialect) -> CdcJsonDecoder {
+        let spec = dialect.spec();
+        // The images are null on the absent side / for unchanged fields, so the nested physical fields
+        // must be nullable regardless of the table's declared nullability.
+        let nullable: Fields = physical
+            .fields()
+            .iter()
+            .map(|f| Arc::new(f.as_ref().clone().with_nullable(true)))
+            .collect();
+        let image = DataType::Struct(nullable.clone());
+        // Canal wraps each image in a JSON array of rows.
+        let image = if spec.arrays {
+            DataType::List(Arc::new(Field::new("item", image, true)))
+        } else {
+            image
+        };
+        // Column 0 = pre-image, 1 = post-image, 2 = op (arrow-json matches the JSON keys by name).
+        let envelope = Arc::new(Schema::new(vec![
+            Field::new(spec.before_field, image.clone(), true),
+            Field::new(spec.after_field, image, true),
+            Field::new(spec.op_field, DataType::Utf8, true),
+        ]));
+        let mut output_fields: Vec<FieldRef> = nullable.iter().cloned().collect();
+        output_fields.push(Arc::new(Field::new(ROW_KIND_COLUMN, DataType::Int8, false)));
+        let output = Arc::new(Schema::new(output_fields));
+        CdcJsonDecoder { envelope, output, arity: nullable.len(), dialect }
+    }
+
+    fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
+        use arrow::array::ListArray;
+        let column = bodies.column(0);
+        let mut decoder = arrow::json::ReaderBuilder::new(self.envelope.clone())
+            .with_batch_size(bodies.num_rows().max(1))
+            .build_decoder()
+            .expect("failed to build CDC JSON decoder");
+        for row in 0..bodies.num_rows() {
+            if let Some(bytes) = binary_body(column, row) {
+                let consumed = decoder.decode(bytes).expect("failed to decode CDC envelope");
+                assert_eq!(consumed, bytes.len(), "CDC body was not a single complete document");
+            }
+        }
+        let envelope = match decoder.flush().expect("failed to flush CDC envelope batch") {
+            Some(batch) => batch,
+            None => return RecordBatch::new_empty(self.output.clone()),
+        };
+
+        let spec = self.dialect.spec();
+        let ops = envelope.column(2).as_any().downcast_ref::<StringArray>().expect("op string");
+
+        // The pre/post images as struct arrays the gather reads from. For Canal they are the *flattened*
+        // values of the `old`/`data` list columns, and a list's element pairs `old[i]` with `data[i]`;
+        // for scalar dialects each envelope row is itself the single unit (pre/post index = the row).
+        let (before, after) = if spec.arrays {
+            let before_list = envelope.column(0).as_any().downcast_ref::<ListArray>().expect("old list");
+            let after_list = envelope.column(1).as_any().downcast_ref::<ListArray>().expect("data list");
+            (before_list.values().clone(), after_list.values().clone())
+        } else {
+            (envelope.column(0).clone(), envelope.column(1).clone())
+        };
+        let before = before.as_any().downcast_ref::<StructArray>().expect("pre-image struct");
+        let after = after.as_any().downcast_ref::<StructArray>().expect("post-image struct");
+
+        // Per output row: its RowKind byte (0 +I, 1 -U, 2 +U, 3 -D — `RowKind.toByteValue()`), and the
+        // rows to read in the pre/post-image struct arrays, and which image to read each column from.
+        let mut out_rows: Vec<(i8, usize, usize, RowSource)> = Vec::with_capacity(envelope.num_rows());
+        for row in 0..envelope.num_rows() {
+            // A missing op field is malformed; Flink fails on it (NPE caught → rethrown). Match that.
+            let op = if ops.is_valid(row) {
+                ops.value(row)
+            } else {
+                panic!("CDC message has no operation field");
+            };
+            let action = match self.dialect.classify(op) {
+                CdcOp::Change(action) => action,
+                CdcOp::Skip => continue,
+                // Flink throws on an unrecognized op by default; we fail too (never drop it silently).
+                CdcOp::Unknown => panic!("unknown CDC operation \"{op}\""),
+            };
+            if spec.arrays {
+                let after_list = envelope.column(1).as_any().downcast_ref::<ListArray>().unwrap();
+                let before_list = envelope.column(0).as_any().downcast_ref::<ListArray>().unwrap();
+                let (after_off, after_len) =
+                    (after_list.value_offsets()[row] as usize, after_list.value_length(row) as usize);
+                let (before_off, before_len) =
+                    (before_list.value_offsets()[row] as usize, before_list.value_length(row) as usize);
+                for i in 0..after_len {
+                    // Canal pairs data[i] with old[i]; if `old` is shorter (or absent) for this element,
+                    // there is no paired pre-image, so fall back to the post-image (coalesce → no change).
+                    let before_idx = if i < before_len { before_off + i } else { after_off + i };
+                    cdc_emit(&action, before_idx, after_off + i, spec.shape, before, &mut out_rows);
+                }
+            } else {
+                cdc_emit(&action, row, row, spec.shape, before, &mut out_rows);
+            }
+        }
+
+        // Gather each physical column, choosing the pre/post-image child per output row. The source is
+        // the same across columns except for `Coalesce`, which picks per field by the pre-image's
+        // validity there — so the gather index is built per field.
+        const BEFORE: usize = 0;
+        const AFTER: usize = 1;
+        let mut columns: Vec<ArrayRef> = Vec::with_capacity(self.arity + 1);
+        for field in 0..self.arity {
+            let before_child = before.column(field);
+            let after_child = after.column(field);
+            let indices: Vec<(usize, usize)> = out_rows
+                .iter()
+                .map(|&(_, before_idx, after_idx, source)| match source {
+                    RowSource::Before => (BEFORE, before_idx),
+                    RowSource::After => (AFTER, after_idx),
+                    RowSource::Coalesce => {
+                        if before_child.is_valid(before_idx) {
+                            (BEFORE, before_idx)
+                        } else {
+                            (AFTER, after_idx)
+                        }
+                    }
+                })
+                .collect();
+            let sources = [before_child.as_ref(), after_child.as_ref()];
+            columns.push(
+                arrow::compute::interleave(&sources, &indices).expect("failed to gather CDC column"),
+            );
+        }
+        columns.push(Arc::new(Int8Array::from(
+            out_rows.iter().map(|&(kind, _, _, _)| kind).collect::<Vec<i8>>(),
+        )));
+        RecordBatch::try_new(self.output.clone(), columns).expect("failed to build CDC batch")
+    }
+}
+
 /// The single, format-dispatched decode core shared by every ingest path: it turns a batch of one
 /// binary column — raw message bodies, one per row — into a typed Arrow batch. JSON goes through
 /// `arrow-json`, CSV through `arrow-csv`, Avro (bare or Confluent-framed) through `arrow-avro` against a
-/// local schema-id store, protobuf through `prost-reflect`/`ptars`, and `raw` is a passthrough. Both the
-/// shallow path (Flink polls bytes, hands them
+/// local schema-id store, protobuf through `prost-reflect`/`ptars`, the CDC changelog formats through
+/// `CdcJsonDecoder`, and `raw` is a passthrough. Both the shallow path (Flink polls bytes, hands them
 /// here) and the native source (rdkafka polls bytes, hands them here) feed the *same* `MessageDecoder`;
 /// only who produces the body batch differs.
 enum MessageDecoder {
@@ -4902,10 +5246,14 @@ enum MessageDecoder {
     /// registered at synthetic id 0 — we prepend the 5-byte id-0 header so the framed decoder applies.
     BareAvro(arrow_avro::schema::SchemaStore),
     Protobuf(ProtobufDecoder),
+    /// CDC changelog JSON (Debezium/OGG): envelope → physical rows + `$row_kind$`, fanning out updates.
+    Cdc(CdcJsonDecoder),
 }
 
 impl MessageDecoder {
-    /// `format`: 0 = JSON, 2 = CSV, 3 = `raw` — decoded against `output_schema`; 1 = Confluent-Avro
+    /// `format`: 0 = JSON, 2 = CSV, 3 = `raw`, 6 = debezium-json, 7 = ogg-json, 8 = maxwell-json,
+    /// 9 = canal-json — all decoded against `output_schema` (CDC treats it as the physical columns);
+    /// 1 = Confluent-Avro
     /// (`avro_schema` registered at `schema_id`); 4 = bare Avro (`avro_schema` as the reader schema,
     /// registered at synthetic id 0). (Protobuf is built via `createProtobufDecoder`, not here.)
     fn new(format: i32, output_schema: SchemaRef, avro_schema: &str, schema_id: i32) -> MessageDecoder {
@@ -4914,6 +5262,10 @@ impl MessageDecoder {
             4 => MessageDecoder::BareAvro(avro_store(avro_schema, 0)),
             2 => MessageDecoder::Csv(CsvDecoder::new(output_schema)),
             3 => MessageDecoder::Raw(RawDecoder::new(output_schema)),
+            6 => MessageDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Debezium)),
+            7 => MessageDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Ogg)),
+            8 => MessageDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Maxwell)),
+            9 => MessageDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Canal)),
             _ => MessageDecoder::Json(JsonDecoder::new(output_schema)),
         }
     }
@@ -4926,6 +5278,7 @@ impl MessageDecoder {
             MessageDecoder::Avro(store) => decode_avro_body(store, body, false),
             MessageDecoder::BareAvro(store) => decode_avro_body(store, body, true),
             MessageDecoder::Protobuf(decoder) => decoder.decode(body),
+            MessageDecoder::Cdc(decoder) => decoder.decode(body),
         }
     }
 }
@@ -6619,6 +6972,143 @@ mod tests {
         let names =
             out.column_by_name("name").unwrap().as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
         assert_eq!((names.value(0), names.value(1)), ("a", "b"));
+    }
+
+    // Debezium JSON (format 6): the `{before, after, op}` envelope fans out to a columnar changelog —
+    // c/r → one INSERT row from `after`, u → UPDATE_BEFORE (from `before`) + UPDATE_AFTER (from `after`),
+    // d → one DELETE row from `before` — with each row's `RowKind` on the trailing `$row_kind$` column.
+    #[test]
+    fn cdc_debezium_decode_emits_changelog() {
+        let insert = br#"{"before":null,"after":{"id":1,"name":"a","score":1.5},"op":"c","ts_ms":7}"#;
+        let update =
+            br#"{"before":{"id":2,"name":"b","score":2.5},"after":{"id":2,"name":"b2","score":3.5},"op":"u"}"#;
+        let delete = br#"{"before":{"id":3,"name":"c","score":4.5},"after":null,"op":"d"}"#;
+        let body = bodies(vec![Some(insert.as_slice()), Some(update), Some(delete)]);
+
+        let out = MessageDecoder::new(6, json_schema(), "", 0).decode(&body);
+
+        // 1 (insert) + 2 (update) + 1 (delete) physical rows.
+        assert_eq!(out.num_rows(), 4);
+        let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(id.values(), &[1, 2, 2, 3]);
+        let names = out.column(1).as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
+        assert_eq!(
+            (0..4).map(|i| names.value(i)).collect::<Vec<_>>(),
+            vec!["a", "b", "b2", "c"]
+        );
+        let scores = out.column(2).as_any().downcast_ref::<arrow::array::Float64Array>().unwrap();
+        assert_eq!(scores.values(), &[1.5, 2.5, 3.5, 4.5]);
+        // INSERT(0), UPDATE_BEFORE(1), UPDATE_AFTER(2), DELETE(3) — Flink's RowKind byte values.
+        let kinds = out.column(3).as_any().downcast_ref::<Int8Array>().unwrap();
+        assert_eq!(kinds.values(), &[0, 1, 2, 3]);
+        assert_eq!(out.schema().field(3).name(), ROW_KIND_COLUMN);
+    }
+
+    // A tombstone (null body) is dropped, leaving the valid records — matching Flink, which skips
+    // empty/null messages regardless of error handling.
+    #[test]
+    fn cdc_debezium_skips_tombstone() {
+        let insert = br#"{"before":null,"after":{"id":1,"name":"a","score":1.5},"op":"r"}"#;
+        let body = bodies(vec![None, Some(insert.as_slice())]);
+
+        let out = MessageDecoder::new(6, json_schema(), "", 0).decode(&body);
+
+        assert_eq!(out.num_rows(), 1);
+        let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(id.values(), &[1]);
+        let kinds = out.column(3).as_any().downcast_ref::<Int8Array>().unwrap();
+        assert_eq!(kinds.values(), &[0]); // "r" snapshot read → INSERT
+    }
+
+    // An unrecognized op fails the decode rather than silently dropping the row — Flink throws on it by
+    // default, so failing keeps the result identical (the planner routes here only when the table does
+    // not set ignore-parse-errors, i.e. Flink is in throw mode too).
+    #[test]
+    #[should_panic(expected = "unknown CDC operation")]
+    fn cdc_unknown_op_fails() {
+        let unknown = br#"{"before":null,"after":{"id":9,"name":"z","score":9.5},"op":"x"}"#;
+        MessageDecoder::new(6, json_schema(), "", 0).decode(&bodies(vec![Some(unknown.as_slice())]));
+    }
+
+    // A null "before" on an update fails (Flink's REPLICA_IDENTITY error), not a silent drop.
+    #[test]
+    #[should_panic(expected = "null \"before\"")]
+    fn cdc_debezium_null_before_update_fails() {
+        let update = br#"{"before":null,"after":{"id":2,"name":"b","score":2.5},"op":"u"}"#;
+        MessageDecoder::new(6, json_schema(), "", 0).decode(&bodies(vec![Some(update.as_slice())]));
+    }
+
+    // OGG JSON (format 7): same nested before/after layout as Debezium, but the op field is `op_type`
+    // with I/U/D codes.
+    #[test]
+    fn cdc_ogg_dialect_uses_op_type() {
+        let insert = br#"{"before":null,"after":{"id":1,"name":"a","score":1.5},"op_type":"I"}"#;
+        let update =
+            br#"{"before":{"id":2,"name":"b","score":2.5},"after":{"id":2,"name":"b2","score":3.5},"op_type":"U"}"#;
+        let delete = br#"{"before":{"id":3,"name":"c","score":4.5},"after":null,"op_type":"D"}"#;
+        let body = bodies(vec![Some(insert.as_slice()), Some(update), Some(delete)]);
+
+        let out = MessageDecoder::new(7, json_schema(), "", 0).decode(&body);
+
+        assert_eq!(out.num_rows(), 4); // insert + (update→2) + delete
+        let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(id.values(), &[1, 2, 2, 3]);
+        let kinds = out.column(3).as_any().downcast_ref::<Int8Array>().unwrap();
+        assert_eq!(kinds.values(), &[0, 1, 2, 3]);
+    }
+
+    // Maxwell JSON (format 8): `{data, old, type}` — `data` is the full post-image, `old` only the
+    // changed fields. An update's UPDATE_BEFORE is coalesce(old, data) per field (unchanged fields fall
+    // back to `data`); a delete reads the row from `data`, not `old`.
+    #[test]
+    fn cdc_maxwell_merges_partial_old_image() {
+        let insert = br#"{"data":{"id":1,"name":"a","score":1.5},"type":"insert"}"#;
+        // Only `name` changed (b → b2): `old` carries just `name`; id/score must come from `data`.
+        let update = br#"{"data":{"id":2,"name":"b2","score":2.5},"old":{"name":"b"},"type":"update"}"#;
+        let delete = br#"{"data":{"id":3,"name":"c","score":3.5},"type":"delete"}"#;
+        let body = bodies(vec![Some(insert.as_slice()), Some(update), Some(delete)]);
+
+        let out = MessageDecoder::new(8, json_schema(), "", 0).decode(&body);
+
+        assert_eq!(out.num_rows(), 4);
+        let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(id.values(), &[1, 2, 2, 3]);
+        let names = out.column(1).as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
+        // UPDATE_BEFORE keeps the old name "b"; the unchanged id/score are pulled from `data`.
+        assert_eq!((0..4).map(|i| names.value(i)).collect::<Vec<_>>(), vec!["a", "b", "b2", "c"]);
+        let scores = out.column(2).as_any().downcast_ref::<arrow::array::Float64Array>().unwrap();
+        assert_eq!(scores.values(), &[1.5, 2.5, 2.5, 3.5]);
+        let kinds = out.column(3).as_any().downcast_ref::<Int8Array>().unwrap();
+        assert_eq!(kinds.values(), &[0, 1, 2, 3]);
+    }
+
+    // Canal JSON (format 9): `data`/`old` are arrays, so one message fans out per element. An INSERT
+    // with a two-row `data` emits two INSERTs; an UPDATE pairs `data[i]` with `old[i]` and merges the
+    // partial `old` like Maxwell (UPDATE_BEFORE coalesces old over data).
+    #[test]
+    fn cdc_canal_fans_out_arrays_and_merges_old() {
+        // One INSERT message carrying two rows.
+        let insert = br#"{"data":[{"id":1,"name":"a","score":1.5},{"id":2,"name":"b","score":2.5}],"type":"INSERT"}"#;
+        // One UPDATE message, one element: only `score` changed (3.5 → 3.75); id/name come from data.
+        let update =
+            br#"{"data":[{"id":3,"name":"c","score":3.75}],"old":[{"score":3.5}],"type":"UPDATE"}"#;
+        // A CREATE (DDL) message is skipped entirely.
+        let ddl = br#"{"data":null,"type":"CREATE"}"#;
+        let body = bodies(vec![Some(insert.as_slice()), Some(update), Some(ddl)]);
+
+        let out = MessageDecoder::new(9, json_schema(), "", 0).decode(&body);
+
+        // 2 inserts + (update → UB + UA); CREATE dropped.
+        assert_eq!(out.num_rows(), 4);
+        let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(id.values(), &[1, 2, 3, 3]);
+        let names = out.column(1).as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
+        assert_eq!((0..4).map(|i| names.value(i)).collect::<Vec<_>>(), vec!["a", "b", "c", "c"]);
+        let scores = out.column(2).as_any().downcast_ref::<arrow::array::Float64Array>().unwrap();
+        // UPDATE_BEFORE keeps the old score 3.5; UPDATE_AFTER has the new 3.75.
+        assert_eq!(scores.values(), &[1.5, 2.5, 3.5, 3.75]);
+        let kinds = out.column(3).as_any().downcast_ref::<Int8Array>().unwrap();
+        assert_eq!(kinds.values(), &[0, 0, 1, 2]);
     }
 
     // Each input row is one complete JSON document; the decoder emits one typed row per document,

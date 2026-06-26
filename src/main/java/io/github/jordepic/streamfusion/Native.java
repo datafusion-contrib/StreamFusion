@@ -425,8 +425,9 @@ public final class Native {
    * batch — the format-decode core both the shallow and native Kafka paths feed bytes into. Stateless,
    * so no snapshot/restore.
    *
-   * @param format 0 = JSON, 2 = CSV, 3 = raw (decoded against the schema C structs), 1 = Confluent Avro,
-   *     4 = bare Avro
+   * @param format 0 = JSON, 2 = CSV, 3 = raw, 6 = debezium-json, 7 = ogg-json, 8 = maxwell-json,
+   *     9 = canal-json (all decoded against the schema C structs; the CDC formats append a
+   *     {@code $row_kind$} byte), 1 = Confluent Avro, 4 = bare Avro
    * @param schemaArrayAddress address of an exported (empty) {@code ArrowArray} of the target schema
    * @param schemaAddress address of the matching exported {@code ArrowSchema}
    * @param avroSchema writer-schema JSON for Avro (ignored for JSON; pass "")
