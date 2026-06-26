@@ -270,7 +270,8 @@ fn bench_interval_join(c: &mut Criterion) {
     group.bench_function("equi_key_push", |b| {
         b.iter_batched(
             || {
-                let mut join = IntervalJoin::new(vec![0], vec![0], 2, 2, 0, 0);
+                let mut join =
+                    IntervalJoin::new(vec![0], vec![0], 2, 2, 0, 0, batch.schema(), batch.schema());
                 join.push_left(batch.clone());
                 join
             },

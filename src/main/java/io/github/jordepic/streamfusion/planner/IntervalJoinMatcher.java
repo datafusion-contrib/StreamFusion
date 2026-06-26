@@ -30,8 +30,8 @@ final class IntervalJoinMatcher {
   /** The specific reason this interval join is not accelerable, or null if it is. */
   static String unsupportedReason(StreamPhysicalIntervalJoin join) {
     JoinSpec joinSpec = ((CommonPhysicalJoin) join).joinSpec();
-    if (joinSpec.getJoinType() != FlinkJoinType.INNER) {
-      return "interval join: only INNER joins (outer/semi/anti emit nulls or differ)";
+    if (joinTypeCode(joinSpec.getJoinType()) < 0) {
+      return "interval join: only INNER/LEFT/RIGHT/FULL joins (semi/anti are regular joins)";
     }
     int[] leftKeys = joinSpec.getLeftKeys();
     int[] rightKeys = joinSpec.getRightKeys();
@@ -76,6 +76,26 @@ final class IntervalJoinMatcher {
     RexNode expanded =
         RexUtil.expandSearch(join.getCluster().getRexBuilder(), null, condition.get());
     return RexExpression.encode(expanded);
+  }
+
+  /** The native join-type code for a time-bounded join (0=INNER,1=LEFT,2=RIGHT,3=FULL), or -1. */
+  static int joinTypeCode(FlinkJoinType joinType) {
+    switch (joinType) {
+      case INNER:
+        return 0;
+      case LEFT:
+        return 1;
+      case RIGHT:
+        return 2;
+      case FULL:
+        return 3;
+      default:
+        return -1;
+    }
+  }
+
+  static int joinTypeCode(StreamPhysicalIntervalJoin join) {
+    return joinTypeCode(((CommonPhysicalJoin) join).joinSpec().getJoinType());
   }
 
   static int[] leftKeys(StreamPhysicalIntervalJoin join) {

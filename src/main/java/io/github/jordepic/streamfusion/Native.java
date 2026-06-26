@@ -598,6 +598,9 @@ public final class Native {
    * @param rightTime rowtime column index in the right input batch
    * @param lowerMillis inclusive lower bound on {@code left.rt - right.rt}
    * @param upperMillis inclusive upper bound on {@code left.rt - right.rt}
+   * @param joinType 0=INNER, 1=LEFT, 2=RIGHT, 3=FULL (outer pads unmatched rows at eviction)
+   * @param leftSchemaAddress C Data Interface address of the left input's (data-only) Arrow schema
+   * @param rightSchemaAddress C Data Interface address of the right input's (data-only) Arrow schema
    * @param predKinds residual non-equi predicate over the joined {@code [left.., right..]} row (empty
    *     ⇒ none), ANDed with the interval bounds; same encoding {@link #createFilterExpression} takes
    */
@@ -608,6 +611,9 @@ public final class Native {
       int rightTime,
       long lowerMillis,
       long upperMillis,
+      int joinType,
+      long leftSchemaAddress,
+      long rightSchemaAddress,
       int[] predKinds,
       int[] predPayload,
       int[] predChildCounts,
@@ -623,8 +629,12 @@ public final class Native {
   public static native void pushRightIntervalJoiner(
       long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
 
-  /** Advances the combined watermark, evicting rows no future arrival can match. */
-  public static native void advanceIntervalJoiner(long handle, long watermarkMillis);
+  /**
+   * Advances the combined watermark, evicting rows no future arrival can match, and exporting the
+   * null-padded rows for evicted outer rows that never matched (empty for an INNER join).
+   */
+  public static native void advanceIntervalJoiner(
+      long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
 
   /** Releases an interval joiner handle. */
   public static native void closeIntervalJoiner(long handle);
@@ -640,6 +650,9 @@ public final class Native {
       int rightTime,
       long lowerMillis,
       long upperMillis,
+      int joinType,
+      long leftSchemaAddress,
+      long rightSchemaAddress,
       int[] predKinds,
       int[] predPayload,
       int[] predChildCounts,

@@ -1,6 +1,7 @@
 package io.github.jordepic.streamfusion.operator;
 
 import io.github.jordepic.streamfusion.Native;
+import io.github.jordepic.streamfusion.arrow.ArrowConversion;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
@@ -16,6 +17,7 @@ import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.TwoInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Columnar event-time INNER interval join (Arrow in on both inputs, Arrow out): the join of
@@ -38,6 +40,9 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
   private final int rightTime;
   private final long lowerMillis;
   private final long upperMillis;
+  private final int joinType;
+  private final RowType leftType;
+  private final RowType rightType;
   private final EncodedPredicate predicate;
 
   private transient BufferAllocator allocator;
@@ -52,6 +57,9 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
       int rightTime,
       long lowerMillis,
       long upperMillis,
+      int joinType,
+      RowType leftType,
+      RowType rightType,
       EncodedPredicate predicate) {
     this.leftKeys = leftKeys;
     this.rightKeys = rightKeys;
@@ -59,6 +67,9 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
     this.rightTime = rightTime;
     this.lowerMillis = lowerMillis;
     this.upperMillis = upperMillis;
+    this.joinType = joinType;
+    this.leftType = leftType;
+    this.rightType = rightType;
     this.predicate = predicate;
   }
 
@@ -76,35 +87,50 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
     for (byte[] entry : handleState.get()) {
       snapshot = entry;
     }
-    handle =
-        snapshot == null
-            ? Native.createIntervalJoiner(
-                leftKeys,
-                rightKeys,
-                leftTime,
-                rightTime,
-                lowerMillis,
-                upperMillis,
-                predicate.kinds,
-                predicate.payload,
-                predicate.childCounts,
-                predicate.longs,
-                predicate.doubles,
-                predicate.strings)
-            : Native.restoreIntervalJoiner(
-                leftKeys,
-                rightKeys,
-                leftTime,
-                rightTime,
-                lowerMillis,
-                upperMillis,
-                predicate.kinds,
-                predicate.payload,
-                predicate.childCounts,
-                predicate.longs,
-                predicate.doubles,
-                predicate.strings,
-                snapshot);
+    // Hand both sides' Arrow schemas to the joiner up front so an outer join can type the null-padding
+    // for a side before that side's first batch arrives.
+    BufferAllocator alloc = NativeAllocator.SHARED;
+    CDataDictionaryProvider dicts = NativeAllocator.DICTIONARIES;
+    try (ArrowSchema leftSchema = ArrowSchema.allocateNew(alloc);
+        ArrowSchema rightSchema = ArrowSchema.allocateNew(alloc)) {
+      Data.exportSchema(alloc, ArrowConversion.toArrowSchema(leftType), dicts, leftSchema);
+      Data.exportSchema(alloc, ArrowConversion.toArrowSchema(rightType), dicts, rightSchema);
+      handle =
+          snapshot == null
+              ? Native.createIntervalJoiner(
+                  leftKeys,
+                  rightKeys,
+                  leftTime,
+                  rightTime,
+                  lowerMillis,
+                  upperMillis,
+                  joinType,
+                  leftSchema.memoryAddress(),
+                  rightSchema.memoryAddress(),
+                  predicate.kinds,
+                  predicate.payload,
+                  predicate.childCounts,
+                  predicate.longs,
+                  predicate.doubles,
+                  predicate.strings)
+              : Native.restoreIntervalJoiner(
+                  leftKeys,
+                  rightKeys,
+                  leftTime,
+                  rightTime,
+                  lowerMillis,
+                  upperMillis,
+                  joinType,
+                  leftSchema.memoryAddress(),
+                  rightSchema.memoryAddress(),
+                  predicate.kinds,
+                  predicate.payload,
+                  predicate.childCounts,
+                  predicate.longs,
+                  predicate.doubles,
+                  predicate.strings,
+                  snapshot);
+    }
   }
 
   @Override
@@ -162,7 +188,19 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
 
   @Override
   public void processWatermark(Watermark mark) throws Exception {
-    Native.advanceIntervalJoiner(handle, mark.getTimestamp());
+    // Eviction may produce null-padded rows for unmatched outer rows whose interval just closed; emit
+    // them before forwarding the watermark.
+    try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
+        ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+      Native.advanceIntervalJoiner(
+          handle, mark.getTimestamp(), outArray.memoryAddress(), outSchema.memoryAddress());
+      VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
+      if (out.getRowCount() > 0) {
+        output.collect(new StreamRecord<>(new ArrowBatch(out)));
+      } else {
+        out.close();
+      }
+    }
     super.processWatermark(mark);
   }
 

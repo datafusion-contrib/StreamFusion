@@ -27,6 +27,9 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
   private final int rightTime;
   private final long lowerMillis;
   private final long upperMillis;
+  private final int joinType;
+  private final RowType leftType;
+  private final RowType rightType;
   private final RexExpression predicate;
 
   public NativeIntervalJoinExecNode(
@@ -41,6 +44,9 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
       int rightTime,
       long lowerMillis,
       long upperMillis,
+      int joinType,
+      RowType leftType,
+      RowType rightType,
       RexExpression predicate) {
     super(
         ExecNodeContext.newNodeId(),
@@ -55,6 +61,9 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
     this.rightTime = rightTime;
     this.lowerMillis = lowerMillis;
     this.upperMillis = upperMillis;
+    this.joinType = joinType;
+    this.leftType = leftType;
+    this.rightType = rightType;
     this.predicate = predicate;
   }
 
@@ -77,6 +86,9 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
             rightTime,
             lowerMillis,
             upperMillis,
+            joinType,
+            leftType,
+            rightType,
             RexExpression.toEncodedPredicate(predicate)),
         ArrowBatchTypeInformation.INSTANCE,
         left.getParallelism(),

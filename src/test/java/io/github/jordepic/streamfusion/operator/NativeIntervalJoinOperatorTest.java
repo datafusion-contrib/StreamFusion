@@ -37,7 +37,8 @@ class NativeIntervalJoinOperatorTest {
   void emitsPairsWithinTheInterval() throws Exception {
     // a.rt BETWEEN b.rt - 1000 AND b.rt + 1000, equi-key on column 0, rt is column 2.
     NativeIntervalJoinOperator operator =
-        new NativeIntervalJoinOperator(new int[] {0}, new int[] {0}, 2, 2, -1000L, 1000L, EncodedPredicate.NONE);
+        new NativeIntervalJoinOperator(
+            new int[] {0}, new int[] {0}, 2, 2, -1000L, 1000L, 0, INPUT, INPUT, EncodedPredicate.NONE);
     try (BufferAllocator allocator = new RootAllocator();
         TwoInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch, ArrowBatch> harness =
             new TwoInputStreamOperatorTestHarness<>(operator)) {
@@ -62,7 +63,8 @@ class NativeIntervalJoinOperatorTest {
   @Test
   void doesNotMatchAcrossKeys() throws Exception {
     NativeIntervalJoinOperator operator =
-        new NativeIntervalJoinOperator(new int[] {0}, new int[] {0}, 2, 2, -1000L, 1000L, EncodedPredicate.NONE);
+        new NativeIntervalJoinOperator(
+            new int[] {0}, new int[] {0}, 2, 2, -1000L, 1000L, 0, INPUT, INPUT, EncodedPredicate.NONE);
     try (BufferAllocator allocator = new RootAllocator();
         TwoInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch, ArrowBatch> harness =
             new TwoInputStreamOperatorTestHarness<>(operator)) {

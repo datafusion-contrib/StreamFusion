@@ -1,5 +1,5 @@
 use arrow::array::{
-    make_array, new_empty_array, Array, ArrayRef, BinaryArray, BooleanArray, Float32Array,
+    make_array, new_empty_array, new_null_array, Array, ArrayRef, BinaryArray, BooleanArray, Float32Array,
     Int16Array, Int32Array, Int64Array, Int8Array, LargeBinaryArray, RecordBatch, StringArray,
     StructArray, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
     UInt32Array,
@@ -29,7 +29,7 @@ use jni::objects::{
 };
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 use tokio::runtime::Runtime;
 
@@ -2091,10 +2091,21 @@ struct IntervalJoiner {
     lower: i64,
     upper: i64,
     predicate: Option<JoinPredicate>,
-    left_schema: Option<SchemaRef>,
-    right_schema: Option<SchemaRef>,
+    join_type: JoinKind,
+    // Eager data schemas (no `$rowid$`), seeded at construction so an outer join can type the
+    // null-padding for a side before that side's first batch arrives.
+    left_data_schema: SchemaRef,
+    right_data_schema: SchemaRef,
+    // Buffered rows: data-only for an INNER join, data + a trailing `__rowid__` for an outer join (so
+    // a matched buffered row can be identified to set its match flag, and an unmatched one null-padded
+    // at eviction).
     left_buffered: Vec<RecordBatch>,
     right_buffered: Vec<RecordBatch>,
+    // Outer only: the row-ids that have matched at least once, and the per-side id counters.
+    left_matched: HashSet<i64>,
+    right_matched: HashSet<i64>,
+    left_next_id: i64,
+    right_next_id: i64,
 }
 
 impl IntervalJoiner {
@@ -2107,6 +2118,9 @@ impl IntervalJoiner {
         lower: i64,
         upper: i64,
         predicate: Option<JoinPredicate>,
+        join_type: JoinKind,
+        left_data_schema: SchemaRef,
+        right_data_schema: SchemaRef,
     ) -> Self {
         IntervalJoiner {
             left_keys,
@@ -2116,10 +2130,15 @@ impl IntervalJoiner {
             lower,
             upper,
             predicate,
-            left_schema: None,
-            right_schema: None,
+            join_type,
+            left_data_schema,
+            right_data_schema,
             left_buffered: Vec::new(),
             right_buffered: Vec::new(),
+            left_matched: HashSet::new(),
+            right_matched: HashSet::new(),
+            left_next_id: 0,
+            right_next_id: 0,
         }
     }
 
@@ -2127,68 +2146,152 @@ impl IntervalJoiner {
         self.left_keys.iter().zip(&self.right_keys).map(|(&l, &r)| (l, r)).collect()
     }
 
+    /// The schema of one side's buffered batches: data, plus a trailing `__rowid__` for an outer join.
+    fn buf_schema(&self, is_left: bool) -> SchemaRef {
+        let data = if is_left { &self.left_data_schema } else { &self.right_data_schema };
+        if self.join_type == JoinKind::Inner {
+            data.clone()
+        } else {
+            with_rowid_schema(data)
+        }
+    }
+
     /// Joins an incoming left batch against the buffered right rows (equi-key + interval bounds and
     /// the residual non-equi predicate), then buffers it. Empty until the right side has rows.
     fn push_left(&mut self, batch: RecordBatch) -> RecordBatch {
-        self.left_schema = Some(batch.schema());
-        let key_pairs = self.key_pairs();
         let interval = Some((self.left_time, self.right_time, self.lower, self.upper));
-        let result = match &self.right_schema {
-            Some(right_schema) if !self.right_buffered.is_empty() => {
-                let right = concat_batches(right_schema, self.right_buffered.iter())
+        let filter = residual_filter(
+            &self.left_data_schema,
+            &self.right_data_schema,
+            interval,
+            self.predicate.as_mut(),
+        );
+        if self.join_type == JoinKind::Inner {
+            let result = if self.right_buffered.is_empty() {
+                empty_batch()
+            } else {
+                let right = concat_batches(&self.buf_schema(false), self.right_buffered.iter())
                     .expect("concat right interval buffer");
-                let filter =
-                    residual_filter(&batch.schema(), right_schema, interval, self.predicate.as_mut());
-                hash_join_inner(batch.clone(), right, &key_pairs, filter)
-            }
-            _ => RecordBatch::new_empty(Arc::new(Schema::empty())),
+                hash_join_inner(batch.clone(), right, &self.key_pairs(), filter)
+            };
+            self.left_buffered.push(batch);
+            return result;
+        }
+        // Outer: tag with row-ids, join, record matches on both sides, then buffer the tagged batch.
+        let tagged = append_rowids(&batch, &mut self.left_next_id);
+        let result = if self.right_buffered.is_empty() {
+            empty_batch()
+        } else {
+            let right = concat_batches(&self.buf_schema(false), self.right_buffered.iter())
+                .expect("concat right interval buffer");
+            self.join_tagged(tagged.clone(), right, filter)
         };
-        self.left_buffered.push(batch);
+        self.left_buffered.push(tagged);
         result
     }
 
     /// Joins an incoming right batch against the buffered left rows, then buffers it.
     fn push_right(&mut self, batch: RecordBatch) -> RecordBatch {
-        self.right_schema = Some(batch.schema());
-        let key_pairs = self.key_pairs();
         let interval = Some((self.left_time, self.right_time, self.lower, self.upper));
-        let result = match &self.left_schema {
-            Some(left_schema) if !self.left_buffered.is_empty() => {
-                let left = concat_batches(left_schema, self.left_buffered.iter())
+        let filter = residual_filter(
+            &self.left_data_schema,
+            &self.right_data_schema,
+            interval,
+            self.predicate.as_mut(),
+        );
+        if self.join_type == JoinKind::Inner {
+            let result = if self.left_buffered.is_empty() {
+                empty_batch()
+            } else {
+                let left = concat_batches(&self.buf_schema(true), self.left_buffered.iter())
                     .expect("concat left interval buffer");
-                let filter =
-                    residual_filter(left_schema, &batch.schema(), interval, self.predicate.as_mut());
-                hash_join_inner(left, batch.clone(), &key_pairs, filter)
-            }
-            _ => RecordBatch::new_empty(Arc::new(Schema::empty())),
+                hash_join_inner(left, batch.clone(), &self.key_pairs(), filter)
+            };
+            self.right_buffered.push(batch);
+            return result;
+        }
+        let tagged = append_rowids(&batch, &mut self.right_next_id);
+        let result = if self.left_buffered.is_empty() {
+            empty_batch()
+        } else {
+            let left = concat_batches(&self.buf_schema(true), self.left_buffered.iter())
+                .expect("concat left interval buffer");
+            self.join_tagged(left, tagged.clone(), filter)
         };
-        self.right_buffered.push(batch);
+        self.right_buffered.push(tagged);
         result
     }
 
-    /// Drops the rows the watermark has made dead. A left row can no longer match once
-    /// `left.rt - lower <= watermark` (a future right row has rt > watermark, but matching it needs
-    /// `right.rt <= left.rt - lower`); a right row once `right.rt + upper <= watermark`.
-    fn advance(&mut self, watermark: i64) {
-        let (lower, upper) = (self.lower, self.upper);
-        Self::evict(&mut self.left_buffered, &self.left_schema, self.left_time, |rt| {
-            rt - lower > watermark
-        });
-        Self::evict(&mut self.right_buffered, &self.right_schema, self.right_time, |rt| {
-            rt + upper > watermark
-        });
+    /// Runs the (always INNER) hash join of two row-id-tagged operands `[left data.., left __rowid__]`
+    /// and `[right data.., right __rowid__]`, records the matched row-ids on both sides, and returns
+    /// the matched pairs projected back to `[left data.., right data..]` (the row-ids dropped).
+    fn join_tagged(
+        &mut self,
+        left_tagged: RecordBatch,
+        right_tagged: RecordBatch,
+        filter: Option<JoinFilter>,
+    ) -> RecordBatch {
+        let left_arity = self.left_data_schema.fields().len();
+        let right_arity = self.right_data_schema.fields().len();
+        let joined = hash_join_inner(left_tagged, right_tagged, &self.key_pairs(), filter);
+        if joined.num_rows() == 0 {
+            return empty_batch();
+        }
+        // Layout after the join (renamed c0..): [left data.., left rid, right data.., right rid].
+        let total = joined.num_columns();
+        let left_rid = joined.column(left_arity).as_any().downcast_ref::<Int64Array>().expect("left rid");
+        let right_rid = joined.column(total - 1).as_any().downcast_ref::<Int64Array>().expect("right rid");
+        for i in 0..joined.num_rows() {
+            self.left_matched.insert(left_rid.value(i));
+            self.right_matched.insert(right_rid.value(i));
+        }
+        // Project out the two row-id columns, leaving [left data.., right data..].
+        let keep: Vec<usize> =
+            (0..left_arity).chain(left_arity + 1..total - 1).collect();
+        let fields: Vec<Field> = keep
+            .iter()
+            .enumerate()
+            .map(|(j, &i)| Field::new(format!("c{j}"), joined.schema().field(i).data_type().clone(), true))
+            .collect();
+        let columns: Vec<ArrayRef> = keep.iter().map(|&i| joined.column(i).clone()).collect();
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("project interval pairs")
     }
 
-    /// Keeps only the buffered rows whose rowtime (column `time`) satisfies `keep`.
-    fn evict(
+    /// Drops the rows the watermark has made dead and, for an outer join, returns the null-padded
+    /// rows for the evicted outer-side rows that never matched (append-only — emitted once). A left
+    /// row can no longer match once `left.rt - lower <= watermark` (a future right row has rt >
+    /// watermark, but matching it needs `right.rt <= left.rt - lower`); a right row once
+    /// `right.rt + upper <= watermark`. Because an outer row is evicted only once no future other-side
+    /// row could match it, all its potential matches have been seen, so its match flag is final.
+    fn advance(&mut self, watermark: i64) -> RecordBatch {
+        let (lower, upper) = (self.lower, self.upper);
+        if self.join_type == JoinKind::Inner {
+            Self::evict_inner(&mut self.left_buffered, &self.left_data_schema, self.left_time, |rt| {
+                rt - lower > watermark
+            });
+            Self::evict_inner(&mut self.right_buffered, &self.right_data_schema, self.right_time, |rt| {
+                rt + upper > watermark
+            });
+            return empty_batch();
+        }
+        let left_pads = self.evict_outer(true, |rt| rt - lower > watermark);
+        let right_pads = self.evict_outer(false, |rt| rt + upper > watermark);
+        match (left_pads, right_pads) {
+            (None, None) => empty_batch(),
+            (Some(b), None) | (None, Some(b)) => b,
+            (Some(l), Some(r)) => {
+                concat_batches(&l.schema(), [l, r].iter()).expect("concat interval null-pads")
+            }
+        }
+    }
+
+    /// INNER eviction: keeps only the buffered rows whose rowtime (column `time`) satisfies `keep`.
+    fn evict_inner(
         buffered: &mut Vec<RecordBatch>,
-        schema: &Option<SchemaRef>,
+        schema: &SchemaRef,
         time: usize,
         keep: impl Fn(i64) -> bool,
     ) {
-        let Some(schema) = schema.as_ref() else {
-            return;
-        };
         if buffered.is_empty() {
             return;
         }
@@ -2199,19 +2302,88 @@ impl IntervalJoiner {
         *buffered = if kept.num_rows() > 0 { vec![kept] } else { Vec::new() };
     }
 
-    /// Serializes both buffers (`[u32 left_len][left ipc][right ipc]`) for a checkpoint.
-    fn snapshot(&self) -> Vec<u8> {
-        let serialize = |schema: &Option<SchemaRef>, buffered: &[RecordBatch]| match schema {
-            Some(schema) if !buffered.is_empty() => {
-                write_ipc(&concat_batches(schema, buffered.iter()).expect("concat interval buffer"))
-            }
-            _ => Vec::new(),
+    /// Outer eviction for one side: keeps the live rows, drops the dead ones' match flags, and returns
+    /// the null-padded rows for evicted rows that never matched (only when this side is outer).
+    fn evict_outer(&mut self, is_left: bool, keep: impl Fn(i64) -> bool) -> Option<RecordBatch> {
+        let buffered = std::mem::take(if is_left { &mut self.left_buffered } else { &mut self.right_buffered });
+        if buffered.is_empty() {
+            return None;
+        }
+        let time = if is_left { self.left_time } else { self.right_time };
+        let buf_schema = self.buf_schema(is_left);
+        let all = concat_batches(&buf_schema, buffered.iter()).expect("concat interval buffer");
+        let rt = rt_to_millis(all.column(time));
+        let keep_mask: BooleanArray = rt.iter().map(|v| Some(keep(v.unwrap()))).collect();
+        let kept = filter_record_batch(&all, &keep_mask).expect("filter interval kept");
+        let evicted =
+            filter_record_batch(&all, &arrow::compute::not(&keep_mask).expect("negate keep mask"))
+                .expect("filter interval evicted");
+        let target = if is_left { &mut self.left_buffered } else { &mut self.right_buffered };
+        *target = if kept.num_rows() > 0 { vec![kept] } else { Vec::new() };
+
+        let rid_index = all.num_columns() - 1;
+        let evicted_rids = evicted.column(rid_index).as_any().downcast_ref::<Int64Array>().expect("rid");
+        let this_outer =
+            if is_left { self.join_type.left_is_outer() } else { self.join_type.right_is_outer() };
+        let matched = if is_left { &mut self.left_matched } else { &mut self.right_matched };
+        // Read match flags before dropping them.
+        let unmatched_mask: BooleanArray = (0..evicted.num_rows())
+            .map(|i| Some(this_outer && !matched.contains(&evicted_rids.value(i))))
+            .collect();
+        for i in 0..evicted.num_rows() {
+            matched.remove(&evicted_rids.value(i));
+        }
+        if !this_outer {
+            return None;
+        }
+        let unmatched = filter_record_batch(&evicted, &unmatched_mask).expect("filter unmatched evicted");
+        if unmatched.num_rows() == 0 {
+            return None;
+        }
+        Some(self.null_pad(&unmatched, is_left))
+    }
+
+    /// Builds the null-padded output `[left data.., right data..]` (columns `c0..`) for unmatched rows
+    /// of one side: the side's data columns (the trailing `__rowid__` dropped) beside all-null columns
+    /// for the other side.
+    fn null_pad(&self, rows: &RecordBatch, is_left: bool) -> RecordBatch {
+        let left_types: Vec<DataType> =
+            self.left_data_schema.fields().iter().map(|f| f.data_type().clone()).collect();
+        let right_types: Vec<DataType> =
+            self.right_data_schema.fields().iter().map(|f| f.data_type().clone()).collect();
+        let n = rows.num_rows();
+        let data_arity = if is_left { left_types.len() } else { right_types.len() };
+        let data: Vec<ArrayRef> = (0..data_arity).map(|i| rows.column(i).clone()).collect();
+        let columns: Vec<ArrayRef> = if is_left {
+            data.into_iter().chain(null_columns(&right_types, n)).collect()
+        } else {
+            null_columns(&left_types, n).into_iter().chain(data).collect()
         };
-        let left = serialize(&self.left_schema, &self.left_buffered);
-        let right = serialize(&self.right_schema, &self.right_buffered);
-        let mut out = (left.len() as u32).to_le_bytes().to_vec();
-        out.extend_from_slice(&left);
-        out.extend_from_slice(&right);
+        let types: Vec<DataType> = left_types.into_iter().chain(right_types).collect();
+        let fields: Vec<Field> =
+            (0..types.len()).map(|j| Field::new(format!("c{j}"), types[j].clone(), true)).collect();
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("build interval null-pad")
+    }
+
+    /// Serializes both buffers and (for an outer join) the per-side matched row-id sets, length-framed.
+    fn snapshot(&self) -> Vec<u8> {
+        let buf = |is_left: bool, buffered: &[RecordBatch]| -> Vec<u8> {
+            if buffered.is_empty() {
+                Vec::new()
+            } else {
+                write_ipc(&concat_batches(&self.buf_schema(is_left), buffered.iter()).expect("concat buf"))
+            }
+        };
+        let mut out = Vec::new();
+        for section in [
+            buf(true, &self.left_buffered),
+            buf(false, &self.right_buffered),
+            serialize_id_set(&self.left_matched),
+            serialize_id_set(&self.right_matched),
+        ] {
+            out.extend_from_slice(&(section.len() as u32).to_le_bytes());
+            out.extend_from_slice(&section);
+        }
         out
     }
 
@@ -2224,21 +2396,108 @@ impl IntervalJoiner {
         lower: i64,
         upper: i64,
         predicate: Option<JoinPredicate>,
+        join_type: JoinKind,
+        left_data_schema: SchemaRef,
+        right_data_schema: SchemaRef,
         bytes: &[u8],
     ) -> Self {
-        let mut joiner =
-            IntervalJoiner::new(left_keys, right_keys, left_time, right_time, lower, upper, predicate);
-        let left_len = u32::from_le_bytes(bytes[0..4].try_into().expect("snapshot len")) as usize;
-        for batch in read_ipc_if_present(&bytes[4..4 + left_len]) {
-            joiner.left_schema = Some(batch.schema());
-            joiner.left_buffered.push(batch);
-        }
-        for batch in read_ipc_if_present(&bytes[4 + left_len..]) {
-            joiner.right_schema = Some(batch.schema());
-            joiner.right_buffered.push(batch);
-        }
+        let mut joiner = IntervalJoiner::new(
+            left_keys,
+            right_keys,
+            left_time,
+            right_time,
+            lower,
+            upper,
+            predicate,
+            join_type,
+            left_data_schema,
+            right_data_schema,
+        );
+        let sections = read_framed_sections(bytes);
+        joiner.left_buffered = read_ipc_if_present(&sections[0]);
+        joiner.right_buffered = read_ipc_if_present(&sections[1]);
+        joiner.left_matched = deserialize_id_set(&sections[2]);
+        joiner.right_matched = deserialize_id_set(&sections[3]);
+        // Resume the id counters past any live buffered row (evicted ids are gone, so reuse is safe).
+        joiner.left_next_id = max_rowid(&joiner.left_buffered) + 1;
+        joiner.right_next_id = max_rowid(&joiner.right_buffered) + 1;
         joiner
     }
+}
+
+/// An empty batch (no schema), the joiner's "nothing to emit" result.
+fn empty_batch() -> RecordBatch {
+    RecordBatch::new_empty(Arc::new(Schema::empty()))
+}
+
+const ROW_ID_COLUMN: &str = "__rowid__";
+
+/// A data schema plus a trailing non-null `__rowid__` Int64 field.
+fn with_rowid_schema(data: &SchemaRef) -> SchemaRef {
+    let mut fields: Vec<Field> = data.fields().iter().map(|f| f.as_ref().clone()).collect();
+    fields.push(Field::new(ROW_ID_COLUMN, DataType::Int64, false));
+    Arc::new(Schema::new(fields))
+}
+
+/// Appends a monotonic Int64 `__rowid__` column to a data batch, advancing the counter.
+fn append_rowids(batch: &RecordBatch, next_id: &mut i64) -> RecordBatch {
+    let n = batch.num_rows() as i64;
+    let ids = Int64Array::from((0..n).map(|i| *next_id + i).collect::<Vec<_>>());
+    *next_id += n;
+    let mut columns = batch.columns().to_vec();
+    columns.push(Arc::new(ids));
+    RecordBatch::try_new(with_rowid_schema(&batch.schema()), columns).expect("append rowids")
+}
+
+/// All-null columns of the given types, `n` rows each — to null-pad the absent side of an outer row.
+fn null_columns(types: &[DataType], n: usize) -> Vec<ArrayRef> {
+    types.iter().map(|t| new_null_array(t, n)).collect()
+}
+
+/// The largest `__rowid__` across a side's buffered batches, or -1 if none.
+fn max_rowid(buffered: &[RecordBatch]) -> i64 {
+    buffered
+        .iter()
+        .flat_map(|b| {
+            let rid = b.column(b.num_columns() - 1).as_any().downcast_ref::<Int64Array>().expect("rid");
+            (0..rid.len()).map(|i| rid.value(i)).collect::<Vec<_>>()
+        })
+        .max()
+        .unwrap_or(-1)
+}
+
+/// Serializes a set of row-ids as an IPC batch of one Int64 `id` column (empty bytes when empty).
+fn serialize_id_set(ids: &HashSet<i64>) -> Vec<u8> {
+    if ids.is_empty() {
+        return Vec::new();
+    }
+    let array = Int64Array::from(ids.iter().copied().collect::<Vec<_>>());
+    let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+    write_ipc(&RecordBatch::try_new(schema, vec![Arc::new(array)]).expect("id-set batch"))
+}
+
+fn deserialize_id_set(bytes: &[u8]) -> HashSet<i64> {
+    let mut set = HashSet::new();
+    for batch in read_ipc_if_present(bytes) {
+        let ids = batch.column(0).as_any().downcast_ref::<Int64Array>().expect("id column");
+        for i in 0..ids.len() {
+            set.insert(ids.value(i));
+        }
+    }
+    set
+}
+
+/// Reads length-framed byte sections (`[u32 len][bytes]` repeated) into a vector.
+fn read_framed_sections(bytes: &[u8]) -> Vec<Vec<u8>> {
+    let mut sections = Vec::new();
+    let mut cursor = 0usize;
+    while cursor + 4 <= bytes.len() {
+        let len = u32::from_le_bytes(bytes[cursor..cursor + 4].try_into().expect("section len")) as usize;
+        cursor += 4;
+        sections.push(bytes[cursor..cursor + len].to_vec());
+        cursor += len;
+    }
+    sections
 }
 
 /// Reads IPC batches, treating empty bytes (a side that never saw a row) as no batches.
@@ -6566,6 +6825,9 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createInterva
     right_time: jint,
     lower: jlong,
     upper: jlong,
+    join_type: jint,
+    left_schema_address: jlong,
+    right_schema_address: jlong,
     pred_kinds: JIntArray<'local>,
     pred_payload: JIntArray<'local>,
     pred_child_counts: JIntArray<'local>,
@@ -6575,6 +6837,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createInterva
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
+    let left_schema = import_schema(left_schema_address);
+    let right_schema = import_schema(right_schema_address);
     let predicate = read_join_predicate(
         &mut env,
         &pred_kinds,
@@ -6592,6 +6856,9 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createInterva
         lower,
         upper,
         predicate,
+        JoinKind::from_code(join_type),
+        left_schema,
+        right_schema,
     ))) as jlong
 }
 
@@ -6629,16 +6896,20 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightInte
     export_record_batch(result, out_array_address, out_schema_address);
 }
 
-/// Advances the combined watermark, evicting rows no future arrival can match.
+/// Advances the combined watermark, evicting rows no future arrival can match, and exporting the
+/// null-padded rows for evicted outer rows that never matched (empty for an INNER join).
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_advanceIntervalJoiner<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     watermark_millis: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
 ) {
     let joiner = unsafe { &mut *(handle as *mut IntervalJoiner) };
-    joiner.advance(watermark_millis);
+    let result = joiner.advance(watermark_millis);
+    export_record_batch(result, out_array_address, out_schema_address);
 }
 
 /// Releases the interval joiner and its native state.
@@ -6678,6 +6949,9 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreInterv
     right_time: jint,
     lower: jlong,
     upper: jlong,
+    join_type: jint,
+    left_schema_address: jlong,
+    right_schema_address: jlong,
     pred_kinds: JIntArray<'local>,
     pred_payload: JIntArray<'local>,
     pred_child_counts: JIntArray<'local>,
@@ -6688,6 +6962,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreInterv
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
+    let left_schema = import_schema(left_schema_address);
+    let right_schema = import_schema(right_schema_address);
     let predicate = read_join_predicate(
         &mut env,
         &pred_kinds,
@@ -6706,6 +6982,9 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreInterv
         lower,
         upper,
         predicate,
+        JoinKind::from_code(join_type),
+        left_schema,
+        right_schema,
         &bytes,
     ))) as jlong
 }
@@ -7348,6 +7627,7 @@ pub mod bench {
     pub struct IntervalJoin(IntervalJoiner);
 
     impl IntervalJoin {
+        #[allow(clippy::too_many_arguments)]
         pub fn new(
             left_keys: Vec<usize>,
             right_keys: Vec<usize>,
@@ -7355,8 +7635,21 @@ pub mod bench {
             right_time: usize,
             lower: i64,
             upper: i64,
+            left_schema: SchemaRef,
+            right_schema: SchemaRef,
         ) -> Self {
-            IntervalJoin(IntervalJoiner::new(left_keys, right_keys, left_time, right_time, lower, upper, None))
+            IntervalJoin(IntervalJoiner::new(
+                left_keys,
+                right_keys,
+                left_time,
+                right_time,
+                lower,
+                upper,
+                None,
+                JoinKind::Inner,
+                left_schema,
+                right_schema,
+            ))
         }
 
         pub fn push_left(&mut self, batch: RecordBatch) -> RecordBatch {
@@ -8322,20 +8615,38 @@ mod tests {
         assert_eq!(row_kinds(&out), vec![3, 0]); // -D[left+null], +I[left+right]
     }
 
+    // The `[k, v, rt]` data schema both sides of the interval-join tests carry.
+    fn interval_schema() -> SchemaRef {
+        Arc::new(Schema::new(vec![
+            Field::new("k", DataType::Int64, false),
+            Field::new("v", DataType::Int64, true),
+            Field::new("rt", DataType::Int64, false),
+        ]))
+    }
+
+    // An INNER interval joiner over the `[k, v, rt]` schema (key col 0, rowtime col 2).
+    fn inner_interval_joiner(lower: i64, upper: i64) -> IntervalJoiner {
+        IntervalJoiner::new(
+            vec![0],
+            vec![0],
+            2,
+            2,
+            lower,
+            upper,
+            None,
+            JoinKind::Inner,
+            interval_schema(),
+            interval_schema(),
+        )
+    }
+
     // A `[k, v, rt]` batch with int64 rowtime (epoch millis) for the interval-join tests.
     fn join_batch(k: Vec<i64>, v: Vec<i64>, rt: Vec<i64>) -> RecordBatch {
-        RecordBatch::try_new(
-            Arc::new(Schema::new(vec![
-                Field::new("k", DataType::Int64, false),
-                Field::new("v", DataType::Int64, true),
-                Field::new("rt", DataType::Int64, false),
-            ])),
-            vec![
-                Arc::new(Int64Array::from(k)),
-                Arc::new(Int64Array::from(v)),
-                Arc::new(Int64Array::from(rt)),
-            ],
-        )
+        RecordBatch::try_new(interval_schema(), vec![
+            Arc::new(Int64Array::from(k)),
+            Arc::new(Int64Array::from(v)),
+            Arc::new(Int64Array::from(rt)),
+        ])
         .unwrap()
     }
 
@@ -8344,7 +8655,7 @@ mod tests {
     #[test]
     fn interval_join_emits_matched_pairs() {
         // a.rt BETWEEN b.rt - 1000 AND b.rt + 1000, single equi-key on column 0, rt is column 2.
-        let mut joiner = IntervalJoiner::new(vec![0], vec![0], 2, 2, -1000, 1000, None);
+        let mut joiner = inner_interval_joiner(-1000, 1000);
         // Buffer two right rows for key 1 (rt 5500 in range of left 5000, rt 7000 out of range).
         assert_eq!(joiner.push_right(join_batch(vec![1, 1], vec![100, 200], vec![5500, 7000])).num_rows(), 0);
         // A left row (k=1, rt=5000): matches the rt=5500 right row only (delta -500 in [-1000,1000]).
@@ -8362,7 +8673,7 @@ mod tests {
     // regardless of which side arrived first.
     #[test]
     fn interval_join_matches_on_key_and_emits_once() {
-        let mut joiner = IntervalJoiner::new(vec![0], vec![0], 2, 2, -1000, 1000, None);
+        let mut joiner = inner_interval_joiner(-1000, 1000);
         // Left first: buffer a left row, no right yet.
         assert_eq!(joiner.push_left(join_batch(vec![1], vec![10], vec![5000])).num_rows(), 0);
         // A right row with a different key does not match.
@@ -8378,7 +8689,7 @@ mod tests {
     // match an evicted row.
     #[test]
     fn interval_join_evicts_dead_rows_on_watermark() {
-        let mut joiner = IntervalJoiner::new(vec![0], vec![0], 2, 2, -1000, 1000, None);
+        let mut joiner = inner_interval_joiner(-1000, 1000);
         joiner.push_left(join_batch(vec![1], vec![10], vec![5000]));
         // Watermark 6000: left.rt - lower = 5000 - (-1000) = 6000, not > 6000, so the row is evicted.
         joiner.advance(6000);
@@ -8451,14 +8762,97 @@ mod tests {
     // Buffered rows survive a snapshot/restore round trip and still match afterward.
     #[test]
     fn interval_join_restores_buffered_rows() {
-        let mut joiner = IntervalJoiner::new(vec![0], vec![0], 2, 2, -1000, 1000, None);
+        let mut joiner = inner_interval_joiner(-1000, 1000);
         joiner.push_right(join_batch(vec![1], vec![100], vec![5500]));
         let snapshot = joiner.snapshot();
-        let mut restored =
-            IntervalJoiner::restore(vec![0], vec![0], 2, 2, -1000, 1000, None, &snapshot);
+        let mut restored = IntervalJoiner::restore(
+            vec![0],
+            vec![0],
+            2,
+            2,
+            -1000,
+            1000,
+            None,
+            JoinKind::Inner,
+            interval_schema(),
+            interval_schema(),
+            &snapshot,
+        );
         let out = restored.push_left(join_batch(vec![1], vec![10], vec![5000]));
         assert_eq!(out.num_rows(), 1);
         assert_eq!(values(&out, 4), vec![100]);
+    }
+
+    fn left_interval_joiner(lower: i64, upper: i64) -> IntervalJoiner {
+        IntervalJoiner::new(
+            vec![0],
+            vec![0],
+            2,
+            2,
+            lower,
+            upper,
+            None,
+            JoinKind::LeftOuter,
+            interval_schema(),
+            interval_schema(),
+        )
+    }
+
+    // LEFT interval join: a left row that never matches is null-padded once its interval is evicted by
+    // the watermark (append-only — emitted once). A left row evicts when `rt - lower <= watermark`.
+    #[test]
+    fn interval_left_join_null_pads_unmatched_on_eviction() {
+        let mut joiner = left_interval_joiner(-1000, 1000);
+        // Left row k=1, v=10, rt=5000; no right buffered → no immediate match.
+        assert_eq!(joiner.push_left(join_batch(vec![1], vec![10], vec![5000])).num_rows(), 0);
+        // Watermark below the eviction point: not yet evicted, nothing emitted.
+        assert_eq!(joiner.advance(5000).num_rows(), 0);
+        // Watermark at/above 5000 - (-1000) = 6000: the left row is evicted unmatched → [left+null]
+        // (append-only, so no $row_kind$ column — just the padded row).
+        let out = joiner.advance(6000);
+        assert_eq!(out.num_rows(), 1);
+        assert_eq!(values(&out, 1), vec![10]); // left v
+        assert!(out.column(3).is_null(0)); // right k nulled
+        assert!(out.column(4).is_null(0)); // right v nulled
+    }
+
+    // LEFT interval join: a left row that matches a right row is emitted as a pair and not
+    // null-padded at eviction.
+    #[test]
+    fn interval_left_join_matched_row_not_padded() {
+        let mut joiner = left_interval_joiner(-1000, 1000);
+        joiner.push_left(join_batch(vec![1], vec![10], vec![5000]));
+        // Right row k=1, rt=5000 within [rt-1000, rt+1000] of the left → emits the matched pair.
+        let out = joiner.push_right(join_batch(vec![1], vec![100], vec![5000]));
+        assert_eq!(out.num_rows(), 1);
+        assert_eq!(values(&out, 4), vec![100]);
+        // Evict the left row: it matched, so no null-pad.
+        assert_eq!(joiner.advance(10000).num_rows(), 0);
+    }
+
+    // The match flags survive a checkpoint: a restored LEFT interval joiner does not re-pad a left
+    // row that matched before the snapshot.
+    #[test]
+    fn interval_left_join_match_flags_survive_restore() {
+        let mut joiner = left_interval_joiner(-1000, 1000);
+        joiner.push_left(join_batch(vec![1], vec![10], vec![5000]));
+        joiner.push_right(join_batch(vec![1], vec![100], vec![5000])); // marks the left row matched
+        let snapshot = joiner.snapshot();
+        let mut restored = IntervalJoiner::restore(
+            vec![0],
+            vec![0],
+            2,
+            2,
+            -1000,
+            1000,
+            None,
+            JoinKind::LeftOuter,
+            interval_schema(),
+            interval_schema(),
+            &snapshot,
+        );
+        // Evicting the (matched) left row post-restore must emit no null-pad.
+        assert_eq!(restored.advance(10000).num_rows(), 0);
     }
 
     // ROW_NUMBER over (PARTITION BY key0 ORDER BY rt): a per-key counter in rowtime order, surviving

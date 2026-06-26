@@ -46,17 +46,31 @@ class FlinkIntervalJoinSqlHarnessTest {
   }
 
   @Test
-  void leftIntervalJoinFallsBackToHost() throws Exception {
-    // A LEFT outer interval join is append-only (so it reaches the matcher) but the native operator
-    // only does INNER — it must fall back cleanly, not produce a wrong native answer, and the
-    // fallback reason names the interval join (ticket 29). SELECT * so no projection Calc routes
-    // either, isolating the assertion to the join node.
-    NativeParity.assertFallbackReasonContains(
-        FlinkIntervalJoinSqlHarnessTest::dataStreamEnvironment,
-        "SELECT * FROM A AS a LEFT JOIN B AS b "
-            + "ON a.k = b.k "
-            + "AND a.rt BETWEEN b.rt - INTERVAL '1' SECOND AND b.rt + INTERVAL '1' SECOND",
-        "interval join: only INNER joins");
+  void leftIntervalJoinMatchesHost() throws Exception {
+    // A LEFT outer interval join is append-only: an unmatched left row is null-padded once the
+    // watermark closes its interval (emitted once, never retracted), so the result set matches the
+    // host. b.v is null for left rows with no in-interval right match.
+    NativeParity.assertParity(
+        FlinkIntervalJoinSqlHarnessTest::dataStreamEnvironment, outerJoin("LEFT"));
+  }
+
+  @Test
+  void rightIntervalJoinMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkIntervalJoinSqlHarnessTest::dataStreamEnvironment, outerJoin("RIGHT"));
+  }
+
+  @Test
+  void fullIntervalJoinMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkIntervalJoinSqlHarnessTest::dataStreamEnvironment, outerJoin("FULL"));
+  }
+
+  private static String outerJoin(String side) {
+    return "SELECT a.k, a.v, b.v FROM A AS a "
+        + side
+        + " JOIN B AS b ON a.k = b.k "
+        + "AND a.rt BETWEEN b.rt - INTERVAL '1' SECOND AND b.rt + INTERVAL '1' SECOND";
   }
 
   @Test

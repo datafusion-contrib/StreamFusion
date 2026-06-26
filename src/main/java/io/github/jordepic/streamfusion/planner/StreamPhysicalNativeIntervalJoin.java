@@ -29,6 +29,7 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
   private final int rightTime;
   private final long lowerMillis;
   private final long upperMillis;
+  private final int joinType;
   private final RexExpression predicate;
 
   public StreamPhysicalNativeIntervalJoin(
@@ -43,6 +44,7 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
       int rightTime,
       long lowerMillis,
       long upperMillis,
+      int joinType,
       RexExpression predicate) {
     super(cluster, traitSet, left, right);
     this.outputRowType = outputRowType;
@@ -52,6 +54,7 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
     this.rightTime = rightTime;
     this.lowerMillis = lowerMillis;
     this.upperMillis = upperMillis;
+    this.joinType = joinType;
     this.predicate = predicate;
   }
 
@@ -79,6 +82,7 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
         rightTime,
         lowerMillis,
         upperMillis,
+        joinType,
         predicate);
   }
 
@@ -96,6 +100,9 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
         rightTime,
         lowerMillis,
         upperMillis,
+        joinType,
+        FlinkTypeFactory$.MODULE$.toLogicalRowType(getLeft().getRowType()),
+        FlinkTypeFactory$.MODULE$.toLogicalRowType(getRight().getRowType()),
         predicate);
   }
 }
