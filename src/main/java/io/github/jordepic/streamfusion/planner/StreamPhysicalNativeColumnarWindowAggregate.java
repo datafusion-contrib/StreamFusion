@@ -14,13 +14,13 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
 
 /**
  * The columnar twin of {@link StreamPhysicalNativeWindowAggregate}: the same single-phase event-time
- * window aggregate, but consuming Arrow batches ({@link ColumnarInput}) from a columnar exchange so
- * no row transpose sits at the window's input. It still emits {@link
- * org.apache.flink.table.data.RowData} (the window results), so it is not {@link ColumnarOutput} — a
- * row consumer downstream needs no transpose either.
+ * window aggregate, consuming Arrow batches ({@link ColumnarInput}) from a columnar exchange and
+ * emitting the window-result batches as Arrow ({@link ColumnarOutput}). Every native operator but a
+ * source/sink is Arrow → Arrow (ticket 36); the planner inserts the {@code ArrowToRowData} transpose
+ * before a rowwise sink at the island perimeter.
  */
 public class StreamPhysicalNativeColumnarWindowAggregate extends SingleRel
-    implements StreamPhysicalRel, ColumnarInput {
+    implements StreamPhysicalRel, ColumnarInput, ColumnarOutput {
 
   private final RelDataType outputRowType;
   private final boolean cumulative;

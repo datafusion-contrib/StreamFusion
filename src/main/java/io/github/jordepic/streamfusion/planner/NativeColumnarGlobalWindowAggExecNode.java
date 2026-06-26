@@ -1,12 +1,12 @@
 package io.github.jordepic.streamfusion.planner;
 
 import io.github.jordepic.streamfusion.operator.ArrowBatch;
+import io.github.jordepic.streamfusion.operator.ArrowBatchTypeInformation;
 import io.github.jordepic.streamfusion.operator.NativeColumnarGlobalWindowAggregateOperator;
 import io.github.jordepic.streamfusion.operator.NativeWindowOperatorCore;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
-import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.planner.delegation.PlannerBase;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeBase;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeConfig;
@@ -15,15 +15,14 @@ import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTranslator;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
-import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
 import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Wraps the columnar global (merge) window operator into the plan: partial-state Arrow batches in,
- * final result rows out.
+ * final result batches (Arrow) out.
  */
-public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<RowData>
-    implements StreamExecNode<RowData>, SingleTransformationTranslator<RowData> {
+public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<ArrowBatch>
+    implements StreamExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch> {
 
   private static final String TRANSFORMATION = "native-columnar-global-window-aggregate";
 
@@ -62,11 +61,12 @@ public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<RowData>
 
   @Override
   @SuppressWarnings("unchecked")
-  protected Transformation<RowData> translateToPlanInternal(
+  protected Transformation<ArrowBatch> translateToPlanInternal(
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     String timeZoneId = planner.getTableConfig().getLocalTimeZone().getId();
+    RowType outputType = (RowType) getOutputType();
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta(TRANSFORMATION, config),
@@ -74,11 +74,12 @@ public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<RowData>
             windowMillis,
             slideMillis,
             cumulative,
-            NativeWindowOperatorCore.keyTypes((RowType) getOutputType(), keyColumns.length),
+            NativeWindowOperatorCore.keyTypes(outputType, keyColumns.length),
             valueTypes,
             aggregateKinds,
-            timeZoneId),
-        InternalTypeInfo.of(getOutputType()),
+            timeZoneId,
+            outputType),
+        ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);
   }

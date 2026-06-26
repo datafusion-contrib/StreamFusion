@@ -8,17 +8,17 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
-import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Columnar global half of two-phase window aggregation: the same merge as {@link
  * NativeGlobalWindowAggregateOperator}, but fed the partial-state Arrow batches the columnar local
- * half emits directly — no row→Arrow rebuild. Each incoming batch ({@code [key?, partial0..,
- * slice_end]}) is folded straight into the aggregator; on a watermark the final per-window rows are
- * emitted, matching the host.
+ * half emits directly — no row→Arrow rebuild — and emitting the final per-window results as Arrow
+ * ({@code [key?, agg…, window_start, window_end]}). Arrow → Arrow (ticket 36); a rowwise sink is
+ * reached through the dedicated {@code ArrowToRowDataOperator} at the island perimeter.
  */
 public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindowOperatorCore
-    implements OneInputStreamOperator<ArrowBatch, RowData> {
+    implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
 
   private final int[] keyTypes;
   private final boolean cumulative;
@@ -30,14 +30,16 @@ public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindow
       int[] keyTypes,
       int[] valueTypes,
       int[] aggregateKinds,
-      String timeZoneId) {
+      String timeZoneId,
+      RowType outputType) {
     super(
         "streamfusion-global-window-state",
         windowMillis,
         slideMillis,
         valueTypes,
         aggregateKinds,
-        timeZoneId);
+        timeZoneId,
+        outputType);
     this.cumulative = cumulative;
     this.keyTypes = keyTypes;
   }

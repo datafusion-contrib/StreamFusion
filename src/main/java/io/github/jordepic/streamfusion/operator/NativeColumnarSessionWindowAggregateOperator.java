@@ -4,18 +4,17 @@ import io.github.jordepic.streamfusion.Native;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
-import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Columnar single-phase session-window aggregation: the same native session aggregator as {@link
- * NativeSessionWindowAggregateOperator}, but fed Arrow batches directly instead of buffered rows. The
- * planner substitutes this when the session's keyed input is kept columnar across the exchange, so the
- * data never transposes to {@link RowData} on the way in. Output is still rows ({@code [key?, agg…,
- * window_start, window_end]}) — like the other single-phase aggregates — so a row consumer downstream
- * needs no transpose either.
+ * NativeSessionWindowAggregateOperator}, but fed Arrow batches directly instead of buffered rows, and
+ * emitting Arrow batches ({@code [key?, agg…, window_start, window_end]}). The whole operator is
+ * Arrow → Arrow (ticket 36); a rowwise sink is reached through the dedicated {@code ArrowToRowDataOperator}
+ * the planner inserts at the island perimeter.
  */
 public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindowOperatorCore
-    implements OneInputStreamOperator<ArrowBatch, RowData> {
+    implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
 
   private final long gapMillis;
   private final int timeColumn;
@@ -31,9 +30,10 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
       int[] keyTypes,
       int[] valueTypes,
       int[] aggregateKinds,
-      String timeZoneId) {
+      String timeZoneId,
+      RowType outputType) {
     // Sessions have no fixed size or slide; the gap is the only window parameter, carried separately.
-    super("streamfusion-session-aggregate-state", 0, 0, valueTypes, aggregateKinds, timeZoneId);
+    super("streamfusion-session-aggregate-state", 0, 0, valueTypes, aggregateKinds, timeZoneId, outputType);
     this.gapMillis = gapMillis;
     this.timeColumn = timeColumn;
     this.valueColumns = valueColumns;

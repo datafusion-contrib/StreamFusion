@@ -4,17 +4,17 @@ import io.github.jordepic.streamfusion.Native;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
-import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Columnar single-phase window aggregation: the same native aggregator as {@link
- * NativeWindowAggregateOperator}, but fed Arrow batches directly instead of buffered rows. The
- * planner substitutes this when the window's keyed input is kept columnar across the exchange, so
- * the data never transposes to {@link RowData} on the way in. Output is still rows ({@code [key?,
- * agg…, window_start, window_end]}), so a row consumer downstream needs no transpose.
+ * NativeWindowAggregateOperator}, but fed Arrow batches directly instead of buffered rows, and
+ * emitting Arrow batches ({@code [key?, agg…, window_start, window_end]}). The whole operator is
+ * Arrow → Arrow (ticket 36); a rowwise sink downstream is reached through the dedicated
+ * {@code ArrowToRowDataOperator} the planner inserts at the island perimeter.
  */
 public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperatorCore
-    implements OneInputStreamOperator<ArrowBatch, RowData> {
+    implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
 
   private final boolean cumulative;
   private final int timeColumn;
@@ -32,14 +32,16 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
       int[] keyTypes,
       int[] valueTypes,
       int[] aggregateKinds,
-      String timeZoneId) {
+      String timeZoneId,
+      RowType outputType) {
     super(
         "streamfusion-window-aggregate-state",
         windowMillis,
         slideMillis,
         valueTypes,
         aggregateKinds,
-        timeZoneId);
+        timeZoneId,
+        outputType);
     this.cumulative = cumulative;
     this.timeColumn = timeColumn;
     this.valueColumns = valueColumns;

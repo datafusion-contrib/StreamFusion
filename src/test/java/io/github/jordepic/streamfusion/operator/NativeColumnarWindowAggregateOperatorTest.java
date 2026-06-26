@@ -17,30 +17,39 @@ import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.logical.TimestampType;
 import org.junit.jupiter.api.Test;
 
 /**
  * The columnar window operator (Arrow-batch input) produces the same window aggregates the row-fed
- * operator does — proving the columnar input extraction (time nanos→millis, value, keys) is correct.
+ * operator did — proving the columnar input extraction (time nanos→millis, value, keys) and the
+ * Arrow-batch emit (the window-result reshape, with the bounds rendered as session-local timestamps)
+ * are correct. Output is now an Arrow batch shaped to the output row type; read it back with the
+ * boundary converter, as the dedicated transpose operator does.
  */
 class NativeColumnarWindowAggregateOperatorTest {
 
-  // Input schema [value BIGINT, rt TIMESTAMP_LTZ(3)]; output [total, window_start, window_end].
+  // Input schema [value BIGINT, rt TIMESTAMP_LTZ(3)]; output [total BIGINT, window_start, window_end].
   private static final RowType SCHEMA =
       RowType.of(
           new LogicalType[] {new BigIntType(), new LocalZonedTimestampType(3)},
           new String[] {"value", "rt"});
+
+  private static final RowType OUTPUT =
+      RowType.of(
+          new LogicalType[] {new BigIntType(), new TimestampType(3), new TimestampType(3)},
+          new String[] {"total", "window_start", "window_end"});
 
   @Test
   void emitsWindowAggregatesFromArrowBatches() throws Exception {
     NativeColumnarWindowAggregateOperator operator =
         new NativeColumnarWindowAggregateOperator(
             false, 1000, 1000, 1, new int[] {0}, new int[0], new int[0], new int[] {0}, new int[] {0},
-            "UTC");
+            "UTC", OUTPUT);
     try (BufferAllocator allocator = new RootAllocator();
-        OneInputStreamOperatorTestHarness<ArrowBatch, RowData> harness =
+        OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
             new OneInputStreamOperatorTestHarness<>(operator, new ArrowBatchSerializer())) {
-      harness.setup();
+      harness.setup(new ArrowBatchSerializer());
       harness.open();
 
       harness.processElement(new StreamRecord<>(batch(allocator, event(1, 0), event(2, 500), event(3, 1000))));
@@ -70,17 +79,20 @@ class NativeColumnarWindowAggregateOperatorTest {
   }
 
   private static List<List<Long>> collect(
-      OneInputStreamOperatorTestHarness<ArrowBatch, RowData> harness) {
+      OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness) {
     List<List<Long>> rows = new ArrayList<>();
     while (!harness.getOutput().isEmpty()) {
       Object event = harness.getOutput().poll();
       if (event instanceof StreamRecord) {
-        RowData r = (RowData) ((StreamRecord<?>) event).getValue();
-        rows.add(
-            List.of(
-                r.getLong(0),
-                r.getTimestamp(1, 3).getMillisecond(),
-                r.getTimestamp(2, 3).getMillisecond()));
+        try (VectorSchemaRoot root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
+          for (RowData r : RowDataArrowConverter.read(root, OUTPUT)) {
+            rows.add(
+                List.of(
+                    r.getLong(0),
+                    r.getTimestamp(1, 3).getMillisecond(),
+                    r.getTimestamp(2, 3).getMillisecond()));
+          }
+        }
       }
     }
     return rows;

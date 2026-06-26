@@ -1,12 +1,12 @@
 package io.github.jordepic.streamfusion.planner;
 
 import io.github.jordepic.streamfusion.operator.ArrowBatch;
+import io.github.jordepic.streamfusion.operator.ArrowBatchTypeInformation;
 import io.github.jordepic.streamfusion.operator.NativeColumnarWindowAggregateOperator;
 import io.github.jordepic.streamfusion.operator.NativeWindowOperatorCore;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
-import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.planner.delegation.PlannerBase;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeBase;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeConfig;
@@ -15,16 +15,15 @@ import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTranslator;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
-import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
 import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Execution node for the columnar window aggregate: it consumes Arrow batches from a columnar
- * exchange and emits the window-result rows, wrapping {@link NativeColumnarWindowAggregateOperator}.
- * The row-fed twin is {@link NativeWindowAggExecNode}.
+ * exchange and emits the window-result batches (Arrow), wrapping {@link
+ * NativeColumnarWindowAggregateOperator}. The row-fed twin is {@link NativeWindowAggExecNode}.
  */
-public class NativeColumnarWindowAggExecNode extends ExecNodeBase<RowData>
-    implements StreamExecNode<RowData>, SingleTransformationTranslator<RowData> {
+public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
+    implements StreamExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch> {
 
   private static final String TRANSFORMATION = "native-columnar-window-aggregate";
 
@@ -69,11 +68,12 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<RowData>
 
   @Override
   @SuppressWarnings("unchecked")
-  protected Transformation<RowData> translateToPlanInternal(
+  protected Transformation<ArrowBatch> translateToPlanInternal(
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     String timeZoneId = planner.getTableConfig().getLocalTimeZone().getId();
+    RowType outputType = (RowType) getOutputType();
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta(TRANSFORMATION, config),
@@ -84,11 +84,12 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<RowData>
             timeColumn,
             valueColumns,
             keyColumns,
-            NativeWindowOperatorCore.keyTypes((RowType) getOutputType(), keyColumns.length),
+            NativeWindowOperatorCore.keyTypes(outputType, keyColumns.length),
             valueTypes,
             aggregateKinds,
-            timeZoneId),
-        InternalTypeInfo.of(getOutputType()),
+            timeZoneId,
+            outputType),
+        ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);
   }

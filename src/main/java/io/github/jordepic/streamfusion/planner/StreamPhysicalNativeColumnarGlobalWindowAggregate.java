@@ -14,13 +14,14 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
 
 /**
  * The columnar twin of {@link StreamPhysicalNativeGlobalWindowAggregate}: the global merge consuming
- * the partial-state Arrow batches the columnar local half emits ({@link ColumnarInput}). It emits
- * the final per-window {@link org.apache.flink.table.data.RowData}, so it is not {@link
- * ColumnarOutput}. The partial columns / slice-end position are not needed — the batch already
- * carries the native partial schema, fed straight to the aggregator.
+ * the partial-state Arrow batches the columnar local half emits ({@link ColumnarInput}) and emitting
+ * the final per-window results as Arrow ({@link ColumnarOutput}). Arrow → Arrow like every native
+ * operator but a source/sink (ticket 36); the planner inserts the {@code ArrowToRowData} transpose
+ * before a rowwise sink at the island perimeter. The partial columns / slice-end position are not
+ * needed — the batch already carries the native partial schema, fed straight to the aggregator.
  */
 public class StreamPhysicalNativeColumnarGlobalWindowAggregate extends SingleRel
-    implements StreamPhysicalRel, ColumnarInput {
+    implements StreamPhysicalRel, ColumnarInput, ColumnarOutput {
 
   private final RelDataType outputRowType;
   private final long windowMillis;

@@ -339,38 +339,14 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         int[] valueTypes =
             WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType());
         int[] kinds = WindowAggregateMatcher.kinds(agg.aggCalls());
-        // If the window sits on an exchange over a columnar producer, keep the shuffle columnar: a
-        // native exchange (splitting the batch by the grouping keys) feeds a columnar window with no
-        // row transpose. The exchange only co-locates each key's rows on one channel — the window
-        // re-groups by key itself — so its hash need not match Flink's. Otherwise stay row-fed.
-        RelNode windowInput = agg.getInputs().get(0);
-        if (windowInput instanceof StreamPhysicalExchange
-            && windowInput.getInputs().get(0) instanceof ColumnarOutput) {
-          RelNode columnarExchange =
-              new StreamPhysicalNativeColumnarExchange(
-                  windowInput.getCluster(),
-                  windowInput.getTraitSet(),
-                  windowInput.getInputs().get(0),
-                  windowInput.getRowType(),
-                  keyColumns);
-          return new StreamPhysicalNativeColumnarWindowAggregate(
-              agg.getCluster(),
-              agg.getTraitSet(),
-              columnarExchange,
-              agg.getRowType(),
-              cumulative,
-              windowMillis,
-              slideMillis,
-              timeColumn,
-              valueColumns,
-              keyColumns,
-              valueTypes,
-              kinds);
-        }
-        return new StreamPhysicalNativeWindowAggregate(
+        // Always columnar (ticket 36): the keyed shuffle stays Arrow where it sits on a columnar
+        // producer (a native exchange splits the batch by the grouping keys), otherwise the transition
+        // pass inserts a row→Arrow transpose at the boundary. The exchange only co-locates each key's
+        // rows on one channel — the window re-groups by key itself — so its hash need not match Flink's.
+        return new StreamPhysicalNativeColumnarWindowAggregate(
             agg.getCluster(),
             agg.getTraitSet(),
-            agg.getInputs().get(0),
+            columnarInput(agg.getInputs().get(0), keyColumns),
             agg.getRowType(),
             cumulative,
             windowMillis,
@@ -391,35 +367,12 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         int[] valueTypes =
             WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType());
         int[] kinds = WindowAggregateMatcher.kinds(agg.aggCalls());
-        // As with the fixed-window aggregate above: if the session sits on an exchange over a columnar
-        // producer, keep the shuffle columnar and feed Arrow straight into the session aggregator with
-        // no row transpose at the input. Otherwise stay row-fed.
-        RelNode sessionInput = agg.getInputs().get(0);
-        if (sessionInput instanceof StreamPhysicalExchange
-            && sessionInput.getInputs().get(0) instanceof ColumnarOutput) {
-          RelNode columnarExchange =
-              new StreamPhysicalNativeColumnarExchange(
-                  sessionInput.getCluster(),
-                  sessionInput.getTraitSet(),
-                  sessionInput.getInputs().get(0),
-                  sessionInput.getRowType(),
-                  keyColumns);
-          return new StreamPhysicalNativeColumnarSessionWindowAggregate(
-              agg.getCluster(),
-              agg.getTraitSet(),
-              columnarExchange,
-              agg.getRowType(),
-              gapMillis,
-              timeColumn,
-              valueColumns,
-              keyColumns,
-              valueTypes,
-              kinds);
-        }
-        return new StreamPhysicalNativeSessionWindowAggregate(
+        // Always columnar (ticket 36): the keyed shuffle stays Arrow where it sits on a columnar
+        // producer, otherwise the transition pass transposes at the boundary.
+        return new StreamPhysicalNativeColumnarSessionWindowAggregate(
             agg.getCluster(),
             agg.getTraitSet(),
-            agg.getInputs().get(0),
+            columnarInput(agg.getInputs().get(0), keyColumns),
             agg.getRowType(),
             gapMillis,
             timeColumn,
@@ -489,21 +442,10 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         long sliceSize = WindowAggregateMatcher.sliceSize(agg.windowing());
         int timeColumn = WindowAggregateMatcher.timeColumn(agg.windowing());
         int[] keyColumns = WindowAggregateMatcher.keyColumns(agg.grouping());
-        // A columnar producer feeds a columnar local (Arrow partials out); otherwise row-fed.
-        if (agg.getInputs().get(0) instanceof ColumnarOutput) {
-          return new StreamPhysicalNativeColumnarLocalWindowAggregate(
-              agg.getCluster(),
-              agg.getTraitSet(),
-              agg.getInputs().get(0),
-              agg.getRowType(),
-              sliceSize,
-              timeColumn,
-              valueColumns,
-              keyColumns,
-              valueTypes,
-              kinds);
-        }
-        return new StreamPhysicalNativeLocalWindowAggregate(
+        // Always columnar (ticket 36): the local pre-aggregate emits Arrow partials. Its input feeds
+        // directly (no shuffle precedes a local); the transition pass inserts a row→Arrow transpose
+        // when the producer is rowwise.
+        return new StreamPhysicalNativeColumnarLocalWindowAggregate(
             agg.getCluster(),
             agg.getTraitSet(),
             agg.getInputs().get(0),
@@ -633,43 +575,19 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         int[] keyColumns = GlobalWindowAggregateMatcher.keyColumns(agg);
         int[] valueTypes = GlobalWindowAggregateMatcher.valueTypes(agg);
         int[] kinds = GlobalWindowAggregateMatcher.kinds(agg);
-        // If the global sits on an exchange over a columnar local, keep the partial shuffle columnar:
-        // a native exchange splits the partial batch by key and feeds a columnar global merge, so the
-        // whole two-phase pipeline flows Arrow. Otherwise stay row-fed (the partial crosses the host
-        // exchange as rows). Same key co-location argument as the single-phase window (divergences/10).
-        RelNode globalInput = agg.getInputs().get(0);
-        if (globalInput instanceof StreamPhysicalExchange
-            && globalInput.getInputs().get(0) instanceof ColumnarOutput) {
-          RelNode columnarExchange =
-              new StreamPhysicalNativeColumnarExchange(
-                  globalInput.getCluster(),
-                  globalInput.getTraitSet(),
-                  globalInput.getInputs().get(0),
-                  globalInput.getRowType(),
-                  keyColumns);
-          return new StreamPhysicalNativeColumnarGlobalWindowAggregate(
-              agg.getCluster(),
-              agg.getTraitSet(),
-              columnarExchange,
-              agg.getRowType(),
-              windowMillis,
-              slideMillis,
-              cumulative,
-              keyColumns,
-              valueTypes,
-              kinds);
-        }
-        return new StreamPhysicalNativeGlobalWindowAggregate(
+        // Always columnar (ticket 36): the columnar local emits Arrow partials, a native exchange
+        // splits them by key, and the columnar global merges — the whole two-phase pipeline flows
+        // Arrow. (columnarInput keeps the partial shuffle Arrow; the local is always a columnar
+        // producer now, so no transpose arises here.)
+        return new StreamPhysicalNativeColumnarGlobalWindowAggregate(
             agg.getCluster(),
             agg.getTraitSet(),
-            agg.getInputs().get(0),
+            columnarInput(agg.getInputs().get(0), keyColumns),
             agg.getRowType(),
             windowMillis,
             slideMillis,
             cumulative,
             keyColumns,
-            GlobalWindowAggregateMatcher.partialColumns(agg),
-            GlobalWindowAggregateMatcher.sliceEndColumn(agg),
             valueTypes,
             kinds);
       }
