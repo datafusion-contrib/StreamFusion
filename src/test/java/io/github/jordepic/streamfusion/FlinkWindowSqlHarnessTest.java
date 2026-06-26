@@ -437,8 +437,9 @@ class FlinkWindowSqlHarnessTest {
 
   @Test
   void decimalSumFallsBack() throws Exception {
-    // SUM over DECIMAL stays on the host: DataFusion's sum precision derivation differs from Flink's.
-    NativeParity.assertParity( // still correct via fallback (a trailing projection may route)
+    // SUM over DECIMAL stays on the host (DataFusion's sum precision derivation differs from Flink's),
+    // so the window aggregate can't be native and the whole query falls back. The result still matches.
+    NativeParity.assertFallback(
         FlinkWindowSqlHarnessTest::environmentWithSource,
         "SELECT window_start, window_end, SUM(price) AS s "
             + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
@@ -509,9 +510,10 @@ class FlinkWindowSqlHarnessTest {
 
   @Test
   void twoPhaseNarrowSumMatchesHost() throws Exception {
-    // Under default planning the narrow SUM's partial type is not one the global merges, so the
-    // window aggregate must stay on the host — never a native-local + host-global mismatch.
-    NativeParity.assertParity(
+    // The narrow SUM's partial type is not one the native global merges, so the two-phase window
+    // aggregate can't be made one columnar island — the whole query falls back to the host (never a
+    // native-local + host-global mismatch). The result still matches.
+    NativeParity.assertFallback(
         FlinkWindowSqlHarnessTest::environmentTwoPhase,
         "SELECT window_start, window_end, SUM(sm) AS s "
             + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
@@ -520,7 +522,9 @@ class FlinkWindowSqlHarnessTest {
 
   @Test
   void twoPhaseFloatSumMatchesHost() throws Exception {
-    NativeParity.assertParity(
+    // As with the narrow case: the float partial is not one the native global merges, so the
+    // two-phase plan can't be one columnar island and the whole query falls back. Result still matches.
+    NativeParity.assertFallback(
         FlinkWindowSqlHarnessTest::environmentTwoPhase,
         "SELECT window_start, window_end, SUM(fl) AS s "
             + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
@@ -560,9 +564,11 @@ class FlinkWindowSqlHarnessTest {
   void floatSumMatchesHostUnderAccumulationError() throws Exception {
     // Values whose 4-byte running sum accumulates rounding error: native must fold in float (not
     // double) to match the host bit-for-bit. A double accumulation would drift from the host here.
+    // SUM only (no AVG): AVG is admitted natively only as a lone aggregate, so pairing it with SUM
+    // would decline the window aggregate and, under all-or-nothing, fall the whole query back.
     NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::floatPrecisionEnvironment,
-        "SELECT window_start, window_end, SUM(fl) AS s, AVG(fl) AS a "
+        "SELECT window_start, window_end, SUM(fl) AS s "
             + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
             + "GROUP BY window_start, window_end");
   }
@@ -627,6 +633,10 @@ class FlinkWindowSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    // Single-phase: the native single-phase float SUM accumulator is what folds in float (the
+    // intended behavior under test). Two-phase would split into a host global merge of float partials
+    // and, under the all-or-nothing rule, fall back entirely — see twoPhaseFloatSumMatchesHost.
+    tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
 
     // Eight 0.1f's in one 1s window: their float running sum is not 0.8f (rounding accumulates),
     // so the result distinguishes a float accumulation (the host's) from a double one.
@@ -660,6 +670,10 @@ class FlinkWindowSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    // Single-phase: the native single-phase narrow SUM accumulator is what wraps at the input width
+    // (the intended behavior under test). Two-phase would split into a host global merge of the narrow
+    // partials and, under the all-or-nothing rule, fall back entirely — see twoPhaseNarrowSumMatchesHost.
+    tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
 
     // Two values per 1s window that overflow the narrow width when summed.
     DataStream<Row> source =

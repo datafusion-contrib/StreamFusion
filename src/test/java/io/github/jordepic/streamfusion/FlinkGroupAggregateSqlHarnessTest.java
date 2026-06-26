@@ -57,9 +57,10 @@ class FlinkGroupAggregateSqlHarnessTest {
 
   @Test
   void avgMatchesHost() throws Exception {
-    // The host rewrites AVG into SUM/COUNT (both native) plus a division; the division Calc sits on
-    // the retracting aggregate and so stays on the host, while the aggregate itself routes natively.
-    NativeParity.assertParity(
+    // AVG in a non-windowed GROUP BY is declined natively — its multi-field running state (a retract-
+    // able sum and count) is not modelled — so the aggregate stays on the host. Under all-or-nothing
+    // the whole query runs on the host; the result still matches.
+    NativeParity.assertFallback(
         FlinkGroupAggregateSqlHarnessTest::environment,
         "SELECT k, AVG(`value`) AS a FROM src GROUP BY k");
   }

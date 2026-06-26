@@ -12,18 +12,20 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 
 /**
- * A host operator that emits a changelog feeding a native one: the row→Arrow transpose at the
- * boundary must carry each row's {@code RowKind}, or the native operator would mistake retractions
- * for inserts. The inner {@code SUM} over a DECIMAL column is declined by the native aggregate (its
- * precision rules stay on the host), so it runs as a host GROUP BY emitting a changelog; the outer
- * {@code COUNT(*)} over that changelog runs natively and must consume the retractions. The collapsed
- * result would differ from the host if the transpose dropped the kind.
+ * A nested aggregate whose inner {@code SUM} over a DECIMAL column is declined by the native
+ * aggregate (its precision rules stay on the host). Under whole-query all-or-nothing, a
+ * declined interior operator falls the entire query back to the host — there is no longer an
+ * interior host→native boundary to cross. The fallback must still produce the host result.
+ *
+ * <p>The RowKind-carrying transpose this used to exercise now lives only at a changelog/upsert
+ * <em>source</em> feeding a native operator (the one surviving rowwise→columnar perimeter); that
+ * coverage belongs in a source-side test.
  */
 class FlinkHostChangelogIntoNativeTest {
 
   @Test
   void nativeAggregateConsumesHostChangelog() throws Exception {
-    NativeParity.assertChangelogParity(
+    NativeParity.assertFallback(
         FlinkHostChangelogIntoNativeTest::environment,
         "SELECT total, COUNT(*) AS n FROM "
             + "(SELECT g, SUM(d) AS total FROM src GROUP BY g) GROUP BY total");
