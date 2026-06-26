@@ -91,6 +91,10 @@ here when the ticket is deleted.
 - **Fully native Kafka source, no JNI** (ticket 33, back burner): subscribe in Rust, decode →Arrow,
   lifting the connector semantics (partition/offset/checkpoint/watermark) from Arroyo. Removes the one
   off-heap copy ticket 32 pays; only worth it once that decode path proves the copy is the bottleneck.
+- **Join breadth** (ticket 35): all three native joins (regular updating, interval, window) are INNER-equi
+  only. Add LEFT/RIGHT/FULL outer, SEMI/ANTI, and a residual non-equi predicate — the regular updating join
+  first (a per-row match-degree, mirroring Flink's `StreamingJoinOperator`/`StreamingSemiAntiJoinOperator`
+  and RisingWave's degree state). Highest-value remaining operator breadth. **(next up)**
 - **Columnar sinks + nested boundary types** (ticket 34): the row↔Arrow transpose carries only
   scalar/temporal columns, so native operators that produce a nested `ROW`/`ARRAY`/`MAP` column can't
   hand it to a rowwise sink — complex protobuf/Avro/JSON messages therefore fall back today. The end
