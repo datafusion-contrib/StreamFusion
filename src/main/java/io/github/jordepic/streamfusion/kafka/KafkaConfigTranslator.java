@@ -92,10 +92,14 @@ public final class KafkaConfigTranslator {
           "send.buffer.bytes", "socket.send.buffer.bytes",
           "receive.buffer.bytes", "socket.receive.buffer.bytes");
 
-  // Keys whose librdkafka default differs from the Java client's: copy the user's value, or pin the
-  // Java default when unset, so behavior matches what a Flink user expects. Keyed by the Java property
-  // name -> (librdkafka key, java default). send/receive.buffer.bytes are also renamed (handled above),
-  // so their user value lands under the librdkafka name before this fills the default.
+  // Keys whose librdkafka default differs from the Java client's *in a way that affects what data you
+  // get*: copy the user's value, or pin the Java default when unset, so behavior matches what a Flink
+  // user expects. Keyed by the Java property name -> (librdkafka key, java default).
+  //
+  // Note: socket send/receive buffer sizes are deliberately NOT pinned here. They only affect
+  // throughput, not correctness, and librdkafka's default (OS-auto-tuned) outperforms Java's small
+  // fixed defaults — pinning Java's 64KB receive buffer measurably throttled the native consumer. The
+  // user's explicit value is still honored via the rename above; we just don't force Java's default.
   private static final Map<String, String[]> DEFAULT_PINS =
       new LinkedHashMap<>(
           Map.of(
@@ -107,9 +111,7 @@ public final class KafkaConfigTranslator {
               "socket.connection.setup.timeout.ms",
                   new String[] {"socket.connection.setup.timeout.ms", "10000"},
               "reconnect.backoff.ms", new String[] {"reconnect.backoff.ms", "50"},
-              "reconnect.backoff.max.ms", new String[] {"reconnect.backoff.max.ms", "1000"},
-              "send.buffer.bytes", new String[] {"socket.send.buffer.bytes", "131072"},
-              "receive.buffer.bytes", new String[] {"socket.receive.buffer.bytes", "65536"}));
+              "reconnect.backoff.max.ms", new String[] {"reconnect.backoff.max.ms", "1000"}));
 
   // Java keys with no librdkafka analog: their presence (non-default) forces a fallback.
   private static final String[] NO_ANALOG = {

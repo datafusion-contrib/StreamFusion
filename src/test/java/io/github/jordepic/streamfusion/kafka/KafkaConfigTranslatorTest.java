@@ -52,8 +52,10 @@ class KafkaConfigTranslatorTest {
     assertEquals("10000", c.get("socket.connection.setup.timeout.ms"));
     assertEquals("50", c.get("reconnect.backoff.ms"));
     assertEquals("1000", c.get("reconnect.backoff.max.ms"));
-    assertEquals("131072", c.get("socket.send.buffer.bytes"));
-    assertEquals("65536", c.get("socket.receive.buffer.bytes"));
+    // Socket buffer sizes are NOT pinned — they only affect throughput, and librdkafka's OS-tuned
+    // default beats Java's small fixed default, so we leave librdkafka to choose.
+    assertNull(c.get("socket.send.buffer.bytes"));
+    assertNull(c.get("socket.receive.buffer.bytes"));
   }
 
   @Test

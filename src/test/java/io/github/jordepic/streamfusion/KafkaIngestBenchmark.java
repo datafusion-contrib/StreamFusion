@@ -3,6 +3,7 @@ package io.github.jordepic.streamfusion;
 import io.github.jordepic.streamfusion.Native;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
@@ -16,6 +17,8 @@ import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -55,6 +58,12 @@ class KafkaIngestBenchmark {
       System.getenv("SF_KAFKA_MESSAGES") != null
           ? Integer.parseInt(System.getenv("SF_KAFKA_MESSAGES"))
           : 1_000_000;
+  // Partition count for the topic. >1 tests whether librdkafka's per-partition fetch (one FetchRequest
+  // carrying all partitions, drained off one queue) closes the gap to Java's inline single-thread poll.
+  private static final int PARTITIONS =
+      System.getenv("SF_KAFKA_PARTITIONS") != null
+          ? Integer.parseInt(System.getenv("SF_KAFKA_PARTITIONS"))
+          : 1;
   private static final String TOPIC = "bench-json";
   private static final String AVRO_TOPIC = "bench-avro";
   private static final int SCHEMA_ID = 1;
@@ -73,11 +82,15 @@ class KafkaIngestBenchmark {
       String brokers = kafka.getBootstrapServers();
       produce(brokers, MESSAGES);
 
-      // Profiling mode: loop the native consume so a sampler has a long, stable window over the poll
-      // thread (librdkafka poll + the byte copy) and the Rust decode thread.
-      if ("1".equals(System.getenv("SF_KAFKA_PROFILE"))) {
-        for (int i = 0; i < 30; i++) {
-          nativeConsumeAndDecode(brokers);
+      // Profiling mode: loop one native JSON leg so a sampler has a long, stable window.
+      // SF_KAFKA_PROFILE=1 loops the pipelined path; =json-serial loops the inline-decode path.
+      String jsonProfile = System.getenv("SF_KAFKA_PROFILE");
+      if (jsonProfile != null && (jsonProfile.equals("1") || jsonProfile.equals("json-serial"))) {
+        boolean serialLeg = jsonProfile.equals("json-serial");
+        System.err.println("PROFILE_CONSUME_LOOP_START");
+        System.err.flush();
+        for (int i = 0; i < 60; i++) {
+          nativeConsumeAndDecode(brokers, serialLeg);
         }
         return;
       }
@@ -86,15 +99,90 @@ class KafkaIngestBenchmark {
       // the JVM, as they'd feed a downstream native operator. The only difference is who polls Kafka:
       // Java's batch poll vs librdkafka's per-message poll.
       double shallow = time(() -> consumeAndDecode(brokers)); // Java batch poll -> bytes -> native decode
-      double nativeSecs = time(() -> nativeConsumeAndDecode(brokers)); // rdkafka poll + native decode
+      double nativeSecs = time(() -> nativeConsumeAndDecode(brokers)); // rdkafka poll ‖ decode thread
+      double serial = time(() -> nativeConsumeAndDecode(brokers, true)); // rdkafka poll + inline decode
 
       System.out.printf(
           "%n[kafka -> Arrow IN RUST, %,d three-field JSON msgs, same plain-JVM harness]%n"
               + "  shallow (Java batch poll -> native decode): %.2fs  =  %,.0f msgs/s%n"
-              + "  native  (rdkafka poll + native decode):     %.2fs  =  %,.0f msgs/s%n"
-              + "  native speedup: %.2fx%n",
-          MESSAGES, shallow, MESSAGES / shallow, nativeSecs, MESSAGES / nativeSecs, shallow / nativeSecs);
+              + "  native pipelined (rdkafka poll ‖ decode):   %.2fs  =  %,.0f msgs/s%n"
+              + "  native serial    (rdkafka poll + inline):   %.2fs  =  %,.0f msgs/s%n"
+              + "  native(pipelined) speedup vs shallow: %.2fx   pipelined vs serial: %.2fx%n",
+          MESSAGES, shallow, MESSAGES / shallow, nativeSecs, MESSAGES / nativeSecs, serial,
+          MESSAGES / serial, shallow / nativeSecs, serial / nativeSecs);
     }
+  }
+
+  /**
+   * Raw delivery throughput with NO decode on either side — isolates the consumer. Answers whether
+   * librdkafka's batch-consume actually delivers slower than the Java client's poll on this box, or
+   * whether the earlier gap was downstream (decode/pipeline). Same topic, both just count messages.
+   */
+  @Test
+  void rawConsumeThroughput() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      produce(brokers, MESSAGES);
+
+      // Profiling mode: loop the native raw consume (NO decode, no decode thread) so a sampler gets a
+      // long, stable window over JUST the poll loop — rd_kafka_consume_batch_queue + per-message destroy.
+      String profile = System.getenv("SF_KAFKA_PROFILE");
+      if (profile != null) {
+        boolean java = "java".equals(profile);
+        System.err.println("PROFILE_CONSUME_LOOP_START");
+        System.err.flush();
+        for (int i = 0; i < 60; i++) {
+          if (java) {
+            javaConsumeOnly(brokers);
+          } else {
+            nativeConsumeOnly(brokers);
+          }
+        }
+        return;
+      }
+
+      double java = time(() -> javaConsumeOnly(brokers));
+      double nativeSecs = time(() -> nativeConsumeOnly(brokers));
+
+      System.out.printf(
+          "%n[raw consume (no decode), %,d msgs]%n"
+              + "  java   (KafkaConsumer poll, count):   %.2fs  =  %,.0f msgs/s%n"
+              + "  native (rdkafka batch consume, count): %.2fs  =  %,.0f msgs/s%n"
+              + "  native speedup: %.2fx%n",
+          MESSAGES, java, MESSAGES / java, nativeSecs, MESSAGES / nativeSecs, java / nativeSecs);
+    }
+  }
+
+  /** Java client raw delivery: poll and count, no decode. */
+  private static long javaConsumeOnly(String brokers) {
+    Properties props = new Properties();
+    props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
+    props.put(ConsumerConfig.GROUP_ID_CONFIG, "bench-raw-" + System.nanoTime());
+    props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+    props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+    props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+    props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 8192);
+    props.put(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, 16 << 20);
+    long seen = 0;
+    try (KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(props)) {
+      consumer.subscribe(List.of(TOPIC));
+      while (seen < MESSAGES) {
+        ConsumerRecords<byte[], byte[]> records = consumer.poll(Duration.ofSeconds(5));
+        seen += records.count();
+      }
+    }
+    return seen;
+  }
+
+  /**
+   * librdkafka raw delivery (no decode) using the EXACT config the production native source sends, so
+   * this isolates how fast the production-tuned librdkafka delivers messages versus the Java client.
+   */
+  private static long nativeConsumeOnly(String brokers) {
+    String[][] config = nativeConfig(brokers, "bench-raw-native-" + System.nanoTime());
+    return Native.benchmarkConsumeOnly(config[0], config[1], TOPIC, MESSAGES);
   }
 
   /**
@@ -113,15 +201,35 @@ class KafkaIngestBenchmark {
               .toString();
       produceAvro(brokers, MESSAGES, avroSchema);
 
+      // Profiling: loop one Avro leg so a sampler gets a stable window. SF_KAFKA_PROFILE=avro-native
+      // loops the pipelined native path (rdkafka consume thread ‖ decode thread); =avro-shallow loops
+      // the serial Java-consume-then-decode path.
+      String profile = System.getenv("SF_KAFKA_PROFILE");
+      if (profile != null && profile.startsWith("avro-")) {
+        System.err.println("PROFILE_CONSUME_LOOP_START");
+        System.err.flush();
+        for (int i = 0; i < 60; i++) {
+          switch (profile) {
+            case "avro-shallow" -> consumeAndDecodeAvro(brokers, avroSchema);
+            case "avro-serial" -> nativeConsumeAndDecodeAvro(brokers, avroSchema, true);
+            default -> nativeConsumeAndDecodeAvro(brokers, avroSchema); // avro-native (pipelined)
+          }
+        }
+        return;
+      }
+
       double shallow = time(() -> consumeAndDecodeAvro(brokers, avroSchema));
       double nativeSecs = time(() -> nativeConsumeAndDecodeAvro(brokers, avroSchema));
+      double serial = time(() -> nativeConsumeAndDecodeAvro(brokers, avroSchema, true));
 
       System.out.printf(
           "%n[kafka -> Arrow IN RUST, %,d three-field Confluent-Avro msgs, same plain-JVM harness]%n"
               + "  shallow (Java batch poll -> native decode): %.2fs  =  %,.0f msgs/s%n"
-              + "  native  (rdkafka poll + native decode):     %.2fs  =  %,.0f msgs/s%n"
-              + "  native speedup: %.2fx%n",
-          MESSAGES, shallow, MESSAGES / shallow, nativeSecs, MESSAGES / nativeSecs, shallow / nativeSecs);
+              + "  native pipelined (rdkafka poll ‖ decode):   %.2fs  =  %,.0f msgs/s%n"
+              + "  native serial    (rdkafka poll + inline):   %.2fs  =  %,.0f msgs/s%n"
+              + "  native(pipelined) speedup vs shallow: %.2fx   pipelined vs serial: %.2fx%n",
+          MESSAGES, shallow, MESSAGES / shallow, nativeSecs, MESSAGES / nativeSecs, serial,
+          MESSAGES / serial, shallow / nativeSecs, serial / nativeSecs);
     }
   }
 
@@ -143,8 +251,9 @@ class KafkaIngestBenchmark {
     return (System.nanoTime() - start) / 1e9;
   }
 
-  /** Produces MESSAGES three-field JSON documents to the topic. */
+  /** Produces MESSAGES three-field JSON documents to the topic, spread round-robin over PARTITIONS. */
   private static void produce(String brokers, int messages) {
+    createTopic(brokers, TOPIC);
     Properties props = new Properties();
     props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
     props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
@@ -156,9 +265,18 @@ class KafkaIngestBenchmark {
         byte[] value =
             String.format("{\"id\": %d, \"name\": \"row-%d\", \"score\": %d.5}", i, i, i % 100)
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        producer.send(new ProducerRecord<>(TOPIC, value));
+        producer.send(new ProducerRecord<>(TOPIC, i % PARTITIONS, null, value));
       }
       producer.flush();
+    }
+  }
+
+  /** Creates {@code topic} with PARTITIONS partitions (an explicit partition needs the topic to exist). */
+  private static void createTopic(String brokers, String topic) {
+    try (Admin admin = Admin.create(Map.of(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers))) {
+      admin.createTopics(List.of(new NewTopic(topic, PARTITIONS, (short) 1))).all().get();
+    } catch (Exception e) {
+      throw new RuntimeException("failed to create topic " + topic, e);
     }
   }
 
@@ -234,18 +352,24 @@ class KafkaIngestBenchmark {
    * counts decoded rows in Rust — terminating with Arrow in Rust, no per-batch JVM export.
    */
   private static long nativeConsumeAndDecode(String brokers) {
-    String[] keys = {
-      "bootstrap.servers", "group.id", "enable.auto.commit", "fetch.queue.backoff.ms", "check.crcs"
-    };
-    String[] values = {brokers, "bench-native-" + System.nanoTime(), "false", "2", "false"};
+    return nativeConsumeAndDecode(brokers, false);
+  }
+
+  private static long nativeConsumeAndDecode(String brokers, boolean serial) {
+    String[][] config = nativeConfig(brokers, "bench-native-" + System.nanoTime());
+    String[] keys = config[0];
+    String[] values = config[1];
     try (BufferAllocator allocator = new RootAllocator();
         CDataDictionaryProvider dictionaries = new CDataDictionaryProvider()) {
       return withExportedSchema(
           allocator,
           dictionaries,
           (arrayAddress, schemaAddress) ->
-              Native.benchmarkNativeConsume(
-                  keys, values, TOPIC, 0, arrayAddress, schemaAddress, "", 0, MESSAGES));
+              serial
+                  ? Native.benchmarkNativeConsumeSerial(
+                      keys, values, TOPIC, 0, arrayAddress, schemaAddress, "", 0, MESSAGES)
+                  : Native.benchmarkNativeConsume(
+                      keys, values, TOPIC, 0, arrayAddress, schemaAddress, "", 0, MESSAGES));
     }
   }
 
@@ -342,19 +466,57 @@ class KafkaIngestBenchmark {
 
   /** Native Avro: rdkafka batch consume + native Confluent-Avro decode, counted in Rust. */
   private static long nativeConsumeAndDecodeAvro(String brokers, String avroSchema) {
-    String[] keys = {
-      "bootstrap.servers", "group.id", "enable.auto.commit", "fetch.queue.backoff.ms", "check.crcs"
-    };
-    String[] values = {brokers, "bench-native-avro-" + System.nanoTime(), "false", "2", "false"};
+    return nativeConsumeAndDecodeAvro(brokers, avroSchema, false);
+  }
+
+  private static long nativeConsumeAndDecodeAvro(String brokers, String avroSchema, boolean serial) {
+    String[][] config = nativeConfig(brokers, "bench-native-avro-" + System.nanoTime());
+    String[] keys = config[0];
+    String[] values = config[1];
     try (BufferAllocator allocator = new RootAllocator();
         CDataDictionaryProvider dictionaries = new CDataDictionaryProvider()) {
       return withExportedSchema(
           allocator,
           dictionaries,
           (arrayAddress, schemaAddress) ->
-              Native.benchmarkNativeConsume(
-                  keys, values, AVRO_TOPIC, 1, arrayAddress, schemaAddress, avroSchema, SCHEMA_ID, MESSAGES));
+              serial
+                  ? Native.benchmarkNativeConsumeSerial(
+                      keys, values, AVRO_TOPIC, 1, arrayAddress, schemaAddress, avroSchema, SCHEMA_ID,
+                      MESSAGES)
+                  : Native.benchmarkNativeConsume(
+                      keys, values, AVRO_TOPIC, 1, arrayAddress, schemaAddress, avroSchema, SCHEMA_ID,
+                      MESSAGES));
     }
+  }
+
+  /**
+   * The librdkafka config the production native source uses for a typical consumer: the {@link
+   * io.github.jordepic.streamfusion.kafka.KafkaConfigTranslator} output (check.crcs left on, as in
+   * production and the Java client) plus the librdkafka-only throughput tuning {@code KafkaTables} folds
+   * in. Returned as {@code {keys, values}} for the JNI string-array call. Keeping this identical to the
+   * production path is the point: the benchmark measures what a real SQL Kafka table actually runs.
+   */
+  private static String[][] nativeConfig(String brokers, String group) {
+    Properties props = new Properties();
+    props.setProperty("bootstrap.servers", brokers);
+    props.setProperty("group.id", group);
+    props.setProperty("enable.auto.commit", "false");
+    props.setProperty("fetch.min.bytes", "1");
+    props.setProperty("fetch.max.bytes", String.valueOf(64 << 20));
+    props.setProperty("max.partition.fetch.bytes", String.valueOf(16 << 20));
+    props.setProperty("fetch.max.wait.ms", "500");
+    java.util.Map<String, String> config =
+        new java.util.HashMap<>(
+            io.github.jordepic.streamfusion.kafka.KafkaConfigTranslator.translate(props).config());
+    config.putIfAbsent("fetch.queue.backoff.ms", "2");
+    config.putIfAbsent("queued.min.messages", "1000000");
+    config.putIfAbsent("queued.max.messages.kbytes", "2097151");
+    String[] keys = config.keySet().toArray(new String[0]);
+    String[] values = new String[keys.length];
+    for (int i = 0; i < keys.length; i++) {
+      values[i] = config.get(keys[i]);
+    }
+    return new String[][] {keys, values};
   }
 
   /**

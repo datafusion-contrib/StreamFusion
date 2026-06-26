@@ -1,11 +1,87 @@
 # Fully native Kafka source (Rust consumer → Arrow, no JVM round-trip)
 
-**Status:** DONE (v1) — **all three layers built and green end-to-end.** A `SELECT * FROM <kafka
-table>` routes through the planner to a native FLIP-27 source that consumes + decodes the topic in Rust
-and emits Arrow batches, with checkpointed per-split offsets (exactly-once across restore verified).
-The 5.08x ingest benchmark (`KafkaIngestBenchmark`: 500k three-field JSON msgs, native ~2.7M vs shallow
-~531k msgs/s, local broker) justified building it. Remaining work is hardening, not the core path — see
-"Follow-ups" at the bottom.
+**Status:** BUILT (v1, green end-to-end) but **SHELVED in favor of the shallow path (2026-06-25).** The
+native rdkafka consumer works — planner → FLIP-27 source → consume+decode in Rust → Arrow, with
+checkpointed exactly-once across restore — but the fair re-benchmark (see "Throughput investigation"
+below) showed the native *consumer* carries a structural per-message malloc/free tax that the JVM Kafka
+client avoids via bulk GC, so it only wins when decode is expensive (JSON) and loses when decode is
+cheap (Avro). **Decision: the shallow path — consume in the JVM, hand raw bytes to Rust, decode to Arrow
+there (the shared `MessageDecoder`) — is the chosen production approach.** It is simpler (Flink owns the
+consumer, offsets, checkpointing, all SASL/SSL/auth), portable, and ties-or-beats native on both formats
+once you strip the pipelining overhead. The native consumer stays in-tree behind the `kafka` feature as
+a **long-term TODO** to revisit if/when raw ingest throughput becomes the proven bottleneck (and ideally
+against a multi-broker cluster, where librdkafka's parallel per-broker fetch — untested here — could
+change the verdict).
+
+**LONG-TERM TODO (native consumer, deferred):** revisit only if raw Kafka ingest is the measured
+bottleneck. Open levers from the investigation: (a) the per-message `rd_kafka_message_destroy` malloc/
+free is ~45% of the serial consume thread and unaddressable from Rust (it's librdkafka's C `free`; a
+Rust `#[global_allocator]` does not intercept it — confirmed); a process `malloc` interposer
+(DYLD/jemalloc) is not shippable. (b) multi-broker parallel fetch is untested. (c) the decode thread
+should be adaptive (inline by default, spill to a thread only under backpressure).
+
+## Throughput investigation — consume + decode profiling (2026-06-25)
+
+Re-ran the benchmark with a **fair methodology** (the earlier "5.08x" compared native→Arrow against
+Flink→RowData — not apples-to-apples): same plain-JVM harness, both paths terminate at **Arrow batches
+counted in Rust** (no per-batch JVM export), the **same `MessageDecoder`** on both sides, and the
+**exact production librdkafka config** (`KafkaConfigTranslator` output + the throughput tuning
+`KafkaTables` folds in). 10M three-field messages (avg 52.7 B), single partition, local cp-kafka.
+
+Two consume models for the native path: **pipelined** (the production split reader — rdkafka poll on
+one thread, decode on a background thread via an mpsc channel) vs **serial** (rdkafka poll + decode
+inline on one thread, no handoff). Shallow = Flink's Java consumer → bytes → native decode (serial).
+
+| Path | JSON (expensive decode) | Avro (cheap decode) |
+|---|---|---|
+| shallow (Java consume → native decode) | 4.61s / 2.17M/s | 2.82s / 3.54M/s |
+| native **pipelined** (poll ‖ decode thread) | **3.94s / 2.54M/s** | 3.67s / 2.72M/s |
+| native **serial** (poll + inline decode) | 4.15s / 2.41M/s | **2.82s / 3.55M/s** |
+
+**Findings (all profiled with macOS `sample` on frame-pointer release builds; librdkafka v2.3.0, the
+exact bundled source at rust-rdkafka 0.36.2's submodule pin):**
+
+1. **Raw consume (no decode) is the floor: native ~3.2M/s vs Java ~4.5–5.9M/s.** Java's
+   `ConsumerRecords.count()` does *zero* per-message work (sums batch counts); librdkafka *materializes
+   and frees a message struct per record*. Both consume threads spend ~57% waiting on the broker
+   (`cnd_timedwait` / `kevent`) and ~37% on-CPU — the difference is *what* the CPU does: Java =
+   TLAB bump-alloc + near-free young GC (GC threads ~99% parked); native = `malloc` per message (broker
+   thread) + `free` per message (consume thread), the structural tax of librdkafka's C API.
+2. **Multi-partition does NOT help on a single broker.** Java scales with partitions (4.5M→5.9M, bigger
+   fetches); native stays flat ~3.2M and the gap *widens*. One broker = one fetch thread = no parallel
+   fetch; native's single merged consumer queue + per-message destroy caps it. (Parallel-broker-thread
+   scaling needs a multi-broker cluster — untested.)
+3. **There is no single-threaded librdkafka mode** (confirmed in `CONFIGURATION.md`): the broker I/O
+   thread + coordinator thread are architectural. And it wouldn't help — the socket `poll()` wait is the
+   same regardless of which thread does it, and the threaded model *overlaps* fetch with processing.
+4. **The "native loses on Avro (0.77x)" was the pipelining handoff — NOT arrow-avro and NOT consume.**
+   In the native Avro profile the **decode thread is 81.5% idle** (starved, parked in `mpsc::recv`);
+   arrow-avro decodes 10M rows in a sliver of CPU. The pipelined path's per-poll overhead (partition
+   bucketing, building the body `RecordBatch` on the consume thread, two channel hops, decode-thread
+   wakeup) costs *more* than the cheap Avro decode it overlaps. **Strip the decode thread → serial native
+   Avro ties shallow exactly (2.82s).** Pipelining only pays when decode is expensive enough to hide
+   behind: JSON pipelined beats serial by 5% and shallow by 17%; Avro serial beats pipelined by 30%.
+5. **Serial native consume thread budget (Avro, the format where it ties shallow):**
+   - **44.6% per-message `rd_kafka_message_destroy`** (`free` → `free_tiny`; ~5% of the thread is the
+     allocator returning pages to the kernel via `madvise`/`mach_vm_deallocate`). The dominant cost.
+   - 17.8% idle `cnd_timedwait` (broker delivery wait — structural, single partition).
+   - 19.9% inline decode (arrow-avro) · 8.6% dequeue machinery (locks/`message_get`/interceptors) ·
+     7.9% copy into builder + `RecordBatch` build + count.
+
+**Implications / candidate work:**
+- **Make the decode thread adaptive/opt-in.** It's a *conditional* optimization: a net win for
+  expensive decoders (JSON), a 30% loss for cheap ones (Avro). Default to inline; spill to the decode
+  thread only under backpressure (decode can't keep up with poll). A single serial path already
+  ties-or-beats shallow on *both* formats; pipelined only wins JSON.
+- **Attack the per-message destroy (45% of the serial thread).** It's librdkafka's malloc/free-per-
+  message — the one structural tax Java avoids via bulk GC. A retaining global allocator
+  (mimalloc/jemalloc) would kill the `madvise`/`vm_deallocate` syscalls (~5%) and speed the rest of the
+  free path. No batch-destroy API exists in librdkafka.
+- **The raw-count comparison flatters Java** (it does no per-record work). With real downstream work the
+  malloc/free delta and handoff latency become noise — the JSON case (real decode) is where native wins.
+
+Benchmark legs live in `KafkaIngestBenchmark` (shallow/pipelined/serial × JSON/Avro; `SF_KAFKA_PROFILE`
+modes for sampling each thread; `SF_KAFKA_PARTITIONS` for the partition sweep).
 
 **Linking:** rdkafka uses the **bundled static librdkafka** (rdkafka-sys mklove build — needs only a C
 toolchain + make, no system librdkafka, no cmake, no pkg-config), so any dev who clones can build the
