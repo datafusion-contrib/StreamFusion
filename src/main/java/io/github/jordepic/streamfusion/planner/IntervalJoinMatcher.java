@@ -1,7 +1,10 @@
 package io.github.jordepic.streamfusion.planner;
 
 import java.lang.reflect.Field;
+import java.util.Optional;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexUtil;
 import org.apache.flink.table.planner.plan.nodes.exec.spec.IntervalJoinSpec;
 import org.apache.flink.table.planner.plan.nodes.exec.spec.JoinSpec;
 import org.apache.flink.table.planner.plan.nodes.physical.common.CommonPhysicalJoin;
@@ -35,8 +38,8 @@ final class IntervalJoinMatcher {
     if (leftKeys.length == 0 || leftKeys.length != rightKeys.length) {
       return "interval join: needs at least one equi-join key";
     }
-    if (joinSpec.getNonEquiCondition().isPresent()) {
-      return "interval join: a residual non-equi condition is not applied";
+    if (joinSpec.getNonEquiCondition().isPresent() && nonEquiPredicate(join) == null) {
+      return "interval join: the residual non-equi condition is not natively expressible";
     }
     for (boolean filterNull : joinSpec.getFilterNulls()) {
       if (!filterNull) {
@@ -58,6 +61,21 @@ final class IntervalJoinMatcher {
       return "interval join: requires event-time interval bounds (proctime not supported)";
     }
     return null;
+  }
+
+  /**
+   * The encoded residual non-equi condition (beyond the interval bounds; its input refs index into
+   * the joined {@code [left.., right..]} row), or null when there is none or it is not natively
+   * expressible.
+   */
+  static RexExpression nonEquiPredicate(StreamPhysicalIntervalJoin join) {
+    Optional<RexNode> condition = ((CommonPhysicalJoin) join).joinSpec().getNonEquiCondition();
+    if (condition.isEmpty()) {
+      return null;
+    }
+    RexNode expanded =
+        RexUtil.expandSearch(join.getCluster().getRexBuilder(), null, condition.get());
+    return RexExpression.encode(expanded);
   }
 
   static int[] leftKeys(StreamPhysicalIntervalJoin join) {

@@ -38,6 +38,7 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
   private final int rightTime;
   private final long lowerMillis;
   private final long upperMillis;
+  private final EncodedPredicate predicate;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
@@ -50,13 +51,15 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
       int leftTime,
       int rightTime,
       long lowerMillis,
-      long upperMillis) {
+      long upperMillis,
+      EncodedPredicate predicate) {
     this.leftKeys = leftKeys;
     this.rightKeys = rightKeys;
     this.leftTime = leftTime;
     this.rightTime = rightTime;
     this.lowerMillis = lowerMillis;
     this.upperMillis = upperMillis;
+    this.predicate = predicate;
   }
 
   @Override
@@ -76,9 +79,32 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
     handle =
         snapshot == null
             ? Native.createIntervalJoiner(
-                leftKeys, rightKeys, leftTime, rightTime, lowerMillis, upperMillis)
+                leftKeys,
+                rightKeys,
+                leftTime,
+                rightTime,
+                lowerMillis,
+                upperMillis,
+                predicate.kinds,
+                predicate.payload,
+                predicate.childCounts,
+                predicate.longs,
+                predicate.doubles,
+                predicate.strings)
             : Native.restoreIntervalJoiner(
-                leftKeys, rightKeys, leftTime, rightTime, lowerMillis, upperMillis, snapshot);
+                leftKeys,
+                rightKeys,
+                leftTime,
+                rightTime,
+                lowerMillis,
+                upperMillis,
+                predicate.kinds,
+                predicate.payload,
+                predicate.childCounts,
+                predicate.longs,
+                predicate.doubles,
+                predicate.strings,
+                snapshot);
   }
 
   @Override

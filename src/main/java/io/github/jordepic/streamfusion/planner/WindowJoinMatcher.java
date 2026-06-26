@@ -1,6 +1,9 @@
 package io.github.jordepic.streamfusion.planner;
 
+import java.util.Optional;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexUtil;
 import org.apache.flink.table.planner.plan.logical.WindowAttachedWindowingStrategy;
 import org.apache.flink.table.planner.plan.logical.WindowingStrategy;
 import org.apache.flink.table.planner.plan.nodes.exec.spec.JoinSpec;
@@ -35,8 +38,8 @@ final class WindowJoinMatcher {
     if (leftKeys.length == 0 || leftKeys.length != rightKeys.length) {
       return "window join: needs at least one equi-join key";
     }
-    if (joinSpec.getNonEquiCondition().isPresent()) {
-      return "window join: a residual non-equi condition is not applied";
+    if (joinSpec.getNonEquiCondition().isPresent() && nonEquiPredicate(join) == null) {
+      return "window join: the residual non-equi condition is not natively expressible";
     }
     for (boolean filterNull : joinSpec.getFilterNulls()) {
       if (!filterNull) {
@@ -60,6 +63,20 @@ final class WindowJoinMatcher {
       }
     }
     return null;
+  }
+
+  /**
+   * The encoded residual non-equi condition (its input refs index into the joined
+   * {@code [left.., right..]} row), or null when there is none or it is not natively expressible.
+   */
+  static RexExpression nonEquiPredicate(StreamPhysicalWindowJoin join) {
+    Optional<RexNode> condition = ((CommonPhysicalJoin) join).joinSpec().getNonEquiCondition();
+    if (condition.isEmpty()) {
+      return null;
+    }
+    RexNode expanded =
+        RexUtil.expandSearch(join.getCluster().getRexBuilder(), null, condition.get());
+    return RexExpression.encode(expanded);
   }
 
   static int[] leftKeys(StreamPhysicalWindowJoin join) {

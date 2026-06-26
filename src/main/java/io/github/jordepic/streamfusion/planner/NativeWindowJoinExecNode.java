@@ -27,6 +27,7 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
   private final int leftWindowEnd;
   private final int rightWindowStart;
   private final int rightWindowEnd;
+  private final RexExpression predicate;
 
   public NativeWindowJoinExecNode(
       ReadableConfig tableConfig,
@@ -39,7 +40,8 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
       int leftWindowStart,
       int leftWindowEnd,
       int rightWindowStart,
-      int rightWindowEnd) {
+      int rightWindowEnd,
+      RexExpression predicate) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-window-join_1"),
@@ -53,6 +55,7 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
     this.leftWindowEnd = leftWindowEnd;
     this.rightWindowStart = rightWindowStart;
     this.rightWindowEnd = rightWindowEnd;
+    this.predicate = predicate;
   }
 
   @Override
@@ -68,7 +71,13 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
         right,
         createTransformationMeta(TRANSFORMATION, config),
         new NativeWindowJoinOperator(
-            leftKeys, rightKeys, leftWindowStart, leftWindowEnd, rightWindowStart, rightWindowEnd),
+            leftKeys,
+            rightKeys,
+            leftWindowStart,
+            leftWindowEnd,
+            rightWindowStart,
+            rightWindowEnd,
+            RexExpression.toEncodedPredicate(predicate)),
         ArrowBatchTypeInformation.INSTANCE,
         left.getParallelism(),
         false);

@@ -34,6 +34,18 @@ class FlinkIntervalJoinSqlHarnessTest {
   }
 
   @Test
+  void intervalJoinWithNonEquiPredicateMatchesHost() throws Exception {
+    // A residual non-equi condition (a.v < b.v) beyond the interval bounds is now applied natively,
+    // ANDed into the join filter; the pairs must match the host.
+    NativeParity.assertParity(
+        FlinkIntervalJoinSqlHarnessTest::dataStreamEnvironment,
+        "SELECT a.k, a.v, b.v FROM A AS a JOIN B AS b "
+            + "ON a.k = b.k "
+            + "AND a.rt BETWEEN b.rt - INTERVAL '1' SECOND AND b.rt + INTERVAL '1' SECOND "
+            + "AND a.v < b.v");
+  }
+
+  @Test
   void leftIntervalJoinFallsBackToHost() throws Exception {
     // A LEFT outer interval join is append-only (so it reaches the matcher) but the native operator
     // only does INNER — it must fall back cleanly, not produce a wrong native answer, and the

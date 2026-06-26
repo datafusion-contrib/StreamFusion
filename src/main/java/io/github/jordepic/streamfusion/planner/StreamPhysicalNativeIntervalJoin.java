@@ -29,6 +29,7 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
   private final int rightTime;
   private final long lowerMillis;
   private final long upperMillis;
+  private final RexExpression predicate;
 
   public StreamPhysicalNativeIntervalJoin(
       RelOptCluster cluster,
@@ -41,7 +42,8 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
       int leftTime,
       int rightTime,
       long lowerMillis,
-      long upperMillis) {
+      long upperMillis,
+      RexExpression predicate) {
     super(cluster, traitSet, left, right);
     this.outputRowType = outputRowType;
     this.leftKeys = leftKeys;
@@ -50,6 +52,7 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
     this.rightTime = rightTime;
     this.lowerMillis = lowerMillis;
     this.upperMillis = upperMillis;
+    this.predicate = predicate;
   }
 
   @Override
@@ -75,7 +78,8 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
         leftTime,
         rightTime,
         lowerMillis,
-        upperMillis);
+        upperMillis,
+        predicate);
   }
 
   @Override
@@ -91,6 +95,7 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
         leftTime,
         rightTime,
         lowerMillis,
-        upperMillis);
+        upperMillis,
+        predicate);
   }
 }

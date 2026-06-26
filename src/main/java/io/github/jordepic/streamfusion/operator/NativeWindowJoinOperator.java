@@ -39,6 +39,7 @@ public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
   private final int leftWindowEnd;
   private final int rightWindowStart;
   private final int rightWindowEnd;
+  private final EncodedPredicate predicate;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
@@ -51,13 +52,15 @@ public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
       int leftWindowStart,
       int leftWindowEnd,
       int rightWindowStart,
-      int rightWindowEnd) {
+      int rightWindowEnd,
+      EncodedPredicate predicate) {
     this.leftKeys = leftKeys;
     this.rightKeys = rightKeys;
     this.leftWindowStart = leftWindowStart;
     this.leftWindowEnd = leftWindowEnd;
     this.rightWindowStart = rightWindowStart;
     this.rightWindowEnd = rightWindowEnd;
+    this.predicate = predicate;
   }
 
   @Override
@@ -77,7 +80,18 @@ public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
     handle =
         snapshot == null
             ? Native.createWindowJoiner(
-                leftKeys, rightKeys, leftWindowStart, leftWindowEnd, rightWindowStart, rightWindowEnd)
+                leftKeys,
+                rightKeys,
+                leftWindowStart,
+                leftWindowEnd,
+                rightWindowStart,
+                rightWindowEnd,
+                predicate.kinds,
+                predicate.payload,
+                predicate.childCounts,
+                predicate.longs,
+                predicate.doubles,
+                predicate.strings)
             : Native.restoreWindowJoiner(
                 leftKeys,
                 rightKeys,
@@ -85,6 +99,12 @@ public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
                 leftWindowEnd,
                 rightWindowStart,
                 rightWindowEnd,
+                predicate.kinds,
+                predicate.payload,
+                predicate.childCounts,
+                predicate.longs,
+                predicate.doubles,
+                predicate.strings,
                 snapshot);
   }
 

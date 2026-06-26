@@ -2090,6 +2090,7 @@ struct IntervalJoiner {
     right_time: usize,
     lower: i64,
     upper: i64,
+    predicate: Option<JoinPredicate>,
     left_schema: Option<SchemaRef>,
     right_schema: Option<SchemaRef>,
     left_buffered: Vec<RecordBatch>,
@@ -2097,6 +2098,7 @@ struct IntervalJoiner {
 }
 
 impl IntervalJoiner {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         left_keys: Vec<usize>,
         right_keys: Vec<usize>,
@@ -2104,6 +2106,7 @@ impl IntervalJoiner {
         right_time: usize,
         lower: i64,
         upper: i64,
+        predicate: Option<JoinPredicate>,
     ) -> Self {
         IntervalJoiner {
             left_keys,
@@ -2112,6 +2115,7 @@ impl IntervalJoiner {
             right_time,
             lower,
             upper,
+            predicate,
             left_schema: None,
             right_schema: None,
             left_buffered: Vec::new(),
@@ -2123,23 +2127,19 @@ impl IntervalJoiner {
         self.left_keys.iter().zip(&self.right_keys).map(|(&l, &r)| (l, r)).collect()
     }
 
-    /// Joins an incoming left batch against the buffered right rows (equi-key + interval filter),
-    /// then buffers it. Empty until the right side has rows.
+    /// Joins an incoming left batch against the buffered right rows (equi-key + interval bounds and
+    /// the residual non-equi predicate), then buffers it. Empty until the right side has rows.
     fn push_left(&mut self, batch: RecordBatch) -> RecordBatch {
         self.left_schema = Some(batch.schema());
+        let key_pairs = self.key_pairs();
+        let interval = Some((self.left_time, self.right_time, self.lower, self.upper));
         let result = match &self.right_schema {
             Some(right_schema) if !self.right_buffered.is_empty() => {
                 let right = concat_batches(right_schema, self.right_buffered.iter())
                     .expect("concat right interval buffer");
-                let filter = interval_filter(
-                    &batch.schema(),
-                    right_schema,
-                    self.left_time,
-                    self.right_time,
-                    self.lower,
-                    self.upper,
-                );
-                hash_join_inner(batch.clone(), right, &self.key_pairs(), Some(filter))
+                let filter =
+                    residual_filter(&batch.schema(), right_schema, interval, self.predicate.as_mut());
+                hash_join_inner(batch.clone(), right, &key_pairs, filter)
             }
             _ => RecordBatch::new_empty(Arc::new(Schema::empty())),
         };
@@ -2150,19 +2150,15 @@ impl IntervalJoiner {
     /// Joins an incoming right batch against the buffered left rows, then buffers it.
     fn push_right(&mut self, batch: RecordBatch) -> RecordBatch {
         self.right_schema = Some(batch.schema());
+        let key_pairs = self.key_pairs();
+        let interval = Some((self.left_time, self.right_time, self.lower, self.upper));
         let result = match &self.left_schema {
             Some(left_schema) if !self.left_buffered.is_empty() => {
                 let left = concat_batches(left_schema, self.left_buffered.iter())
                     .expect("concat left interval buffer");
-                let filter = interval_filter(
-                    left_schema,
-                    &batch.schema(),
-                    self.left_time,
-                    self.right_time,
-                    self.lower,
-                    self.upper,
-                );
-                hash_join_inner(left, batch.clone(), &self.key_pairs(), Some(filter))
+                let filter =
+                    residual_filter(left_schema, &batch.schema(), interval, self.predicate.as_mut());
+                hash_join_inner(left, batch.clone(), &key_pairs, filter)
             }
             _ => RecordBatch::new_empty(Arc::new(Schema::empty())),
         };
@@ -2227,10 +2223,11 @@ impl IntervalJoiner {
         right_time: usize,
         lower: i64,
         upper: i64,
+        predicate: Option<JoinPredicate>,
         bytes: &[u8],
     ) -> Self {
         let mut joiner =
-            IntervalJoiner::new(left_keys, right_keys, left_time, right_time, lower, upper);
+            IntervalJoiner::new(left_keys, right_keys, left_time, right_time, lower, upper, predicate);
         let left_len = u32::from_le_bytes(bytes[0..4].try_into().expect("snapshot len")) as usize;
         for batch in read_ipc_if_present(&bytes[4..4 + left_len]) {
             joiner.left_schema = Some(batch.schema());
@@ -2317,26 +2314,58 @@ fn hash_join_inner(
     rename_positional(&joined)
 }
 
-/// Builds an interval-join residual filter for `lower <= left.rt - right.rt <= upper`, expressed as
-/// `left.rt >= right.rt + lower AND left.rt <= right.rt + upper` over the two rowtime columns so it
-/// works directly on the timestamp type (no subtraction to a duration). `column_indices` maps the
-/// filter's intermediate schema `[left.rt, right.rt]` back to the join inputs.
-fn interval_filter(
+/// Builds the residual `JoinFilter` for a time-bounded join: the interval bounds (if any) AND the
+/// residual non-equi predicate (if any), over the full joined `[left.., right..]` schema. Returns
+/// None when neither is present. The intermediate schema is the joined schema (columns `c0..`), so a
+/// predicate compiled against that schema and the interval bounds (referencing the two rowtime
+/// columns by their joined index) share one filter; `column_indices` maps each joined column back to
+/// its side. The interval bounds are `left.rt >= right.rt + lower AND left.rt <= right.rt + upper`,
+/// expressed over the rowtime columns directly so the comparison works on the timestamp type.
+fn residual_filter(
     left_schema: &SchemaRef,
     right_schema: &SchemaRef,
+    interval: Option<(usize, usize, i64, i64)>,
+    predicate: Option<&mut JoinPredicate>,
+) -> Option<JoinFilter> {
+    let left_n = left_schema.fields().len();
+    let right_n = right_schema.fields().len();
+    let intermediate = UpdatingJoiner::joined_schema(left_schema, right_schema);
+    let mut conjuncts: Vec<Arc<dyn PhysicalExpr>> = Vec::new();
+    if let Some((left_rt, right_rt, lower, upper)) = interval {
+        let right_type = right_schema.field(right_rt).data_type();
+        conjuncts.push(interval_bounds_expr(&intermediate, left_rt, left_n + right_rt, right_type, lower, upper));
+    }
+    if let Some(predicate) = predicate {
+        conjuncts.push(predicate.compiled(&intermediate));
+    }
+    if conjuncts.is_empty() {
+        return None;
+    }
+    let expression = conjuncts
+        .into_iter()
+        .reduce(|a, b| binary(a, Operator::And, b, &intermediate).expect("failed to AND residual filter"))
+        .expect("at least one conjunct");
+    let column_indices = (0..left_n)
+        .map(|i| ColumnIndex { index: i, side: JoinSide::Left })
+        .chain((0..right_n).map(|i| ColumnIndex { index: i, side: JoinSide::Right }))
+        .collect();
+    Some(JoinFilter::new(expression, column_indices, intermediate))
+}
+
+/// The interval-bounds conjunct `joined[left_rt] BETWEEN joined[right_rt] + lower AND + upper`, built
+/// against the joined intermediate schema. `right_type` is the right rowtime's type, which the bound
+/// offset must match (arrow rejects a timestamp plus a duration of a different unit).
+fn interval_bounds_expr(
+    intermediate: &SchemaRef,
     left_rt: usize,
     right_rt: usize,
+    right_type: &DataType,
     lower: i64,
     upper: i64,
-) -> JoinFilter {
+) -> Arc<dyn PhysicalExpr> {
     use arrow::datatypes::TimeUnit;
-    let left_type = left_schema.field(left_rt).data_type().clone();
-    let right_type = right_schema.field(right_rt).data_type().clone();
-    // The bound is added to the rowtime in its own type and unit (arrow rejects a timestamp plus a
-    // duration of a different unit): a plain millis offset for an int64 rowtime, else a Duration in
-    // the timestamp's own unit (the millis offset scaled to it).
     let offset = |millis: i64| -> ScalarValue {
-        match &right_type {
+        match right_type {
             DataType::Int64 => ScalarValue::Int64(Some(millis)),
             DataType::Timestamp(TimeUnit::Second, _) => ScalarValue::DurationSecond(Some(millis / 1_000)),
             DataType::Timestamp(TimeUnit::Millisecond, _) => ScalarValue::DurationMillisecond(Some(millis)),
@@ -2349,26 +2378,19 @@ fn interval_filter(
             other => panic!("unsupported interval-join rowtime type: {other:?}"),
         }
     };
-    let intermediate = Arc::new(Schema::new(vec![
-        Field::new("left_rt", left_type, true),
-        Field::new("right_rt", right_type.clone(), true),
-    ]));
-    let left_col: Arc<dyn PhysicalExpr> = Arc::new(Column::new("left_rt", 0));
-    let right_col: Arc<dyn PhysicalExpr> = Arc::new(Column::new("right_rt", 1));
+    let left_col: Arc<dyn PhysicalExpr> =
+        Arc::new(Column::new(intermediate.field(left_rt).name(), left_rt));
+    let right_col: Arc<dyn PhysicalExpr> =
+        Arc::new(Column::new(intermediate.field(right_rt).name(), right_rt));
     let bound = |millis: i64| -> Arc<dyn PhysicalExpr> {
-        binary(right_col.clone(), Operator::Plus, lit(offset(millis)), &intermediate)
+        binary(right_col.clone(), Operator::Plus, lit(offset(millis)), intermediate)
             .expect("failed to build interval bound")
     };
-    let ge = binary(left_col.clone(), Operator::GtEq, bound(lower), &intermediate)
+    let ge = binary(left_col.clone(), Operator::GtEq, bound(lower), intermediate)
         .expect("failed to build lower bound");
-    let le = binary(left_col.clone(), Operator::LtEq, bound(upper), &intermediate)
+    let le = binary(left_col.clone(), Operator::LtEq, bound(upper), intermediate)
         .expect("failed to build upper bound");
-    let expression = binary(ge, Operator::And, le, &intermediate).expect("failed to build interval and");
-    let column_indices = vec![
-        ColumnIndex { index: left_rt, side: JoinSide::Left },
-        ColumnIndex { index: right_rt, side: JoinSide::Right },
-    ];
-    JoinFilter::new(expression, column_indices, intermediate)
+    binary(ge, Operator::And, le, intermediate).expect("failed to build interval and")
 }
 
 /// Buffered rows of one side of a window join, grouped by window then by equi-join key.
@@ -2388,6 +2410,7 @@ struct WindowJoiner {
     left_wend: usize,
     right_wstart: usize,
     right_wend: usize,
+    predicate: Option<JoinPredicate>,
     left_schema: Option<SchemaRef>,
     right_schema: Option<SchemaRef>,
     left_buffered: Vec<RecordBatch>,
@@ -2403,6 +2426,7 @@ impl WindowJoiner {
         left_wend: usize,
         right_wstart: usize,
         right_wend: usize,
+        predicate: Option<JoinPredicate>,
     ) -> Self {
         WindowJoiner {
             left_keys,
@@ -2411,6 +2435,7 @@ impl WindowJoiner {
             left_wend,
             right_wstart,
             right_wend,
+            predicate,
             left_schema: None,
             right_schema: None,
             left_buffered: Vec::new(),
@@ -2462,7 +2487,10 @@ impl WindowJoiner {
                     self.left_keys.iter().zip(&self.right_keys).map(|(&l, &r)| (l, r)).collect();
                 on.push((self.left_wstart, self.right_wstart));
                 on.push((self.left_wend, self.right_wend));
-                hash_join_inner(left, right, &on, None)
+                // A window join has no interval bounds; the only residual is the optional non-equi
+                // predicate over the joined row.
+                let filter = residual_filter(&left.schema(), &right.schema(), None, self.predicate.as_mut());
+                hash_join_inner(left, right, &on, filter)
             }
             _ => RecordBatch::new_empty(Arc::new(Schema::empty())),
         }
@@ -2492,10 +2520,18 @@ impl WindowJoiner {
         left_wend: usize,
         right_wstart: usize,
         right_wend: usize,
+        predicate: Option<JoinPredicate>,
         bytes: &[u8],
     ) -> Self {
-        let mut joiner =
-            WindowJoiner::new(left_keys, right_keys, left_wstart, left_wend, right_wstart, right_wend);
+        let mut joiner = WindowJoiner::new(
+            left_keys,
+            right_keys,
+            left_wstart,
+            left_wend,
+            right_wstart,
+            right_wend,
+            predicate,
+        );
         let left_len = u32::from_le_bytes(bytes[0..4].try_into().expect("snapshot len")) as usize;
         for batch in read_ipc_if_present(&bytes[4..4 + left_len]) {
             joiner.left_schema = Some(batch.schema());
@@ -2592,21 +2628,22 @@ struct JoinPredicate {
     longs: Vec<i64>,
     doubles: Vec<f64>,
     strings: Vec<Option<String>>,
-    /// The joined `[left fields.., right fields..]` schema the predicate's column refs index into.
-    schema: SchemaRef,
     compiled: Option<Arc<dyn PhysicalExpr>>,
 }
 
 impl JoinPredicate {
-    fn compiled(&mut self) -> Arc<dyn PhysicalExpr> {
+    /// The physical predicate compiled against the joined `[left.., right..]` schema (columns `c0..`)
+    /// its input refs index into, cached on first use. The schema is supplied by the caller because
+    /// the time-bounded joins learn it from their input batches rather than at construction.
+    fn compiled(&mut self, schema: &SchemaRef) -> Arc<dyn PhysicalExpr> {
         if let Some(expr) = &self.compiled {
             return expr.clone();
         }
         let df_schema = Arc::new(
-            DFSchema::try_from(self.schema.as_ref().clone()).expect("failed to build join-predicate schema"),
+            DFSchema::try_from(schema.as_ref().clone()).expect("failed to build join-predicate schema"),
         );
         let physical = compile_expr(
-            &self.schema,
+            schema,
             &df_schema,
             &self.kinds,
             &self.payload,
@@ -2620,17 +2657,16 @@ impl JoinPredicate {
         physical
     }
 
-    /// Evaluates the predicate over the candidate `[left.., right..]` rows, returning one boolean per
-    /// row (a null result is `false` — not a match).
-    fn evaluate(&mut self, rows: &[JoinRow]) -> Vec<bool> {
-        let types: Vec<DataType> =
-            self.schema.fields().iter().map(|f| f.data_type().clone()).collect();
+    /// Evaluates the predicate over the candidate `[left.., right..]` rows (laid out by `schema`),
+    /// returning one boolean per row (a null result is `false` — not a match).
+    fn evaluate(&mut self, schema: &SchemaRef, rows: &[JoinRow]) -> Vec<bool> {
+        let types: Vec<DataType> = schema.fields().iter().map(|f| f.data_type().clone()).collect();
         let columns: Vec<ArrayRef> = (0..types.len())
             .map(|j| scalars_to_array(rows.iter().map(|r| r[j].clone()).collect(), &types[j]))
             .collect();
-        let batch = RecordBatch::try_new(self.schema.clone(), columns)
+        let batch = RecordBatch::try_new(schema.clone(), columns)
             .expect("failed to build join-predicate batch");
-        let predicate = self.compiled();
+        let predicate = self.compiled(schema);
         let evaluated = predicate
             .evaluate(&batch)
             .expect("failed to evaluate join predicate")
@@ -2709,6 +2745,7 @@ impl UpdatingJoiner {
         if associated.is_empty() || self.predicate.is_none() {
             return;
         }
+        let joined = Self::joined_schema(&self.left_schema, &self.right_schema);
         let pairs: Vec<JoinRow> = associated
             .iter()
             .map(|other| {
@@ -2719,7 +2756,7 @@ impl UpdatingJoiner {
                 }
             })
             .collect();
-        let mask = self.predicate.as_mut().expect("predicate present").evaluate(&pairs);
+        let mask = self.predicate.as_mut().expect("predicate present").evaluate(&joined, &pairs);
         let mut keep = mask.into_iter();
         associated.retain(|_| keep.next().unwrap_or(false));
     }
@@ -6518,9 +6555,10 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_benchmarkKafk
 /// Creates an event-time INNER interval joiner and returns an opaque handle. The key/time column
 /// indices locate the equi-join key and rowtime within each side's input batch; `lower`/`upper` are
 /// the inclusive bounds (millis) on `left.rt - right.rt`. The JVM owns the handle across calls.
+#[allow(clippy::too_many_arguments)]
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createIntervalJoiner<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     left_keys: JIntArray<'local>,
     right_keys: JIntArray<'local>,
@@ -6528,9 +6566,24 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createInterva
     right_time: jint,
     lower: jlong,
     upper: jlong,
+    pred_kinds: JIntArray<'local>,
+    pred_payload: JIntArray<'local>,
+    pred_child_counts: JIntArray<'local>,
+    pred_longs: JLongArray<'local>,
+    pred_doubles: JDoubleArray<'local>,
+    pred_strings: JObjectArray<'local>,
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
+    let predicate = read_join_predicate(
+        &mut env,
+        &pred_kinds,
+        &pred_payload,
+        &pred_child_counts,
+        &pred_longs,
+        &pred_doubles,
+        &pred_strings,
+    );
     Box::into_raw(Box::new(IntervalJoiner::new(
         left,
         right,
@@ -6538,6 +6591,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createInterva
         right_time as usize,
         lower,
         upper,
+        predicate,
     ))) as jlong
 }
 
@@ -6614,8 +6668,9 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotInter
 
 /// Rebuilds an interval joiner from a snapshot taken by a prior run and returns a fresh handle.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreIntervalJoiner<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     left_keys: JIntArray<'local>,
     right_keys: JIntArray<'local>,
@@ -6623,10 +6678,25 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreInterv
     right_time: jint,
     lower: jlong,
     upper: jlong,
+    pred_kinds: JIntArray<'local>,
+    pred_payload: JIntArray<'local>,
+    pred_child_counts: JIntArray<'local>,
+    pred_longs: JLongArray<'local>,
+    pred_doubles: JDoubleArray<'local>,
+    pred_strings: JObjectArray<'local>,
     snapshot: JByteArray<'local>,
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
+    let predicate = read_join_predicate(
+        &mut env,
+        &pred_kinds,
+        &pred_payload,
+        &pred_child_counts,
+        &pred_longs,
+        &pred_doubles,
+        &pred_strings,
+    );
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read join snapshot");
     Box::into_raw(Box::new(IntervalJoiner::restore(
         left,
@@ -6635,17 +6705,15 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreInterv
         right_time as usize,
         lower,
         upper,
+        predicate,
         &bytes,
     ))) as jlong
 }
 
-/// Reads the encoded residual non-equi join predicate (empty `kinds` ⇒ no predicate), building it
-/// against the joined `[left.., right..]` schema its column refs index into.
-#[allow(clippy::too_many_arguments)]
+/// Reads the encoded residual non-equi join predicate (empty `kinds` ⇒ no predicate). It compiles
+/// lazily against the joined `[left.., right..]` schema supplied at evaluation time.
 fn read_join_predicate(
     env: &mut JNIEnv,
-    left_schema: &SchemaRef,
-    right_schema: &SchemaRef,
     kinds: &JIntArray,
     payload: &JIntArray,
     child_counts: &JIntArray,
@@ -6664,7 +6732,6 @@ fn read_join_predicate(
         longs: read_longs(env, longs),
         doubles: read_doubles(env, doubles),
         strings: read_strings(env, strings),
-        schema: UpdatingJoiner::joined_schema(left_schema, right_schema),
         compiled: None,
     })
 }
@@ -6697,8 +6764,6 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createUpdatin
     let right_schema = import_schema(right_schema_address);
     let predicate = read_join_predicate(
         &mut env,
-        &left_schema,
-        &right_schema,
         &pred_kinds,
         &pred_payload,
         &pred_child_counts,
@@ -6787,8 +6852,6 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreUpdati
     let right_schema = import_schema(right_schema_address);
     let predicate = read_join_predicate(
         &mut env,
-        &left_schema,
-        &right_schema,
         &pred_kinds,
         &pred_payload,
         &pred_child_counts,
@@ -6922,9 +6985,10 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeTopNRank
 /// Creates an event-time INNER window joiner and returns an opaque handle. The key/window column
 /// indices locate the equi-join key and the `window_start`/`window_end` columns within each side's
 /// input batch. The JVM owns the handle across calls and must release it with the matching close.
+#[allow(clippy::too_many_arguments)]
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createWindowJoiner<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     left_keys: JIntArray<'local>,
     right_keys: JIntArray<'local>,
@@ -6932,9 +6996,24 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createWindowJ
     left_window_end: jint,
     right_window_start: jint,
     right_window_end: jint,
+    pred_kinds: JIntArray<'local>,
+    pred_payload: JIntArray<'local>,
+    pred_child_counts: JIntArray<'local>,
+    pred_longs: JLongArray<'local>,
+    pred_doubles: JDoubleArray<'local>,
+    pred_strings: JObjectArray<'local>,
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
+    let predicate = read_join_predicate(
+        &mut env,
+        &pred_kinds,
+        &pred_payload,
+        &pred_child_counts,
+        &pred_longs,
+        &pred_doubles,
+        &pred_strings,
+    );
     Box::into_raw(Box::new(WindowJoiner::new(
         left,
         right,
@@ -6942,6 +7021,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createWindowJ
         left_window_end as usize,
         right_window_start as usize,
         right_window_end as usize,
+        predicate,
     ))) as jlong
 }
 
@@ -7012,9 +7092,10 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotWindo
 }
 
 /// Rebuilds a window joiner from a snapshot taken by a prior run and returns a fresh handle.
+#[allow(clippy::too_many_arguments)]
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreWindowJoiner<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     left_keys: JIntArray<'local>,
     right_keys: JIntArray<'local>,
@@ -7022,10 +7103,25 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreWindow
     left_window_end: jint,
     right_window_start: jint,
     right_window_end: jint,
+    pred_kinds: JIntArray<'local>,
+    pred_payload: JIntArray<'local>,
+    pred_child_counts: JIntArray<'local>,
+    pred_longs: JLongArray<'local>,
+    pred_doubles: JDoubleArray<'local>,
+    pred_strings: JObjectArray<'local>,
     snapshot: JByteArray<'local>,
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
+    let predicate = read_join_predicate(
+        &mut env,
+        &pred_kinds,
+        &pred_payload,
+        &pred_child_counts,
+        &pred_longs,
+        &pred_doubles,
+        &pred_strings,
+    );
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read window-join snapshot");
     Box::into_raw(Box::new(WindowJoiner::restore(
         left,
@@ -7034,6 +7130,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreWindow
         left_window_end as usize,
         right_window_start as usize,
         right_window_end as usize,
+        predicate,
         &bytes,
     ))) as jlong
 }
@@ -7259,7 +7356,7 @@ pub mod bench {
             lower: i64,
             upper: i64,
         ) -> Self {
-            IntervalJoin(IntervalJoiner::new(left_keys, right_keys, left_time, right_time, lower, upper))
+            IntervalJoin(IntervalJoiner::new(left_keys, right_keys, left_time, right_time, lower, upper, None))
         }
 
         pub fn push_left(&mut self, batch: RecordBatch) -> RecordBatch {
@@ -7291,6 +7388,7 @@ pub mod bench {
                 left_window_end,
                 right_window_start,
                 right_window_end,
+                None,
             ))
         }
 
@@ -8185,7 +8283,6 @@ mod tests {
             longs: vec![],
             doubles: vec![],
             strings: vec![],
-            schema: UpdatingJoiner::joined_schema(&kv_schema(), &kv_schema()),
             compiled: None,
         };
         let mut joiner = UpdatingJoiner::new(
@@ -8247,7 +8344,7 @@ mod tests {
     #[test]
     fn interval_join_emits_matched_pairs() {
         // a.rt BETWEEN b.rt - 1000 AND b.rt + 1000, single equi-key on column 0, rt is column 2.
-        let mut joiner = IntervalJoiner::new(vec![0], vec![0], 2, 2, -1000, 1000);
+        let mut joiner = IntervalJoiner::new(vec![0], vec![0], 2, 2, -1000, 1000, None);
         // Buffer two right rows for key 1 (rt 5500 in range of left 5000, rt 7000 out of range).
         assert_eq!(joiner.push_right(join_batch(vec![1, 1], vec![100, 200], vec![5500, 7000])).num_rows(), 0);
         // A left row (k=1, rt=5000): matches the rt=5500 right row only (delta -500 in [-1000,1000]).
@@ -8265,7 +8362,7 @@ mod tests {
     // regardless of which side arrived first.
     #[test]
     fn interval_join_matches_on_key_and_emits_once() {
-        let mut joiner = IntervalJoiner::new(vec![0], vec![0], 2, 2, -1000, 1000);
+        let mut joiner = IntervalJoiner::new(vec![0], vec![0], 2, 2, -1000, 1000, None);
         // Left first: buffer a left row, no right yet.
         assert_eq!(joiner.push_left(join_batch(vec![1], vec![10], vec![5000])).num_rows(), 0);
         // A right row with a different key does not match.
@@ -8281,7 +8378,7 @@ mod tests {
     // match an evicted row.
     #[test]
     fn interval_join_evicts_dead_rows_on_watermark() {
-        let mut joiner = IntervalJoiner::new(vec![0], vec![0], 2, 2, -1000, 1000);
+        let mut joiner = IntervalJoiner::new(vec![0], vec![0], 2, 2, -1000, 1000, None);
         joiner.push_left(join_batch(vec![1], vec![10], vec![5000]));
         // Watermark 6000: left.rt - lower = 5000 - (-1000) = 6000, not > 6000, so the row is evicted.
         joiner.advance(6000);
@@ -8322,7 +8419,7 @@ mod tests {
     #[test]
     fn window_join_emits_matches_when_window_closes() {
         // keys col 0; window_start col 2, window_end col 3 on both sides.
-        let mut joiner = WindowJoiner::new(vec![0], vec![0], 2, 3, 2, 3);
+        let mut joiner = WindowJoiner::new(vec![0], vec![0], 2, 3, 2, 3, None);
         // Window [0,1000): left k=1 (two rows) and k=2; right k=1 and k=3.
         joiner.push_left(window_batch(vec![1, 1, 2], vec![10, 11, 20], vec![0, 0, 0], vec![1000, 1000, 1000]));
         joiner.push_right(window_batch(vec![1, 3], vec![100, 300], vec![0, 0], vec![1000, 1000]));
@@ -8342,11 +8439,11 @@ mod tests {
     // Buffered window-join rows survive a snapshot/restore round trip.
     #[test]
     fn window_join_restores_buffered_rows() {
-        let mut joiner = WindowJoiner::new(vec![0], vec![0], 2, 3, 2, 3);
+        let mut joiner = WindowJoiner::new(vec![0], vec![0], 2, 3, 2, 3, None);
         joiner.push_left(window_batch(vec![1], vec![10], vec![0], vec![1000]));
         joiner.push_right(window_batch(vec![1], vec![100], vec![0], vec![1000]));
         let snapshot = joiner.snapshot();
-        let mut restored = WindowJoiner::restore(vec![0], vec![0], 2, 3, 2, 3, &snapshot);
+        let mut restored = WindowJoiner::restore(vec![0], vec![0], 2, 3, 2, 3, None, &snapshot);
         let out = restored.flush(1000);
         assert_eq!(left_right_values(&out), vec![(10, 100)]);
     }
@@ -8354,11 +8451,11 @@ mod tests {
     // Buffered rows survive a snapshot/restore round trip and still match afterward.
     #[test]
     fn interval_join_restores_buffered_rows() {
-        let mut joiner = IntervalJoiner::new(vec![0], vec![0], 2, 2, -1000, 1000);
+        let mut joiner = IntervalJoiner::new(vec![0], vec![0], 2, 2, -1000, 1000, None);
         joiner.push_right(join_batch(vec![1], vec![100], vec![5500]));
         let snapshot = joiner.snapshot();
         let mut restored =
-            IntervalJoiner::restore(vec![0], vec![0], 2, 2, -1000, 1000, &snapshot);
+            IntervalJoiner::restore(vec![0], vec![0], 2, 2, -1000, 1000, None, &snapshot);
         let out = restored.push_left(join_batch(vec![1], vec![10], vec![5000]));
         assert_eq!(out.num_rows(), 1);
         assert_eq!(values(&out, 4), vec![100]);

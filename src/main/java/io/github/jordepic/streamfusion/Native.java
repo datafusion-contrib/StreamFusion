@@ -598,9 +598,22 @@ public final class Native {
    * @param rightTime rowtime column index in the right input batch
    * @param lowerMillis inclusive lower bound on {@code left.rt - right.rt}
    * @param upperMillis inclusive upper bound on {@code left.rt - right.rt}
+   * @param predKinds residual non-equi predicate over the joined {@code [left.., right..]} row (empty
+   *     ⇒ none), ANDed with the interval bounds; same encoding {@link #createFilterExpression} takes
    */
   public static native long createIntervalJoiner(
-      int[] leftKeys, int[] rightKeys, int leftTime, int rightTime, long lowerMillis, long upperMillis);
+      int[] leftKeys,
+      int[] rightKeys,
+      int leftTime,
+      int rightTime,
+      long lowerMillis,
+      long upperMillis,
+      int[] predKinds,
+      int[] predPayload,
+      int[] predChildCounts,
+      long[] predLongs,
+      double[] predDoubles,
+      String[] predStrings);
 
   /** Pushes a left batch, exporting the matched pairs (left columns then right columns). */
   public static native void pushLeftIntervalJoiner(
@@ -627,6 +640,12 @@ public final class Native {
       int rightTime,
       long lowerMillis,
       long upperMillis,
+      int[] predKinds,
+      int[] predPayload,
+      int[] predChildCounts,
+      long[] predLongs,
+      double[] predDoubles,
+      String[] predStrings,
       byte[] snapshot);
 
   /**
@@ -741,7 +760,13 @@ public final class Native {
       int leftWindowStart,
       int leftWindowEnd,
       int rightWindowStart,
-      int rightWindowEnd);
+      int rightWindowEnd,
+      int[] predKinds,
+      int[] predPayload,
+      int[] predChildCounts,
+      long[] predLongs,
+      double[] predDoubles,
+      String[] predStrings);
 
   /** Buffers a left batch; its rows are joined when a watermark closes their window. */
   public static native void pushLeftWindowJoiner(
@@ -772,6 +797,12 @@ public final class Native {
       int leftWindowEnd,
       int rightWindowStart,
       int rightWindowEnd,
+      int[] predKinds,
+      int[] predPayload,
+      int[] predChildCounts,
+      long[] predLongs,
+      double[] predDoubles,
+      String[] predStrings,
       byte[] snapshot);
 
   /**

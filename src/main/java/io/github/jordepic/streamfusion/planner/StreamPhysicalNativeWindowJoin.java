@@ -29,6 +29,7 @@ public class StreamPhysicalNativeWindowJoin extends BiRel
   private final int leftWindowEnd;
   private final int rightWindowStart;
   private final int rightWindowEnd;
+  private final RexExpression predicate;
 
   public StreamPhysicalNativeWindowJoin(
       RelOptCluster cluster,
@@ -41,7 +42,8 @@ public class StreamPhysicalNativeWindowJoin extends BiRel
       int leftWindowStart,
       int leftWindowEnd,
       int rightWindowStart,
-      int rightWindowEnd) {
+      int rightWindowEnd,
+      RexExpression predicate) {
     super(cluster, traitSet, left, right);
     this.outputRowType = outputRowType;
     this.leftKeys = leftKeys;
@@ -50,6 +52,7 @@ public class StreamPhysicalNativeWindowJoin extends BiRel
     this.leftWindowEnd = leftWindowEnd;
     this.rightWindowStart = rightWindowStart;
     this.rightWindowEnd = rightWindowEnd;
+    this.predicate = predicate;
   }
 
   @Override
@@ -75,7 +78,8 @@ public class StreamPhysicalNativeWindowJoin extends BiRel
         leftWindowStart,
         leftWindowEnd,
         rightWindowStart,
-        rightWindowEnd);
+        rightWindowEnd,
+        predicate);
   }
 
   @Override
@@ -91,6 +95,7 @@ public class StreamPhysicalNativeWindowJoin extends BiRel
         leftWindowStart,
         leftWindowEnd,
         rightWindowStart,
-        rightWindowEnd);
+        rightWindowEnd,
+        predicate);
   }
 }

@@ -1,5 +1,6 @@
 package io.github.jordepic.streamfusion.planner;
 
+import io.github.jordepic.streamfusion.operator.EncodedPredicate;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.calcite.rel.core.Calc;
@@ -90,6 +91,23 @@ final class RexExpression {
   static RexExpression encode(RexNode node) {
     RexExpression encoder = new RexExpression();
     return encoder.emit(node) ? encoder : null;
+  }
+
+  /**
+   * Packages an encoded single-expression predicate (its root at node 0) for a native join operator,
+   * or {@link EncodedPredicate#NONE} when there is no predicate.
+   */
+  static EncodedPredicate toEncodedPredicate(RexExpression predicate) {
+    if (predicate == null) {
+      return EncodedPredicate.NONE;
+    }
+    return new EncodedPredicate(
+        predicate.kinds(),
+        predicate.payload(),
+        predicate.childCounts(),
+        predicate.longs(),
+        predicate.doubles(),
+        predicate.strings());
   }
 
   /**

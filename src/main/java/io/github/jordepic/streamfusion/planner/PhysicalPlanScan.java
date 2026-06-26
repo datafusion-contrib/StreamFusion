@@ -552,7 +552,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             IntervalJoinMatcher.leftTime(join),
             IntervalJoinMatcher.rightTime(join),
             IntervalJoinMatcher.lowerMillis(join),
-            IntervalJoinMatcher.upperMillis(join));
+            IntervalJoinMatcher.upperMillis(join),
+            IntervalJoinMatcher.nonEquiPredicate(join));
       }
     }
 
@@ -580,7 +581,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             WindowJoinMatcher.leftWindowStart(join),
             WindowJoinMatcher.leftWindowEnd(join),
             WindowJoinMatcher.rightWindowStart(join),
-            WindowJoinMatcher.rightWindowEnd(join));
+            WindowJoinMatcher.rightWindowEnd(join),
+            WindowJoinMatcher.nonEquiPredicate(join));
       }
     }
 

@@ -35,6 +35,20 @@ class FlinkWindowJoinSqlHarnessTest {
   }
 
   @Test
+  void windowJoinWithNonEquiPredicateMatchesHost() throws Exception {
+    // A residual non-equi condition (a.v < b.v) beyond the window-bound equi keys is applied natively
+    // as the join filter; the matches must equal the host's.
+    NativeParity.assertParity(
+        FlinkWindowJoinSqlHarnessTest::dataStreamEnvironment,
+        "SELECT a.k, a.v, b.v FROM "
+            + "(SELECT * FROM TABLE(TUMBLE(TABLE A, DESCRIPTOR(rt), INTERVAL '1' SECOND))) a "
+            + "JOIN "
+            + "(SELECT * FROM TABLE(TUMBLE(TABLE B, DESCRIPTOR(rt), INTERVAL '1' SECOND))) b "
+            + "ON a.k = b.k AND a.window_start = b.window_start AND a.window_end = b.window_end "
+            + "AND a.v < b.v");
+  }
+
+  @Test
   void windowJoinOverParquetMatchesHost() throws Exception {
     Path left = Files.createTempDirectory("wjoin-left");
     Path right = Files.createTempDirectory("wjoin-right");

@@ -27,6 +27,7 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
   private final int rightTime;
   private final long lowerMillis;
   private final long upperMillis;
+  private final RexExpression predicate;
 
   public NativeIntervalJoinExecNode(
       ReadableConfig tableConfig,
@@ -39,7 +40,8 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
       int leftTime,
       int rightTime,
       long lowerMillis,
-      long upperMillis) {
+      long upperMillis,
+      RexExpression predicate) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-interval-join_1"),
@@ -53,6 +55,7 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
     this.rightTime = rightTime;
     this.lowerMillis = lowerMillis;
     this.upperMillis = upperMillis;
+    this.predicate = predicate;
   }
 
   @Override
@@ -68,7 +71,13 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
         right,
         createTransformationMeta(TRANSFORMATION, config),
         new NativeIntervalJoinOperator(
-            leftKeys, rightKeys, leftTime, rightTime, lowerMillis, upperMillis),
+            leftKeys,
+            rightKeys,
+            leftTime,
+            rightTime,
+            lowerMillis,
+            upperMillis,
+            RexExpression.toEncodedPredicate(predicate)),
         ArrowBatchTypeInformation.INSTANCE,
         left.getParallelism(),
         false);
