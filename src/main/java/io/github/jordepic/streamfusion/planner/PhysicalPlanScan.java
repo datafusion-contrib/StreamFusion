@@ -51,9 +51,40 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     if (!NativeConfig.nativeEnabled()) {
       return root;
     }
-    // Pass 1 substitutes native (columnar) operators; pass 2 inserts a row↔columnar transpose
-    // wherever a columnar rel meets a rowwise one, so adjacent columnar operators flow batches.
-    return insertTransitions(rewrite(root));
+    // Pass 1 substitutes native (columnar) operators.
+    RelNode substituted = rewrite(root);
+    // Whole-query all-or-nothing (ticket 36): every native operator but a source/sink is Arrow → Arrow.
+    // If any operator other than a source (a leaf) or the sink (the plan root) is still row-wise, the
+    // query cannot run as one columnar island, so accelerate nothing — it runs as stock Flink. The only
+    // row-wise operator allowed is a rowwise source/sink, bridged by a transpose at the perimeter.
+    if (substitutions > 0 && !fullyColumnar(substituted, true)) {
+      substitutions = 0; // reasons stay recorded for reporting; nothing is substituted
+      return root;
+    }
+    // Pass 2 inserts a row↔columnar transpose at each perimeter edge (rowwise source/sink ↔ island).
+    return insertTransitions(substituted);
+  }
+
+  /**
+   * Whether the substituted tree is one fully-columnar island: every operator is native except a
+   * row-wise source (a leaf) or the sink (the plan root). Any other row-wise operator means the query
+   * cannot be a single columnar island, so the whole thing falls back to stock Flink.
+   */
+  private static boolean fullyColumnar(RelNode node, boolean isRoot) {
+    boolean allowed =
+        node instanceof ColumnarInput
+            || node instanceof ColumnarOutput
+            || node.getInputs().isEmpty() // source / leaf
+            || isRoot; // sink (terminal)
+    if (!allowed) {
+      return false;
+    }
+    for (RelNode input : node.getInputs()) {
+      if (!fullyColumnar(input, false)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /** Inserts transpose rels at every columnar↔rowwise edge of the (already substituted) tree. */
@@ -475,26 +506,12 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         int[] keyColumns = OverAggregateMatcher.keyColumns(over);
         int valueType = OverAggregateMatcher.valueTypeCode(over);
         int[] kinds = OverAggregateMatcher.kinds(over);
-        // When the OVER sits on an exchange over a columnar producer, keep the keyed shuffle
-        // columnar (a native exchange splits the batch by the partition keys); otherwise the
-        // columnar OVER is fed via a row→Arrow transpose at the boundary. The OVER itself is always
-        // columnar (input columns pass through with the running aggregate appended).
-        RelNode overInput = over.getInputs().get(0);
-        RelNode input = overInput;
-        if (overInput instanceof StreamPhysicalExchange
-            && overInput.getInputs().get(0) instanceof ColumnarOutput) {
-          input =
-              new StreamPhysicalNativeColumnarExchange(
-                  overInput.getCluster(),
-                  overInput.getTraitSet(),
-                  overInput.getInputs().get(0),
-                  overInput.getRowType(),
-                  keyColumns);
-        }
+        // Always columnar (ticket 36): the keyed shuffle becomes a native exchange (split by the
+        // partition keys); the transition pass transposes below it only when the producer is rowwise.
         return new StreamPhysicalNativeOverAggregate(
             over.getCluster(),
             over.getTraitSet(),
-            input,
+            columnarInput(over.getInputs().get(0), keyColumns),
             over.getRowType(),
             timeColumn,
             valueColumn,
@@ -682,12 +699,13 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   }
 
   /**
-   * Replaces a join input's host keyed exchange with a native columnar one (splitting the batch by
-   * the join key) when it sits on a columnar producer; otherwise returns the input unchanged so the
-   * transition pass inserts a transpose at the columnar boundary.
+   * Replaces a keyed host exchange with a native columnar one (splitting the batch by the key), so the
+   * shuffle is always part of the columnar island (ticket 36). When the exchange's producer is rowwise
+   * the transition pass inserts a single transpose below the native exchange (the island perimeter);
+   * when it is columnar no transpose is needed. A non-exchange input is returned unchanged.
    */
   private RelNode columnarInput(RelNode input, int[] keyColumns) {
-    if (input instanceof StreamPhysicalExchange && input.getInputs().get(0) instanceof ColumnarOutput) {
+    if (input instanceof StreamPhysicalExchange) {
       return new StreamPhysicalNativeColumnarExchange(
           input.getCluster(),
           input.getTraitSet(),
