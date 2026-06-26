@@ -86,6 +86,15 @@
             <version>${flink.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- Provides the JUnit5 MiniClusterExtension: the SQL harness tests share one Flink mini-cluster
+             per test class (redirecting getExecutionEnvironment to it) instead of booting and tearing
+             down a fresh local cluster on every executeSql().collect() — the suite's dominant cost. -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-test-utils</artifactId>
+            <version>${flink.version}</version>
+            <scope>test</scope>
+        </dependency>
         <!-- The native ORC source plugs into Flink's file source for enumeration/split assignment/
              checkpointing, so the connector is a compile-time dependency (provided at runtime by the
              Flink distribution, which bundles it). The format jars and Hadoop below stay test-only,
