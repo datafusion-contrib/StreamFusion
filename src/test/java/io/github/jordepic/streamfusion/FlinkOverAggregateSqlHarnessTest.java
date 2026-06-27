@@ -69,6 +69,15 @@ class FlinkOverAggregateSqlHarnessTest {
         "SELECT k, v, SUM(v) OVER (PARTITION BY k ORDER BY rt) AS total FROM src");
   }
 
+  @Test
+  void booleanPartitionKeyMatchesHost() throws Exception {
+    // PARTITION BY a boolean key — exercises the wider partition-key set (the native key path is
+    // type-general; boolean/date/timestamp/decimal are admitted, not just bigint/int/string).
+    NativeParity.assertParity(
+        FlinkOverAggregateSqlHarnessTest::environment,
+        "SELECT b, v, SUM(v) OVER (PARTITION BY b ORDER BY rt) AS total FROM src");
+  }
+
   private static TableEnvironment environment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
@@ -76,12 +85,17 @@ class FlinkOverAggregateSqlHarnessTest {
     // Out-of-order within the bound so the running totals exercise rowtime ordering and ties.
     DataStream<Row> source =
         env.fromData(
-                Types.ROW_NAMED(new String[] {"k", "v", "ts"}, Types.LONG, Types.LONG, Types.LONG),
-                Row.of(1L, 10L, 0L),
-                Row.of(2L, 20L, 1000L),
-                Row.of(1L, 30L, 1000L),
-                Row.of(2L, 40L, 500L),
-                Row.of(1L, 50L, 2000L))
+                Types.ROW_NAMED(
+                    new String[] {"k", "v", "ts", "b"},
+                    Types.LONG,
+                    Types.LONG,
+                    Types.LONG,
+                    Types.BOOLEAN),
+                Row.of(1L, 10L, 0L, false),
+                Row.of(2L, 20L, 1000L, true),
+                Row.of(1L, 30L, 1000L, false),
+                Row.of(2L, 40L, 500L, true),
+                Row.of(1L, 50L, 2000L, false))
             .assignTimestampsAndWatermarks(
                 WatermarkStrategy.<Row>forBoundedOutOfOrderness(java.time.Duration.ofSeconds(5))
                     .withTimestampAssigner((row, ts) -> (Long) row.getField(2)));
@@ -92,6 +106,7 @@ class FlinkOverAggregateSqlHarnessTest {
             .column("k", DataTypes.BIGINT())
             .column("v", DataTypes.BIGINT())
             .column("ts", DataTypes.BIGINT())
+            .column("b", DataTypes.BOOLEAN())
             .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
             .watermark("rt", "SOURCE_WATERMARK()")
             .build());

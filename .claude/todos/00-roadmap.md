@@ -29,8 +29,10 @@ here when the ticket is deleted.
   numeric value type (custom accumulators keep the host's type/precision) plus decimal MIN/MAX/COUNT;
   multiple value columns (`SUM(a), SUM(b)`); bigint/int/string/boolean/date/timestamp/decimal grouping
   keys; and `COUNT(*)` (one- and two-phase). Parity matrix in `docs/aggregate-type-support.md`.
-  Decimal `SUM`/`AVG` stay on the host (precision rules). Join/`OVER` partition keys still carry only
-  bigint/int/string (the wider-key carriage exists; admitting it there just needs tests).
+  Decimal `SUM`/`AVG` stay on the host (precision rules). Join/`OVER` partition keys now carry the
+  full grouping-key set (bigint/int/string/boolean/date/timestamp/decimal) — the native key path is
+  type-general, so OVER, interval join, and window join were widened from bigint/int/string to match
+  the group-by/window aggregate (float/double stay out — key equality on them is ill-defined).
 - **Columnar flow, end to end:** `ArrowBatch` stream type + IPC serializer, the two
   transpose operators, the transition-inserter pass, `ColumnarInput`/`ColumnarOutput` markers, a
   **columnar watermark assigner**, a **columnar keyed shuffle** (native by-key split +

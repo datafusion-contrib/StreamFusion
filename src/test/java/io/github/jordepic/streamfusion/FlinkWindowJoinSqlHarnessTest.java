@@ -35,6 +35,19 @@ class FlinkWindowJoinSqlHarnessTest {
   }
 
   @Test
+  void booleanKeyWindowJoinMatchesHost() throws Exception {
+    // Join on a boolean key (plus the window bounds) — exercises the wider equi-key set
+    // (boolean/date/timestamp/decimal now admitted); the native key path is type-general.
+    NativeParity.assertParity(
+        FlinkWindowJoinSqlHarnessTest::dataStreamEnvironment,
+        "SELECT a.k, a.v, b.v FROM "
+            + "(SELECT * FROM TABLE(TUMBLE(TABLE A, DESCRIPTOR(rt), INTERVAL '1' SECOND))) a "
+            + "JOIN "
+            + "(SELECT * FROM TABLE(TUMBLE(TABLE B, DESCRIPTOR(rt), INTERVAL '1' SECOND))) b "
+            + "ON a.g = b.g AND a.window_start = b.window_start AND a.window_end = b.window_end");
+  }
+
+  @Test
   void windowJoinWithNonEquiPredicateMatchesHost() throws Exception {
     // A residual non-equi condition (a.v < b.v) beyond the window-bound equi keys is applied natively
     // as the join filter; the matches must equal the host's.
@@ -94,12 +107,17 @@ class FlinkWindowJoinSqlHarnessTest {
 
   private static DataStream<Row> stream(StreamExecutionEnvironment env) {
     return env.fromData(
-            Types.ROW_NAMED(new String[] {"k", "v", "ts"}, Types.LONG, Types.LONG, Types.LONG),
-            Row.of(1L, 10L, 100L),
-            Row.of(1L, 20L, 1500L),
-            Row.of(2L, 30L, 200L),
-            Row.of(1L, 40L, 1700L),
-            Row.of(3L, 50L, 400L))
+            Types.ROW_NAMED(
+                new String[] {"k", "v", "ts", "g"},
+                Types.LONG,
+                Types.LONG,
+                Types.LONG,
+                Types.BOOLEAN),
+            Row.of(1L, 10L, 100L, true),
+            Row.of(1L, 20L, 1500L, false),
+            Row.of(2L, 30L, 200L, true),
+            Row.of(1L, 40L, 1700L, false),
+            Row.of(3L, 50L, 400L, true))
         .assignTimestampsAndWatermarks(
             WatermarkStrategy.<Row>forBoundedOutOfOrderness(Duration.ofSeconds(5))
                 .withTimestampAssigner((row, ts) -> (Long) row.getField(2)));
@@ -110,6 +128,7 @@ class FlinkWindowJoinSqlHarnessTest {
         .column("k", DataTypes.BIGINT())
         .column("v", DataTypes.BIGINT())
         .column("ts", DataTypes.BIGINT())
+        .column("g", DataTypes.BOOLEAN())
         .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
         .watermark("rt", "SOURCE_WATERMARK()")
         .build();

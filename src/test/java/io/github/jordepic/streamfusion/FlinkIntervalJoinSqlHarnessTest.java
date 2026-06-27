@@ -46,6 +46,17 @@ class FlinkIntervalJoinSqlHarnessTest {
   }
 
   @Test
+  void dateKeyIntervalJoinMatchesHost() throws Exception {
+    // Join on a DATE key — exercises the wider equi-key set (boolean/date/timestamp/decimal now
+    // admitted, not just bigint/int/string); the native key path is type-general.
+    NativeParity.assertParity(
+        FlinkIntervalJoinSqlHarnessTest::dataStreamEnvironment,
+        "SELECT a.k, a.v, b.v FROM A AS a JOIN B AS b "
+            + "ON a.d = b.d "
+            + "AND a.rt BETWEEN b.rt - INTERVAL '1' SECOND AND b.rt + INTERVAL '1' SECOND");
+  }
+
+  @Test
   void leftIntervalJoinMatchesHost() throws Exception {
     // A LEFT outer interval join is append-only: an unmatched left row is null-padded once the
     // watermark closes its interval (emitted once, never retracted), so the result set matches the
@@ -109,13 +120,18 @@ class FlinkIntervalJoinSqlHarnessTest {
 
   private static DataStream<Row> stream(StreamExecutionEnvironment env) {
     return env.fromData(
-            Types.ROW_NAMED(new String[] {"k", "v", "ts"}, Types.LONG, Types.LONG, Types.LONG),
-            Row.of(1L, 10L, 1000L),
-            Row.of(1L, 20L, 3000L),
-            Row.of(2L, 30L, 1000L),
-            Row.of(1L, 40L, 1500L),
-            Row.of(2L, 50L, 1500L),
-            Row.of(3L, 60L, 2000L))
+            Types.ROW_NAMED(
+                new String[] {"k", "v", "ts", "d"},
+                Types.LONG,
+                Types.LONG,
+                Types.LONG,
+                Types.LOCAL_DATE),
+            Row.of(1L, 10L, 1000L, java.time.LocalDate.of(2020, 1, 1)),
+            Row.of(1L, 20L, 3000L, java.time.LocalDate.of(2020, 1, 2)),
+            Row.of(2L, 30L, 1000L, java.time.LocalDate.of(2020, 1, 1)),
+            Row.of(1L, 40L, 1500L, java.time.LocalDate.of(2020, 1, 1)),
+            Row.of(2L, 50L, 1500L, java.time.LocalDate.of(2020, 1, 2)),
+            Row.of(3L, 60L, 2000L, java.time.LocalDate.of(2020, 1, 1)))
         .assignTimestampsAndWatermarks(
             WatermarkStrategy.<Row>forBoundedOutOfOrderness(Duration.ofSeconds(5))
                 .withTimestampAssigner((row, ts) -> (Long) row.getField(2)));
@@ -126,6 +142,7 @@ class FlinkIntervalJoinSqlHarnessTest {
         .column("k", DataTypes.BIGINT())
         .column("v", DataTypes.BIGINT())
         .column("ts", DataTypes.BIGINT())
+        .column("d", DataTypes.DATE())
         .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
         .watermark("rt", "SOURCE_WATERMARK()")
         .build();

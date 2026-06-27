@@ -15,7 +15,7 @@ import org.apache.flink.table.runtime.operators.join.FlinkJoinType;
  * Recognizes the event-time INNER interval joins the native operator implements:
  * {@code a JOIN b ON a.k = b.k AND a.rt BETWEEN b.rt + lower AND b.rt + upper}. Requires an INNER
  * join, an event-time interval, one or more equi-join keys all of supported types
- * (bigint/int/string), null-filtering keys (INNER semantics), and no residual non-equi predicate —
+ * (bigint/int/string/boolean/date/timestamp/decimal), null-filtering keys (INNER semantics), and no residual non-equi predicate —
  * the whole interval condition must live in the window bounds. Anything else (outer joins, proctime,
  * an extra filter, an unsupported key type) falls back to the host.
  */
@@ -49,11 +49,11 @@ final class IntervalJoinMatcher {
     RelDataType leftType = join.getLeft().getRowType();
     RelDataType rightType = join.getRight().getRowType();
     for (int i = 0; i < leftKeys.length; i++) {
-      if (!WindowAggregateMatcher.supportedKeyType(
+      if (!WindowAggregateMatcher.supportedGroupingKeyType(
               leftType.getFieldList().get(leftKeys[i]).getType().getSqlTypeName())
-          || !WindowAggregateMatcher.supportedKeyType(
+          || !WindowAggregateMatcher.supportedGroupingKeyType(
               rightType.getFieldList().get(rightKeys[i]).getType().getSqlTypeName())) {
-        return "interval join: equi-join keys must be bigint/int/string";
+        return "interval join: equi-join keys must be bigint/int/string/boolean/date/timestamp/decimal";
       }
     }
     IntervalJoinSpec.WindowBounds bounds = windowBounds(join);

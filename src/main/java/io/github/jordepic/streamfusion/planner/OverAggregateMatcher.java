@@ -15,7 +15,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalO
 /**
  * Recognizes the event-time {@code OVER} aggregations the native operator implements: a single
  * window group ordered by a rowtime (local-time-zone) attribute, the default {@code RANGE BETWEEN
- * UNBOUNDED PRECEDING AND CURRENT ROW} frame, optional {@code PARTITION BY} on bigint/int/string
+ * UNBOUNDED PRECEDING AND CURRENT ROW} frame, optional {@code PARTITION BY} on bigint/int/string/boolean/date/timestamp/decimal
  * keys, and one or more {@code SUM}/{@code MIN}/{@code MAX}/{@code COUNT} aggregates that all read
  * the same bigint/int/double value column. Anything else (ROWS frame, a bounded frame, proctime,
  * AVG, multiple value columns, an unsupported key type) falls back to the host.
@@ -37,9 +37,9 @@ final class OverAggregateMatcher {
     Window.Group group = window.groups.get(0);
     RelDataType inputType = over.getInput().getRowType();
     for (int key : group.keys.toArray()) {
-      if (!WindowAggregateMatcher.supportedKeyType(
+      if (!WindowAggregateMatcher.supportedGroupingKeyType(
           inputType.getFieldList().get(key).getType().getSqlTypeName())) {
-        return "OVER: PARTITION BY only on bigint/int/string keys";
+        return "OVER: PARTITION BY only on bigint/int/string/boolean/date/timestamp/decimal keys";
       }
     }
     if (!(group.lowerBound.isUnbounded() && group.lowerBound.isPreceding())
