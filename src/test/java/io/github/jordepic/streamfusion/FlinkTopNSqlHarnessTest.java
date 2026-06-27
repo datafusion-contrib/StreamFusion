@@ -35,12 +35,20 @@ class FlinkTopNSqlHarnessTest {
   }
 
   @Test
-  void topNWithRankNumberFallsBackToHost() throws Exception {
-    // Selecting the rank number means the rank column is output (shifts emit updates); the native
-    // no-row-number path does not implement that, so it stays on the host.
-    NativeParity.assertFallback(
+  void topNWithRankNumberMatchesHost() throws Exception {
+    // Projecting the rank number: a row entering the top-N shifts those below it, so the operator
+    // emits the UPDATE_BEFORE/UPDATE_AFTER cascade (with the rank column) Flink does.
+    NativeParity.assertParity(
         FlinkTopNSqlHarnessTest::environment,
         "SELECT k, v, rn FROM (SELECT k, v, ROW_NUMBER() OVER (PARTITION BY k ORDER BY v) AS rn "
+            + "FROM src) WHERE rn <= 2");
+  }
+
+  @Test
+  void topNWithRankNumberDescendingMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkTopNSqlHarnessTest::environment,
+        "SELECT k, v, rn FROM (SELECT k, v, ROW_NUMBER() OVER (PARTITION BY k ORDER BY v DESC) AS rn "
             + "FROM src) WHERE rn <= 2");
   }
 

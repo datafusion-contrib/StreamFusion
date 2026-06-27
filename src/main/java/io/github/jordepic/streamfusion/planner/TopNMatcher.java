@@ -9,11 +9,12 @@ import org.apache.flink.table.runtime.operators.rank.RankType;
 
 /**
  * Recognizes the append-only streaming Top-N the native ranker implements:
- * {@code ROW_NUMBER() OVER (PARTITION BY … ORDER BY …) <= N} with the rank number not projected.
- * Requires {@code ROW_NUMBER} (not RANK/DENSE_RANK), a constant rank range starting at 1 (no offset),
- * no rank-number output column, and input/output column types the row/Arrow conversion supports. The
- * caller additionally requires an insert-only input — only the append-only Top-N is implemented.
- * Anything else (rank-number output, an offset, RANK/DENSE_RANK, a retracting input) falls back.
+ * {@code ROW_NUMBER() OVER (PARTITION BY … ORDER BY …) <= N}, with or without the rank number
+ * projected. Requires {@code ROW_NUMBER} (not RANK/DENSE_RANK), a constant rank range starting at 1
+ * (no offset), and input/output column types the row/Arrow conversion supports. When the rank number
+ * is projected, the ranker emits Flink's shift cascade and appends the rank column. The caller
+ * additionally requires an insert-only input — only the append-only Top-N is implemented. Anything
+ * else (an offset, RANK/DENSE_RANK, a retracting input) falls back.
  */
 final class TopNMatcher {
 
@@ -22,9 +23,6 @@ final class TopNMatcher {
   static boolean matches(StreamPhysicalRank rank) {
     if (rank.rankType() != RankType.ROW_NUMBER) {
       return false;
-    }
-    if (rank.outputRankNumber()) {
-      return false; // the rank column is not emitted by the no-row-number path
     }
     if (!(rank.rankRange() instanceof ConstantRankRange)) {
       return false;
@@ -48,6 +46,10 @@ final class TopNMatcher {
 
   static long limit(StreamPhysicalRank rank) {
     return ((ConstantRankRange) rank.rankRange()).getRankEnd();
+  }
+
+  static boolean outputRankNumber(StreamPhysicalRank rank) {
+    return rank.outputRankNumber();
   }
 
   static int[] sortIndices(StreamPhysicalRank rank) {

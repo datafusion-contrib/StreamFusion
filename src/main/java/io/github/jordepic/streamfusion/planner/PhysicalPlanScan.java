@@ -269,7 +269,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             TopNMatcher.sortIndices(rank),
             TopNMatcher.sortAscending(rank),
             TopNMatcher.sortNullsFirst(rank),
-            TopNMatcher.limit(rank));
+            TopNMatcher.limit(rank),
+            TopNMatcher.outputRankNumber(rank));
       }
     }
 
@@ -298,7 +299,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             LimitMatcher.sortIndices(sort),
             LimitMatcher.sortAscending(sort),
             LimitMatcher.sortNullsFirst(sort),
-            LimitMatcher.limit(sort));
+            LimitMatcher.limit(sort),
+            false); // a global LIMIT never projects a rank column
       }
       // Recognized but not substituted. A sort-limit emits a changelog, so it would otherwise slip
       // past the insert-only guard below unreported; record why here so a non-accelerating query can

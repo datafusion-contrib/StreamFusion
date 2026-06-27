@@ -3848,26 +3848,42 @@ fn compare_rows(a: &[ScalarValue], b: &[ScalarValue], sort: &[SortColumn]) -> st
     Equal
 }
 
-/// Append-only streaming Top-N (`ROW_NUMBER() OVER (PARTITION BY … ORDER BY …) <= N`, rank number
-/// not projected). Per partition it keeps the top `limit` rows sorted by the order keys (ties in
-/// arrival order), exactly the host's append-only bounded buffer. On each input row it inserts into
-/// the buffer; if that overflows the limit it drops the last (rank N+1) — emitting nothing if the
-/// new row is the one dropped, else a DELETE of the displaced row — and otherwise emits the new row
-/// as an INSERT. Output is the input columns (no rank column) plus the `$row_kind$` byte.
+/// Append-only streaming Top-N (`ROW_NUMBER() OVER (PARTITION BY … ORDER BY …) <= N`). Per partition
+/// it keeps the top `limit` rows sorted by the order keys (ties in arrival order), exactly the host's
+/// append-only bounded buffer.
+///
+/// With the rank number **not** projected (`output_rank_number = false`): on each input row it
+/// inserts into the buffer; if that overflows the limit it drops the last (rank N+1) — emitting
+/// nothing if the new row is the one dropped, else a DELETE of the displaced row — and otherwise
+/// emits the new row as an INSERT. Output is the input columns plus the `$row_kind$` byte.
+///
+/// With the rank number projected (`output_rank_number = true`): a row entering at rank `r` shifts
+/// everyone below it down by one, so the operator emits the cascade Flink's `AppendOnlyTopNFunction`
+/// does — for each rank from `r` to the buffer end, UPDATE_BEFORE(old occupant)/UPDATE_AFTER(new
+/// occupant), and an INSERT for the row taking a brand-new rank; a row pushed past `limit` is
+/// retracted by the UPDATE_BEFORE at the last rank (no separate delete). Output appends the rank
+/// (a bigint) before the `$row_kind$` byte.
 struct TopNRanker {
     partition_columns: Vec<usize>,
     sort_columns: Vec<SortColumn>,
     limit: i64,
+    output_rank_number: bool,
     schema: Option<SchemaRef>,
     groups: HashMap<GroupKey, Vec<JoinRow>>,
 }
 
 impl TopNRanker {
-    fn new(partition_columns: Vec<usize>, sort_columns: Vec<SortColumn>, limit: i64) -> Self {
+    fn new(
+        partition_columns: Vec<usize>,
+        sort_columns: Vec<SortColumn>,
+        limit: i64,
+        output_rank_number: bool,
+    ) -> Self {
         TopNRanker {
             partition_columns,
             sort_columns,
             limit,
+            output_rank_number,
             schema: None,
             groups: HashMap::new(),
         }
@@ -3882,6 +3898,7 @@ impl TopNRanker {
 
         let mut out_rows: Vec<JoinRow> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
+        let mut out_ranks: Vec<i64> = Vec::new();
 
         for row in 0..batch.num_rows() {
             let key = read_key(&partition_arrays, row);
@@ -3890,25 +3907,56 @@ impl TopNRanker {
                 .map(|a| ScalarValue::try_from_array(a, row).expect("top-n row scalar"))
                 .collect();
             let sort = &self.sort_columns;
+            let limit = self.limit as usize;
             let buffer = self.groups.entry(key).or_default();
             // Insert after any rows that order equal-or-before, preserving arrival order for ties.
             let pos = buffer.partition_point(|r| compare_rows(r, &full, sort) != std::cmp::Ordering::Greater);
-            buffer.insert(pos, full.clone());
-            if buffer.len() as i64 > self.limit {
-                let evicted = buffer.pop().expect("buffer over limit is non-empty");
-                if evicted == full {
-                    continue; // the new row was itself rank N+1 — it never entered the top-N
+
+            if self.output_rank_number {
+                if pos >= limit {
+                    continue; // beyond rank N — the new row never enters the top-N
                 }
-                out_rows.push(evicted);
-                out_kinds.push(3); // -D the displaced row
+                let old_len = buffer.len();
+                buffer.insert(pos, full.clone());
+                // Cascade from the new row's rank to the buffer end (capped at the limit): each rank's
+                // occupant changes, so retract the old and append the new; a brand-new rank inserts.
+                let upper = (old_len + 1).min(limit); // highest 1-based rank to emit
+                for rank in (pos + 1)..=upper {
+                    let new_occupant = buffer[rank - 1].clone();
+                    if rank <= old_len {
+                        out_rows.push(buffer[rank].clone()); // old occupant (shifted down by one)
+                        out_kinds.push(1); // -U
+                        out_ranks.push(rank as i64);
+                        out_rows.push(new_occupant);
+                        out_kinds.push(2); // +U
+                        out_ranks.push(rank as i64);
+                    } else {
+                        out_rows.push(new_occupant);
+                        out_kinds.push(0); // +I a brand-new rank
+                        out_ranks.push(rank as i64);
+                    }
+                }
+                if buffer.len() > limit {
+                    buffer.truncate(limit); // the row past N was retracted by the -U at rank=limit
+                }
+            } else {
+                buffer.insert(pos, full.clone());
+                if buffer.len() as i64 > self.limit {
+                    let evicted = buffer.pop().expect("buffer over limit is non-empty");
+                    if evicted == full {
+                        continue; // the new row was itself rank N+1 — it never entered the top-N
+                    }
+                    out_rows.push(evicted);
+                    out_kinds.push(3); // -D the displaced row
+                }
+                out_rows.push(full);
+                out_kinds.push(0); // +I the new row
             }
-            out_rows.push(full);
-            out_kinds.push(0); // +I the new row
         }
-        self.emit(out_rows, out_kinds)
+        self.emit(out_rows, out_kinds, out_ranks)
     }
 
-    fn emit(&self, out_rows: Vec<JoinRow>, out_kinds: Vec<i8>) -> RecordBatch {
+    fn emit(&self, out_rows: Vec<JoinRow>, out_kinds: Vec<i8>, out_ranks: Vec<i64>) -> RecordBatch {
         if out_rows.is_empty() {
             return RecordBatch::new_empty(Arc::new(Schema::empty()));
         }
@@ -3919,6 +3967,10 @@ impl TopNRanker {
                 scalars_to_array(out_rows.iter().map(|r| r[j].clone()).collect(), fields[j].data_type())
             })
             .collect();
+        if self.output_rank_number {
+            fields.push(Field::new("w0$o0", DataType::Int64, false));
+            columns.push(Arc::new(Int64Array::from(out_ranks)));
+        }
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
         columns.push(Arc::new(Int8Array::from(out_kinds)));
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
@@ -3945,9 +3997,10 @@ impl TopNRanker {
         partition_columns: Vec<usize>,
         sort_columns: Vec<SortColumn>,
         limit: i64,
+        output_rank_number: bool,
         bytes: &[u8],
     ) -> Self {
-        let mut ranker = TopNRanker::new(partition_columns, sort_columns, limit);
+        let mut ranker = TopNRanker::new(partition_columns, sort_columns, limit, output_rank_number);
         for batch in read_ipc_if_present(bytes) {
             ranker.schema = Some(batch.schema());
             let partition_arrays: Vec<&ArrayRef> =
@@ -8364,10 +8417,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTopNRan
     sort_ascending: JIntArray<'local>,
     sort_nulls_first: JIntArray<'local>,
     limit: jlong,
+    output_rank_number: jboolean,
 ) -> jlong {
     let partitions = read_columns(&env, &partition_columns);
     let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
-    Box::into_raw(Box::new(TopNRanker::new(partitions, sort, limit))) as jlong
+    Box::into_raw(Box::new(TopNRanker::new(partitions, sort, limit, output_rank_number != 0))) as jlong
 }
 
 /// Folds an input batch into the per-partition top-N and exports the changelog it produces (the
@@ -8410,12 +8464,14 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTopNRa
     sort_ascending: JIntArray<'local>,
     sort_nulls_first: JIntArray<'local>,
     limit: jlong,
+    output_rank_number: jboolean,
     snapshot: JByteArray<'local>,
 ) -> jlong {
     let partitions = read_columns(&env, &partition_columns);
     let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read top-n snapshot");
-    Box::into_raw(Box::new(TopNRanker::restore(partitions, sort, limit, &bytes))) as jlong
+    Box::into_raw(Box::new(TopNRanker::restore(partitions, sort, limit, output_rank_number != 0, &bytes)))
+        as jlong
 }
 
 /// Releases a Top-N ranker handle.
@@ -9619,7 +9675,7 @@ mod tests {
     #[test]
     fn topn_keeps_smallest_n_per_partition() {
         // partition col 0, ORDER BY col 1 ASC, limit 2.
-        let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 2);
+        let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 2, false);
         // s = 5, 3, 8, 1 for partition 1.
         let out = ranker.push(&topn_batch(vec![1, 1, 1, 1], vec![5, 3, 8, 1]));
         // 5: +I5. 3: +I3 (top2 = {3,5}). 8: rank 3 -> nothing. 1: +I1, -D5 (top2 = {1,3}).
@@ -9627,10 +9683,23 @@ mod tests {
         assert_eq!(values(&out, 1), vec![5, 3, 5, 1]); // the sort-key column of each emitted row
     }
 
+    // Top-2 with the rank number projected: a row entering shifts the rows below it, emitting the
+    // UPDATE_BEFORE/UPDATE_AFTER cascade Flink does, and an INSERT for a brand-new rank.
+    #[test]
+    fn topn_with_rank_number_emits_cascade() {
+        let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 2, true);
+        let out = ranker.push(&topn_batch(vec![1, 1, 1, 1], vec![5, 3, 8, 1]));
+        // 5: +I(5,1). 3: -U(5,1) +U(3,1) +I(5,2). 8: rank 3 -> nothing.
+        // 1: -U(3,1) +U(1,1) -U(5,2) +U(3,2)  [5 pushed past rank 2, retracted by the -U].
+        assert_eq!(row_kinds(&out), vec![0, 1, 2, 0, 1, 2, 1, 2]);
+        assert_eq!(values(&out, 1), vec![5, 5, 3, 5, 3, 1, 5, 3]); // sort-key column
+        assert_eq!(values(&out, 2), vec![1, 1, 1, 2, 1, 1, 2, 2]); // appended rank (w0$o0)
+    }
+
     // Partitions are independent: each keeps its own top-N.
     #[test]
     fn topn_is_per_partition() {
-        let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 1);
+        let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 1, false);
         let out = ranker.push(&topn_batch(vec![1, 2, 1], vec![5, 7, 3]));
         // p1: +I5; p2: +I7; p1 sees 3 < 5 -> -D5 then +I3 (delete first, as the host emits).
         assert_eq!(row_kinds(&out), vec![0, 0, 3, 0]);
@@ -9641,10 +9710,10 @@ mod tests {
     // The bounded buffer survives a checkpoint, so post-restore ranking continues correctly.
     #[test]
     fn topn_buffer_survives_snapshot_restore() {
-        let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 2);
+        let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 2, false);
         ranker.push(&topn_batch(vec![1, 1], vec![5, 3])); // top2 = {3, 5}
         let snapshot = ranker.snapshot();
-        let mut restored = TopNRanker::restore(vec![0], vec![asc(1)], 2, &snapshot);
+        let mut restored = TopNRanker::restore(vec![0], vec![asc(1)], 2, false, &snapshot);
         // A 1 enters the restored top-2 and displaces the 5.
         let out = restored.push(&topn_batch(vec![1], vec![1]));
         assert_eq!(row_kinds(&out), vec![3, 0]); // -D5, +I1

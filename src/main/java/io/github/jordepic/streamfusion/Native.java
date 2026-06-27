@@ -901,9 +901,16 @@ public final class Native {
    * @param sortAscending per sort column, 1 if ascending else 0
    * @param sortNullsFirst per sort column, 1 if nulls sort first else 0
    * @param limit the rank bound N
+   * @param outputRankNumber whether the rank column is projected (the operator then emits the
+   *     shift cascade and appends the rank); false for the plain Top-N and the global LIMIT
    */
   public static native long createTopNRanker(
-      int[] partitionColumns, int[] sortIndices, int[] sortAscending, int[] sortNullsFirst, long limit);
+      int[] partitionColumns,
+      int[] sortIndices,
+      int[] sortAscending,
+      int[] sortNullsFirst,
+      long limit,
+      boolean outputRankNumber);
 
   /** Pushes an input batch, exporting the top-N changelog (input columns plus the row kind). */
   public static native void pushTopNRanker(
@@ -922,6 +929,7 @@ public final class Native {
       int[] sortAscending,
       int[] sortNullsFirst,
       long limit,
+      boolean outputRankNumber,
       byte[] snapshot);
 
   /**

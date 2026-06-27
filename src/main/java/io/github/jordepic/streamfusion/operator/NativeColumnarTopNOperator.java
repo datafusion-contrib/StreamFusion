@@ -30,6 +30,7 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
   private final int[] sortAscending;
   private final int[] sortNullsFirst;
   private final long limit;
+  private final boolean outputRankNumber;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
@@ -41,12 +42,14 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
       int[] sortIndices,
       int[] sortAscending,
       int[] sortNullsFirst,
-      long limit) {
+      long limit,
+      boolean outputRankNumber) {
     this.partitionColumns = partitionColumns;
     this.sortIndices = sortIndices;
     this.sortAscending = sortAscending;
     this.sortNullsFirst = sortNullsFirst;
     this.limit = limit;
+    this.outputRankNumber = outputRankNumber;
   }
 
   @Override
@@ -66,9 +69,15 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
     handle =
         snapshot == null
             ? Native.createTopNRanker(
-                partitionColumns, sortIndices, sortAscending, sortNullsFirst, limit)
+                partitionColumns, sortIndices, sortAscending, sortNullsFirst, limit, outputRankNumber)
             : Native.restoreTopNRanker(
-                partitionColumns, sortIndices, sortAscending, sortNullsFirst, limit, snapshot);
+                partitionColumns,
+                sortIndices,
+                sortAscending,
+                sortNullsFirst,
+                limit,
+                outputRankNumber,
+                snapshot);
   }
 
   @Override

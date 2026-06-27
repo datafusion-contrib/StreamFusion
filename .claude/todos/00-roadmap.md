@@ -23,8 +23,10 @@ here when the ticket is deleted.
   `ProcTimeDeduplicateKeepLastRowFunction`). The streaming engines RisingWave/Proton informed these
   (divergences/14). All three are **columnar** (Arrow in/out) per the CLAUDE.md principle — the
   row↔Arrow conversion is paid only at host edges, so a native changelog chain has no per-operator
-  transpose. Feature tails — outer/semi/anti joins, rank-number / `RANK` / retracting-input Top-N —
-  are tracked in the coverage tracker (ticket 11).
+  transpose. Streaming Top-N now also projects the **rank number** (the `AppendOnlyTopNFunction`
+  shift cascade — UPDATE_BEFORE/UPDATE_AFTER per shifted rank, plus the appended rank column).
+  Feature tails — `RANK`/`DENSE_RANK`, an offset, and retracting-input Top-N — are tracked in the
+  coverage tracker (ticket 11).
 - **Window aggregate input schemas:** all five aggregates over every non-decimal
   numeric value type (custom accumulators keep the host's type/precision) plus decimal MIN/MAX/COUNT;
   multiple value columns (`SUM(a), SUM(b)`); bigint/int/string/boolean/date/timestamp/decimal grouping

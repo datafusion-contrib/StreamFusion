@@ -26,6 +26,7 @@ public class StreamPhysicalNativeColumnarTopN extends SingleRel
   private final int[] sortAscending;
   private final int[] sortNullsFirst;
   private final long limit;
+  private final boolean outputRankNumber;
 
   public StreamPhysicalNativeColumnarTopN(
       RelOptCluster cluster,
@@ -36,7 +37,8 @@ public class StreamPhysicalNativeColumnarTopN extends SingleRel
       int[] sortIndices,
       int[] sortAscending,
       int[] sortNullsFirst,
-      long limit) {
+      long limit,
+      boolean outputRankNumber) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.partitionColumns = partitionColumns;
@@ -44,6 +46,7 @@ public class StreamPhysicalNativeColumnarTopN extends SingleRel
     this.sortAscending = sortAscending;
     this.sortNullsFirst = sortNullsFirst;
     this.limit = limit;
+    this.outputRankNumber = outputRankNumber;
   }
 
   @Override
@@ -67,7 +70,8 @@ public class StreamPhysicalNativeColumnarTopN extends SingleRel
         sortIndices,
         sortAscending,
         sortNullsFirst,
-        limit);
+        limit,
+        outputRankNumber);
   }
 
   @Override
@@ -81,6 +85,7 @@ public class StreamPhysicalNativeColumnarTopN extends SingleRel
         sortIndices,
         sortAscending,
         sortNullsFirst,
-        limit);
+        limit,
+        outputRankNumber);
   }
 }
