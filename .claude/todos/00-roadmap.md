@@ -18,7 +18,9 @@ here when the ticket is deleted.
   append-only streaming Top-N (`ROW_NUMBER`), which the global `FETCH`/`LIMIT` reuses — `ORDER BY …
   LIMIT n` (`SortLimit`) and plain `LIMIT n` (`Limit`) both lower to a global no-partition
   ROW_NUMBER rank, so they run on the same native Top-N operator with an empty partition key (no new
-  operator). The streaming engines RisingWave/Proton informed these
+  operator). A fourth, **changelog normalization** (`ChangelogNormalize`, upsert/CDC-with-PK source →
+  regular changelog), keeps the last row per unique key (a port of Flink's keep-last-on-changelog
+  `ProcTimeDeduplicateKeepLastRowFunction`). The streaming engines RisingWave/Proton informed these
   (divergences/14). All three are **columnar** (Arrow in/out) per the CLAUDE.md principle — the
   row↔Arrow conversion is paid only at host edges, so a native changelog chain has no per-operator
   transpose. Feature tails — outer/semi/anti joins, rank-number / `RANK` / retracting-input Top-N —

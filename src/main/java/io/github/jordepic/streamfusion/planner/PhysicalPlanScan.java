@@ -7,6 +7,7 @@ import org.apache.calcite.rel.core.Calc;
 import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalChangelogNormalize;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExchange;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExpand;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGlobalWindowAggregate;
@@ -356,6 +357,28 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
           calc.getInputs().get(0),
           calc.getRowType(),
           CalcMatcher.encode(calc));
+    }
+
+    // Changelog normalization (upsert / duplicate-bearing source → regular changelog): keep the last
+    // row per unique key, emitting INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE. Both consumes and emits a
+    // changelog, so (like the GROUP BY) it is exempt from the insert-only guard below. The keyed
+    // shuffle (by the unique key) stays columnar where the input sits on a columnar producer.
+    if (current instanceof StreamPhysicalChangelogNormalize) {
+      StreamPhysicalChangelogNormalize normalize = (StreamPhysicalChangelogNormalize) current;
+      if (ChangelogNormalizeMatcher.matches(normalize)) {
+        if (!NativeConfig.operatorEnabled("changelogNormalize")) {
+          return noteDisabled(current, "changelogNormalize");
+        }
+        substitutions++;
+        int[] keyColumns = ChangelogNormalizeMatcher.keyColumns(normalize);
+        return new StreamPhysicalNativeChangelogNormalize(
+            normalize.getCluster(),
+            normalize.getTraitSet(),
+            columnarInput(normalize.getInputs().get(0), keyColumns),
+            normalize.getRowType(),
+            keyColumns,
+            ChangelogNormalizeMatcher.generateUpdateBefore(normalize));
+      }
     }
 
     // GROUPING SETS / CUBE / ROLLUP expansion: fan each row out to one row per grouping set (copy
@@ -887,6 +910,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     }
     if (node instanceof StreamPhysicalExpand) {
       return ExpandMatcher.unsupportedReason((StreamPhysicalExpand) node);
+    }
+    if (node instanceof StreamPhysicalChangelogNormalize) {
+      return ChangelogNormalizeMatcher.unsupportedReason((StreamPhysicalChangelogNormalize) node);
     }
     if (node instanceof StreamPhysicalSortLimit || node instanceof StreamPhysicalLimit) {
       return LimitMatcher.unsupportedReason((Sort) node);

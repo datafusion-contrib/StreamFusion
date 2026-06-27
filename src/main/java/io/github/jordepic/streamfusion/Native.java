@@ -561,6 +561,35 @@ public final class Native {
       byte[] snapshot);
 
   /**
+   * Creates a changelog normalizer (keep-last per unique key) and returns an opaque handle. Each
+   * input changelog batch folds into per-key state and the normalizer exports the normalized
+   * changelog (INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE on the {@code $row_kind$} column). Released
+   * with {@link #closeChangelogNormalizer}.
+   *
+   * @param keyColumns unique-key column indices in the input batch
+   * @param generateUpdateBefore whether to emit an UPDATE_BEFORE row before each UPDATE_AFTER
+   */
+  public static native long createChangelogNormalizer(
+      int[] keyColumns, boolean generateUpdateBefore);
+
+  /**
+   * Folds an input changelog batch into per-key keep-last state, exporting the normalized changelog
+   * (the input columns then the {@code $row_kind$} byte column) into the consumer-allocated C structs.
+   */
+  public static native void pushChangelogNormalizer(
+      long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
+
+  /** Serializes a changelog normalizer's per-key state for a checkpoint. */
+  public static native byte[] snapshotChangelogNormalizer(long handle);
+
+  /** Rebuilds a changelog normalizer from a snapshot and returns a fresh handle. */
+  public static native long restoreChangelogNormalizer(
+      int[] keyColumns, boolean generateUpdateBefore, byte[] snapshot);
+
+  /** Releases a changelog normalizer handle. */
+  public static native void closeChangelogNormalizer(long handle);
+
+  /**
    * Creates the single format-dispatched message decoder shared by every ingest path, released with
    * {@link #closeDecoder}. It turns a batch of one binary column of raw message bodies into a typed
    * batch — the format-decode core both the shallow and native Kafka paths feed bytes into. Stateless,
