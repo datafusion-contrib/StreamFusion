@@ -2,6 +2,7 @@ package io.github.jordepic.streamfusion.planner;
 
 import org.apache.flink.table.api.TableConfig;
 import org.apache.flink.table.api.TableEnvironment;
+import org.apache.flink.table.api.config.OptimizerConfigOptions;
 import org.apache.flink.table.planner.calcite.CalciteConfig$;
 import org.apache.flink.table.planner.plan.optimize.program.FlinkChainedProgram;
 import org.apache.flink.table.planner.plan.optimize.program.FlinkStreamProgram;
@@ -24,6 +25,15 @@ public final class NativePlanner {
    */
   public static PhysicalPlanScan install(TableEnvironment tableEnv) {
     TableConfig config = tableEnv.getConfig();
+    // Disable sub-plan reuse. The columnar island rests on the "produced fresh, consumed once"
+    // invariant — each Arrow batch is handed off to exactly one consumer, which closes its off-heap
+    // buffers after reading (ArrowBatchSerializer.copy is therefore a zero-cost identity). Sub-plan
+    // reuse breaks that: it makes a shared branch fan its batches to two consumers, the first of
+    // which closes the VectorSchemaRoot, leaving the second reading freed memory. Disabling reuse
+    // keeps the physical plan a tree (every node has one consumer), so the invariant holds. Reuse
+    // and no-reuse compute the same result, so this only affects the execution graph, never output.
+    config.set(OptimizerConfigOptions.TABLE_OPTIMIZER_REUSE_SUB_PLAN_ENABLED, false);
+    config.set(OptimizerConfigOptions.TABLE_OPTIMIZER_REUSE_SOURCE_ENABLED, false);
     FlinkChainedProgram<StreamOptimizeContext> program = FlinkStreamProgram.buildProgram(config);
     PhysicalPlanScan scan = new PhysicalPlanScan();
     program.addLast("streamfusion_native", scan);

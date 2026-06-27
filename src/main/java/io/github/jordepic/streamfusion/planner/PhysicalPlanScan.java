@@ -18,6 +18,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalR
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTemporalSort;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalUnion;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWatermarkAssigner;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowDeduplicate;
@@ -314,6 +315,23 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
           calc.getInputs().get(0),
           calc.getRowType(),
           CalcMatcher.encode(calc));
+    }
+
+    // A UNION ALL is a pure stream merge — every input record flows through unchanged, with no
+    // per-row work and no shuffle. It never touches the `$row_kind$` tag, so (like the Calc/GROUP
+    // BY/join above) it is changelog-transparent and exempt from the insert-only guard below: it
+    // matches the host's union row for row over either insert-only or retracting inputs. The native
+    // node carries no operator — it lowers to a UnionTransformation over the inputs' Arrow streams.
+    if (current instanceof StreamPhysicalUnion) {
+      StreamPhysicalUnion union = (StreamPhysicalUnion) current;
+      if (UnionMatcher.matches(union)) {
+        if (!NativeConfig.operatorEnabled("union")) {
+          return noteDisabled(current, "union");
+        }
+        substitutions++;
+        return new StreamPhysicalNativeUnion(
+            union.getCluster(), union.getTraitSet(), union.getInputs(), union.getRowType());
+      }
     }
 
     // Native operators emit insert-only rows; substituting into a retracting or updating stream
@@ -796,6 +814,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     }
     if (node instanceof StreamPhysicalTemporalSort) {
       return TemporalSortMatcher.unsupportedReason((StreamPhysicalTemporalSort) node);
+    }
+    if (node instanceof StreamPhysicalUnion) {
+      return UnionMatcher.unsupportedReason((StreamPhysicalUnion) node);
     }
     if (node instanceof StreamPhysicalWindowRank) {
       return WindowRankMatcher.unsupportedReason((StreamPhysicalWindowRank) node);
