@@ -110,9 +110,15 @@ These have no matcher; any query containing one falls back entirely.
   default BOTH-whitespace; `POSITION` with a FROM start; wrong arity for any admitted function.
 
 ### 4. Type level
-- **Column types** the whole-row converter rejects — anything outside
-  tinyint/smallint/int/bigint/float/double/boolean/char/varchar/timestamp/timestamp-ltz/date/decimal
-  (notably ARRAY/MAP/ROW/MULTISET/TIME/interval/raw).
+- **Column types outside the matcher gate.** The stateful/keyed operators (filter/`Calc`, GROUP BY,
+  join, Top-N, dedup, Expand, LIMIT, ChangelogNormalize, window-rank) gate on a deliberately
+  conservative scalar allow-list — `RowDataArrowConverter.supports` / `FilterCalcMatcher.convertibleRow`
+  — of tinyint/smallint/int/bigint/float/double/boolean/char/varchar/timestamp/timestamp-ltz/date/decimal.
+  A column of any other type (notably **ARRAY/MAP/ROW/MULTISET/TIME/interval/raw**) makes those matchers
+  decline. Note this is *narrower than what the Arrow boundary can carry*: `ArrowConversion` itself
+  handles nested ROW/ARRAY/MAP and binary (the Kafka JSON/Avro decode already emits them), but those
+  operators key/aggregate/sort on scalar column values, so nested types are gated out until that
+  behavior is validated against Flink — it is a conservatism gate, not a conversion limit.
 - **Key types** outside bigint/int/string/boolean/date/timestamp/decimal (joins, OVER, window/group
   keys).
 - **Aggregate value types** outside the parity matrix in `aggregate-type-support.md` (esp. decimal
