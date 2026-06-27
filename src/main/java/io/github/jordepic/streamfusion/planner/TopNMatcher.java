@@ -33,6 +33,9 @@ final class TopNMatcher {
     if (range.getRankStart() != 1) {
       return false; // an offset (rank start > 1) is not supported
     }
+    if (DeduplicateMatcher.isRowtimeOrder(rank)) {
+      return false; // a rowtime-ordered rank is deduplication (DeduplicateMatcher), not a value Top-N
+    }
     // The whole row crosses the boundary unchanged, so every column (incl. partition/order keys)
     // must be a type the conversion handles.
     return RowDataArrowConverter.supports(

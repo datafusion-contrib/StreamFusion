@@ -213,6 +213,31 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       }
     }
 
+    // Keep-first deduplication is a rowtime-ordered rank-1 the host plans as a row-time deduplicate;
+    // it is insert-only (emits each key's first row once on the watermark), so like the append-only
+    // Top-N below it requires an insert-only input. Checked before Top-N — both are StreamPhysicalRank,
+    // but a rowtime-ordered rank is deduplication, which TopNMatcher declines.
+    if (current instanceof StreamPhysicalRank) {
+      StreamPhysicalRank rank = (StreamPhysicalRank) current;
+      if (DeduplicateMatcher.matches(rank)
+          && ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) rank.getInput())) {
+        if (!NativeConfig.operatorEnabled("deduplicate")) {
+          return noteDisabled(current, "deduplicate");
+        }
+        substitutions++;
+        int[] partitionColumns = DeduplicateMatcher.partitionColumns(rank);
+        // Columnar (Arrow in/out); the partitioned shuffle stays columnar where the input sits on a
+        // columnar producer, else the transition pass transposes at the boundary.
+        return new StreamPhysicalNativeDeduplicate(
+            rank.getCluster(),
+            rank.getTraitSet(),
+            columnarInput(rank.getInput(), partitionColumns),
+            rank.getRowType(),
+            partitionColumns,
+            DeduplicateMatcher.rowtimeColumn(rank));
+      }
+    }
+
     // An append-only streaming Top-N emits a changelog (it deletes a row when one is displaced), so
     // it is exempt from the insert-only guard below; it requires an insert-only input (only the
     // append-only Top-N is implemented).

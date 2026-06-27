@@ -430,6 +430,32 @@ public final class Native {
   public static native long restoreTemporalSorter(int rtColumn, byte[] snapshot);
 
   /**
+   * Creates a keep-first deduplicator over the partition-key columns and rowtime column, and returns
+   * an opaque handle. Each input batch is buffered; on a watermark the deduplicator emits each key's
+   * minimum-rowtime row (insert-only) once the watermark reaches that rowtime, and drops every later
+   * row for the key. Released with {@link #closeKeepFirstDeduplicator}.
+   */
+  public static native long createKeepFirstDeduplicator(int[] partitionColumns, int rtColumn);
+
+  /** Buffers an input batch; each key's first row is emitted on the watermark that reaches it. */
+  public static native void pushKeepFirstDeduplicator(
+      long handle, long inArrayAddress, long inSchemaAddress);
+
+  /** Exports each key's first (minimum-rowtime) row whose rowtime the watermark has reached. */
+  public static native void flushKeepFirstDeduplicator(
+      long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
+
+  /** Releases the deduplicator and its per-key state. */
+  public static native void closeKeepFirstDeduplicator(long handle);
+
+  /** Serializes the deduplicator's pending candidates, emitted keys, and watermark for a checkpoint. */
+  public static native byte[] snapshotKeepFirstDeduplicator(long handle);
+
+  /** Rebuilds a keep-first deduplicator from a snapshot and returns a fresh handle. */
+  public static native long restoreKeepFirstDeduplicator(
+      int[] partitionColumns, int rtColumn, byte[] snapshot);
+
+  /**
    * Creates a non-windowed {@code GROUP BY} aggregator and returns an opaque handle. Each input batch
    * folds into per-key state and the aggregator exports the changelog rows it produces, with the row
    * kinds carried on the {@code $row_kind$} column. Released with {@link #closeGroupAggregator}.

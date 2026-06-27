@@ -3848,6 +3848,178 @@ impl TopNRanker {
     }
 }
 
+/// Append-only keep-first deduplication on a rowtime order — Flink's
+/// `RowTimeDeduplicateKeepFirstRowFunction`. Per partition key it keeps the row with the minimum
+/// rowtime and emits it exactly once, when a watermark reaches that rowtime; every later row for the
+/// key is then ignored, and a row arriving with a rowtime already below the watermark is dropped as
+/// late. Insert-only: once a key's candidate fires, no smaller-rowtime row can still arrive (it would
+/// be late), so the emitted row is final and never retracted. This is the columnar analog of Flink's
+/// keyed deduplicate; keys are co-located by the columnar shuffle, the per-key state lives here.
+struct KeepFirstDeduplicator {
+    partition_columns: Vec<usize>,
+    rt_column: usize,
+    current_watermark: i64,
+    /// The minimum-rowtime row seen so far per key, awaiting the watermark that releases it.
+    pending: HashMap<GroupKey, (i64, JoinRow)>,
+    /// Keys whose first row has already been emitted; later rows for them are ignored.
+    emitted: std::collections::HashSet<GroupKey>,
+    schema: Option<SchemaRef>,
+}
+
+impl KeepFirstDeduplicator {
+    fn new(partition_columns: Vec<usize>, rt_column: usize) -> Self {
+        KeepFirstDeduplicator {
+            partition_columns,
+            rt_column,
+            current_watermark: i64::MIN,
+            pending: HashMap::new(),
+            emitted: std::collections::HashSet::new(),
+            schema: None,
+        }
+    }
+
+    fn push(&mut self, batch: &RecordBatch) {
+        let arity = data_arity(batch);
+        self.schema = Some(data_schema(batch));
+        let partition_arrays: Vec<&ArrayRef> =
+            self.partition_columns.iter().map(|&i| batch.column(i)).collect();
+        let data_arrays: Vec<&ArrayRef> = (0..arity).map(|i| batch.column(i)).collect();
+        let rt = rt_to_millis(batch.column(self.rt_column));
+        for row in 0..batch.num_rows() {
+            let rowtime = rt.value(row);
+            if rowtime < self.current_watermark {
+                continue; // late: the watermark already passed this rowtime
+            }
+            let key = read_key(&partition_arrays, row);
+            if self.emitted.contains(&key) {
+                continue; // this key's first row already emitted
+            }
+            // Replace the candidate only with a strictly smaller rowtime, so ties keep the first
+            // arrival (Flink's shouldKeepCurrentRow with keepLastRow=false).
+            if let Some((existing, _)) = self.pending.get(&key) {
+                if *existing <= rowtime {
+                    continue;
+                }
+            }
+            let full: JoinRow = data_arrays
+                .iter()
+                .map(|a| ScalarValue::try_from_array(a, row).expect("dedup row scalar"))
+                .collect();
+            self.pending.insert(key, (rowtime, full));
+        }
+    }
+
+    /// Emits each key's candidate whose rowtime the watermark has now reached (insert-only), and
+    /// records the key as emitted so later rows for it are ignored.
+    fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.current_watermark = watermark;
+        let ready: Vec<GroupKey> = self
+            .pending
+            .iter()
+            .filter(|(_, (rt, _))| *rt <= watermark)
+            .map(|(key, _)| key.clone())
+            .collect();
+        let mut rows: Vec<JoinRow> = Vec::with_capacity(ready.len());
+        for key in ready {
+            let (_, row) = self.pending.remove(&key).expect("ready key is pending");
+            self.emitted.insert(key);
+            rows.push(row);
+        }
+        self.emit(rows)
+    }
+
+    fn emit(&self, rows: Vec<JoinRow>) -> RecordBatch {
+        let schema = match &self.schema {
+            Some(schema) => schema.clone(),
+            None => return RecordBatch::new_empty(Arc::new(Schema::empty())),
+        };
+        if rows.is_empty() {
+            return RecordBatch::new_empty(schema);
+        }
+        let fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
+        let columns: Vec<ArrayRef> = (0..fields.len())
+            .map(|j| scalars_to_array(rows.iter().map(|r| r[j].clone()).collect(), fields[j].data_type()))
+            .collect();
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("dedup output batch")
+    }
+
+    fn snapshot(&self) -> Vec<u8> {
+        let mut out = self.current_watermark.to_le_bytes().to_vec();
+        let pending = self.snapshot_pending();
+        out.extend_from_slice(&(pending.len() as u32).to_le_bytes());
+        out.extend_from_slice(&pending);
+        out.extend_from_slice(&self.snapshot_emitted());
+        out
+    }
+
+    /// The pending candidates as an IPC batch of the data columns plus a trailing rowtime column.
+    fn snapshot_pending(&self) -> Vec<u8> {
+        let Some(schema) = &self.schema else { return Vec::new() };
+        if self.pending.is_empty() {
+            return Vec::new();
+        }
+        let rows: Vec<&(i64, JoinRow)> = self.pending.values().collect();
+        let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
+        let mut columns: Vec<ArrayRef> = (0..fields.len())
+            .map(|j| {
+                scalars_to_array(rows.iter().map(|(_, r)| r[j].clone()).collect(), fields[j].data_type())
+            })
+            .collect();
+        fields.push(Field::new("__dedup_rt__", DataType::Int64, false));
+        columns.push(Arc::new(Int64Array::from(rows.iter().map(|(rt, _)| *rt).collect::<Vec<_>>())));
+        write_ipc(&RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("dedup pending"))
+    }
+
+    /// The emitted keys as an IPC batch of just the key columns (their types taken from the scalars).
+    fn snapshot_emitted(&self) -> Vec<u8> {
+        if self.emitted.is_empty() {
+            return Vec::new();
+        }
+        let keys: Vec<&GroupKey> = self.emitted.iter().collect();
+        let arity = keys[0].len();
+        let fields: Vec<Field> = (0..arity)
+            .map(|j| Field::new(format!("key{j}"), keys[0][j].data_type(), true))
+            .collect();
+        let columns: Vec<ArrayRef> = (0..arity)
+            .map(|j| scalars_to_array(keys.iter().map(|k| k[j].clone()).collect(), fields[j].data_type()))
+            .collect();
+        write_ipc(&RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("dedup emitted"))
+    }
+
+    fn restore(partition_columns: Vec<usize>, rt_column: usize, bytes: &[u8]) -> Self {
+        let mut dedup = KeepFirstDeduplicator::new(partition_columns, rt_column);
+        if bytes.len() < 8 {
+            return dedup;
+        }
+        dedup.current_watermark = i64::from_le_bytes(bytes[0..8].try_into().expect("watermark"));
+        let pending_len = u32::from_le_bytes(bytes[8..12].try_into().expect("pending len")) as usize;
+        let pending_bytes = &bytes[12..12 + pending_len];
+        for batch in read_ipc_if_present(pending_bytes) {
+            let data_arity = batch.num_columns() - 1; // last column is the stored rowtime
+            let rt = batch.column(data_arity).as_any().downcast_ref::<Int64Array>().expect("rt col");
+            let data_fields: Vec<Field> =
+                (0..data_arity).map(|i| batch.schema().field(i).clone()).collect();
+            dedup.schema = Some(Arc::new(Schema::new(data_fields)));
+            let partition_arrays: Vec<&ArrayRef> =
+                dedup.partition_columns.iter().map(|&i| batch.column(i)).collect();
+            for row in 0..batch.num_rows() {
+                let key = read_key(&partition_arrays, row);
+                let full: JoinRow = (0..data_arity)
+                    .map(|i| ScalarValue::try_from_array(batch.column(i), row).expect("dedup scalar"))
+                    .collect();
+                dedup.pending.insert(key, (rt.value(row), full));
+            }
+        }
+        for batch in read_ipc_if_present(&bytes[12 + pending_len..]) {
+            let key_arrays: Vec<&ArrayRef> = (0..batch.num_columns()).map(|i| batch.column(i)).collect();
+            for row in 0..batch.num_rows() {
+                dedup.emitted.insert(read_key(&key_arrays, row));
+            }
+        }
+        dedup
+    }
+}
+
 /// One open session for a key: its end (the latest element's timestamp plus the gap) and the
 /// incremental accumulators folding in its rows. The start is the map key that holds it.
 struct Session {
@@ -5768,6 +5940,87 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTempor
 ) -> jlong {
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read sort snapshot");
     Box::into_raw(Box::new(TemporalSorter::restore(rt_column as usize, &bytes))) as jlong
+}
+
+/// Creates a keep-first deduplicator over the given partition-key columns and rowtime column.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createKeepFirstDeduplicator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    partition_columns: JIntArray<'local>,
+    rt_column: jint,
+) -> jlong {
+    let partitions = read_columns(&env, &partition_columns);
+    Box::into_raw(Box::new(KeepFirstDeduplicator::new(partitions, rt_column as usize))) as jlong
+}
+
+/// Buffers an input batch (no output); each key's minimum-rowtime row is emitted later, on the
+/// watermark that reaches its rowtime.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushKeepFirstDeduplicator<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+) {
+    let dedup = unsafe { &mut *(handle as *mut KeepFirstDeduplicator) };
+    dedup.push(&import_record_batch(in_array_address, in_schema_address));
+}
+
+/// Exports each key's first (minimum-rowtime) row whose rowtime the watermark has reached.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushKeepFirstDeduplicator<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark_millis: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let dedup = unsafe { &mut *(handle as *mut KeepFirstDeduplicator) };
+    let result = dedup.flush(watermark_millis);
+    export_record_batch(result, out_array_address, out_schema_address);
+}
+
+/// Releases the deduplicator and its per-key state.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeKeepFirstDeduplicator<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    unsafe {
+        drop(Box::from_raw(handle as *mut KeepFirstDeduplicator));
+    }
+}
+
+/// Serializes the deduplicator's pending candidates, emitted keys, and watermark for a checkpoint.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotKeepFirstDeduplicator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jbyteArray {
+    let dedup = unsafe { &mut *(handle as *mut KeepFirstDeduplicator) };
+    env.byte_array_from_slice(&dedup.snapshot())
+        .expect("failed to allocate dedup snapshot array")
+        .into_raw()
+}
+
+/// Rebuilds a keep-first deduplicator from a snapshot taken by a prior run and returns a fresh handle.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepFirstDeduplicator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    partition_columns: JIntArray<'local>,
+    rt_column: jint,
+    snapshot: JByteArray<'local>,
+) -> jlong {
+    let partitions = read_columns(&env, &partition_columns);
+    let bytes = env.convert_byte_array(&snapshot).expect("failed to read dedup snapshot");
+    Box::into_raw(Box::new(KeepFirstDeduplicator::restore(partitions, rt_column as usize, &bytes)))
+        as jlong
 }
 
 /// Creates a non-windowed `GROUP BY` aggregator and returns an opaque handle. The aggregate kinds
