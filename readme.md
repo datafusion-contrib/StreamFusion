@@ -10,7 +10,8 @@ anything else falls back to Flink with identical results.
 
 What executes natively today and the conditions under which each operator is accelerated.
 An operator is substituted only when **all** of its terms (plus the global terms) hold;
-otherwise it runs on Flink unchanged.
+otherwise it runs on Flink unchanged. For the complement — everything we *don't* support and
+every specific cause of a fallback — see [docs/coverage-and-fallbacks.md](docs/coverage-and-fallbacks.md).
 
 | Operator | Accelerated | Terms |
 |---|---|---|

@@ -77,6 +77,12 @@ Two exceptions stay as records: a partially-done ticket (trim it to what remains
 (keep it, clearly marked, so the dead end isn't re-explored). As we knock things out, update the readme
 Compatibility Chart so it reflects exactly what is accelerated and under what terms.
 
+`docs/coverage-and-fallbacks.md` is the inverse of the Compatibility Chart — what we do **not** support and
+**every** specific cause of a fallback to Flink (gate, per-operator matcher declines, expression/type/connector
+limits). Keep it current in the same commit as any change to coverage: when an operator/type/expression/connector
+gains or loses support, or a matcher condition changes, update this file alongside the readme chart so it always
+answers "why didn't my query accelerate?" precisely.
+
 The `divergences/` directory (at the repo root) records where we deviate from the datafusion-comet / arroyo
 architectural decisions — this project should start with little divergence from them. If you make such a
 decision, describe it in `divergences/` and why.
