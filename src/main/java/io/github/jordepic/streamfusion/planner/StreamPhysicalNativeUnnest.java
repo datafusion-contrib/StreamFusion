@@ -26,6 +26,7 @@ public class StreamPhysicalNativeUnnest extends SingleRel
   private final RelDataType outputRowType;
   private final int arrayColumn;
   private final boolean withOrdinality;
+  private final boolean isLeft;
 
   public StreamPhysicalNativeUnnest(
       RelOptCluster cluster,
@@ -33,11 +34,13 @@ public class StreamPhysicalNativeUnnest extends SingleRel
       RelNode input,
       RelDataType outputRowType,
       int arrayColumn,
-      boolean withOrdinality) {
+      boolean withOrdinality,
+      boolean isLeft) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.arrayColumn = arrayColumn;
     this.withOrdinality = withOrdinality;
+    this.isLeft = isLeft;
   }
 
   @Override
@@ -53,7 +56,7 @@ public class StreamPhysicalNativeUnnest extends SingleRel
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
     return new StreamPhysicalNativeUnnest(
-        getCluster(), traitSet, inputs.get(0), outputRowType, arrayColumn, withOrdinality);
+        getCluster(), traitSet, inputs.get(0), outputRowType, arrayColumn, withOrdinality, isLeft);
   }
 
   @Override
@@ -64,6 +67,7 @@ public class StreamPhysicalNativeUnnest extends SingleRel
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
         getRelDetailedDescription(),
         arrayColumn,
-        withOrdinality);
+        withOrdinality,
+        isLeft);
   }
 }

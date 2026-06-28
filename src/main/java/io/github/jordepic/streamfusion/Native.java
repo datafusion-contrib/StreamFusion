@@ -172,7 +172,8 @@ public final class Native {
       long outArrayAddress,
       long outSchemaAddress,
       int arrayCol,
-      boolean withOrdinality);
+      boolean withOrdinality,
+      boolean isLeft);
 
   /**
    * Compiles an encoded Calc — an optional condition tree plus the projection trees, sharing one set

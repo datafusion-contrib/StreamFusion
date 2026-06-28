@@ -754,8 +754,15 @@ fn expand(
 /// struct child. The `$row_kind$` tag rides through (repeated per element), so it is
 /// changelog-transparent. The same take-based fan-out as the windowing TVF / Expand — see
 /// divergences/15 for why we don't drive DataFusion's UnnestExec. With `with_ordinality`, a trailing
-/// 1-based INTEGER ordinality column (the element's position in its collection) is appended.
-fn unnest_array(input: &RecordBatch, array_col: usize, with_ordinality: bool) -> RecordBatch {
+/// 1-based INTEGER ordinality column (the element's position in its collection) is appended. With
+/// `is_left` (a LEFT/outer unnest), a row whose collection produces no element emits one row with the
+/// appended columns null, rather than no rows.
+fn unnest_array(
+    input: &RecordBatch,
+    array_col: usize,
+    with_ordinality: bool,
+    is_left: bool,
+) -> RecordBatch {
     let schema = input.schema();
     let row_kind_idx = schema.fields().iter().position(|f| f.name() == ROW_KIND_COLUMN);
     let data_end = row_kind_idx.unwrap_or_else(|| schema.fields().len());
@@ -803,23 +810,32 @@ fn unnest_array(input: &RecordBatch, array_col: usize, with_ordinality: bool) ->
 
     // One take index per output row: the input row it copies (passthrough) and the child element it
     // carries. A null/empty collection contributes nothing (INNER); a null struct element is dropped.
+    // take_elems carries the child index per output row, or NULL for a LEFT null-pad row (a null take
+    // index makes `take` emit a null, so the appended columns are null). ordinals likewise.
     let mut take_rows: Vec<u32> = Vec::new();
-    let mut take_elems: Vec<u32> = Vec::new();
-    let mut ordinals: Vec<i32> = Vec::new();
+    let mut take_elems: Vec<Option<u32>> = Vec::new();
+    let mut ordinals: Vec<Option<i32>> = Vec::new();
     for row in 0..input.num_rows() {
-        if column.is_null(row) {
-            continue;
-        }
-        let start = offsets[row];
-        for k in start..offsets[row + 1] {
-            if let Some(child) = &null_check {
-                if child.is_null(k as usize) {
-                    continue;
+        let mut emitted = false;
+        if !column.is_null(row) {
+            let start = offsets[row];
+            for k in start..offsets[row + 1] {
+                if let Some(child) = &null_check {
+                    if child.is_null(k as usize) {
+                        continue;
+                    }
                 }
+                take_rows.push(row as u32);
+                take_elems.push(Some(k as u32));
+                ordinals.push(Some((k - start) + 1)); // 1-based position in this row's collection
+                emitted = true;
             }
+        }
+        if !emitted && is_left {
+            // LEFT/outer: a row that produced no element is kept with the appended columns null.
             take_rows.push(row as u32);
-            take_elems.push(k as u32);
-            ordinals.push((k - start) + 1); // 1-based position in this row's collection
+            take_elems.push(None);
+            ordinals.push(None);
         }
     }
     let rows_idx = UInt32Array::from(take_rows);
@@ -832,11 +848,13 @@ fn unnest_array(input: &RecordBatch, array_col: usize, with_ordinality: bool) ->
         columns.push(take(input.column(i), &rows_idx, None).expect("failed to fan out column"));
     }
     for (field, child) in &children {
-        fields.push(field.clone());
+        // A LEFT/outer null-pad makes every appended column nullable (even a map key or a
+        // non-nullable struct field), so relax nullability there.
+        fields.push(if is_left { field.clone().with_nullable(true) } else { field.clone() });
         columns.push(take(child.as_ref(), &elems_idx, None).expect("failed to take unnest element"));
     }
     if with_ordinality {
-        fields.push(Field::new("ordinality", DataType::Int32, false));
+        fields.push(Field::new("ordinality", DataType::Int32, is_left));
         columns.push(Arc::new(Int32Array::from(ordinals)));
     }
     if let Some(idx) = row_kind_idx {
@@ -5712,9 +5730,10 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_unnest<'local
     out_schema_address: jlong,
     array_col: jint,
     with_ordinality: jboolean,
+    is_left: jboolean,
 ) {
     let batch = import_record_batch(in_array_address, in_schema_address);
-    let result = unnest_array(&batch, array_col as usize, with_ordinality != 0);
+    let result = unnest_array(&batch, array_col as usize, with_ordinality != 0, is_left != 0);
     export_record_batch(result, out_array_address, out_schema_address);
 }
 

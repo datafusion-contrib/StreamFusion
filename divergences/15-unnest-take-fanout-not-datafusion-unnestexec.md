@@ -32,5 +32,8 @@ A filter pushed into the `Correlate` as a `condition`
 (`… WHERE element > x`) is applied as a native filter over the unnest output: Flink's correlate
 condition indexes the table-function output, so its refs are shifted by the input arity to index the
 `[input.., element]` output, then encoded by the expression engine and run as a `StreamPhysicalNativeFilter`
-on top of the unnest (it composes — no new operator). A `MULTISET` unnest, a `LEFT` (outer) unnest,
-and a pushed condition the expression engine can't encode all fall back.
+on top of the unnest (it composes — no new operator). A LEFT (outer) unnest is supported: a row whose
+collection produces no element emits one row with the appended columns null (a null take index makes
+`take` emit null; the appended fields are relaxed to nullable). A `MULTISET` unnest, a condition the
+expression engine can't encode, and a pushed condition over a LEFT unnest (it changes outer semantics)
+all fall back.

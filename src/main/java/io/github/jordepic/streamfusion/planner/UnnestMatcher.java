@@ -21,8 +21,9 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalC
  * {@code MAP} appends a key and a value column; {@code WITH ORDINALITY} appends a trailing 1-based
  * ordinal (Flink's behavior). A filter pushed into the correlate (e.g. {@code … WHERE element > x})
  * becomes a {@code condition} on the node; it is applied as a native filter over the unnest output,
- * so it is supported when the expression engine can encode it. A {@code MULTISET} unnest, a LEFT
- * (outer) unnest, or a condition the expression engine can't encode fall back.
+ * so it is supported when the expression engine can encode it. A LEFT (outer) unnest is supported —
+ * a row whose collection is empty/null is kept with the appended columns null. A {@code MULTISET}
+ * unnest, a condition the expression engine can't encode, or a condition over a LEFT unnest fall back.
  */
 final class UnnestMatcher {
 
@@ -34,8 +35,9 @@ final class UnnestMatcher {
   private static final String UNNEST_ROWS_WITH_ORDINALITY = "$UNNEST_ROWS_WITH_ORDINALITY$1";
 
   static boolean matches(StreamPhysicalCorrelate correlate) {
-    if (joinType(correlate) != JoinRelType.INNER) {
-      return false; // only INNER UNNEST (a LEFT unnest null-pads empty arrays)
+    JoinRelType joinType = joinType(correlate);
+    if (joinType != JoinRelType.INNER && joinType != JoinRelType.LEFT) {
+      return false; // INNER, or LEFT (null-pads an empty/null collection)
     }
     RexNode call = correlate.scan().getCall();
     if (!(call instanceof RexCall)) {
@@ -76,9 +78,18 @@ final class UnnestMatcher {
     if (!FilterCalcMatcher.convertibleRow(correlate.getRowType())) {
       return false;
     }
-    // A pushed condition (… WHERE element > x) must be encodable by the expression engine; it is
-    // applied as a native filter over the unnest output.
-    return !correlate.condition().isDefined() || encodedCondition(correlate) != null;
+    if (!correlate.condition().isDefined()) {
+      return true;
+    }
+    // A pushed condition over a LEFT unnest changes outer semantics (a filtered-out element should
+    // still leave a null-pad), which the native filter doesn't model; only INNER applies it as a
+    // post-unnest filter, and only when the expression engine can encode it.
+    return !isLeft(correlate) && encodedCondition(correlate) != null;
+  }
+
+  /** Whether this is a LEFT (outer) unnest, which null-pads an empty/null collection. */
+  static boolean isLeft(StreamPhysicalCorrelate correlate) {
+    return joinType(correlate) == JoinRelType.LEFT;
   }
 
   /** Whether this is {@code UNNEST … WITH ORDINALITY} (a trailing 1-based ordinal column). */
@@ -124,8 +135,8 @@ final class UnnestMatcher {
   }
 
   static String unsupportedReason(StreamPhysicalCorrelate correlate) {
-    return "correlate: only an INNER UNNEST of a single ARRAY (scalar or ROW element) or MAP column,"
-        + " optionally WITH ORDINALITY, is supported — MULTISET, LEFT, or a non-encodable condition"
-        + " fall back";
+    return "correlate: only an INNER/LEFT UNNEST of a single ARRAY (scalar or ROW element) or MAP"
+        + " column, optionally WITH ORDINALITY, is supported — MULTISET, a non-encodable condition, or"
+        + " a condition over a LEFT unnest fall back";
   }
 }

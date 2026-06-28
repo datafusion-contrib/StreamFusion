@@ -70,6 +70,22 @@ class FlinkUnnestSqlHarnessTest {
   }
 
   @Test
+  void leftUnnestMatchesHost() throws Exception {
+    // LEFT (outer) unnest: an empty array (k=3) or null array (k=4) is kept with a null element.
+    NativeParity.assertParity(
+        FlinkUnnestSqlHarnessTest::environment,
+        "SELECT k, e FROM t LEFT JOIN UNNEST(vs) AS u(e) ON TRUE");
+  }
+
+  @Test
+  void leftUnnestWithOrdinalityMatchesHost() throws Exception {
+    // A LEFT null-pad row carries a null ordinal too.
+    NativeParity.assertParity(
+        FlinkUnnestSqlHarnessTest::environment,
+        "SELECT k, e, o FROM t LEFT JOIN UNNEST(vs) WITH ORDINALITY AS u(e, o) ON TRUE");
+  }
+
+  @Test
   void unnestWithOrdinalityMatchesHost() throws Exception {
     // WITH ORDINALITY appends a 1-based position column (the element's index in its array).
     NativeParity.assertParity(
