@@ -67,14 +67,12 @@ class FlinkComplexTypeSqlHarnessTest {
   }
 
   @Test
-  void countOfArrayColumnFallsBack() throws Exception {
-    // COUNT over a complex value column falls back: the group-by reads each value column as a typed
-    // numeric (COUNT only needs null-ness, but the read happens before the kind is known), so a
-    // non-numeric value column isn't admitted. Flink supports it; we fall back cleanly.
-    TableEnvironment nativeEnv = repeatedArrayEnvironment();
-    PhysicalPlanScan scan = NativePlanner.install(nativeEnv);
-    collect(nativeEnv, "SELECT k, COUNT(arr) FROM t GROUP BY k");
-    assertEquals(0, scan.substitutions(), "COUNT over a complex value column should fall back");
+  void countOfArrayColumnMatchesHost() throws Exception {
+    // COUNT(array) — counts non-null without reading a typed value (the value column is read for
+    // null-ness only), matching Flink. MAX(array) still falls back (Flink rejects ordering arrays).
+    assertComplexChangelogParity(
+        FlinkComplexTypeSqlHarnessTest::repeatedArrayEnvironment,
+        "SELECT k, COUNT(arr) FROM t GROUP BY k");
   }
 
   @Test

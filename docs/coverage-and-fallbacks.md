@@ -34,9 +34,9 @@ These have no matcher; any query containing one falls back entirely.
 | `Python*` (`PythonCalc`/`PythonCorrelate`/`PythonGroupAggregate`/`PythonOverAggregate`/…) | PyFlink UDFs |
 
 ### Feature gaps inside operators we *do* support
-- **Nested types** (`ARRAY`/`MAP`/`ROW`) are carried through filters/projections and usable as
-  GROUP BY / join / dedup keys (see §4). The remaining nested-type gaps are *ordering* a nested value
-  (`MAX`/`ORDER BY`/Top-N sort — which Flink also rejects) and `COUNT` over a complex value column.
+- **Nested types** (`ARRAY`/`MAP`/`ROW`) are carried through filters/projections, usable as GROUP BY /
+  join / dedup keys, and as a `COUNT` value column (see §4). The remaining nested-type gap is *ordering*
+  a nested value (`MAX`/`ORDER BY`/Top-N sort) — which Flink also rejects.
 - **Aggregates** — `SUM`/`AVG` over decimal; two-phase `AVG`; window `AVG` only as a lone aggregate;
   non-windowed `GROUP BY` `AVG` only via the host's SUM/COUNT rewrite (not modeled natively); value
   types outside bigint/double/int/smallint/tinyint/float (see `aggregate-type-support.md`).
@@ -117,14 +117,11 @@ These have no matcher; any query containing one falls back entirely.
   (`FilterCalcMatcher.convertibleRow` for filter/`Calc`, `RowDataArrowConverter.supports` for the
   keyed/stateful operators) check this recursively.
 - **Nested `ARRAY`/`MAP`/`ROW` are supported** (recursively, down to supported leaves): carried through
-  filters/projections, and usable as a GROUP BY / join / dedup **key** (the nested value rides the row
-  state as a DataFusion `ScalarValue` and is cast back to its declared column type on emit). What still
-  falls back for a nested column:
+  filters/projections, usable as a GROUP BY / join / dedup **key** (the nested value rides the row
+  state as a DataFusion `ScalarValue` and is cast back to its declared column type on emit), and as a
+  `COUNT` value column (counted for null-ness only). What still falls back for a nested column:
   - **Ordering a nested value** — `MAX`/`MIN` over it, `ORDER BY` it, or a Top-N/sort on it. Flink
     itself rejects `MAX(array)` and `ORDER BY array`, so this matches the host.
-  - **`COUNT` over a complex value column** (e.g. `COUNT(arr)`) — the group-by reads each value column
-    as a typed numeric (the read happens before the aggregate kind is known), so a non-numeric value
-    column isn't admitted. Flink supports it; we fall back cleanly.
 - **Key types** outside bigint/int/string/boolean/date/timestamp/decimal **(plus the nested types
   above)** for join/OVER/window/group keys.
 - **Aggregate value types** outside the parity matrix in `aggregate-type-support.md` (esp. decimal

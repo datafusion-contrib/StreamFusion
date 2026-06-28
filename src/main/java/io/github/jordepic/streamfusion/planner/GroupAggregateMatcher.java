@@ -56,9 +56,10 @@ final class GroupAggregateMatcher {
       if (call.getArgList().size() > 1) {
         return false;
       }
-      // A present argument column is read as a running value, so it must be one of the running types;
-      // COUNT(*) (no argument) is unrestricted.
-      if (!call.getArgList().isEmpty()) {
+      // SUM/MIN/MAX read a present argument as a typed running value, so it must be a running type.
+      // COUNT only reads null-ness, so it counts any column the row already admits (incl. a complex
+      // ARRAY/MAP/ROW value); COUNT(*) (no argument) is unrestricted.
+      if (!call.getArgList().isEmpty() && kind != WindowAggregateMatcher.KIND_COUNT) {
         SqlTypeName valueType =
             inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
         if (!isRunningType(valueType)) {

@@ -1115,6 +1115,10 @@ enum ValueColumn<'a> {
     I64(&'a Int64Array),
     I32(&'a Int32Array),
     F64(&'a arrow::array::Float64Array),
+    // Any column read only for null-ness: COUNT over a non-numeric (e.g. ARRAY/MAP/ROW) value
+    // column, where only "is this row non-null" matters. The dummy value is never folded (COUNT
+    // ignores it), so the matcher admits this only for COUNT.
+    NullOnly(&'a ArrayRef),
 }
 
 impl ValueColumn<'_> {
@@ -1123,6 +1127,7 @@ impl ValueColumn<'_> {
             ValueColumn::I64(a) => (!a.is_null(row)).then(|| Num::I64(a.value(row))),
             ValueColumn::I32(a) => (!a.is_null(row)).then(|| Num::I32(a.value(row))),
             ValueColumn::F64(a) => (!a.is_null(row)).then(|| Num::F64(a.value(row))),
+            ValueColumn::NullOnly(a) => (!a.is_null(row)).then_some(Num::I64(0)),
         }
     }
 }
@@ -1603,7 +1608,9 @@ impl GroupAggregator {
                     return None;
                 }
                 let column = batch.column(self.value_columns[i] as usize);
-                Some(match self.value_types[i] {
+                // Build from the column's actual type: the numeric folds read a typed value, while a
+                // non-numeric column (only COUNT admits one) is read for null-ness alone.
+                Some(match column.data_type() {
                     DataType::Int64 => {
                         ValueColumn::I64(column.as_any().downcast_ref().expect("int64 value"))
                     }
@@ -1613,7 +1620,7 @@ impl GroupAggregator {
                     DataType::Float64 => {
                         ValueColumn::F64(column.as_any().downcast_ref().expect("float64 value"))
                     }
-                    ref other => panic!("unsupported group-by value type: {other:?}"),
+                    _ => ValueColumn::NullOnly(column),
                 })
             })
             .collect();
