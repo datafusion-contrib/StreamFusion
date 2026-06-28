@@ -160,6 +160,20 @@ public final class Native {
       long[] expandIdValues);
 
   /**
+   * Stateless INNER UNNEST of an ARRAY column: fans each input row out to one output row per element
+   * of {@code arrayCol}, the input columns repeated and the element appended ({@code [input cols..,
+   * element]}). A null/empty array yields no rows (INNER); a null element rides through as a null
+   * row. The {@code $row_kind$} tag rides through (repeated per element), so it is
+   * changelog-transparent.
+   */
+  public static native void unnest(
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress,
+      int arrayCol);
+
+  /**
    * Compiles an encoded Calc — an optional condition tree plus the projection trees, sharing one set
    * of pools, with each tree's root in {@code projectionRoots}/{@code conditionRoot} — into a
    * reusable handle. Released with {@link #closeCalcExpression(long)}.

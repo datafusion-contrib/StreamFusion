@@ -1,6 +1,6 @@
 use arrow::array::{
     make_array, new_empty_array, new_null_array, Array, ArrayRef, BinaryArray, BooleanArray, Float32Array,
-    Int16Array, Int32Array, Int64Array, Int8Array, LargeBinaryArray, RecordBatch, StringArray,
+    Int16Array, Int32Array, Int64Array, Int8Array, LargeBinaryArray, ListArray, RecordBatch, StringArray,
     StructArray, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
     UInt32Array,
 };
@@ -743,6 +743,63 @@ fn expand(
         columns.push(arrow::compute::concat(&refs).expect("failed to concat row kind"));
     }
     RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("failed to build expand batch")
+}
+
+/// Stateless INNER UNNEST of an ARRAY column (Flink's `$UNNEST_ROWS$` / `Correlate`): each input row
+/// is fanned out to one output row per element of its array column `array_col`, the input columns
+/// repeated and the element appended (Flink keeps the array column and appends the element, so the
+/// output is `[input cols.., element]`). A NULL array yields no rows and an empty array yields no
+/// rows (INNER semantics); a null *element* inside a non-null array is emitted as a null row, matching
+/// Flink. The `$row_kind$` tag rides through (repeated per element), so it is changelog-transparent.
+/// The same take-based fan-out as the windowing TVF / Expand — see divergences/15 for why we don't
+/// drive DataFusion's UnnestExec.
+fn unnest_array(input: &RecordBatch, array_col: usize) -> RecordBatch {
+    let schema = input.schema();
+    let row_kind_idx = schema.fields().iter().position(|f| f.name() == ROW_KIND_COLUMN);
+    let data_end = row_kind_idx.unwrap_or_else(|| schema.fields().len());
+
+    let list = input
+        .column(array_col)
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .expect("UNNEST column must be a List");
+    let offsets = list.value_offsets();
+    let values = list.values();
+
+    // One take index per output row: which input row it copies (passthrough columns) and which child
+    // element it carries. A null/empty array contributes nothing (INNER).
+    let mut take_rows: Vec<u32> = Vec::new();
+    let mut take_elems: Vec<u32> = Vec::new();
+    for row in 0..input.num_rows() {
+        if list.is_null(row) {
+            continue;
+        }
+        for k in offsets[row]..offsets[row + 1] {
+            take_rows.push(row as u32);
+            take_elems.push(k as u32);
+        }
+    }
+    let rows_idx = UInt32Array::from(take_rows);
+    let elems_idx = UInt32Array::from(take_elems);
+
+    let element_type = match list.data_type() {
+        DataType::List(field) => field.data_type().clone(),
+        other => panic!("UNNEST column must be a List, got {other:?}"),
+    };
+
+    let mut fields: Vec<Field> = Vec::with_capacity(data_end + 2);
+    let mut columns: Vec<ArrayRef> = Vec::with_capacity(data_end + 2);
+    for i in 0..data_end {
+        fields.push(schema.field(i).as_ref().clone());
+        columns.push(take(input.column(i), &rows_idx, None).expect("failed to fan out column"));
+    }
+    fields.push(Field::new("f0", element_type, true));
+    columns.push(take(values.as_ref(), &elems_idx, None).expect("failed to take unnest element"));
+    if let Some(idx) = row_kind_idx {
+        fields.push(schema.field(idx).as_ref().clone());
+        columns.push(take(input.column(idx), &rows_idx, None).expect("failed to fan out row kind"));
+    }
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("failed to build unnest batch")
 }
 
 /// One open aligned window: its start, plus the per-key accumulators folding in matching rows. The
@@ -5597,6 +5654,22 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_expand<'local
         &copy,
         &ids,
     );
+    export_record_batch(result, out_array_address, out_schema_address);
+}
+
+/// Stateless INNER UNNEST of an ARRAY column over an Arrow batch the JVM exported.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_unnest<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+    array_col: jint,
+) {
+    let batch = import_record_batch(in_array_address, in_schema_address);
+    let result = unnest_array(&batch, array_col as usize);
     export_record_batch(result, out_array_address, out_schema_address);
 }
 

@@ -22,7 +22,7 @@ These have no matcher; any query containing one falls back entirely.
 
 | Operator | SQL surface |
 |---|---|
-| `Correlate` | lateral table functions, `UNNEST` (array/map) |
+| `Correlate` | lateral table functions, and `UNNEST` beyond the INNER single-`ARRAY` case (`MAP`/`MULTISET` unnest, `ARRAY<ROW>`, `WITH ORDINALITY`, `LEFT` unnest, or a filter pushed into the `Correlate` as a condition). INNER `UNNEST` of a single `ARRAY` column **is** supported — see the chart. |
 | `TemporalJoin` | `FOR SYSTEM_TIME AS OF` versioned-table join |
 | `LookupJoin` | dimension-table / async lookup join |
 | `Match` | `MATCH_RECOGNIZE` (CEP / row-pattern) |

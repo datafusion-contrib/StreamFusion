@@ -8,6 +8,7 @@ import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalChangelogNormalize;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCorrelate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExchange;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExpand;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGlobalWindowAggregate;
@@ -380,6 +381,26 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             normalize.getRowType(),
             keyColumns,
             ChangelogNormalizeMatcher.generateUpdateBefore(normalize));
+      }
+    }
+
+    // INNER UNNEST of an array (Flink's Correlate over $UNNEST_ROWS$): fan each row out to one row
+    // per element of its array column, appending the element. Stateless and changelog-transparent
+    // (the `$row_kind$` tag rides through), so — like Expand — it is exempt from the insert-only
+    // guard below.
+    if (current instanceof StreamPhysicalCorrelate) {
+      StreamPhysicalCorrelate correlate = (StreamPhysicalCorrelate) current;
+      if (UnnestMatcher.matches(correlate)) {
+        if (!NativeConfig.operatorEnabled("unnest")) {
+          return noteDisabled(current, "unnest");
+        }
+        substitutions++;
+        return new StreamPhysicalNativeUnnest(
+            correlate.getCluster(),
+            correlate.getTraitSet(),
+            correlate.getInputs().get(0),
+            correlate.getRowType(),
+            UnnestMatcher.arrayColumn(correlate));
       }
     }
 
@@ -912,6 +933,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     }
     if (node instanceof StreamPhysicalExpand) {
       return ExpandMatcher.unsupportedReason((StreamPhysicalExpand) node);
+    }
+    if (node instanceof StreamPhysicalCorrelate) {
+      return UnnestMatcher.unsupportedReason((StreamPhysicalCorrelate) node);
     }
     if (node instanceof StreamPhysicalChangelogNormalize) {
       return ChangelogNormalizeMatcher.unsupportedReason((StreamPhysicalChangelogNormalize) node);
