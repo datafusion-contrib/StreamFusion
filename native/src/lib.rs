@@ -549,9 +549,18 @@ fn build_aggregates(kinds: &[i64], value_types: &[i64]) -> Vec<WindowAggregate> 
 /// element type cannot be inferred from the values).
 fn scalars_to_array(scalars: Vec<ScalarValue>, data_type: &DataType) -> ArrayRef {
     if scalars.is_empty() {
-        new_empty_array(data_type)
+        return new_empty_array(data_type);
+    }
+    let array = ScalarValue::iter_to_array(scalars).expect("failed to build array");
+    // For scalars the reconstructed type already equals `data_type` (no-op). For a nested type
+    // (List/Struct/Map), ScalarValue reconstruction names the inner field generically (e.g. "item",
+    // nullable) which need not match the declared column's field metadata; cast reconciles it so the
+    // column's type matches the schema and RecordBatch assembly accepts it.
+    if array.data_type() == data_type {
+        array
     } else {
-        ScalarValue::iter_to_array(scalars).expect("failed to build array")
+        arrow::compute::cast(&array, data_type)
+            .expect("failed to cast reconstructed array to its column type")
     }
 }
 

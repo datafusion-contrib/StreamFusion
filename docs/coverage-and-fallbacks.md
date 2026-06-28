@@ -34,8 +34,9 @@ These have no matcher; any query containing one falls back entirely.
 | `Python*` (`PythonCalc`/`PythonCorrelate`/`PythonGroupAggregate`/`PythonOverAggregate`/…) | PyFlink UDFs |
 
 ### Feature gaps inside operators we *do* support
-- **Nested boundary types** — `ARRAY`/`MAP`/`ROW`/`MULTISET` columns are not carried by the whole-row
-  converter, so any stateful/keyed operator touching them falls back. (This is what blocks `UNNEST`.)
+- **Nested types** (`ARRAY`/`MAP`/`ROW`) are carried through filters/projections and usable as
+  GROUP BY / join / dedup keys (see §4). The remaining nested-type gaps are *ordering* a nested value
+  (`MAX`/`ORDER BY`/Top-N sort — which Flink also rejects) and `COUNT` over a complex value column.
 - **Aggregates** — `SUM`/`AVG` over decimal; two-phase `AVG`; window `AVG` only as a lone aggregate;
   non-windowed `GROUP BY` `AVG` only via the host's SUM/COUNT rewrite (not modeled natively); value
   types outside bigint/double/int/smallint/tinyint/float (see `aggregate-type-support.md`).
@@ -110,21 +111,22 @@ These have no matcher; any query containing one falls back entirely.
   default BOTH-whitespace; `POSITION` with a FROM start; wrong arity for any admitted function.
 
 ### 4. Type level
-- **Column types outside the matcher gate.** Two gates, deliberately different in breadth:
-  - **filter / `Calc`** (`FilterCalcMatcher.convertibleRow`) admits the scalars **plus nested
-    `ARRAY`/`MAP`/`ROW`** (recursively, down to supported leaf types). A filter/projection only passes
-    those columns through — never keying/sorting/aggregating on them — so the `ArrowConversion`
-    round-trip is all that's needed, and it carries nested types. A column type outside that (e.g.
-    `TIME`/interval/raw, or a nested type with an unsupported leaf) makes the filter/`Calc` fall back.
-  - **stateful/keyed operators** (GROUP BY, join, Top-N, dedup, Expand, LIMIT, ChangelogNormalize,
-    window-rank) gate on the **scalar-only** allow-list `RowDataArrowConverter.supports`
-    (tinyint/smallint/int/bigint/float/double/boolean/char/varchar/timestamp/timestamp-ltz/date/decimal).
-    A nested or otherwise non-scalar column makes these decline — they key/aggregate/sort on scalar
-    column values, and nested-value equality/ordering hasn't been validated against Flink yet (a
-    conservatism gate, not a conversion limit: `ArrowConversion` itself, and the Kafka JSON/Avro decode,
-    already carry nested ROW/ARRAY/MAP).
-- **Key types** outside bigint/int/string/boolean/date/timestamp/decimal (joins, OVER, window/group
-  keys).
+- **Scalar leaf types.** Every column (and every nested leaf) must be a type the boundary converter
+  carries: tinyint/smallint/int/bigint/float/double/boolean/char/varchar/timestamp/timestamp-ltz/date/decimal.
+  Anything outside that — `TIME`, interval, raw/binary — falls back. Both gates
+  (`FilterCalcMatcher.convertibleRow` for filter/`Calc`, `RowDataArrowConverter.supports` for the
+  keyed/stateful operators) check this recursively.
+- **Nested `ARRAY`/`MAP`/`ROW` are supported** (recursively, down to supported leaves): carried through
+  filters/projections, and usable as a GROUP BY / join / dedup **key** (the nested value rides the row
+  state as a DataFusion `ScalarValue` and is cast back to its declared column type on emit). What still
+  falls back for a nested column:
+  - **Ordering a nested value** — `MAX`/`MIN` over it, `ORDER BY` it, or a Top-N/sort on it. Flink
+    itself rejects `MAX(array)` and `ORDER BY array`, so this matches the host.
+  - **`COUNT` over a complex value column** (e.g. `COUNT(arr)`) — the group-by reads each value column
+    as a typed numeric (the read happens before the aggregate kind is known), so a non-numeric value
+    column isn't admitted. Flink supports it; we fall back cleanly.
+- **Key types** outside bigint/int/string/boolean/date/timestamp/decimal **(plus the nested types
+  above)** for join/OVER/window/group keys.
 - **Aggregate value types** outside the parity matrix in `aggregate-type-support.md` (esp. decimal
   SUM/AVG).
 

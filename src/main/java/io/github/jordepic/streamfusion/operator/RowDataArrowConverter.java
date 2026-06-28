@@ -44,27 +44,38 @@ public final class RowDataArrowConverter {
    * otherwise.
    */
   public static boolean supports(RowType rowType) {
-    for (LogicalType type : rowType.getChildren()) {
-      switch (type.getTypeRoot()) {
-        case TINYINT:
-        case SMALLINT:
-        case INTEGER:
-        case BIGINT:
-        case FLOAT:
-        case DOUBLE:
-        case BOOLEAN:
-        case CHAR:
-        case VARCHAR:
-        case TIMESTAMP_WITHOUT_TIME_ZONE:
-        case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
-        case DATE:
-        case DECIMAL:
-          break;
-        default:
-          return false;
-      }
+    return rowType.getChildren().stream().allMatch(RowDataArrowConverter::isSupportedType);
+  }
+
+  private static boolean isSupportedType(LogicalType type) {
+    switch (type.getTypeRoot()) {
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+      case FLOAT:
+      case DOUBLE:
+      case BOOLEAN:
+      case CHAR:
+      case VARCHAR:
+      case TIMESTAMP_WITHOUT_TIME_ZONE:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+      case DATE:
+      case DECIMAL:
+        return true;
+      case ARRAY:
+      case MULTISET:
+      case MAP:
+      case ROW:
+        // Nested types ride the Arrow boundary, and a keyed/stateful operator carries them through
+        // its row state via DataFusion ScalarValue (List/Struct/Map); the reconstructed array is cast
+        // back to the declared column type on emit (scalars_to_array). Admitted recursively to
+        // supported leaves. Whether an operator can *order* a nested value is gated separately (a MAX
+        // over an array, or ORDER BY an array, still falls back — Flink rejects those too).
+        return type.getChildren().stream().allMatch(RowDataArrowConverter::isSupportedType);
+      default:
+        return false;
     }
-    return true;
   }
 
   /** Builds an Arrow batch holding {@code rows} under {@code rowType}. The caller closes the root. */

@@ -57,6 +57,41 @@ class FlinkComplexTypeSqlHarnessTest {
         FlinkComplexTypeSqlHarnessTest::rowEnvironment, "SELECT k, r FROM t WHERE k > 1");
   }
 
+  @Test
+  void groupByArrayKeyMatchesHost() throws Exception {
+    // GROUP BY an ARRAY key: rows with an equal array group together (a nested-ScalarValue GroupKey),
+    // and the array key is rebuilt on emit (cast back to its declared column type).
+    assertComplexChangelogParity(
+        FlinkComplexTypeSqlHarnessTest::repeatedArrayEnvironment,
+        "SELECT arr, COUNT(*) FROM t GROUP BY arr");
+  }
+
+  @Test
+  void countOfArrayColumnFallsBack() throws Exception {
+    // COUNT over a complex value column falls back: the group-by reads each value column as a typed
+    // numeric (COUNT only needs null-ness, but the read happens before the kind is known), so a
+    // non-numeric value column isn't admitted. Flink supports it; we fall back cleanly.
+    TableEnvironment nativeEnv = repeatedArrayEnvironment();
+    PhysicalPlanScan scan = NativePlanner.install(nativeEnv);
+    collect(nativeEnv, "SELECT k, COUNT(arr) FROM t GROUP BY k");
+    assertEquals(0, scan.substitutions(), "COUNT over a complex value column should fall back");
+  }
+
+  @Test
+  void joinOnArrayKeyMatchesHost() throws Exception {
+    // Equi-join on an ARRAY key: rows match when their arrays are equal (nested-ScalarValue join key).
+    assertComplexChangelogParity(
+        FlinkComplexTypeSqlHarnessTest::repeatedArrayEnvironment,
+        "SELECT a.k, b.k FROM t a JOIN t b ON a.arr = b.arr");
+  }
+
+  @Test
+  void groupByRowKeyMatchesHost() throws Exception {
+    // GROUP BY a ROW key — a nested-Struct GroupKey.
+    assertComplexChangelogParity(
+        FlinkComplexTypeSqlHarnessTest::rowEnvironment, "SELECT r, COUNT(*) FROM t GROUP BY r");
+  }
+
   /** Runs host vs native, normalizing nested arrays/rows/maps so content (not identity) is compared. */
   private static void assertComplexParity(Supplier<TableEnvironment> environment, String sql)
       throws Exception {
@@ -68,6 +103,45 @@ class FlinkComplexTypeSqlHarnessTest {
 
     assertTrue(scan.substitutions() > 0, "query did not route to native; parity check is moot");
     assertEquals(sorted(host), sorted(nativeRows), "native result differs from host");
+  }
+
+  /** Like {@link #assertComplexParity} but compares the collapsed changelog (for GROUP BY / join). */
+  private static void assertComplexChangelogParity(
+      Supplier<TableEnvironment> environment, String sql) throws Exception {
+    Map<List<Object>, Long> host = collapsed(environment.get(), sql);
+
+    TableEnvironment nativeEnv = environment.get();
+    PhysicalPlanScan scan = NativePlanner.install(nativeEnv);
+    Map<List<Object>, Long> nativeRows = collapsed(nativeEnv, sql);
+
+    assertTrue(scan.substitutions() > 0, "query did not route to native; parity check is moot");
+    assertEquals(host, nativeRows, "collapsed changelog differs from host");
+  }
+
+  private static Map<List<Object>, Long> collapsed(TableEnvironment environment, String sql)
+      throws Exception {
+    Map<List<Object>, Long> counts = new java.util.HashMap<>();
+    try (CloseableIterator<Row> it = environment.executeSql(sql).collect()) {
+      while (it.hasNext()) {
+        Row row = it.next();
+        List<Object> fields = new ArrayList<>(row.getArity());
+        for (int i = 0; i < row.getArity(); i++) {
+          fields.add(normalize(row.getField(i)));
+        }
+        long delta =
+            row.getKind() == org.apache.flink.types.RowKind.DELETE
+                    || row.getKind() == org.apache.flink.types.RowKind.UPDATE_BEFORE
+                ? -1
+                : 1;
+        long next = counts.getOrDefault(fields, 0L) + delta;
+        if (next == 0) {
+          counts.remove(fields);
+        } else {
+          counts.put(fields, next);
+        }
+      }
+    }
+    return counts;
   }
 
   private static List<List<Object>> collect(TableEnvironment environment, String sql)
@@ -130,6 +204,27 @@ class FlinkComplexTypeSqlHarnessTest {
             Row.of(1L, new Long[] {10L, 20L}),
             Row.of(2L, new Long[] {30L}),
             Row.of(3L, new Long[] {40L, 50L, 60L}));
+    tEnv.createTemporaryView(
+        "t",
+        source,
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("arr", DataTypes.ARRAY(DataTypes.BIGINT()))
+            .build());
+    return tEnv;
+  }
+
+  private static TableEnvironment repeatedArrayEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    // Two rows share the array [10,20] so grouping/joining by the array key is actually exercised.
+    DataStream<Row> source =
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"k", "arr"}, Types.LONG, Types.OBJECT_ARRAY(Types.LONG)),
+            Row.of(1L, new Long[] {10L, 20L}),
+            Row.of(2L, new Long[] {10L, 20L}),
+            Row.of(3L, new Long[] {30L}));
     tEnv.createTemporaryView(
         "t",
         source,
