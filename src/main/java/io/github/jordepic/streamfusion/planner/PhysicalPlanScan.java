@@ -304,7 +304,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             partitionColumns,
             DeduplicateMatcher.rowtimeColumn(rank),
             DeduplicateMatcher.keepLast(rank),
-            DeduplicateMatcher.generateUpdateBefore(rank));
+            DeduplicateMatcher.generateUpdateBefore(rank),
+            DeduplicateMatcher.isProctime(rank));
       }
     }
 

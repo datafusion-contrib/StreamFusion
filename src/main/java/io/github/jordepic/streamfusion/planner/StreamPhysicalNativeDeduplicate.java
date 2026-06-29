@@ -13,12 +13,13 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalR
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 
 /**
- * Physical node standing in for a row-time deduplication the native operator runs, the host's
- * {@code ROW_NUMBER() OVER (PARTITION BY … ORDER BY rowtime …) = 1}. Columnar in and out ({@link
- * ColumnarInput} and {@link ColumnarOutput}): the input is shuffled by the partition key (a columnar
- * exchange). Two modes: keep-first (ASC) buffers and, on a watermark, emits each key's minimum-rowtime
- * row insert-only — so it requires an upstream watermark; keep-last (DESC) keeps the maximum-rowtime
- * row and emits a retract changelog eagerly per row — no watermark needed.
+ * Physical node standing in for a deduplication the native operator runs, the host's {@code
+ * ROW_NUMBER() OVER (PARTITION BY … ORDER BY time …) = 1}. Columnar in and out ({@link ColumnarInput}
+ * and {@link ColumnarOutput}): the input is shuffled by the partition key (a columnar exchange).
+ * Modes: rowtime keep-first (ASC) buffers and, on a watermark, emits each key's minimum-rowtime row
+ * insert-only — so it requires an upstream watermark; every other mode (rowtime keep-last, and
+ * proctime keep-first/keep-last) emits eagerly per row with no watermark. Keep-last emits a retract
+ * changelog; keep-first is insert-only.
  */
 public class StreamPhysicalNativeDeduplicate extends SingleRel
     implements StreamPhysicalRel, ColumnarInput, ColumnarOutput {
@@ -28,6 +29,7 @@ public class StreamPhysicalNativeDeduplicate extends SingleRel
   private final int rowtimeColumn;
   private final boolean keepLast;
   private final boolean generateUpdateBefore;
+  private final boolean proctime;
 
   public StreamPhysicalNativeDeduplicate(
       RelOptCluster cluster,
@@ -37,18 +39,21 @@ public class StreamPhysicalNativeDeduplicate extends SingleRel
       int[] partitionColumns,
       int rowtimeColumn,
       boolean keepLast,
-      boolean generateUpdateBefore) {
+      boolean generateUpdateBefore,
+      boolean proctime) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.partitionColumns = partitionColumns;
     this.rowtimeColumn = rowtimeColumn;
     this.keepLast = keepLast;
     this.generateUpdateBefore = generateUpdateBefore;
+    this.proctime = proctime;
   }
 
   @Override
   public boolean requireWatermark() {
-    return !keepLast; // keep-first releases on the watermark; keep-last emits eagerly
+    // Only rowtime keep-first releases on a watermark; proctime modes and keep-last emit eagerly.
+    return !keepLast && !proctime;
   }
 
   @Override
@@ -66,7 +71,8 @@ public class StreamPhysicalNativeDeduplicate extends SingleRel
         partitionColumns,
         rowtimeColumn,
         keepLast,
-        generateUpdateBefore);
+        generateUpdateBefore,
+        proctime);
   }
 
   @Override
@@ -79,6 +85,7 @@ public class StreamPhysicalNativeDeduplicate extends SingleRel
         partitionColumns,
         rowtimeColumn,
         keepLast,
-        generateUpdateBefore);
+        generateUpdateBefore,
+        proctime);
   }
 }

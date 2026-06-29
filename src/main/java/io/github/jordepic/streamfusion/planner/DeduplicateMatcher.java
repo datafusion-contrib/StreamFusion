@@ -11,14 +11,14 @@ import org.apache.flink.table.runtime.operators.rank.ConstantRankRange;
 import org.apache.flink.table.runtime.operators.rank.RankType;
 
 /**
- * Recognizes row-time deduplication: {@code ROW_NUMBER() OVER (PARTITION BY … ORDER BY rowtime …) =
- * 1}. The host plans this as a {@link StreamPhysicalRank} whose sole order key is an event-time
- * attribute and whose range is exactly rank 1 — distinct from a value-ordered Top-N (handled by
- * {@link TopNMatcher}). Ascending is keep-first (Flink's insert-only {@code
- * RowTimeDeduplicateKeepFirstRowFunction}: per key emit the minimum-rowtime row once, on the
- * watermark); descending is keep-last (Flink's {@code RowTimeDeduplicateFunction}: per key keep the
- * maximum-rowtime row, emitting a retract changelog eagerly). A non-time order key is a Top-N, not
- * deduplication.
+ * Recognizes deduplication: {@code ROW_NUMBER() OVER (PARTITION BY … ORDER BY <time> …) = 1}, where
+ * {@code <time>} is a rowtime or proctime attribute. The host plans this as a {@link
+ * StreamPhysicalRank} whose sole order key is a time attribute and whose range is exactly rank 1 —
+ * distinct from a value-ordered Top-N (handled by {@link TopNMatcher}). Ascending is keep-first,
+ * descending is keep-last. Rowtime keep-first ({@code RowTimeDeduplicateKeepFirstRowFunction}) emits
+ * each key's minimum-rowtime row once on the watermark; the other three — rowtime keep-last ({@code
+ * RowTimeDeduplicateFunction}) and proctime keep-first/keep-last ({@code ProcTimeDeduplicateKeep…}) —
+ * emit eagerly in arrival order. A non-time order key is a Top-N, not deduplication.
  */
 final class DeduplicateMatcher {
 
@@ -36,9 +36,9 @@ final class DeduplicateMatcher {
       return false; // exactly the top row per key
     }
     if (rank.orderKey().getFieldCollations().size() != 1) {
-      return false; // a single order key (the rowtime); ascending = keep-first, descending = keep-last
+      return false; // a single order key (the time attribute); ascending = keep-first, descending = keep-last
     }
-    if (!isRowtimeOrder(rank)) {
+    if (!isTimeOrder(rank)) {
       return false; // a non-time order key is a value Top-N, not deduplication
     }
     return RowDataArrowConverter.supports(
@@ -55,15 +55,30 @@ final class DeduplicateMatcher {
     return ChangelogPlanUtils.generateUpdateBefore(rank);
   }
 
-  /** Whether the rank's sole order key is an event-time (rowtime) attribute — the dedup signal. */
-  static boolean isRowtimeOrder(StreamPhysicalRank rank) {
+  /** Whether the rank's sole order key is a time attribute (rowtime or proctime) — the dedup signal. */
+  static boolean isTimeOrder(StreamPhysicalRank rank) {
+    return orderType(rank)
+        .map(
+            type ->
+                FlinkTypeFactory$.MODULE$.isRowtimeIndicatorType(type)
+                    || FlinkTypeFactory$.MODULE$.isProctimeIndicatorType(type))
+        .orElse(false);
+  }
+
+  /** Whether the dedup orders by processing time (arrival order) rather than a rowtime. */
+  static boolean isProctime(StreamPhysicalRank rank) {
+    return orderType(rank)
+        .map(FlinkTypeFactory$.MODULE$::isProctimeIndicatorType)
+        .orElse(false);
+  }
+
+  private static java.util.Optional<RelDataType> orderType(StreamPhysicalRank rank) {
     List<RelFieldCollation> collations = rank.orderKey().getFieldCollations();
     if (collations.size() != 1) {
-      return false;
+      return java.util.Optional.empty();
     }
-    RelDataType orderType =
-        rank.getInput().getRowType().getFieldList().get(collations.get(0).getFieldIndex()).getType();
-    return FlinkTypeFactory$.MODULE$.isRowtimeIndicatorType(orderType);
+    return java.util.Optional.of(
+        rank.getInput().getRowType().getFieldList().get(collations.get(0).getFieldIndex()).getType());
   }
 
   static int[] partitionColumns(StreamPhysicalRank rank) {
@@ -75,7 +90,7 @@ final class DeduplicateMatcher {
   }
 
   static String unsupportedReason(StreamPhysicalRank rank) {
-    return "deduplication: needs ROW_NUMBER() OVER (PARTITION BY … ORDER BY rowtime ASC|DESC) = 1"
-        + " (keep-first or keep-last) over an insert-only input with zero idle-state TTL";
+    return "deduplication: needs ROW_NUMBER() OVER (PARTITION BY … ORDER BY rowtime|proctime ASC|DESC)"
+        + " = 1 (keep-first or keep-last) over an insert-only input with zero idle-state TTL";
   }
 }

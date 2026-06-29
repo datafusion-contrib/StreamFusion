@@ -66,13 +66,16 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   narrow result type). Real gap: proctime ordering. (More than one window group, decimal bounded
   frames, `FOLLOWING` frames, non-time/descending order, and `LAG`/`LEAD` are parity — Flink rejects
   or single-groups them in streaming.)
-- **Deduplication** — rowtime keep-first (`ORDER BY rowtime ASC`, insert-only) and keep-last (`DESC`,
-  retracting) are both native; proctime deduplication falls back.
+- **Deduplication** — all four variants are native: rowtime keep-first (insert-only, watermark-
+  released) and keep-last (retracting), and proctime keep-first/keep-last (arrival order, no
+  watermark). The proctime order key is materialized by the native `PROCTIME()` expression.
 - **Joins** — proctime interval/window joins fall back; a residual non-equi predicate must be
   expressible by the native expression engine.
 - **Sources/sink** — local `file:` path only (Parquet/ORC source, Parquet sink); Kafka decode limited
   (see below); CDC only Debezium/OGG JSON.
-- **Proctime** variants of essentially every event-time operator (dedup, window agg, joins, `OVER`).
+- **Proctime** windows, joins, and `OVER` fall back (their results close on wall-clock timers, so they
+  are non-deterministic and not byte-parity-testable); proctime **deduplication** is native (its
+  result depends only on arrival order, not the clock).
 
 ---
 
@@ -123,8 +126,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   never reach us — Flink rejects them in streaming.)
 - **LIMIT** — missing `FETCH`, or a retracting input (`OFFSET` is handled — it uses the retracting
   ranker over the insert-only input).
-- **Deduplicate** — not a rowtime rank-1 (keep-first `ASC` or keep-last `DESC` are both native);
-  proctime deduplication falls back.
+- **Deduplicate** — not a time-ordered rank-1. Rowtime and proctime, keep-first (`ASC`) and keep-last
+  (`DESC`), are all native; a value-ordered rank-1 is a Top-N (handled separately).
 - **Window Top-N / window dedup** — rank not starting at 1 (an `OFFSET`).
 - **Windowing TVF** — not event-time `TUMBLE`/`HOP`/`CUMULATE` (zero offset) over a local-time-zone
   rowtime.

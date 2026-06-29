@@ -32,6 +32,7 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
   private final int rowtimeColumn;
   private final boolean keepLast;
   private final boolean generateUpdateBefore;
+  private final boolean proctime;
 
   public NativeDeduplicateExecNode(
       ReadableConfig tableConfig,
@@ -41,7 +42,8 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
       int[] partitionColumns,
       int rowtimeColumn,
       boolean keepLast,
-      boolean generateUpdateBefore) {
+      boolean generateUpdateBefore,
+      boolean proctime) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-deduplicate_1"),
@@ -53,6 +55,7 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
     this.rowtimeColumn = rowtimeColumn;
     this.keepLast = keepLast;
     this.generateUpdateBefore = generateUpdateBefore;
+    this.proctime = proctime;
   }
 
   @Override
@@ -61,10 +64,14 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
+    // The eager push→emit operator serves proctime (either keep mode) and rowtime keep-last; only
+    // rowtime keep-first is watermark-buffered (it emits a key's min-rowtime row once a watermark
+    // completes it).
+    boolean eager = proctime || keepLast;
     OneInputStreamOperator<ArrowBatch, ArrowBatch> operator =
-        keepLast
+        eager
             ? new NativeColumnarKeepLastDeduplicateOperator(
-                partitionColumns, rowtimeColumn, generateUpdateBefore)
+                partitionColumns, rowtimeColumn, generateUpdateBefore, !proctime, !keepLast)
             : new NativeColumnarDeduplicateOperator(partitionColumns, rowtimeColumn);
     return ExecNodeUtil.createOneInputTransformation(
         input,

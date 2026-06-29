@@ -530,28 +530,38 @@ public final class Native {
       int[] partitionColumns, int rtColumn, byte[] snapshot);
 
   /**
-   * Creates a keep-last (rowtime) deduplicator and returns an opaque handle. Per partition key it
-   * keeps the maximum-rowtime row and emits a retract changelog eagerly per input row: first row
-   * {@code +I}; a later row (rowtime {@code >=} stored) emits {@code -U}(previous, gated on {@code
-   * generateUpdateBefore}) then {@code +U}(new); an older row is ignored. Released with {@link
-   * #closeKeepLastDeduplicator}.
+   * Creates an eager (push→emit) deduplicator and returns an opaque handle. Per partition key, keep-
+   * last keeps the winning row and emits a retract changelog eagerly per input row (first row {@code
+   * +I}; a replacement emits {@code -U}(previous, gated on {@code generateUpdateBefore})/{@code +U}
+   * (new)); keep-first emits the first row per key ({@code +I}, insert-only) and drops the rest. A
+   * rowtime order ({@code rowtimeOrdered}) reads the rowtime column and keeps the max-rowtime row;
+   * proctime uses arrival order (no rowtime read). Released with {@link #closeKeepLastDeduplicator}.
    */
   public static native long createKeepLastDeduplicator(
-      int[] partitionColumns, int rtColumn, boolean generateUpdateBefore);
+      int[] partitionColumns,
+      int rtColumn,
+      boolean generateUpdateBefore,
+      boolean rowtimeOrdered,
+      boolean keepFirst);
 
-  /** Folds an input batch and returns the retract changelog it produces. */
+  /** Folds an input batch and returns the changelog (or insert-only rows) it produces. */
   public static native void pushKeepLastDeduplicator(
       long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
 
-  /** Releases the keep-last deduplicator and its per-key state. */
+  /** Releases the deduplicator and its per-key state. */
   public static native void closeKeepLastDeduplicator(long handle);
 
-  /** Serializes the keep-last deduplicator's per-key stored rows for a checkpoint. */
+  /** Serializes the deduplicator's per-key stored rows for a checkpoint. */
   public static native byte[] snapshotKeepLastDeduplicator(long handle);
 
-  /** Rebuilds a keep-last deduplicator from a snapshot and returns a fresh handle. */
+  /** Rebuilds an eager deduplicator from a snapshot and returns a fresh handle. */
   public static native long restoreKeepLastDeduplicator(
-      int[] partitionColumns, int rtColumn, boolean generateUpdateBefore, byte[] snapshot);
+      int[] partitionColumns,
+      int rtColumn,
+      boolean generateUpdateBefore,
+      boolean rowtimeOrdered,
+      boolean keepFirst,
+      byte[] snapshot);
 
   /**
    * Creates a window-rank ranker (window Top-N / window deduplication) over the attached

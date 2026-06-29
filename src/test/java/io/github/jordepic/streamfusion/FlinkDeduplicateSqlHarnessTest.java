@@ -40,6 +40,55 @@ class FlinkDeduplicateSqlHarnessTest {
     NativeParity.assertChangelogParity(FlinkDeduplicateSqlHarnessTest::environment, KEEP_LAST);
   }
 
+  // Proctime dedup orders by arrival (no rowtime). Only k,v are projected (the PROCTIME() column is
+  // wall-clock, hence non-deterministic) so the comparison is deterministic at parallelism 1.
+  private static final String KEEP_FIRST_PROCTIME =
+      "SELECT k, v FROM ("
+          + "SELECT *, ROW_NUMBER() OVER (PARTITION BY k ORDER BY pt ASC) AS rn FROM src) WHERE rn = 1";
+
+  private static final String KEEP_LAST_PROCTIME =
+      "SELECT k, v FROM ("
+          + "SELECT *, ROW_NUMBER() OVER (PARTITION BY k ORDER BY pt DESC) AS rn FROM src) WHERE rn = 1";
+
+  @Test
+  void keepFirstProctimeDeduplicationMatchesHost() throws Exception {
+    // Proctime keep-first emits each key's first-arriving row (insert-only): key 1's (v=30), key 2's
+    // (v=50) — by source/arrival order, not rowtime.
+    NativeParity.assertParity(
+        FlinkDeduplicateSqlHarnessTest::proctimeEnvironment, KEEP_FIRST_PROCTIME);
+  }
+
+  @Test
+  void keepLastProctimeDeduplicationMatchesHost() throws Exception {
+    // Proctime keep-last keeps each key's last-arriving row, emitting a retract changelog; the
+    // collapsed result is key 1's (v=25) and key 2's (v=40).
+    NativeParity.assertChangelogParity(
+        FlinkDeduplicateSqlHarnessTest::proctimeEnvironment, KEEP_LAST_PROCTIME);
+  }
+
+  private static TableEnvironment proctimeEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    DataStream<Row> source =
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"k", "v"}, Types.LONG, Types.LONG),
+            Row.of(1L, 30L),
+            Row.of(2L, 50L),
+            Row.of(1L, 20L),
+            Row.of(2L, 40L),
+            Row.of(1L, 25L));
+    tEnv.createTemporaryView(
+        "src",
+        source,
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("v", DataTypes.BIGINT())
+            .columnByExpression("pt", "PROCTIME()")
+            .build());
+    return tEnv;
+  }
+
   private static TableEnvironment environment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);

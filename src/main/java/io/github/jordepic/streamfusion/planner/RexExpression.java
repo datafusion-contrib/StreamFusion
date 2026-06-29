@@ -40,6 +40,11 @@ final class RexExpression {
   private static final int KIND_LIT_TINY = 9;
   // A cast node: payload is the target type code, with one child (the casted expression).
   private static final int KIND_CAST = 11;
+  // PROCTIME(): a nullary call materializing the current processing time as a TIMESTAMP_LTZ(3)
+  // column. Admitting it keeps the planner's `PROCTIME() AS …` projection columnar, which is what
+  // unblocks proctime-ordered operators (dedup, OVER) — those use the column only as an arrival-order
+  // key and project it away, so its (non-deterministic) value is never observed in the output.
+  private static final int KIND_PROCTIME = 12;
 
   // Cast target type codes, mirrored on the native side.
   private static final int CAST_TINYINT = 0;
@@ -288,6 +293,11 @@ final class RexExpression {
     // changing the value — an identity projection of its first operand.
     if (call.getKind() == SqlKind.REINTERPRET) {
       return emit(call.getOperands().get(0));
+    }
+    // PROCTIME() / PROCTIME_MATERIALIZE(): a nullary current-processing-time column.
+    if (call.getOperator().getName().toUpperCase(java.util.Locale.ROOT).contains("PROCTIME")) {
+      add(KIND_PROCTIME, 0, 0);
+      return true;
     }
     if ("COALESCE".equalsIgnoreCase(call.getOperator().getName())) {
       return emitCoalesceAsCase(call.getOperands());

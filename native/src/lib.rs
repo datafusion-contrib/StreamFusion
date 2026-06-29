@@ -5163,28 +5163,45 @@ impl KeepFirstDeduplicator {
     }
 }
 
-/// Keep-last deduplication on a rowtime order — Flink's `RowTimeDeduplicateFunction` (keep-last). Per
-/// partition key it keeps the row with the **maximum** rowtime and emits a retract changelog eagerly,
-/// per input row (no watermark buffering, unlike keep-first): the first row for a key emits `+I`; a
-/// later row whose rowtime is `>=` the stored one replaces it, emitting `-U`(previous, gated on
-/// `generate_update_before`) then `+U`(new); a row with a smaller rowtime is ignored (it is older).
-/// Insert-only input (every row is a put), changelog output. The stored full row per key lives as
-/// scalars and is rebuilt with `scalars_to_array` on emit, like the changelog normalizer below.
+/// Eager (push→emit, no watermark buffering) deduplication keyed by a partition key. Serves three of
+/// the four dedup variants — the watermark-buffered event-time keep-first lives in
+/// {@link KeepFirstDeduplicator}:
+///   * **rowtime keep-last** — Flink's `RowTimeDeduplicateFunction`: keep the **maximum**-rowtime row;
+///     the first row emits `+I`, a later row (rowtime `>=` the stored one) emits `-U`(previous, gated
+///     on `generate_update_before`)/`+U`(new), and a smaller-rowtime row is ignored.
+///   * **proctime keep-last** — Flink's `ProcTimeDeduplicateKeepLastRowFunction`: the same, but in
+///     arrival order, so every later row replaces (no rowtime read or comparison).
+///   * **proctime keep-first** — Flink's `ProcTimeDeduplicateKeepFirstRowFunction`: the first row per
+///     key emits `+I` and every later row is dropped; insert-only output (no `$row_kind$`).
+/// Insert-only input. The stored full row per key lives as scalars and is rebuilt with
+/// `scalars_to_array` on emit, like the changelog normalizer below.
 struct KeepLastDeduplicator {
     partition_columns: Vec<usize>,
     rt_column: usize,
     generate_update_before: bool,
+    /// Whether the order is a rowtime (read + compared) or proctime (arrival order; rt ignored).
+    rowtime_ordered: bool,
+    /// Keep-first (insert-only, first row wins) vs keep-last (retract changelog, latest row wins).
+    keep_first: bool,
     schema: Option<SchemaRef>,
-    /// Per key: the stored row's rowtime (millis) and its full row.
+    /// Per key: the stored row's rowtime (millis, 0 in proctime) and its full row.
     rows: HashMap<GroupKey, (i64, JoinRow)>,
 }
 
 impl KeepLastDeduplicator {
-    fn new(partition_columns: Vec<usize>, rt_column: usize, generate_update_before: bool) -> Self {
+    fn new(
+        partition_columns: Vec<usize>,
+        rt_column: usize,
+        generate_update_before: bool,
+        rowtime_ordered: bool,
+        keep_first: bool,
+    ) -> Self {
         KeepLastDeduplicator {
             partition_columns,
             rt_column,
             generate_update_before,
+            rowtime_ordered,
+            keep_first,
             schema: None,
             rows: HashMap::new(),
         }
@@ -5196,13 +5213,28 @@ impl KeepLastDeduplicator {
         let key_arrays: Vec<&ArrayRef> =
             self.partition_columns.iter().map(|&i| batch.column(i)).collect();
         let data_arrays: Vec<&ArrayRef> = (0..arity).map(|i| batch.column(i)).collect();
-        let rt = rt_to_millis(batch.column(self.rt_column));
+        // The rowtime is read only for a rowtime order; proctime dedup uses arrival order.
+        let rt = self.rowtime_ordered.then(|| rt_to_millis(batch.column(self.rt_column)));
 
         let mut out_rows: Vec<JoinRow> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
         for row in 0..batch.num_rows() {
             let key = read_key(&key_arrays, row);
-            let rowtime = rt.value(row);
+            // keep-first: the first row per key wins, later rows are dropped (insert-only).
+            if self.keep_first {
+                if self.rows.contains_key(&key) {
+                    continue;
+                }
+                let current: JoinRow = data_arrays
+                    .iter()
+                    .map(|a| ScalarValue::try_from_array(a, row).expect("keep-first row scalar"))
+                    .collect();
+                out_rows.push(current.clone());
+                out_kinds.push(0); // +I — first row for the key
+                self.rows.insert(key, (0, current));
+                continue;
+            }
+            let rowtime = rt.as_ref().map_or(0, |rt| rt.value(row));
             let current: JoinRow = data_arrays
                 .iter()
                 .map(|a| ScalarValue::try_from_array(a, row).expect("keep-last row scalar"))
@@ -5212,8 +5244,9 @@ impl KeepLastDeduplicator {
                     out_rows.push(current.clone());
                     out_kinds.push(0); // +I — first row for the key
                 }
-                Some((stored_rt, _)) if rowtime < *stored_rt => {
-                    continue; // an older row by rowtime — keep-last ignores it
+                // A rowtime order ignores an older (smaller-rowtime) row; proctime always replaces.
+                Some((stored_rt, _)) if self.rowtime_ordered && rowtime < *stored_rt => {
+                    continue;
                 }
                 Some((_, prev)) => {
                     if self.generate_update_before {
@@ -5240,8 +5273,12 @@ impl KeepLastDeduplicator {
                 scalars_to_array(out_rows.iter().map(|r| r[j].clone()).collect(), fields[j].data_type())
             })
             .collect();
-        fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
-        columns.push(Arc::new(Int8Array::from(out_kinds)));
+        // Keep-first is insert-only (every emitted row is a +I), so it carries no $row_kind$ column;
+        // keep-last emits a changelog and tags each row's kind.
+        if !self.keep_first {
+            fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
+            columns.push(Arc::new(Int8Array::from(out_kinds)));
+        }
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build keep-last dedup batch")
     }
@@ -5268,22 +5305,30 @@ impl KeepLastDeduplicator {
         partition_columns: Vec<usize>,
         rt_column: usize,
         generate_update_before: bool,
+        rowtime_ordered: bool,
+        keep_first: bool,
         bytes: &[u8],
     ) -> Self {
-        let mut dedup =
-            KeepLastDeduplicator::new(partition_columns, rt_column, generate_update_before);
+        let mut dedup = KeepLastDeduplicator::new(
+            partition_columns,
+            rt_column,
+            generate_update_before,
+            rowtime_ordered,
+            keep_first,
+        );
         for batch in read_ipc_if_present(bytes) {
             dedup.schema = Some(batch.schema());
             let key_arrays: Vec<&ArrayRef> =
                 dedup.partition_columns.iter().map(|&i| batch.column(i)).collect();
-            let rt = rt_to_millis(batch.column(dedup.rt_column));
+            // The stored rowtime matters only to the rowtime keep-last comparison; proctime stores 0.
+            let rt = rowtime_ordered.then(|| rt_to_millis(batch.column(dedup.rt_column)));
             let arity = batch.num_columns();
             for row in 0..batch.num_rows() {
                 let key = read_key(&key_arrays, row);
                 let stored: JoinRow = (0..arity)
                     .map(|i| ScalarValue::try_from_array(batch.column(i), row).expect("restore scalar"))
                     .collect();
-                dedup.rows.insert(key, (rt.value(row), stored));
+                dedup.rows.insert(key, (rt.as_ref().map_or(0, |rt| rt.value(row)), stored));
             }
         }
         dedup
@@ -6196,6 +6241,19 @@ fn build_expr(
                 ));
             }
             build_call(op, args)
+        }
+        // PROCTIME(): the current processing time as a TIMESTAMP_LTZ(3) literal. Stamped once when the
+        // Calc is compiled; the proctime-ordered operators read it only as an arrival-order key (which
+        // they ignore) and project it away, so a fixed value per operator is correct for them.
+        12 => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            datafusion::prelude::Expr::Literal(
+                ScalarValue::TimestampMillisecond(Some(now), Some(Arc::from("UTC"))),
+                None,
+            )
         }
         other => panic!("unsupported expression kind: {other}"),
     }
@@ -7703,7 +7761,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepFi
         as jlong
 }
 
-/// Creates a keep-last (rowtime) deduplicator and returns an opaque handle.
+/// Creates an eager deduplicator (rowtime/proctime keep-last, or proctime keep-first) and returns an
+/// opaque handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createKeepLastDeduplicator<'local>(
     env: JNIEnv<'local>,
@@ -7711,12 +7770,16 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createKeepLas
     partition_columns: JIntArray<'local>,
     rt_column: jint,
     generate_update_before: jboolean,
+    rowtime_ordered: jboolean,
+    keep_first: jboolean,
 ) -> jlong {
     let partitions = read_columns(&env, &partition_columns);
     Box::into_raw(Box::new(KeepLastDeduplicator::new(
         partitions,
         rt_column as usize,
         generate_update_before != 0,
+        rowtime_ordered != 0,
+        keep_first != 0,
     ))) as jlong
 }
 
@@ -7760,7 +7823,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotKeepL
         .into_raw()
 }
 
-/// Rebuilds a keep-last deduplicator from a snapshot and returns a fresh handle.
+/// Rebuilds an eager deduplicator from a snapshot and returns a fresh handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepLastDeduplicator<'local>(
     env: JNIEnv<'local>,
@@ -7768,6 +7831,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepLa
     partition_columns: JIntArray<'local>,
     rt_column: jint,
     generate_update_before: jboolean,
+    rowtime_ordered: jboolean,
+    keep_first: jboolean,
     snapshot: JByteArray<'local>,
 ) -> jlong {
     let partitions = read_columns(&env, &partition_columns);
@@ -7776,6 +7841,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepLa
         partitions,
         rt_column as usize,
         generate_update_before != 0,
+        rowtime_ordered != 0,
+        keep_first != 0,
         &bytes,
     ))) as jlong
 }

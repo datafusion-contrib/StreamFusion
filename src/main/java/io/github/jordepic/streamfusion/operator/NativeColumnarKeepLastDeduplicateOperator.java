@@ -17,13 +17,16 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
 /**
- * Columnar keep-last deduplication (`ROW_NUMBER() OVER (PARTITION BY … ORDER BY rowtime DESC) = 1`):
- * Arrow in, Arrow out. The analog of the host's {@code RowTimeDeduplicateFunction} (keep-last). Per
- * partition key it keeps the maximum-rowtime row and emits a retract changelog **eagerly** on each
- * input batch (no watermark buffering, unlike keep-first): the kernel emits `+I` for a key's first
- * row, and `-U`(previous)/`+U`(new) when a later row replaces it — the row kind rides the batch's
- * {@code $row_kind$} column. Insert-only input, changelog output. Keys are co-located by the columnar
- * shuffle; the per-key stored row and the checkpointed handle state live here.
+ * Columnar eager (push→emit) deduplication: Arrow in, Arrow out. Serves the three non-buffered dedup
+ * variants — rowtime keep-last ({@code RowTimeDeduplicateFunction}), proctime keep-last ({@code
+ * ProcTimeDeduplicateKeepLastRowFunction}), and proctime keep-first ({@code
+ * ProcTimeDeduplicateKeepFirstRowFunction}). Keep-last keeps the winning row per key and emits a
+ * retract changelog eagerly on each input batch ({@code +I} for a key's first row, {@code
+ * -U}(previous)/{@code +U}(new) on replacement — the kind rides the {@code $row_kind$} column);
+ * keep-first emits each key's first row ({@code +I}, insert-only) and drops the rest. A rowtime order
+ * keeps the max-rowtime row; proctime uses arrival order. Insert-only input. Keys are co-located by
+ * the columnar shuffle; the per-key stored row and the checkpointed handle state live here. (Rowtime
+ * keep-first is watermark-buffered — see {@link NativeColumnarDeduplicateOperator}.)
  */
 public class NativeColumnarKeepLastDeduplicateOperator extends AbstractStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
@@ -31,6 +34,8 @@ public class NativeColumnarKeepLastDeduplicateOperator extends AbstractStreamOpe
   private final int[] partitionColumns;
   private final int rowtimeColumn;
   private final boolean generateUpdateBefore;
+  private final boolean rowtimeOrdered;
+  private final boolean keepFirst;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
@@ -38,10 +43,16 @@ public class NativeColumnarKeepLastDeduplicateOperator extends AbstractStreamOpe
   private transient ListState<byte[]> handleState;
 
   public NativeColumnarKeepLastDeduplicateOperator(
-      int[] partitionColumns, int rowtimeColumn, boolean generateUpdateBefore) {
+      int[] partitionColumns,
+      int rowtimeColumn,
+      boolean generateUpdateBefore,
+      boolean rowtimeOrdered,
+      boolean keepFirst) {
     this.partitionColumns = partitionColumns;
     this.rowtimeColumn = rowtimeColumn;
     this.generateUpdateBefore = generateUpdateBefore;
+    this.rowtimeOrdered = rowtimeOrdered;
+    this.keepFirst = keepFirst;
   }
 
   @Override
@@ -60,9 +71,15 @@ public class NativeColumnarKeepLastDeduplicateOperator extends AbstractStreamOpe
     }
     handle =
         snapshot == null
-            ? Native.createKeepLastDeduplicator(partitionColumns, rowtimeColumn, generateUpdateBefore)
+            ? Native.createKeepLastDeduplicator(
+                partitionColumns, rowtimeColumn, generateUpdateBefore, rowtimeOrdered, keepFirst)
             : Native.restoreKeepLastDeduplicator(
-                partitionColumns, rowtimeColumn, generateUpdateBefore, snapshot);
+                partitionColumns,
+                rowtimeColumn,
+                generateUpdateBefore,
+                rowtimeOrdered,
+                keepFirst,
+                snapshot);
   }
 
   @Override
