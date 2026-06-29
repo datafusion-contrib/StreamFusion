@@ -28,6 +28,8 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
   private final int[] keyColumns;
   private final int valueType;
   private final int[] aggregateKinds;
+  private final int frameKind;
+  private final long frameOffset;
 
   public StreamPhysicalNativeOverAggregate(
       RelOptCluster cluster,
@@ -38,7 +40,9 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
       int valueColumn,
       int[] keyColumns,
       int valueType,
-      int[] aggregateKinds) {
+      int[] aggregateKinds,
+      int frameKind,
+      long frameOffset) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.timeColumn = timeColumn;
@@ -46,6 +50,8 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
     this.keyColumns = keyColumns;
     this.valueType = valueType;
     this.aggregateKinds = aggregateKinds;
+    this.frameKind = frameKind;
+    this.frameOffset = frameOffset;
   }
 
   @Override
@@ -62,7 +68,7 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
     return new StreamPhysicalNativeOverAggregate(
         getCluster(), traitSet, inputs.get(0), outputRowType, timeColumn, valueColumn, keyColumns,
-        valueType, aggregateKinds);
+        valueType, aggregateKinds, frameKind, frameOffset);
   }
 
   @Override
@@ -76,6 +82,8 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
         valueColumn,
         keyColumns,
         valueType,
-        aggregateKinds);
+        aggregateKinds,
+        frameKind,
+        frameOffset);
   }
 }

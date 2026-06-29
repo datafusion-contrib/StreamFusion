@@ -884,6 +884,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         int[] keyColumns = OverAggregateMatcher.keyColumns(over);
         int valueType = OverAggregateMatcher.valueTypeCode(over);
         int[] kinds = OverAggregateMatcher.kinds(over);
+        int frameKind = OverAggregateMatcher.frameKind(over);
+        long frameOffset = OverAggregateMatcher.frameOffset(over);
         // Always columnar: the keyed shuffle becomes a native exchange (split by the
         // partition keys); the transition pass transposes below it only when the producer is rowwise.
         return new StreamPhysicalNativeOverAggregate(
@@ -895,7 +897,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             valueColumn,
             keyColumns,
             valueType,
-            kinds);
+            kinds,
+            frameKind,
+            frameOffset);
       }
     }
 

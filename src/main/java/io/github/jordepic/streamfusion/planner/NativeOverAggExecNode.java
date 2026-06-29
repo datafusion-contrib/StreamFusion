@@ -27,6 +27,8 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] keyColumns;
   private final int valueType;
   private final int[] aggregateKinds;
+  private final int frameKind;
+  private final long frameOffset;
 
   public NativeOverAggExecNode(
       ReadableConfig tableConfig,
@@ -37,7 +39,9 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
       int valueColumn,
       int[] keyColumns,
       int valueType,
-      int[] aggregateKinds) {
+      int[] aggregateKinds,
+      int frameKind,
+      long frameOffset) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-over-aggregate_1"),
@@ -50,6 +54,8 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
     this.keyColumns = keyColumns;
     this.valueType = valueType;
     this.aggregateKinds = aggregateKinds;
+    this.frameKind = frameKind;
+    this.frameOffset = frameOffset;
   }
 
   @Override
@@ -61,7 +67,8 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta(TRANSFORMATION, config),
-        new NativeOverAggregateOperator(timeColumn, valueColumn, keyColumns, valueType, aggregateKinds),
+        new NativeOverAggregateOperator(
+            timeColumn, valueColumn, keyColumns, valueType, aggregateKinds, frameKind, frameOffset),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

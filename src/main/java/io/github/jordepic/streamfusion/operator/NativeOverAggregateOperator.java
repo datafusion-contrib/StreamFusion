@@ -33,6 +33,8 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
   private final int[] keyColumns;
   private final int valueType;
   private final int[] aggregateKinds;
+  private final int frameKind;
+  private final long frameOffset;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
@@ -40,12 +42,20 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
   private transient ListState<byte[]> handleState;
 
   public NativeOverAggregateOperator(
-      int timeColumn, int valueColumn, int[] keyColumns, int valueType, int[] aggregateKinds) {
+      int timeColumn,
+      int valueColumn,
+      int[] keyColumns,
+      int valueType,
+      int[] aggregateKinds,
+      int frameKind,
+      long frameOffset) {
     this.timeColumn = timeColumn;
     this.valueColumn = valueColumn;
     this.keyColumns = keyColumns;
     this.valueType = valueType;
     this.aggregateKinds = aggregateKinds;
+    this.frameKind = frameKind;
+    this.frameOffset = frameOffset;
   }
 
   @Override
@@ -64,9 +74,17 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
     }
     handle =
         snapshot == null
-            ? Native.createOverAggregator(valueType, aggregateKinds, timeColumn, valueColumn, keyColumns)
+            ? Native.createOverAggregator(
+                valueType, aggregateKinds, timeColumn, valueColumn, keyColumns, frameKind, frameOffset)
             : Native.restoreOverAggregator(
-                valueType, aggregateKinds, timeColumn, valueColumn, keyColumns, snapshot);
+                valueType,
+                aggregateKinds,
+                timeColumn,
+                valueColumn,
+                keyColumns,
+                frameKind,
+                frameOffset,
+                snapshot);
   }
 
   @Override

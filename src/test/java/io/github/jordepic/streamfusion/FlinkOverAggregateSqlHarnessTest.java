@@ -89,12 +89,69 @@ class FlinkOverAggregateSqlHarnessTest {
   }
 
   @Test
+  void boundedRowsFrameMatchesHost() throws Exception {
+    // ROWS BETWEEN 1 PRECEDING AND CURRENT ROW: each row's aggregate covers only itself and the row
+    // before it within its partition. The native side recomputes over the frame slice rather than the
+    // unbounded running fold. Uses a dedicated source whose rowtimes are strictly positive and
+    // globally distinct (see boundedEnvironment) so every frame is unambiguous.
+    NativeParity.assertParity(
+        FlinkOverAggregateSqlHarnessTest::boundedEnvironment,
+        "SELECT k, v, SUM(v) OVER w AS s, MIN(v) OVER w AS lo, MAX(v) OVER w AS hi, "
+            + "COUNT(v) OVER w AS c FROM src "
+            + "WINDOW w AS (PARTITION BY k ORDER BY rt ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)");
+  }
+
+  @Test
+  void boundedRowsFrameUnpartitionedMatchesHost() throws Exception {
+    // ROWS BETWEEN 2 PRECEDING over the whole stream: with globally distinct rowtimes the frame is the
+    // current row and the two before it in rowtime order.
+    NativeParity.assertParity(
+        FlinkOverAggregateSqlHarnessTest::boundedEnvironment,
+        "SELECT v, SUM(v) OVER (ORDER BY rt ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS s FROM src");
+  }
+
+  @Test
   void booleanPartitionKeyMatchesHost() throws Exception {
     // PARTITION BY a boolean key — exercises the wider partition-key set (the native key path is
     // type-general; boolean/date/timestamp/decimal are admitted, not just bigint/int/string).
     NativeParity.assertParity(
         FlinkOverAggregateSqlHarnessTest::environment,
         "SELECT b, v, SUM(v) OVER (PARTITION BY b ORDER BY rt) AS total FROM src");
+  }
+
+  /**
+   * A source for the bounded-frame tests: rowtimes strictly positive and globally distinct
+   * (1000/1500/2000/2500/3000 ms), so every ROWS frame is unambiguous and none hit Flink's bounded
+   * OVER epoch-0 late-drop quirk (it seeds {@code lastTriggeringTs = 0}, dropping a rowtime-0 row,
+   * which cannot occur with real epoch-millis rowtimes).
+   */
+  private static TableEnvironment boundedEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    DataStream<Row> source =
+        env.fromData(
+                Types.ROW_NAMED(
+                    new String[] {"k", "v", "ts"}, Types.LONG, Types.LONG, Types.LONG),
+                Row.of(1L, 10L, 1000L),
+                Row.of(2L, 20L, 1500L),
+                Row.of(1L, 30L, 2000L),
+                Row.of(2L, 40L, 2500L),
+                Row.of(1L, 50L, 3000L))
+            .assignTimestampsAndWatermarks(
+                WatermarkStrategy.<Row>forBoundedOutOfOrderness(java.time.Duration.ofSeconds(5))
+                    .withTimestampAssigner((row, ts) -> (Long) row.getField(2)));
+    tEnv.createTemporaryView(
+        "src",
+        source,
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("v", DataTypes.BIGINT())
+            .column("ts", DataTypes.BIGINT())
+            .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
+            .watermark("rt", "SOURCE_WATERMARK()")
+            .build());
+    return tEnv;
   }
 
   private static TableEnvironment environment() {

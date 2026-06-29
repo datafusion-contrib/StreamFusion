@@ -435,9 +435,18 @@ public final class Native {
    * @param rtColumn rowtime column index in the input batch
    * @param valueColumn value column index in the input batch
    * @param keyColumns PARTITION BY column indices in the input batch (empty for no partition)
+   * @param frameKind frame shape: 0 = RANGE unbounded preceding, 1 = bounded ROWS, 2 = bounded RANGE
+   * @param frameOffset n preceding rows (ROWS) or the preceding interval in millis (RANGE); 0 when
+   *     unbounded
    */
   public static native long createOverAggregator(
-      int valueType, int[] aggregateKinds, int rtColumn, int valueColumn, int[] keyColumns);
+      int valueType,
+      int[] aggregateKinds,
+      int rtColumn,
+      int valueColumn,
+      int[] keyColumns,
+      int frameKind,
+      long frameOffset);
 
   /** Buffers an input batch; its rows are emitted later when a watermark completes them. */
   public static native void pushOverAggregator(
@@ -463,6 +472,8 @@ public final class Native {
       int rtColumn,
       int valueColumn,
       int[] keyColumns,
+      int frameKind,
+      long frameOffset,
       byte[] snapshot);
 
   /**

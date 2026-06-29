@@ -6,7 +6,9 @@ import org.apache.calcite.rel.core.Window;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexWindowBound;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
@@ -14,11 +16,13 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalO
 
 /**
  * Recognizes the event-time {@code OVER} aggregations the native operator implements: a single
- * window group ordered by a rowtime (local-time-zone) attribute, the default {@code RANGE BETWEEN
- * UNBOUNDED PRECEDING AND CURRENT ROW} frame, optional {@code PARTITION BY} on bigint/int/string/boolean/date/timestamp/decimal
- * keys, and one or more {@code SUM}/{@code MIN}/{@code MAX}/{@code COUNT}/{@code FIRST_VALUE}/{@code
- * LAST_VALUE} aggregates that all read the same bigint/int/double value column. Anything else (ROWS
- * frame, a bounded frame, proctime, AVG, multiple value columns, an unsupported key type) falls back.
+ * window group ordered by a rowtime (local-time-zone) attribute, optional {@code PARTITION BY} on
+ * bigint/int/string/boolean/date/timestamp/decimal keys, and one or more {@code SUM}/{@code MIN}/{@code
+ * MAX}/{@code COUNT}/{@code FIRST_VALUE}/{@code LAST_VALUE} aggregates that all read the same
+ * bigint/int/double value column, over one of two frames ending at the current row: {@code RANGE
+ * UNBOUNDED PRECEDING} (a persistent running fold) or {@code ROWS BETWEEN n PRECEDING AND CURRENT ROW}
+ * (recomputed over the frame slice). Anything else (a bounded RANGE frame, proctime, AVG, multiple
+ * value columns, an unsupported key type) falls back.
  */
 final class OverAggregateMatcher {
 
@@ -42,9 +46,8 @@ final class OverAggregateMatcher {
         return "OVER: PARTITION BY only on bigint/int/string/boolean/date/timestamp/decimal keys";
       }
     }
-    if (!(group.lowerBound.isUnbounded() && group.lowerBound.isPreceding())
-        || !group.upperBound.isCurrentRow()) {
-      return "OVER: only the UNBOUNDED PRECEDING .. CURRENT ROW frame";
+    if (!group.upperBound.isCurrentRow()) {
+      return "OVER: only frames ending at CURRENT ROW";
     }
     Integer order = orderColumn(group);
     if (order == null
@@ -52,16 +55,69 @@ final class OverAggregateMatcher {
             inputType.getFieldList().get(order).getType())) {
       return "OVER: requires exactly one ascending event-time (rowtime) order column";
     }
-    // Window functions (ROW_NUMBER) are computed per partition with no value column and use a ROWS
-    // frame; aggregates use a RANGE frame over a single shared value column.
+    // Window functions (ROW_NUMBER) are computed per partition with no value column over the default
+    // ROWS UNBOUNDED PRECEDING frame.
     if (allWindowFunctions(group)) {
-      return null;
+      if (group.lowerBound.isUnbounded() && group.lowerBound.isPreceding()) {
+        return null;
+      }
+      return "OVER: window functions need the UNBOUNDED PRECEDING .. CURRENT ROW frame";
     }
-    if (group.isRows || valueColumn(group, inputType) == null) {
-      return "OVER: aggregates need a RANGE frame over one shared bigint/int/double value column"
-          + " (ROWS frame, AVG, or multiple value columns not supported)";
+    if (valueColumn(group, inputType) == null) {
+      return "OVER: aggregates need a single shared bigint/int/double value column"
+          + " (AVG or multiple value columns not supported)";
+    }
+    // Bounded ROWS (n PRECEDING) recomputes per row over the frame slice; RANGE is currently only the
+    // unbounded-preceding running fold (bounded RANGE is Phase 2).
+    if (group.isRows) {
+      if (group.lowerBound.isUnbounded() || !group.lowerBound.isPreceding()
+          || boundOffset(group.lowerBound, window, inputType.getFieldCount()) == null) {
+        return "OVER: ROWS frame must be BETWEEN n PRECEDING AND CURRENT ROW";
+      }
+    } else if (!(group.lowerBound.isUnbounded() && group.lowerBound.isPreceding())) {
+      return "OVER: RANGE frame must be UNBOUNDED PRECEDING .. CURRENT ROW";
     }
     return null;
+  }
+
+  /** Frame shape code: 0 = RANGE unbounded preceding, 1 = bounded ROWS (n preceding). */
+  static int frameKind(StreamPhysicalOverAggregate over) {
+    Window.Group group = over.logicWindow().groups.get(0);
+    return !allWindowFunctions(group) && group.isRows ? 1 : 0;
+  }
+
+  /** The bounded-frame offset: n preceding rows for a ROWS frame, else 0 (unbounded). */
+  static long frameOffset(StreamPhysicalOverAggregate over) {
+    Window window = over.logicWindow();
+    Window.Group group = window.groups.get(0);
+    if (!allWindowFunctions(group) && group.isRows) {
+      Long offset = boundOffset(group.lowerBound, window, over.getInput().getRowType().getFieldCount());
+      return offset == null ? 0 : offset;
+    }
+    return 0;
+  }
+
+  /**
+   * The constant offset of a {@code n PRECEDING} bound, or null if it is not a numeric constant. The
+   * planner hoists the literal into {@link Window#constants} and the bound references it as an input
+   * ref past the input columns (index {@code inputFieldCount + constantIndex}).
+   */
+  private static Long boundOffset(RexWindowBound bound, Window window, int inputFieldCount) {
+    RexNode offset = bound.getOffset();
+    RexLiteral literal = null;
+    if (offset instanceof RexLiteral) {
+      literal = (RexLiteral) offset;
+    } else if (offset instanceof RexInputRef) {
+      int constant = ((RexInputRef) offset).getIndex() - inputFieldCount;
+      if (constant >= 0 && constant < window.constants.size()) {
+        literal = window.constants.get(constant);
+      }
+    }
+    if (literal == null) {
+      return null;
+    }
+    Number value = literal.getValueAs(Long.class);
+    return value == null ? null : value.longValue();
   }
 
   /** Whether every aggregate in the group is a supported non-aggregate window function. */

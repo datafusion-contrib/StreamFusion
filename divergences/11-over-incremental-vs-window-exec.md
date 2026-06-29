@@ -1,7 +1,8 @@
 # Event-time OVER: incremental accumulators, not a DataFusion window exec
 
 **Kind:** algorithmic — internal implementation differs; output is identical.
-**Diverges from:** Arroyo.
+**Diverges from:** Arroyo (unbounded frame); Flink (bounded ROWS frame — recompute vs
+retraction, see below).
 **Forced by parity:** partially — the *unbounded-preceding* frame makes the
 incremental model strictly necessary for bounded memory; matching Flink's
 streaming OVER operator is the prime directive either way.
@@ -67,12 +68,37 @@ serialized for checkpointing, matching Flink's `OverAggregate` exactly. For
 `ROW_NUMBER` this is identical to DataFusion's own evaluator (`n+1`), so nothing is
 re-derived; for the others the logic is small and Flink-defined.
 
+## Bounded ROWS frame — recompute over the slice, not incremental retraction
+The `ROWS BETWEEN n PRECEDING AND CURRENT ROW` frame is *bounded*: rows fall off
+the trailing edge as the window slides. The unbounded incremental accumulator above
+cannot serve it, because `MIN`/`MAX` are not retractable — once the running extreme
+leaves the frame there is no way to recover the new extreme without the underlying
+values. Flink's `RowTimeRowsBoundedPrecedingFunction` solves this by keeping the
+frame's rows in `MapState` and a **retractable** accumulator, retracting each row as
+it leaves.
+
+We take the model **RisingWave defaults to** instead: keep a per-key sorted buffer of
+the rows still reachable by some future frame and **recompute** each emitted row's
+aggregate over its frame slice with a fresh accumulator. The result is identical to
+Flink (both aggregate over the same frame extent), and recompute sidesteps the
+non-retractable-`MIN`/`MAX` problem entirely — the bounded path reuses the same
+`RunningAgg` fold the unbounded path uses, just folded fresh per row over
+`buffer[lo..=i]` rather than once cumulatively. Cost is O(frame size) per row, fine
+for a bounded frame; the trailing edge is evicted (ROWS: keep the last `n` rows per
+key) so memory stays bounded. This is an **algorithmic** divergence from Flink's
+retraction-based operator with **identical output** — chosen because it is simpler and
+correct where incremental retraction would need a MIN/MAX value multiset we do not keep.
+
+Flink seeds `lastTriggeringTs = 0` in this operator and drops a row whose rowtime is
+`<= 0` as late; with real epoch-millis rowtimes that never fires, and we do not
+reproduce the epoch-0 quirk (a rowtime-0 row is processed normally).
+
 ## Scope
 Running aggregates (`SUM`/`MIN`/`MAX`/`COUNT`/`AVG`; `AVG` via Flink's
-`$SUM0`+`COUNT` with the divide on the host) and the window functions
-`ROW_NUMBER`/`RANK`/`DENSE_RANK`. Bounded frames and proctime fall back.
-`FIRST_VALUE`/`LAST_VALUE` are next (they need the value column threaded through and
-RANGE tie handling — the last value in a tie group is shared).
+`$SUM0`+`COUNT` with the divide on the host), `FIRST_VALUE`/`LAST_VALUE`, and the
+window functions `ROW_NUMBER`/`RANK`/`DENSE_RANK`, over the unbounded `RANGE` frame or
+the bounded `ROWS n PRECEDING` frame. A bounded-`RANGE` (time-interval) frame and
+proctime fall back.
 
 ## Verification
 Parity harness: running aggregates and `ROW_NUMBER`, partitioned and not, over

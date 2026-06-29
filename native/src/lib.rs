@@ -1584,6 +1584,207 @@ impl OverAggregator {
     }
 }
 
+/// One buffered row of a bounded-frame OVER partition: its rowtime and the single OVER value (None =
+/// null, which the aggregates skip). Held until it can no longer fall inside any future row's frame.
+#[derive(Clone, Copy)]
+struct BufferedRow {
+    rt: i64,
+    value: Option<Num>,
+}
+
+/// Bounded-frame event-time OVER (`ROWS BETWEEN n PRECEDING AND CURRENT ROW`, or `RANGE BETWEEN
+/// INTERVAL x PRECEDING AND CURRENT ROW`). Unlike the unbounded {@link OverAggregator}, which folds a
+/// single persistent accumulator per key, a bounded frame drops rows off its trailing edge — so the
+/// running value cannot be maintained incrementally for MIN/MAX (they would need a retractable
+/// multiset). Instead this keeps a per-key sorted buffer of the rows still reachable by some future
+/// frame and **recomputes** each emitted row's aggregate over its frame slice with a fresh
+/// {@link RunningAgg}. The result is byte-identical to Flink's `*BoundedPrecedingFunction` (both
+/// aggregate over the same frame) and sidesteps MIN/MAX retraction entirely. See divergences/11.
+struct BoundedOverAggregator {
+    kinds: Vec<i64>,
+    value_type: DataType,
+    /// true = ROWS (count of rows), false = RANGE (rowtime interval).
+    rows_frame: bool,
+    /// n preceding rows (ROWS) or the preceding interval in millis (RANGE).
+    offset: i64,
+    /// Per key, the buffered rows sorted ascending by rowtime (stable for ties).
+    keys: HashMap<GroupKey, Vec<BufferedRow>>,
+    key_types: Vec<DataType>,
+}
+
+impl BoundedOverAggregator {
+    fn new(value_type: i64, kinds: Vec<i64>, rows_frame: bool, offset: i64) -> Self {
+        BoundedOverAggregator {
+            kinds,
+            value_type: value_data_type(value_type),
+            rows_frame,
+            offset,
+            keys: HashMap::new(),
+            key_types: Vec::new(),
+        }
+    }
+
+    /// Folds the batch (`rt` i64, `value`, optional `key0..`) into the per-key buffer and returns
+    /// `[result0..]` per input row, each computed by recomputing the aggregate over that row's frame.
+    fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
+        let rt = column_i64(batch, "rt");
+        let value = batch.column_by_name("value").expect("missing value column");
+        let value_column = match self.value_type {
+            DataType::Int64 => ValueColumn::I64(value.as_any().downcast_ref().expect("int64 value")),
+            DataType::Int32 => ValueColumn::I32(value.as_any().downcast_ref().expect("int32 value")),
+            DataType::Float64 => {
+                ValueColumn::F64(value.as_any().downcast_ref().expect("float64 value"))
+            }
+            ref other => panic!("unsupported bounded OVER value type: {other:?}"),
+        };
+        let key_arrays = key_arrays(batch);
+        self.key_types = key_types(&key_arrays);
+        let n = batch.num_rows();
+        let num_agg = self.kinds.len();
+        let row_keys: Vec<GroupKey> = (0..n).map(|row| read_key(&key_arrays, row)).collect();
+
+        // Append the new rows to their per-key buffers in rowtime order (stable for ties). Every new
+        // row's rowtime is past the prior watermark, hence at or after all already-buffered rows, so
+        // appending in this order keeps each buffer sorted. Record where each input row landed.
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by_key(|&row| rt.value(row));
+        let mut buffer_index = vec![0usize; n];
+        let mut max_rt = i64::MIN;
+        for &row in &order {
+            let row_rt = rt.value(row);
+            max_rt = max_rt.max(row_rt);
+            let buffer = self.keys.entry(row_keys[row].clone()).or_default();
+            buffer.push(BufferedRow { rt: row_rt, value: value_column.at(row) });
+            buffer_index[row] = buffer.len() - 1;
+        }
+
+        let mut results: Vec<Vec<ScalarValue>> = vec![vec![ScalarValue::Null; n]; num_agg];
+        for row in 0..n {
+            let buffer = &self.keys[&row_keys[row]];
+            let upper = buffer_index[row];
+            let lower = if self.rows_frame {
+                upper.saturating_sub(self.offset as usize)
+            } else {
+                let bound = buffer[upper].rt - self.offset;
+                buffer.partition_point(|r| r.rt < bound)
+            };
+            let mut aggs: Vec<RunningAgg> =
+                self.kinds.iter().map(|&k| RunningAgg::new(k, &self.value_type)).collect();
+            for r in &buffer[lower..=upper] {
+                if let Some(v) = r.value {
+                    for agg in aggs.iter_mut() {
+                        agg.fold(v);
+                    }
+                }
+            }
+            for (a, agg) in aggs.iter().enumerate() {
+                results[a][row] = agg.emit();
+            }
+        }
+
+        self.evict(max_rt);
+
+        let mut fields = Vec::with_capacity(num_agg);
+        let mut columns: Vec<ArrayRef> = Vec::with_capacity(num_agg);
+        for (a, &kind) in self.kinds.iter().enumerate() {
+            let result_type = RunningAgg::new(kind, &self.value_type).result_type();
+            fields.push(Field::new(format!("result{a}"), result_type.clone(), true));
+            columns.push(scalars_to_array(std::mem::take(&mut results[a]), &result_type));
+        }
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build bounded over result batch")
+    }
+
+    /// Drops buffered rows that can no longer fall inside any future row's frame. A future row's
+    /// rowtime exceeds `max_rt` (it has not completed yet), so for RANGE keep rows whose rowtime is at
+    /// or after `max_rt - offset`; for ROWS keep the most recent `offset` rows (the deepest any future
+    /// frame can reach back). Empty partitions are removed to bound memory.
+    fn evict(&mut self, max_rt: i64) {
+        let (rows_frame, offset) = (self.rows_frame, self.offset);
+        self.keys.retain(|_, buffer| {
+            if rows_frame {
+                let keep = offset as usize;
+                if buffer.len() > keep {
+                    buffer.drain(0..buffer.len() - keep);
+                }
+            } else {
+                let bound = max_rt - offset;
+                let cut = buffer.partition_point(|r| r.rt < bound);
+                if cut > 0 {
+                    buffer.drain(0..cut);
+                }
+            }
+            !buffer.is_empty()
+        });
+    }
+
+    /// Serializes the per-key buffer (`[key0.., rt, value]`, one row per buffered row).
+    fn snapshot(&mut self) -> Vec<u8> {
+        let mut keys: Vec<GroupKey> = Vec::new();
+        let mut rts: Vec<ScalarValue> = Vec::new();
+        let mut values: Vec<ScalarValue> = Vec::new();
+        for (key, buffer) in self.keys.iter() {
+            for row in buffer {
+                keys.push(key.clone());
+                rts.push(ScalarValue::Int64(Some(row.rt)));
+                values.push(num_to_scalar(&self.value_type, row.value));
+            }
+        }
+        let mut fields = key_fields(&self.key_types);
+        let mut columns = key_columns(&keys, &self.key_types);
+        fields.push(Field::new("rt", DataType::Int64, false));
+        columns.push(scalars_to_array(rts, &DataType::Int64));
+        fields.push(Field::new("value", self.value_type.clone(), true));
+        columns.push(scalars_to_array(values, &self.value_type));
+        write_ipc(&RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build bounded over snapshot batch"))
+    }
+
+    fn restore(value_type: i64, kinds: Vec<i64>, rows_frame: bool, offset: i64, bytes: &[u8]) -> Self {
+        let mut aggregator = BoundedOverAggregator::new(value_type, kinds, rows_frame, offset);
+        for batch in read_ipc(bytes) {
+            let arity = batch.num_columns() - 2; // trailing rt + value columns
+            let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
+            aggregator.key_types = key_types(&key_arrays);
+            let rt = column_i64(&batch, "rt");
+            let value = batch.column_by_name("value").expect("missing value column");
+            for row in 0..batch.num_rows() {
+                let key = read_key(&key_arrays, row);
+                let scalar = ScalarValue::try_from_array(value, row).expect("bounded over value");
+                aggregator
+                    .keys
+                    .entry(key)
+                    .or_default()
+                    .push(BufferedRow { rt: rt.value(row), value: num_from_scalar(&scalar) });
+            }
+        }
+        aggregator
+    }
+}
+
+/// A single OVER value as a typed Arrow scalar of the value column's type (null = no value).
+fn num_to_scalar(value_type: &DataType, num: Option<Num>) -> ScalarValue {
+    match (value_type, num) {
+        (_, Some(Num::I64(v))) => ScalarValue::Int64(Some(v)),
+        (_, Some(Num::I32(v))) => ScalarValue::Int32(Some(v)),
+        (_, Some(Num::F64(v))) => ScalarValue::Float64(Some(v)),
+        (DataType::Int64, None) => ScalarValue::Int64(None),
+        (DataType::Int32, None) => ScalarValue::Int32(None),
+        (DataType::Float64, None) => ScalarValue::Float64(None),
+        (other, _) => panic!("unsupported bounded OVER value type: {other:?}"),
+    }
+}
+
+/// Reads a typed Arrow scalar back into an OVER value (null → None, skipped by the aggregates).
+fn num_from_scalar(scalar: &ScalarValue) -> Option<Num> {
+    match scalar {
+        ScalarValue::Int64(v) => v.map(Num::I64),
+        ScalarValue::Int32(v) => v.map(Num::I32),
+        ScalarValue::Float64(v) => v.map(Num::F64),
+        other => panic!("unsupported bounded OVER value scalar: {other:?}"),
+    }
+}
+
 /// The hidden column carrying a changelog row's `RowKind` as a byte across the row/Arrow boundary
 /// (must match the JVM converter's column name). See divergences/13.
 const ROW_KIND_COLUMN: &str = "$row_kind$";
@@ -2437,21 +2638,31 @@ impl WindowFunctionOver {
 /// sub-batch and return one result column per output, in input row order.
 enum OverInner {
     Aggregates(OverAggregator),
+    Bounded(BoundedOverAggregator),
     WindowFunctions(WindowFunctionOver),
 }
 
 impl OverInner {
-    fn new(value_type: i64, kinds: Vec<i64>) -> Self {
+    fn new(value_type: i64, kinds: Vec<i64>, frame_kind: i64, frame_offset: i64) -> Self {
         if kinds.iter().all(|&k| is_window_function_kind(k)) {
             OverInner::WindowFunctions(WindowFunctionOver::new(kinds))
-        } else {
+        } else if frame_kind == 0 {
             OverInner::Aggregates(OverAggregator::new(value_type, kinds))
+        } else {
+            // frame_kind 1 = bounded ROWS, 2 = bounded RANGE.
+            OverInner::Bounded(BoundedOverAggregator::new(
+                value_type,
+                kinds,
+                frame_kind == 1,
+                frame_offset,
+            ))
         }
     }
 
     fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
         match self {
             OverInner::Aggregates(inner) => inner.update(batch),
+            OverInner::Bounded(inner) => inner.update(batch),
             OverInner::WindowFunctions(inner) => inner.update(batch),
         }
     }
@@ -2459,15 +2670,24 @@ impl OverInner {
     fn snapshot(&mut self) -> Vec<u8> {
         match self {
             OverInner::Aggregates(inner) => inner.snapshot(),
+            OverInner::Bounded(inner) => inner.snapshot(),
             OverInner::WindowFunctions(inner) => inner.snapshot(),
         }
     }
 
-    fn restore(value_type: i64, kinds: Vec<i64>, bytes: &[u8]) -> Self {
+    fn restore(value_type: i64, kinds: Vec<i64>, frame_kind: i64, frame_offset: i64, bytes: &[u8]) -> Self {
         if kinds.iter().all(|&k| is_window_function_kind(k)) {
             OverInner::WindowFunctions(WindowFunctionOver::restore(kinds, bytes))
-        } else {
+        } else if frame_kind == 0 {
             OverInner::Aggregates(OverAggregator::restore(value_type, kinds, bytes))
+        } else {
+            OverInner::Bounded(BoundedOverAggregator::restore(
+                value_type,
+                kinds,
+                frame_kind == 1,
+                frame_offset,
+                bytes,
+            ))
         }
     }
 }
@@ -2494,9 +2714,11 @@ impl OverWindowAggregator {
         rt_column: usize,
         value_column: Option<usize>,
         key_columns: Vec<usize>,
+        frame_kind: i64,
+        frame_offset: i64,
     ) -> Self {
         OverWindowAggregator {
-            inner: OverInner::new(value_type, kinds),
+            inner: OverInner::new(value_type, kinds, frame_kind, frame_offset),
             rt_column,
             value_column,
             key_columns,
@@ -2584,10 +2806,13 @@ impl OverWindowAggregator {
         rt_column: usize,
         value_column: Option<usize>,
         key_columns: Vec<usize>,
+        frame_kind: i64,
+        frame_offset: i64,
         bytes: &[u8],
     ) -> Self {
         let accumulators_len = u32::from_le_bytes(bytes[0..4].try_into().expect("len")) as usize;
-        let inner = OverInner::restore(value_type, kinds, &bytes[4..4 + accumulators_len]);
+        let inner =
+            OverInner::restore(value_type, kinds, frame_kind, frame_offset, &bytes[4..4 + accumulators_len]);
         let mut aggregator = OverWindowAggregator {
             inner,
             rt_column,
@@ -7098,6 +7323,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createOverAgg
     rt_column: jint,
     value_column: jint,
     key_columns: JIntArray<'local>,
+    frame_kind: jint,
+    frame_offset: jlong,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
     let keys = read_columns(&env, &key_columns);
@@ -7107,6 +7334,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createOverAgg
         rt_column as usize,
         if value_column < 0 { None } else { Some(value_column as usize) },
         keys,
+        frame_kind as i64,
+        frame_offset,
     ))) as jlong
 }
 
@@ -7173,6 +7402,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreOverAg
     rt_column: jint,
     value_column: jint,
     key_columns: JIntArray<'local>,
+    frame_kind: jint,
+    frame_offset: jlong,
     snapshot: JByteArray<'local>,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
@@ -7184,6 +7415,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreOverAg
         rt_column as usize,
         if value_column < 0 { None } else { Some(value_column as usize) },
         keys,
+        frame_kind as i64,
+        frame_offset,
         &bytes,
     ))) as jlong
 }
@@ -9842,7 +10075,7 @@ pub mod bench {
             value_column: Option<usize>,
             key_columns: Vec<usize>,
         ) -> Self {
-            Over(OverWindowAggregator::new(value_type, kinds, rt_column, value_column, key_columns))
+            Over(OverWindowAggregator::new(value_type, kinds, rt_column, value_column, key_columns, 0, 0))
         }
 
         pub fn push(&mut self, batch: RecordBatch) {
@@ -10381,7 +10614,7 @@ mod tests {
             Field::new("rt", DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None), false),
         ]));
         let batch = RecordBatch::try_new(schema, vec![k, v, rt]).unwrap();
-        let mut over = OverWindowAggregator::new(0, vec![0], 2, Some(1), vec![0]);
+        let mut over = OverWindowAggregator::new(0, vec![0], 2, Some(1), vec![0], 0, 0);
         over.push(batch);
         // Watermark 2000ms completes the first three rows (rt 0/1000/500); the rt=9000 row stays.
         let out = over.flush(2000);
@@ -10395,6 +10628,34 @@ mod tests {
         assert_eq!(rest.num_rows(), 1);
         assert_eq!(values(&rest, 1), vec![40]); // v
         assert_eq!(values(&rest, 3), vec![70]); // key 1 running sum 10+20+40
+    }
+
+    // Bounded ROWS frame (1 PRECEDING): each row's SUM covers only itself and the row before it
+    // within its partition, recomputed over the frame slice — and the trailing edge drops older rows.
+    #[test]
+    fn bounded_rows_over_sums_the_frame_slice() {
+        let k: ArrayRef = Arc::new(Int64Array::from(vec![1i64, 1, 1, 2]));
+        let v: ArrayRef = Arc::new(Int64Array::from(vec![10i64, 20, 30, 100]));
+        let rt: ArrayRef = Arc::new(TimestampNanosecondArray::from(vec![
+            0i64,
+            1_000_000_000,
+            2_000_000_000,
+            500_000_000,
+        ]));
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("k", DataType::Int64, false),
+            Field::new("v", DataType::Int64, true),
+            Field::new("rt", DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None), false),
+        ]));
+        let batch = RecordBatch::try_new(schema, vec![k, v, rt]).unwrap();
+        // frame_kind 1 = bounded ROWS, offset 1 = one preceding row.
+        let mut over = OverWindowAggregator::new(0, vec![0], 2, Some(1), vec![0], 1, 1);
+        over.push(batch);
+        let out = over.flush(2000);
+        assert_eq!(out.num_rows(), 4);
+        // SUM over {self, prev}: key 1 -> 10, 10+20, 20+30; key 2 (lone row) -> 100.
+        assert_eq!(values(&out, 1), vec![10, 20, 30, 100]); // v passed through
+        assert_eq!(values(&out, 3), vec![10, 30, 50, 100]);
     }
 
     // Two-phase cumulative: per-slice SUM partials merge into the nested windows of their bucket.
