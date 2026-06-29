@@ -31,8 +31,7 @@ These have no matcher; any query containing one falls back entirely.
 | Operator | SQL surface |
 |---|---|
 | `Correlate` | lateral table functions, and `UNNEST` with a pushed condition the expression engine can't encode (or any condition over a LEFT unnest). INNER **or LEFT** `UNNEST` of a single `ARRAY` (scalar or `ROW` element, flattened), `MAP` (key+value), or `MULTISET` (element by count) column — optionally `WITH ORDINALITY`, INNER including a pushed element filter — **is** supported (see the chart). |
-| `TemporalJoin` | `FOR SYSTEM_TIME AS OF` versioned-table join |
-| `LookupJoin` | dimension-table / async lookup join |
+| `LookupJoin` | dimension-table / async lookup join — an **intentional** architectural fallback, not a gap to close. Its work is an external I/O call into a host-Java `LookupFunction` (JDBC/HBase/…), not vectorizable compute, and the async path needs Flink's `AsyncWaitOperator` + mailbox purely for ordered emit; running it inside the all-or-nothing island would mean JNI-upcalling the JVM connector per batch. (Arroyo can do this natively only because *its* connectors are native Rust; Flink's are JVM.) |
 | `Match` | `MATCH_RECOGNIZE` (CEP / row-pattern) |
 | `GroupWindowAggregate`, `GroupWindowTableAggregate` | legacy `GROUP BY TUMBLE(...)` windowing, and proctime group windows |
 | `IncrementalGroupAggregate` | the three-phase (distinct) non-windowed `GROUP BY`. The ordinary two-phase / mini-batch `LocalGroupAggregate` + `GlobalGroupAggregate` (+ `MiniBatchAssigner`) **is** native — see the feature gaps and §2 below |
@@ -71,8 +70,15 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 - **Deduplication** — all four variants are native: rowtime keep-first (insert-only, watermark-
   released) and keep-last (retracting), and proctime keep-first/keep-last (arrival order, no
   watermark). The proctime order key is materialized by the native `PROCTIME()` expression.
-- **Joins** — a residual non-equi predicate must be expressible by the native expression engine
-  (event-time and proctime interval and window joins are all native).
+- **Joins** — regular/interval/window joins: a residual non-equi predicate must be expressible by the
+  native expression engine (event-time and proctime interval and window joins are all native).
+  **Temporal table join** (`FOR SYSTEM_TIME AS OF probe.rowtime`) is native for INNER and LEFT over
+  event time: the build side is held as per-key versioned state (changelog `+I`/`+U`/`-D`, indexed by
+  rowtime), and on a watermark each buffered probe row joins the version valid at its time — a faithful
+  port of Flink's `TemporalRowTimeJoinOperator`, deterministic and value-compared to the host. Gaps:
+  a residual non-equi predicate beyond the temporal condition falls back (v1); a **processing-time**
+  temporal table join is parity (Flink itself rejects it — FLINK-19830), as is the legacy proctime
+  temporal *function* join.
 - **Sources/sink** — local `file:` path only (Parquet/ORC source, Parquet sink); Kafka decode limited
   (see below); CDC only Debezium/OGG JSON.
 - **Proctime** support, by operator:
@@ -102,6 +108,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
     Non-deterministic, so routing/execution are tested but not byte-compared.
   - A proctime bounded-RANGE `OVER` frame falls back: with processing time materialized as a fixed
     per-batch timestamp, a wall-clock-interval frame has no meaningful definition.
+  - **Temporal table join** is event-time only by design — Flink itself rejects a processing-time
+    temporal table join (FLINK-19830), so a proctime one is parity, not a gap.
 
 ---
 
@@ -134,6 +142,9 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 - **Window join** — same key/type/non-equi conditions; both sides must carry a window-attached
   windowing of the same time semantics (both event-time or both proctime). Proctime closes the
   window on a processing-time timer instead of a watermark.
+- **Temporal join** — not INNER/LEFT (Flink rejects RIGHT/FULL); no equi key; non-null-dropping keys;
+  equi-key type outside the supported set; a residual non-equi predicate beyond the `FOR SYSTEM_TIME`
+  condition (v1); a processing-time temporal join (parity — Flink rejects it for a versioned table).
 - **Regular join** — unsupported join type; no equi key; non-null-dropping keys; non-equi residual not
   expressible; an input column type the converter can't carry.
 - **Window aggregate / local / global** — window not event-time `TUMBLE`/`HOP`/`CUMULATE` (zero offset)

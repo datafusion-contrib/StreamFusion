@@ -26,6 +26,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalR
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSortLimit;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTemporalJoin;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTemporalSort;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalUnion;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWatermarkAssigner;
@@ -986,6 +987,33 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       }
     }
 
+    if (current instanceof StreamPhysicalTemporalJoin) {
+      StreamPhysicalTemporalJoin join = (StreamPhysicalTemporalJoin) current;
+      if (TemporalJoinMatcher.matches(join)) {
+        if (!NativeConfig.operatorEnabled("temporalJoin")) {
+          return noteDisabled(current, "temporalJoin");
+        }
+        substitutions++;
+        int[] leftKeys = TemporalJoinMatcher.leftKeys(join);
+        int[] rightKeys = TemporalJoinMatcher.rightKeys(join);
+        // Shuffle each input by its join key (columnar where it sits on a columnar producer); the
+        // versioned join then groups by key in its own state, like the interval/window join.
+        RelNode left = columnarInput(join.getLeft(), leftKeys);
+        RelNode right = columnarInput(join.getRight(), rightKeys);
+        return new StreamPhysicalNativeTemporalJoin(
+            join.getCluster(),
+            join.getTraitSet(),
+            left,
+            right,
+            join.getRowType(),
+            leftKeys,
+            rightKeys,
+            TemporalJoinMatcher.leftTime(join),
+            TemporalJoinMatcher.rightTime(join),
+            TemporalJoinMatcher.joinTypeCode(join));
+      }
+    }
+
     if (current instanceof StreamPhysicalGlobalWindowAggregate) {
       StreamPhysicalGlobalWindowAggregate agg = (StreamPhysicalGlobalWindowAggregate) current;
       if (GlobalWindowAggregateMatcher.matches(agg)) {
@@ -1068,6 +1096,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     }
     if (node instanceof StreamPhysicalWindowJoin) {
       return WindowJoinMatcher.unsupportedReason((StreamPhysicalWindowJoin) node);
+    }
+    if (node instanceof StreamPhysicalTemporalJoin) {
+      return TemporalJoinMatcher.unsupportedReason((StreamPhysicalTemporalJoin) node);
     }
     if (node instanceof StreamPhysicalWindowTableFunction) {
       return WindowTableFunctionMatcher.unsupportedReason((StreamPhysicalWindowTableFunction) node);

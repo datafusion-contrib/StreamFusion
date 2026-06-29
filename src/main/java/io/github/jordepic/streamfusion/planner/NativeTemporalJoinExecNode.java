@@ -1,0 +1,86 @@
+package io.github.jordepic.streamfusion.planner;
+
+import io.github.jordepic.streamfusion.operator.ArrowBatch;
+import io.github.jordepic.streamfusion.operator.ArrowBatchTypeInformation;
+import io.github.jordepic.streamfusion.operator.NativeTemporalJoinOperator;
+import java.util.Arrays;
+import org.apache.flink.api.dag.Transformation;
+import org.apache.flink.configuration.ReadableConfig;
+import org.apache.flink.table.planner.delegation.PlannerBase;
+import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeBase;
+import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeConfig;
+import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeContext;
+import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
+import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
+import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
+import org.apache.flink.table.types.logical.RowType;
+
+/** Wraps the native temporal-join operator into the plan; Arrow batches on both inputs and out. */
+public class NativeTemporalJoinExecNode extends ExecNodeBase<ArrowBatch>
+    implements StreamExecNode<ArrowBatch> {
+
+  private static final String TRANSFORMATION = "native-temporal-join";
+
+  private final int[] leftKeys;
+  private final int[] rightKeys;
+  private final int leftTime;
+  private final int rightTime;
+  private final int joinType;
+  private final RowType leftType;
+  private final RowType rightType;
+
+  public NativeTemporalJoinExecNode(
+      ReadableConfig tableConfig,
+      InputProperty leftInputProperty,
+      InputProperty rightInputProperty,
+      RowType outputType,
+      String description,
+      int[] leftKeys,
+      int[] rightKeys,
+      int leftTime,
+      int rightTime,
+      int joinType,
+      RowType leftType,
+      RowType rightType) {
+    super(
+        ExecNodeContext.newNodeId(),
+        new ExecNodeContext("stream-exec-native-temporal-join_1"),
+        tableConfig,
+        Arrays.asList(leftInputProperty, rightInputProperty),
+        outputType,
+        description);
+    this.leftKeys = leftKeys;
+    this.rightKeys = rightKeys;
+    this.leftTime = leftTime;
+    this.rightTime = rightTime;
+    this.joinType = joinType;
+    this.leftType = leftType;
+    this.rightType = rightType;
+  }
+
+  @Override
+  @SuppressWarnings("unchecked")
+  protected Transformation<ArrowBatch> translateToPlanInternal(
+      PlannerBase planner, ExecNodeConfig config) {
+    Transformation<ArrowBatch> left =
+        (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
+    Transformation<ArrowBatch> right =
+        (Transformation<ArrowBatch>) getInputEdges().get(1).translateToPlan(planner);
+    return ExecNodeUtil.createTwoInputTransformation(
+        left,
+        right,
+        createTransformationMeta(TRANSFORMATION, config),
+        new NativeTemporalJoinOperator(
+            leftKeys,
+            rightKeys,
+            leftTime,
+            rightTime,
+            joinType,
+            leftType,
+            rightType,
+            io.github.jordepic.streamfusion.operator.EncodedPredicate.NONE),
+        ArrowBatchTypeInformation.INSTANCE,
+        left.getParallelism(),
+        false);
+  }
+}

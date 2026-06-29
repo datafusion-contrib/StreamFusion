@@ -949,6 +949,75 @@ public final class Native {
       byte[] snapshot);
 
   /**
+   * Creates an event-time temporal-table joiner ({@code FOR SYSTEM_TIME AS OF probe.rowtime}) and
+   * returns an opaque handle. The right input is a versioned changelog keyed by the equi-join key; a
+   * probe row is buffered until the watermark passes its time, then joined against the build version
+   * valid at that time. The JVM owns the handle and must release it with {@link #closeTemporalJoiner}.
+   *
+   * @param leftKeys equi-join key column indices in the probe (left) input batch
+   * @param rightKeys equi-join key column indices in the build (right) input batch
+   * @param leftTime rowtime column index in the probe input batch
+   * @param rightTime rowtime column index in the build input batch
+   * @param joinType 0=INNER or 1=LEFT (a LEFT join null-pads a probe row with no valid build version)
+   * @param leftSchemaAddress C Data Interface address of the left input's (data-only) Arrow schema
+   * @param rightSchemaAddress C Data Interface address of the right input's (data-only) Arrow schema
+   * @param predKinds residual non-equi predicate over the joined {@code [left.., right..]} row (empty
+   *     ⇒ none); same encoding {@link #createFilterExpression} takes
+   */
+  public static native long createTemporalJoiner(
+      int[] leftKeys,
+      int[] rightKeys,
+      int leftTime,
+      int rightTime,
+      int joinType,
+      long leftSchemaAddress,
+      long rightSchemaAddress,
+      int[] predKinds,
+      int[] predPayload,
+      int[] predChildCounts,
+      long[] predLongs,
+      double[] predDoubles,
+      String[] predStrings);
+
+  /** Buffers a probe-side (left) batch (no output until a watermark). */
+  public static native void pushLeftTemporalJoiner(
+      long handle, long inArrayAddress, long inSchemaAddress);
+
+  /** Folds a build-side (right) changelog batch into the versioned state (no output until a watermark). */
+  public static native void pushRightTemporalJoiner(
+      long handle, long inArrayAddress, long inSchemaAddress);
+
+  /**
+   * Advances the watermark, exporting the joined rows ({@code [left.., right..]} with a trailing
+   * {@code $row_kind$}) for the buffered probe rows it has passed.
+   */
+  public static native void advanceTemporalJoiner(
+      long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
+
+  /** Releases a temporal joiner handle. */
+  public static native void closeTemporalJoiner(long handle);
+
+  /** Serializes a temporal joiner's buffered probe rows and versioned build state for a checkpoint. */
+  public static native byte[] snapshotTemporalJoiner(long handle);
+
+  /** Rebuilds a temporal joiner from a snapshot and returns a fresh handle. */
+  public static native long restoreTemporalJoiner(
+      int[] leftKeys,
+      int[] rightKeys,
+      int leftTime,
+      int rightTime,
+      int joinType,
+      long leftSchemaAddress,
+      long rightSchemaAddress,
+      int[] predKinds,
+      int[] predPayload,
+      int[] predChildCounts,
+      long[] predLongs,
+      double[] predDoubles,
+      String[] predStrings,
+      byte[] snapshot);
+
+  /**
    * Creates a regular (non-windowed) updating joiner and returns an opaque handle. It keeps a
    * per-side keyed multiset of live rows and, on each input row, emits the join changelog against the
    * other side (carrying the input row's kind from the trailing {@code $row_kind$} column). For
