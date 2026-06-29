@@ -60,10 +60,11 @@ final class OverAggregateMatcher {
     if (!rowtimeOrder && !proctimeOrder) {
       return "OVER: requires exactly one ascending event-time or proctime order column";
     }
-    // Proctime orders by arrival, so a frame measured by the (wall-clock) order value is
-    // non-deterministic; only the row-count (ROWS) and running (unbounded) frames are well-defined.
+    // Proctime is materialized as a fixed per-batch timestamp, so a frame measured by that wall-clock
+    // value has no meaningful definition; only the row-count (ROWS) and running (unbounded) frames are
+    // well-defined over proctime (they depend on arrival order, not the clock value).
     if (proctimeOrder && !group.isRows && !group.lowerBound.isUnbounded()) {
-      return "OVER: a bounded RANGE frame needs an event-time order (proctime is non-deterministic)";
+      return "OVER: a bounded RANGE frame over proctime is not supported (use ROWS or an event-time order)";
     }
     // Window functions (ROW_NUMBER) are computed per partition with no value column over the default
     // ROWS UNBOUNDED PRECEDING frame.

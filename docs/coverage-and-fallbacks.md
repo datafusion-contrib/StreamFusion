@@ -75,10 +75,15 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   expressible by the native expression engine.
 - **Sources/sink** — local `file:` path only (Parquet/ORC source, Parquet sink); Kafka decode limited
   (see below); CDC only Debezium/OGG JSON.
-- **Proctime** windows and joins fall back (their results close on wall-clock timers, so they are
-  non-deterministic and not byte-parity-testable). Proctime **deduplication** and **`OVER`** (running
-  / bounded-ROWS) are native — they depend only on arrival order, not the clock value; a proctime
-  bounded-RANGE OVER frame (a wall-clock interval) does fall back as non-deterministic.
+- **Proctime** windows and joins fall back because they are **not yet implemented** — they close
+  windows / evict join state on a wall-clock processing-time timer, a mechanism we don't have (every
+  native operator today flushes on a watermark instead). Their output is also non-deterministic, which
+  makes them harder to test and so lower-priority, but that is not the gate — see the CLAUDE.md note,
+  we are fine using our own implementation for non-deterministic functions. Proctime **deduplication**
+  and **`OVER`** (running / bounded-ROWS) are native: they emit eagerly in arrival order, no
+  wall-clock timer needed. A proctime bounded-RANGE OVER frame falls back because, with processing
+  time materialized as a fixed per-batch timestamp, a wall-clock-interval frame has no meaningful
+  definition — the running and ROWS frames already cover the well-defined proctime cases.
 
 ---
 
