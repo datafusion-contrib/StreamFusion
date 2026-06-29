@@ -1,8 +1,8 @@
 use arrow::array::{
-    make_array, new_empty_array, new_null_array, Array, ArrayRef, BinaryArray, BooleanArray, Float32Array,
-    Int16Array, Int32Array, Int64Array, Int8Array, LargeBinaryArray, ListArray, MapArray, RecordBatch, StringArray,
-    StructArray, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
-    UInt32Array,
+    make_array, new_empty_array, new_null_array, Array, ArrayRef, BinaryArray, BooleanArray, Decimal128Array,
+    Float32Array, Int16Array, Int32Array, Int64Array, Int8Array, LargeBinaryArray, ListArray, MapArray,
+    RecordBatch, StringArray, StructArray, TimestampMicrosecondArray, TimestampMillisecondArray,
+    TimestampNanosecondArray, UInt32Array,
 };
 use arrow::compute::{concat_batches, filter_record_batch, take};
 use arrow::datatypes::{DataType, Field, FieldRef, Fields, Schema, SchemaRef};
@@ -1246,6 +1246,8 @@ enum Num {
     I64(i64),
     I32(i32),
     F64(f64),
+    /// A DECIMAL value as its unscaled i128 (the scale is fixed per aggregate).
+    I128(i128),
 }
 
 /// The OVER value column downcast once, so the per-row fold reads a typed value without a per-row
@@ -1254,6 +1256,7 @@ enum ValueColumn<'a> {
     I64(&'a Int64Array),
     I32(&'a Int32Array),
     F64(&'a arrow::array::Float64Array),
+    Decimal128(&'a Decimal128Array),
     // Any column read only for null-ness: COUNT over a non-numeric (e.g. ARRAY/MAP/ROW) value
     // column, where only "is this row non-null" matters. The dummy value is never folded (COUNT
     // ignores it), so the matcher admits this only for COUNT.
@@ -1266,6 +1269,7 @@ impl ValueColumn<'_> {
             ValueColumn::I64(a) => (!a.is_null(row)).then(|| Num::I64(a.value(row))),
             ValueColumn::I32(a) => (!a.is_null(row)).then(|| Num::I32(a.value(row))),
             ValueColumn::F64(a) => (!a.is_null(row)).then(|| Num::F64(a.value(row))),
+            ValueColumn::Decimal128(a) => (!a.is_null(row)).then(|| Num::I128(a.value(row))),
             ValueColumn::NullOnly(a) => (!a.is_null(row)).then_some(Num::I64(0)),
         }
     }
@@ -1286,6 +1290,10 @@ enum RunningAgg {
     MinF64(Option<f64>),
     MaxF64(Option<f64>),
     Count(i64),
+    // SUM over DECIMAL(p, s): accumulate the unscaled i128 at the input scale; the result is
+    // DECIMAL(38, s) (Flink's findSumAggType). `overflow` latches once the running sum no longer
+    // fits DECIMAL(38, s) (|value| >= 10^38), at which point Flink reports NULL.
+    SumDecimal { sum: i128, scale: i8, overflow: bool },
     // FIRST_VALUE / LAST_VALUE: hold the first / most-recent non-null value seen (None until one
     // arrives → emits NULL, matching Flink, which ignores nulls in these functions).
     FirstI64(Option<i64>),
@@ -1319,6 +1327,8 @@ impl RunningAgg {
             (2, DataType::Float64) => MaxF64(None),
             (5, DataType::Float64) => FirstF64(None),
             (6, DataType::Float64) => LastF64(None),
+            // SUM(DECIMAL(_, s)) — accumulate the unscaled i128 at scale s; result is DECIMAL(38, s).
+            (0, DataType::Decimal128(_, s)) => SumDecimal { sum: 0, scale: *s, overflow: false },
             (k, other) => panic!("unsupported OVER aggregate kind {k} for value type {other:?}"),
         }
     }
@@ -1337,6 +1347,7 @@ impl RunningAgg {
             (MinF64(m), Num::F64(v)) => *m = Some(m.map_or(v, |x| x.min(v))),
             (MaxF64(m), Num::F64(v)) => *m = Some(m.map_or(v, |x| x.max(v))),
             (Count(c), _) => *c += 1,
+            (SumDecimal { sum, overflow, .. }, Num::I128(v)) => accumulate_decimal(sum, overflow, v),
             // FIRST_VALUE keeps the earliest value (set once); LAST_VALUE takes the most recent.
             (FirstI64(f), Num::I64(v)) => *f = Some(f.unwrap_or(v)),
             (LastI64(l), Num::I64(v)) => *l = Some(v),
@@ -1358,6 +1369,9 @@ impl RunningAgg {
             (SumI32(s), Num::I32(v)) => *s = Some(s.unwrap_or(0).wrapping_sub(v)),
             (SumF64(s), Num::F64(v)) => *s = Some(s.unwrap_or(0.0) - v),
             (Count(c), _) => *c -= 1,
+            (SumDecimal { sum, overflow, .. }, Num::I128(v)) => {
+                accumulate_decimal(sum, overflow, v.wrapping_neg())
+            }
             _ => unreachable!("aggregate does not support retraction"),
         }
     }
@@ -1370,6 +1384,10 @@ impl RunningAgg {
             SumI32(v) | MinI32(v) | MaxI32(v) | FirstI32(v) | LastI32(v) => ScalarValue::Int32(*v),
             SumF64(v) | MinF64(v) | MaxF64(v) | FirstF64(v) | LastF64(v) => ScalarValue::Float64(*v),
             Count(c) => ScalarValue::Int64(Some(*c)),
+            // Overflow past DECIMAL(38, s) reports NULL, matching Flink's fromBigDecimal.
+            SumDecimal { sum, scale, overflow } => {
+                ScalarValue::Decimal128((!*overflow).then_some(*sum), 38, *scale)
+            }
         }
     }
 
@@ -1381,6 +1399,7 @@ impl RunningAgg {
             }
             SumI32(_) | MinI32(_) | MaxI32(_) | FirstI32(_) | LastI32(_) => DataType::Int32,
             SumF64(_) | MinF64(_) | MaxF64(_) | FirstF64(_) | LastF64(_) => DataType::Float64,
+            SumDecimal { scale, .. } => DataType::Decimal128(38, *scale),
         }
     }
 
@@ -1398,8 +1417,32 @@ impl RunningAgg {
                 SumF64(s) | MinF64(s) | MaxF64(s) | FirstF64(s) | LastF64(s),
                 ScalarValue::Float64(v),
             ) => *s = *v,
+            // A NULL snapshot value means the running sum had overflowed DECIMAL(38, s).
+            (SumDecimal { sum, overflow, .. }, ScalarValue::Decimal128(v, _, _)) => match v {
+                Some(x) => {
+                    *sum = *x;
+                    *overflow = false;
+                }
+                None => *overflow = true,
+            },
             _ => panic!("OVER state type mismatch on restore"),
         }
+    }
+}
+
+/// The exclusive bound for a `DECIMAL(38, _)` magnitude: a value fits iff `|value| < 10^38`.
+const DECIMAL128_MAX: i128 = 10i128.pow(38);
+
+/// Adds `delta` to a decimal running sum, latching `overflow` once it no longer fits DECIMAL(38, s)
+/// (matching Flink's `fromBigDecimal`, which returns NULL past precision 38). Once overflowed it stays
+/// overflowed — the lost magnitude can't be recovered by a later retraction.
+fn accumulate_decimal(sum: &mut i128, overflow: &mut bool, delta: i128) {
+    if *overflow {
+        return;
+    }
+    match sum.checked_add(delta) {
+        Some(t) if t > -DECIMAL128_MAX && t < DECIMAL128_MAX => *sum = t,
+        _ => *overflow = true,
     }
 }
 
@@ -1581,6 +1624,8 @@ impl MinMaxKey {
             Num::I64(v) => MinMaxKey::I64(v),
             Num::I32(v) => MinMaxKey::I32(v),
             Num::F64(v) => MinMaxKey::F64(OrdF64(v)),
+            // MIN/MAX over DECIMAL is not admitted (only SUM folds an i128), so this never occurs.
+            Num::I128(_) => panic!("decimal MIN/MAX is not supported"),
         }
     }
 
@@ -1758,6 +1803,9 @@ impl GroupAggregator {
                     }
                     DataType::Float64 => {
                         ValueColumn::F64(column.as_any().downcast_ref().expect("float64 value"))
+                    }
+                    DataType::Decimal128(_, _) => {
+                        ValueColumn::Decimal128(column.as_any().downcast_ref().expect("decimal128 value"))
                     }
                     _ => ValueColumn::NullOnly(column),
                 })

@@ -57,12 +57,17 @@ final class GroupAggregateMatcher {
         return false;
       }
       // SUM/MIN/MAX read a present argument as a typed running value, so it must be a running type.
-      // COUNT only reads null-ness, so it counts any column the row already admits (incl. a complex
-      // ARRAY/MAP/ROW value); COUNT(*) (no argument) is unrestricted.
+      // SUM additionally folds DECIMAL (an i128 running sum at the input scale → DECIMAL(38, s),
+      // matching Flink); MIN/MAX over decimal are not modelled yet. COUNT only reads null-ness, so it
+      // counts any column the row already admits (incl. a complex ARRAY/MAP/ROW value); COUNT(*) (no
+      // argument) is unrestricted.
       if (!call.getArgList().isEmpty() && kind != WindowAggregateMatcher.KIND_COUNT) {
         SqlTypeName valueType =
             inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
-        if (!isRunningType(valueType)) {
+        boolean ok =
+            isRunningType(valueType)
+                || (kind == WindowAggregateMatcher.KIND_SUM && valueType == SqlTypeName.DECIMAL);
+        if (!ok) {
           return false;
         }
       }
