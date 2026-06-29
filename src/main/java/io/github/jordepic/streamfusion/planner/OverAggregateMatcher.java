@@ -19,7 +19,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalO
  * window group ordered by a rowtime (local-time-zone) attribute, optional {@code PARTITION BY} on
  * bigint/int/string/boolean/date/timestamp/decimal keys, and one or more {@code SUM}/{@code MIN}/{@code
  * MAX}/{@code COUNT}/{@code FIRST_VALUE}/{@code LAST_VALUE} aggregates that each read a (possibly
- * different) bigint/int/double value column, over one of three frames ending at the current row: {@code RANGE
+ * different) bigint/int/smallint/tinyint/double/float value column, over one of three frames ending at the current row: {@code RANGE
  * UNBOUNDED PRECEDING} (a persistent running fold), {@code ROWS BETWEEN n PRECEDING AND CURRENT ROW}
  * (recomputed over the row slice), or {@code RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW}
  * (recomputed over the rowtime interval). Anything else (proctime, AVG, multiple value columns, an
@@ -189,10 +189,7 @@ final class OverAggregateMatcher {
         return null; // SUM/SUM0/MIN/MAX/COUNT only (no AVG), a single column argument each
       }
       int index = ((RexInputRef) call.getOperands().get(0)).getIndex();
-      SqlTypeName valueType = inputType.getFieldList().get(index).getType().getSqlTypeName();
-      if (valueType != SqlTypeName.BIGINT
-          && valueType != SqlTypeName.INTEGER
-          && valueType != SqlTypeName.DOUBLE) {
+      if (!supportedValueType(inputType.getFieldList().get(index).getType().getSqlTypeName())) {
         return null;
       }
       columns[a] = index;
@@ -218,7 +215,20 @@ final class OverAggregateMatcher {
     return valueColumns(group, over.getInput().getRowType());
   }
 
-  /** Value-type code per aggregate matching the native side: 0 = bigint, 1 = double, 2 = int. */
+  /** The value types an OVER aggregate may read: bigint/int/smallint/tinyint and double/float. */
+  private static boolean supportedValueType(SqlTypeName type) {
+    return type == SqlTypeName.BIGINT
+        || type == SqlTypeName.INTEGER
+        || type == SqlTypeName.SMALLINT
+        || type == SqlTypeName.TINYINT
+        || type == SqlTypeName.DOUBLE
+        || type == SqlTypeName.FLOAT;
+  }
+
+  /**
+   * Value-type code per aggregate matching the native side: 0 = bigint, 1 = double, 2 = int, 4 =
+   * smallint, 5 = tinyint, 6 = float.
+   */
   static int[] valueTypeCodes(StreamPhysicalOverAggregate over) {
     int[] columns = valueColumnIndices(over);
     RelDataType inputType = over.getInput().getRowType();
@@ -230,6 +240,15 @@ final class OverAggregateMatcher {
           break;
         case INTEGER:
           codes[a] = 2;
+          break;
+        case SMALLINT:
+          codes[a] = 4;
+          break;
+        case TINYINT:
+          codes[a] = 5;
+          break;
+        case FLOAT:
+          codes[a] = 6;
           break;
         default:
           codes[a] = 0;

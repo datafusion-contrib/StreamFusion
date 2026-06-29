@@ -1245,7 +1245,10 @@ impl TumblingAggregator {
 enum Num {
     I64(i64),
     I32(i32),
+    I16(i16),
+    I8(i8),
     F64(f64),
+    F32(f32),
     /// A DECIMAL value as its unscaled i128 (the scale is fixed per aggregate).
     I128(i128),
 }
@@ -1255,7 +1258,10 @@ enum Num {
 enum ValueColumn<'a> {
     I64(&'a Int64Array),
     I32(&'a Int32Array),
+    I16(&'a arrow::array::Int16Array),
+    I8(&'a Int8Array),
     F64(&'a arrow::array::Float64Array),
+    F32(&'a arrow::array::Float32Array),
     Decimal128(&'a Decimal128Array),
     // Any column read only for null-ness: COUNT over a non-numeric (e.g. ARRAY/MAP/ROW) value
     // column, where only "is this row non-null" matters. The dummy value is never folded (COUNT
@@ -1268,7 +1274,10 @@ impl ValueColumn<'_> {
         match self {
             ValueColumn::I64(a) => (!a.is_null(row)).then(|| Num::I64(a.value(row))),
             ValueColumn::I32(a) => (!a.is_null(row)).then(|| Num::I32(a.value(row))),
+            ValueColumn::I16(a) => (!a.is_null(row)).then(|| Num::I16(a.value(row))),
+            ValueColumn::I8(a) => (!a.is_null(row)).then(|| Num::I8(a.value(row))),
             ValueColumn::F64(a) => (!a.is_null(row)).then(|| Num::F64(a.value(row))),
+            ValueColumn::F32(a) => (!a.is_null(row)).then(|| Num::F32(a.value(row))),
             ValueColumn::Decimal128(a) => (!a.is_null(row)).then(|| Num::I128(a.value(row))),
             ValueColumn::NullOnly(a) => (!a.is_null(row)).then_some(Num::I64(0)),
         }
@@ -1305,6 +1314,24 @@ enum RunningAgg {
     LastI32(Option<i32>),
     FirstF64(Option<f64>),
     LastF64(Option<f64>),
+    // Narrow ints (SMALLINT/TINYINT) and 4-byte float keep the host's narrow result type: integer
+    // SUM wraps at the input width, float SUM keeps 4-byte precision (matching the tumbling
+    // WrappingNarrowSum / FloatSum). MIN/MAX/FIRST/LAST keep the value in its narrow type.
+    SumI16(Option<i16>),
+    MinI16(Option<i16>),
+    MaxI16(Option<i16>),
+    FirstI16(Option<i16>),
+    LastI16(Option<i16>),
+    SumI8(Option<i8>),
+    MinI8(Option<i8>),
+    MaxI8(Option<i8>),
+    FirstI8(Option<i8>),
+    LastI8(Option<i8>),
+    SumF32(Option<f32>),
+    MinF32(Option<f32>),
+    MaxF32(Option<f32>),
+    FirstF32(Option<f32>),
+    LastF32(Option<f32>),
 }
 
 impl RunningAgg {
@@ -1330,6 +1357,21 @@ impl RunningAgg {
             (2, DataType::Float64) => MaxF64(None),
             (5, DataType::Float64) => FirstF64(None),
             (6, DataType::Float64) => LastF64(None),
+            (0, DataType::Int16) => SumI16(None),
+            (1, DataType::Int16) => MinI16(None),
+            (2, DataType::Int16) => MaxI16(None),
+            (5, DataType::Int16) => FirstI16(None),
+            (6, DataType::Int16) => LastI16(None),
+            (0, DataType::Int8) => SumI8(None),
+            (1, DataType::Int8) => MinI8(None),
+            (2, DataType::Int8) => MaxI8(None),
+            (5, DataType::Int8) => FirstI8(None),
+            (6, DataType::Int8) => LastI8(None),
+            (0, DataType::Float32) => SumF32(None),
+            (1, DataType::Float32) => MinF32(None),
+            (2, DataType::Float32) => MaxF32(None),
+            (5, DataType::Float32) => FirstF32(None),
+            (6, DataType::Float32) => LastF32(None),
             // SUM(DECIMAL(_, s)) — accumulate the unscaled i128 at scale s; result is DECIMAL(38, s).
             (0, DataType::Decimal128(_, s)) => SumDecimal { sum: 0, scale: *s, overflow: false },
             // MIN/MAX(DECIMAL(p, s)) — the extreme lives in the multiset; result is DECIMAL(p, s).
@@ -1360,6 +1402,21 @@ impl RunningAgg {
             (LastI32(l), Num::I32(v)) => *l = Some(v),
             (FirstF64(f), Num::F64(v)) => *f = Some(f.unwrap_or(v)),
             (LastF64(l), Num::F64(v)) => *l = Some(v),
+            (SumI16(s), Num::I16(v)) => *s = Some(s.unwrap_or(0).wrapping_add(v)),
+            (MinI16(m), Num::I16(v)) => *m = Some(m.map_or(v, |x| x.min(v))),
+            (MaxI16(m), Num::I16(v)) => *m = Some(m.map_or(v, |x| x.max(v))),
+            (FirstI16(f), Num::I16(v)) => *f = Some(f.unwrap_or(v)),
+            (LastI16(l), Num::I16(v)) => *l = Some(v),
+            (SumI8(s), Num::I8(v)) => *s = Some(s.unwrap_or(0).wrapping_add(v)),
+            (MinI8(m), Num::I8(v)) => *m = Some(m.map_or(v, |x| x.min(v))),
+            (MaxI8(m), Num::I8(v)) => *m = Some(m.map_or(v, |x| x.max(v))),
+            (FirstI8(f), Num::I8(v)) => *f = Some(f.unwrap_or(v)),
+            (LastI8(l), Num::I8(v)) => *l = Some(v),
+            (SumF32(s), Num::F32(v)) => *s = Some(s.unwrap_or(0.0) + v),
+            (MinF32(m), Num::F32(v)) => *m = Some(m.map_or(v, |x| x.min(v))),
+            (MaxF32(m), Num::F32(v)) => *m = Some(m.map_or(v, |x| x.max(v))),
+            (FirstF32(f), Num::F32(v)) => *f = Some(f.unwrap_or(v)),
+            (LastF32(l), Num::F32(v)) => *l = Some(v),
             _ => unreachable!("OVER value type does not match aggregate state"),
         }
     }
@@ -1373,6 +1430,9 @@ impl RunningAgg {
             (SumI64(s), Num::I64(v)) => *s = Some(s.unwrap_or(0).wrapping_sub(v)),
             (SumI32(s), Num::I32(v)) => *s = Some(s.unwrap_or(0).wrapping_sub(v)),
             (SumF64(s), Num::F64(v)) => *s = Some(s.unwrap_or(0.0) - v),
+            (SumI16(s), Num::I16(v)) => *s = Some(s.unwrap_or(0).wrapping_sub(v)),
+            (SumI8(s), Num::I8(v)) => *s = Some(s.unwrap_or(0).wrapping_sub(v)),
+            (SumF32(s), Num::F32(v)) => *s = Some(s.unwrap_or(0.0) - v),
             (Count(c), _) => *c -= 1,
             (SumDecimal { sum, overflow, .. }, Num::I128(v)) => {
                 accumulate_decimal(sum, overflow, v.wrapping_neg())
@@ -1388,6 +1448,9 @@ impl RunningAgg {
             SumI64(v) | MinI64(v) | MaxI64(v) | FirstI64(v) | LastI64(v) => ScalarValue::Int64(*v),
             SumI32(v) | MinI32(v) | MaxI32(v) | FirstI32(v) | LastI32(v) => ScalarValue::Int32(*v),
             SumF64(v) | MinF64(v) | MaxF64(v) | FirstF64(v) | LastF64(v) => ScalarValue::Float64(*v),
+            SumI16(v) | MinI16(v) | MaxI16(v) | FirstI16(v) | LastI16(v) => ScalarValue::Int16(*v),
+            SumI8(v) | MinI8(v) | MaxI8(v) | FirstI8(v) | LastI8(v) => ScalarValue::Int8(*v),
+            SumF32(v) | MinF32(v) | MaxF32(v) | FirstF32(v) | LastF32(v) => ScalarValue::Float32(*v),
             Count(c) => ScalarValue::Int64(Some(*c)),
             // Overflow past DECIMAL(38, s) reports NULL, matching Flink's fromBigDecimal.
             SumDecimal { sum, scale, overflow } => {
@@ -1406,6 +1469,9 @@ impl RunningAgg {
             }
             SumI32(_) | MinI32(_) | MaxI32(_) | FirstI32(_) | LastI32(_) => DataType::Int32,
             SumF64(_) | MinF64(_) | MaxF64(_) | FirstF64(_) | LastF64(_) => DataType::Float64,
+            SumI16(_) | MinI16(_) | MaxI16(_) | FirstI16(_) | LastI16(_) => DataType::Int16,
+            SumI8(_) | MinI8(_) | MaxI8(_) | FirstI8(_) | LastI8(_) => DataType::Int8,
+            SumF32(_) | MinF32(_) | MaxF32(_) | FirstF32(_) | LastF32(_) => DataType::Float32,
             SumDecimal { scale, .. } => DataType::Decimal128(38, *scale),
             MinMaxDecimal { precision, scale } => DataType::Decimal128(*precision, *scale),
         }
@@ -1425,6 +1491,13 @@ impl RunningAgg {
                 SumF64(s) | MinF64(s) | MaxF64(s) | FirstF64(s) | LastF64(s),
                 ScalarValue::Float64(v),
             ) => *s = *v,
+            (SumI16(s) | MinI16(s) | MaxI16(s) | FirstI16(s) | LastI16(s), ScalarValue::Int16(v)) => {
+                *s = *v
+            }
+            (SumI8(s) | MinI8(s) | MaxI8(s) | FirstI8(s) | LastI8(s), ScalarValue::Int8(v)) => *s = *v,
+            (SumF32(s) | MinF32(s) | MaxF32(s) | FirstF32(s) | LastF32(s), ScalarValue::Float32(v)) => {
+                *s = *v
+            }
             // A NULL snapshot value means the running sum had overflowed DECIMAL(38, s).
             (SumDecimal { sum, overflow, .. }, ScalarValue::Decimal128(v, _, _)) => match v {
                 Some(x) => {
@@ -1459,7 +1532,10 @@ fn over_value_column<'a>(column: &'a ArrayRef, value_type: &DataType) -> ValueCo
     match value_type {
         DataType::Int64 => ValueColumn::I64(column.as_any().downcast_ref().expect("int64 value")),
         DataType::Int32 => ValueColumn::I32(column.as_any().downcast_ref().expect("int32 value")),
+        DataType::Int16 => ValueColumn::I16(column.as_any().downcast_ref().expect("int16 value")),
+        DataType::Int8 => ValueColumn::I8(column.as_any().downcast_ref().expect("int8 value")),
         DataType::Float64 => ValueColumn::F64(column.as_any().downcast_ref().expect("float64 value")),
+        DataType::Float32 => ValueColumn::F32(column.as_any().downcast_ref().expect("float32 value")),
         other => panic!("unsupported OVER value type: {other:?}"),
     }
 }
@@ -1790,10 +1866,17 @@ fn num_to_scalar(value_type: &DataType, num: Option<Num>) -> ScalarValue {
     match (value_type, num) {
         (_, Some(Num::I64(v))) => ScalarValue::Int64(Some(v)),
         (_, Some(Num::I32(v))) => ScalarValue::Int32(Some(v)),
+        (_, Some(Num::I16(v))) => ScalarValue::Int16(Some(v)),
+        (_, Some(Num::I8(v))) => ScalarValue::Int8(Some(v)),
         (_, Some(Num::F64(v))) => ScalarValue::Float64(Some(v)),
+        (_, Some(Num::F32(v))) => ScalarValue::Float32(Some(v)),
+        (_, Some(Num::I128(_))) => unreachable!("decimal bounded OVER is not admitted"),
         (DataType::Int64, None) => ScalarValue::Int64(None),
         (DataType::Int32, None) => ScalarValue::Int32(None),
+        (DataType::Int16, None) => ScalarValue::Int16(None),
+        (DataType::Int8, None) => ScalarValue::Int8(None),
         (DataType::Float64, None) => ScalarValue::Float64(None),
+        (DataType::Float32, None) => ScalarValue::Float32(None),
         (other, _) => panic!("unsupported bounded OVER value type: {other:?}"),
     }
 }
@@ -1803,7 +1886,10 @@ fn num_from_scalar(scalar: &ScalarValue) -> Option<Num> {
     match scalar {
         ScalarValue::Int64(v) => v.map(Num::I64),
         ScalarValue::Int32(v) => v.map(Num::I32),
+        ScalarValue::Int16(v) => v.map(Num::I16),
+        ScalarValue::Int8(v) => v.map(Num::I8),
         ScalarValue::Float64(v) => v.map(Num::F64),
+        ScalarValue::Float32(v) => v.map(Num::F32),
         other => panic!("unsupported bounded OVER value scalar: {other:?}"),
     }
 }
@@ -1861,6 +1947,12 @@ impl MinMaxKey {
             Num::I32(v) => MinMaxKey::I32(v),
             Num::F64(v) => MinMaxKey::F64(OrdF64(v)),
             Num::I128(v) => MinMaxKey::Decimal128(v),
+            // The Extremes multiset (GROUP BY retractable MIN/MAX) is only built for the wider types
+            // its matcher admits; narrow ints / 4-byte float reach MIN/MAX only via the OVER running
+            // path (RunningAgg's narrow variants), never here.
+            Num::I16(_) | Num::I8(_) | Num::F32(_) => {
+                unreachable!("narrow MIN/MAX uses the running path, not the Extremes multiset")
+            }
         }
     }
 

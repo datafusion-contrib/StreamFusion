@@ -145,6 +145,27 @@ class FlinkOverAggregateSqlHarnessTest {
   }
 
   @Test
+  void narrowAndFloatValueTypesMatchHost() throws Exception {
+    // SUM/MIN/MAX/FIRST_VALUE over SMALLINT, TINYINT, and FLOAT value columns. Each keeps the host's
+    // narrow result type (integer SUM wraps at the input width, float SUM keeps 4-byte precision).
+    NativeParity.assertParity(
+        FlinkOverAggregateSqlHarnessTest::narrowEnvironment,
+        "SELECT k, SUM(si) OVER w AS ssi, MAX(ti) OVER w AS mti, MIN(fl) OVER w AS mfl, "
+            + "SUM(fl) OVER w AS sfl, FIRST_VALUE(si) OVER w AS fsi "
+            + "FROM src WINDOW w AS (PARTITION BY k ORDER BY rt)");
+  }
+
+  @Test
+  void narrowValueTypesBoundedRowsMatchHost() throws Exception {
+    // Narrow/float value columns over a bounded ROWS frame, recomputed over the frame slice.
+    NativeParity.assertParity(
+        FlinkOverAggregateSqlHarnessTest::narrowEnvironment,
+        "SELECT k, SUM(ti) OVER w AS sti, MAX(fl) OVER w AS mfl "
+            + "FROM src "
+            + "WINDOW w AS (PARTITION BY k ORDER BY rt ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)");
+  }
+
+  @Test
   void booleanPartitionKeyMatchesHost() throws Exception {
     // PARTITION BY a boolean key — exercises the wider partition-key set (the native key path is
     // type-general; boolean/date/timestamp/decimal are admitted, not just bigint/int/string).
@@ -181,6 +202,46 @@ class FlinkOverAggregateSqlHarnessTest {
         Schema.newBuilder()
             .column("k", DataTypes.BIGINT())
             .column("v", DataTypes.BIGINT())
+            .column("ts", DataTypes.BIGINT())
+            .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
+            .watermark("rt", "SOURCE_WATERMARK()")
+            .build());
+    return tEnv;
+  }
+
+  /**
+   * A source with SMALLINT/TINYINT/FLOAT value columns and strictly-positive, globally-distinct
+   * rowtimes, for the narrow/float value-type tests.
+   */
+  private static TableEnvironment narrowEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    DataStream<Row> source =
+        env.fromData(
+                Types.ROW_NAMED(
+                    new String[] {"k", "si", "ti", "fl", "ts"},
+                    Types.LONG,
+                    Types.SHORT,
+                    Types.BYTE,
+                    Types.FLOAT,
+                    Types.LONG),
+                Row.of(1L, (short) 10, (byte) 1, 1.5f, 1000L),
+                Row.of(2L, (short) 20, (byte) 5, 4.0f, 1500L),
+                Row.of(1L, (short) 30, (byte) 2, 2.5f, 2000L),
+                Row.of(2L, (short) 40, (byte) 4, 3.0f, 2500L),
+                Row.of(1L, (short) 50, (byte) 3, 0.5f, 3000L))
+            .assignTimestampsAndWatermarks(
+                WatermarkStrategy.<Row>forBoundedOutOfOrderness(java.time.Duration.ofSeconds(5))
+                    .withTimestampAssigner((row, ts) -> (Long) row.getField(4)));
+    tEnv.createTemporaryView(
+        "src",
+        source,
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("si", DataTypes.SMALLINT())
+            .column("ti", DataTypes.TINYINT())
+            .column("fl", DataTypes.FLOAT())
             .column("ts", DataTypes.BIGINT())
             .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
             .watermark("rt", "SOURCE_WATERMARK()")

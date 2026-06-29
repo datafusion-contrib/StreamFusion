@@ -62,10 +62,10 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   `ROWS BETWEEN n PRECEDING AND CURRENT ROW` frame (recomputed over the row slice), **and** the
   bounded `RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW` frame (recomputed over the rowtime
   interval), over one ascending rowtime, each aggregate over its own (possibly different)
-  bigint/int/double value column. Real gaps: wider value types (smallint/tinyint/float) and proctime
-  ordering. (More than one window group, decimal bounded frames, `FOLLOWING` frames,
-  non-time/descending order, and `LAG`/`LEAD` are parity — Flink rejects or single-groups them in
-  streaming.)
+  bigint/int/smallint/tinyint/double/float value column (narrow ints / 4-byte float keep the host's
+  narrow result type). Real gap: proctime ordering. (More than one window group, decimal bounded
+  frames, `FOLLOWING` frames, non-time/descending order, and `LAG`/`LEAD` are parity — Flink rejects
+  or single-groups them in streaming.)
 - **Deduplication** — rowtime keep-first (`ORDER BY rowtime ASC`, insert-only) and keep-last (`DESC`,
   retracting) are both native; proctime deduplication falls back.
 - **Joins** — proctime interval/window joins fall back; a residual non-equi predicate must be
@@ -94,10 +94,10 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 ### 2. Per-operator matcher declines (exact conditions)
 - **OVER** — a frame not of the form `… PRECEDING .. CURRENT ROW` (a `ROWS`/`RANGE` lower bound that
   is not a constant preceding offset); proctime ordering; an aggregate that is `AVG`, `COUNT(*)`, or
-  reads a non-bigint/int/double column; `PARTITION BY` key outside
-  bigint/int/string/boolean/date/timestamp/decimal. (More than one window group, decimal bounded
-  frames, non-time/descending order, `FOLLOWING` frames, and `LAG`/`LEAD` never reach us — Flink
-  rejects or single-groups them in streaming.)
+  reads a non-numeric / decimal column (numeric value columns are bigint/int/smallint/tinyint/double/
+  float); `PARTITION BY` key outside bigint/int/string/boolean/date/timestamp/decimal. (More than one
+  window group, decimal bounded frames, non-time/descending order, `FOLLOWING` frames, and
+  `LAG`/`LEAD` never reach us — Flink rejects or single-groups them in streaming.)
 - **Interval join** — not INNER/LEFT/RIGHT/FULL; no equi key; non-null-dropping (non-INNER) keys;
   equi-key type outside the supported set; non-equi residual not expressible; proctime bounds.
 - **Window join** — same key/type/non-equi conditions; both sides must carry an event-time
