@@ -637,6 +637,7 @@ public final class Native {
       int[] valueTypes,
       int[] valueColumns,
       int[] keyColumns,
+      int[] filterColumns,
       boolean generateUpdateBefore);
 
   /**
@@ -658,6 +659,7 @@ public final class Native {
       int[] valueTypes,
       int[] valueColumns,
       int[] keyColumns,
+      int[] filterColumns,
       boolean generateUpdateBefore,
       byte[] snapshot);
 

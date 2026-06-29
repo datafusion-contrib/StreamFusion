@@ -30,6 +30,7 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
   private final int[] valueTypes;
   private final int[] valueColumns;
   private final int[] keyColumns;
+  private final int[] filterColumns;
   private final boolean generateUpdateBefore;
 
   private transient BufferAllocator allocator;
@@ -42,11 +43,13 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
       int[] valueTypes,
       int[] valueColumns,
       int[] keyColumns,
+      int[] filterColumns,
       boolean generateUpdateBefore) {
     this.aggregateKinds = aggregateKinds;
     this.valueTypes = valueTypes;
     this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
+    this.filterColumns = filterColumns;
     this.generateUpdateBefore = generateUpdateBefore;
   }
 
@@ -67,9 +70,10 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
     handle =
         snapshot == null
             ? Native.createGroupAggregator(
-                aggregateKinds, valueTypes, valueColumns, keyColumns, generateUpdateBefore)
+                aggregateKinds, valueTypes, valueColumns, keyColumns, filterColumns, generateUpdateBefore)
             : Native.restoreGroupAggregator(
-                aggregateKinds, valueTypes, valueColumns, keyColumns, generateUpdateBefore, snapshot);
+                aggregateKinds, valueTypes, valueColumns, keyColumns, filterColumns,
+                generateUpdateBefore, snapshot);
   }
 
   @Override

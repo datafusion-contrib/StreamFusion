@@ -2206,6 +2206,9 @@ struct GroupAggregator {
     // AVG, whose snapshot stores the wider running sum (BIGINT / DOUBLE).
     state_types: Vec<DataType>,
     value_columns: Vec<i64>,
+    // Per-aggregate FILTER column index (the boolean the host computes for `AGG(x) FILTER (WHERE p)`),
+    // or -1 for an unfiltered aggregate. A row folds into aggregate i only when its filter is TRUE.
+    filter_columns: Vec<i64>,
     key_columns: Vec<usize>,
     generate_update_before: bool,
     keys: HashMap<GroupKey, GroupKeyState>,
@@ -2231,6 +2234,7 @@ impl GroupAggregator {
             .zip(&value_types)
             .map(|(&kind, vt)| RunningAgg::new(kind, vt).state_type())
             .collect();
+        let filter_columns = vec![-1; kinds.len()];
         GroupAggregator {
             kinds,
             value_types,
@@ -2241,7 +2245,17 @@ impl GroupAggregator {
             generate_update_before,
             keys: HashMap::new(),
             key_types: Vec::new(),
+            filter_columns,
         }
+    }
+
+    /// Sets the per-aggregate FILTER columns (-1 = unfiltered). A builder so the many existing
+    /// call sites that construct an unfiltered aggregator stay unchanged.
+    fn with_filter_columns(mut self, filter_columns: Vec<i64>) -> Self {
+        if !filter_columns.is_empty() {
+            self.filter_columns = filter_columns;
+        }
+        self
     }
 
     /// The per-key state, created (empty) on first touch.
@@ -2299,6 +2313,19 @@ impl GroupAggregator {
         let distinct_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| (self.kinds[i] == 7).then_some(self.value_columns[i] as usize))
             .collect();
+        // Per aggregate, the FILTER boolean column (None = unfiltered). A row folds into aggregate i
+        // only where this is TRUE — a NULL or FALSE skips it, matching SQL FILTER / Flink's filterArg.
+        let filter_cols: Vec<Option<&BooleanArray>> = (0..num_agg)
+            .map(|i| {
+                (self.filter_columns[i] >= 0).then(|| {
+                    batch
+                        .column(self.filter_columns[i] as usize)
+                        .as_any()
+                        .downcast_ref::<BooleanArray>()
+                        .expect("filter column must be boolean")
+                })
+            })
+            .collect();
 
         let mut out_keys: Vec<GroupKey> = Vec::new();
         let mut out_results: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
@@ -2330,6 +2357,12 @@ impl GroupAggregator {
                     self.state(key.clone())
                 };
                 for i in 0..num_agg {
+                    // FILTER: fold into this aggregate only where its filter is TRUE (NULL/FALSE skip).
+                    if let Some(filter) = filter_cols[i] {
+                        if filter.is_null(row) || !filter.value(row) {
+                            continue;
+                        }
+                    }
                     // COUNT(DISTINCT x) (kind 7) folds the value itself, not a Num — read its scalar
                     // (skipping nulls, which DISTINCT ignores) and add/remove it from the value set.
                     if let Some(col_idx) = distinct_cols[i] {
@@ -8655,19 +8688,18 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createGroupAg
     value_types: JIntArray<'local>,
     value_columns: JIntArray<'local>,
     key_columns: JIntArray<'local>,
+    filter_columns: JIntArray<'local>,
     generate_update_before: jboolean,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
     let value_types = read_int_array(&env, &value_types);
     let value_columns = read_int_array(&env, &value_columns);
+    let filter_columns = read_int_array(&env, &filter_columns);
     let key_columns = read_columns(&env, &key_columns);
-    Box::into_raw(Box::new(GroupAggregator::new(
-        kinds,
-        value_types,
-        value_columns,
-        key_columns,
-        generate_update_before != 0,
-    ))) as jlong
+    Box::into_raw(Box::new(
+        GroupAggregator::new(kinds, value_types, value_columns, key_columns, generate_update_before != 0)
+            .with_filter_columns(filter_columns),
+    )) as jlong
 }
 
 /// Folds an input batch into per-key state and exports the changelog rows it produces (the row kinds
@@ -8709,22 +8741,27 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
     value_types: JIntArray<'local>,
     value_columns: JIntArray<'local>,
     key_columns: JIntArray<'local>,
+    filter_columns: JIntArray<'local>,
     generate_update_before: jboolean,
     snapshot: JByteArray<'local>,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
     let value_types = read_int_array(&env, &value_types);
     let value_columns = read_int_array(&env, &value_columns);
+    let filter_columns = read_int_array(&env, &filter_columns);
     let key_columns = read_columns(&env, &key_columns);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read group-by snapshot");
-    Box::into_raw(Box::new(GroupAggregator::restore(
-        kinds,
-        value_types,
-        value_columns,
-        key_columns,
-        generate_update_before != 0,
-        &bytes,
-    ))) as jlong
+    Box::into_raw(Box::new(
+        GroupAggregator::restore(
+            kinds,
+            value_types,
+            value_columns,
+            key_columns,
+            generate_update_before != 0,
+            &bytes,
+        )
+        .with_filter_columns(filter_columns),
+    )) as jlong
 }
 
 /// Releases the `GROUP BY` aggregator and its native state.
@@ -11871,6 +11908,29 @@ mod tests {
         let out = agg.update(&group_batch(vec![1, 1], vec![10, 1]));
         assert_eq!(row_kinds(&out), vec![0, 1, 2]); // +I, then -U/+U
         assert_eq!(values(&out, 1), vec![10, 10, 5]);
+    }
+
+    // COUNT(*) FILTER (WHERE flag): a row folds into the aggregate only where its filter boolean is
+    // TRUE — FALSE and NULL are skipped, matching SQL FILTER.
+    #[test]
+    fn group_by_filter_gates_each_aggregate() {
+        let key: ArrayRef = Arc::new(Int64Array::from(vec![1, 1, 1]));
+        let flag: ArrayRef = Arc::new(BooleanArray::from(vec![Some(true), Some(false), None]));
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("key0", DataType::Int64, false),
+                Field::new("flag", DataType::Boolean, true),
+            ])),
+            vec![key, flag],
+        )
+        .unwrap();
+        // COUNT(*) over a boolean filter in column 1; group on column 0.
+        let mut agg = GroupAggregator::new(vec![3], vec![0], vec![-1], vec![0], true)
+            .with_filter_columns(vec![1]);
+        let out = agg.update(&batch);
+        // Only the TRUE row counts → +I count=1; the FALSE/NULL rows leave it unchanged (suppressed).
+        assert_eq!(row_kinds(&out), vec![0]);
+        assert_eq!(values(&out, 1), vec![1]);
     }
 
     // A columnar input from an insert-only producer has no `$row_kind$` column; every row is then an

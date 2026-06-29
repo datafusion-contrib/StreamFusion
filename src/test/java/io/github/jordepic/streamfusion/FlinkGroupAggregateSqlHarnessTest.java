@@ -75,6 +75,21 @@ class FlinkGroupAggregateSqlHarnessTest {
   }
 
   @Test
+  void filteredAggregatesMatchHost() throws Exception {
+    // COUNT(*)/SUM/COUNT(DISTINCT) with FILTER (WHERE …) — Nexmark q15/q17's shape: each aggregate
+    // folds only the rows whose filter is true (a boolean input column the host computes). The range
+    // predicate lowers to a SEARCH the encoder expands.
+    NativeParity.assertChangelogParity(
+        FlinkGroupAggregateSqlHarnessTest::environment,
+        "SELECT k, "
+            + "COUNT(*) AS total, "
+            + "COUNT(*) FILTER (WHERE `value` >= 2 AND `value` < 4) AS mid, "
+            + "SUM(`value`) FILTER (WHERE qty > 15) AS sf, "
+            + "COUNT(DISTINCT s) FILTER (WHERE `value` >= 2) AS distinct_s "
+            + "FROM src GROUP BY k");
+  }
+
+  @Test
   void globalAvgMatchesHost() throws Exception {
     // No GROUP BY: a single global AVG, still a retracting changelog (+I then -U/+U per row).
     NativeParity.assertChangelogParity(

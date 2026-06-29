@@ -199,6 +199,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             GroupAggregateMatcher.valueTypeCodes(agg),
             GroupAggregateMatcher.valueColumns(agg),
             keyColumns,
+            GroupAggregateMatcher.filterColumns(agg),
             GroupAggregateMatcher.generateUpdateBefore(agg));
       }
     }
@@ -224,6 +225,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             GlobalGroupAggregateMatcher.valueTypeCodes(agg),
             GlobalGroupAggregateMatcher.valueColumns(agg),
             keyColumns,
+            new int[0], // the global merge applies no FILTER — the local half already filtered
             GlobalGroupAggregateMatcher.generateUpdateBefore(agg));
       }
     }

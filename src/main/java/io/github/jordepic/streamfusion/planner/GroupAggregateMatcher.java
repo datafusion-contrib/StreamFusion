@@ -47,7 +47,9 @@ final class GroupAggregateMatcher {
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
-      if (call.isApproximate() || call.filterArg >= 0) {
+      // A FILTER (call.filterArg >= 0) is native — the filter is a boolean input column the operator
+      // gates each fold on; only an approximate aggregate is rejected.
+      if (call.isApproximate()) {
         return false;
       }
       int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
@@ -134,6 +136,16 @@ final class GroupAggregateMatcher {
 
   static int[] keyColumns(StreamPhysicalGroupAggregate agg) {
     return WindowAggregateMatcher.keyColumns(agg.grouping());
+  }
+
+  /** The FILTER boolean column index per aggregate (Calcite's {@code filterArg}), or -1 if none. */
+  static int[] filterColumns(StreamPhysicalGroupAggregate agg) {
+    Seq<AggregateCall> aggCalls = agg.aggCalls();
+    int[] filters = new int[aggCalls.size()];
+    for (int i = 0; i < aggCalls.size(); i++) {
+      filters[i] = aggCalls.apply(i).filterArg;
+    }
+    return filters;
   }
 
   /** Whether the host wants UPDATE_BEFORE rows emitted on this node's output edge. */

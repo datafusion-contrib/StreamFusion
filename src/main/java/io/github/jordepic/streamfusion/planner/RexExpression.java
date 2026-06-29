@@ -155,7 +155,12 @@ final class RexExpression {
     }
     for (RexLocalRef ref : program.getProjectList()) {
       projectionRoots.add(kinds.size());
-      if (!emit(program.expandLocalRef(ref))) {
+      // Expand a Sarg/SEARCH the same as in the condition — a `FILTER (WHERE x >= a AND x < b)`
+      // lowers its range into a SEARCH inside a projected expression, not just the condition.
+      RexNode projection =
+          RexUtil.expandSearch(
+              calc.getCluster().getRexBuilder(), null, program.expandLocalRef(ref));
+      if (!emit(projection)) {
         return false;
       }
     }
