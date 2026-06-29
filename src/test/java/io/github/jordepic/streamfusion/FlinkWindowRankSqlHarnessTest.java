@@ -58,6 +58,50 @@ class FlinkWindowRankSqlHarnessTest {
             + " window_end, k ORDER BY rt DESC) AS rn FROM " + TVF + ") WHERE rn = 1");
   }
 
+  private static final String PROCTIME_TVF =
+      "TABLE(TUMBLE(TABLE src, DESCRIPTOR(pt), INTERVAL '5' SECOND))";
+
+  @Test
+  void proctimeWindowTopNRoutesToNative() throws Exception {
+    // Window Top-N over a proctime TUMBLE: each window closes on a processing-time timer rather than a
+    // watermark. Non-deterministic boundaries (see the CLAUDE.md note) — assert it routes and runs;
+    // NativeColumnarWindowRankOperatorTest pins the close on a controlled clock.
+    NativeParity.assertRoutes(
+        FlinkWindowRankSqlHarnessTest::proctimeEnvironment,
+        "SELECT k, v, window_start FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY window_start,"
+            + " window_end ORDER BY v DESC) AS rn FROM " + PROCTIME_TVF + ") WHERE rn <= 2");
+  }
+
+  @Test
+  void proctimeWindowDeduplicationRoutesToNative() throws Exception {
+    // Window deduplication (rank-1 keep-first by proctime order) over a proctime TUMBLE.
+    NativeParity.assertRoutes(
+        FlinkWindowRankSqlHarnessTest::proctimeEnvironment,
+        "SELECT k, v, window_start FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY window_start,"
+            + " window_end, k ORDER BY pt ASC) AS rn FROM " + PROCTIME_TVF + ") WHERE rn = 1");
+  }
+
+  private static TableEnvironment proctimeEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    DataStream<Row> source =
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"k", "v"}, Types.LONG, Types.LONG),
+            Row.of(1L, 10L),
+            Row.of(1L, 30L),
+            Row.of(2L, 20L));
+    tEnv.createTemporaryView(
+        "src",
+        source,
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("v", DataTypes.BIGINT())
+            .columnByExpression("pt", "PROCTIME()")
+            .build());
+    return tEnv;
+  }
+
   private static TableEnvironment environment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);

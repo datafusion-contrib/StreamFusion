@@ -30,6 +30,7 @@ public class StreamPhysicalNativeWindowTableFunction extends SingleRel
   private final long windowMillis;
   private final long slideMillis;
   private final boolean cumulative;
+  private final boolean proctime;
 
   public StreamPhysicalNativeWindowTableFunction(
       RelOptCluster cluster,
@@ -39,18 +40,20 @@ public class StreamPhysicalNativeWindowTableFunction extends SingleRel
       int timeColumn,
       long windowMillis,
       long slideMillis,
-      boolean cumulative) {
+      boolean cumulative,
+      boolean proctime) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.timeColumn = timeColumn;
     this.windowMillis = windowMillis;
     this.slideMillis = slideMillis;
     this.cumulative = cumulative;
+    this.proctime = proctime;
   }
 
   @Override
   public boolean requireWatermark() {
-    return true;
+    return !proctime;
   }
 
   @Override
@@ -68,7 +71,8 @@ public class StreamPhysicalNativeWindowTableFunction extends SingleRel
         timeColumn,
         windowMillis,
         slideMillis,
-        cumulative);
+        cumulative,
+        proctime);
   }
 
   @Override
@@ -81,6 +85,7 @@ public class StreamPhysicalNativeWindowTableFunction extends SingleRel
         timeColumn,
         windowMillis,
         slideMillis,
-        cumulative);
+        cumulative,
+        proctime);
   }
 }

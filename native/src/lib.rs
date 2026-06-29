@@ -616,16 +616,21 @@ fn assign_windows(
     window_millis: i64,
     slide_millis: i64,
     cumulative: bool,
+    proctime_now_millis: Option<i64>,
 ) -> RecordBatch {
     let schema = input.schema();
     let row_kind_idx = schema.fields().iter().position(|f| f.name() == ROW_KIND_COLUMN);
     let data_end = row_kind_idx.unwrap_or_else(|| schema.fields().len());
 
-    let times = input
-        .column(time_col)
-        .as_any()
-        .downcast_ref::<TimestampNanosecondArray>()
-        .expect("windowing TVF time column must be timestamp(ns)");
+    // Event-time assigns each row by its rowtime column; proctime assigns every row to the window(s)
+    // covering the operator's processing-time clock (passed in), ignoring the time column.
+    let times = proctime_now_millis.is_none().then(|| {
+        input
+            .column(time_col)
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .expect("windowing TVF time column must be timestamp(ns)")
+    });
 
     // One take index per output row (the input row it copies), plus that row's window bounds in nanos.
     let mut take_indices: Vec<u32> = Vec::with_capacity(input.num_rows());
@@ -633,7 +638,11 @@ fn assign_windows(
     let mut ends: Vec<i64> = Vec::new();
     let mut windows: Vec<(i64, i64)> = Vec::new();
     for row in 0..input.num_rows() {
-        windows_for(times.value(row) / 1_000_000, window_millis, slide_millis, cumulative, &mut windows);
+        let time_millis = match proctime_now_millis {
+            Some(now) => now,
+            None => times.unwrap().value(row) / 1_000_000,
+        };
+        windows_for(time_millis, window_millis, slide_millis, cumulative, &mut windows);
         for &(start, end) in &windows {
             take_indices.push(row as u32);
             starts.push(start * 1_000_000);
@@ -6754,6 +6763,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_assignWindows
     window_millis: jlong,
     slide_millis: jlong,
     cumulative: jboolean,
+    proctime: jboolean,
+    proctime_now_millis: jlong,
 ) {
     let batch = import_record_batch(in_array_address, in_schema_address);
     let result = assign_windows(
@@ -6762,6 +6773,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_assignWindows
         window_millis,
         slide_millis,
         cumulative != 0,
+        (proctime != 0).then_some(proctime_now_millis),
     );
     export_record_batch(result, out_array_address, out_schema_address);
 }

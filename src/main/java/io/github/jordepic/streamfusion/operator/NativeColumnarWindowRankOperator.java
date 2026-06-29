@@ -11,6 +11,7 @@ import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.TimeStampNanoVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.api.common.operators.ProcessingTimeService.ProcessingTimeCallback;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.typeinfo.PrimitiveArrayTypeInfo;
@@ -29,9 +30,15 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
  * append-only, emitted once. Deduplication is the {@code limit = 1} case. The buffering, ranking,
  * and late-row drop live in the native ranker; this layer moves batches across the bridge and owns
  * the handle's checkpointed state.
+ *
+ * <p>An event-time window rank closes windows on a watermark. A **proctime** window rank closes them
+ * on the processing-time clock: the upstream proctime TVF assigns each row to the window covering the
+ * clock, and this operator fires a processing-time timer at each window end (chaining to the next
+ * slide boundary while windows remain open, like the proctime window aggregate). It ignores
+ * watermarks in that mode and drains on finish.
  */
 public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<ArrowBatch>
-    implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+    implements OneInputStreamOperator<ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
 
   private final int windowStartColumn;
   private final int windowEndColumn;
@@ -42,12 +49,18 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
   private final long limit;
   private final boolean outputRankNumber;
   private final String timeZoneId;
+  private final boolean proctime;
+  private final long windowMillis;
+  private final long slideMillis;
+  private final boolean cumulative;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient ZoneId zone;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient long registeredTimer;
+  private transient long maxOpenEnd;
 
   public NativeColumnarWindowRankOperator(
       int windowStartColumn,
@@ -58,7 +71,11 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
       int[] sortNullsFirst,
       long limit,
       boolean outputRankNumber,
-      String timeZoneId) {
+      String timeZoneId,
+      boolean proctime,
+      long windowMillis,
+      long slideMillis,
+      boolean cumulative) {
     this.windowStartColumn = windowStartColumn;
     this.windowEndColumn = windowEndColumn;
     this.partitionColumns = partitionColumns;
@@ -68,6 +85,10 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
     this.limit = limit;
     this.outputRankNumber = outputRankNumber;
     this.timeZoneId = timeZoneId;
+    this.proctime = proctime;
+    this.windowMillis = windowMillis;
+    this.slideMillis = slideMillis;
+    this.cumulative = cumulative;
   }
 
   @Override
@@ -113,6 +134,8 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
     zone = ZoneId.of(timeZoneId);
+    registeredTimer = Long.MIN_VALUE;
+    maxOpenEnd = Long.MIN_VALUE;
   }
 
   @Override
@@ -127,27 +150,69 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
     } finally {
       in.close();
     }
+    if (proctime) {
+      long now = getProcessingTimeService().getCurrentProcessingTime();
+      flush(now);
+      maxOpenEnd = Math.max(maxOpenEnd, latestWindowEnd(now));
+      scheduleNextTimer(now);
+    }
   }
 
   @Override
   public void processWatermark(Watermark mark) throws Exception {
+    // Proctime ranks close on the processing-time clock, not the watermark; just forward it.
+    if (!proctime) {
+      flush(mark.getTimestamp());
+    }
+    super.processWatermark(mark);
+  }
+
+  @Override
+  public void onProcessingTime(long time) {
+    long now = getProcessingTimeService().getCurrentProcessingTime();
+    flush(now);
+    scheduleNextTimer(now);
+  }
+
+  @Override
+  public void finish() throws Exception {
+    if (proctime) {
+      flush(Long.MAX_VALUE); // end of input: close every remaining window
+    }
+    super.finish();
+  }
+
+  private void scheduleNextTimer(long now) {
+    long boundary = Math.floorDiv(now, slideMillis) * slideMillis + slideMillis;
+    if (boundary <= maxOpenEnd && boundary > registeredTimer) {
+      getProcessingTimeService().registerTimer(boundary, this);
+      registeredTimer = boundary;
+    }
+  }
+
+  private long latestWindowEnd(long now) {
+    return cumulative
+        ? Math.floorDiv(now, windowMillis) * windowMillis + windowMillis
+        : Math.floorDiv(now, slideMillis) * slideMillis + windowMillis;
+  }
+
+  /** Emits and evicts every window whose end the given threshold has passed. */
+  private void flush(long threshold) {
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushWindowRanker(
-          handle, mark.getTimestamp(), array.memoryAddress(), schema.memoryAddress());
+      Native.flushWindowRanker(handle, threshold, array.memoryAddress(), schema.memoryAddress());
       VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
       if (out.getRowCount() > 0) {
         // The native side keeps window_start/window_end as UTC epoch (so eviction compares against the
-        // UTC watermark); render them as session-local wall-clock TIMESTAMPs on emit, as the host does
+        // UTC threshold); render them as session-local wall-clock TIMESTAMPs on emit, as the host does
         // (window_time stays the UTC rowtime). Same toLocal shift as the window aggregate.
         shiftToLocal(out, windowStartColumn);
         shiftToLocal(out, windowEndColumn);
         output.collect(new StreamRecord<>(new ArrowBatch(out)));
       } else {
-        out.close(); // no window closed on this watermark
+        out.close(); // no window closed at this threshold
       }
     }
-    super.processWatermark(mark);
   }
 
   /** Rewrites a UTC-epoch timestamp column to the session-local wall-clock the host emits. */

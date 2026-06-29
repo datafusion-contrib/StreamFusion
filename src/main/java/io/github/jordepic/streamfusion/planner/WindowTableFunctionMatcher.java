@@ -28,16 +28,22 @@ final class WindowTableFunctionMatcher {
 
   private static boolean matches(
       WindowingStrategy windowing, org.apache.calcite.rel.type.RelDataType inputType) {
-    if (!(windowing instanceof TimeAttributeWindowingStrategy) || !windowing.isRowtime()) {
+    if (!(windowing instanceof TimeAttributeWindowingStrategy)) {
       return false;
     }
     // Window bounds are emitted via the session zone, which matches the host only for a
-    // local-time-zone event-time attribute (the same constraint as the window aggregate).
+    // local-time-zone time attribute (the same constraint as the window aggregate). Both event-time
+    // (assign by rowtime) and proctime (assign by the clock) windowings are accepted; the downstream
+    // window join/rank closes the windows on a watermark or a processing-time timer respectively.
     if (windowing.getTimeAttributeType().getTypeRoot()
         != LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
       return false;
     }
     return aligned(windowing.getWindow()) && FilterCalcMatcher.convertibleRow(inputType);
+  }
+
+  static boolean isProctime(StreamPhysicalWindowTableFunction tvf) {
+    return tvf.windowing().isProctime();
   }
 
   /** Tumbling/hopping are always aligned to the epoch; cumulative only with a zero offset. */

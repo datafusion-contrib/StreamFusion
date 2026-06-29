@@ -31,6 +31,10 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
   private final RowType leftType;
   private final RowType rightType;
   private final RexExpression predicate;
+  private final boolean proctime;
+  private final long windowMillis;
+  private final long slideMillis;
+  private final boolean cumulative;
 
   public NativeWindowJoinExecNode(
       ReadableConfig tableConfig,
@@ -47,7 +51,11 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
       int joinType,
       RowType leftType,
       RowType rightType,
-      RexExpression predicate) {
+      RexExpression predicate,
+      boolean proctime,
+      long windowMillis,
+      long slideMillis,
+      boolean cumulative) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-window-join_1"),
@@ -65,6 +73,10 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
     this.leftType = leftType;
     this.rightType = rightType;
     this.predicate = predicate;
+    this.proctime = proctime;
+    this.windowMillis = windowMillis;
+    this.slideMillis = slideMillis;
+    this.cumulative = cumulative;
   }
 
   @Override
@@ -89,7 +101,11 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
             joinType,
             leftType,
             rightType,
-            RexExpression.toEncodedPredicate(predicate)),
+            RexExpression.toEncodedPredicate(predicate),
+            proctime,
+            windowMillis,
+            slideMillis,
+            cumulative),
         ArrowBatchTypeInformation.INSTANCE,
         left.getParallelism(),
         false);

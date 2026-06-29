@@ -126,6 +126,9 @@ public final class Native {
    * @param windowMillis window size in millis (the max size for cumulative)
    * @param slideMillis slide in millis (the size for tumbling, the step for cumulative)
    * @param cumulative whether the window is cumulative (nested windows sharing a start)
+   * @param proctime whether to assign by the processing-time clock instead of the time column
+   * @param proctimeNowMillis the processing-time clock (epoch millis) to assign every row by when
+   *     {@code proctime} is set; ignored otherwise
    */
   public static native void assignWindows(
       long inArrayAddress,
@@ -135,7 +138,9 @@ public final class Native {
       int timeColumn,
       long windowMillis,
       long slideMillis,
-      boolean cumulative);
+      boolean cumulative,
+      boolean proctime,
+      long proctimeNowMillis);
 
   /**
    * Stateless GROUPING SETS / CUBE / ROLLUP expansion: fans each input row out to {@code

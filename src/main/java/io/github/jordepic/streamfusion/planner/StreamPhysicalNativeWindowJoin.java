@@ -31,6 +31,10 @@ public class StreamPhysicalNativeWindowJoin extends BiRel
   private final int rightWindowEnd;
   private final int joinType;
   private final RexExpression predicate;
+  private final boolean proctime;
+  private final long windowMillis;
+  private final long slideMillis;
+  private final boolean cumulative;
 
   public StreamPhysicalNativeWindowJoin(
       RelOptCluster cluster,
@@ -45,7 +49,11 @@ public class StreamPhysicalNativeWindowJoin extends BiRel
       int rightWindowStart,
       int rightWindowEnd,
       int joinType,
-      RexExpression predicate) {
+      RexExpression predicate,
+      boolean proctime,
+      long windowMillis,
+      long slideMillis,
+      boolean cumulative) {
     super(cluster, traitSet, left, right);
     this.outputRowType = outputRowType;
     this.leftKeys = leftKeys;
@@ -56,11 +64,15 @@ public class StreamPhysicalNativeWindowJoin extends BiRel
     this.rightWindowEnd = rightWindowEnd;
     this.joinType = joinType;
     this.predicate = predicate;
+    this.proctime = proctime;
+    this.windowMillis = windowMillis;
+    this.slideMillis = slideMillis;
+    this.cumulative = cumulative;
   }
 
   @Override
   public boolean requireWatermark() {
-    return true;
+    return !proctime;
   }
 
   @Override
@@ -83,7 +95,11 @@ public class StreamPhysicalNativeWindowJoin extends BiRel
         rightWindowStart,
         rightWindowEnd,
         joinType,
-        predicate);
+        predicate,
+        proctime,
+        windowMillis,
+        slideMillis,
+        cumulative);
   }
 
   @Override
@@ -103,6 +119,10 @@ public class StreamPhysicalNativeWindowJoin extends BiRel
         joinType,
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getLeft().getRowType()),
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getRight().getRowType()),
-        predicate);
+        predicate,
+        proctime,
+        windowMillis,
+        slideMillis,
+        cumulative);
   }
 }

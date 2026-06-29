@@ -19,6 +19,11 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
  * per window, for hopping/cumulative). It does no event-time buffering — the downstream window join
  * or aggregate does — so it forwards watermarks unchanged (the default {@link AbstractStreamOperator}
  * behavior); carrying Arrow lets it chain with the native window operators without transposing.
+ *
+ * <p>An event-time TVF assigns each row by its rowtime column. A **proctime** TVF assigns every row
+ * in a batch to the window(s) covering the operator's current processing-time clock (Flink's
+ * processing-time assigner uses the clock, not a row value); the downstream window join/rank closes
+ * those windows on a processing-time timer. The TVF itself stays stateless either way.
  */
 public class NativeWindowTableFunctionOperator extends AbstractStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
@@ -27,16 +32,18 @@ public class NativeWindowTableFunctionOperator extends AbstractStreamOperator<Ar
   private final long windowMillis;
   private final long slideMillis;
   private final boolean cumulative;
+  private final boolean proctime;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
 
   public NativeWindowTableFunctionOperator(
-      int timeColumn, long windowMillis, long slideMillis, boolean cumulative) {
+      int timeColumn, long windowMillis, long slideMillis, boolean cumulative, boolean proctime) {
     this.timeColumn = timeColumn;
     this.windowMillis = windowMillis;
     this.slideMillis = slideMillis;
     this.cumulative = cumulative;
+    this.proctime = proctime;
   }
 
   @Override
@@ -59,6 +66,7 @@ public class NativeWindowTableFunctionOperator extends AbstractStreamOperator<Ar
         ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
+      long now = proctime ? getProcessingTimeService().getCurrentProcessingTime() : 0;
       Native.assignWindows(
           inArray.memoryAddress(),
           inSchema.memoryAddress(),
@@ -67,7 +75,9 @@ public class NativeWindowTableFunctionOperator extends AbstractStreamOperator<Ar
           timeColumn,
           windowMillis,
           slideMillis,
-          cumulative);
+          cumulative,
+          proctime,
+          now);
       assigned = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
     } finally {
       in.close(); // the input batch is consumed

@@ -8,6 +8,7 @@ import org.apache.arrow.c.CDataDictionaryProvider;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.api.common.operators.ProcessingTimeService.ProcessingTimeCallback;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.typeinfo.PrimitiveArrayTypeInfo;
@@ -31,9 +32,14 @@ import org.apache.flink.table.types.logical.RowType;
  * <p>Flink delivers each input's watermark to {@link #processWatermark1}/{@link #processWatermark2};
  * the base operator combines them into the minimum and calls {@link #processWatermark}, which closes
  * the windows that minimum has passed before forwarding it downstream.
+ *
+ * <p>A **proctime** window join instead closes windows on the processing-time clock: the upstream
+ * proctime TVF assigns each row to the window(s) covering the clock, and this operator fires a
+ * processing-time timer at each window end (chaining to the next slide boundary while windows remain
+ * open, like the proctime window aggregate). It ignores watermarks in that mode and drains on finish.
  */
 public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
-    implements TwoInputStreamOperator<ArrowBatch, ArrowBatch, ArrowBatch> {
+    implements TwoInputStreamOperator<ArrowBatch, ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
 
   private final int[] leftKeys;
   private final int[] rightKeys;
@@ -45,11 +51,17 @@ public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
   private final RowType leftType;
   private final RowType rightType;
   private final EncodedPredicate predicate;
+  private final boolean proctime;
+  private final long windowMillis;
+  private final long slideMillis;
+  private final boolean cumulative;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient long registeredTimer;
+  private transient long maxOpenEnd;
 
   public NativeWindowJoinOperator(
       int[] leftKeys,
@@ -61,7 +73,11 @@ public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
       int joinType,
       RowType leftType,
       RowType rightType,
-      EncodedPredicate predicate) {
+      EncodedPredicate predicate,
+      boolean proctime,
+      long windowMillis,
+      long slideMillis,
+      boolean cumulative) {
     this.leftKeys = leftKeys;
     this.rightKeys = rightKeys;
     this.leftWindowStart = leftWindowStart;
@@ -72,6 +88,10 @@ public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
     this.leftType = leftType;
     this.rightType = rightType;
     this.predicate = predicate;
+    this.proctime = proctime;
+    this.windowMillis = windowMillis;
+    this.slideMillis = slideMillis;
+    this.cumulative = cumulative;
   }
 
   @Override
@@ -137,16 +157,64 @@ public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
     super.open();
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
+    registeredTimer = Long.MIN_VALUE;
+    maxOpenEnd = Long.MIN_VALUE;
   }
 
   @Override
   public void processElement1(StreamRecord<ArrowBatch> element) {
     buffer(element.getValue(), true);
+    onProctimeInput();
   }
 
   @Override
   public void processElement2(StreamRecord<ArrowBatch> element) {
     buffer(element.getValue(), false);
+    onProctimeInput();
+  }
+
+  /**
+   * After buffering a proctime batch, close any window the clock has passed and (re)schedule the
+   * timer at the next window-end boundary while windows remain open — the same chained-timer model as
+   * the proctime window aggregate, here driving the two-input join's flush.
+   */
+  private void onProctimeInput() {
+    if (!proctime) {
+      return;
+    }
+    long now = getProcessingTimeService().getCurrentProcessingTime();
+    flush(now);
+    maxOpenEnd = Math.max(maxOpenEnd, latestWindowEnd(now));
+    scheduleNextTimer(now);
+  }
+
+  @Override
+  public void onProcessingTime(long time) {
+    long now = getProcessingTimeService().getCurrentProcessingTime();
+    flush(now);
+    scheduleNextTimer(now);
+  }
+
+  private void scheduleNextTimer(long now) {
+    long boundary = Math.floorDiv(now, slideMillis) * slideMillis + slideMillis;
+    if (boundary <= maxOpenEnd && boundary > registeredTimer) {
+      getProcessingTimeService().registerTimer(boundary, this);
+      registeredTimer = boundary;
+    }
+  }
+
+  private long latestWindowEnd(long now) {
+    return cumulative
+        ? Math.floorDiv(now, windowMillis) * windowMillis + windowMillis
+        : Math.floorDiv(now, slideMillis) * slideMillis + windowMillis;
+  }
+
+  @Override
+  public void finish() throws Exception {
+    if (proctime) {
+      flush(Long.MAX_VALUE); // end of input: close every remaining window
+    }
+    super.finish();
   }
 
   /** Hands a batch to its side of the joiner, which buffers it (no output until a watermark). */
@@ -169,18 +237,25 @@ public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
 
   @Override
   public void processWatermark(Watermark mark) throws Exception {
+    // Proctime joins close on the processing-time clock, not the watermark; just forward it.
+    if (!proctime) {
+      flush(mark.getTimestamp());
+    }
+    super.processWatermark(mark);
+  }
+
+  /** Emits and evicts every window whose end the given threshold has passed. */
+  private void flush(long threshold) {
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushWindowJoiner(
-          handle, mark.getTimestamp(), array.memoryAddress(), schema.memoryAddress());
+      Native.flushWindowJoiner(handle, threshold, array.memoryAddress(), schema.memoryAddress());
       VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
       if (out.getRowCount() > 0) {
         output.collect(new StreamRecord<>(new ArrowBatch(out)));
       } else {
-        out.close(); // no windows closed (or no matches) this watermark
+        out.close(); // no windows closed (or no matches) at this threshold
       }
     }
-    super.processWatermark(mark);
   }
 
   @Override

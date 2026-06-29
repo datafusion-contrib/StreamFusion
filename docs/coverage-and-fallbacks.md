@@ -71,8 +71,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 - **Deduplication** — all four variants are native: rowtime keep-first (insert-only, watermark-
   released) and keep-last (retracting), and proctime keep-first/keep-last (arrival order, no
   watermark). The proctime order key is materialized by the native `PROCTIME()` expression.
-- **Joins** — proctime interval/window joins fall back; a residual non-equi predicate must be
-  expressible by the native expression engine.
+- **Joins** — proctime interval joins fall back (proctime window joins are native); a residual
+  non-equi predicate must be expressible by the native expression engine.
 - **Sources/sink** — local `file:` path only (Parquet/ORC source, Parquet sink); Kafka decode limited
   (see below); CDC only Debezium/OGG JSON.
 - **Proctime** support, by operator:
@@ -90,8 +90,14 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
     further input. A later element extends the session (merging in the native aggregator) and
     registers its own later timer, so a firing emits only the sessions the clock has truly left behind
     by a full gap. Non-deterministic, so routing/execution are tested but not byte-compared.
-  - **Window joins, interval joins** — still fall back: not yet ported to the processing-time-timer
-    path (the joins are two-input). Non-deterministic, so lower-priority — but that is not the gate.
+  - **Windowing TVF, window join, window Top-N / dedup** — native; the windowing TVF assigns each row
+    to the window(s) covering the clock (instead of reading a rowtime column), and the downstream
+    window join (two-input) and window rank close those windows on a chained processing-time timer
+    (the same next-slide-boundary model as the window aggregate) rather than a watermark. The slide
+    must divide the size. Non-deterministic, so routing/execution are tested but not byte-compared.
+  - **Interval joins** — still fall back: not yet ported to the processing-time-timer path (the
+    interval join evicts by wall-clock on two inputs). Non-deterministic, so lower-priority — but that
+    is not the gate.
   - A proctime bounded-RANGE `OVER` frame falls back: with processing time materialized as a fixed
     per-batch timestamp, a wall-clock-interval frame has no meaningful definition.
 
@@ -122,8 +128,9 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   Flink rejects or single-groups them in streaming.)
 - **Interval join** — not INNER/LEFT/RIGHT/FULL; no equi key; non-null-dropping (non-INNER) keys;
   equi-key type outside the supported set; non-equi residual not expressible; proctime bounds.
-- **Window join** — same key/type/non-equi conditions; both sides must carry an event-time
-  window-attached windowing.
+- **Window join** — same key/type/non-equi conditions; both sides must carry a window-attached
+  windowing of the same time semantics (both event-time or both proctime). Proctime closes the
+  window on a processing-time timer instead of a watermark.
 - **Regular join** — unsupported join type; no equi key; non-null-dropping keys; non-equi residual not
   expressible; an input column type the converter can't carry.
 - **Window aggregate / local / global** — window not event-time `TUMBLE`/`HOP`/`CUMULATE` (zero offset)
@@ -150,8 +157,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 - **Deduplicate** — not a time-ordered rank-1. Rowtime and proctime, keep-first (`ASC`) and keep-last
   (`DESC`), are all native; a value-ordered rank-1 is a Top-N (handled separately).
 - **Window Top-N / window dedup** — rank not starting at 1 (an `OFFSET`).
-- **Windowing TVF** — not event-time `TUMBLE`/`HOP`/`CUMULATE` (zero offset) over a local-time-zone
-  rowtime.
+- **Windowing TVF** — not `TUMBLE`/`HOP`/`CUMULATE` (zero offset) over a local-time-zone time
+  attribute. Both event-time (assign by rowtime) and proctime (assign by the clock) are native.
 - **Event-time sort** — a secondary order key beyond the leading ascending rowtime. (A descending or
   non-time leading key is a non-temporal `Sort`, which Flink rejects in streaming — parity.)
 - **Union** — a row type the converter can't carry. (`UNION` distinct is not a fallback — the host

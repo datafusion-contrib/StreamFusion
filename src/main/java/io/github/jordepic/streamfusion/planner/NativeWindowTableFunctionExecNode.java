@@ -29,6 +29,7 @@ public class NativeWindowTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
   private final long windowMillis;
   private final long slideMillis;
   private final boolean cumulative;
+  private final boolean proctime;
 
   public NativeWindowTableFunctionExecNode(
       ReadableConfig tableConfig,
@@ -38,7 +39,8 @@ public class NativeWindowTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
       int timeColumn,
       long windowMillis,
       long slideMillis,
-      boolean cumulative) {
+      boolean cumulative,
+      boolean proctime) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-window-table-function_1"),
@@ -50,6 +52,7 @@ public class NativeWindowTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
     this.windowMillis = windowMillis;
     this.slideMillis = slideMillis;
     this.cumulative = cumulative;
+    this.proctime = proctime;
   }
 
   @Override
@@ -61,7 +64,8 @@ public class NativeWindowTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta(TRANSFORMATION, config),
-        new NativeWindowTableFunctionOperator(timeColumn, windowMillis, slideMillis, cumulative),
+        new NativeWindowTableFunctionOperator(
+            timeColumn, windowMillis, slideMillis, cumulative, proctime),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

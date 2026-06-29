@@ -32,6 +32,10 @@ public class StreamPhysicalNativeWindowRank extends SingleRel
   private final int[] sortNullsFirst;
   private final long limit;
   private final boolean outputRankNumber;
+  private final boolean proctime;
+  private final long windowMillis;
+  private final long slideMillis;
+  private final boolean cumulative;
 
   public StreamPhysicalNativeWindowRank(
       RelOptCluster cluster,
@@ -45,7 +49,11 @@ public class StreamPhysicalNativeWindowRank extends SingleRel
       int[] sortAscending,
       int[] sortNullsFirst,
       long limit,
-      boolean outputRankNumber) {
+      boolean outputRankNumber,
+      boolean proctime,
+      long windowMillis,
+      long slideMillis,
+      boolean cumulative) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.windowStartColumn = windowStartColumn;
@@ -56,11 +64,15 @@ public class StreamPhysicalNativeWindowRank extends SingleRel
     this.sortNullsFirst = sortNullsFirst;
     this.limit = limit;
     this.outputRankNumber = outputRankNumber;
+    this.proctime = proctime;
+    this.windowMillis = windowMillis;
+    this.slideMillis = slideMillis;
+    this.cumulative = cumulative;
   }
 
   @Override
   public boolean requireWatermark() {
-    return true;
+    return !proctime;
   }
 
   @Override
@@ -82,7 +94,11 @@ public class StreamPhysicalNativeWindowRank extends SingleRel
         sortAscending,
         sortNullsFirst,
         limit,
-        outputRankNumber);
+        outputRankNumber,
+        proctime,
+        windowMillis,
+        slideMillis,
+        cumulative);
   }
 
   @Override
@@ -99,6 +115,10 @@ public class StreamPhysicalNativeWindowRank extends SingleRel
         sortAscending,
         sortNullsFirst,
         limit,
-        outputRankNumber);
+        outputRankNumber,
+        proctime,
+        windowMillis,
+        slideMillis,
+        cumulative);
   }
 }

@@ -47,7 +47,8 @@ class NativeColumnarWindowRankOperatorTest {
   void emitsTopNWithRankNumberOnWindowClose() throws Exception {
     NativeColumnarWindowRankOperator operator =
         new NativeColumnarWindowRankOperator(
-            1, 2, new int[0], new int[] {0}, new int[] {0}, new int[] {0}, 2, true, "UTC");
+            1, 2, new int[0], new int[] {0}, new int[] {0}, new int[] {0}, 2, true, "UTC",
+            false, 0, 0, false);
     try (BufferAllocator allocator = new RootAllocator();
         OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
             new OneInputStreamOperatorTestHarness<>(operator, new ArrowBatchSerializer())) {
@@ -74,6 +75,35 @@ class NativeColumnarWindowRankOperatorTest {
       harness.processElement(new StreamRecord<>(batch(allocator, row(99, 0, 1000))));
       harness.processWatermark(new Watermark(2000));
       assertEquals(List.of(ranked(50, 1000, 1), ranked(40, 1000, 2)), collect(harness));
+    }
+  }
+
+  /**
+   * A proctime window rank (TUMBLE 1s) closes each window on a processing-time timer, not a
+   * watermark. The upstream proctime TVF stamps window_start/window_end by the clock; here the rows
+   * already carry those columns, and driving {@code setProcessingTime} past a window end fires the
+   * timer that emits its top-N. Deterministic via the controlled clock (proctime is non-deterministic
+   * in a real run — see the CLAUDE.md note).
+   */
+  @Test
+  void emitsTopNOnProcessingTimeTimer() throws Exception {
+    NativeColumnarWindowRankOperator operator =
+        new NativeColumnarWindowRankOperator(
+            1, 2, new int[0], new int[] {0}, new int[] {0}, new int[] {0}, 2, true, "UTC",
+            true, 1000, 1000, false);
+    try (BufferAllocator allocator = new RootAllocator();
+        OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
+            new OneInputStreamOperatorTestHarness<>(operator, new ArrowBatchSerializer())) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+
+      harness.setProcessingTime(500);
+      harness.processElement(
+          new StreamRecord<>(
+              batch(allocator, row(10, 0, 1000), row(30, 0, 1000), row(20, 0, 1000))));
+      assertEquals(List.of(), collect(harness)); // window [0,1000) still open at proctime 500
+      harness.setProcessingTime(1000); // fires the window-end timer
+      assertEquals(List.of(ranked(30, 0, 1), ranked(20, 0, 2)), collect(harness));
     }
   }
 

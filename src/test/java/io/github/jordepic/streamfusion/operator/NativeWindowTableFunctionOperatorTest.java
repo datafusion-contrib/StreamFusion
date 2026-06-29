@@ -50,7 +50,7 @@ class NativeWindowTableFunctionOperatorTest {
     // HOP size 2s, slide 1s: a row at t=1500 falls in [0,2000) and [1000,3000).
     assertEquals(
         List.of(window(0, 2000), window(1000, 3000)),
-        run(new NativeWindowTableFunctionOperator(1, 2000, 1000, false), 7L, 1500L));
+        run(new NativeWindowTableFunctionOperator(1, 2000, 1000, false, false), 7L, 1500L));
   }
 
   @Test
@@ -58,7 +58,48 @@ class NativeWindowTableFunctionOperatorTest {
     // CUMULATE max 2s, step 1s: a row at t=500 falls in the nested [0,1000) and [0,2000).
     assertEquals(
         List.of(window(0, 1000), window(0, 2000)),
-        run(new NativeWindowTableFunctionOperator(1, 2000, 1000, true), 7L, 500L));
+        run(new NativeWindowTableFunctionOperator(1, 2000, 1000, true, false), 7L, 500L));
+  }
+
+  @Test
+  void proctimeAssignsByTheClockIgnoringTheTimeColumn() throws Exception {
+    // A proctime HOP (size 2s, slide 1s): the row's time column (t=9999) is ignored — assignment is
+    // by the operator's processing-time clock, set to 1500 here, so the row falls in [0,2000) and
+    // [1000,3000) exactly as the event-time row at 1500 above. Deterministic via setProcessingTime.
+    NativeWindowTableFunctionOperator operator =
+        new NativeWindowTableFunctionOperator(1, 2000, 1000, false, true);
+    List<List<Long>> rows = new ArrayList<>();
+    try (BufferAllocator allocator = new RootAllocator();
+        OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
+            new OneInputStreamOperatorTestHarness<>(operator, new ArrowBatchSerializer())) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.setProcessingTime(1500);
+
+      GenericRowData row = new GenericRowData(2);
+      row.setField(0, 7L);
+      row.setField(1, TimestampData.fromEpochMillis(9999L));
+      harness.processElement(
+          new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(List.of(row), SCHEMA, allocator))));
+
+      while (!harness.getOutput().isEmpty()) {
+        Object event = harness.getOutput().poll();
+        if (event instanceof StreamRecord) {
+          try (VectorSchemaRoot out = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
+            for (RowData r : RowDataArrowConverter.read(out, OUTPUT)) {
+              rows.add(
+                  List.of(
+                      r.getLong(0),
+                      r.getTimestamp(2, 3).getMillisecond(),
+                      r.getTimestamp(3, 3).getMillisecond(),
+                      r.getTimestamp(4, 3).getMillisecond()));
+            }
+          }
+        }
+      }
+    }
+    rows.sort(Comparator.<List<Long>>comparingLong(r -> r.get(2)).thenComparingLong(r -> r.get(1)));
+    assertEquals(List.of(window(0, 2000), window(1000, 3000)), rows);
   }
 
   /** window_time is window_end - 1ms (Flink's windowing TVF semantics). */

@@ -61,6 +61,22 @@ final class WindowRankMatcher {
     return rank.outputRankNumber();
   }
 
+  static boolean isProctime(StreamPhysicalWindowRank rank) {
+    return windowing(rank).isProctime();
+  }
+
+  static long windowMillis(StreamPhysicalWindowRank rank) {
+    return WindowAggregateMatcher.windowSize(windowing(rank));
+  }
+
+  static long slideMillis(StreamPhysicalWindowRank rank) {
+    return WindowAggregateMatcher.windowSlide(windowing(rank));
+  }
+
+  static boolean cumulative(StreamPhysicalWindowRank rank) {
+    return WindowAggregateMatcher.isCumulative(windowing(rank));
+  }
+
   static int[] sortIndices(StreamPhysicalWindowRank rank) {
     return rank.orderKey().getFieldCollations().stream()
         .mapToInt(RelFieldCollation::getFieldIndex)

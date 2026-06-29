@@ -34,6 +34,10 @@ public class NativeWindowRankExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] sortNullsFirst;
   private final long limit;
   private final boolean outputRankNumber;
+  private final boolean proctime;
+  private final long windowMillis;
+  private final long slideMillis;
+  private final boolean cumulative;
 
   public NativeWindowRankExecNode(
       ReadableConfig tableConfig,
@@ -47,7 +51,11 @@ public class NativeWindowRankExecNode extends ExecNodeBase<ArrowBatch>
       int[] sortAscending,
       int[] sortNullsFirst,
       long limit,
-      boolean outputRankNumber) {
+      boolean outputRankNumber,
+      boolean proctime,
+      long windowMillis,
+      long slideMillis,
+      boolean cumulative) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-window-rank_1"),
@@ -63,6 +71,10 @@ public class NativeWindowRankExecNode extends ExecNodeBase<ArrowBatch>
     this.sortNullsFirst = sortNullsFirst;
     this.limit = limit;
     this.outputRankNumber = outputRankNumber;
+    this.proctime = proctime;
+    this.windowMillis = windowMillis;
+    this.slideMillis = slideMillis;
+    this.cumulative = cumulative;
   }
 
   @Override
@@ -84,7 +96,11 @@ public class NativeWindowRankExecNode extends ExecNodeBase<ArrowBatch>
             sortNullsFirst,
             limit,
             outputRankNumber,
-            timeZoneId),
+            timeZoneId,
+            proctime,
+            windowMillis,
+            slideMillis,
+            cumulative),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

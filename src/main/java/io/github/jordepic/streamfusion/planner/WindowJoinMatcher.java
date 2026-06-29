@@ -46,10 +46,13 @@ final class WindowJoinMatcher {
       }
     }
     if (!(join.leftWindowing() instanceof WindowAttachedWindowingStrategy)
-        || !(join.rightWindowing() instanceof WindowAttachedWindowingStrategy)
-        || !join.leftWindowing().isRowtime()
-        || !join.rightWindowing().isRowtime()) {
-      return "window join: both sides must carry an event-time, window-attached window";
+        || !(join.rightWindowing() instanceof WindowAttachedWindowingStrategy)) {
+      return "window join: both sides must carry a window-attached window";
+    }
+    // Both sides close on the same trigger — both on a watermark (event time) or both on the
+    // processing-time clock. The TVFs that fed them are identical, so this normally holds.
+    if (join.leftWindowing().isProctime() != join.rightWindowing().isProctime()) {
+      return "window join: both sides must use the same time semantics (event time or proctime)";
     }
     RelDataType leftType = join.getLeft().getRowType();
     RelDataType rightType = join.getRight().getRowType();
@@ -105,6 +108,23 @@ final class WindowJoinMatcher {
 
   static int rightWindowEnd(StreamPhysicalWindowJoin join) {
     return attached(join.rightWindowing()).getWindowEnd();
+  }
+
+  static boolean isProctime(StreamPhysicalWindowJoin join) {
+    return join.leftWindowing().isProctime();
+  }
+
+  /** Window size in millis (both sides share the window); drives the proctime close timer. */
+  static long windowMillis(StreamPhysicalWindowJoin join) {
+    return WindowAggregateMatcher.windowSize(join.leftWindowing());
+  }
+
+  static long slideMillis(StreamPhysicalWindowJoin join) {
+    return WindowAggregateMatcher.windowSlide(join.leftWindowing());
+  }
+
+  static boolean cumulative(StreamPhysicalWindowJoin join) {
+    return WindowAggregateMatcher.isCumulative(join.leftWindowing());
   }
 
   private static WindowAttachedWindowingStrategy attached(WindowingStrategy windowing) {

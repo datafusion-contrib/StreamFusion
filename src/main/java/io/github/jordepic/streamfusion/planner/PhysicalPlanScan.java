@@ -656,7 +656,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             WindowTableFunctionMatcher.timeColumn(tvf),
             WindowTableFunctionMatcher.windowMillis(tvf),
             WindowTableFunctionMatcher.slideMillis(tvf),
-            WindowTableFunctionMatcher.cumulative(tvf));
+            WindowTableFunctionMatcher.cumulative(tvf),
+            WindowTableFunctionMatcher.isProctime(tvf));
       }
     }
 
@@ -683,7 +684,11 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             WindowRankMatcher.sortAscending(rank),
             WindowRankMatcher.sortNullsFirst(rank),
             WindowRankMatcher.limit(rank),
-            WindowRankMatcher.outputRankNumber(rank));
+            WindowRankMatcher.outputRankNumber(rank),
+            WindowRankMatcher.isProctime(rank),
+            WindowRankMatcher.windowMillis(rank),
+            WindowRankMatcher.slideMillis(rank),
+            WindowRankMatcher.cumulative(rank));
       }
     }
 
@@ -709,7 +714,11 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             WindowDeduplicateMatcher.sortAscending(dedup),
             WindowDeduplicateMatcher.sortNullsFirst(dedup),
             1,
-            false);
+            false,
+            WindowDeduplicateMatcher.isProctime(dedup),
+            WindowDeduplicateMatcher.windowMillis(dedup),
+            WindowDeduplicateMatcher.slideMillis(dedup),
+            WindowDeduplicateMatcher.cumulative(dedup));
       }
     }
 
@@ -968,7 +977,11 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             WindowJoinMatcher.rightWindowStart(join),
             WindowJoinMatcher.rightWindowEnd(join),
             WindowJoinMatcher.joinTypeCode(join),
-            WindowJoinMatcher.nonEquiPredicate(join));
+            WindowJoinMatcher.nonEquiPredicate(join),
+            WindowJoinMatcher.isProctime(join),
+            WindowJoinMatcher.windowMillis(join),
+            WindowJoinMatcher.slideMillis(join),
+            WindowJoinMatcher.cumulative(join));
       }
     }
 

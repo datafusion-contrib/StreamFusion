@@ -96,6 +96,45 @@ class FlinkWindowJoinSqlHarnessTest {
         + "ON a.k = b.k AND a.window_start = b.window_start AND a.window_end = b.window_end";
   }
 
+  @Test
+  void proctimeWindowJoinRoutesToNative() throws Exception {
+    // Two proctime TUMBLE windowing-TVF inputs joined within the same window. The windows are
+    // assigned by the operators' processing-time clock and closed on a processing-time timer, so the
+    // result is non-deterministic and not byte-compared to the host (see the CLAUDE.md note); this
+    // asserts the join routes to native and runs. The chained-timer firing is pinned deterministically
+    // by NativeColumnarWindowAggregateOperatorTest / the rank operator test with a controlled clock.
+    NativeParity.assertRoutes(
+        FlinkWindowJoinSqlHarnessTest::proctimeEnvironment,
+        "SELECT a.k, a.v, b.v FROM "
+            + "(SELECT * FROM TABLE(TUMBLE(TABLE A, DESCRIPTOR(pt), INTERVAL '5' SECOND))) a "
+            + "JOIN "
+            + "(SELECT * FROM TABLE(TUMBLE(TABLE B, DESCRIPTOR(pt), INTERVAL '5' SECOND))) b "
+            + "ON a.k = b.k AND a.window_start = b.window_start AND a.window_end = b.window_end");
+  }
+
+  private static TableEnvironment proctimeEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    Schema proctimeSchema =
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("v", DataTypes.BIGINT())
+            .columnByExpression("pt", "PROCTIME()")
+            .build();
+    tEnv.createTemporaryView("A", proctimeStream(env), proctimeSchema);
+    tEnv.createTemporaryView("B", proctimeStream(env), proctimeSchema);
+    return tEnv;
+  }
+
+  private static DataStream<Row> proctimeStream(StreamExecutionEnvironment env) {
+    return env.fromData(
+        Types.ROW_NAMED(new String[] {"k", "v"}, Types.LONG, Types.LONG),
+        Row.of(1L, 10L),
+        Row.of(2L, 30L),
+        Row.of(1L, 20L));
+  }
+
   private static TableEnvironment dataStreamEnvironment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);

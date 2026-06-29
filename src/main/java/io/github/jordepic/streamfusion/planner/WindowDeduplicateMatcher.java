@@ -62,6 +62,22 @@ final class WindowDeduplicateMatcher {
     return new int[] {0}; // the rowtime order key is never null
   }
 
+  static boolean isProctime(StreamPhysicalWindowDeduplicate dedup) {
+    return windowing(dedup).isProctime();
+  }
+
+  static long windowMillis(StreamPhysicalWindowDeduplicate dedup) {
+    return WindowAggregateMatcher.windowSize(windowing(dedup));
+  }
+
+  static long slideMillis(StreamPhysicalWindowDeduplicate dedup) {
+    return WindowAggregateMatcher.windowSlide(windowing(dedup));
+  }
+
+  static boolean cumulative(StreamPhysicalWindowDeduplicate dedup) {
+    return WindowAggregateMatcher.isCumulative(windowing(dedup));
+  }
+
   /** Reads the node's private {@code keepLastRow} flag; null if it cannot be read. */
   static Boolean keepLastRow(StreamPhysicalWindowDeduplicate dedup) {
     try {
