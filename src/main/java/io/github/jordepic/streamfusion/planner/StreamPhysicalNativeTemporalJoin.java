@@ -28,6 +28,7 @@ public class StreamPhysicalNativeTemporalJoin extends BiRel
   private final int leftTime;
   private final int rightTime;
   private final int joinType;
+  private final RexExpression predicate;
 
   public StreamPhysicalNativeTemporalJoin(
       RelOptCluster cluster,
@@ -39,7 +40,8 @@ public class StreamPhysicalNativeTemporalJoin extends BiRel
       int[] rightKeys,
       int leftTime,
       int rightTime,
-      int joinType) {
+      int joinType,
+      RexExpression predicate) {
     super(cluster, traitSet, left, right);
     this.outputRowType = outputRowType;
     this.leftKeys = leftKeys;
@@ -47,6 +49,7 @@ public class StreamPhysicalNativeTemporalJoin extends BiRel
     this.leftTime = leftTime;
     this.rightTime = rightTime;
     this.joinType = joinType;
+    this.predicate = predicate;
   }
 
   @Override
@@ -71,7 +74,8 @@ public class StreamPhysicalNativeTemporalJoin extends BiRel
         rightKeys,
         leftTime,
         rightTime,
-        joinType);
+        joinType,
+        predicate);
   }
 
   @Override
@@ -88,6 +92,7 @@ public class StreamPhysicalNativeTemporalJoin extends BiRel
         rightTime,
         joinType,
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getLeft().getRowType()),
-        FlinkTypeFactory$.MODULE$.toLogicalRowType(getRight().getRowType()));
+        FlinkTypeFactory$.MODULE$.toLogicalRowType(getRight().getRowType()),
+        predicate);
   }
 }

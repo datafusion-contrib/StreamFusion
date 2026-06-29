@@ -1,5 +1,6 @@
 package io.github.jordepic.streamfusion.planner;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.apache.calcite.plan.RelOptUtil;
@@ -7,6 +8,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexUtil;
 import org.apache.flink.table.planner.plan.nodes.exec.spec.JoinSpec;
 import org.apache.flink.table.planner.plan.nodes.physical.common.CommonPhysicalJoin;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTemporalJoin;
@@ -66,15 +68,10 @@ final class TemporalJoinMatcher {
     if (condition.isEmpty()) {
       return "temporal join: missing temporal join condition";
     }
-    // Only the synthetic temporal condition may remain as a non-equi conjunct; any further residual
-    // predicate is not supported yet (it would need to ride the joined row into the native filter).
-    List<RexNode> conjuncts = RelOptUtil.conjunctions(condition.get());
     RexCall temporalCall = null;
-    for (RexNode conjunct : conjuncts) {
+    for (RexNode conjunct : RelOptUtil.conjunctions(condition.get())) {
       if (isTemporalCall(conjunct)) {
         temporalCall = (RexCall) conjunct;
-      } else {
-        return "temporal join: a residual non-equi predicate beyond FOR SYSTEM_TIME is not supported";
       }
     }
     if (temporalCall == null) {
@@ -83,7 +80,44 @@ final class TemporalJoinMatcher {
     if (!isRowTime(temporalCall, leftType.getFieldCount())) {
       return "temporal join: only event-time (FOR SYSTEM_TIME AS OF rowtime); proctime is unsupported";
     }
+    // A residual non-equi predicate beyond FOR SYSTEM_TIME (e.g. `… AND o.amount < r.rate`) is applied
+    // natively as the join filter, so it must be expressible by the native expression engine.
+    if (residualCondition(join) != null && nonEquiPredicate(join) == null) {
+      return "temporal join: the residual non-equi condition is not natively expressible";
+    }
     return null;
+  }
+
+  /**
+   * The encoded residual non-equi condition (everything in the join condition beyond the synthetic
+   * temporal-join marker; its input refs index into the joined {@code [left.., right..]} row), or null
+   * when there is none or it is not natively expressible.
+   */
+  static RexExpression nonEquiPredicate(StreamPhysicalTemporalJoin join) {
+    RexNode residual = residualCondition(join);
+    if (residual == null) {
+      return null;
+    }
+    RexNode expanded = RexUtil.expandSearch(join.getCluster().getRexBuilder(), null, residual);
+    return RexExpression.encode(expanded);
+  }
+
+  /** The conjunction of the non-equi condition's conjuncts other than the temporal marker, or null. */
+  private static RexNode residualCondition(StreamPhysicalTemporalJoin join) {
+    RexNode condition = ((CommonPhysicalJoin) join).joinSpec().getNonEquiCondition().orElse(null);
+    if (condition == null) {
+      return null;
+    }
+    List<RexNode> residual = new ArrayList<>();
+    for (RexNode conjunct : RelOptUtil.conjunctions(condition)) {
+      if (!isTemporalCall(conjunct)) {
+        residual.add(conjunct);
+      }
+    }
+    if (residual.isEmpty()) {
+      return null;
+    }
+    return RexUtil.composeConjunction(join.getCluster().getRexBuilder(), residual);
   }
 
   /** The native join-type code (0=INNER, 1=LEFT), or -1 for an unsupported type. */

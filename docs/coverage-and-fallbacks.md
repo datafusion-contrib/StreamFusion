@@ -75,10 +75,10 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   **Temporal table join** (`FOR SYSTEM_TIME AS OF probe.rowtime`) is native for INNER and LEFT over
   event time: the build side is held as per-key versioned state (changelog `+I`/`+U`/`-D`, indexed by
   rowtime), and on a watermark each buffered probe row joins the version valid at its time — a faithful
-  port of Flink's `TemporalRowTimeJoinOperator`, deterministic and value-compared to the host. Gaps:
-  a residual non-equi predicate beyond the temporal condition falls back (v1); a **processing-time**
-  temporal table join is parity (Flink itself rejects it — FLINK-19830), as is the legacy proctime
-  temporal *function* join.
+  port of Flink's `TemporalRowTimeJoinOperator`, deterministic and value-compared to the host. A
+  residual non-equi predicate beyond the temporal condition (e.g. `… AND o.amount < r.rate`) is applied
+  natively, like the other joins. Real gap: none — a **processing-time** temporal table join is parity
+  (Flink itself rejects it — FLINK-19830), as is the legacy proctime temporal *function* join.
 - **Sources/sink** — local `file:` path only (Parquet/ORC source, Parquet sink); Kafka decode limited
   (see below); CDC only Debezium/OGG JSON.
 - **Proctime** support, by operator:
@@ -144,7 +144,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   window on a processing-time timer instead of a watermark.
 - **Temporal join** — not INNER/LEFT (Flink rejects RIGHT/FULL); no equi key; non-null-dropping keys;
   equi-key type outside the supported set; a residual non-equi predicate beyond the `FOR SYSTEM_TIME`
-  condition (v1); a processing-time temporal join (parity — Flink rejects it for a versioned table).
+  condition that the native engine can't express; a processing-time temporal join (parity — Flink
+  rejects it for a versioned table).
 - **Regular join** — unsupported join type; no equi key; non-null-dropping keys; non-equi residual not
   expressible; an input column type the converter can't carry.
 - **Window aggregate / local / global** — window not event-time `TUMBLE`/`HOP`/`CUMULATE` (zero offset)

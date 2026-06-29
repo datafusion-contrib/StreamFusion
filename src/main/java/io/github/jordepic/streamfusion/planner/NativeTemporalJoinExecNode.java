@@ -28,6 +28,7 @@ public class NativeTemporalJoinExecNode extends ExecNodeBase<ArrowBatch>
   private final int joinType;
   private final RowType leftType;
   private final RowType rightType;
+  private final RexExpression predicate;
 
   public NativeTemporalJoinExecNode(
       ReadableConfig tableConfig,
@@ -41,7 +42,8 @@ public class NativeTemporalJoinExecNode extends ExecNodeBase<ArrowBatch>
       int rightTime,
       int joinType,
       RowType leftType,
-      RowType rightType) {
+      RowType rightType,
+      RexExpression predicate) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-temporal-join_1"),
@@ -56,6 +58,7 @@ public class NativeTemporalJoinExecNode extends ExecNodeBase<ArrowBatch>
     this.joinType = joinType;
     this.leftType = leftType;
     this.rightType = rightType;
+    this.predicate = predicate;
   }
 
   @Override
@@ -78,7 +81,7 @@ public class NativeTemporalJoinExecNode extends ExecNodeBase<ArrowBatch>
             joinType,
             leftType,
             rightType,
-            io.github.jordepic.streamfusion.operator.EncodedPredicate.NONE),
+            RexExpression.toEncodedPredicate(predicate)),
         ArrowBatchTypeInformation.INSTANCE,
         left.getParallelism(),
         false);

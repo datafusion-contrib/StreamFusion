@@ -33,6 +33,18 @@ class FlinkTemporalJoinSqlHarnessTest {
   }
 
   @Test
+  void temporalJoinWithNonEquiPredicateMatchesHost() throws Exception {
+    // A residual non-equi condition (o.amount < r.rate) beyond the equi key + FOR SYSTEM_TIME is
+    // applied natively as the join filter; a probe whose valid version fails it does not match.
+    NativeParity.assertParity(
+        FlinkTemporalJoinSqlHarnessTest::environment,
+        "SELECT o.currency, o.amount, r.rate "
+            + "FROM Orders AS o "
+            + "JOIN Rates FOR SYSTEM_TIME AS OF o.rt AS r "
+            + "ON o.currency = r.currency AND o.amount < r.rate");
+  }
+
+  @Test
   void leftTemporalJoinMatchesHost() throws Exception {
     // A GBP order has no rate version at all → null-padded by the LEFT join.
     NativeParity.assertParity(

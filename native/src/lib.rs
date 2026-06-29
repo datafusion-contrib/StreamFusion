@@ -12084,6 +12084,34 @@ mod tests {
         assert_eq!(values(&out, 4), vec![20]); // resolves to the version valid at 500 (rate 20 @300)
     }
 
+    // A residual non-equi predicate gates the version match: the version valid at the probe time is
+    // joined only when the pair also satisfies the predicate, else (INNER) the probe row is dropped.
+    // Joined row is [lk, lamount, lrt, rk, rrate, rrt] = indices [0..6]; predicate is amount > rate.
+    #[test]
+    fn temporal_join_applies_non_equi_predicate() {
+        let predicate = JoinPredicate {
+            kinds: vec![6, 0, 0],     // CALL(>), input_ref, input_ref
+            payload: vec![10, 1, 4],  // op GREATER_THAN; probe.amount (col 1) > build.rate (col 4)
+            child_counts: vec![2, 0, 0],
+            longs: vec![],
+            doubles: vec![],
+            strings: vec![],
+            compiled: None,
+        };
+        let mut joiner = TemporalJoiner::new(
+            vec![0], vec![0], 2, 2, JoinKind::Inner, temporal_schema(), temporal_schema(),
+            Some(predicate),
+        );
+        // key 1: rate 5@100 then rate 50@300 (+U).
+        joiner.push_right(&temporal_build_batch(vec![1], vec![5], vec![100], vec![0]));
+        joiner.push_right(&temporal_build_batch(vec![1], vec![50], vec![300], vec![2]));
+        // amount 10 @200 -> version rate 5, 10 > 5 matches; amount 10 @500 -> version rate 50, fails.
+        joiner.push_left(&temporal_probe_batch(vec![1, 1], vec![10, 10], vec![200, 500]));
+        let out = joiner.advance(i64::MAX);
+        assert_eq!(out.num_rows(), 1);
+        assert_eq!(values(&out, 4), vec![5]); // only the pair passing amount > rate
+    }
+
     // A residual non-equi predicate gates which same-key pairs are matches. `left.v > right.v`
     // (cols [k, lv, k0, rv] = indices [0,1,2,3]) over an INNER join: of two buffered right rows only
     // the one whose v is below the left's v matches.
