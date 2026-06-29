@@ -550,6 +550,14 @@ final class RexExpression {
     }
     SqlTypeName source = sourceType.getSqlTypeName();
     SqlTypeName targetType = resultType.getSqlTypeName();
+    // A cast to DECIMAL (e.g. coercing q1's `0.908 * price` to the sink's DECIMAL(23,3)) is admitted
+    // only under the approximate-decimal flag: it is computed in double and cast to the declared
+    // precision/scale, not byte-identical to Flink's decimal rounding — same trade-off as the
+    // arithmetic path. Off by default, so it falls back.
+    if (targetType == SqlTypeName.DECIMAL && NativeConfig.allowsApproximateDecimal()) {
+      add(KIND_CAST_DECIMAL, resultType.getPrecision() * 100 + resultType.getScale(), 1);
+      return emit(call.getOperands().get(0));
+    }
     int target = wideningTargetCode(source, targetType);
     if (target < 0) {
       return reject("unsupported CAST " + source + "→" + targetType + " (only widening numeric)");

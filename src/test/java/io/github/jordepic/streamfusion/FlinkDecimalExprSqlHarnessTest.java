@@ -41,6 +41,30 @@ class FlinkDecimalExprSqlHarnessTest {
     }
   }
 
+  @Test
+  void approximateDecimalCastRoutesUnderFlag() throws Exception {
+    // A DECIMAL→DECIMAL cast (q1 coerces 0.908 * price to the sink's DECIMAL(23,3)) is admitted only
+    // under the same flag — computed in double, cast to the declared precision/scale. Routes, not exact.
+    System.setProperty("streamfusion.expression.decimalArithmetic.approximate", "true");
+    try {
+      NativeParity.assertRoutes(
+          FlinkDecimalExprSqlHarnessTest::environment,
+          "SELECT auction, CAST(0.908 * price AS DECIMAL(23, 3)) AS price FROM t");
+    } finally {
+      System.clearProperty("streamfusion.expression.decimalArithmetic.approximate");
+    }
+  }
+
+  @Test
+  void decimalCastFallsBackByDefault() throws Exception {
+    // With the flag off, the outer DECIMAL→DECIMAL cast is rejected (the encoder reaches it before the
+    // inner arithmetic), so the calc falls back on the cast reason.
+    NativeParity.assertFallbackReasonContains(
+        FlinkDecimalExprSqlHarnessTest::environment,
+        "SELECT auction, CAST(0.908 * price AS DECIMAL(23, 3)) AS price FROM t",
+        "unsupported CAST DECIMAL");
+  }
+
   private static TableEnvironment environment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
