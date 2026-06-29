@@ -880,9 +880,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         }
         substitutions++;
         int timeColumn = OverAggregateMatcher.timeColumn(over);
-        int valueColumn = OverAggregateMatcher.valueColumnIndex(over);
+        int[] valueColumns = OverAggregateMatcher.valueColumnIndices(over);
         int[] keyColumns = OverAggregateMatcher.keyColumns(over);
-        int valueType = OverAggregateMatcher.valueTypeCode(over);
+        int[] valueTypes = OverAggregateMatcher.valueTypeCodes(over);
         int[] kinds = OverAggregateMatcher.kinds(over);
         int frameKind = OverAggregateMatcher.frameKind(over);
         long frameOffset = OverAggregateMatcher.frameOffset(over);
@@ -894,9 +894,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             columnarInput(over.getInputs().get(0), keyColumns),
             over.getRowType(),
             timeColumn,
-            valueColumn,
+            valueColumns,
             keyColumns,
-            valueType,
+            valueTypes,
             kinds,
             frameKind,
             frameOffset);

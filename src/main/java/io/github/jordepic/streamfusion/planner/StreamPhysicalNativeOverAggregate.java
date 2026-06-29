@@ -24,9 +24,9 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
 
   private final RelDataType outputRowType;
   private final int timeColumn;
-  private final int valueColumn;
+  private final int[] valueColumns;
   private final int[] keyColumns;
-  private final int valueType;
+  private final int[] valueTypes;
   private final int[] aggregateKinds;
   private final int frameKind;
   private final long frameOffset;
@@ -37,18 +37,18 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
       RelNode input,
       RelDataType outputRowType,
       int timeColumn,
-      int valueColumn,
+      int[] valueColumns,
       int[] keyColumns,
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds,
       int frameKind,
       long frameOffset) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.timeColumn = timeColumn;
-    this.valueColumn = valueColumn;
+    this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
-    this.valueType = valueType;
+    this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
     this.frameKind = frameKind;
     this.frameOffset = frameOffset;
@@ -67,8 +67,8 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
     return new StreamPhysicalNativeOverAggregate(
-        getCluster(), traitSet, inputs.get(0), outputRowType, timeColumn, valueColumn, keyColumns,
-        valueType, aggregateKinds, frameKind, frameOffset);
+        getCluster(), traitSet, inputs.get(0), outputRowType, timeColumn, valueColumns, keyColumns,
+        valueTypes, aggregateKinds, frameKind, frameOffset);
   }
 
   @Override
@@ -79,9 +79,9 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
         getRelDetailedDescription(),
         timeColumn,
-        valueColumn,
+        valueColumns,
         keyColumns,
-        valueType,
+        valueTypes,
         aggregateKinds,
         frameKind,
         frameOffset);

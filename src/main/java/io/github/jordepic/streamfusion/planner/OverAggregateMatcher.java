@@ -18,8 +18,8 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalO
  * Recognizes the event-time {@code OVER} aggregations the native operator implements: a single
  * window group ordered by a rowtime (local-time-zone) attribute, optional {@code PARTITION BY} on
  * bigint/int/string/boolean/date/timestamp/decimal keys, and one or more {@code SUM}/{@code MIN}/{@code
- * MAX}/{@code COUNT}/{@code FIRST_VALUE}/{@code LAST_VALUE} aggregates that all read the same
- * bigint/int/double value column, over one of three frames ending at the current row: {@code RANGE
+ * MAX}/{@code COUNT}/{@code FIRST_VALUE}/{@code LAST_VALUE} aggregates that each read a (possibly
+ * different) bigint/int/double value column, over one of three frames ending at the current row: {@code RANGE
  * UNBOUNDED PRECEDING} (a persistent running fold), {@code ROWS BETWEEN n PRECEDING AND CURRENT ROW}
  * (recomputed over the row slice), or {@code RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW}
  * (recomputed over the rowtime interval). Anything else (proctime, AVG, multiple value columns, an
@@ -64,9 +64,9 @@ final class OverAggregateMatcher {
       }
       return "OVER: window functions need the UNBOUNDED PRECEDING .. CURRENT ROW frame";
     }
-    if (valueColumn(group, inputType) == null) {
-      return "OVER: aggregates need a single shared bigint/int/double value column"
-          + " (AVG or multiple value columns not supported)";
+    if (valueColumns(group, inputType) == null) {
+      return "OVER: aggregates need a single bigint/int/double value-column argument each"
+          + " (AVG and COUNT(*) not supported)";
     }
     // Every supported frame ends at CURRENT ROW with a preceding lower bound. ROWS must be a constant
     // n PRECEDING (recomputed over the row slice); RANGE may be UNBOUNDED PRECEDING (the running fold)
@@ -170,37 +170,34 @@ final class OverAggregateMatcher {
   }
 
   /**
-   * The shared value column index if every aggregate is a supported kind over the same single
-   * bigint/int/double input column, or null otherwise.
+   * One value-column index per aggregate if every aggregate is a supported kind over a single
+   * bigint/int/double input column (each may read a different one), or null otherwise.
    */
-  private static Integer valueColumn(Window.Group group, RelDataType inputType) {
-    Integer column = null;
-    for (Window.RexWinAggCall aggCall : group.aggCalls) {
-      RexCall call = aggCall;
+  private static int[] valueColumns(Window.Group group, RelDataType inputType) {
+    List<Window.RexWinAggCall> aggCalls = group.aggCalls;
+    if (aggCalls.isEmpty()) {
+      return null;
+    }
+    int[] columns = new int[aggCalls.size()];
+    for (int a = 0; a < aggCalls.size(); a++) {
+      RexCall call = aggCalls.get(a);
       int kind = overKind(call.getOperator().getKind());
       if (call.getOperands().size() != 1
           || !(call.getOperands().get(0) instanceof RexInputRef)
           || kind < 0
           || kind == WindowAggregateMatcher.KIND_AVG) {
-        return null; // SUM/SUM0/MIN/MAX/COUNT only (no AVG yet), single column argument
+        return null; // SUM/SUM0/MIN/MAX/COUNT only (no AVG), a single column argument each
       }
-      RexNode operand = call.getOperands().get(0);
-      int index = ((RexInputRef) operand).getIndex();
-      if (column == null) {
-        column = index;
-      } else if (column != index) {
-        return null; // all aggregates must read the same value column
+      int index = ((RexInputRef) call.getOperands().get(0)).getIndex();
+      SqlTypeName valueType = inputType.getFieldList().get(index).getType().getSqlTypeName();
+      if (valueType != SqlTypeName.BIGINT
+          && valueType != SqlTypeName.INTEGER
+          && valueType != SqlTypeName.DOUBLE) {
+        return null;
       }
+      columns[a] = index;
     }
-    if (column == null) {
-      return null;
-    }
-    SqlTypeName valueType = inputType.getFieldList().get(column).getType().getSqlTypeName();
-    return valueType == SqlTypeName.BIGINT
-            || valueType == SqlTypeName.INTEGER
-            || valueType == SqlTypeName.DOUBLE
-        ? column
-        : null;
+    return columns;
   }
 
   static int timeColumn(StreamPhysicalOverAggregate over) {
@@ -212,29 +209,33 @@ final class OverAggregateMatcher {
     return over.logicWindow().groups.get(0).keys.toArray();
   }
 
-  /** The shared value column index, or -1 for window-function OVER (e.g. ROW_NUMBER) with no argument. */
-  static int valueColumnIndex(StreamPhysicalOverAggregate over) {
+  /** One value-column index per aggregate, or empty for window-function OVER (e.g. ROW_NUMBER). */
+  static int[] valueColumnIndices(StreamPhysicalOverAggregate over) {
     Window.Group group = over.logicWindow().groups.get(0);
     if (allWindowFunctions(group)) {
-      return -1;
+      return new int[0];
     }
-    return valueColumn(group, over.getInput().getRowType());
+    return valueColumns(group, over.getInput().getRowType());
   }
 
-  /** Value-type code matching the native side: 0 = bigint, 1 = double, 2 = int (0 when no value). */
-  static int valueTypeCode(StreamPhysicalOverAggregate over) {
-    int valueColumn = valueColumnIndex(over);
-    if (valueColumn < 0) {
-      return 0; // window functions ignore the value type
+  /** Value-type code per aggregate matching the native side: 0 = bigint, 1 = double, 2 = int. */
+  static int[] valueTypeCodes(StreamPhysicalOverAggregate over) {
+    int[] columns = valueColumnIndices(over);
+    RelDataType inputType = over.getInput().getRowType();
+    int[] codes = new int[columns.length];
+    for (int a = 0; a < columns.length; a++) {
+      switch (inputType.getFieldList().get(columns[a]).getType().getSqlTypeName()) {
+        case DOUBLE:
+          codes[a] = 1;
+          break;
+        case INTEGER:
+          codes[a] = 2;
+          break;
+        default:
+          codes[a] = 0;
+      }
     }
-    switch (over.getInput().getRowType().getFieldList().get(valueColumn).getType().getSqlTypeName()) {
-      case DOUBLE:
-        return 1;
-      case INTEGER:
-        return 2;
-      default:
-        return 0;
-    }
+    return codes;
   }
 
   static int[] kinds(StreamPhysicalOverAggregate over) {

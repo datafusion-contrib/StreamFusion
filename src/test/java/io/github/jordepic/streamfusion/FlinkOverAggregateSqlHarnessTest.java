@@ -124,6 +124,27 @@ class FlinkOverAggregateSqlHarnessTest {
   }
 
   @Test
+  void independentValueColumnsMatchHost() throws Exception {
+    // One OVER group, two aggregates reading different value columns: SUM(v) and MAX(ts). Each folds
+    // its own column rather than a single shared one.
+    NativeParity.assertParity(
+        FlinkOverAggregateSqlHarnessTest::environment,
+        "SELECT k, SUM(v) OVER w AS sv, MAX(ts) OVER w AS mt "
+            + "FROM src WINDOW w AS (PARTITION BY k ORDER BY rt)");
+  }
+
+  @Test
+  void independentValueColumnsBoundedRowsMatchHost() throws Exception {
+    // Independent value columns over a bounded ROWS frame: each aggregate recomputes over its own
+    // column's frame slice.
+    NativeParity.assertParity(
+        FlinkOverAggregateSqlHarnessTest::boundedEnvironment,
+        "SELECT k, SUM(v) OVER w AS sv, MIN(ts) OVER w AS mt "
+            + "FROM src "
+            + "WINDOW w AS (PARTITION BY k ORDER BY rt ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)");
+  }
+
+  @Test
   void booleanPartitionKeyMatchesHost() throws Exception {
     // PARTITION BY a boolean key — exercises the wider partition-key set (the native key path is
     // type-general; boolean/date/timestamp/decimal are admitted, not just bigint/int/string).

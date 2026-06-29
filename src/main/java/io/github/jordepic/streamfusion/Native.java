@@ -430,20 +430,22 @@ public final class Native {
    * row): it buffers input batches and, on a watermark, emits the completed rows with the running
    * aggregate(s) appended. Released with {@link #closeOverAggregator}.
    *
-   * @param valueType value column type (see {@link #createTumblingAggregator})
+   * @param valueTypes value column type per aggregate (see {@link #createTumblingAggregator}); empty
+   *     for window-function OVER with no value argument
    * @param aggregateKinds aggregate codes (see {@link #createTumblingAggregator})
    * @param rtColumn rowtime column index in the input batch
-   * @param valueColumn value column index in the input batch
+   * @param valueColumns value column index per aggregate (each aggregate reads its own); empty for
+   *     window-function OVER
    * @param keyColumns PARTITION BY column indices in the input batch (empty for no partition)
    * @param frameKind frame shape: 0 = RANGE unbounded preceding, 1 = bounded ROWS, 2 = bounded RANGE
    * @param frameOffset n preceding rows (ROWS) or the preceding interval in millis (RANGE); 0 when
    *     unbounded
    */
   public static native long createOverAggregator(
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds,
       int rtColumn,
-      int valueColumn,
+      int[] valueColumns,
       int[] keyColumns,
       int frameKind,
       long frameOffset);
@@ -467,10 +469,10 @@ public final class Native {
 
   /** Rebuilds an OVER aggregator from a snapshot and returns a fresh handle. */
   public static native long restoreOverAggregator(
-      int valueType,
+      int[] valueTypes,
       int[] aggregateKinds,
       int rtColumn,
-      int valueColumn,
+      int[] valueColumns,
       int[] keyColumns,
       int frameKind,
       long frameOffset,

@@ -34,7 +34,7 @@ class NativeOverAggregateOperatorTest {
   @Test
   void emitsRunningSumWithPassthrough() throws Exception {
     NativeOverAggregateOperator operator =
-        new NativeOverAggregateOperator(1, 0, new int[0], 0, new int[] {0}, 0, 0);
+        new NativeOverAggregateOperator(1, new int[] {0}, new int[0], new int[] {0}, new int[] {0}, 0, 0);
     try (BufferAllocator allocator = new RootAllocator();
         OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
             new OneInputStreamOperatorTestHarness<>(operator, new ArrowBatchSerializer())) {

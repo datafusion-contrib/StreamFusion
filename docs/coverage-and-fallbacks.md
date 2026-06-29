@@ -61,8 +61,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 - **`OVER`** — the unbounded `RANGE … CURRENT ROW` frame (running fold), the bounded
   `ROWS BETWEEN n PRECEDING AND CURRENT ROW` frame (recomputed over the row slice), **and** the
   bounded `RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW` frame (recomputed over the rowtime
-  interval), over one ascending rowtime, all aggregates over one shared bigint/int/double value
-  column. Real gaps: independent value columns per aggregate, wider value types, and proctime
+  interval), over one ascending rowtime, each aggregate over its own (possibly different)
+  bigint/int/double value column. Real gaps: wider value types (smallint/tinyint/float) and proctime
   ordering. (More than one window group, decimal bounded frames, `FOLLOWING` frames,
   non-time/descending order, and `LAG`/`LEAD` are parity — Flink rejects or single-groups them in
   streaming.)
@@ -93,8 +93,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 
 ### 2. Per-operator matcher declines (exact conditions)
 - **OVER** — a frame not of the form `… PRECEDING .. CURRENT ROW` (a `ROWS`/`RANGE` lower bound that
-  is not a constant preceding offset); proctime ordering; aggregates not all over one shared
-  bigint/int/double value column; `PARTITION BY` key outside
+  is not a constant preceding offset); proctime ordering; an aggregate that is `AVG`, `COUNT(*)`, or
+  reads a non-bigint/int/double column; `PARTITION BY` key outside
   bigint/int/string/boolean/date/timestamp/decimal. (More than one window group, decimal bounded
   frames, non-time/descending order, `FOLLOWING` frames, and `LAG`/`LEAD` never reach us — Flink
   rejects or single-groups them in streaming.)
