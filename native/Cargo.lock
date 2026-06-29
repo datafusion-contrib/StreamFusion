@@ -3092,6 +3092,7 @@ dependencies = [
  "ahash",
  "arrow",
  "arrow-avro",
+ "chrono",
  "criterion",
  "datafusion",
  "datafusion-orc",

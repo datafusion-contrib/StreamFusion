@@ -6749,6 +6749,10 @@ fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prel
         // SPLIT_INDEX(str, sep, index): Flink's whole-separator split, index-th piece (see SplitIndex).
         return datafusion::logical_expr::ScalarUDF::new_from_impl(SplitIndex::new()).call(args);
     }
+    if op == 86 {
+        // DATE_FORMAT(ts, fmt): fmt is the already-translated chrono pattern (see DateFormat).
+        return datafusion::logical_expr::ScalarUDF::new_from_impl(DateFormat::new()).call(args);
+    }
     if op == 57 {
         // POSITION(sub IN s): operands arrive [sub, s]; strpos takes (string, substring).
         let mut a = args.into_iter();
@@ -6904,6 +6908,72 @@ impl datafusion::logical_expr::ScalarUDFImpl for SplitIndex {
             }
             match str.split(seps.value(row)).nth(index as usize) {
                 Some(piece) => builder.append_value(piece),
+                None => builder.append_null(),
+            }
+        }
+        Ok(ColumnarValue::Array(Arc::new(builder.finish())))
+    }
+}
+
+/// Flink's `DATE_FORMAT(timestamp, format)`: format the timestamp's UTC wall-clock with the given
+/// pattern — `LocalDateTime.ofInstant(ts, UTC).format(DateTimeFormatter.ofPattern(format))`. The JVM
+/// encoder validates the (literal) Java pattern and passes the equivalent chrono strftime pattern as
+/// the second argument, admitting only patterns whose chrono translation is byte-identical; the native
+/// side just formats. The timestamp column is naive (TIMESTAMP, no zone), so its stored millis are the
+/// wall-clock at UTC — `from_timestamp_millis` recovers exactly the fields Flink formats.
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct DateFormat {
+    signature: datafusion::logical_expr::Signature,
+}
+
+impl DateFormat {
+    fn new() -> Self {
+        Self {
+            signature: datafusion::logical_expr::Signature::variadic_any(
+                datafusion::logical_expr::Volatility::Immutable,
+            ),
+        }
+    }
+}
+
+impl datafusion::logical_expr::ScalarUDFImpl for DateFormat {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &str {
+        "date_format"
+    }
+    fn signature(&self) -> &datafusion::logical_expr::Signature {
+        &self.signature
+    }
+    fn return_type(&self, _: &[DataType]) -> datafusion::common::Result<DataType> {
+        Ok(DataType::Utf8)
+    }
+    fn invoke_with_args(
+        &self,
+        args: datafusion::logical_expr::ScalarFunctionArgs,
+    ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
+        use datafusion::logical_expr::ColumnarValue;
+        let rows = args.number_rows;
+        let arrays = ColumnarValue::values_to_arrays(&args.args)?;
+        let times = arrow::compute::cast(
+            &arrays[0],
+            &DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
+        )?;
+        let times =
+            times.as_any().downcast_ref::<TimestampMillisecondArray>().expect("timestamp ms");
+        let formats = arrow::compute::cast(&arrays[1], &DataType::Utf8)?;
+        let formats = formats.as_any().downcast_ref::<StringArray>().expect("utf8 format");
+        let mut builder = arrow::array::StringBuilder::new();
+        for row in 0..rows {
+            if times.is_null(row) || formats.is_null(row) {
+                builder.append_null();
+                continue;
+            }
+            match chrono::DateTime::from_timestamp_millis(times.value(row)) {
+                Some(instant) => {
+                    builder.append_value(instant.naive_utc().format(formats.value(row)).to_string())
+                }
                 None => builder.append_null(),
             }
         }
@@ -12773,6 +12843,43 @@ mod tests {
         assert!(col.is_null(1)); // ["x"] has no index 3
         assert!(col.is_null(2)); // empty input -> no tokens
         assert!(col.is_null(3)); // null url
+    }
+
+    // DATE_FORMAT(ts, '%Y-%m-%d') over the Calc path: formats the timestamp's UTC wall-clock, NULL for
+    // a null input (the JVM encoder supplies the chrono pattern).
+    #[test]
+    fn calc_date_format_matches_flink() {
+        let ts: ArrayRef = Arc::new(TimestampMillisecondArray::from(vec![
+            Some(0),
+            Some(86_400_000),
+            None,
+        ]));
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "ts",
+                DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
+                true,
+            )])),
+            vec![ts],
+        )
+        .unwrap();
+        let mut calc = CalcExpression {
+            kinds: vec![6, 0, 3],       // CALL(DATE_FORMAT), col ts, lit "%Y-%m-%d"
+            payload: vec![86, 0, 0],    // op 86; col 0; strings[0]
+            child_counts: vec![2, 0, 0],
+            longs: vec![],
+            doubles: vec![],
+            strings: vec![Some("%Y-%m-%d".to_string())],
+            projection_roots: vec![0],
+            condition_root: -1,
+            output_names: vec!["d".to_string()],
+            compiled: None,
+        };
+        let out = calc.evaluate(batch);
+        let col = out.column(0).as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(col.value(0), "1970-01-01");
+        assert_eq!(col.value(1), "1970-01-02");
+        assert!(col.is_null(2));
     }
 
     // The by-key split sends every row with the same key to the same partition and preserves all

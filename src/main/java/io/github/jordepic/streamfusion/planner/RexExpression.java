@@ -351,6 +351,9 @@ final class RexExpression {
     if ("SPLIT_INDEX".equalsIgnoreCase(call.getOperator().getName())) {
       return emitSplitIndex(call.getOperands());
     }
+    if ("DATE_FORMAT".equalsIgnoreCase(call.getOperator().getName())) {
+      return emitDateFormat(call.getOperands());
+    }
     if ("ABS".equalsIgnoreCase(call.getOperator().getName())) {
       return emitFloatUnary(call, 62);
     }
@@ -671,6 +674,94 @@ final class RexExpression {
       }
     }
     return true;
+  }
+
+  /**
+   * Emits {@code DATE_FORMAT(timestamp, format)} (op 86). Admitted only for a plain {@code TIMESTAMP}
+   * (not local-zoned, whose formatting would depend on the session zone) with a literal format whose
+   * Java pattern translates to a byte-identical chrono pattern (see {@link #toChronoFormat}); the
+   * translated pattern is passed to the native side. Anything else falls back.
+   */
+  private boolean emitDateFormat(List<RexNode> args) {
+    if (args.size() != 2) {
+      return reject("DATE_FORMAT requires 2 arguments");
+    }
+    RexNode timestamp = args.get(0);
+    if (timestamp.getType().getSqlTypeName() != SqlTypeName.TIMESTAMP) {
+      return reject("DATE_FORMAT: only a plain TIMESTAMP argument is supported");
+    }
+    if (!(args.get(1) instanceof RexLiteral)) {
+      return reject("DATE_FORMAT: format must be a literal");
+    }
+    String chrono = toChronoFormat(((RexLiteral) args.get(1)).getValueAs(String.class));
+    if (chrono == null) {
+      return reject("DATE_FORMAT: unsupported format pattern");
+    }
+    add(KIND_CALL, 86, 2);
+    if (!emit(timestamp)) {
+      return false;
+    }
+    add(KIND_LIT_STRING, strings.size(), 0);
+    strings.add(chrono);
+    return true;
+  }
+
+  /**
+   * Translates a Java {@code DateTimeFormatter} pattern to the equivalent chrono strftime pattern, or
+   * null if it uses any field the translation can't reproduce byte-for-byte. Only zero-padded numeric
+   * fields (the unambiguous ones) and literal separators are admitted; text fields, fractional seconds,
+   * am/pm, zones, and single-letter (non-padded) fields fall back.
+   */
+  private static String toChronoFormat(String pattern) {
+    if (pattern == null || pattern.isEmpty()) {
+      return null;
+    }
+    StringBuilder out = new StringBuilder();
+    int i = 0;
+    while (i < pattern.length()) {
+      char c = pattern.charAt(i);
+      if (Character.isLetter(c)) {
+        int j = i;
+        while (j < pattern.length() && pattern.charAt(j) == c) {
+          j++;
+        }
+        String token;
+        switch (pattern.substring(i, j)) {
+          case "yyyy":
+            token = "%Y";
+            break;
+          case "yy":
+            token = "%y";
+            break;
+          case "MM":
+            token = "%m";
+            break;
+          case "dd":
+            token = "%d";
+            break;
+          case "HH":
+            token = "%H";
+            break;
+          case "mm":
+            token = "%M";
+            break;
+          case "ss":
+            token = "%S";
+            break;
+          default:
+            return null;
+        }
+        out.append(token);
+        i = j;
+      } else if (c == '%') {
+        out.append("%%"); // a literal percent — chrono's escape
+        i++;
+      } else {
+        out.append(c); // separator / literal passes through
+        i++;
+      }
+    }
+    return out.toString();
   }
 
   /** A unary incompatible function, native only under its allowIncompatible flag. */
