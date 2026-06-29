@@ -108,6 +108,42 @@ class FlinkIntervalJoinSqlHarnessTest {
     NativeParity.assertParity(() -> parquetEnvironment(left, right, 2), JOIN);
   }
 
+  @Test
+  void proctimeIntervalJoinRoutesToNative() throws Exception {
+    // A proctime interval join: each row is timed by the operator's processing-time clock (not a
+    // rowtime column) and eviction advances on the clock, so the result is non-deterministic and not
+    // byte-compared to the host (see the CLAUDE.md note); this asserts it routes to native and runs.
+    // The match-by-clock and eviction are pinned deterministically by NativeIntervalJoinOperatorTest.
+    NativeParity.assertRoutes(
+        FlinkIntervalJoinSqlHarnessTest::proctimeEnvironment,
+        "SELECT a.k, a.v, b.v FROM A AS a JOIN B AS b "
+            + "ON a.k = b.k "
+            + "AND a.pt BETWEEN b.pt - INTERVAL '1' SECOND AND b.pt + INTERVAL '1' SECOND");
+  }
+
+  private static TableEnvironment proctimeEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    Schema proctimeSchema =
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("v", DataTypes.BIGINT())
+            .columnByExpression("pt", "PROCTIME()")
+            .build();
+    tEnv.createTemporaryView("A", proctimeStream(env), proctimeSchema);
+    tEnv.createTemporaryView("B", proctimeStream(env), proctimeSchema);
+    return tEnv;
+  }
+
+  private static DataStream<Row> proctimeStream(StreamExecutionEnvironment env) {
+    return env.fromData(
+        Types.ROW_NAMED(new String[] {"k", "v"}, Types.LONG, Types.LONG),
+        Row.of(1L, 10L),
+        Row.of(2L, 30L),
+        Row.of(1L, 20L));
+  }
+
   /** Two DataStream sources, each with a 5s-bounded watermark (lagging past the data span). */
   private static TableEnvironment dataStreamEnvironment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();

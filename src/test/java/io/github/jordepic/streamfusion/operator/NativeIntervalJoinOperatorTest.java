@@ -38,7 +38,8 @@ class NativeIntervalJoinOperatorTest {
     // a.rt BETWEEN b.rt - 1000 AND b.rt + 1000, equi-key on column 0, rt is column 2.
     NativeIntervalJoinOperator operator =
         new NativeIntervalJoinOperator(
-            new int[] {0}, new int[] {0}, 2, 2, -1000L, 1000L, 0, INPUT, INPUT, EncodedPredicate.NONE);
+            new int[] {0}, new int[] {0}, 2, 2, -1000L, 1000L, 0, INPUT, INPUT, EncodedPredicate.NONE,
+            false);
     try (BufferAllocator allocator = new RootAllocator();
         TwoInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch, ArrowBatch> harness =
             new TwoInputStreamOperatorTestHarness<>(operator)) {
@@ -64,7 +65,8 @@ class NativeIntervalJoinOperatorTest {
   void doesNotMatchAcrossKeys() throws Exception {
     NativeIntervalJoinOperator operator =
         new NativeIntervalJoinOperator(
-            new int[] {0}, new int[] {0}, 2, 2, -1000L, 1000L, 0, INPUT, INPUT, EncodedPredicate.NONE);
+            new int[] {0}, new int[] {0}, 2, 2, -1000L, 1000L, 0, INPUT, INPUT, EncodedPredicate.NONE,
+            false);
     try (BufferAllocator allocator = new RootAllocator();
         TwoInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch, ArrowBatch> harness =
             new TwoInputStreamOperatorTestHarness<>(operator)) {
@@ -77,6 +79,39 @@ class NativeIntervalJoinOperatorTest {
       assertEquals(List.of(), collect(harness));
 
       harness.processBothWatermarks(new Watermark(Long.MAX_VALUE));
+      closeForwarded(harness);
+    }
+  }
+
+  /**
+   * A proctime interval join times each row by the operator's processing-time clock, not the row's
+   * time column: the rt values below are deliberately bogus (9999) and ignored. Driving the clock
+   * with {@code setProcessingTime}, a right row stamped at 5000 and a left row stamped at 5500 fall
+   * within {@code [-1000, 1000]} (delta 500), so they match — deterministic via the controlled clock
+   * (proctime is non-deterministic in a real run — see the CLAUDE.md note). The emitted rt columns
+   * carry the stamped clock values.
+   */
+  @Test
+  void proctimeMatchesByTheClockIgnoringTheTimeColumn() throws Exception {
+    NativeIntervalJoinOperator operator =
+        new NativeIntervalJoinOperator(
+            new int[] {0}, new int[] {0}, 2, 2, -1000L, 1000L, 0, INPUT, INPUT, EncodedPredicate.NONE,
+            true);
+    try (BufferAllocator allocator = new RootAllocator();
+        TwoInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch, ArrowBatch> harness =
+            new TwoInputStreamOperatorTestHarness<>(operator)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+
+      harness.setProcessingTime(5000);
+      harness.processElement2(new StreamRecord<>(batch(allocator, row(1, 100, 9999))));
+      assertEquals(List.of(), collect(harness));
+
+      harness.setProcessingTime(5500);
+      harness.processElement1(new StreamRecord<>(batch(allocator, row(1, 10, 9999))));
+      assertEquals(List.of(List.of(1L, 10L, 5500L, 1L, 100L, 5000L)), collect(harness));
+
+      harness.setProcessingTime(7000); // past 5500 + max(upper,-lower); buffers drain (no-op for INNER)
       closeForwarded(harness);
     }
   }

@@ -947,7 +947,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             IntervalJoinMatcher.lowerMillis(join),
             IntervalJoinMatcher.upperMillis(join),
             IntervalJoinMatcher.joinTypeCode(join),
-            IntervalJoinMatcher.nonEquiPredicate(join));
+            IntervalJoinMatcher.nonEquiPredicate(join),
+            IntervalJoinMatcher.isProctime(join));
       }
     }
 

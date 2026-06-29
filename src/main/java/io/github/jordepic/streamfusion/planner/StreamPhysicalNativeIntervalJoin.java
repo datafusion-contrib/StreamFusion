@@ -31,6 +31,7 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
   private final long upperMillis;
   private final int joinType;
   private final RexExpression predicate;
+  private final boolean proctime;
 
   public StreamPhysicalNativeIntervalJoin(
       RelOptCluster cluster,
@@ -45,7 +46,8 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
       long lowerMillis,
       long upperMillis,
       int joinType,
-      RexExpression predicate) {
+      RexExpression predicate,
+      boolean proctime) {
     super(cluster, traitSet, left, right);
     this.outputRowType = outputRowType;
     this.leftKeys = leftKeys;
@@ -56,11 +58,12 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
     this.upperMillis = upperMillis;
     this.joinType = joinType;
     this.predicate = predicate;
+    this.proctime = proctime;
   }
 
   @Override
   public boolean requireWatermark() {
-    return true;
+    return !proctime;
   }
 
   @Override
@@ -83,7 +86,8 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
         lowerMillis,
         upperMillis,
         joinType,
-        predicate);
+        predicate,
+        proctime);
   }
 
   @Override
@@ -103,6 +107,7 @@ public class StreamPhysicalNativeIntervalJoin extends BiRel
         joinType,
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getLeft().getRowType()),
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getRight().getRowType()),
-        predicate);
+        predicate,
+        proctime);
   }
 }

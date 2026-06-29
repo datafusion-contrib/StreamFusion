@@ -31,6 +31,7 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
   private final RowType leftType;
   private final RowType rightType;
   private final RexExpression predicate;
+  private final boolean proctime;
 
   public NativeIntervalJoinExecNode(
       ReadableConfig tableConfig,
@@ -47,7 +48,8 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
       int joinType,
       RowType leftType,
       RowType rightType,
-      RexExpression predicate) {
+      RexExpression predicate,
+      boolean proctime) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-interval-join_1"),
@@ -65,6 +67,7 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
     this.leftType = leftType;
     this.rightType = rightType;
     this.predicate = predicate;
+    this.proctime = proctime;
   }
 
   @Override
@@ -89,7 +92,8 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
             joinType,
             leftType,
             rightType,
-            RexExpression.toEncodedPredicate(predicate)),
+            RexExpression.toEncodedPredicate(predicate),
+            proctime),
         ArrowBatchTypeInformation.INSTANCE,
         left.getParallelism(),
         false);

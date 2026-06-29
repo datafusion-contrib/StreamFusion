@@ -892,13 +892,29 @@ public final class Native {
       double[] predDoubles,
       String[] predStrings);
 
-  /** Pushes a left batch, exporting the matched pairs (left columns then right columns). */
+  /**
+   * Pushes a left batch, exporting the matched pairs (left columns then right columns). For a
+   * proctime join {@code proctime} is set and every row's time is stamped with {@code
+   * proctimeNowMillis} (the operator clock) instead of read from the time column.
+   */
   public static native void pushLeftIntervalJoiner(
-      long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress,
+      boolean proctime,
+      long proctimeNowMillis);
 
   /** Pushes a right batch, exporting the matched pairs (left columns then right columns). */
   public static native void pushRightIntervalJoiner(
-      long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress,
+      boolean proctime,
+      long proctimeNowMillis);
 
   /**
    * Advances the combined watermark, evicting rows no future arrival can match, and exporting the

@@ -57,10 +57,15 @@ final class IntervalJoinMatcher {
       }
     }
     IntervalJoinSpec.WindowBounds bounds = windowBounds(join);
-    if (bounds == null || !bounds.isEventTime()) {
-      return "interval join: requires event-time interval bounds (proctime not supported)";
+    if (bounds == null) {
+      return "interval join: requires time-bounded (event-time or proctime) interval bounds";
     }
     return null;
+  }
+
+  /** True when the interval is over processing time (the operator times rows by the clock). */
+  static boolean isProctime(StreamPhysicalIntervalJoin join) {
+    return !windowBounds(join).isEventTime();
   }
 
   /**

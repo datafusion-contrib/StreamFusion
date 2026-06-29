@@ -610,6 +610,29 @@ fn windows_for(
 /// `TIMESTAMP_LTZ` to — while the window math runs in millis, identical to the window aggregate
 /// (shared [`windows_for`]). A trailing `$row_kind$` changelog tag stays the last output column, so
 /// the window columns land at the input-column count (the indices the join/aggregate expect).
+/// Replaces the time column with a constant clock value (epoch millis) for every row, rendered in the
+/// joiner's declared column type. Used by the proctime interval join to time each row by the
+/// operator's processing-time clock instead of a rowtime column. The incoming batch carries the
+/// proctime attribute as a millisecond timestamp (PROCTIME() is TIMESTAMP_LTZ), whereas the joiner's
+/// schema (derived from the logical row type) declares the rowtime slot as a nanosecond timestamp, so
+/// the stamped column is cast to the target type and its schema field retyped to match — keeping the
+/// buffered batches concat-compatible with the joiner's schema.
+fn stamp_time_column(
+    batch: &RecordBatch,
+    col: usize,
+    now_millis: i64,
+    target: &DataType,
+) -> RecordBatch {
+    let base: ArrayRef = Arc::new(TimestampMillisecondArray::from(vec![now_millis; batch.num_rows()]));
+    let array = arrow::compute::cast(&base, target).expect("cast stamped interval time to target type");
+    let mut fields: Vec<Field> =
+        batch.schema().fields().iter().map(|f| f.as_ref().clone()).collect();
+    fields[col] = Field::new(fields[col].name(), target.clone(), fields[col].is_nullable());
+    let mut columns = batch.columns().to_vec();
+    columns[col] = array;
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("stamp interval time column")
+}
+
 fn assign_windows(
     input: &RecordBatch,
     time_col: usize,
@@ -3243,8 +3266,17 @@ impl IntervalJoiner {
     }
 
     /// Joins an incoming left batch against the buffered right rows (equi-key + interval bounds and
-    /// the residual non-equi predicate), then buffers it. Empty until the right side has rows.
-    fn push_left(&mut self, batch: RecordBatch) -> RecordBatch {
+    /// the residual non-equi predicate), then buffers it. Empty until the right side has rows. A
+    /// proctime join stamps every row's time with the operator's clock (passed in) before joining, so
+    /// the interval is measured in processing time rather than read from a rowtime column.
+    fn push_left(&mut self, batch: RecordBatch, proctime_now: Option<i64>) -> RecordBatch {
+        let batch = match proctime_now {
+            Some(now) => {
+                let target = self.left_data_schema.field(self.left_time).data_type().clone();
+                stamp_time_column(&batch, self.left_time, now, &target)
+            }
+            None => batch,
+        };
         let interval = Some((self.left_time, self.right_time, self.lower, self.upper));
         let filter = residual_filter(
             &self.left_data_schema,
@@ -3276,8 +3308,16 @@ impl IntervalJoiner {
         result
     }
 
-    /// Joins an incoming right batch against the buffered left rows, then buffers it.
-    fn push_right(&mut self, batch: RecordBatch) -> RecordBatch {
+    /// Joins an incoming right batch against the buffered left rows, then buffers it. As with {@link
+    /// push_left}, a proctime join stamps the row time with the clock before joining.
+    fn push_right(&mut self, batch: RecordBatch, proctime_now: Option<i64>) -> RecordBatch {
+        let batch = match proctime_now {
+            Some(now) => {
+                let target = self.right_data_schema.field(self.right_time).data_type().clone();
+                stamp_time_column(&batch, self.right_time, now, &target)
+            }
+            None => batch,
+        };
         let interval = Some((self.left_time, self.right_time, self.lower, self.upper));
         let filter = residual_filter(
             &self.left_data_schema,
@@ -9521,10 +9561,12 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftInter
     in_schema_address: jlong,
     out_array_address: jlong,
     out_schema_address: jlong,
+    proctime: jboolean,
+    proctime_now_millis: jlong,
 ) {
     let joiner = unsafe { &mut *(handle as *mut IntervalJoiner) };
     let batch = import_record_batch(in_array_address, in_schema_address);
-    let result = joiner.push_left(batch);
+    let result = joiner.push_left(batch, (proctime != 0).then_some(proctime_now_millis));
     export_record_batch(result, out_array_address, out_schema_address);
 }
 
@@ -9538,10 +9580,12 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightInte
     in_schema_address: jlong,
     out_array_address: jlong,
     out_schema_address: jlong,
+    proctime: jboolean,
+    proctime_now_millis: jlong,
 ) {
     let joiner = unsafe { &mut *(handle as *mut IntervalJoiner) };
     let batch = import_record_batch(in_array_address, in_schema_address);
-    let result = joiner.push_right(batch);
+    let result = joiner.push_right(batch, (proctime != 0).then_some(proctime_now_millis));
     export_record_batch(result, out_array_address, out_schema_address);
 }
 
@@ -10423,11 +10467,11 @@ pub mod bench {
         }
 
         pub fn push_left(&mut self, batch: RecordBatch) -> RecordBatch {
-            self.0.push_left(batch)
+            self.0.push_left(batch, None)
         }
 
         pub fn push_right(&mut self, batch: RecordBatch) -> RecordBatch {
-            self.0.push_right(batch)
+            self.0.push_right(batch, None)
         }
     }
 
@@ -11547,9 +11591,9 @@ mod tests {
         // a.rt BETWEEN b.rt - 1000 AND b.rt + 1000, single equi-key on column 0, rt is column 2.
         let mut joiner = inner_interval_joiner(-1000, 1000);
         // Buffer two right rows for key 1 (rt 5500 in range of left 5000, rt 7000 out of range).
-        assert_eq!(joiner.push_right(join_batch(vec![1, 1], vec![100, 200], vec![5500, 7000])).num_rows(), 0);
+        assert_eq!(joiner.push_right(join_batch(vec![1, 1], vec![100, 200], vec![5500, 7000]), None).num_rows(), 0);
         // A left row (k=1, rt=5000): matches the rt=5500 right row only (delta -500 in [-1000,1000]).
-        let out = joiner.push_left(join_batch(vec![1], vec![10], vec![5000]));
+        let out = joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None);
         assert_eq!(out.num_rows(), 1);
         assert_eq!(values(&out, 0), vec![1]); // left k
         assert_eq!(values(&out, 1), vec![10]); // left v
@@ -11565,11 +11609,11 @@ mod tests {
     fn interval_join_matches_on_key_and_emits_once() {
         let mut joiner = inner_interval_joiner(-1000, 1000);
         // Left first: buffer a left row, no right yet.
-        assert_eq!(joiner.push_left(join_batch(vec![1], vec![10], vec![5000])).num_rows(), 0);
+        assert_eq!(joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None).num_rows(), 0);
         // A right row with a different key does not match.
-        assert_eq!(joiner.push_right(join_batch(vec![2], vec![100], vec![5000])).num_rows(), 0);
+        assert_eq!(joiner.push_right(join_batch(vec![2], vec![100], vec![5000]), None).num_rows(), 0);
         // A matching right row emits the pair exactly once.
-        let out = joiner.push_right(join_batch(vec![1], vec![100], vec![5500]));
+        let out = joiner.push_right(join_batch(vec![1], vec![100], vec![5500]), None);
         assert_eq!(out.num_rows(), 1);
         assert_eq!(values(&out, 1), vec![10]);
         assert_eq!(values(&out, 4), vec![100]);
@@ -11580,11 +11624,11 @@ mod tests {
     #[test]
     fn interval_join_evicts_dead_rows_on_watermark() {
         let mut joiner = inner_interval_joiner(-1000, 1000);
-        joiner.push_left(join_batch(vec![1], vec![10], vec![5000]));
+        joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None);
         // Watermark 6000: left.rt - lower = 5000 - (-1000) = 6000, not > 6000, so the row is evicted.
         joiner.advance(6000);
         // A right row that would otherwise match (delta -500) finds nothing buffered.
-        assert_eq!(joiner.push_right(join_batch(vec![1], vec![100], vec![5500])).num_rows(), 0);
+        assert_eq!(joiner.push_right(join_batch(vec![1], vec![100], vec![5500]), None).num_rows(), 0);
     }
 
     // The `[k, v, window_start, window_end]` data schema the window-join tests carry.
@@ -11691,7 +11735,7 @@ mod tests {
     #[test]
     fn interval_join_restores_buffered_rows() {
         let mut joiner = inner_interval_joiner(-1000, 1000);
-        joiner.push_right(join_batch(vec![1], vec![100], vec![5500]));
+        joiner.push_right(join_batch(vec![1], vec![100], vec![5500]), None);
         let snapshot = joiner.snapshot();
         let mut restored = IntervalJoiner::restore(
             vec![0],
@@ -11706,7 +11750,7 @@ mod tests {
             interval_schema(),
             &snapshot,
         );
-        let out = restored.push_left(join_batch(vec![1], vec![10], vec![5000]));
+        let out = restored.push_left(join_batch(vec![1], vec![10], vec![5000]), None);
         assert_eq!(out.num_rows(), 1);
         assert_eq!(values(&out, 4), vec![100]);
     }
@@ -11732,7 +11776,7 @@ mod tests {
     fn interval_left_join_null_pads_unmatched_on_eviction() {
         let mut joiner = left_interval_joiner(-1000, 1000);
         // Left row k=1, v=10, rt=5000; no right buffered → no immediate match.
-        assert_eq!(joiner.push_left(join_batch(vec![1], vec![10], vec![5000])).num_rows(), 0);
+        assert_eq!(joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None).num_rows(), 0);
         // Watermark below the eviction point: not yet evicted, nothing emitted.
         assert_eq!(joiner.advance(5000).num_rows(), 0);
         // Watermark at/above 5000 - (-1000) = 6000: the left row is evicted unmatched → [left+null]
@@ -11749,9 +11793,9 @@ mod tests {
     #[test]
     fn interval_left_join_matched_row_not_padded() {
         let mut joiner = left_interval_joiner(-1000, 1000);
-        joiner.push_left(join_batch(vec![1], vec![10], vec![5000]));
+        joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None);
         // Right row k=1, rt=5000 within [rt-1000, rt+1000] of the left → emits the matched pair.
-        let out = joiner.push_right(join_batch(vec![1], vec![100], vec![5000]));
+        let out = joiner.push_right(join_batch(vec![1], vec![100], vec![5000]), None);
         assert_eq!(out.num_rows(), 1);
         assert_eq!(values(&out, 4), vec![100]);
         // Evict the left row: it matched, so no null-pad.
@@ -11763,8 +11807,8 @@ mod tests {
     #[test]
     fn interval_left_join_match_flags_survive_restore() {
         let mut joiner = left_interval_joiner(-1000, 1000);
-        joiner.push_left(join_batch(vec![1], vec![10], vec![5000]));
-        joiner.push_right(join_batch(vec![1], vec![100], vec![5000])); // marks the left row matched
+        joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None);
+        joiner.push_right(join_batch(vec![1], vec![100], vec![5000]), None); // marks the left row matched
         let snapshot = joiner.snapshot();
         let mut restored = IntervalJoiner::restore(
             vec![0],

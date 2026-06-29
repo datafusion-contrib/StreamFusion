@@ -71,8 +71,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 - **Deduplication** — all four variants are native: rowtime keep-first (insert-only, watermark-
   released) and keep-last (retracting), and proctime keep-first/keep-last (arrival order, no
   watermark). The proctime order key is materialized by the native `PROCTIME()` expression.
-- **Joins** — proctime interval joins fall back (proctime window joins are native); a residual
-  non-equi predicate must be expressible by the native expression engine.
+- **Joins** — a residual non-equi predicate must be expressible by the native expression engine
+  (event-time and proctime interval and window joins are all native).
 - **Sources/sink** — local `file:` path only (Parquet/ORC source, Parquet sink); Kafka decode limited
   (see below); CDC only Debezium/OGG JSON.
 - **Proctime** support, by operator:
@@ -95,9 +95,11 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
     window join (two-input) and window rank close those windows on a chained processing-time timer
     (the same next-slide-boundary model as the window aggregate) rather than a watermark. The slide
     must divide the size. Non-deterministic, so routing/execution are tested but not byte-compared.
-  - **Interval joins** — still fall back: not yet ported to the processing-time-timer path (the
-    interval join evicts by wall-clock on two inputs). Non-deterministic, so lower-priority — but that
-    is not the gate.
+  - **Interval join** — native; each row is timed by the operator's processing-time clock (its time
+    column is stamped with the clock at push, so the interval is measured in processing time), and
+    eviction advances on the clock — each batch registers a cleanup timer at `now + max(upper, -lower)`
+    (the latest a row buffered now could still match), the tail draining at the last timer / on finish.
+    Non-deterministic, so routing/execution are tested but not byte-compared.
   - A proctime bounded-RANGE `OVER` frame falls back: with processing time materialized as a fixed
     per-batch timestamp, a wall-clock-interval frame has no meaningful definition.
 
@@ -127,7 +129,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   bounded frames, non-time/descending order, `FOLLOWING` frames, and `LAG`/`LEAD` never reach us —
   Flink rejects or single-groups them in streaming.)
 - **Interval join** — not INNER/LEFT/RIGHT/FULL; no equi key; non-null-dropping (non-INNER) keys;
-  equi-key type outside the supported set; non-equi residual not expressible; proctime bounds.
+  equi-key type outside the supported set; non-equi residual not expressible. (Event-time and proctime
+  bounds are both native — proctime times rows by the clock and evicts on a processing-time timer.)
 - **Window join** — same key/type/non-equi conditions; both sides must carry a window-attached
   windowing of the same time semantics (both event-time or both proctime). Proctime closes the
   window on a processing-time timer instead of a watermark.

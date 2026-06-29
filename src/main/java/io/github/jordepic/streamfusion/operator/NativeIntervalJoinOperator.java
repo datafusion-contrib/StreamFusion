@@ -8,6 +8,7 @@ import org.apache.arrow.c.CDataDictionaryProvider;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.api.common.operators.ProcessingTimeService.ProcessingTimeCallback;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.typeinfo.PrimitiveArrayTypeInfo;
@@ -30,9 +31,17 @@ import org.apache.flink.table.types.logical.RowType;
  * <p>Flink delivers each input's watermark to {@link #processWatermark1}/{@link #processWatermark2};
  * the base operator combines them into the minimum and calls {@link #processWatermark}, which we
  * override to advance the joiner's eviction frontier before forwarding the watermark downstream.
+ *
+ * <p>A **proctime** interval join times each row by the operator's processing-time clock (Flink's
+ * {@code ProcTimeIntervalJoin} uses the clock, not a row value): the row's time column is stamped with
+ * the clock when it is pushed, the interval is measured in processing time, and eviction advances on
+ * the clock. A buffered row arriving at {@code now} can no longer match once the clock passes {@code
+ * now + max(upper, -lower)} (a future arrival's time only grows), so each batch registers a cleanup
+ * timer there; the last one drains the tail (for an outer join, emitting the null-pads). Watermarks
+ * are ignored in that mode and the remaining buffer is drained on finish.
  */
 public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatch>
-    implements TwoInputStreamOperator<ArrowBatch, ArrowBatch, ArrowBatch> {
+    implements TwoInputStreamOperator<ArrowBatch, ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
 
   private final int[] leftKeys;
   private final int[] rightKeys;
@@ -44,11 +53,13 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
   private final RowType leftType;
   private final RowType rightType;
   private final EncodedPredicate predicate;
+  private final boolean proctime;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient long registeredTimer;
 
   public NativeIntervalJoinOperator(
       int[] leftKeys,
@@ -60,7 +71,8 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
       int joinType,
       RowType leftType,
       RowType rightType,
-      EncodedPredicate predicate) {
+      EncodedPredicate predicate,
+      boolean proctime) {
     this.leftKeys = leftKeys;
     this.rightKeys = rightKeys;
     this.leftTime = leftTime;
@@ -71,6 +83,7 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
     this.leftType = leftType;
     this.rightType = rightType;
     this.predicate = predicate;
+    this.proctime = proctime;
   }
 
   @Override
@@ -138,6 +151,7 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
     super.open();
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
+    registeredTimer = Long.MIN_VALUE;
   }
 
   @Override
@@ -152,6 +166,7 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
 
   /** Pushes a batch to its side of the joiner and emits the matched pairs it returns (if any). */
   private void join(ArrowBatch batch, boolean left) {
+    long now = proctime ? getProcessingTimeService().getCurrentProcessingTime() : 0;
     VectorSchemaRoot in = batch.root();
     BufferAllocator inAllocator =
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
@@ -166,14 +181,18 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
             inArray.memoryAddress(),
             inSchema.memoryAddress(),
             outArray.memoryAddress(),
-            outSchema.memoryAddress());
+            outSchema.memoryAddress(),
+            proctime,
+            now);
       } else {
         Native.pushRightIntervalJoiner(
             handle,
             inArray.memoryAddress(),
             inSchema.memoryAddress(),
             outArray.memoryAddress(),
-            outSchema.memoryAddress());
+            outSchema.memoryAddress(),
+            proctime,
+            now);
       }
       VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       if (out.getRowCount() > 0) {
@@ -184,16 +203,48 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
     } finally {
       in.close();
     }
+    if (proctime) {
+      advance(now); // trim the buffers / emit outer null-pads the clock has passed
+      // A row buffered at `now` is dead once the clock passes now + max(upper, -lower); schedule a
+      // cleanup there so even with no further input the tail (and outer null-pads) drains. now only
+      // advances, so the latest boundary scheduled covers every row buffered as of now.
+      long horizon = Math.max(Math.max(upperMillis, -lowerMillis), 0);
+      long boundary = now + Math.max(horizon, 1); // strictly future, so the timer actually fires
+      if (boundary > registeredTimer) {
+        getProcessingTimeService().registerTimer(boundary, this);
+        registeredTimer = boundary;
+      }
+    }
+  }
+
+  @Override
+  public void onProcessingTime(long time) {
+    advance(getProcessingTimeService().getCurrentProcessingTime());
+  }
+
+  @Override
+  public void finish() throws Exception {
+    if (proctime) {
+      advance(Long.MAX_VALUE); // end of input: evict everything (drains outer null-pads)
+    }
+    super.finish();
   }
 
   @Override
   public void processWatermark(Watermark mark) throws Exception {
-    // Eviction may produce null-padded rows for unmatched outer rows whose interval just closed; emit
-    // them before forwarding the watermark.
+    // Proctime joins evict on the processing-time clock, not the watermark; just forward it.
+    if (!proctime) {
+      advance(mark.getTimestamp());
+    }
+    super.processWatermark(mark);
+  }
+
+  /** Advances the eviction frontier, emitting any null-padded rows for evicted unmatched outer rows. */
+  private void advance(long threshold) {
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
       Native.advanceIntervalJoiner(
-          handle, mark.getTimestamp(), outArray.memoryAddress(), outSchema.memoryAddress());
+          handle, threshold, outArray.memoryAddress(), outSchema.memoryAddress());
       VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       if (out.getRowCount() > 0) {
         output.collect(new StreamRecord<>(new ArrowBatch(out)));
@@ -201,7 +252,6 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
         out.close();
       }
     }
-    super.processWatermark(mark);
   }
 
   @Override
