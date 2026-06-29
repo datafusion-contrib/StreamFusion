@@ -15,8 +15,8 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalOverAggregate;
 
 /**
- * Recognizes the event-time {@code OVER} aggregations the native operator implements: a single
- * window group ordered by a rowtime (local-time-zone) attribute, optional {@code PARTITION BY} on
+ * Recognizes the {@code OVER} aggregations the native operator implements: a single window group
+ * ordered by a time attribute — a rowtime (local-time-zone) or a proctime — optional {@code PARTITION BY} on
  * bigint/int/string/boolean/date/timestamp/decimal keys, and one or more {@code SUM}/{@code MIN}/{@code
  * MAX}/{@code COUNT}/{@code FIRST_VALUE}/{@code LAST_VALUE} aggregates that each read a (possibly
  * different) bigint/int/smallint/tinyint/double/float value column, over one of three frames ending at the current row: {@code RANGE
@@ -51,10 +51,19 @@ final class OverAggregateMatcher {
       return "OVER: only frames ending at CURRENT ROW";
     }
     Integer order = orderColumn(group);
-    if (order == null
-        || !FlinkTypeFactory$.MODULE$.isRowtimeIndicatorType(
-            inputType.getFieldList().get(order).getType())) {
-      return "OVER: requires exactly one ascending event-time (rowtime) order column";
+    if (order == null) {
+      return "OVER: requires exactly one ascending time order column";
+    }
+    RelDataType orderType = inputType.getFieldList().get(order).getType();
+    boolean rowtimeOrder = FlinkTypeFactory$.MODULE$.isRowtimeIndicatorType(orderType);
+    boolean proctimeOrder = FlinkTypeFactory$.MODULE$.isProctimeIndicatorType(orderType);
+    if (!rowtimeOrder && !proctimeOrder) {
+      return "OVER: requires exactly one ascending event-time or proctime order column";
+    }
+    // Proctime orders by arrival, so a frame measured by the (wall-clock) order value is
+    // non-deterministic; only the row-count (ROWS) and running (unbounded) frames are well-defined.
+    if (proctimeOrder && !group.isRows && !group.lowerBound.isUnbounded()) {
+      return "OVER: a bounded RANGE frame needs an event-time order (proctime is non-deterministic)";
     }
     // Window functions (ROW_NUMBER) are computed per partition with no value column over the default
     // ROWS UNBOUNDED PRECEDING frame.
@@ -199,6 +208,14 @@ final class OverAggregateMatcher {
 
   static int timeColumn(StreamPhysicalOverAggregate over) {
     return orderColumn(over.logicWindow().groups.get(0));
+  }
+
+  /** Whether the OVER orders by processing time (arrival order) rather than a rowtime. */
+  static boolean isProctime(StreamPhysicalOverAggregate over) {
+    Integer order = orderColumn(over.logicWindow().groups.get(0));
+    return order != null
+        && FlinkTypeFactory$.MODULE$.isProctimeIndicatorType(
+            over.getInput().getRowType().getFieldList().get(order).getType());
   }
 
   /** The PARTITION BY column indices (empty for no partition). */

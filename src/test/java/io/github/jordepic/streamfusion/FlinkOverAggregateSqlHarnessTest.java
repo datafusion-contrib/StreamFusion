@@ -249,6 +249,49 @@ class FlinkOverAggregateSqlHarnessTest {
     return tEnv;
   }
 
+  @Test
+  void proctimeRunningSumMatchesHost() throws Exception {
+    // Proctime OVER folds in arrival order and emits each row eagerly (no watermark). Only k,v and the
+    // running aggregate are projected (PROCTIME() is wall-clock, so not selected) — deterministic at
+    // parallelism 1, where arrival order is the source order.
+    NativeParity.assertParity(
+        FlinkOverAggregateSqlHarnessTest::proctimeEnvironment,
+        "SELECT k, v, SUM(v) OVER (PARTITION BY k ORDER BY pt) AS s FROM src");
+  }
+
+  @Test
+  void proctimeBoundedRowsMatchesHost() throws Exception {
+    // Proctime OVER with a bounded ROWS frame: each row's aggregate covers itself and the row before
+    // it within its partition, by arrival order.
+    NativeParity.assertParity(
+        FlinkOverAggregateSqlHarnessTest::proctimeEnvironment,
+        "SELECT k, v, SUM(v) OVER w AS s, MAX(v) OVER w AS hi FROM src "
+            + "WINDOW w AS (PARTITION BY k ORDER BY pt ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)");
+  }
+
+  private static TableEnvironment proctimeEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    DataStream<Row> source =
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"k", "v"}, Types.LONG, Types.LONG),
+            Row.of(1L, 10L),
+            Row.of(2L, 100L),
+            Row.of(1L, 20L),
+            Row.of(2L, 200L),
+            Row.of(1L, 30L));
+    tEnv.createTemporaryView(
+        "src",
+        source,
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("v", DataTypes.BIGINT())
+            .columnByExpression("pt", "PROCTIME()")
+            .build());
+    return tEnv;
+  }
+
   private static TableEnvironment environment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);

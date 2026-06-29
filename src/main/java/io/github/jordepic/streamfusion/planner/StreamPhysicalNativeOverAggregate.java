@@ -30,6 +30,7 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
   private final int[] aggregateKinds;
   private final int frameKind;
   private final long frameOffset;
+  private final boolean proctime;
 
   public StreamPhysicalNativeOverAggregate(
       RelOptCluster cluster,
@@ -42,7 +43,8 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
       int[] valueTypes,
       int[] aggregateKinds,
       int frameKind,
-      long frameOffset) {
+      long frameOffset,
+      boolean proctime) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.timeColumn = timeColumn;
@@ -52,11 +54,12 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
     this.aggregateKinds = aggregateKinds;
     this.frameKind = frameKind;
     this.frameOffset = frameOffset;
+    this.proctime = proctime;
   }
 
   @Override
   public boolean requireWatermark() {
-    return true;
+    return !proctime; // proctime OVER emits eagerly in arrival order; rowtime needs a watermark
   }
 
   @Override
@@ -68,7 +71,7 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
     return new StreamPhysicalNativeOverAggregate(
         getCluster(), traitSet, inputs.get(0), outputRowType, timeColumn, valueColumns, keyColumns,
-        valueTypes, aggregateKinds, frameKind, frameOffset);
+        valueTypes, aggregateKinds, frameKind, frameOffset, proctime);
   }
 
   @Override
@@ -84,6 +87,7 @@ public class StreamPhysicalNativeOverAggregate extends SingleRel
         valueTypes,
         aggregateKinds,
         frameKind,
-        frameOffset);
+        frameOffset,
+        proctime);
   }
 }

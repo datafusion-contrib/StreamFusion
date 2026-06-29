@@ -35,6 +35,7 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
   private final int[] aggregateKinds;
   private final int frameKind;
   private final long frameOffset;
+  private final boolean proctime;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
@@ -48,7 +49,8 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
       int[] valueTypes,
       int[] aggregateKinds,
       int frameKind,
-      long frameOffset) {
+      long frameOffset,
+      boolean proctime) {
     this.timeColumn = timeColumn;
     this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
@@ -56,6 +58,7 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
     this.aggregateKinds = aggregateKinds;
     this.frameKind = frameKind;
     this.frameOffset = frameOffset;
+    this.proctime = proctime;
   }
 
   @Override
@@ -75,7 +78,14 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
     handle =
         snapshot == null
             ? Native.createOverAggregator(
-                valueTypes, aggregateKinds, timeColumn, valueColumns, keyColumns, frameKind, frameOffset)
+                valueTypes,
+                aggregateKinds,
+                timeColumn,
+                valueColumns,
+                keyColumns,
+                frameKind,
+                frameOffset,
+                proctime)
             : Native.restoreOverAggregator(
                 valueTypes,
                 aggregateKinds,
@@ -84,6 +94,7 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
                 keyColumns,
                 frameKind,
                 frameOffset,
+                proctime,
                 snapshot);
   }
 
@@ -99,12 +110,32 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
     VectorSchemaRoot in = element.getValue().root();
     BufferAllocator inAllocator =
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
-    try (ArrowArray array = ArrowArray.allocateNew(inAllocator);
-        ArrowSchema schema = ArrowSchema.allocateNew(inAllocator)) {
-      Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, array, schema);
-      // The native aggregator imports and keeps the batch (it buffers until the watermark completes
-      // these rows), so this side hands it off and closes its own view.
-      Native.pushOverAggregator(handle, array.memoryAddress(), schema.memoryAddress());
+    try (ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
+        ArrowSchema inSchema = ArrowSchema.allocateNew(inAllocator)) {
+      Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
+      if (proctime) {
+        // Proctime: fold in arrival order and emit this batch's rows immediately (no watermark).
+        try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
+            ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+          Native.pushProctimeOverAggregator(
+              handle,
+              inArray.memoryAddress(),
+              inSchema.memoryAddress(),
+              outArray.memoryAddress(),
+              outSchema.memoryAddress());
+          VectorSchemaRoot out =
+              Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
+          if (out.getRowCount() > 0) {
+            output.collect(new StreamRecord<>(new ArrowBatch(out)));
+          } else {
+            out.close();
+          }
+        }
+      } else {
+        // Rowtime: the native aggregator imports and keeps the batch (buffered until a watermark
+        // completes these rows), so this side hands it off and closes its own view.
+        Native.pushOverAggregator(handle, inArray.memoryAddress(), inSchema.memoryAddress());
+      }
     } finally {
       in.close();
     }
@@ -112,6 +143,10 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
 
   @Override
   public void processWatermark(Watermark mark) throws Exception {
+    if (proctime) {
+      super.processWatermark(mark); // proctime emits eagerly in processElement; nothing to flush
+      return;
+    }
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       Native.flushOverAggregator(

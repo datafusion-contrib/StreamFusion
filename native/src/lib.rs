@@ -2821,6 +2821,11 @@ struct OverWindowAggregator {
     key_columns: Vec<usize>,
     buffered: Vec<RecordBatch>,
     input_schema: Option<SchemaRef>,
+    /// Proctime OVER: order by arrival rather than a rowtime, emitting each batch's rows eagerly (no
+    /// watermark). The ordering key is a monotonic arrival sequence the operator assigns, so the
+    /// existing rowtime fold/frames apply unchanged; `next_seq` is the running counter.
+    proctime: bool,
+    next_seq: i64,
 }
 
 impl OverWindowAggregator {
@@ -2832,6 +2837,7 @@ impl OverWindowAggregator {
         key_columns: Vec<usize>,
         frame_kind: i64,
         frame_offset: i64,
+        proctime: bool,
     ) -> Self {
         OverWindowAggregator {
             inner: OverInner::new(value_types, kinds, frame_kind, frame_offset),
@@ -2840,12 +2846,36 @@ impl OverWindowAggregator {
             key_columns,
             buffered: Vec::new(),
             input_schema: None,
+            proctime,
+            next_seq: 0,
         }
     }
 
     fn push(&mut self, batch: RecordBatch) {
         self.input_schema = Some(batch.schema());
         self.buffered.push(batch);
+    }
+
+    /// Proctime OVER: fold the whole batch in arrival order and emit every row immediately (proctime
+    /// has no watermark to wait on). Each row is tagged with an increasing arrival sequence used as the
+    /// ordering key, so the per-key fold and any frame behave exactly as in the rowtime path — the
+    /// sequence is distinct and increasing, hence rows fold one at a time in arrival order. The
+    /// proctime order column's (non-deterministic) value is never read.
+    fn push_proctime(&mut self, batch: RecordBatch) -> RecordBatch {
+        self.input_schema = Some(batch.schema());
+        let n = batch.num_rows();
+        let seq: Int64Array = (0..n as i64).map(|i| self.next_seq + i).collect();
+        self.next_seq += n as i64;
+        let aggregates = self.inner.update(&self.keyed_subbatch(&batch, Arc::new(seq)));
+        let mut fields: Vec<Field> =
+            batch.schema().fields().iter().map(|f| f.as_ref().clone()).collect();
+        let mut columns: Vec<ArrayRef> = batch.columns().to_vec();
+        for (i, field) in aggregates.schema().fields().iter().enumerate() {
+            fields.push(field.as_ref().clone());
+            columns.push(aggregates.column(i).clone());
+        }
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build proctime over output batch")
     }
 
     /// Emits the rows the watermark has completed (input columns + running aggregates) and keeps the
@@ -2866,7 +2896,8 @@ impl OverWindowAggregator {
             return RecordBatch::new_empty(Arc::new(Schema::empty()));
         }
 
-        let aggregates = self.inner.update(&self.keyed_subbatch(&complete));
+        let rt = Arc::new(rt_to_millis(complete.column(self.rt_column)));
+        let aggregates = self.inner.update(&self.keyed_subbatch(&complete, rt));
         let mut fields: Vec<Field> =
             complete.schema().fields().iter().map(|f| f.as_ref().clone()).collect();
         let mut columns: Vec<ArrayRef> = complete.columns().to_vec();
@@ -2878,12 +2909,13 @@ impl OverWindowAggregator {
             .expect("failed to build over output batch")
     }
 
-    /// The `[rt(ms i64), value0.., key0..]` batch the inner per-key fold reads, projected from the
-    /// completed rows (rowtime converted from its timestamp unit to epoch millis). One `value{a}`
-    /// column per aggregate, in aggregate order.
-    fn keyed_subbatch(&self, complete: &RecordBatch) -> RecordBatch {
+    /// The `[rt(i64), value0.., key0..]` batch the inner per-key fold reads, projected from `source`.
+    /// `rt` is the ordering key — epoch millis for a rowtime OVER, the arrival sequence for proctime.
+    /// One `value{a}` column per aggregate, in aggregate order.
+    fn keyed_subbatch(&self, source: &RecordBatch, rt: ArrayRef) -> RecordBatch {
+        let complete = source;
         let mut fields = vec![Field::new("rt", DataType::Int64, false)];
-        let mut columns: Vec<ArrayRef> = vec![Arc::new(rt_to_millis(complete.column(self.rt_column)))];
+        let mut columns: Vec<ArrayRef> = vec![rt];
         for (a, &value_column) in self.value_columns.iter().enumerate() {
             fields.push(Field::new(
                 format!("value{a}"),
@@ -2915,7 +2947,9 @@ impl OverWindowAggregator {
             }
             _ => Vec::new(),
         };
-        let mut out = (accumulators.len() as u32).to_le_bytes().to_vec();
+        // Prefix the proctime arrival counter so the sequence continues across a checkpoint.
+        let mut out = self.next_seq.to_le_bytes().to_vec();
+        out.extend_from_slice(&(accumulators.len() as u32).to_le_bytes());
         out.extend_from_slice(&accumulators);
         out.extend_from_slice(&buffer);
         out
@@ -2929,11 +2963,18 @@ impl OverWindowAggregator {
         key_columns: Vec<usize>,
         frame_kind: i64,
         frame_offset: i64,
+        proctime: bool,
         bytes: &[u8],
     ) -> Self {
-        let accumulators_len = u32::from_le_bytes(bytes[0..4].try_into().expect("len")) as usize;
-        let inner =
-            OverInner::restore(value_types, kinds, frame_kind, frame_offset, &bytes[4..4 + accumulators_len]);
+        let next_seq = i64::from_le_bytes(bytes[0..8].try_into().expect("next_seq"));
+        let accumulators_len = u32::from_le_bytes(bytes[8..12].try_into().expect("len")) as usize;
+        let inner = OverInner::restore(
+            value_types,
+            kinds,
+            frame_kind,
+            frame_offset,
+            &bytes[12..12 + accumulators_len],
+        );
         let mut aggregator = OverWindowAggregator {
             inner,
             rt_column,
@@ -2941,8 +2982,10 @@ impl OverWindowAggregator {
             key_columns,
             buffered: Vec::new(),
             input_schema: None,
+            proctime,
+            next_seq,
         };
-        let buffer = &bytes[4 + accumulators_len..];
+        let buffer = &bytes[12 + accumulators_len..];
         if !buffer.is_empty() {
             let reader =
                 arrow::ipc::reader::StreamReader::try_new(buffer, None).expect("over buffer reader");
@@ -7504,6 +7547,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createOverAgg
     key_columns: JIntArray<'local>,
     frame_kind: jint,
     frame_offset: jlong,
+    proctime: jboolean,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
     let value_types = read_int_array(&env, &value_types);
@@ -7517,6 +7561,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createOverAgg
         keys,
         frame_kind as i64,
         frame_offset,
+        proctime != 0,
     ))) as jlong
 }
 
@@ -7531,6 +7576,23 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushOverAggre
 ) {
     let aggregator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
     aggregator.push(import_record_batch(in_array_address, in_schema_address));
+}
+
+/// Proctime OVER: folds a batch in arrival order and exports its rows immediately (no watermark),
+/// each with the running aggregate / window-function column(s) appended.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushProctimeOverAggregator<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let aggregator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
+    let result = aggregator.push_proctime(import_record_batch(in_array_address, in_schema_address));
+    export_record_batch(result, out_array_address, out_schema_address);
 }
 
 /// Exports the rows the watermark has completed (input columns + running aggregates).
@@ -7585,6 +7647,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreOverAg
     key_columns: JIntArray<'local>,
     frame_kind: jint,
     frame_offset: jlong,
+    proctime: jboolean,
     snapshot: JByteArray<'local>,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
@@ -7600,6 +7663,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreOverAg
         keys,
         frame_kind as i64,
         frame_offset,
+        proctime != 0,
         &bytes,
     ))) as jlong
 }
@@ -10273,7 +10337,7 @@ pub mod bench {
                 None => Vec::new(),
             };
             Over(OverWindowAggregator::new(
-                value_types, kinds, rt_column, value_columns, key_columns, 0, 0,
+                value_types, kinds, rt_column, value_columns, key_columns, 0, 0, false,
             ))
         }
 
@@ -10813,7 +10877,7 @@ mod tests {
             Field::new("rt", DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None), false),
         ]));
         let batch = RecordBatch::try_new(schema, vec![k, v, rt]).unwrap();
-        let mut over = OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 0, 0);
+        let mut over = OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 0, 0, false);
         over.push(batch);
         // Watermark 2000ms completes the first three rows (rt 0/1000/500); the rt=9000 row stays.
         let out = over.flush(2000);
@@ -10848,7 +10912,7 @@ mod tests {
         ]));
         let batch = RecordBatch::try_new(schema, vec![k, v, rt]).unwrap();
         // frame_kind 1 = bounded ROWS, offset 1 = one preceding row.
-        let mut over = OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 1, 1);
+        let mut over = OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 1, 1, false);
         over.push(batch);
         let out = over.flush(2000);
         assert_eq!(out.num_rows(), 4);
@@ -10875,12 +10939,31 @@ mod tests {
         ]));
         let batch = RecordBatch::try_new(schema, vec![k, v, rt]).unwrap();
         // frame_kind 2 = bounded RANGE, offset 1000 = a 1000ms preceding interval.
-        let mut over = OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 2, 1000);
+        let mut over = OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 2, 1000, false);
         over.push(batch);
         let out = over.flush(2000);
         assert_eq!(out.num_rows(), 3);
         // SUM over rows within 1000ms: rt0 -> {10}, rt1000 -> {10,20}, rt2000 -> {20,30}.
         assert_eq!(values(&out, 3), vec![10, 30, 50]);
+    }
+
+    // Proctime OVER: rows fold in arrival order and emit immediately (no watermark). The running SUM
+    // per key advances row by row in the order the rows arrive.
+    #[test]
+    fn proctime_over_running_sum_in_arrival_order() {
+        let k: ArrayRef = Arc::new(Int64Array::from(vec![1i64, 2, 1]));
+        let v: ArrayRef = Arc::new(Int64Array::from(vec![10i64, 100, 20]));
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("k", DataType::Int64, false),
+            Field::new("v", DataType::Int64, true),
+        ]));
+        let batch = RecordBatch::try_new(schema, vec![k, v]).unwrap();
+        // rt_column is ignored in proctime mode (arrival order); value col 1, key col 0, unbounded.
+        let mut over = OverWindowAggregator::new(vec![0], vec![0], 0, vec![1], vec![0], 0, 0, true);
+        let out = over.push_proctime(batch);
+        assert_eq!(out.num_rows(), 3);
+        assert_eq!(values(&out, 1), vec![10, 100, 20]); // v passed through
+        assert_eq!(values(&out, 2), vec![10, 100, 30]); // running SUM per key, in arrival order
     }
 
     // Independent value columns in one OVER group: SUM(v0) and MAX(v1) read different input columns.
@@ -10903,7 +10986,7 @@ mod tests {
         let batch = RecordBatch::try_new(schema, vec![k, v0, v1, rt]).unwrap();
         // value types [bigint, bigint]; columns [1, 2]; kinds [SUM, MAX]; rt col 3; key col 0; unbounded.
         let mut over =
-            OverWindowAggregator::new(vec![0, 0], vec![0, 2], 3, vec![1, 2], vec![0], 0, 0);
+            OverWindowAggregator::new(vec![0, 0], vec![0, 2], 3, vec![1, 2], vec![0], 0, 0, false);
         over.push(batch);
         let out = over.flush(2000);
         assert_eq!(out.num_rows(), 3);

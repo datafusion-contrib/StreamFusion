@@ -103,7 +103,10 @@ Running aggregates (`SUM`/`MIN`/`MAX`/`COUNT`/`AVG`; `AVG` via Flink's
 `$SUM0`+`COUNT` with the divide on the host), `FIRST_VALUE`/`LAST_VALUE`, and the
 window functions `ROW_NUMBER`/`RANK`/`DENSE_RANK`, over the unbounded `RANGE` frame, the
 bounded `ROWS n PRECEDING` frame, or the bounded `RANGE INTERVAL n PRECEDING` frame.
-Proctime ordering and decimal bounded frames fall back.
+Both event-time and proctime orders are supported; under proctime the operator folds in
+arrival order and emits eagerly (no watermark), assigning a monotonic arrival sequence as
+the ordering key so the same fold/frames apply — only a proctime bounded-`RANGE` frame
+(a wall-clock interval) falls back as non-deterministic. Decimal bounded frames fall back.
 
 ## Verification
 Parity harness: running aggregates and `ROW_NUMBER`, partitioned and not, over

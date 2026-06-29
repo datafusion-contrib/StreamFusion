@@ -440,6 +440,7 @@ public final class Native {
    * @param frameKind frame shape: 0 = RANGE unbounded preceding, 1 = bounded ROWS, 2 = bounded RANGE
    * @param frameOffset n preceding rows (ROWS) or the preceding interval in millis (RANGE); 0 when
    *     unbounded
+   * @param proctime whether the order is processing time (arrival order, eager emit) vs a rowtime
    */
   public static native long createOverAggregator(
       int[] valueTypes,
@@ -448,11 +449,19 @@ public final class Native {
       int[] valueColumns,
       int[] keyColumns,
       int frameKind,
-      long frameOffset);
+      long frameOffset,
+      boolean proctime);
 
-  /** Buffers an input batch; its rows are emitted later when a watermark completes them. */
+  /** Buffers an input batch; its rows are emitted later when a watermark completes them (rowtime). */
   public static native void pushOverAggregator(
       long handle, long inArrayAddress, long inSchemaAddress);
+
+  /**
+   * Proctime OVER: folds a batch in arrival order and exports its rows immediately (no watermark),
+   * each with the running aggregate(s) appended, into the consumer-allocated C structs.
+   */
+  public static native void pushProctimeOverAggregator(
+      long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
 
   /**
    * Exports the rows the watermark has completed — the input columns with the running aggregate(s)
@@ -476,6 +485,7 @@ public final class Native {
       int[] keyColumns,
       int frameKind,
       long frameOffset,
+      boolean proctime,
       byte[] snapshot);
 
   /**

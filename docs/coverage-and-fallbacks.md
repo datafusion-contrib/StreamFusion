@@ -63,9 +63,11 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   bounded `RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW` frame (recomputed over the rowtime
   interval), over one ascending rowtime, each aggregate over its own (possibly different)
   bigint/int/smallint/tinyint/double/float value column (narrow ints / 4-byte float keep the host's
-  narrow result type). Real gap: proctime ordering. (More than one window group, decimal bounded
-  frames, `FOLLOWING` frames, non-time/descending order, and `LAG`/`LEAD` are parity — Flink rejects
-  or single-groups them in streaming.)
+  narrow result type). **Proctime** order is native too (arrival order, eager emit) for the running
+  and bounded-ROWS frames. Real gap: none beyond the parity cases — a bounded-RANGE frame over
+  proctime (wall-clock interval, non-deterministic), more than one window group, decimal bounded
+  frames, `FOLLOWING` frames, non-time/descending order, and `LAG`/`LEAD` are all parity (Flink
+  rejects or single-groups them in streaming).
 - **Deduplication** — all four variants are native: rowtime keep-first (insert-only, watermark-
   released) and keep-last (retracting), and proctime keep-first/keep-last (arrival order, no
   watermark). The proctime order key is materialized by the native `PROCTIME()` expression.
@@ -73,9 +75,10 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   expressible by the native expression engine.
 - **Sources/sink** — local `file:` path only (Parquet/ORC source, Parquet sink); Kafka decode limited
   (see below); CDC only Debezium/OGG JSON.
-- **Proctime** windows, joins, and `OVER` fall back (their results close on wall-clock timers, so they
-  are non-deterministic and not byte-parity-testable); proctime **deduplication** is native (its
-  result depends only on arrival order, not the clock).
+- **Proctime** windows and joins fall back (their results close on wall-clock timers, so they are
+  non-deterministic and not byte-parity-testable). Proctime **deduplication** and **`OVER`** (running
+  / bounded-ROWS) are native — they depend only on arrival order, not the clock value; a proctime
+  bounded-RANGE OVER frame (a wall-clock interval) does fall back as non-deterministic.
 
 ---
 
@@ -96,11 +99,12 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 
 ### 2. Per-operator matcher declines (exact conditions)
 - **OVER** — a frame not of the form `… PRECEDING .. CURRENT ROW` (a `ROWS`/`RANGE` lower bound that
-  is not a constant preceding offset); proctime ordering; an aggregate that is `AVG`, `COUNT(*)`, or
-  reads a non-numeric / decimal column (numeric value columns are bigint/int/smallint/tinyint/double/
-  float); `PARTITION BY` key outside bigint/int/string/boolean/date/timestamp/decimal. (More than one
-  window group, decimal bounded frames, non-time/descending order, `FOLLOWING` frames, and
-  `LAG`/`LEAD` never reach us — Flink rejects or single-groups them in streaming.)
+  is not a constant preceding offset); a bounded-RANGE frame over a proctime order (wall-clock
+  interval, non-deterministic); an aggregate that is `AVG`, `COUNT(*)`, or reads a non-numeric /
+  decimal column (numeric value columns are bigint/int/smallint/tinyint/double/float); `PARTITION BY`
+  key outside bigint/int/string/boolean/date/timestamp/decimal. (More than one window group, decimal
+  bounded frames, non-time/descending order, `FOLLOWING` frames, and `LAG`/`LEAD` never reach us —
+  Flink rejects or single-groups them in streaming.)
 - **Interval join** — not INNER/LEFT/RIGHT/FULL; no equi key; non-null-dropping (non-INNER) keys;
   equi-key type outside the supported set; non-equi residual not expressible; proctime bounds.
 - **Window join** — same key/type/non-equi conditions; both sides must carry an event-time
