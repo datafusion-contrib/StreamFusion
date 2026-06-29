@@ -6814,7 +6814,12 @@ fn build_expr(
     *cursor += 1;
     let arg = payload[node] as usize;
     match kinds[node] {
-        0 => logical_col(schema.field(arg).name()),
+        // Reference the column by its exact field name, not via `col()`, which parses its argument as
+        // a SQL identifier and lower-cases an unquoted name — breaking a mixed-case column like the
+        // Nexmark `dateTime` rowtime.
+        0 => datafusion::prelude::Expr::Column(
+            datafusion::common::Column::new_unqualified(schema.field(arg).name()),
+        ),
         1 => logical_lit(longs[arg]),
         2 => logical_lit(doubles[arg]),
         3 => logical_lit(strings[arg].clone().expect("string literal")),
@@ -13094,6 +13099,36 @@ mod tests {
         assert_eq!(
             out.column(0).as_any().downcast_ref::<Int64Array>().unwrap().values(),
             &[99, 40, 200]
+        );
+    }
+
+    // A Calc projecting a mixed-case top-level column (INPUT_REF) must resolve it by its exact name;
+    // `col()` would lower-case "dateTime" to "datetime" and fail to compile (the Nexmark q0/q1 rowtime).
+    #[test]
+    fn calc_projects_mixed_case_column() {
+        let value: ArrayRef = Arc::new(Int64Array::from(vec![5, 7, 9]));
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new("dateTime", DataType::Int64, true)])),
+            vec![value],
+        )
+        .unwrap();
+        let mut calc = CalcExpression {
+            kinds: vec![0],
+            payload: vec![0],
+            child_counts: vec![0],
+            longs: vec![],
+            doubles: vec![],
+            strings: vec![],
+            projection_roots: vec![0],
+            condition_root: -1,
+            output_names: vec!["dateTime".to_string()],
+            compiled: None,
+        };
+        let out = calc.evaluate(batch);
+        assert_eq!(out.schema().field(0).name(), "dateTime");
+        assert_eq!(
+            out.column(0).as_any().downcast_ref::<Int64Array>().unwrap().values(),
+            &[5, 7, 9]
         );
     }
 
