@@ -6,6 +6,7 @@ import java.util.List;
 import org.apache.calcite.rel.core.Calc;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexFieldAccess;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexLocalRef;
@@ -45,6 +46,10 @@ final class RexExpression {
   // unblocks proctime-ordered operators (dedup, OVER) — those use the column only as an arrival-order
   // key and project it away, so its (non-deterministic) value is never observed in the output.
   private static final int KIND_PROCTIME = 12;
+  // Field access: extract a named field from a ROW/struct-typed child. payload is the string-pool
+  // index of the field name, with one child (the struct-typed expression). Nested access (a.b.c)
+  // nests these, the child being itself a field access. Mirrors DataFusion's get_field.
+  private static final int KIND_FIELD_ACCESS = 13;
 
   // Cast target type codes, mirrored on the native side.
   private static final int CAST_TINYINT = 0;
@@ -220,6 +225,12 @@ final class RexExpression {
     }
     if (node instanceof RexCall) {
       return emitCall((RexCall) node);
+    }
+    if (node instanceof RexFieldAccess) {
+      RexFieldAccess access = (RexFieldAccess) node;
+      add(KIND_FIELD_ACCESS, strings.size(), 1);
+      strings.add(access.getField().getName());
+      return emit(access.getReferenceExpr());
     }
     return reject("unsupported expression node: " + node);
   }

@@ -206,7 +206,11 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   `MULTISET<E>` rides the Arrow boundary as a `MAP<E, INT>`): carried through filters/projections,
   usable as a GROUP BY / join / dedup **key** (the nested value rides the row state as a DataFusion
   `ScalarValue` and is cast back to its declared column type on emit), and as a `COUNT` value column
-  (counted for null-ness only). What still falls back for a nested column:
+  (counted for null-ness only). **Extracting a scalar field from a `ROW` column** in an expression
+  (`bid.price`, nested `a.b.c`) is native — the expression engine encodes it as DataFusion's
+  `get_field`, returning NULL for a null struct, matching Flink. (This is what lets the Nexmark
+  `person`/`auction`/`bid` views — `SELECT bid.price … FROM events WHERE event_type = N` — accelerate.)
+  What still falls back for a nested column:
   - **Ordering a nested value** — `MAX`/`MIN` over it, `ORDER BY` it, or a Top-N/sort on it. Flink
     itself rejects `MAX(array)` and `ORDER BY array`, so this matches the host.
 - **Key types** outside bigint/int/string/boolean/date/timestamp/decimal **(plus the nested types

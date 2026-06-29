@@ -6664,6 +6664,16 @@ fn build_expr(
             }
             build_call(op, args)
         }
+        // Field access: extract a named field from a ROW/struct child. `arg` indexes the field name in
+        // the string pool; the one child (built next) is the struct-typed expression. get_field returns
+        // NULL for a null struct, matching Flink's field access.
+        13 => {
+            let name = strings[arg].clone().expect("field name");
+            let child = build_expr(
+                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+            );
+            datafusion::functions::core::expr_fn::get_field(child, name)
+        }
         // PROCTIME(): the current processing time as a TIMESTAMP_LTZ(3) literal. Stamped once when the
         // Calc is compiled; the proctime-ordered operators read it only as an arrival-order key (which
         // they ignore) and project it away, so a fixed value per operator is correct for them.
@@ -12616,6 +12626,46 @@ mod tests {
         let out = calc.evaluate(ab_batch());
         assert_eq!(out.num_rows(), 1);
         assert_eq!(out.column(0).as_any().downcast_ref::<Int64Array>().unwrap().values(), &[3]);
+    }
+
+    // A Calc projects a field pulled out of a ROW/struct column (kind 13 → get_field), the Nexmark
+    // view shape (`bid.price`).
+    #[test]
+    fn calc_extracts_struct_field() {
+        let auction: ArrayRef = Arc::new(Int64Array::from(vec![100, 101, 102]));
+        let price: ArrayRef = Arc::new(Int64Array::from(vec![99, 40, 200]));
+        let bid = StructArray::from(vec![
+            (Arc::new(Field::new("auction", DataType::Int64, true)), auction),
+            (Arc::new(Field::new("price", DataType::Int64, true)), price),
+        ]);
+        let et: ArrayRef = Arc::new(Int64Array::from(vec![2, 2, 2]));
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("event_type", DataType::Int64, true),
+                Field::new("bid", bid.data_type().clone(), true),
+            ])),
+            vec![et, Arc::new(bid)],
+        )
+        .unwrap();
+
+        let mut calc = CalcExpression {
+            kinds: vec![13, 0],         // FIELD_ACCESS("price"), col bid
+            payload: vec![0, 1],        // strings[0]="price"; bid is column 1
+            child_counts: vec![1, 0],
+            longs: vec![],
+            doubles: vec![],
+            strings: vec![Some("price".to_string())],
+            projection_roots: vec![0],
+            condition_root: -1,
+            output_names: vec!["price".to_string()],
+            compiled: None,
+        };
+        let out = calc.evaluate(batch);
+        assert_eq!(out.schema().field(0).name(), "price");
+        assert_eq!(
+            out.column(0).as_any().downcast_ref::<Int64Array>().unwrap().values(),
+            &[99, 40, 200]
+        );
     }
 
     // The by-key split sends every row with the same key to the same partition and preserves all
