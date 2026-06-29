@@ -6797,6 +6797,11 @@ fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prel
         22 => !next(),
         30 => next().is_null(),
         31 => next().is_not_null(),
+        // x IS [NOT] TRUE/FALSE — three-valued: a null operand is neither true nor false.
+        32 => next().is_true(),
+        33 => next().is_not_true(),
+        34 => next().is_false(),
+        35 => next().is_not_false(),
         52 => datafusion::functions::unicode::expr_fn::character_length(next()),
         54 => datafusion::functions::string::expr_fn::btrim(vec![next()]),
         60 => datafusion::functions::string::expr_fn::ltrim(vec![next()]),

@@ -420,6 +420,10 @@ final class RexExpression {
       case NOT:
       case IS_NULL:
       case IS_NOT_NULL:
+      case IS_TRUE:
+      case IS_NOT_TRUE:
+      case IS_FALSE:
+      case IS_NOT_FALSE:
         if (operands.size() != 1) {
           return false;
         }
@@ -947,6 +951,14 @@ final class RexExpression {
         return 30;
       case IS_NOT_NULL:
         return 31;
+      case IS_TRUE:
+        return 32;
+      case IS_NOT_TRUE:
+        return 33;
+      case IS_FALSE:
+        return 34;
+      case IS_NOT_FALSE:
+        return 35;
       case CASE:
         return 40;
       case LIKE:
