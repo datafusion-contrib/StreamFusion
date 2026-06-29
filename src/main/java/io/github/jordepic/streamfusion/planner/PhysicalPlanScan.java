@@ -760,7 +760,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             keyColumns,
             valueTypes,
             kinds,
-            proctime);
+            proctime,
+            WindowAggregateMatcher.isLtz(agg.windowing()));
       }
       if (WindowAggregateMatcher.matchesSession(
           agg.windowing(), agg.grouping(), agg.aggCalls(), agg.getInput().getRowType())) {
@@ -786,7 +787,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             keyColumns,
             valueTypes,
             kinds,
-            proctime);
+            proctime,
+            WindowAggregateMatcher.isLtz(agg.windowing()));
       }
     }
 
@@ -1044,7 +1046,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             cumulative,
             keyColumns,
             valueTypes,
-            kinds);
+            kinds,
+            WindowAggregateMatcher.isLtz(agg.windowing()));
       }
     }
     // A recognized operator shape we reached here is one its matcher declined — record why, so a
@@ -1149,7 +1152,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     if (node instanceof StreamPhysicalWindowAggregate
         || node instanceof StreamPhysicalLocalWindowAggregate) {
       return "window aggregate: needs an event-time TUMBLE/HOP/CUMULATE (zero offset) over a"
-          + " local-time-zone rowtime, one value column whose type matches the aggregate"
+          + " local-time-zone or plain TIMESTAMP rowtime, one value column whose type matches the aggregate"
           + " (bigint/int/double for SUM/AVG, also smallint/tinyint/float for MIN/MAX/COUNT),"
           + " and bigint/int/string/boolean/date keys (docs/aggregate-type-support.md)";
     }

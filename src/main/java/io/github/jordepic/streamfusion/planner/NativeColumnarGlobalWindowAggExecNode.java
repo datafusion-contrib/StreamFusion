@@ -32,6 +32,7 @@ public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<ArrowBat
   private final int[] keyColumns;
   private final int[] valueTypes;
   private final int[] aggregateKinds;
+  private final boolean timestampLtz;
 
   public NativeColumnarGlobalWindowAggExecNode(
       ReadableConfig tableConfig,
@@ -43,7 +44,8 @@ public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<ArrowBat
       boolean cumulative,
       int[] keyColumns,
       int[] valueTypes,
-      int[] aggregateKinds) {
+      int[] aggregateKinds,
+      boolean timestampLtz) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-columnar-global-window-aggregate_1"),
@@ -57,6 +59,7 @@ public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<ArrowBat
     this.keyColumns = keyColumns;
     this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
+    this.timestampLtz = timestampLtz;
   }
 
   @Override
@@ -65,7 +68,8 @@ public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<ArrowBat
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
-    String timeZoneId = planner.getTableConfig().getLocalTimeZone().getId();
+    String timeZoneId =
+        timestampLtz ? planner.getTableConfig().getLocalTimeZone().getId() : "UTC";
     RowType outputType = (RowType) getOutputType();
     return ExecNodeUtil.createOneInputTransformation(
         input,

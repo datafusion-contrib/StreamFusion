@@ -71,8 +71,28 @@ final class WindowAggregateMatcher {
 
   private static boolean proctimeTimeAttribute(WindowingStrategy windowing) {
     return windowing instanceof TimeAttributeWindowingStrategy
-        && windowing.getTimeAttributeType().getTypeRoot()
-            == LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE;
+        && supportedTimeAttribute(windowing);
+  }
+
+  /**
+   * Whether the window's time attribute is one the operator renders correctly: a local-time-zone
+   * attribute (window bounds emitted in the session zone) or a plain TIMESTAMP (bounds emitted as the
+   * raw wall-clock — the operator is told to render in UTC via {@link #isLtz}).
+   */
+  static boolean supportedTimeAttribute(WindowingStrategy windowing) {
+    LogicalTypeRoot root = windowing.getTimeAttributeType().getTypeRoot();
+    return root == LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+        || root == LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE;
+  }
+
+  /**
+   * Whether the time attribute is local-zoned (vs a plain TIMESTAMP). The window operator renders its
+   * window_start/window_end through the session zone when true, and through UTC (raw wall-clock) when
+   * false — see how the exec nodes choose the render zone.
+   */
+  static boolean isLtz(WindowingStrategy windowing) {
+    return windowing.getTimeAttributeType().getTypeRoot()
+        == LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE;
   }
 
   static boolean isCumulative(WindowingStrategy windowing) {
@@ -192,10 +212,9 @@ final class WindowAggregateMatcher {
     if (!(windowing instanceof TimeAttributeWindowingStrategy) || !windowing.isRowtime()) {
       return false;
     }
-    // Window bounds are emitted via the session zone, which matches the host only for a
-    // local-time-zone event-time attribute.
-    if (windowing.getTimeAttributeType().getTypeRoot()
-        != LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
+    // The time attribute must be one the operator renders correctly: local-time-zone (bounds in the
+    // session zone) or plain TIMESTAMP (bounds as raw wall-clock, rendered in UTC — see isLtz).
+    if (!supportedTimeAttribute(windowing)) {
       return false;
     }
     return supportedAggregates(grouping, aggCalls, inputType);

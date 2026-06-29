@@ -32,6 +32,7 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends SingleRel
   private final int[] valueTypes;
   private final int[] aggregateKinds;
   private final boolean proctime;
+  private final boolean timestampLtz;
 
   public StreamPhysicalNativeColumnarWindowAggregate(
       RelOptCluster cluster,
@@ -46,7 +47,8 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends SingleRel
       int[] keyColumns,
       int[] valueTypes,
       int[] aggregateKinds,
-      boolean proctime) {
+      boolean proctime,
+      boolean timestampLtz) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.cumulative = cumulative;
@@ -58,6 +60,7 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends SingleRel
     this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
     this.proctime = proctime;
+    this.timestampLtz = timestampLtz;
   }
 
   @Override
@@ -85,7 +88,8 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends SingleRel
         keyColumns,
         valueTypes,
         aggregateKinds,
-        proctime);
+        proctime,
+        timestampLtz);
   }
 
   @Override
@@ -103,6 +107,7 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends SingleRel
         keyColumns,
         valueTypes,
         aggregateKinds,
-        proctime);
+        proctime,
+        timestampLtz);
   }
 }

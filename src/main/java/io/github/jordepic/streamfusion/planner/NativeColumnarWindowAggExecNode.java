@@ -36,6 +36,7 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] valueTypes;
   private final int[] aggregateKinds;
   private final boolean proctime;
+  private final boolean timestampLtz;
 
   public NativeColumnarWindowAggExecNode(
       ReadableConfig tableConfig,
@@ -50,7 +51,8 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
       int[] keyColumns,
       int[] valueTypes,
       int[] aggregateKinds,
-      boolean proctime) {
+      boolean proctime,
+      boolean timestampLtz) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-columnar-window-aggregate_1"),
@@ -67,6 +69,7 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
     this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
     this.proctime = proctime;
+    this.timestampLtz = timestampLtz;
   }
 
   @Override
@@ -75,7 +78,10 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
-    String timeZoneId = planner.getTableConfig().getLocalTimeZone().getId();
+    // A local-zoned rowtime renders window bounds in the session zone; a plain TIMESTAMP renders them
+    // as the raw wall-clock, i.e. in UTC (the bounds' millis are already the wall-clock).
+    String timeZoneId =
+        timestampLtz ? planner.getTableConfig().getLocalTimeZone().getId() : "UTC";
     RowType outputType = (RowType) getOutputType();
     return ExecNodeUtil.createOneInputTransformation(
         input,

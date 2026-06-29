@@ -153,7 +153,9 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 - **Regular join** — unsupported join type; no equi key; non-null-dropping keys; non-equi residual not
   expressible; an input column type the converter can't carry.
 - **Window aggregate / local / global** — window not event-time `TUMBLE`/`HOP`/`CUMULATE` (zero offset)
-  over a local-time-zone rowtime — or, for **proctime**, a single-phase `TUMBLE`/`HOP`/`CUMULATE` whose
+  over a local-time-zone **or plain `TIMESTAMP`** rowtime (the bounds render in the session zone for a
+  local-time-zone attribute, in UTC — the raw wall-clock — for a plain `TIMESTAMP`) — or, for
+  **proctime**, a single-phase `TUMBLE`/`HOP`/`CUMULATE` whose
   slide divides its size, or a single-phase `SESSION`; anything else proctime (the two-phase local/
   global path) is not yet on the processing-time-timer path; `HOP` slide / `CUMULATE` step doesn't
   divide size; key type outside bigint/int/string/boolean/date/timestamp/decimal; value type/aggregate
