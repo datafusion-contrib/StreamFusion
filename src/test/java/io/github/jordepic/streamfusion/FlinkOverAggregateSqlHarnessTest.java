@@ -111,6 +111,19 @@ class FlinkOverAggregateSqlHarnessTest {
   }
 
   @Test
+  void boundedRangeFrameMatchesHost() throws Exception {
+    // RANGE BETWEEN INTERVAL '1' SECOND PRECEDING AND CURRENT ROW: each row's aggregate covers the
+    // rows within 1000ms of its rowtime (by interval, not row count). The native side recomputes over
+    // the rowtime interval; per-partition rowtimes are distinct so every frame is unambiguous.
+    NativeParity.assertParity(
+        FlinkOverAggregateSqlHarnessTest::boundedEnvironment,
+        "SELECT k, v, SUM(v) OVER w AS s, MIN(v) OVER w AS lo, MAX(v) OVER w AS hi, "
+            + "COUNT(v) OVER w AS c FROM src "
+            + "WINDOW w AS (PARTITION BY k ORDER BY rt "
+            + "RANGE BETWEEN INTERVAL '1' SECOND PRECEDING AND CURRENT ROW)");
+  }
+
+  @Test
   void booleanPartitionKeyMatchesHost() throws Exception {
     // PARTITION BY a boolean key — exercises the wider partition-key set (the native key path is
     // type-general; boolean/date/timestamp/decimal are admitted, not just bigint/int/string).

@@ -1661,12 +1661,16 @@ impl BoundedOverAggregator {
         let mut results: Vec<Vec<ScalarValue>> = vec![vec![ScalarValue::Null; n]; num_agg];
         for row in 0..n {
             let buffer = &self.keys[&row_keys[row]];
-            let upper = buffer_index[row];
-            let lower = if self.rows_frame {
-                upper.saturating_sub(self.offset as usize)
+            let i = buffer_index[row];
+            let cur_rt = buffer[i].rt;
+            // ROWS counts physical rows up to and including this one; RANGE covers all rows within the
+            // rowtime interval and shares one frame across rows of equal rowtime (ending at the last).
+            let (lower, upper) = if self.rows_frame {
+                (i.saturating_sub(self.offset as usize), i)
             } else {
-                let bound = buffer[upper].rt - self.offset;
-                buffer.partition_point(|r| r.rt < bound)
+                let lo = buffer.partition_point(|r| r.rt < cur_rt - self.offset);
+                let hi = buffer.partition_point(|r| r.rt <= cur_rt) - 1;
+                (lo, hi)
             };
             let mut aggs: Vec<RunningAgg> =
                 self.kinds.iter().map(|&k| RunningAgg::new(k, &self.value_type)).collect();
@@ -10656,6 +10660,32 @@ mod tests {
         // SUM over {self, prev}: key 1 -> 10, 10+20, 20+30; key 2 (lone row) -> 100.
         assert_eq!(values(&out, 1), vec![10, 20, 30, 100]); // v passed through
         assert_eq!(values(&out, 3), vec![10, 30, 50, 100]);
+    }
+
+    // Bounded RANGE frame (1 SECOND PRECEDING): each row's SUM covers the rows within 1000ms of it,
+    // by rowtime interval rather than a physical row count.
+    #[test]
+    fn bounded_range_over_sums_the_time_interval() {
+        let k: ArrayRef = Arc::new(Int64Array::from(vec![1i64, 1, 1]));
+        let v: ArrayRef = Arc::new(Int64Array::from(vec![10i64, 20, 30]));
+        let rt: ArrayRef = Arc::new(TimestampNanosecondArray::from(vec![
+            0i64,
+            1_000_000_000,
+            2_000_000_000,
+        ]));
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("k", DataType::Int64, false),
+            Field::new("v", DataType::Int64, true),
+            Field::new("rt", DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None), false),
+        ]));
+        let batch = RecordBatch::try_new(schema, vec![k, v, rt]).unwrap();
+        // frame_kind 2 = bounded RANGE, offset 1000 = a 1000ms preceding interval.
+        let mut over = OverWindowAggregator::new(0, vec![0], 2, Some(1), vec![0], 2, 1000);
+        over.push(batch);
+        let out = over.flush(2000);
+        assert_eq!(out.num_rows(), 3);
+        // SUM over rows within 1000ms: rt0 -> {10}, rt1000 -> {10,20}, rt2000 -> {20,30}.
+        assert_eq!(values(&out, 3), vec![10, 30, 50]);
     }
 
     // Two-phase cumulative: per-slice SUM partials merge into the nested windows of their bucket.

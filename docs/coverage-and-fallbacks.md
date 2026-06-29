@@ -58,11 +58,12 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   Scope: SUM/MIN/MAX/COUNT over bigint/int/double, with **no widening of the partial** — `SUM(INT)`
   (whose partial Flink widens to bigint) routes single-phase, as does `AVG`/distinct (the latter plans
   as `IncrementalGroupAggregate`). Row-time mini-batch falls back.
-- **`OVER`** — the unbounded `RANGE … CURRENT ROW` frame (running fold) **and** the bounded
-  `ROWS BETWEEN n PRECEDING AND CURRENT ROW` frame (recomputed over the frame slice), over one
-  ascending rowtime, all aggregates over one shared bigint/int/double value column. Real gaps:
-  bounded-`RANGE` (time-interval) frame, independent value columns per aggregate, wider value types,
-  and proctime ordering. (More than one window group, decimal bounded frames, `FOLLOWING` frames,
+- **`OVER`** — the unbounded `RANGE … CURRENT ROW` frame (running fold), the bounded
+  `ROWS BETWEEN n PRECEDING AND CURRENT ROW` frame (recomputed over the row slice), **and** the
+  bounded `RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW` frame (recomputed over the rowtime
+  interval), over one ascending rowtime, all aggregates over one shared bigint/int/double value
+  column. Real gaps: independent value columns per aggregate, wider value types, and proctime
+  ordering. (More than one window group, decimal bounded frames, `FOLLOWING` frames,
   non-time/descending order, and `LAG`/`LEAD` are parity — Flink rejects or single-groups them in
   streaming.)
 - **Deduplication** — rowtime keep-first (`ORDER BY rowtime ASC`, insert-only) and keep-last (`DESC`,
@@ -91,8 +92,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   `groupAggregate` switch. `kafkaSource` defaults to *false*.
 
 ### 2. Per-operator matcher declines (exact conditions)
-- **OVER** — a bounded-`RANGE` (time-interval) frame; a `ROWS` frame not of the form
-  `n PRECEDING .. CURRENT ROW`; proctime ordering; aggregates not all over one shared
+- **OVER** — a frame not of the form `… PRECEDING .. CURRENT ROW` (a `ROWS`/`RANGE` lower bound that
+  is not a constant preceding offset); proctime ordering; aggregates not all over one shared
   bigint/int/double value column; `PARTITION BY` key outside
   bigint/int/string/boolean/date/timestamp/decimal. (More than one window group, decimal bounded
   frames, non-time/descending order, `FOLLOWING` frames, and `LAG`/`LEAD` never reach us — Flink

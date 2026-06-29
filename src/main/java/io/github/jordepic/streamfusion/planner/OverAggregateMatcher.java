@@ -19,10 +19,11 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalO
  * window group ordered by a rowtime (local-time-zone) attribute, optional {@code PARTITION BY} on
  * bigint/int/string/boolean/date/timestamp/decimal keys, and one or more {@code SUM}/{@code MIN}/{@code
  * MAX}/{@code COUNT}/{@code FIRST_VALUE}/{@code LAST_VALUE} aggregates that all read the same
- * bigint/int/double value column, over one of two frames ending at the current row: {@code RANGE
- * UNBOUNDED PRECEDING} (a persistent running fold) or {@code ROWS BETWEEN n PRECEDING AND CURRENT ROW}
- * (recomputed over the frame slice). Anything else (a bounded RANGE frame, proctime, AVG, multiple
- * value columns, an unsupported key type) falls back.
+ * bigint/int/double value column, over one of three frames ending at the current row: {@code RANGE
+ * UNBOUNDED PRECEDING} (a persistent running fold), {@code ROWS BETWEEN n PRECEDING AND CURRENT ROW}
+ * (recomputed over the row slice), or {@code RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW}
+ * (recomputed over the rowtime interval). Anything else (proctime, AVG, multiple value columns, an
+ * unsupported key type) falls back.
  */
 final class OverAggregateMatcher {
 
@@ -67,34 +68,48 @@ final class OverAggregateMatcher {
       return "OVER: aggregates need a single shared bigint/int/double value column"
           + " (AVG or multiple value columns not supported)";
     }
-    // Bounded ROWS (n PRECEDING) recomputes per row over the frame slice; RANGE is currently only the
-    // unbounded-preceding running fold (bounded RANGE is Phase 2).
+    // Every supported frame ends at CURRENT ROW with a preceding lower bound. ROWS must be a constant
+    // n PRECEDING (recomputed over the row slice); RANGE may be UNBOUNDED PRECEDING (the running fold)
+    // or a constant INTERVAL PRECEDING (recomputed over the rowtime interval).
+    if (!group.lowerBound.isPreceding()) {
+      return "OVER: frame must have a PRECEDING lower bound";
+    }
     if (group.isRows) {
-      if (group.lowerBound.isUnbounded() || !group.lowerBound.isPreceding()
+      if (group.lowerBound.isUnbounded()
           || boundOffset(group.lowerBound, window, inputType.getFieldCount()) == null) {
         return "OVER: ROWS frame must be BETWEEN n PRECEDING AND CURRENT ROW";
       }
-    } else if (!(group.lowerBound.isUnbounded() && group.lowerBound.isPreceding())) {
-      return "OVER: RANGE frame must be UNBOUNDED PRECEDING .. CURRENT ROW";
+    } else if (!group.lowerBound.isUnbounded()
+        && boundOffset(group.lowerBound, window, inputType.getFieldCount()) == null) {
+      return "OVER: bounded RANGE frame must be BETWEEN INTERVAL n PRECEDING AND CURRENT ROW";
     }
     return null;
   }
 
-  /** Frame shape code: 0 = RANGE unbounded preceding, 1 = bounded ROWS (n preceding). */
+  /**
+   * Frame shape code matching the native side: 0 = RANGE unbounded preceding (running fold), 1 =
+   * bounded ROWS (n preceding rows), 2 = bounded RANGE (a preceding rowtime interval).
+   */
   static int frameKind(StreamPhysicalOverAggregate over) {
     Window.Group group = over.logicWindow().groups.get(0);
-    return !allWindowFunctions(group) && group.isRows ? 1 : 0;
+    if (allWindowFunctions(group)) {
+      return 0;
+    }
+    if (group.isRows) {
+      return 1;
+    }
+    return group.lowerBound.isUnbounded() ? 0 : 2;
   }
 
-  /** The bounded-frame offset: n preceding rows for a ROWS frame, else 0 (unbounded). */
+  /** The bounded-frame offset: n preceding rows (ROWS) or the preceding interval in millis (RANGE). */
   static long frameOffset(StreamPhysicalOverAggregate over) {
     Window window = over.logicWindow();
     Window.Group group = window.groups.get(0);
-    if (!allWindowFunctions(group) && group.isRows) {
-      Long offset = boundOffset(group.lowerBound, window, over.getInput().getRowType().getFieldCount());
-      return offset == null ? 0 : offset;
+    if (allWindowFunctions(group) || (!group.isRows && group.lowerBound.isUnbounded())) {
+      return 0;
     }
-    return 0;
+    Long offset = boundOffset(group.lowerBound, window, over.getInput().getRowType().getFieldCount());
+    return offset == null ? 0 : offset;
   }
 
   /**
