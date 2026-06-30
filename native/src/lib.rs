@@ -4,7 +4,8 @@ use arrow::array::{
     RecordBatch, StringArray, StructArray, TimestampMicrosecondArray, TimestampMillisecondArray,
     TimestampNanosecondArray, UInt32Array,
 };
-use arrow::compute::{concat_batches, filter_record_batch, take};
+use arrow::compute::{concat_batches, filter_record_batch, take, SortOptions};
+use arrow::row::{OwnedRow, Row, RowConverter, SortField};
 use arrow::datatypes::{DataType, Field, FieldRef, Fields, Schema, SchemaRef};
 use arrow::ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema};
 use datafusion::catalog::memory::MemorySourceConfig;
@@ -5229,13 +5230,30 @@ fn compare_rows(a: &[ScalarValue], b: &[ScalarValue], sort: &[SortColumn]) -> st
 /// occupant), and an INSERT for the row taking a brand-new rank; a row pushed past `limit` is
 /// retracted by the UPDATE_BEFORE at the last rank (no separate delete). Output appends the rank
 /// (a bigint) before the `$row_kind$` byte.
+/// arrow-row encoders for a Top-N, built once from the first batch's column types and reused: the
+/// partition key, the memcomparable sort key (per-column ASC/DESC + null placement), and the
+/// value-encoded full row.
+struct TopNConverters {
+    partition: RowConverter,
+    sort: RowConverter,
+    payload: RowConverter,
+}
+
+/// A buffered Top-N row as compact arrow-row bytes: its memcomparable sort key and the value-encoded
+/// full row. No per-cell `ScalarValue`, so a buffer insert and the rank cascade move/clone a single
+/// byte buffer rather than deep-cloning every column (notably the heap strings that dominated the
+/// `ScalarValue` path's malloc/clone churn). `OwnedRow` is `Ord`/`Eq` by those bytes, so ordering and
+/// the full-row equality the eviction needs are byte compares.
+type TopNRow = (OwnedRow, OwnedRow);
+
 struct TopNRanker {
     partition_columns: Vec<usize>,
     sort_columns: Vec<SortColumn>,
     limit: i64,
     output_rank_number: bool,
     schema: Option<SchemaRef>,
-    groups: HashMap<GroupKey, Vec<JoinRow>>,
+    converters: Option<TopNConverters>,
+    groups: HashMap<OwnedRow, Vec<TopNRow>>,
 }
 
 impl TopNRanker {
@@ -5251,46 +5269,86 @@ impl TopNRanker {
             limit,
             output_rank_number,
             schema: None,
+            converters: None,
             groups: HashMap::new(),
         }
+    }
+
+    /// Builds the three arrow-row converters from a batch's column types, once.
+    fn ensure_converters(&mut self, batch: &RecordBatch, arity: usize) {
+        if self.converters.is_some() {
+            return;
+        }
+        let payload = RowConverter::new(
+            (0..arity).map(|i| SortField::new(batch.column(i).data_type().clone())).collect(),
+        )
+        .expect("top-n payload converter");
+        let sort = RowConverter::new(
+            self.sort_columns
+                .iter()
+                .map(|s| {
+                    SortField::new_with_options(
+                        batch.column(s.index).data_type().clone(),
+                        SortOptions { descending: !s.ascending, nulls_first: s.nulls_first },
+                    )
+                })
+                .collect(),
+        )
+        .expect("top-n sort converter");
+        let partition = RowConverter::new(
+            self.partition_columns
+                .iter()
+                .map(|&i| SortField::new(batch.column(i).data_type().clone()))
+                .collect(),
+        )
+        .expect("top-n partition converter");
+        self.converters = Some(TopNConverters { partition, sort, payload });
     }
 
     fn push(&mut self, batch: &RecordBatch) -> RecordBatch {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
-        let partition_arrays: Vec<&ArrayRef> =
-            self.partition_columns.iter().map(|&i| batch.column(i)).collect();
-        let data_arrays: Vec<&ArrayRef> = (0..arity).map(|i| batch.column(i)).collect();
+        self.ensure_converters(batch, arity);
+        let conv = self.converters.as_ref().expect("converters set");
+        // Encode the whole batch columnar->row in three vectorized passes (partition key, sort key,
+        // full-row payload), instead of materializing a `ScalarValue` per cell.
+        let partition_arrays: Vec<ArrayRef> =
+            self.partition_columns.iter().map(|&i| batch.column(i).clone()).collect();
+        let sort_arrays: Vec<ArrayRef> =
+            self.sort_columns.iter().map(|s| batch.column(s.index).clone()).collect();
+        let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
+        let parts = conv.partition.convert_columns(&partition_arrays).expect("encode partition");
+        let keys = conv.sort.convert_columns(&sort_arrays).expect("encode sort key");
+        let payloads = conv.payload.convert_columns(&data_arrays).expect("encode payload");
 
-        let mut out_rows: Vec<JoinRow> = Vec::new();
+        let limit = self.limit as usize;
+        let output_rank = self.output_rank_number;
+        let groups = &mut self.groups;
+        let mut out_rows: Vec<OwnedRow> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
         let mut out_ranks: Vec<i64> = Vec::new();
 
         for row in 0..batch.num_rows() {
-            let key = read_key(&partition_arrays, row);
-            let full: JoinRow = data_arrays
-                .iter()
-                .map(|a| ScalarValue::try_from_array(a, row).expect("top-n row scalar"))
-                .collect();
-            let sort = &self.sort_columns;
-            let limit = self.limit as usize;
-            let buffer = self.groups.entry(key).or_default();
-            // Insert after any rows that order equal-or-before, preserving arrival order for ties.
-            let pos = buffer.partition_point(|r| compare_rows(r, &full, sort) != std::cmp::Ordering::Greater);
+            let key = keys.row(row).owned();
+            let payload = payloads.row(row).owned();
+            let buffer = groups.entry(parts.row(row).owned()).or_default();
+            // Insert after any rows that order equal-or-before, preserving arrival order for ties
+            // (byte compare of the memcomparable sort key).
+            let pos = buffer.partition_point(|(k, _)| *k <= key);
 
-            if self.output_rank_number {
+            if output_rank {
                 if pos >= limit {
                     continue; // beyond rank N — the new row never enters the top-N
                 }
                 let old_len = buffer.len();
-                buffer.insert(pos, full.clone());
+                buffer.insert(pos, (key.clone(), payload.clone()));
                 // Cascade from the new row's rank to the buffer end (capped at the limit): each rank's
                 // occupant changes, so retract the old and append the new; a brand-new rank inserts.
                 let upper = (old_len + 1).min(limit); // highest 1-based rank to emit
                 for rank in (pos + 1)..=upper {
-                    let new_occupant = buffer[rank - 1].clone();
+                    let new_occupant = buffer[rank - 1].1.clone();
                     if rank <= old_len {
-                        out_rows.push(buffer[rank].clone()); // old occupant (shifted down by one)
+                        out_rows.push(buffer[rank].1.clone()); // old occupant (shifted down by one)
                         out_kinds.push(1); // -U
                         out_ranks.push(rank as i64);
                         out_rows.push(new_occupant);
@@ -5306,33 +5364,33 @@ impl TopNRanker {
                     buffer.truncate(limit); // the row past N was retracted by the -U at rank=limit
                 }
             } else {
-                buffer.insert(pos, full.clone());
-                if buffer.len() as i64 > self.limit {
+                buffer.insert(pos, (key, payload.clone()));
+                if buffer.len() > limit {
                     let evicted = buffer.pop().expect("buffer over limit is non-empty");
-                    if evicted == full {
+                    if evicted.1 == payload {
                         continue; // the new row was itself rank N+1 — it never entered the top-N
                     }
-                    out_rows.push(evicted);
+                    out_rows.push(evicted.1);
                     out_kinds.push(3); // -D the displaced row
                 }
-                out_rows.push(full);
+                out_rows.push(payload);
                 out_kinds.push(0); // +I the new row
             }
         }
         self.emit(out_rows, out_kinds, out_ranks)
     }
 
-    fn emit(&self, out_rows: Vec<JoinRow>, out_kinds: Vec<i8>, out_ranks: Vec<i64>) -> RecordBatch {
+    fn emit(&self, out_rows: Vec<OwnedRow>, out_kinds: Vec<i8>, out_ranks: Vec<i64>) -> RecordBatch {
         if out_rows.is_empty() {
             return RecordBatch::new_empty(Arc::new(Schema::empty()));
         }
         let schema = self.schema.as_ref().expect("schema set once a row was processed");
+        let conv = self.converters.as_ref().expect("converters set");
+        // One vectorized row->columnar pass rebuilds every data column, replacing the per-cell
+        // `scalars_to_array` over per-row scalar clones.
+        let mut columns: Vec<ArrayRef> =
+            conv.payload.convert_rows(out_rows.iter().map(|r| r.row())).expect("decode top-n payloads");
         let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
-        let mut columns: Vec<ArrayRef> = (0..fields.len())
-            .map(|j| {
-                scalars_to_array(out_rows.iter().map(|r| r[j].clone()).collect(), fields[j].data_type())
-            })
-            .collect();
         if self.output_rank_number {
             fields.push(Field::new("w0$o0", DataType::Int64, false));
             columns.push(Arc::new(Int64Array::from(out_ranks)));
@@ -5346,17 +5404,13 @@ impl TopNRanker {
     /// Serializes the buffered rows in per-partition buffer order (partition derivable from the row).
     fn snapshot(&self) -> Vec<u8> {
         let Some(schema) = &self.schema else { return Vec::new() };
-        let rows: Vec<&JoinRow> = self.groups.values().flatten().collect();
+        let Some(conv) = &self.converters else { return Vec::new() };
+        let rows: Vec<Row> = self.groups.values().flatten().map(|(_, p)| p.row()).collect();
         if rows.is_empty() {
             return Vec::new();
         }
-        let fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
-        let columns: Vec<ArrayRef> = (0..fields.len())
-            .map(|j| {
-                scalars_to_array(rows.iter().map(|r| r[j].clone()).collect(), fields[j].data_type())
-            })
-            .collect();
-        write_ipc(&RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("top-n snapshot"))
+        let columns = conv.payload.convert_rows(rows).expect("decode top-n snapshot payloads");
+        write_ipc(&RecordBatch::try_new(schema.clone(), columns).expect("top-n snapshot"))
     }
 
     fn restore(
@@ -5368,15 +5422,24 @@ impl TopNRanker {
     ) -> Self {
         let mut ranker = TopNRanker::new(partition_columns, sort_columns, limit, output_rank_number);
         for batch in read_ipc_if_present(bytes) {
+            let arity = batch.num_columns();
             ranker.schema = Some(batch.schema());
-            let partition_arrays: Vec<&ArrayRef> =
-                ranker.partition_columns.iter().map(|&i| batch.column(i)).collect();
+            ranker.ensure_converters(&batch, arity);
+            let conv = ranker.converters.as_ref().expect("converters set");
+            let partition_arrays: Vec<ArrayRef> =
+                ranker.partition_columns.iter().map(|&i| batch.column(i).clone()).collect();
+            let sort_arrays: Vec<ArrayRef> =
+                ranker.sort_columns.iter().map(|s| batch.column(s.index).clone()).collect();
+            let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
+            let parts = conv.partition.convert_columns(&partition_arrays).expect("encode partition");
+            let keys = conv.sort.convert_columns(&sort_arrays).expect("encode sort key");
+            let payloads = conv.payload.convert_columns(&data_arrays).expect("encode payload");
+            let groups = &mut ranker.groups;
             for row in 0..batch.num_rows() {
-                let key = read_key(&partition_arrays, row);
-                let full: JoinRow = (0..batch.num_columns())
-                    .map(|i| ScalarValue::try_from_array(batch.column(i), row).expect("top-n scalar"))
-                    .collect();
-                ranker.groups.entry(key).or_default().push(full);
+                groups
+                    .entry(parts.row(row).owned())
+                    .or_default()
+                    .push((keys.row(row).owned(), payloads.row(row).owned()));
             }
         }
         ranker
