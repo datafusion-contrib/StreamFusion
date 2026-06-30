@@ -267,13 +267,16 @@ scan, so its `json` format decodes everything). Run with `SF_BENCHMARK=true mvn 
 | q1 currency | 0.77 M ev/s | 0.72 M ev/s | **0.94×** |
 | q0 pass-through | 0.77 M ev/s | 0.69 M ev/s | **0.90×** |
 
-**At parity, not the win the generator path shows — and that's the honest result.** JSON is row-
-sequential, so the decoder must tokenize the whole object to find field boundaries; projection pushdown
-saves only the *materialization* of skipped fields, not the parse. Flink's JSON deserializer is mature,
-and the native path adds the bytes→Arrow→RowData handoffs, so the pruning gain is largely offset. This
-is the opposite trade-off from the generator source, where the JVM transpose reads every field's value
-and pruning that away doubled throughput. (Binary formats that can skip field bytes — Avro positional,
-Protobuf tag-length — may prune more profitably; not yet measured.)
+**At parity, not the win the generator path shows — and the profile says why.** Sampling the native
+job (`SF_PROFILE=true … -Dtest=NexmarkKafkaBenchmark#q0NativeProfileLoop`) attributes its CPU as: ~45%
+Kafka socket I/O + thread-sync, ~19% `arrow-json` tape tokenize (parses the *whole* document), ~12% JIT,
+~10% memcpy, and only **~5% building the Arrow arrays — the one part projection pushdown reduces**. So
+pruning's ceiling on this workload is ~5%, and the dominant I/O+sync cost is *shared* with the Flink run
+(both use Flink's `KafkaSource`), which pins the ratio near 1×. This is the opposite of the generator
+source, where the JVM transpose reads every field's value and pruning that away doubled throughput. The
+bigger lever for Kafka throughput would be the I/O path (a native consumer bypassing Flink's
+`KafkaSource`), not decode pruning. (Binary formats — Avro positional, Protobuf tag-length — tokenize
+less and may shift this balance; not yet measured.)
 
 _Apple M1 Max; numbers are comparable only within a machine._
 

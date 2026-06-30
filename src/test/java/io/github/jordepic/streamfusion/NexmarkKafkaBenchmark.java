@@ -52,6 +52,30 @@ class NexmarkKafkaBenchmark {
           + " `dateTime` BIGINT";
 
   @Test
+  @EnabledIfEnvironmentVariable(named = "SF_PROFILE", matches = "true")
+  void q0NativeProfileLoop() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      produce(brokers, "nexmark");
+      String sinkDdl =
+          "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price BIGINT, `dateTime` BIGINT,"
+              + " extra STRING) WITH ('connector' = 'blackhole')";
+      String insertSql =
+          "INSERT INTO sink SELECT bid.auction, bid.bidder, bid.price, bid.`dateTime`, bid.extra"
+              + " FROM src WHERE event_type = 2";
+      long deadline = System.currentTimeMillis() + Long.getLong("profile.seconds", 60L) * 1000L;
+      long iterations = 0;
+      while (System.currentTimeMillis() < deadline) {
+        runOnce(brokers, true, sinkDdl, insertSql);
+        iterations++;
+      }
+      System.out.println("[profile] native Kafka/JSON q0 iterations: " + iterations);
+    }
+  }
+
+  @Test
   void nexmarkKafkaJson() throws Exception {
     try (KafkaContainer kafka =
         new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
