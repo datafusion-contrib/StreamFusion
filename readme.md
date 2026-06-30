@@ -256,32 +256,33 @@ per-row key read dominate; closing this is the columnar-changelog work
 ### Nexmark q0–q2 from a Kafka source (native decode)
 
 The native decoder is itself a (Rust) bytes→Arrow transpose. Flink does **not** push projection into
-the Kafka scan, so its format decodes the whole record; for JSON we push the query's projection into
-the decode so it builds only the read columns/fields. Run with `SF_BENCHMARK=true mvn test -Pbench
+the Kafka scan, so its format decodes the whole record; we push the query's projection into the decode
+so it builds only the read columns/fields. Run with `SF_BENCHMARK=true mvn test -Pbench
 -Dtest=NexmarkKafkaBenchmark` (Testcontainers Kafka). 2 M events, native decode vs Flink's own format:
 
 | Query | JSON (Flink → Native) | Avro (Flink → Native) |
 |---|---|---|
-| q0 pass-through | 0.77 → 0.69 M ev/s — **0.90×** | 0.81 → 0.95 M ev/s — **1.18×** |
-| q1 currency | 0.77 → 0.72 M ev/s — **0.94×** | 0.83 → 0.88 M ev/s — **1.06×** |
-| q2 filter | 0.78 → 0.81 M ev/s — **1.03×** | 0.84 → 1.00 M ev/s — **1.18×** |
+| q0 pass-through | 0.72 → 0.73 M ev/s — **1.02×** | 0.81 → 1.33 M ev/s — **1.64×** |
+| q1 currency | 0.76 → 0.74 M ev/s — **0.98×** | 0.82 → 1.34 M ev/s — **1.63×** |
+| q2 filter | 0.80 → 0.77 M ev/s — **0.97×** | 0.83 → 1.52 M ev/s — **1.83×** |
 
-**JSON is ~parity; Avro is a 1.06–1.18× win — and the profiles say why** (sample with `SF_PROFILE=true …
-#q0NativeProfileLoop`, `-Dprofile.format=json|avro`). Both share a large Kafka-I/O + thread-sync cost
-(~38–45%) with the Flink run, plus JIT noise from the harness's short jobs. The decode itself differs:
+**JSON is ~parity; Avro is a 1.6–1.8× win — and the profiles predicted exactly that** (sample with
+`SF_PROFILE=true … #q0NativeProfileLoop`, `-Dprofile.format=json|avro`). Both share a large Kafka-I/O +
+thread-sync cost (~38–45%) with the Flink run, plus JIT noise from the harness's short jobs. The decode
+itself is bound by completely different work:
 
-- **JSON is tokenize-bound** — ~19% `arrow-json` tape parse of the *whole* document, and only **~5%
-  building the Arrow arrays** (the part projection pushdown reduces). So pruning's ceiling is ~5%, and
-  Flink's mature JSON deserializer edges out the native path + its handoffs → parity.
+- **JSON is tokenize-bound** — ~19% `arrow-json` tape parse of the *whole* document, only **~5% building
+  the Arrow arrays** (the part pruning reduces). So pruning's ceiling is ~5%, and Flink's mature JSON
+  deserializer edges out the native path + its handoffs → parity.
 - **Avro is build/copy-bound** — ~27% `memmove` + ~15% decode, of which **`append_null` for the mostly-
-  null `person`/`auction` union branches is ~15% alone**. `arrow-avro` already beats Flink's Avro
-  deserializer decoding the full record, and that `append_null`/copy cost is exactly what a reader-
-  schema prune would remove — so Avro pruning has a real ~15%+ ceiling (unlike JSON's ~5%).
+  null `person`/`auction` union branches was ~15% alone**. `arrow-avro` already beat Flink decoding the
+  full record (1.06–1.18×); pushing the projection into the decode removed that build/copy of unread
+  fields and lifted it to **1.6–1.8×**.
 
-Avro projection isn't wired yet: bare-Avro datums are schema-less, so pruning needs a full *writer*
-schema plus a narrowed *reader* schema (Avro resolution), not just a narrowed output type — a bigger
-change than JSON's, but one the profile justifies. The other shared lever for both formats is the I/O
-path (a native consumer bypassing Flink's `KafkaSource`).
+Avro pruning needs more than JSON's: bare-Avro datums are schema-less, so the decode keeps the full
+*writer* schema (to parse the bytes) and applies the narrowed output as a *reader* schema, projecting
+via Avro resolution. The remaining shared lever for both formats is the I/O path (a native consumer
+bypassing Flink's `KafkaSource`), which the profile shows is ~40% of the job.
 
 _Apple M1 Max; numbers are comparable only within a machine._
 
