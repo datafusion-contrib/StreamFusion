@@ -8,6 +8,7 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LogicalType;
@@ -50,6 +51,10 @@ class TransposeOperatorsTest {
       // The harness copies records by serializer; tell it to use the batch serializer (identity copy)
       // for the ArrowBatch edges rather than falling back to Kryo, which cannot copy an Arrow batch.
       toArrow.setup(new ArrowBatchSerializer());
+      // ArrowToRowData emits a reused, lazy ColumnarRowData valid only until the batch closes; like a
+      // real downstream, the harness must copy each emitted row on arrival — give it a RowData
+      // serializer so getOutput() holds independent rows rather than aliases of freed buffers.
+      toRows.setup(new RowDataSerializer(SCHEMA));
       toArrow.open();
       toRows.open();
       for (RowData r : input) {
