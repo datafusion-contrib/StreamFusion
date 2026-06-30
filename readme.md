@@ -260,11 +260,11 @@ the Kafka scan, so its format decodes the whole record; we push the query's proj
 so it builds only the read columns/fields. Run with `SF_BENCHMARK=true mvn test -Pbench
 -Dtest=NexmarkKafkaBenchmark` (Testcontainers Kafka). 2 M events, native decode vs Flink's own format:
 
-| Query | JSON (Flink → Native) | Avro (Flink → Native) |
-|---|---|---|
-| q0 pass-through | 0.72 → 0.73 M ev/s — **1.02×** | 0.81 → 1.33 M ev/s — **1.64×** |
-| q1 currency | 0.76 → 0.74 M ev/s — **0.98×** | 0.82 → 1.34 M ev/s — **1.63×** |
-| q2 filter | 0.80 → 0.77 M ev/s — **0.97×** | 0.83 → 1.52 M ev/s — **1.83×** |
+| Query | JSON (Flink → Native) | Avro (Flink → Native) | Protobuf — no prune yet (Flink → Native) |
+|---|---|---|---|
+| q0 pass-through | 0.72 → 0.73 M ev/s — **1.02×** | 0.81 → 1.33 M ev/s — **1.64×** | 0.88 → 0.81 M ev/s — **0.91×** |
+| q1 currency | 0.76 → 0.74 M ev/s — **0.98×** | 0.82 → 1.34 M ev/s — **1.63×** | 0.96 → 0.84 M ev/s — **0.88×** |
+| q2 filter | 0.80 → 0.77 M ev/s — **0.97×** | 0.83 → 1.52 M ev/s — **1.83×** | 1.09 → 1.03 M ev/s — **0.94×** |
 
 **JSON is ~parity; Avro is a 1.6–1.8× win — and the profiles predicted exactly that** (sample with
 `SF_PROFILE=true … #q0NativeProfileLoop`, `-Dprofile.format=json|avro`). Both share a large Kafka-I/O +
@@ -281,8 +281,19 @@ itself is bound by completely different work:
 
 Avro pruning needs more than JSON's: bare-Avro datums are schema-less, so the decode keeps the full
 *writer* schema (to parse the bytes) and applies the narrowed output as a *reader* schema, projecting
-via Avro resolution. The remaining shared lever for both formats is the I/O path (a native consumer
-bypassing Flink's `KafkaSource`), which the profile shows is ~40% of the job.
+via Avro resolution.
+
+**Protobuf** is also **build/copy-bound** (~25% `memmove` + ~16% ptars decode), like Avro — but native
+protobuf decode is slightly *slower* than Flink's (0.88–0.94×) before pruning. Its profile says pruning
+should help the same way (skip building the unset `person`/`auction` messages and the unread `bid`
+fields). Protobuf projects via a **pruned descriptor** — ptars builds a column per descriptor field and
+skips wire tags it has no field for, so feeding it a descriptor narrowed to the read fields projects.
+That needs exact recursive descriptor pruning (matching the narrowed output, resolving nested message
+types); benchmark + profile are in, the prune itself is the remaining work.
+
+The remaining lever shared by *all* formats is the I/O path (a native consumer bypassing Flink's
+`KafkaSource`), which the profiles show is ~40% of the job — and the only lever for JSON, which pruning
+can't help.
 
 _Apple M1 Max; numbers are comparable only within a machine._
 
