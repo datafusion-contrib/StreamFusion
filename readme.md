@@ -296,31 +296,73 @@ can't help. The next section pulls that lever.
 
 _Apple M1 Max; numbers are comparable only within a machine._
 
-### Nexmark q0–q2 from a Kafka source (native rdkafka source)
+### Nexmark q0–q2 from a Kafka source — the row→columnar ladder
 
-The same three queries, but the source is the **native rdkafka consumer** — Rust owns the consume *and*
-the decode (librdkafka polls each partition; a background decode thread turns the payloads straight into
-Arrow), so neither Flink's Kafka client nor a `RowData` is on the path. This pulls the I/O lever above:
-where the decode rows had Flink consume the bytes, here the whole source is native. The decode is the
-full record (no projection pushed into the source *yet* — that's the obvious next win), so it is a fair
-head-to-head with Flink's full decode. Opt-in (behind the `kafka` cargo feature and the `kafkaSource`
-gate): `SF_BENCHMARK=true mvn test -Pbench -Dnative.cargo.args="build --release --features kafka"
--Dtest=NexmarkNativeKafkaSourceBenchmark`. 2 M events, native source vs Flink's own format:
+How far into Rust the source-side work moves, on the same q0/q1/q2 over the same produced bytes, all vs
+stock Flink. Four rungs, each one layer more native; the query projection is pushed in at every rung that
+can (the JVM transpose, the Rust decode, and now the native source — narrowed JSON schema, bare-Avro
+reader schema, or pruned protobuf descriptor):
 
-| Query | JSON (Flink → Native) | Avro (Flink → Native) | Protobuf (Flink → Native) |
+1. **JVM transpose** — Flink consumes *and* decodes to `RowData` with its own format, then a JVM
+   `RowData → Arrow` transpose feeds the native calc.
+2. **Rust transpose, JVM poll** — Flink's `KafkaSource` polls raw bytes, a native operator decodes them
+   straight to Arrow (the shallow decode path).
+3. **Rust poll + Rust transpose** — the native rdkafka source: Rust owns the consume *and* the decode
+   (librdkafka polls each partition, a background thread decodes to Arrow). No Flink Kafka client, no
+   `RowData`.
+
+`SF_BENCHMARK=true mvn test -Pbench -Dnative.cargo.args="build --release --features kafka"
+-Dtest=NexmarkKafkaLadderBenchmark` (Testcontainers Kafka; native source needs the `kafka` feature).
+2 M events, ×vs stock Flink (the best rung **bold**):
+
+| Format | Flink (ev/s) | JVM transpose | Rust transpose, JVM poll | Rust poll + Rust transpose |
+|---|---|---|---|---|
+| JSON q0 | 0.76 M | 1.07× | 0.99× | **1.23×** |
+| JSON q1 | 0.80 M | 1.04× | 0.93× | **1.19×** |
+| JSON q2 | 0.81 M | 1.10× | 1.03× | **1.18×** |
+| Avro q0 | 0.85 M | 1.03× | **1.63×** | 1.57× |
+| Avro q1 | 0.85 M | 0.96× | **1.65×** | 1.57× |
+| Avro q2 | 0.84 M | 1.07× | **1.80×** | 1.61× |
+| Protobuf q0 | 1.18 M | 1.07× | **1.33×** | 1.15× |
+| Protobuf q1 | 1.20 M | 1.04× | **1.29×** | 1.13× |
+| Protobuf q2 | 1.21 M | 1.14× | **1.37×** | 1.10× |
+
+**The best rung depends on the format**, and that's the whole point:
+
+- **JSON → the full native source wins (1.18–1.23×).** JSON decode is tokenize-bound, so the Rust decode
+  alone is only ~parity (it still shares Flink's `KafkaSource`); the win comes from owning the **poll**.
+  Pushdown lifted it from ~1.0–1.16× to 1.18–1.23× — JSON is *our* code (not a fast path inherited from a
+  downstream system), so every bit of read/build we cut counts.
+- **Avro / Protobuf → the Rust decode (JVM poll) wins** (1.6–1.8× / 1.3–1.4×). The full native source
+  actually *trails* it, because it plateaus at a **~1.33–1.36 M ev/s ceiling regardless of format**
+  (avro-source 1.34 M ≈ protobuf-source 1.36 M) — its per-poll FFI drain + per-partition batching + emit
+  overhead, fine when decode is the bottleneck (JSON) but a cap once the binary decode is faster than it.
+  The decode path has no such ceiling (one batched `decodeInto` per 8192-row batch over Flink's poll),
+  so it reaches ~1.5–1.6 M.
+
+The **JVM transpose** rung is a flat 1.0–1.14× everywhere: it still pays Flink's full `RowData` decode,
+then a (pruned) transpose — the row→columnar boundary on the JVM. So the ladder reads as: pay the
+transpose on the JVM (≈1×), move the decode to Rust (binary formats jump), or move the whole consume to
+Rust (JSON jumps; binary hits the source's FFI ceiling). Next lever: lift that source ceiling (fewer
+FFI round-trips / larger drains) and attack the JSON tokenize itself.
+
+**Reference — the transpose floor (no Kafka).** The same q0/q1/q2 with the source replaced by the
+in-process `nexmark` datagen emitting `RowData` directly — no Kafka client, no format decode, just the
+columnar island (pruned `RowData → Arrow` transpose → native calc → `Arrow → RowData` out) over a free
+source and `blackhole` sink (`-Dtest=NexmarkBenchmark`). It has its own Flink baseline and is *not*
+comparable cell-for-cell to the Kafka rows above — it's the ceiling for what columnar execution buys when
+I/O and decode are free:
+
+| Query | Flink (RowData) | Native (JVM transpose, no decode) | speedup |
 |---|---|---|---|
-| q0 pass-through | 0.79 → 0.91 M ev/s — **1.16×** | 0.81 → 1.31 M ev/s — **1.62×** | 1.21 → 1.32 M ev/s — **1.08×** |
-| q1 currency | 0.77 → 0.78 M ev/s — **1.00×** | 0.77 → 1.32 M ev/s — **1.71×** | 1.20 → 1.34 M ev/s — **1.12×** |
-| q2 filter | 0.82 → 0.90 M ev/s — **1.10×** | 0.89 → 1.33 M ev/s — **1.51×** | 1.23 → 1.34 M ev/s — **1.09×** |
+| q0 pass-through | 1.93 M ev/s | 2.11 M ev/s | **1.09×** |
+| q1 currency | 1.76 M ev/s | 1.97 M ev/s | **1.12×** |
+| q2 filter | 1.75 M ev/s | 2.84 M ev/s | **1.62×** |
 
-The headline is **JSON**: the decode path was ~parity (it shares Flink's `KafkaSource`), and bypassing it
-with the native consumer lifts JSON to **1.0–1.16×** — exactly the I/O lever, the only one JSON has.
-**Avro** stays a 1.5–1.7× win *without* pruning — the native consume + `arrow-avro` decode beat Flink's
-client + `RowData` decode outright. **Protobuf** is the weakest (1.08–1.12×): Flink's protobuf path is
-already fast (~1.2 M ev/s), and the source decodes the full record, so it gives up the decode path's
-pruning edge (which had carried protobuf to 1.26–1.36×). That points straight at the next step — pushing
-the query's projection into the native source (the reader-schema / pruned-descriptor machinery the
-decode path already has), to stack the I/O win on top of the build/copy savings, especially for protobuf.
+Both engines run **2–3× faster in absolute ev/s than any Kafka rung** (Flink ~1.8 M here vs ~0.8–1.2 M
+over Kafka) — that gap is exactly the Kafka consume + decode the ladder above is about. The native
+speedup is pure columnar execution: modest on the projections (q0/q1, transpose-bound) and large on the
+filter (q2 — the native filter discards rows in Arrow before they are ever materialized to `RowData`).
 
 _Apple M1 Max; numbers are comparable only within a machine._
 
