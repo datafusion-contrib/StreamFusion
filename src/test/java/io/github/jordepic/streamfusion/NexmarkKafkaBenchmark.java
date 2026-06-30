@@ -47,14 +47,14 @@ import org.testcontainers.utility.DockerImageName;
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class NexmarkKafkaBenchmark {
 
-  private static final long ROWS =
+  static final long ROWS =
       System.getenv("SF_ROWS") != null ? Long.parseLong(System.getenv("SF_ROWS")) : 1_000_000L;
   private static final int WARMUP = 1;
   private static final int RUNS = 2;
   private static final int BLOCK = 50;
   private static final String[] STATES = {"OR", "ID", "CA", "WA", "NY", "TX"};
 
-  private static final String SCHEMA =
+  static final String SCHEMA =
       "event_type INT,"
           + " person ROW<id BIGINT, name STRING, emailAddress STRING, creditCard STRING, city STRING,"
           + " state STRING, `dateTime` BIGINT, extra STRING>,"
@@ -223,7 +223,7 @@ class NexmarkKafkaBenchmark {
     return seconds;
   }
 
-  private static void produce(String brokers, String topic, String format) throws Exception {
+  static void produce(String brokers, String topic, String format) throws Exception {
     Properties props = new Properties();
     props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
     props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());

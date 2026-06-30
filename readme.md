@@ -39,7 +39,7 @@ every specific cause of a fallback — see [docs/coverage-and-fallbacks.md](docs
 | Parquet source (`SELECT … FROM`) | Local filesystem | A `filesystem`-connector source with `'format' = 'parquet'` reading from a local (`file:` or scheme-less) `path`. Read natively through DataFusion's file scan straight to Arrow batches (columnar), so the data never becomes `RowData` — feeding a fully columnar pipeline (a copy into a Parquet sink runs columnar end to end). Flink's file source owns discovery, split assignment, and checkpointing; the native reader is handed one file's byte range and reads only the row groups starting in it (splittable — a large file is read by several subtasks at once), with the projection pushed into the decode. Remote filesystems (e.g. `hdfs:`/`s3:`) fall back to the host. |
 | ORC source (`SELECT … FROM`) | Local filesystem | A `filesystem`-connector source with `'format' = 'orc'` reading from a local (`file:` or scheme-less) `path`. Same path as the Parquet source — read natively through DataFusion's file scan (via a DataFusion ORC source) straight to Arrow, split at stripe granularity with the framework owning enumeration/assignment/checkpointing and the projection pushed into the decode. Remote filesystems fall back to the host. |
 | Parquet sink (`INSERT INTO`) | Local filesystem | A `filesystem`-connector sink with `'format' = 'parquet'` writing to a local (`file:` or scheme-less) `path`. The incoming rows are written to Parquet natively (Arrow → Parquet), committed exactly once via two-phase commit on checkpoint. Remote filesystems (e.g. `hdfs:`/`s3:`) and other formats fall back to the host. |
-| Kafka source native decode (`SELECT … FROM`) | JSON / CSV / raw / bare-Avro value formats, incl. nested ROW/ARRAY/MAP | A `kafka`-connector source whose `value.format` is `json`, `csv`, `raw`, or `avro`: Flink's own Kafka source consumes the raw value bytes — owning offsets, checkpointing, and auth — and a native operator decodes a whole batch straight to Arrow, replacing Flink's per-record `RowData` materialization with one native decode per batch. JSON and Avro carry nested objects/records, arrays, and maps (ROW/ARRAY/MAP columns), verified against Flink's own decoder; bare Avro decodes against the reader schema derived from the table's `RowType` by the same converter Flink's `avro` format uses, so the result matches. Requires an explicit topic, a supported startup mode, an unbounded or `latest-offset` bounded scan, and no `key.format`. The registry-framed `avro-confluent` format has a native decoder but is not wired into this routing yet, so it falls back. (The fully-native rdkafka source — Rust owning the consume — is opt-in and off by default: it is behind the optional `kafka` build feature and the shallow decode here won the throughput comparison.) |
+| Kafka source native decode (`SELECT … FROM`) | JSON / CSV / raw / bare-Avro value formats, incl. nested ROW/ARRAY/MAP | A `kafka`-connector source whose `value.format` is `json`, `csv`, `raw`, or `avro`: Flink's own Kafka source consumes the raw value bytes — owning offsets, checkpointing, and auth — and a native operator decodes a whole batch straight to Arrow, replacing Flink's per-record `RowData` materialization with one native decode per batch. JSON and Avro carry nested objects/records, arrays, and maps (ROW/ARRAY/MAP columns), verified against Flink's own decoder; bare Avro decodes against the reader schema derived from the table's `RowType` by the same converter Flink's `avro` format uses, so the result matches. Requires an explicit topic, a supported startup mode, an unbounded or `latest-offset` bounded scan, and no `key.format`. The registry-framed `avro-confluent` format has a native decoder but is not wired into this routing yet, so it falls back. (The fully-native rdkafka source — Rust owning the consume *and* decode — is opt-in, behind the optional `kafka` build feature and the `kafkaSource` gate; it decodes JSON / bare-Avro / protobuf and benchmarks competitive-to-faster than this decode path, notably lifting JSON past the parity ceiling — see the Nexmark native-source results.) |
 | Kafka protobuf source (`SELECT … FROM`) | Messages of supported scalar, nested-message, repeated, and map fields | A `kafka`-connector source with `value.format = protobuf` and a `protobuf.message-class-name`. Flink consumes the raw protobuf messages and a native operator decodes them straight to Arrow via the descriptor reflectively extracted from that generated class (descriptor-driven, no per-record object tree). Substituted when every field (recursively) is reproduced identically to Flink: the scalar types `int32`/`int64`/`sint*`/`sfixed*` → INT/BIGINT, `float`/`double`, `bool`, `string`; nested messages → ROW; `repeated` → ARRAY; `map` → MAP. Verified by host-baseline parity tests (decode via both, compared) for flat, nested, and repeated/map messages. Falls back (descriptor inspected at plan time) on an `enum` or unsigned/`fixed` int (decoded differently here than in Flink), `bytes`, or a well-known type (`google.protobuf.*`, which maps to a dedicated Arrow type rather than the nested row Flink produces). Same topic/startup/bounded/`key.format` prerequisites as the row above. |
 | Kafka CDC source (`SELECT … FROM`, emits a changelog) | Debezium / OGG JSON, reproduced identically to Flink | A `kafka`-connector source whose `value.format` is `debezium-json` or `ogg-json`. Flink consumes the raw bytes and a native operator decodes the `{before, after, op}` envelope straight to a columnar changelog — physical columns plus the `RowKind` byte, an update fanning out to UPDATE_BEFORE + UPDATE_AFTER — with no `RowData` envelope decode. Because a CDC source emits a changelog itself, it is substituted even though it is not insert-only, and the downstream changelog (e.g. into a native `GROUP BY`/join) flows with no row materialization. Substituted **only** where the result is identical to Flink's own decoder: full-image dialects only (see Maxwell/Canal below), no `schema-include` wrapper, default error handling (`ignore-parse-errors` unset — an unknown op or a null pre-image *fails* like Flink rather than being dropped), and no metadata/computed columns; anything else falls back. Same topic/startup/bounded/`key.format` prerequisites as the decode row above. |
 
@@ -292,7 +292,35 @@ submessages + unread `bid` fields on the wire.
 
 The remaining lever shared by *all* formats is the I/O path (a native consumer bypassing Flink's
 `KafkaSource`), which the profiles show is ~40% of the job — and the only lever for JSON, which pruning
-can't help.
+can't help. The next section pulls that lever.
+
+_Apple M1 Max; numbers are comparable only within a machine._
+
+### Nexmark q0–q2 from a Kafka source (native rdkafka source)
+
+The same three queries, but the source is the **native rdkafka consumer** — Rust owns the consume *and*
+the decode (librdkafka polls each partition; a background decode thread turns the payloads straight into
+Arrow), so neither Flink's Kafka client nor a `RowData` is on the path. This pulls the I/O lever above:
+where the decode rows had Flink consume the bytes, here the whole source is native. The decode is the
+full record (no projection pushed into the source *yet* — that's the obvious next win), so it is a fair
+head-to-head with Flink's full decode. Opt-in (behind the `kafka` cargo feature and the `kafkaSource`
+gate): `SF_BENCHMARK=true mvn test -Pbench -Dnative.cargo.args="build --release --features kafka"
+-Dtest=NexmarkNativeKafkaSourceBenchmark`. 2 M events, native source vs Flink's own format:
+
+| Query | JSON (Flink → Native) | Avro (Flink → Native) | Protobuf (Flink → Native) |
+|---|---|---|---|
+| q0 pass-through | 0.79 → 0.91 M ev/s — **1.16×** | 0.81 → 1.31 M ev/s — **1.62×** | 1.21 → 1.32 M ev/s — **1.08×** |
+| q1 currency | 0.77 → 0.78 M ev/s — **1.00×** | 0.77 → 1.32 M ev/s — **1.71×** | 1.20 → 1.34 M ev/s — **1.12×** |
+| q2 filter | 0.82 → 0.90 M ev/s — **1.10×** | 0.89 → 1.33 M ev/s — **1.51×** | 1.23 → 1.34 M ev/s — **1.09×** |
+
+The headline is **JSON**: the decode path was ~parity (it shares Flink's `KafkaSource`), and bypassing it
+with the native consumer lifts JSON to **1.0–1.16×** — exactly the I/O lever, the only one JSON has.
+**Avro** stays a 1.5–1.7× win *without* pruning — the native consume + `arrow-avro` decode beat Flink's
+client + `RowData` decode outright. **Protobuf** is the weakest (1.08–1.12×): Flink's protobuf path is
+already fast (~1.2 M ev/s), and the source decodes the full record, so it gives up the decode path's
+pruning edge (which had carried protobuf to 1.26–1.36×). That points straight at the next step — pushing
+the query's projection into the native source (the reader-schema / pruned-descriptor machinery the
+decode path already has), to stack the I/O win on top of the build/copy savings, especially for protobuf.
 
 _Apple M1 Max; numbers are comparable only within a machine._
 
