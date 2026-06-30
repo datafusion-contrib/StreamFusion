@@ -395,7 +395,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // above, it is therefore exempt from the insert-only guard below. (Append decode formats — JSON via
     // the native source, CSV/raw via the insert-only decode branch below — are insert-only and handled
     // after the guard.)
-    if (KafkaTables.isCdcDecode(current)) {
+    if (KafkaTables.isCdcDecode(current) && NativeConfig.operatorEnabled("kafkaDecode")) {
       return kafkaDecode(current);
     }
 
@@ -448,6 +448,20 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
               calc.getCluster(),
               calc.getTraitSet(),
               decode.withProjection(pruned.inputType),
+              calc.getRowType(),
+              encoded.remapInputs(pruned.remap));
+        }
+      }
+      if (pruned != null && input instanceof StreamPhysicalNativeKafkaSource) {
+        // The fully-native rdkafka source decodes in Rust too: push the projection in so the in-Rust
+        // decode builds only the read columns/fields straight from the bytes (the columnar-source analog
+        // of pruning the entry transpose). Only for formats whose decoder honors a pruned schema.
+        StreamPhysicalNativeKafkaSource source = (StreamPhysicalNativeKafkaSource) input;
+        if (KafkaTables.decodeHonorsProjection(source.options())) {
+          return new StreamPhysicalNativeCalc(
+              calc.getCluster(),
+              calc.getTraitSet(),
+              source.withProjection(pruned.inputType),
               calc.getRowType(),
               encoded.remapInputs(pruned.remap));
         }
@@ -629,7 +643,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // Shallow native-decode path (the default for every value format): Flink's KafkaSource consumes raw
     // bytes, a native operator decodes them to Arrow, skipping Flink's RowData decode. JSON/CSV/raw/Avro
     // and protobuf all route here; CDC changelog formats are handled by the branch above the guard.
-    if (KafkaTables.isNativeKafkaDecode(current)) {
+    if (KafkaTables.isNativeKafkaDecode(current) && NativeConfig.operatorEnabled("kafkaDecode")) {
       return kafkaDecode(current);
     }
 

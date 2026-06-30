@@ -9807,7 +9807,10 @@ impl KafkaSplitReader {
             // is built straight from the descriptor (not in MessageDecoder::new, like the shallow path's
             // createProtobufDecoder); every other format dispatches through MessageDecoder::new.
             let decoder = if format == 5 {
-                MessageDecoder::Protobuf(ProtobufDecoder::new(&proto_descriptor, &proto_message_name))
+                // Prune the descriptor to the output schema's fields so ptars builds only those columns
+                // (projection pushed into the source); a no-op when the schema is the full message.
+                let pruned = prune_descriptor_set(&proto_descriptor, &proto_message_name, &output_schema);
+                MessageDecoder::Protobuf(ProtobufDecoder::new(&pruned, &proto_message_name))
             } else {
                 MessageDecoder::new(format, output_schema, &avro_schema, &reader_avro_schema, schema_id)
             };

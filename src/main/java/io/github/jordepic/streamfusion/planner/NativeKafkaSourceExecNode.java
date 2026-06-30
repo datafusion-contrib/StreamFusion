@@ -28,11 +28,16 @@ public class NativeKafkaSourceExecNode extends ExecNodeBase<ArrowBatch>
 
   private static final String TRANSFORMATION = "native-kafka-source";
 
+  private final RowType writerType;
   private final RowType outputType;
   private final Map<String, String> options;
 
   public NativeKafkaSourceExecNode(
-      ReadableConfig tableConfig, RowType outputType, String description, Map<String, String> options) {
+      ReadableConfig tableConfig,
+      RowType writerType,
+      RowType outputType,
+      String description,
+      Map<String, String> options) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-kafka-source_1"),
@@ -40,6 +45,7 @@ public class NativeKafkaSourceExecNode extends ExecNodeBase<ArrowBatch>
         Collections.emptyList(),
         outputType,
         description);
+    this.writerType = writerType;
     this.outputType = outputType;
     this.options = options;
   }
@@ -48,7 +54,7 @@ public class NativeKafkaSourceExecNode extends ExecNodeBase<ArrowBatch>
   protected Transformation<ArrowBatch> translateToPlanInternal(
       PlannerBase planner, ExecNodeConfig config) {
     StreamExecutionEnvironment env = planner.getExecEnv();
-    NativeKafkaSource source = KafkaTables.build(options, outputType);
+    NativeKafkaSource source = KafkaTables.build(options, writerType, outputType);
     DataStreamSource<ArrowBatch> stream =
         env.fromSource(
             source, WatermarkStrategy.noWatermarks(), TRANSFORMATION, ArrowBatchTypeInformation.INSTANCE);

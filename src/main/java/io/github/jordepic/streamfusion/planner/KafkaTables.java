@@ -80,8 +80,14 @@ final class KafkaTables {
   /** Builds the native source for a table {@link #isNativeKafka} accepted. The decode runs in Rust, so
    * the format-specific schema inputs match the shallow decode path: bare Avro derives its writer schema
    * from the row type (the same converter Flink's own {@code avro} format uses), protobuf carries the
-   * reflectively-extracted descriptor + message name, JSON decodes against the exported output schema. */
-  static NativeKafkaSource build(Map<String, String> options, RowType outputType) {
+   * reflectively-extracted descriptor + message name, JSON decodes against the exported output schema.
+   *
+   * <p>{@code writerType} is the full table schema the decoder parses against; {@code outputType} is what
+   * the source emits — narrower when a downstream Calc's projection was pushed in. They drive the
+   * pruning: JSON decodes straight to {@code outputType} (arrow-json builds only those columns), bare
+   * Avro keeps {@code writerType} as the writer schema and applies {@code outputType} as a reader schema
+   * (Avro resolution), and protobuf prunes its descriptor to {@code outputType}'s fields natively. */
+  static NativeKafkaSource build(Map<String, String> options, RowType writerType, RowType outputType) {
     Properties props = consumerProperties(options);
     Map<String, String> librdkafka =
         new java.util.HashMap<>(KafkaConfigTranslator.translate(props).config());
@@ -99,12 +105,21 @@ final class KafkaTables {
     List<String> topics = Arrays.asList(options.get("topic").split(";"));
     boolean bounded = "latest-offset".equals(options.get("scan.bounded.mode"));
     int format = decodeFormatCode(options);
-    // Bare Avro decodes against its writer schema (datums are schema-less): derive it from the row type,
-    // forced non-null so the row is a record, not a ["null", record] union — matching Flink's `avro`.
+    boolean pruned = !writerType.equals(outputType);
+    // Bare Avro decodes against its writer schema (datums are schema-less): derive it from the full
+    // writer row type, forced non-null so the row is a record, not a ["null", record] union — matching
+    // Flink's `avro`. When the output is a narrowed subset, also derive a reader schema (the output) so
+    // Avro resolution materializes only the read fields.
     String avroSchema =
-        format == BARE_AVRO ? AvroSchemaConverter.convertToSchema(outputType.copy(false)).toString() : "";
+        format == BARE_AVRO ? AvroSchemaConverter.convertToSchema(writerType.copy(false)).toString() : "";
+    String readerAvroSchema =
+        format == BARE_AVRO && pruned
+            ? AvroSchemaConverter.convertToSchema(outputType.copy(false)).toString()
+            : "";
     // Protobuf decodes against the generated message class's descriptor, extracted by reflection (no
-    // compile-time protobuf-java dependency — the class + runtime come from the Flink distribution).
+    // compile-time protobuf-java dependency — the class + runtime come from the Flink distribution). The
+    // native side prunes the descriptor to outputType's fields (a no-op when outputType is the full
+    // message), so ptars builds only the read columns.
     String messageClass = options.get("protobuf.message-class-name");
     byte[] protoDescriptor =
         format == PROTOBUF ? ProtobufDescriptors.descriptorSet(messageClass) : null;
@@ -120,7 +135,7 @@ final class KafkaTables {
         format,
         outputType,
         avroSchema,
-        "", // reader schema: no projection pushed into the source yet (the full record is decoded)
+        readerAvroSchema,
         0,
         protoDescriptor,
         protoMessageName,
