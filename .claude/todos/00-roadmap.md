@@ -120,6 +120,14 @@ here when the ticket is deleted.
 - **Fully native Kafka source, no JNI** (ticket 33, back burner): subscribe in Rust, decode →Arrow,
   lifting the connector semantics (partition/offset/checkpoint/watermark) from Arroyo. Removes the one
   off-heap copy ticket 32 pays; only worth it once that decode path proves the copy is the bottleneck.
+- **Nexmark with Apache Fluss as the source** (ticket 36): add Fluss (columnar streaming storage) as a
+  fourth source in the Nexmark matrix; its columnar format may let the native island ingest Arrow with
+  little/no row transpose — the perimeter transpose is a visible share of the remaining stateful-query
+  cost, so Fluss is the source most likely to show the engine's largest end-to-end margin.
+- **Disaggregated state store** (ticket 37): move operator state off-heap to a remote/tiered store
+  (likely Fluss's PK-table KV) with a local working-set cache — decoupling state size from worker RAM
+  and enabling incremental checkpoints + lazy rescale (Flink 2.0 ForSt / RisingWave Hummock direction).
+  The operators' state is already arrow-row bytes, so the stored format is mostly in place.
 - **Join breadth** (ticket 35): **DONE.** The regular updating join does INNER/LEFT/RIGHT/FULL/SEMI/ANTI +
   a residual non-equi predicate (per-row match-degree, RisingWave's degree table = Flink's
   `numOfAssociations`); the interval and window joins do INNER/LEFT/RIGHT/FULL + a residual non-equi
