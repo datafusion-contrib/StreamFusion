@@ -253,6 +253,28 @@ runtime is fast (q3 at 2.72 M ev/s). The changelog retract stream (up to ~2× th
 per-row key read dominate; closing this is the columnar-changelog work
 ([divergences/08](divergences/08-columnar-flow-transitions.md)), not a perimeter-transpose problem.
 
+### Nexmark q0–q2 from a Kafka JSON source (native decode)
+
+The same projection pushdown applies to the Kafka decode path — the native decoder is itself a (Rust)
+bytes→Arrow transpose, so a `SELECT bid.auction, …` over a `'format'='json'` table decodes only the
+read columns/fields rather than the whole record (Flink does **not** push projection into the Kafka
+scan, so its `json` format decodes everything). Run with `SF_BENCHMARK=true mvn test -Pbench
+-Dtest=NexmarkKafkaBenchmark` (Testcontainers Kafka). 2 M events, native decode vs Flink's `json`:
+
+| Query | Flink | Native | Native vs. Flink |
+|---|---|---|---|
+| q2 filter | 0.78 M ev/s | 0.81 M ev/s | **1.03×** |
+| q1 currency | 0.77 M ev/s | 0.72 M ev/s | **0.94×** |
+| q0 pass-through | 0.77 M ev/s | 0.69 M ev/s | **0.90×** |
+
+**At parity, not the win the generator path shows — and that's the honest result.** JSON is row-
+sequential, so the decoder must tokenize the whole object to find field boundaries; projection pushdown
+saves only the *materialization* of skipped fields, not the parse. Flink's JSON deserializer is mature,
+and the native path adds the bytes→Arrow→RowData handoffs, so the pruning gain is largely offset. This
+is the opposite trade-off from the generator source, where the JVM transpose reads every field's value
+and pruning that away doubled throughput. (Binary formats that can skip field bytes — Avro positional,
+Protobuf tag-length — may prune more profitably; not yet measured.)
+
 _Apple M1 Max; numbers are comparable only within a machine._
 
 ## Related work
