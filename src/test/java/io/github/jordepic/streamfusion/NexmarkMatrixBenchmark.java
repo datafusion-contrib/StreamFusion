@@ -365,13 +365,16 @@ class NexmarkMatrixBenchmark {
             .filter(x -> x.label.equals(label))
             .findFirst()
             .orElseThrow(() -> new IllegalArgumentException("unknown profile.query: " + label));
+    // profile.native=false profiles the stock-Flink path instead, so the two can be diffed to isolate
+    // what the native island actually spends beyond what Flink already pays (source/decode are shared).
+    boolean nativeRun = !"false".equals(System.getProperty("profile.native", "true"));
     long deadline = System.currentTimeMillis() + Long.getLong("profile.seconds", 60L) * 1000L;
     long iterations = 0;
     while (System.currentTimeMillis() < deadline) {
-      withDecimal(q, true, () -> runGeneratorOnce(q, true));
+      withDecimal(q, nativeRun, () -> runGeneratorOnce(q, nativeRun));
       iterations++;
     }
-    System.out.println("[profile] native " + label + " iterations: " + iterations);
+    System.out.println("[profile] " + (nativeRun ? "native " : "flink ") + label + " iterations: " + iterations);
   }
 
   private static Query[] selectQueries() {
