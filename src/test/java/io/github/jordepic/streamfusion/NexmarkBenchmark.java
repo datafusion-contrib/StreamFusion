@@ -185,6 +185,11 @@ class NexmarkBenchmark {
   static TableEnvironment environment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
+    // Object reuse (a standard tuned-prod setting, enabled for both the Flink baseline and the native
+    // run) drops Flink's per-handoff defensive record copy, so the transpose's reused ColumnarRowData
+    // flows to the sink without being materialized + boxed into a GenericRowData. The Flink SQL runtime
+    // stays correct under it (the planner copies only where an operator retains references).
+    env.getConfig().enableObjectReuse();
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
     DataStream<Row> source =
         env.fromSequence(0, ROWS - 1)
