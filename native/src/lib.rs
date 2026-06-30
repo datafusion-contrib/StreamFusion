@@ -2086,7 +2086,7 @@ enum GroupAggState {
     // COUNT(DISTINCT x): a value→multiplicity map (Flink's DistinctAccumulator MapView). The count is
     // the number of live entries; a value's multiplicity tracks how many input rows carry it so a
     // retraction removes it only when the last one is retracted. Nulls are never inserted.
-    Distinct(HashMap<ScalarValue, i64>),
+    Distinct(ahash::HashMap<ScalarValue, i64>),
 }
 
 impl GroupAggState {
@@ -2094,7 +2094,7 @@ impl GroupAggState {
         match kind {
             1 => GroupAggState::Extremes { is_min: true, counts: BTreeMap::new() }, // MIN
             2 => GroupAggState::Extremes { is_min: false, counts: BTreeMap::new() }, // MAX
-            7 => GroupAggState::Distinct(HashMap::new()), // COUNT(DISTINCT)
+            7 => GroupAggState::Distinct(ahash::HashMap::default()), // COUNT(DISTINCT)
             _ => GroupAggState::Running { agg: RunningAgg::new(kind, value_type), non_null: 0 },
         }
     }
@@ -2255,7 +2255,7 @@ struct GroupAggregator {
     filter_columns: Vec<i64>,
     key_columns: Vec<usize>,
     generate_update_before: bool,
-    keys: HashMap<GroupKey, GroupKeyState>,
+    keys: ahash::HashMap<GroupKey, GroupKeyState>,
     key_types: Vec<DataType>,
 }
 
@@ -2287,7 +2287,7 @@ impl GroupAggregator {
             value_columns,
             key_columns,
             generate_update_before,
-            keys: HashMap::new(),
+            keys: ahash::HashMap::default(),
             key_types: Vec::new(),
             filter_columns,
         }
