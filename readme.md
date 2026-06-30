@@ -366,6 +366,90 @@ filter (q2 — the native filter discards rows in Arrow before they are ever mat
 
 _Apple M1 Max; numbers are comparable only within a machine._
 
+### Nexmark — the full accelerating set, every source
+
+Beyond q0–q4, StreamFusion runs **18 of the 22 Nexmark queries** natively end-to-end (the explain
+diagnostic `NexmarkExplainTest` enumerates them; q5/q6/q13/q14/q21/q23 fall back — an unsupported window
+shape, a temporal-table join, a non-builtin UDF, `REGEXP_EXTRACT`). `NexmarkMatrixBenchmark` runs each
+one over **every source it can be fed by** — the rowwise generator and Kafka json/avro/protobuf across
+the four-rung ladder — all vs stock Flink, same steelmanned perimeter (rowwise source + `blackhole`
+sink, object reuse on both engines, q1 under the approximate-decimal flag). 1 M events.
+
+`SF_BENCHMARK=true mvn test -Pbench -Dnative.cargo.args="build --release --features kafka"
+-Dtest=NexmarkMatrixBenchmark` (Testcontainers Kafka; native source needs the `kafka` feature).
+
+**Generator** (the transpose floor — no I/O, no decode), native vs Flink, sorted by speedup:
+
+| Query | Shape | Native vs. Flink |
+|---|---|---|
+| q11 | session-window `COUNT` per bidder | **2.00×** |
+| q12 | proctime tumble `COUNT` per bidder | **1.49×** |
+| q2 | filter `WHERE MOD(auction, 123) = 0` | **1.34×** |
+| q22 | `SPLIT_INDEX(url, '/', n)` projection | **1.26×** |
+| q0 | pass-through projection of `bid` | **1.25×** |
+| q1 | `0.908 * price` (approximate decimal) | **1.16×** |
+| q10 | `DATE_FORMAT` projection | 0.94× |
+| q8 | tumble windowed-distinct ⋈ join | 0.91× |
+| q15 | multi-`DISTINCT` `COUNT`s per day | 0.78× |
+| q3 | updating join `auction ⋈ person` | 0.67× |
+| q17 | group agg + `AVG`/`MIN`/`MAX`/`SUM` | 0.65× |
+| q18 | `ROW_NUMBER` dedup (≤ 1) | 0.61× |
+| q16 | multi-`DISTINCT` per channel/day | 0.59× |
+| q4 | interval join → `MAX` → `AVG` | 0.48× |
+| q20 | updating join (`category = 10`) | 0.48× |
+| q7 | tumble `MAX` ⋈ bid | 0.44× |
+| q9 | interval join → `ROW_NUMBER` (≤ 1) | 0.28× |
+| q19 | `ROW_NUMBER` topN (≤ 10) | 0.25× |
+
+The split is sharp and tracks **what kind of operator dominates**, not the source:
+
+- **Wins — projection / filter / scalar and windowed aggregates.** q0/q1/q2 (project/filter/decimal),
+  q22 (`SPLIT_INDEX`), q12 (proctime tumble), and the standout **q11 session aggregate at 2.0×**. These
+  are transpose- or aggregate-throughput-bound — exactly where columnar Arrow execution pays.
+- **Losses — changelog-incremental operators.** Streaming joins (q3/q4/q7/q20), `ROW_NUMBER` topN/dedup
+  (q9/q18/q19), and the retract-heavy multi-`DISTINCT`/`DATE_FORMAT` aggregates (q15/q16/q17) run
+  0.25–0.78×. They are dominated by per-row changelog state-machine work (retract streams up to ~2× the
+  input, per-row key reads) where Flink's mature operators win — not a transpose problem. Closing it is
+  the columnar-changelog work ([divergences/08](divergences/08-columnar-flow-transitions.md)).
+
+**Kafka**, best rung per format (native speedup vs that format's own Flink baseline; rung in parens —
+`jvm` = JVM transpose, `decode` = Rust decode/JVM poll, `source` = full native rdkafka source). The four
+`DATE_FORMAT`-grouped queries are generator-only here: native `DATE_FORMAT` needs a plain `TIMESTAMP`,
+but the Kafka event-time column is `TIMESTAMP_LTZ` (the epoch-millis decode lifted by a new native
+`TO_TIMESTAMP_LTZ`).
+
+| Query | JSON | Avro | Protobuf |
+|---|---|---|---|
+| q11 | **1.83×** (jvm) | **2.49×** (decode) | **2.59×** (decode) |
+| q8 | 0.89× | **1.43×** (decode) | **1.37×** (decode) |
+| q12 | 1.09× | **1.69×** (decode) | **1.41×** (decode) |
+| q22 | **1.22×** (source) | **1.67×** (decode) | **1.29×** (decode) |
+| q0 | **1.14×** (jvm) | **1.66×** (decode) | **1.22×** (decode) |
+| q2 | 1.08× | **1.62×** (decode) | **1.35×** (decode) |
+| q1 | 1.05× | **1.60×** (decode) | **1.32×** (decode) |
+| q3 | 0.93× | **1.37×** (decode) | **1.17×** (decode) |
+| q20 | 0.84× | 0.82× | 0.63× |
+| q4 | 0.78× | 0.92× | 0.62× |
+| q7 | 0.75× | 0.79× | 0.61× |
+| q18 | 0.87× | 0.79× | 0.69× |
+| q9 | 0.42× | 0.41× | 0.38× |
+| q19 | 0.29× | 0.28× | 0.28× |
+
+Two things the Kafka columns add on top of the generator picture:
+
+- **The source rung compounds the operator verdict; it doesn't flip it.** Where the operator already
+  wins, moving decode into Rust stacks on top: q11 reaches **2.5–2.6× on avro/protobuf** (session win ×
+  native binary decode), q8 hits 1.4×, and q0/q1/q2/q12/q22 land 1.2–1.7× on the binary formats via the
+  Rust-decode rung — decode-bound, exactly as the q0–q2 ladder showed. JSON stays near parity
+  (tokenize-bound), winning only where the operator carries it (q11, q22).
+- **For the changelog losers, pushing decode into Rust makes them *worse*.** q9 and q19 are the extreme:
+  native is already ~0.25–0.42×, and the Rust-decode/source rungs roughly *double* the native time again
+  (q9: Flink 2.3 s → JVM transpose 5.4 s → Rust decode 11.7 s). The bottleneck is downstream of the
+  source — feeding a changelog operator faster just buries it in retractions sooner. Native decode is a
+  lever for source- and aggregate-bound queries; it is the wrong lever for changelog-bound ones.
+
+_Apple M1 Max; numbers are comparable only within a machine._
+
 ## Related work
 
 Two commercial native Flink accelerators exist, both **closed source**:

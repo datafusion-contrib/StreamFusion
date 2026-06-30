@@ -224,6 +224,10 @@ class NexmarkKafkaBenchmark {
   }
 
   static void produce(String brokers, String topic, String format) throws Exception {
+    produce(brokers, topic, format, ROWS);
+  }
+
+  static void produce(String brokers, String topic, String format, long rows) throws Exception {
     Properties props = new Properties();
     props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
     props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
@@ -235,7 +239,7 @@ class NexmarkKafkaBenchmark {
     Schema schema = avro ? AvroSchemaConverter.convertToSchema(nexmarkRowType().copy(false)) : null;
     GenericDatumWriter<GenericRecord> writer = avro ? new GenericDatumWriter<>(schema) : null;
     try (KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(props)) {
-      for (long i = 0; i < ROWS; i++) {
+      for (long i = 0; i < rows; i++) {
         byte[] value;
         if (protobuf) {
           value = protobufEvent(i).toByteArray();

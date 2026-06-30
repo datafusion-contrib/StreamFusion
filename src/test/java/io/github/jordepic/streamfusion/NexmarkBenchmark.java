@@ -183,6 +183,10 @@ class NexmarkBenchmark {
   }
 
   static TableEnvironment environment() {
+    return environment(ROWS);
+  }
+
+  static TableEnvironment environment(long rows) {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     // Object reuse (a standard tuned-prod setting, enabled for both the Flink baseline and the native
@@ -192,7 +196,7 @@ class NexmarkBenchmark {
     env.getConfig().enableObjectReuse();
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
     DataStream<Row> source =
-        env.fromSequence(0, ROWS - 1)
+        env.fromSequence(0, rows - 1)
             .map(NexmarkBenchmark::event)
             .returns(eventType())
             .assignTimestampsAndWatermarks(
