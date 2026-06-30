@@ -18,16 +18,32 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
  * unchanged — only the physical carrier becomes columnar. When the edge carries a changelog,
  * {@code carryRowKind} keeps each row's {@code RowKind} as a hidden column so the native consumer
  * sees it (an insert-only edge omits it — every row is an INSERT).
+ *
+ * <p>When {@code prunedType} is set the transpose also prunes (nested projection pushdown): it is the
+ * input type narrowed to the columns and struct sub-fields a downstream native calc reads, so only
+ * those become Arrow columns — the unread fields of a wide source row never get materialized. The
+ * consumer's top-level column references are remapped to the compacted positions by the planner.
  */
 public class StreamPhysicalRowDataToArrow extends SingleRel
     implements StreamPhysicalRel, ColumnarOutput {
 
   private final boolean carryRowKind;
+  private final RelDataType prunedType;
 
   public StreamPhysicalRowDataToArrow(
       RelOptCluster cluster, RelTraitSet traitSet, RelNode input, boolean carryRowKind) {
+    this(cluster, traitSet, input, carryRowKind, null);
+  }
+
+  public StreamPhysicalRowDataToArrow(
+      RelOptCluster cluster,
+      RelTraitSet traitSet,
+      RelNode input,
+      boolean carryRowKind,
+      RelDataType prunedType) {
     super(cluster, traitSet, input);
     this.carryRowKind = carryRowKind;
+    this.prunedType = prunedType;
   }
 
   @Override
@@ -37,12 +53,13 @@ public class StreamPhysicalRowDataToArrow extends SingleRel
 
   @Override
   protected RelDataType deriveRowType() {
-    return getInput().getRowType();
+    return prunedType != null ? prunedType : getInput().getRowType();
   }
 
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
-    return new StreamPhysicalRowDataToArrow(getCluster(), traitSet, inputs.get(0), carryRowKind);
+    return new StreamPhysicalRowDataToArrow(
+        getCluster(), traitSet, inputs.get(0), carryRowKind, prunedType);
   }
 
   @Override
@@ -52,6 +69,9 @@ public class StreamPhysicalRowDataToArrow extends SingleRel
         InputProperty.DEFAULT,
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
         getRelDetailedDescription(),
-        carryRowKind);
+        carryRowKind,
+        prunedType == null
+            ? null
+            : FlinkTypeFactory$.MODULE$.toLogicalRowType(getInput().getRowType()));
   }
 }

@@ -195,6 +195,21 @@ final class RexExpression {
     return outputNames;
   }
 
+  /**
+   * Remaps every top-level input-column reference through {@code map} (old column index → new), in
+   * place. Used when the entry transpose prunes the input: the Arrow batch the native operator sees
+   * holds only the read columns, compacted, so each {@code INPUT_REF} points at its new position.
+   * Nested field access is encoded by name and the pruned fields keep their names, so it is unaffected.
+   */
+  RexExpression remapInputs(int[] map) {
+    for (int i = 0; i < kinds.size(); i++) {
+      if (kinds.get(i) == KIND_INPUT_REF) {
+        payload.set(i, map[payload.get(i)]);
+      }
+    }
+    return this;
+  }
+
   int[] kinds() {
     return toIntArray(kinds);
   }

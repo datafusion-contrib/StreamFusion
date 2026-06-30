@@ -429,13 +429,32 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         return noteDisabled(current, "calc");
       }
       Calc calc = (Calc) current;
+      RelNode input = calc.getInputs().get(0);
+      RexExpression encoded = CalcMatcher.encode(calc);
       substitutions++;
+      // Nested projection pushdown: when the input is rowwise (about to be transposed) and the calc
+      // reads only some of its columns / struct sub-fields, prune the entry transpose to just those
+      // and remap the calc's top-level column references to the compacted positions. The transpose
+      // then converts only the read fields of each wide source row to Arrow. (A columnar producer is
+      // left alone — its batch is already built; nested access stays by name, so it needs no remap.)
+      CalcProjectionPruner.Pruned pruned =
+          emitsColumnar(input) ? null : CalcProjectionPruner.compute(calc);
+      if (pruned != null) {
+        boolean carryRowKind =
+            input instanceof StreamPhysicalRel
+                && !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) input);
+        RelNode prunedTranspose =
+            new StreamPhysicalRowDataToArrow(
+                input.getCluster(), input.getTraitSet(), input, carryRowKind, pruned.inputType);
+        return new StreamPhysicalNativeCalc(
+            calc.getCluster(),
+            calc.getTraitSet(),
+            prunedTranspose,
+            calc.getRowType(),
+            encoded.remapInputs(pruned.remap));
+      }
       return new StreamPhysicalNativeCalc(
-          calc.getCluster(),
-          calc.getTraitSet(),
-          calc.getInputs().get(0),
-          calc.getRowType(),
-          CalcMatcher.encode(calc));
+          calc.getCluster(), calc.getTraitSet(), input, calc.getRowType(), encoded);
     }
 
     // Changelog normalization (upsert / duplicate-bearing source → regular changelog): keep the last

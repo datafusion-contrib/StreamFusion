@@ -28,6 +28,16 @@ class FlinkFieldAccessSqlHarnessTest {
   }
 
   @Test
+  void prunesUnreadNestedFields() throws Exception {
+    // Reads one nested field of the bid struct (auction) and the filter column; the entry transpose
+    // must prune bidder/price/channel out of the converted struct yet still produce the host's rows.
+    // Exercises the nested projection pushdown: pruned fields keep their names, so access still binds.
+    NativeParity.assertParity(
+        FlinkFieldAccessSqlHarnessTest::environment,
+        "SELECT auction FROM events WHERE event_type = 2 AND bid.auction > 100");
+  }
+
+  @Test
   void filtersOnExtractedField() throws Exception {
     // q2-shaped: a predicate over an extracted field.
     NativeParity.assertParity(

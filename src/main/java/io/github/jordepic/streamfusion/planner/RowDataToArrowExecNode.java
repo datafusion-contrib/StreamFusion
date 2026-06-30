@@ -26,13 +26,15 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
 
   private final RowType rowType;
   private final boolean carryRowKind;
+  private final RowType sourceType;
 
   public RowDataToArrowExecNode(
       ReadableConfig tableConfig,
       InputProperty inputProperty,
       RowType rowType,
       String description,
-      boolean carryRowKind) {
+      boolean carryRowKind,
+      RowType sourceType) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-row-to-arrow_1"),
@@ -42,6 +44,7 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
         description);
     this.rowType = rowType;
     this.carryRowKind = carryRowKind;
+    this.sourceType = sourceType;
   }
 
   @Override
@@ -53,7 +56,7 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta(TRANSFORMATION, config),
-        new RowDataToArrowOperator(rowType, BATCH_SIZE, carryRowKind),
+        new RowDataToArrowOperator(rowType, BATCH_SIZE, carryRowKind, sourceType),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

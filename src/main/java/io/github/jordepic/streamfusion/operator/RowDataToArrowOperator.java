@@ -26,14 +26,18 @@ public class RowDataToArrowOperator extends AbstractStreamOperator<ArrowBatch>
   private final RowType rowType;
   private final int batchSize;
   private final boolean carryRowKind;
+  private final RowType sourceType;
 
   private transient BufferAllocator allocator;
   private transient List<RowData> buffer;
+  private transient PrunedRowData projector;
 
-  public RowDataToArrowOperator(RowType rowType, int batchSize, boolean carryRowKind) {
+  public RowDataToArrowOperator(
+      RowType rowType, int batchSize, boolean carryRowKind, RowType sourceType) {
     this.rowType = rowType;
     this.batchSize = batchSize;
     this.carryRowKind = carryRowKind;
+    this.sourceType = sourceType;
   }
 
   @Override
@@ -41,6 +45,9 @@ public class RowDataToArrowOperator extends AbstractStreamOperator<ArrowBatch>
     super.open();
     allocator = NativeAllocator.SHARED;
     buffer = new ArrayList<>(batchSize);
+    // When the planner pruned the transpose, present each wide source row as the narrowed schema so
+    // the converter builds and fills only the read columns/sub-fields.
+    projector = sourceType == null ? null : PrunedRowData.of(sourceType, rowType);
   }
 
   @Override
@@ -71,8 +78,28 @@ public class RowDataToArrowOperator extends AbstractStreamOperator<ArrowBatch>
     if (buffer.isEmpty()) {
       return;
     }
-    VectorSchemaRoot root = RowDataArrowConverter.write(buffer, rowType, allocator, carryRowKind);
+    List<RowData> rows = projector == null ? buffer : projected();
+    VectorSchemaRoot root = RowDataArrowConverter.write(rows, rowType, allocator, carryRowKind);
     output.collect(new StreamRecord<>(new ArrowBatch(root)));
     buffer.clear();
+  }
+
+  /**
+   * The buffer presented through the pruning projector — a reused, zero-copy view repointed per row.
+   * Safe because the converter reads each row inline (into the Arrow vectors) before requesting the
+   * next, so the shared projector is never observed at two positions at once.
+   */
+  private List<RowData> projected() {
+    return new java.util.AbstractList<RowData>() {
+      @Override
+      public RowData get(int index) {
+        return projector.replaceRow(buffer.get(index));
+      }
+
+      @Override
+      public int size() {
+        return buffer.size();
+      }
+    };
   }
 }
