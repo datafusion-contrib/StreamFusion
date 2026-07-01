@@ -400,6 +400,9 @@ final class RexExpression {
     if ("SPLIT_INDEX".equalsIgnoreCase(call.getOperator().getName())) {
       return emitSplitIndex(call.getOperands());
     }
+    if ("REGEXP_EXTRACT".equalsIgnoreCase(call.getOperator().getName())) {
+      return emitRegexpExtract(call.getOperands());
+    }
     if ("DATE_FORMAT".equalsIgnoreCase(call.getOperator().getName())) {
       return emitDateFormat(call.getOperands());
     }
@@ -732,6 +735,36 @@ final class RexExpression {
       return reject("SPLIT_INDEX requires a non-empty separator");
     }
     add(KIND_CALL, 85, 3);
+    for (RexNode arg : args) {
+      if (!emit(arg)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Emits {@code REGEXP_EXTRACT(str, pattern, groupIndex)} (op 88), opt-in behind the allowIncompatible
+   * flag: Rust's {@code regex} engine and Java's {@code java.util.regex} agree on common syntax but
+   * diverge on advanced features (backreferences, lookaround, some Unicode/class edges), which can't be
+   * statically ruled out — so, like Comet's regex handling, this admits only under the flag. The pattern
+   * must be a string literal (so the native side compiles it once per batch) and the group index a
+   * literal ≥ 0. The two-argument form (no explicit index) falls back.
+   */
+  private boolean emitRegexpExtract(List<RexNode> args) {
+    if (!NativeConfig.allowsIncompatible("REGEXP_EXTRACT")) {
+      return reject(incompatibleReason("REGEXP_EXTRACT"));
+    }
+    if (args.size() != 3) {
+      return reject("REGEXP_EXTRACT requires 3 arguments (str, pattern, groupIndex)");
+    }
+    if (!(args.get(1) instanceof RexLiteral)) {
+      return reject("REGEXP_EXTRACT requires a literal pattern");
+    }
+    if (!isIntLiteralAtLeast(args.get(2), 0)) {
+      return reject("REGEXP_EXTRACT requires a literal group index ≥ 0");
+    }
+    add(KIND_CALL, 88, 3);
     for (RexNode arg : args) {
       if (!emit(arg)) {
         return false;

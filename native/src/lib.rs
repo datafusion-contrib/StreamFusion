@@ -7185,6 +7185,10 @@ fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prel
         // DATE_FORMAT(ts, fmt): fmt is the already-translated chrono pattern (see DateFormat).
         return datafusion::logical_expr::ScalarUDF::new_from_impl(DateFormat::new()).call(args);
     }
+    if op == 88 {
+        // REGEXP_EXTRACT(str, pattern, groupIndex): opt-in (allowIncompatible) — see RegexpExtract.
+        return datafusion::logical_expr::ScalarUDF::new_from_impl(RegexpExtract::new()).call(args);
+    }
     if op == 87 {
         // TO_TIMESTAMP_LTZ(millis, 3): the single operand is epoch millis (the Java side admits only
         // the precision-3 form). Casting Int64 -> Timestamp(ms) reads the int as millis-since-epoch
@@ -7427,6 +7431,84 @@ impl datafusion::logical_expr::ScalarUDFImpl for DateFormat {
                 Some(instant) => {
                     builder.append_value(instant.naive_utc().format(formats.value(row)).to_string())
                 }
+                None => builder.append_null(),
+            }
+        }
+        Ok(ColumnarValue::Array(Arc::new(builder.finish())))
+    }
+}
+
+/// Flink's `REGEXP_EXTRACT(str, regex, extractIndex)`: compile `regex`, find the first match in `str`,
+/// and return the `extractIndex`-th capture group (0 = the whole match), or NULL when there is no match,
+/// the group did not participate, the index is out of range, the pattern fails to compile, or any
+/// argument is NULL — a faithful port of `SqlFunctionUtils.regexpExtract`, which wraps the whole thing in
+/// a try/catch returning null. Opt-in only (allowIncompatible): Java's `java.util.regex` and Rust's
+/// `regex` engine agree on the common syntax but diverge on advanced features (backreferences,
+/// lookaround, some class/Unicode edges), which the JVM encoder cannot statically rule out — so the
+/// encoder admits this only under the flag, matching Comet's stance on regex. The encoder further
+/// requires a literal pattern, so every row's pattern is identical and the regex compiles once per batch.
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct RegexpExtract {
+    signature: datafusion::logical_expr::Signature,
+}
+
+impl RegexpExtract {
+    fn new() -> Self {
+        Self {
+            signature: datafusion::logical_expr::Signature::variadic_any(
+                datafusion::logical_expr::Volatility::Immutable,
+            ),
+        }
+    }
+}
+
+impl datafusion::logical_expr::ScalarUDFImpl for RegexpExtract {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &str {
+        "regexp_extract"
+    }
+    fn signature(&self) -> &datafusion::logical_expr::Signature {
+        &self.signature
+    }
+    fn return_type(&self, _: &[DataType]) -> datafusion::common::Result<DataType> {
+        Ok(DataType::Utf8)
+    }
+    fn invoke_with_args(
+        &self,
+        args: datafusion::logical_expr::ScalarFunctionArgs,
+    ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
+        use datafusion::logical_expr::ColumnarValue;
+        let rows = args.number_rows;
+        let arrays = ColumnarValue::values_to_arrays(&args.args)?;
+        let strs = arrow::compute::cast(&arrays[0], &DataType::Utf8)?;
+        let pats = arrow::compute::cast(&arrays[1], &DataType::Utf8)?;
+        let idxs = arrow::compute::cast(&arrays[2], &DataType::Int64)?;
+        let strs = strs.as_any().downcast_ref::<StringArray>().expect("utf8 str");
+        let pats = pats.as_any().downcast_ref::<StringArray>().expect("utf8 pattern");
+        let idxs = idxs.as_any().downcast_ref::<Int64Array>().expect("i64 index");
+        // The pattern is a literal (encoder-enforced), so compile it once and reuse. An invalid pattern
+        // compiles to None, which — like Flink's catch — yields NULL for every row.
+        let compiled: Option<regex::Regex> = (rows > 0 && !pats.is_null(0))
+            .then(|| regex::Regex::new(pats.value(0)).ok())
+            .flatten();
+        let mut builder = arrow::array::StringBuilder::new();
+        for row in 0..rows {
+            if strs.is_null(row) || pats.is_null(row) || idxs.is_null(row) {
+                builder.append_null();
+                continue;
+            }
+            let index = idxs.value(row);
+            let group = match compiled.as_ref() {
+                Some(re) if index >= 0 => re
+                    .captures(strs.value(row))
+                    .and_then(|caps| caps.get(index as usize))
+                    .map(|m| m.as_str()),
+                _ => None,
+            };
+            match group {
+                Some(piece) => builder.append_value(piece),
                 None => builder.append_null(),
             }
         }
@@ -13611,6 +13693,42 @@ mod tests {
         assert_eq!(col.value(0), "1970-01-01");
         assert_eq!(col.value(1), "1970-01-02");
         assert!(col.is_null(2));
+    }
+
+    // REGEXP_EXTRACT(url, '(&|^)channel_id=([^&]*)', 2) over the Calc path — q21's channel_id
+    // extraction: the group-2 capture of the first match, NULL when there is no match or the input is
+    // null. Mirrors Flink's SqlFunctionUtils.regexpExtract (first find(), group(index), null on miss).
+    #[test]
+    fn calc_regexp_extract_matches_flink() {
+        let url: ArrayRef = Arc::new(StringArray::from(vec![
+            Some("channel_id=apple&x=1"),      // matches at ^, group 2 = "apple"
+            Some("https://h?a=1&channel_id=9"), // matches after &, group 2 = "9"
+            Some("no channel here"),            // no match -> NULL
+            None,                               // null input -> NULL
+        ]));
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new("url", DataType::Utf8, true)])),
+            vec![url],
+        )
+        .unwrap();
+        let mut calc = CalcExpression {
+            kinds: vec![6, 0, 3, 7],    // CALL(REGEXP_EXTRACT), col url, lit pattern, lit 2
+            payload: vec![88, 0, 0, 0], // op 88; col 0; strings[0]; longs[0]
+            child_counts: vec![3, 0, 0, 0],
+            longs: vec![2],
+            doubles: vec![],
+            strings: vec![Some("(&|^)channel_id=([^&]*)".to_string())],
+            projection_roots: vec![0],
+            condition_root: -1,
+            output_names: vec!["channel_id".to_string()],
+            compiled: None,
+        };
+        let out = calc.evaluate(batch);
+        let col = out.column(0).as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(col.value(0), "apple");
+        assert_eq!(col.value(1), "9");
+        assert!(col.is_null(2));
+        assert!(col.is_null(3));
     }
 
     // TIMESTAMP - INTERVAL arithmetic (q7's join residual): a day-time interval literal subtracted

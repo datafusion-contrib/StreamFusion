@@ -3105,6 +3105,7 @@ dependencies = [
  "prost-types",
  "ptars",
  "rdkafka",
+ "regex",
  "tokio",
 ]
 
