@@ -141,11 +141,15 @@ class NexmarkMatrixBenchmark {
         "INSERT INTO sink SELECT auction, bidder, price, `dateTime`, extra FROM bid"),
     new Query(
         "q1",
-        false, // 0.908 * price is exact and native by default now — no approximate-decimal flag
+        false, // exact Decimal128 * + HALF_UP cast is native + byte-parity by default (the reported cell)
         null,
         "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price DECIMAL(23, 3), `dateTime` %TS%,"
             + " extra STRING) WITH ('connector' = 'blackhole')",
-        "INSERT INTO sink SELECT auction, bidder, 0.908 * price AS price, `dateTime`, extra FROM bid"),
+        "INSERT INTO sink SELECT auction, bidder, 0.908 * price AS price, `dateTime`, extra FROM bid",
+        // …and a second cell on the faster approximate-decimal path (double math, diverges from Flink's
+        // exact rounding at an edge) — same parity-vs-non-parity split as q21's regex/case.
+        "approximate decimal (incompatible)",
+        Map.of("streamfusion.expression.decimalArithmetic.approximate", "true")),
     new Query(
         "q2",
         false,

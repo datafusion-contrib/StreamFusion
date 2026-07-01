@@ -227,9 +227,10 @@ pays a `RowData → Arrow` transpose at the source **and** an `Arrow → RowData
 We keep both transposes in the measured path on purpose — a real deployment feeds us rowwise records
 and drains to a rowwise sink, so this is the honest end-to-end number, not the favorable
 columnar-source/columnar-sink case above. Object reuse is enabled (a standard tuned-prod setting) for
-both engines. q1's decimal arithmetic is now exact and native by default (Decimal128 multiply + a
-HALF_UP cast to DECIMAL(23,3), matching Flink — no approximate-decimal flag); the exact path measures a
-touch below the earlier approximate one (the extra i128 multiply + rounding cast), ~1.1× on a fresh JVM.
+both engines. q1's decimal arithmetic is exact and native by default (Decimal128 multiply + a HALF_UP
+cast to DECIMAL(23,3), matching Flink); measuring it against the opt-in approximate-decimal toggle shows
+the two are throughput-identical (the i128 multiply is not the bottleneck), so exact-by-default is free —
+see the ‡ note under the matrix table.
 
 | Query | Shape | Flink | Native | Native vs. Flink |
 |---|---|---|---|---|
@@ -431,7 +432,7 @@ so these **understate** native for the aggregate/dedup queries (fresh-JVM-per-qu
 ones — q15/q17/q18 — back above 1.0×); it is the conservative read._
 
 **Generator** (the transpose floor — no I/O, no decode), native vs Flink, all 23 accelerated queries
-sorted by speedup (q21 appears twice — its parity default and its opt-in fast path, see † below):
+sorted by speedup (q1 and q21 each appear twice — parity default and opt-in path, see ‡/† below):
 
 | Query | Shape | Native vs. Flink |
 |---|---|---|
@@ -442,7 +443,8 @@ sorted by speedup (q21 appears twice — its parity default and its opt-in fast 
 | q0 | pass-through projection of `bid` | **1.27×** |
 | q22 | `SPLIT_INDEX(url, '/', n)` projection | **1.22×** |
 | q4 | regular join → `MAX` → `AVG` per category | **1.07×** |
-| q1 | `0.908 * price` (exact decimal) | **1.06×** |
+| q1 | `0.908 * price` — exact `Decimal128` (byte-parity) | **1.19×** |
+| q1 ‡ | …same, approximate-decimal toggle (opt-in, non-parity) | 1.20× |
 | q10 | `DATE_FORMAT` projection | **1.01×** |
 | q14 | `HOUR`/`CASE` + `count_char` UDF + decimal | **1.00×** |
 | q9 | regular join → `ROW_NUMBER` (≤ 1) | 0.97× |
@@ -491,6 +493,14 @@ regex/case path, which is **1.57×** — a 2× swing over the parity path, and t
 guarantee. The default is parity; the fast path is opt-in and documented in
 [divergences/07](divergences/07-expression-encoding-and-compile-once.md). Both are measured against the
 same Flink baseline in a single `NexmarkMatrixBenchmark` run (a query may carry a `nativeVariant`).
+
+**‡ q1 is also reported both ways — and here the toggle buys nothing.** q1's `0.908 * price` runs an
+exact `Decimal128` multiply + HALF_UP cast to `DECIMAL(23,3)` by default (byte-parity with Flink);
+`-Dstreamfusion.expression.decimalArithmetic.approximate=true` switches to a `double`-based path that can
+differ at the last digit. Unlike q21's regex, the two measure **identically** (1.19× vs 1.20×, and the
+ordering flips run to run) — the exact i128 multiply is not the bottleneck, so exact-by-default costs
+nothing and the non-parity toggle is not worth enabling for q1. Measuring it was the point: the parity
+default is free here.
 
 **Kafka**, best rung per format (native speedup vs that format's own Flink baseline; rung in parens —
 `jvm` = JVM transpose, `decode` = Rust decode / JVM poll, `source` = full native rdkafka source). The
