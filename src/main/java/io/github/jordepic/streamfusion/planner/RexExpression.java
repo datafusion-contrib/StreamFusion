@@ -369,6 +369,9 @@ final class RexExpression {
     if (call.getKind() == SqlKind.REINTERPRET) {
       return emit(call.getOperands().get(0));
     }
+    if (call.getKind() == SqlKind.EXTRACT) {
+      return emitExtract(call);
+    }
     // Decimal-typed arithmetic. Add/subtract/multiply are exact: the operands reach the native side as
     // Decimal128 (columns already are; literals now emit as exact Decimal128), and Arrow's Decimal128
     // add/sub/multiply match Flink's — the products carry the full scale (sum of input scales for ×,
@@ -882,6 +885,64 @@ final class RexExpression {
         return 7; // TYPE_BYTE
       default:
         return -1;
+    }
+  }
+
+  /**
+   * Emits {@code EXTRACT(unit FROM ts)} (op 89), the lowering of {@code YEAR}/{@code MONTH}/{@code
+   * HOUR}/… (Nexmark q14's {@code HOUR(dateTime)}). Admitted only over a plain {@code TIMESTAMP} (a
+   * local-zoned timestamp's fields depend on the session zone, like {@code DATE_FORMAT}) for the
+   * unambiguous integer fields whose value is identical in Flink and chrono; anything else — a fractional
+   * result (e.g. {@code SECOND} carrying millis, whose result type is decimal) or a
+   * convention-divergent unit ({@code DOW}/{@code WEEK}/{@code QUARTER}) — falls back.
+   */
+  private boolean emitExtract(RexCall call) {
+    List<RexNode> operands = call.getOperands();
+    if (operands.size() != 2 || !(operands.get(0) instanceof RexLiteral)) {
+      return reject("unsupported EXTRACT form");
+    }
+    RexNode source = operands.get(1);
+    if (source.getType().getSqlTypeName() != SqlTypeName.TIMESTAMP) {
+      return reject("EXTRACT: only a plain TIMESTAMP argument is supported");
+    }
+    SqlTypeName returnType = call.getType().getSqlTypeName();
+    if (returnType != SqlTypeName.BIGINT && returnType != SqlTypeName.INTEGER) {
+      return reject("EXTRACT: only integer-valued fields supported");
+    }
+    Object unit = ((RexLiteral) operands.get(0)).getValue();
+    String field = extractField(unit == null ? null : unit.toString());
+    if (field == null) {
+      return reject("EXTRACT: unsupported time unit " + unit);
+    }
+    add(KIND_CALL, 89, 2);
+    if (!emit(source)) {
+      return false;
+    }
+    add(KIND_LIT_STRING, strings.size(), 0);
+    strings.add(field);
+    return true;
+  }
+
+  /** The chrono field name for a Calcite {@code TimeUnitRange}, or null if not a supported integer field. */
+  private static String extractField(String unit) {
+    if (unit == null) {
+      return null;
+    }
+    switch (unit) {
+      case "YEAR":
+        return "year";
+      case "MONTH":
+        return "month";
+      case "DAY":
+        return "day";
+      case "HOUR":
+        return "hour";
+      case "MINUTE":
+        return "minute";
+      case "SECOND":
+        return "second";
+      default:
+        return null;
     }
   }
 

@@ -7288,6 +7288,10 @@ fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prel
         // REGEXP_EXTRACT(str, pattern, groupIndex): opt-in (allowIncompatible) — see RegexpExtract.
         return datafusion::logical_expr::ScalarUDF::new_from_impl(RegexpExtract::new()).call(args);
     }
+    if op == 89 {
+        // EXTRACT(unit FROM ts): unit is a literal chrono field name (see ExtractField).
+        return datafusion::logical_expr::ScalarUDF::new_from_impl(ExtractField::new()).call(args);
+    }
     if op == 87 {
         // TO_TIMESTAMP_LTZ(millis, 3): the single operand is epoch millis (the Java side admits only
         // the precision-3 form). Casting Int64 -> Timestamp(ms) reads the int as millis-since-epoch
@@ -7529,6 +7533,82 @@ impl datafusion::logical_expr::ScalarUDFImpl for DateFormat {
             match chrono::DateTime::from_timestamp_millis(times.value(row)) {
                 Some(instant) => {
                     builder.append_value(instant.naive_utc().format(formats.value(row)).to_string())
+                }
+                None => builder.append_null(),
+            }
+        }
+        Ok(ColumnarValue::Array(Arc::new(builder.finish())))
+    }
+}
+
+/// Flink's `EXTRACT(unit FROM ts)` (the lowering of `YEAR`/`MONTH`/`HOUR`/…): extract an integer field
+/// from the timestamp's UTC wall-clock. The timestamp column is naive (no zone), so its stored millis are
+/// the wall-clock at UTC and `from_timestamp_millis(...).naive_utc()` recovers exactly the fields Flink
+/// reads. The JVM encoder admits this only over a plain `TIMESTAMP` and only for the fields whose value
+/// is identical in Flink and chrono (year/month/day 1-based, hour/minute/second) — see `emitExtract`.
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct ExtractField {
+    signature: datafusion::logical_expr::Signature,
+}
+
+impl ExtractField {
+    fn new() -> Self {
+        Self {
+            signature: datafusion::logical_expr::Signature::variadic_any(
+                datafusion::logical_expr::Volatility::Immutable,
+            ),
+        }
+    }
+}
+
+impl datafusion::logical_expr::ScalarUDFImpl for ExtractField {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &str {
+        "extract_field"
+    }
+    fn signature(&self) -> &datafusion::logical_expr::Signature {
+        &self.signature
+    }
+    fn return_type(&self, _: &[DataType]) -> datafusion::common::Result<DataType> {
+        Ok(DataType::Int64)
+    }
+    fn invoke_with_args(
+        &self,
+        args: datafusion::logical_expr::ScalarFunctionArgs,
+    ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
+        use chrono::{Datelike, Timelike};
+        use datafusion::logical_expr::ColumnarValue;
+        let rows = args.number_rows;
+        let arrays = ColumnarValue::values_to_arrays(&args.args)?;
+        let times = arrow::compute::cast(
+            &arrays[0],
+            &DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
+        )?;
+        let times =
+            times.as_any().downcast_ref::<TimestampMillisecondArray>().expect("timestamp ms");
+        let units = arrow::compute::cast(&arrays[1], &DataType::Utf8)?;
+        let units = units.as_any().downcast_ref::<StringArray>().expect("utf8 unit");
+        let mut builder = Int64Array::builder(rows);
+        for row in 0..rows {
+            if times.is_null(row) || units.is_null(row) {
+                builder.append_null();
+                continue;
+            }
+            match chrono::DateTime::from_timestamp_millis(times.value(row)) {
+                Some(instant) => {
+                    let dt = instant.naive_utc();
+                    let value = match units.value(row) {
+                        "year" => dt.year() as i64,
+                        "month" => dt.month() as i64,
+                        "day" => dt.day() as i64,
+                        "hour" => dt.hour() as i64,
+                        "minute" => dt.minute() as i64,
+                        "second" => dt.second() as i64,
+                        other => panic!("unsupported EXTRACT unit: {other}"),
+                    };
+                    builder.append_value(value);
                 }
                 None => builder.append_null(),
             }
@@ -13941,6 +14021,44 @@ mod tests {
         let col = out.column(0).as_any().downcast_ref::<StringArray>().unwrap();
         assert_eq!(col.value(0), "1970-01-01");
         assert_eq!(col.value(1), "1970-01-02");
+        assert!(col.is_null(2));
+    }
+
+    // EXTRACT(HOUR FROM ts) over the Calc path (q14's HOUR): the integer field of the timestamp's UTC
+    // wall-clock, NULL for a null input. epoch 0 = 1970-01-01T00:00 (hour 0); 86_400_000 + 3_600_000 =
+    // 1970-01-02T01:00 (hour 1).
+    #[test]
+    fn calc_extract_hour_matches_flink() {
+        let ts: ArrayRef = Arc::new(TimestampMillisecondArray::from(vec![
+            Some(0),
+            Some(86_400_000 + 3_600_000),
+            None,
+        ]));
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "ts",
+                DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
+                true,
+            )])),
+            vec![ts],
+        )
+        .unwrap();
+        let mut calc = CalcExpression {
+            kinds: vec![6, 0, 3],    // CALL(EXTRACT), col ts, lit "hour"
+            payload: vec![89, 0, 0], // op 89; col 0; strings[0]
+            child_counts: vec![2, 0, 0],
+            longs: vec![],
+            doubles: vec![],
+            strings: vec![Some("hour".to_string())],
+            projection_roots: vec![0],
+            condition_root: -1,
+            output_names: vec!["h".to_string()],
+            compiled: None,
+        };
+        let out = calc.evaluate(batch);
+        let col = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(col.value(0), 0);
+        assert_eq!(col.value(1), 1);
         assert!(col.is_null(2));
     }
 
