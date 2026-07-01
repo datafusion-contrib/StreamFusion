@@ -84,10 +84,26 @@ class FlinkCalcSqlHarnessTest {
   }
 
   @Test
-  void narrowingCastFallsBack() throws Exception {
-    // BIGINT → INT is narrowing (overflow semantics differ), so it is not admitted and falls back.
-    NativeParity.assertFallback(
-        FlinkCalcSqlHarnessTest::environment, "SELECT CAST(k AS INT) FROM f");
+  void narrowingIntCastMatchesHost() throws Exception {
+    // BIGINT → INT narrows: Flink's primitive Java cast truncates to the low 32 bits (two's-complement
+    // wraparound), which the native wrapping kernel reproduces. The environment includes values past
+    // the INT range (2^31 and 2^32+1), so this pins the overflow behavior, not just the in-range case.
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::castEnvironment, "SELECT CAST(big AS INT) FROM c");
+  }
+
+  @Test
+  void narrowingIntCastToTinyintMatchesHost() throws Exception {
+    // A further narrowing (BIGINT → TINYINT) wraps to the low 8 bits — e.g. 300 → 44 — on both sides.
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::castEnvironment, "SELECT CAST(big AS TINYINT) FROM c");
+  }
+
+  @Test
+  void floatToIntCastMatchesHost() throws Exception {
+    // DOUBLE → INT: Flink's primitive Java cast rounds toward zero and saturates to the INT range
+    // (NaN → 0, ±overflow → Integer.MIN/MAX), which Rust's `as` reproduces. The environment includes
+    // NaN, ±infinity and ±1e20 to pin the saturation edges.
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::castEnvironment, "SELECT CAST(dbl AS INT) FROM c");
   }
 
   @Test
@@ -110,9 +126,23 @@ class FlinkCalcSqlHarnessTest {
 
   @Test
   void coalesceMatchesHost() throws Exception {
-    // COALESCE lowers to CASE in sql-to-rel, so it rides the admitted CASE path (numeric branches,
-    // no cast). The string form COALESCE(s,'x') needs a CHAR→VARCHAR cast, still not admitted.
+    // COALESCE lowers to CASE in sql-to-rel, so it rides the admitted CASE path (numeric branches).
     NativeParity.assertParity(FlinkCalcSqlHarnessTest::nullableEnvironment, "SELECT COALESCE(v, 0) FROM g");
+  }
+
+  @Test
+  void coalesceStringMatchesHost() throws Exception {
+    // COALESCE(s, 'x'): the CHAR(1) literal branch is unified up to VARCHAR, a widening string cast
+    // Flink neither pads nor truncates — now an admitted passthrough, so the whole Calc routes.
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::nullableEnvironment, "SELECT COALESCE(s, 'x') FROM g");
+  }
+
+  @Test
+  void charToVarcharCastMatchesHost() throws Exception {
+    // An explicit CAST of a CHAR literal to VARCHAR (target length ≥ source) is an unpadded no-op.
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::environment, "SELECT CAST('abc' AS VARCHAR(10)) FROM f");
   }
 
   @Test
@@ -501,6 +531,30 @@ class FlinkCalcSqlHarnessTest {
             .column("a", DataTypes.TINYINT())
             .column("b", DataTypes.TINYINT())
             .column("c", DataTypes.SMALLINT())
+            .build());
+    return tEnv;
+  }
+
+  private static TableEnvironment castEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    DataStream<Row> source =
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"big", "dbl"}, Types.LONG, Types.DOUBLE),
+            Row.of(300L, 3.9),
+            Row.of(2147483648L, -3.9),
+            Row.of(4294967297L, 1e20),
+            Row.of(-5L, -1e20),
+            Row.of(42L, Double.NaN),
+            Row.of(1L, Double.POSITIVE_INFINITY),
+            Row.of(-1L, Double.NEGATIVE_INFINITY));
+    tEnv.createTemporaryView(
+        "c",
+        source,
+        Schema.newBuilder()
+            .column("big", DataTypes.BIGINT())
+            .column("dbl", DataTypes.DOUBLE())
             .build());
     return tEnv;
   }

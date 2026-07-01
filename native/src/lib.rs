@@ -7244,6 +7244,16 @@ fn build_expr(
                 cast_data_type(arg),
             ))
         }
+        // A narrowing cast to an integer target (`arg` is the target int code). Uses the NarrowingCast
+        // kernel so the value wraps (integer source) / saturates with NaN→0 (float source) like Flink's
+        // primitive Java cast, rather than erroring on overflow as arrow's own cast would.
+        18 => {
+            let target = cast_data_type(arg);
+            let child = build_expr(
+                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+            );
+            datafusion::logical_expr::ScalarUDF::new_from_impl(NarrowingCast::new(target)).call(vec![child])
+        }
         6 => {
             let op = payload[node];
             let count = child_counts[node] as usize;
@@ -7529,6 +7539,90 @@ fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prel
             DataType::Utf8,
         )),
         other => panic!("unsupported expression op: {other}"),
+    }
+}
+
+/// A narrowing numeric cast to an integer type with Flink's primitive-Java-cast semantics: an integer
+/// source truncates to the low bits (two's-complement wraparound), a float/double source rounds toward
+/// zero and saturates to the target range with NaN→0. Rust's `as` reproduces both exactly — where
+/// arrow's own cast would error on overflow — so this kernel matches the host byte-for-byte. The JVM
+/// encoder (KIND_CAST_NARROW) emits it only for a narrowing int→int or a float/double→int cast; see
+/// divergences/07.
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct NarrowingCast {
+    target: DataType,
+    signature: datafusion::logical_expr::Signature,
+}
+
+impl NarrowingCast {
+    fn new(target: DataType) -> Self {
+        Self {
+            target,
+            signature: datafusion::logical_expr::Signature::variadic_any(
+                datafusion::logical_expr::Volatility::Immutable,
+            ),
+        }
+    }
+}
+
+impl datafusion::logical_expr::ScalarUDFImpl for NarrowingCast {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &str {
+        "narrowing_cast"
+    }
+    fn signature(&self) -> &datafusion::logical_expr::Signature {
+        &self.signature
+    }
+    fn return_type(&self, _: &[DataType]) -> datafusion::common::Result<DataType> {
+        Ok(self.target.clone())
+    }
+    fn invoke_with_args(
+        &self,
+        args: datafusion::logical_expr::ScalarFunctionArgs,
+    ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
+        use datafusion::logical_expr::ColumnarValue;
+        let arrays = ColumnarValue::values_to_arrays(&args.args)?;
+        let input = &arrays[0];
+        let result: ArrayRef = match input.data_type() {
+            // Integer source: widen losslessly to i64 (no overflow possible), then `as` the target,
+            // which truncates to the low bits exactly like Java's `(int)`/`(short)`/… primitive cast.
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                let widened = arrow::compute::cast(input, &DataType::Int64)?;
+                let vals = widened
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .expect("i64 narrowing source");
+                match &self.target {
+                    DataType::Int8 => Arc::new(vals.iter().map(|o| o.map(|v| v as i8)).collect::<Int8Array>()),
+                    DataType::Int16 => Arc::new(vals.iter().map(|o| o.map(|v| v as i16)).collect::<Int16Array>()),
+                    DataType::Int32 => Arc::new(vals.iter().map(|o| o.map(|v| v as i32)).collect::<Int32Array>()),
+                    _ => Arc::new(vals.iter().map(|o| o.map(|v| v as i64)).collect::<Int64Array>()),
+                }
+            }
+            // Float source: widen to f64, then `as` the target, which rounds toward zero and saturates
+            // to the target range (NaN→0) exactly like Java's `(int)` primitive cast of a double.
+            DataType::Float16 | DataType::Float32 | DataType::Float64 => {
+                let widened = arrow::compute::cast(input, &DataType::Float64)?;
+                let vals = widened
+                    .as_any()
+                    .downcast_ref::<arrow::array::Float64Array>()
+                    .expect("f64 narrowing source");
+                match &self.target {
+                    DataType::Int8 => Arc::new(vals.iter().map(|o| o.map(|v| v as i8)).collect::<Int8Array>()),
+                    DataType::Int16 => Arc::new(vals.iter().map(|o| o.map(|v| v as i16)).collect::<Int16Array>()),
+                    DataType::Int32 => Arc::new(vals.iter().map(|o| o.map(|v| v as i32)).collect::<Int32Array>()),
+                    _ => Arc::new(vals.iter().map(|o| o.map(|v| v as i64)).collect::<Int64Array>()),
+                }
+            }
+            other => {
+                return Err(datafusion::error::DataFusionError::Internal(format!(
+                    "narrowing_cast: unsupported source type {other:?}"
+                )))
+            }
+        };
+        Ok(ColumnarValue::Array(result))
     }
 }
 

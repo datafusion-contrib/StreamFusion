@@ -66,6 +66,10 @@ final class RexExpression {
   // argument expressions. The native JvmUdf node upcalls NativeUdf.invokeUdf to run the actual Flink
   // ScalarFunction.eval over each batch (columnar), so a non-builtin UDF stays inside the native island.
   private static final int KIND_UDF = 17;
+  // A narrowing cast to an integer type: payload is the target integer type code (CAST_TINYINT..
+  // CAST_BIGINT), one child. Built natively as a wrapping/saturating kernel matching Flink's primitive
+  // Java cast, since arrow's own cast errors on overflow rather than wrapping.
+  private static final int KIND_CAST_NARROW = 18;
 
   // Cast target type codes, mirrored on the native side.
   private static final int CAST_TINYINT = 0;
@@ -607,11 +611,13 @@ final class RexExpression {
     }
     SqlTypeName source = sourceType.getSqlTypeName();
     SqlTypeName targetType = resultType.getSqlTypeName();
-    // A widening VARCHAR→VARCHAR cast (target length ≥ source, e.g. a bounded computed string coerced to
-    // an unbounded STRING sink column — Nexmark q14/q21's CASE result). Flink neither pads nor truncates
-    // when widening a VARCHAR, so the value is unchanged: emit the operand as a passthrough. Narrowing
-    // (target < source) truncates and is not admitted.
-    if (source == SqlTypeName.VARCHAR
+    // A non-narrowing cast to VARCHAR from a CHAR or VARCHAR source (target length ≥ source). Flink
+    // stores both as unpadded StringData and neither pads nor truncates a widening string cast, so the
+    // value is unchanged — emit the operand as a passthrough. This covers a bounded computed string
+    // coerced to an unbounded STRING sink column (Nexmark q14/q21's CASE result) and a CHAR literal
+    // unified up to VARCHAR (the ELSE branch of COALESCE(s, 'x') / CASE). Narrowing (target < source)
+    // truncates and is not admitted; casting *to* CHAR(n) pads, so it is not admitted either.
+    if ((source == SqlTypeName.VARCHAR || source == SqlTypeName.CHAR)
         && targetType == SqlTypeName.VARCHAR
         && resultType.getPrecision() >= sourceType.getPrecision()) {
       return emit(call.getOperands().get(0));
@@ -629,11 +635,22 @@ final class RexExpression {
       }
     }
     int target = wideningTargetCode(source, targetType);
-    if (target < 0) {
-      return reject("unsupported CAST " + source + "→" + targetType + " (only widening numeric)");
+    if (target >= 0) {
+      add(KIND_CAST, target, 1);
+      return emit(call.getOperands().get(0));
     }
-    add(KIND_CAST, target, 1);
-    return emit(call.getOperands().get(0));
+    // A narrowing cast to an integer target (a wider integer, or a float/double, narrowed to an
+    // integer type). Flink emits the primitive Java cast: an integer source truncates to the low bits
+    // (two's-complement wraparound), a float/double source rounds toward zero and saturates to the
+    // target range with NaN→0. Rust's `as` reproduces both exactly, so a dedicated native wrapping
+    // kernel matches the host — where arrow's own cast would instead error on overflow. See
+    // divergences/07.
+    int narrowTarget = narrowingIntTargetCode(source, targetType);
+    if (narrowTarget >= 0) {
+      add(KIND_CAST_NARROW, narrowTarget, 1);
+      return emit(call.getOperands().get(0));
+    }
+    return reject("unsupported CAST " + source + "→" + targetType);
   }
 
   /** The target type code for a widening numeric cast {@code source → target}, or -1 if not safe. */
@@ -657,6 +674,32 @@ final class RexExpression {
         return CAST_FLOAT;
       case DOUBLE:
         return CAST_DOUBLE;
+      default:
+        return -1;
+    }
+  }
+
+  /**
+   * The target integer code for a narrowing cast to an integer type — an integer→narrower-integer or a
+   * float/double→integer cast — or -1 if {@code target} is not an integer type or the cast is not
+   * narrowing (widening is handled by {@link #wideningTargetCode}, an identity/same-rank cast earlier).
+   * Admitted because Flink's primitive Java cast wraps (integer source) / saturates with NaN→0 (float
+   * source), which the native wrapping kernel reproduces.
+   */
+  private static int narrowingIntTargetCode(SqlTypeName source, SqlTypeName target) {
+    int from = numericRank(source);
+    if (from < 0) {
+      return -1;
+    }
+    switch (target) {
+      case TINYINT:
+        return from > 0 ? CAST_TINYINT : -1;
+      case SMALLINT:
+        return from > 1 ? CAST_SMALLINT : -1;
+      case INTEGER:
+        return from > 2 ? CAST_INTEGER : -1;
+      case BIGINT:
+        return from > 3 ? CAST_BIGINT : -1;
       default:
         return -1;
     }
