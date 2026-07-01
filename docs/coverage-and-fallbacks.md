@@ -31,7 +31,6 @@ These have no matcher; any query containing one falls back entirely.
 | Operator | SQL surface |
 |---|---|
 | `Correlate` | lateral table functions, and `UNNEST` with a pushed condition the expression engine can't encode (or any condition over a LEFT unnest). INNER **or LEFT** `UNNEST` of a single `ARRAY` (scalar or `ROW` element, flattened), `MAP` (key+value), or `MULTISET` (element by count) column — optionally `WITH ORDINALITY`, INNER including a pushed element filter — **is** supported (see the chart). |
-| `LookupJoin` | dimension-table / async lookup join — an **intentional** architectural fallback, not a gap to close. Its work is an external I/O call into a host-Java `LookupFunction` (JDBC/HBase/…), not vectorizable compute, and the async path needs Flink's `AsyncWaitOperator` + mailbox purely for ordered emit; running it inside the all-or-nothing island would mean JNI-upcalling the JVM connector per batch. (Arroyo can do this natively only because *its* connectors are native Rust; Flink's are JVM.) |
 | `Match` | `MATCH_RECOGNIZE` (CEP / row-pattern) |
 | `GroupWindowAggregate` (most), `GroupWindowTableAggregate` | the legacy group-window syntax — `GROUP BY TUMBLE(...)`/`HOP(...)`, and proctime group windows. **Exception:** a legacy event-time `SESSION(...)` group-window routes natively (reusing the session operator), when its only window properties are `(window_start, window_end[, rowtime][, proctime])` in that order |
 | `IncrementalGroupAggregate` | the three-phase (distinct) non-windowed `GROUP BY`. The ordinary two-phase / mini-batch `LocalGroupAggregate` + `GlobalGroupAggregate` (+ `MiniBatchAssigner`) **is** native — see the feature gaps and §2 below |
@@ -83,6 +82,13 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   residual non-equi predicate beyond the temporal condition (e.g. `… AND o.amount < r.rate`) is applied
   natively, like the other joins. Real gap: none — a **processing-time** temporal table join is parity
   (Flink itself rejects it — FLINK-19830), as is the legacy proctime temporal *function* join.
+- **Lookup join** (`FOR SYSTEM_TIME AS OF probe.proctime`, the dimension-table join, Nexmark q13) — the
+  **synchronous** form is native for INNER and LEFT: the probe batch stays Arrow and each row calls the
+  connector's real synchronous `LookupFunction` (byte-identical to Flink's `LookupJoinRunner`;
+  `NativeLookupJoinOperator`). This is not vectorizable compute — it is a per-row JVM upcall into the
+  host connector — but it keeps the island unbroken. Still falls back: the **async** lookup path (needs
+  the operator mailbox), an **upsert-materialized** (keyed-state) lookup, a **calc/filter on the temporal
+  table**, and any **residual or pre-filter** condition; ticket 40 tracks these follow-ups.
 - **Sources/sink** — local `file:` path only (Parquet/ORC source, Parquet sink); Kafka decode limited
   (see below); CDC only Debezium/OGG JSON.
 - **Proctime** support, by operator:
@@ -129,7 +135,7 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   an insert-only input; a retracting/updating input falls it back.
 - **Per-operator kill switch**: `-Dstreamfusion.operator.<name>.enabled=false` (e.g. `filter`,
   `groupAggregate`, `union`, `limit`, `expand`, `changelogNormalize`, `windowRank`,
-  `localGroupAggregate`, `miniBatchAssigner`, …). The two-phase global half reuses the
+  `localGroupAggregate`, `miniBatchAssigner`, `lookupJoin`, …). The two-phase global half reuses the
   `groupAggregate` switch. `kafkaSource` defaults to *false*.
 
 ### 2. Per-operator matcher declines (exact conditions)
@@ -150,6 +156,10 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   equi-key type outside the supported set; a residual non-equi predicate beyond the `FOR SYSTEM_TIME`
   condition that the native engine can't express; a processing-time temporal join (parity — Flink
   rejects it for a versioned table).
+- **Lookup join** — an async lookup (needs the operator mailbox); an upsert-materialized (keyed-state)
+  lookup; a projection/filter on the temporal table; a residual (non-equi) or pre-filter condition; not
+  INNER/LEFT; a temporal table that isn't a non-legacy `TableSourceTable`; a non-field-reference
+  (constant/computed) lookup key. (The synchronous processing-time form is otherwise native — §(a).)
 - **Regular join** — unsupported join type; no equi key; non-null-dropping keys; non-equi residual not
   expressible; an input column type the converter can't carry.
 - **Window aggregate / local / global** — window not event-time `TUMBLE`/`HOP`/`CUMULATE` (zero offset)
@@ -219,12 +229,25 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   `allowIncompatible`), computed in double and cast to the declared `DECIMAL(p, s)`, which is **not**
   byte-identical to Flink; intended for benchmarking throughput, not correctness. Byte-exact decimal
   division remains future work.
-- **Incompatible functions** — off by default, native only under
-  `-Dstreamfusion.expression.<NAME>.allowIncompatible=true` (or the blanket flag): `UPPER`, `LOWER`,
-  `EXP`, `LN`, `SIN`, `COS`, `TAN`, `ASIN`, `ACOS`, `ATAN`, `LOG10`, and `ROUND` on float/double.
+- **Case folding & regex — native by default, *not* a fallback.** `UPPER`/`LOWER` and `REGEXP_EXTRACT`
+  run natively **by default** via a columnar JVM upcall to Flink's own `BinaryStringData` case folding /
+  `SqlFunctionUtils.regexpExtract`, so they are byte-identical to the host and the rest of the expression
+  stays native. Each also has a faster **pure-Rust** path (Rust case folding / the `regex` crate) that is
+  opt-in under `-Dstreamfusion.expression.<NAME>.allowIncompatible=true` (or the blanket flag) — it can
+  diverge from the JVM on non-ASCII case folding / advanced regex (backreferences, lookaround, some
+  Unicode classes), so it is not the default. Neither falls back to the host for supported argument types
+  (a non-string argument, or the pure-native `REGEXP_EXTRACT`'s non-literal pattern/index, does fall back).
+- **Incompatible math — off by default, native only under
+  `-Dstreamfusion.expression.<NAME>.allowIncompatible=true` (or the blanket flag):** `EXP`, `LN`, `SIN`,
+  `COS`, `TAN`, `ASIN`, `ACOS`, `ATAN`, `LOG10`, `POWER`/`SQRT` (last-ULP libm divergence), and `ROUND`
+  on float/double (`BigDecimal` vs binary-float rounding). Unlike case folding/regex there is no cheap
+  byte-exact path, so these **fall back** unless opted in.
 - **Literal/arity guards** — unsupported literal type; `SUBSTRING` non-literal or out-of-range
   start/length; `LEFT`/`RIGHT`/`REPEAT`/`LPAD`/`RPAD` non-literal or negative count; `TRIM` other than
-  default BOTH-whitespace; `POSITION` with a FROM start; wrong arity for any admitted function.
+  default BOTH-whitespace; `POSITION` with a FROM start; `SPLIT_INDEX` empty/non-literal separator;
+  `DATE_FORMAT` a non-literal or non-translatable pattern (text/fraction/zone fields) or a local-zoned
+  timestamp; `EXTRACT` a fractional/convention-divergent field (`SECOND`/`DOW`/`WEEK`/`QUARTER`) or a
+  non-plain-`TIMESTAMP` argument; `TO_TIMESTAMP_LTZ` precision ≠ 3; wrong arity for any admitted function.
 
 ### 4. Type level
 - **Scalar leaf types.** Every column (and every nested leaf) must be a type the boundary converter
