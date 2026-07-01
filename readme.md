@@ -371,11 +371,17 @@ _Apple M1 Max; numbers are comparable only within a machine._
 
 Beyond q0–q4, StreamFusion runs **20 of the 22 Nexmark queries** natively end-to-end (the explain
 diagnostic `NexmarkExplainTest` enumerates them). Only two of the runnable queries still fall back: q14
-(a non-builtin `count_char` UDF — its decimal arithmetic now runs natively) and, without the
+(its decimal and its `count_char` UDF both run natively now — the last gap is `EXTRACT`) and, without the
 `allowIncompatible` flag, q21 (`REGEXP_EXTRACT`, gated because Rust's regex engine diverges from Java's on
 advanced features, as Comet gates regex). q6 (Flink SQL cannot consume the retractions its `OVER` needs),
 q13 (a temporal-table/lookup join, async-gated) and q23 (a query-file parse quirk) are outside the
-runnable set. `NexmarkMatrixBenchmark` runs each query over **every source it can be fed by** — the
+runnable set.
+
+**Non-builtin UDFs** run natively too: a Flink `ScalarFunction` the expression engine can't implement
+itself is invoked by a native→JVM columnar upcall (datafusion-comet's `JvmScalarUdfExpr` pattern) — the
+native `Calc` exports the argument columns over the Arrow C Data Interface and the JVM bridge runs the
+actual `eval` over the whole batch (one JNI crossing per batch, no per-row boundary), so the result is
+byte-identical to Flink and the query stays inside the native island. See `NativeUdf` / `JvmUdf`. `NexmarkMatrixBenchmark` runs each query over **every source it can be fed by** — the
 rowwise generator and Kafka json/avro/protobuf across the four-rung ladder — all vs stock Flink, same
 steelmanned perimeter (rowwise source + `blackhole` sink, object reuse on both engines). q1's decimal
 arithmetic is exact and native by default; q5 (Hot Items) runs on a window-attached window aggregate
