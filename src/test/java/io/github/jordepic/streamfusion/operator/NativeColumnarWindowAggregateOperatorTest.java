@@ -7,6 +7,7 @@ import java.util.List;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
@@ -148,6 +149,50 @@ class NativeColumnarWindowAggregateOperatorTest {
       harness.setProcessingTime(3000);
       assertEquals(List.of(row(10, 0, 3000)), collect(harness));
     }
+  }
+
+  /**
+   * A checkpoint barrier landing mid-stream — after rows for an event-time window have arrived but
+   * before the watermark closes it — must lose nothing. {@code snapshotState} flushes the buffered
+   * input into native state before serializing, so restoring into a fresh operator resumes the
+   * still-open window and combines the pre- and post-restore rows. Pins the synchronous-mailbox
+   * guarantee (ticket 01): buffered work survives a checkpoint even though native compute runs
+   * synchronously on the task thread. (Re-added after the row-fed operator carrying the original test
+   * was deleted in the fully-columnar migration.)
+   */
+  @Test
+  void bufferedInputSurvivesCheckpointMidStream() throws Exception {
+    OperatorSubtaskState snapshot;
+    try (BufferAllocator allocator = new RootAllocator();
+        OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
+            new OneInputStreamOperatorTestHarness<>(eventTimeOperator(), new ArrowBatchSerializer())) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      // Rows land in window [0,1000); the watermark stays below 1000, so the window is still open and
+      // its two rows are buffered — not yet emitted — when the checkpoint barrier arrives.
+      harness.processElement(new StreamRecord<>(batch(allocator, event(1, 0), event(2, 500))));
+      assertEquals(List.of(), collect(harness));
+      snapshot = harness.snapshot(1L, 1L);
+    }
+
+    // A fresh operator restored from that snapshot must resume the open window: a third row joins the
+    // two that survived the checkpoint, and closing the window with a watermark emits their sum.
+    try (BufferAllocator allocator = new RootAllocator();
+        OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
+            new OneInputStreamOperatorTestHarness<>(eventTimeOperator(), new ArrowBatchSerializer())) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(snapshot);
+      harness.open();
+      harness.processElement(new StreamRecord<>(batch(allocator, event(3, 700))));
+      harness.processWatermark(new Watermark(1000));
+      assertEquals(List.of(row(6, 0, 1000)), collect(harness)); // 1 + 2 (pre-checkpoint) + 3 (post)
+    }
+  }
+
+  private static NativeColumnarWindowAggregateOperator eventTimeOperator() {
+    return new NativeColumnarWindowAggregateOperator(
+        false, 1000, 1000, 1, new int[] {0}, new int[0], new int[0], new int[] {0}, new int[] {0},
+        "UTC", OUTPUT, false);
   }
 
   private static RowData event(long value, long eventTimeMillis) {

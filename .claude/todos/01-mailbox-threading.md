@@ -89,13 +89,14 @@ design). Revisit only if a native operator needs to block on something other
 than CPU.
 
 ## Follow-ups (if/when we add the above)
-- ⚠️ **Lock in the current guarantee with a checkpoint-interleaving test — REGRESSED, needs re-adding.**
-  The test (`bufferedInputSurvivesCheckpointMidStream`: snapshot with rows still buffered before the
-  window watermark, restore into a fresh operator, confirm buffered rows survive and combine with
-  post-restore rows) originally lived on the row-fed `NativeWindowAggregateOperator`. That operator was
-  deleted when window aggregates went fully columnar (commit `e8eec6a`) and the test was **not** migrated
-  to `NativeColumnarWindowAggregateOperatorTest` — so the guarantee is currently **not** test-covered.
-  Re-add an equivalent checkpoint-interleaving test on a columnar stateful operator.
+- ✅ **Lock in the current guarantee with a checkpoint-interleaving test.** Done —
+  `NativeColumnarWindowAggregateOperatorTest.bufferedInputSurvivesCheckpointMidStream` processes rows
+  into a still-open event-time window (watermark below the window end), snapshots mid-stream, restores
+  into a fresh operator, then adds another row and closes the window — asserting the emitted sum
+  includes the pre-checkpoint rows. Proves `snapshotState` flushes pending input into native state so
+  the synchronous-mailbox path loses nothing across a checkpoint. (This test was lost when the row-fed
+  `NativeWindowAggregateOperator` was deleted in the fully-columnar migration, commit `e8eec6a`; re-added
+  on the columnar operator.)
 - Source-operator availability-future bridge (separate ticket when we add a
   native source).
 
