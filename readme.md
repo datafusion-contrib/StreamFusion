@@ -371,7 +371,7 @@ _Apple M1 Max; numbers are comparable only within a machine._
 
 Beyond q0–q4, StreamFusion runs **every runnable Nexmark query** natively end-to-end, with no fallback
 and no flags (the explain diagnostic `NexmarkExplainTest` enumerates them) — including q14 (decimal +
-`count_char` UDF + `EXTRACT(HOUR …)`), q21, and q23:
+`count_char` UDF + `EXTRACT(HOUR …)`), q21, q23, and q13:
 
 - **q21** (`CASE` + `REGEXP_EXTRACT` over `lower(channel)`) is fully native by default. `REGEXP_EXTRACT`
   and `UPPER`/`LOWER` — whose Rust regex / case folding can diverge from Java's — route through the
@@ -383,18 +383,22 @@ and no flags (the explain diagnostic `NexmarkExplainTest` enumerates them) — i
   references the reserved identifier `dateTime` bare; the quoted form (as the DDL declares it) parses and
   accelerates identically.
 
-Two queries stay outside for reasons that are not StreamFusion's to fix (re-verified on Flink 2.2.1).
+- **q13** is a processing-time lookup join against a bounded side input (`JOIN dim FOR SYSTEM_TIME AS OF
+  probe.proctime ON …`). The native `NativeLookupJoinOperator` keeps the probe batches Arrow (so the
+  probe-side Calc/source stay in the island) and, per row, calls the connector's real synchronous
+  `LookupFunction` — the same function Flink's `LookupJoinRunner` calls — so the join is byte-identical
+  (`FlinkLookupJoinSqlHarnessTest`, INNER + LEFT). Only the point lookup is row-oriented, as it must be.
+  Async lookups (which need the operator mailbox) and the calc/residual variants fall back — ticket 40.
+
+**One query stays outside** for a reason that is not StreamFusion's to fix (re-verified on Flink 2.2.1).
 **q6** (`AVG(…) OVER (ROWS BETWEEN 10 PRECEDING …)` over a retracting winning-bid Top-1) does not run in
-Flink SQL: the nexmark file is invalid as written (`WHERE rownum` can't see the same-level `ROW_NUMBER`
-alias), and even wrapped correctly Flink rejects it with *"Non-time attribute sort is not supported for
-bounded OVER window"* — the Top-N strips `dateTime`'s time-attribute property that a `ROWS` frame needs.
-(FLINK-19059, the retraction limit the nexmark README pins q6 on, is fixed in Flink 2.1.0 — that barrier
-is gone; a different one remains.) With no host plan there is nothing to override or parity-check. **q13**
-does run in Flink (✅) as a processing-time lookup join (`StreamPhysicalLookupJoin`, async
-`LookupJoinRunner`) to a bounded side input; StreamFusion leaves it on Flink because a lookup join is
-async external I/O, not columnar compute — the native temporal-join operator covers only event-time
-versioned-table joins. Both are analyzed in
-[.claude/todos/39-nexmark-q6-q13-exclusions.md](.claude/todos/39-nexmark-q6-q13-exclusions.md).
+Flink SQL at all: the nexmark file is invalid as written (`WHERE rownum` can't see the same-level
+`ROW_NUMBER` alias), and even wrapped correctly Flink rejects it with *"Non-time attribute sort is not
+supported for bounded OVER window"* — the Top-N strips `dateTime`'s time-attribute property that a `ROWS`
+frame needs. (FLINK-19059, the retraction limit the nexmark README pins q6 on, is fixed in Flink 2.1.0 —
+that barrier is gone; a different one remains.) With no host plan there is nothing to override or
+parity-check. Analyzed in
+[.claude/todos/39-nexmark-q6-exclusion.md](.claude/todos/39-nexmark-q6-exclusion.md).
 
 **Non-builtin UDFs** run natively too: a Flink `ScalarFunction` the expression engine can't implement
 itself is invoked by a native→JVM columnar upcall (datafusion-comet's `JvmScalarUdfExpr` pattern) — the

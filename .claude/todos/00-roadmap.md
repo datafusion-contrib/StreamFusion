@@ -131,13 +131,16 @@ here when the ticket is deleted.
   `open()`, deregister at `close()`). The same upcall now also carries `REGEXP_EXTRACT` and `UPPER`/`LOWER`
   by default (host-exact regex/case folding), so q21 accelerates with no flag; these builtins hit the same
   distributed-registry limitation until ticket 38 lands.
-- **Nexmark q6 / q13 — documented exclusions** (ticket 39): every Flink 2.2.1-runnable Nexmark query now
-  accelerates fully and by default. q6 does not run in Flink SQL (invalid as written; wrapped, Flink
-  rejects the bounded `OVER` over the Top-N's non-time-attribute `dateTime` — note FLINK-19059, the
-  retraction limit the nexmark README cites, is fixed in 2.1.0, so that specific barrier is gone). q13
-  runs in Flink as an async processing-time lookup join (`StreamPhysicalLookupJoin`) — external I/O, not
-  columnar compute, so StreamFusion leaves it on Flink (native temporal join covers event-time
-  versioned-table joins only). Neither is StreamFusion's to fix; reasons re-verified 2026-07-01.
+- **Native lookup join** (ticket 40): **v1 DONE.** `NativeLookupJoinOperator` accelerates a synchronous
+  processing-time lookup join (Nexmark q13) — Arrow probe batches stay in the island while each row calls
+  the connector's real `LookupFunction` (byte-identical to Flink's `LookupJoinRunner`); INNER + LEFT,
+  field-ref keys, no calc/residual. Follow-ups in ticket 40: async lookups (needs the operator mailbox),
+  calc-on-temporal-table + residual condition, constant keys, columnar/preload assembly, distributed
+  serialization.
+- **Nexmark q6 — documented exclusion** (ticket 39): the one query Flink 2.2.1 itself can't run (invalid
+  as written; wrapped, Flink rejects the bounded `OVER` over the Top-N's non-time-attribute `dateTime` —
+  FLINK-19059, the retraction limit the nexmark README cites, is fixed in 2.1.0, so that barrier is gone,
+  but a different one remains). No host plan to mirror or parity-check. Not StreamFusion's to fix.
 - **Disaggregated state store** (ticket 37): move operator state off-heap to a remote/tiered store
   (likely Fluss's PK-table KV) with a local working-set cache — decoupling state size from worker RAM
   and enabling incremental checkpoints + lazy rescale (Flink 2.0 ForSt / RisingWave Hummock direction).
