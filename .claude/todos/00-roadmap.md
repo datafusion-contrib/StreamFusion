@@ -78,9 +78,11 @@ here when the ticket is deleted.
 ## Next, roughly in order
 1. **Expression layer stage 3 tail** (ticket 19): general projection (the planner's `Calc` node —
    an optional filter plus projections in one node — handled natively) and a broad function set are
-   done (`/` `%`, COALESCE/NULLIF/NULL, narrow-int arithmetic, and the common string/exact-math
-   functions, with precision/locale-divergent ones opt-in). Remaining: narrowing/float→int/string
-   `CAST`, and any further obscure functions — each parity-gated.
+   done (`/` `%`, COALESCE/NULLIF/NULL, narrow-int arithmetic, the common string/temporal/exact-math
+   functions with precision/locale-divergent ones opt-in, **exact `Decimal128` `+`/`-`/`*`**, and — new —
+   **narrowing integer / float→int `CAST`** via a wrapping/saturating kernel and **`CHAR`/`VARCHAR`→
+   `VARCHAR`** passthrough). Remaining tail (each parity-gated): number↔string `CAST`, narrowing a
+   `VARCHAR` / cast to `CHAR(n)`, byte-exact decimal `/`/`%`, and any further obscure functions.
 2. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
    filesystems (`hdfs:`/`s3:`) for the native source/sink; currently `file:` only. **Deferred by
    direction until generalized operator support lands** — broaden what we can run (item 1 and the

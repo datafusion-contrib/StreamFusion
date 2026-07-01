@@ -100,11 +100,34 @@ project; record any deliberate semantic choice in `divergences/`.
      Utf8) — matched by operator name, mapped to DataFusion `upper`/`lower`/`character_length`/`btrim`/
      `substr`/`substring`; ASCII-identical, edges (Unicode, start<1, LEADING/TRAILING) documented in
      divergences/07 and gated. `CONCAT` was tried and **rejected**: Flink propagates NULL, DataFusion's
-     `concat` ignores it (fallback test).
-   - Remaining: narrowing/float→int/string `CAST` (so `COALESCE(s,'x')` with its `CHAR→VARCHAR` cast
-     still falls back); more string functions (`POSITION`/`REPLACE`/`LPAD`…) and temporal functions
-     (timezone-prone). The long tail; each gated by a parity test, admitted only where DataFusion
-     matches Flink.
+     `concat` ignores it (fallback test). (`UPPER`/`LOWER` now default to a JVM upcall to Flink's own
+     case folding — byte-exact without the incompatible flag; the pure-Rust path stays opt-in.)
+   - ✅ The broad string/temporal function tail — `REPLACE`, `POSITION` (no FROM), `SPLIT_INDEX`,
+     `REVERSE`, `LTRIM`/`RTRIM`, `ASCII`/`CHR`, `REPEAT`, `LEFT`/`RIGHT`, `LPAD`/`RPAD`, `LIKE`, `ABS`/
+     `FLOOR`/`CEIL`/`SIGN` (float/double), `EXTRACT`(YEAR/MONTH/DAY/HOUR/MINUTE/SECOND over plain
+     TIMESTAMP), `DATE_FORMAT` (literal pattern → chrono), `TO_TIMESTAMP_LTZ` (ms), `REGEXP_EXTRACT`
+     (JVM-upcall by default, native Rust regex opt-in) — each literal/type-gated, each with a parity
+     test; divergence-prone edges fall back.
+   - ✅ **Exact decimal arithmetic** — `+`/`-`/`*` whose result is DECIMAL run natively **by default**,
+     byte-exact: operands reach the native side as Decimal128 (columns already are; literals emit as an
+     exact Decimal128 via KIND_LIT_DECIMAL), Arrow's Decimal128 add/sub/mul match Flink's scale rules,
+     and the wrapping cast to the declared `DECIMAL(p,s)` rounds HALF_UP like Flink. Division/modulo
+     (a rounded-quotient-scale the two engines disagree on) stay behind the approximate flag. Tested in
+     `FlinkDecimalExprSqlHarnessTest` (Nexmark q1's `0.908 * price`).
+   - ✅ **CAST widening to DECIMAL** from an exact source (another DECIMAL or an integer) — byte-exact
+     (Arrow rescales Decimal128 HALF_UP); from a float/double source it stays behind the approximate flag.
+   - ✅ **CHAR/VARCHAR → VARCHAR** passthrough (target length ≥ source) — Flink stores both unpadded and
+     neither pads nor truncates a widening string cast, so it is a no-op. Unblocks `COALESCE(s,'x')` (the
+     CHAR literal branch unified up to VARCHAR) and q14/q21's CASE-result-to-STRING coercion.
+   - ✅ **Narrowing integer / float→int `CAST`** (KIND_CAST_NARROW → the native `NarrowingCast` kernel) —
+     Flink's primitive Java cast truncates to the low bits (two's-complement wraparound) for an integer
+     source and rounds-toward-zero-and-saturates with NaN→0 for a float/double source; Rust's `as`
+     reproduces both exactly, so a dedicated kernel matches (arrow's own cast errors on overflow). Parity
+     tested at the 2³¹/2³²+1 and NaN/±∞/±1e20 boundaries.
+   - Remaining (the genuine tail, each parity-gated): **string↔numeric `CAST`** (`CAST(x AS VARCHAR)`,
+     `CAST(s AS INT)`) — Flink's number↔string formatting/parsing diverges from Arrow's; **narrowing a
+     VARCHAR** (truncation) and **casting to CHAR(n)** (space-padding); **decimal `/` and `%`** byte-exact
+     (quotient-scale disagreement); and any further obscure functions (timezone-prone temporal, etc.).
 
 ## Acceptance criteria
 - Existing filter/projection tests pass via the general expression path.

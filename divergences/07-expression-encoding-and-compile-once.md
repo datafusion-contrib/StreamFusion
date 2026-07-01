@@ -121,3 +121,23 @@ would just be wrong.
 - **`CONCAT` is *not* admitted:** Flink's `CONCAT` propagates NULL (`CONCAT(null, x) = null`) but
   DataFusion's `concat` ignores NULL args — a value divergence, so it falls back (asserted by a test)
   rather than ship a wrong answer.
+- **`CAST`:** widening numeric (`integer→wider int`, `integer→float/double`, `float→double`) is a plain
+  Arrow cast — lossless/IEEE-identical. **Narrowing to an integer type** (a wider int, or a float/double,
+  → `TINYINT`/`SMALLINT`/`INTEGER`/`BIGINT`) is *not* a plain Arrow cast — arrow's kernel errors on
+  overflow, whereas Flink emits the primitive Java cast, which **wraps** (an integer source truncates to
+  the low bits, two's-complement) or **saturates** (a float/double source rounds toward zero and clamps
+  to the target range, `NaN`→0). A dedicated `NarrowingCast` kernel uses Rust's `as`, which reproduces
+  both exactly (Rust's float→int `as` is saturating with `NaN`→0, matching Java since 1.45); parity is
+  tested at the `2³¹`/`2³²+1` integer boundaries and the `NaN`/`±∞`/`±1e20` float boundaries. **String
+  casts still fall back:** number→string / string→number (formatting/parsing diverges from Arrow),
+  narrowing a `VARCHAR` (truncation), and casting *to* `CHAR(n)` (space-padding). A **`CHAR`/`VARCHAR`→
+  `VARCHAR`** cast with target length ≥ source is admitted as an unpadded passthrough (Flink stores both
+  unpadded and neither pads nor truncates a widening string cast), which is what lets `COALESCE(s,'x')`
+  (its `CHAR` literal branch unified up to `VARCHAR`) route.
+- **Decimal `+`/`-`/`*` are exact and admitted by default;** `/`/`%` are not. Operands reach the native
+  side as `Decimal128` (columns already are; a literal emits as an exact `Decimal128`, not via double),
+  Arrow's `Decimal128` add/sub/mul carry Flink's derived scales, and the wrapping cast to the declared
+  `DECIMAL(p, s)` rounds HALF_UP — the same mode Flink uses. Division/modulo derive a rounded quotient
+  scale Arrow and Flink disagree on, so they stay behind `decimalArithmetic.approximate` (double-computed,
+  not byte-exact). A `CAST` to `DECIMAL` from an exact source (another decimal or an integer) is likewise
+  byte-exact; from a float/double source it is approximate (flag-gated).
