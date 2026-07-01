@@ -36,6 +36,18 @@ use tokio::runtime::Runtime;
 
 /// Takes ownership of a batch the JVM exported through the C Data Interface, swapping in released
 /// placeholders so the producer's release callbacks fire once when the imported data drops.
+/// The JVM handle, captured on the first JNI entry that may build a UDF-bearing expression, so a native
+/// `JvmUdf` node can attach the (already JVM-owned) task thread and upcall the UDF bridge. Set once.
+static JVM: OnceLock<jni::JavaVM> = OnceLock::new();
+
+fn capture_jvm(env: &JNIEnv) {
+    if JVM.get().is_none() {
+        if let Ok(vm) = env.get_java_vm() {
+            let _ = JVM.set(vm);
+        }
+    }
+}
+
 fn import_record_batch(array_address: jlong, schema_address: jlong) -> RecordBatch {
     let ffi_array = unsafe {
         std::ptr::replace(array_address as *mut FFI_ArrowArray, FFI_ArrowArray::empty())
@@ -7125,6 +7137,21 @@ fn build_expr(
             }
             build_call(op, args)
         }
+        // A JVM UDF node: `arg` indexes the long pool at [udf id, return-type code]; the children are the
+        // argument expressions. Builds a JvmUdf scalar function that upcalls the JVM per batch.
+        17 => {
+            let id = longs[arg] as i32;
+            let return_type = udf_data_type(longs[arg + 1]);
+            let count = child_counts[node] as usize;
+            let mut children = Vec::with_capacity(count);
+            for _ in 0..count {
+                children.push(build_expr(
+                    schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                ));
+            }
+            datafusion::logical_expr::ScalarUDF::new_from_impl(JvmUdf::new(id, return_type))
+                .call(children)
+        }
         // A day-time INTERVAL literal (millis in the long pool), built as an Arrow IntervalDayTime so
         // `timestamp - interval` (e.g. q7's join residual) evaluates to a timestamp. Split into
         // days + milliseconds to keep each within i32 for multi-day intervals.
@@ -7588,6 +7615,109 @@ impl datafusion::logical_expr::ScalarUDFImpl for RegexpExtract {
     }
 }
 
+/// Arrow type of a UDF argument/result value-type code (mirrors NativeUdf's TYPE_* constants).
+fn udf_data_type(code: i64) -> DataType {
+    match code {
+        0 => DataType::Utf8,
+        1 => DataType::Int64,
+        2 => DataType::Int32,
+        3 => DataType::Float64,
+        4 => DataType::Boolean,
+        5 => DataType::Float32,
+        6 => DataType::Int16,
+        7 => DataType::Int8,
+        other => panic!("unsupported UDF type code: {other}"),
+    }
+}
+
+/// A user-defined Flink `ScalarFunction` the native engine cannot implement itself, evaluated by
+/// upcalling the JVM once per batch (see `NativeUdf` on the Java side) — the StreamFusion analog of
+/// datafusion-comet's `JvmScalarUdfExpr`. It builds a batch of the argument columns, exports it over the
+/// Arrow C Data Interface, calls `NativeUdf.invokeUdf` (which runs the actual `eval` over the whole batch
+/// and exports the result column), then imports that column. One JNI crossing per batch — columnar, no
+/// per-row boundary. Because it runs the same JVM `eval`, the result is byte-identical to Flink.
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct JvmUdf {
+    id: i32,
+    return_type: DataType,
+    signature: datafusion::logical_expr::Signature,
+}
+
+impl JvmUdf {
+    fn new(id: i32, return_type: DataType) -> Self {
+        Self {
+            id,
+            return_type,
+            signature: datafusion::logical_expr::Signature::variadic_any(
+                datafusion::logical_expr::Volatility::Immutable,
+            ),
+        }
+    }
+}
+
+impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &str {
+        "jvm_udf"
+    }
+    fn signature(&self) -> &datafusion::logical_expr::Signature {
+        &self.signature
+    }
+    fn return_type(&self, _: &[DataType]) -> datafusion::common::Result<DataType> {
+        Ok(self.return_type.clone())
+    }
+    fn invoke_with_args(
+        &self,
+        args: datafusion::logical_expr::ScalarFunctionArgs,
+    ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
+        use datafusion::common::DataFusionError;
+        use datafusion::logical_expr::ColumnarValue;
+        let exec = |e: String| DataFusionError::Execution(e);
+        let arrays = ColumnarValue::values_to_arrays(&args.args)?;
+        // Pack the argument columns into one batch (arg0..argN-1) to hand across the boundary at once.
+        let fields: Vec<Field> = arrays
+            .iter()
+            .enumerate()
+            .map(|(i, a)| Field::new(format!("arg{i}"), a.data_type().clone(), true))
+            .collect();
+        let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays)
+            .map_err(|e| exec(e.to_string()))?;
+        let struct_data = StructArray::from(batch).to_data();
+
+        // Export the args; the JVM imports and releases them within the call. Allocate empty output
+        // structs the JVM fills; Rust then takes ownership of the result via from_ffi.
+        let mut in_array = FFI_ArrowArray::new(&struct_data);
+        let mut in_schema =
+            FFI_ArrowSchema::try_from(struct_data.data_type()).map_err(|e| exec(e.to_string()))?;
+        let mut out_array = FFI_ArrowArray::empty();
+        let mut out_schema = FFI_ArrowSchema::empty();
+
+        let vm = JVM.get().ok_or_else(|| exec("JVM not captured for UDF upcall".to_string()))?;
+        let mut env = vm.attach_current_thread().map_err(|e| exec(e.to_string()))?;
+        env.call_static_method(
+            "io/github/jordepic/streamfusion/operator/NativeUdf",
+            "invokeUdf",
+            "(IJJJJ)V",
+            &[
+                jni::objects::JValue::Int(self.id),
+                jni::objects::JValue::Long(&mut in_array as *mut FFI_ArrowArray as jlong),
+                jni::objects::JValue::Long(&mut in_schema as *mut FFI_ArrowSchema as jlong),
+                jni::objects::JValue::Long(&mut out_array as *mut FFI_ArrowArray as jlong),
+                jni::objects::JValue::Long(&mut out_schema as *mut FFI_ArrowSchema as jlong),
+            ],
+        )
+        .map_err(|e| exec(format!("UDF upcall failed: {e}")))?;
+
+        // The JVM exports the result as a one-field root, i.e. a struct{result}; take that one column.
+        let mut data = unsafe { from_ffi(out_array, &out_schema) }.map_err(|e| exec(e.to_string()))?;
+        data.align_buffers();
+        let result = StructArray::from(data);
+        Ok(ColumnarValue::Array(result.column(0).clone()))
+    }
+}
+
 /// A compiled filter predicate held across batches: the decoded expression tree plus the physical
 /// expression, which is built once against the first batch's schema and reused for every later
 /// batch. This follows Comet — the plan is compiled once at operator construction, not re-planned
@@ -7831,6 +7961,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createCalcExp
     condition_root: jint,
     output_names: JObjectArray<'local>,
 ) -> jlong {
+    capture_jvm(&env); // so a JvmUdf node in this Calc can upcall the JVM bridge at evaluation time
     let expression = CalcExpression {
         kinds: read_int_array(&env, &kinds),
         payload: read_int_array(&env, &payload),

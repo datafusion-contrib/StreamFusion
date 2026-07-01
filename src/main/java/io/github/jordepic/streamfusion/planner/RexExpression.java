@@ -62,6 +62,10 @@ final class RexExpression {
   // (the unscaled integer as a string, as it can exceed i64). The native side builds a Decimal128 scalar,
   // so decimal arithmetic stays exact instead of routing through double.
   private static final int KIND_LIT_DECIMAL = 16;
+  // A JVM UDF call: payload indexes the long pool at [udf id, return-type code]; children are the
+  // argument expressions. The native JvmUdf node upcalls NativeUdf.invokeUdf to run the actual Flink
+  // ScalarFunction.eval over each batch (columnar), so a non-builtin UDF stays inside the native island.
+  private static final int KIND_UDF = 17;
 
   // Cast target type codes, mirrored on the native side.
   private static final int CAST_TINYINT = 0;
@@ -491,6 +495,10 @@ final class RexExpression {
       add(KIND_CALL, fnOp, 1);
       return emit(call.getOperands().get(0));
     }
+    if (call.getOperator()
+        instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction) {
+      return emitUdf(call);
+    }
     int op = opCode(call.getKind());
     if (op < 0) {
       return reject("unsupported function/operator: " + call.getOperator().getName());
@@ -800,6 +808,95 @@ final class RexExpression {
       }
     }
     return true;
+  }
+
+  /**
+   * Emits a Flink user {@link org.apache.flink.table.functions.ScalarFunction} call as a JVM-upcall node
+   * (op {@link #KIND_UDF}). The function is registered in {@link
+   * io.github.jordepic.streamfusion.operator.NativeUdf} and invoked per batch by the native {@code
+   * JvmUdf} expression, which runs the actual {@code eval} over the Arrow argument columns (columnar) —
+   * so the result is byte-identical to Flink. Admitted only when the definition is a {@code
+   * ScalarFunction}, every argument and the result map to a supported marshalling type, and exactly one
+   * {@code eval} overload of the right arity exists (an ambiguous overload is not guessed); otherwise the
+   * call falls back.
+   */
+  private boolean emitUdf(RexCall call) {
+    org.apache.flink.table.functions.FunctionDefinition def =
+        ((org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction) call.getOperator())
+            .getDefinition();
+    if (!(def instanceof org.apache.flink.table.functions.ScalarFunction)) {
+      return reject("unsupported function/operator: " + call.getOperator().getName());
+    }
+    org.apache.flink.table.functions.ScalarFunction scalar =
+        (org.apache.flink.table.functions.ScalarFunction) def;
+    int returnCode = udfTypeCode(call.getType().getSqlTypeName());
+    if (returnCode < 0) {
+      return reject("UDF return type not native: " + call.getType().getSqlTypeName());
+    }
+    List<RexNode> args = call.getOperands();
+    int[] argCodes = new int[args.size()];
+    for (int i = 0; i < args.size(); i++) {
+      argCodes[i] = udfTypeCode(args.get(i).getType().getSqlTypeName());
+      if (argCodes[i] < 0) {
+        return reject("UDF argument type not native: " + args.get(i).getType().getSqlTypeName());
+      }
+    }
+    java.lang.reflect.Method eval = resolveEval(scalar, args.size());
+    if (eval == null) {
+      return reject(
+          "UDF " + scalar.getClass().getName() + " has no single eval of arity " + args.size());
+    }
+    int id =
+        io.github.jordepic.streamfusion.operator.NativeUdf.register(scalar, eval, argCodes, returnCode);
+    add(KIND_UDF, longs.size(), args.size());
+    longs.add((long) id);
+    longs.add((long) returnCode);
+    for (RexNode arg : args) {
+      if (!emit(arg)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** The native UDF marshalling type code for a SQL type (see NativeUdf.TYPE_*), or -1 if unsupported. */
+  private static int udfTypeCode(SqlTypeName type) {
+    switch (type) {
+      case VARCHAR:
+      case CHAR:
+        return 0; // TYPE_STRING
+      case BIGINT:
+        return 1; // TYPE_LONG
+      case INTEGER:
+        return 2; // TYPE_INT
+      case DOUBLE:
+        return 3; // TYPE_DOUBLE
+      case BOOLEAN:
+        return 4; // TYPE_BOOLEAN
+      case FLOAT:
+      case REAL:
+        return 5; // TYPE_FLOAT
+      case SMALLINT:
+        return 6; // TYPE_SHORT
+      case TINYINT:
+        return 7; // TYPE_BYTE
+      default:
+        return -1;
+    }
+  }
+
+  /** The single public {@code eval} of the given arity, or null if none or more than one matches. */
+  private static java.lang.reflect.Method resolveEval(Object function, int arity) {
+    java.lang.reflect.Method match = null;
+    for (java.lang.reflect.Method method : function.getClass().getMethods()) {
+      if (method.getName().equals("eval") && method.getParameterCount() == arity) {
+        if (match != null) {
+          return null; // ambiguous — do not guess which overload the host would pick
+        }
+        match = method;
+      }
+    }
+    return match;
   }
 
   /**
