@@ -31,5 +31,5 @@ separate JVMs whose registry is empty, so the upcall would fail (`no registered 
 `ScalarFunction` instances Flink hands us via `BridgingSqlFunction.getDefinition()` are serializable in
 all registration paths (`createTemporarySystemFunction(class)` vs an instance vs a catalog function).
 
-Relates to: the native UDF support (`NativeUdf`/`JvmUdf`), ticket 19 (expression layer), and the
-`streamfusion-jvm-udf-upcall` memory note.
+Relates to: the native UDF support (`NativeUdf`/`JvmUdf`), the native expression engine
+(`RexExpression` / divergences/07), and the `streamfusion-jvm-udf-upcall` memory note.

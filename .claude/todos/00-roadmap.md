@@ -5,6 +5,15 @@ detailed ticket. Keep it in step as tickets are completed or added; delete a tic
 here when the ticket is deleted.
 
 ## Where we are (done + parity-verified)
+- **Native expression engine — done** (was ticket 19, now retired; the residual tail lives in
+  `docs/coverage-and-fallbacks.md` §3 + `divergences/07`). A hand-encoded `RexNode`→DataFusion evaluator
+  compiled once per operator handles the planner's `Calc` (optional filter + arbitrary projections):
+  arithmetic incl. `/`/`%` and narrow-int width, the comparisons/boolean/null predicates, searched
+  `CASE`/`COALESCE`/`NULLIF`, `ROW`-field access, `PROCTIME()`, a broad string/temporal function set,
+  **exact `Decimal128` `+`/`-`/`*`**, widening + **narrowing/float→int** `CAST` (wrapping/saturating
+  kernel) and `CHAR`/`VARCHAR`→`VARCHAR` passthrough; precision/locale-divergent ops (`ROUND`/transcendental,
+  pure-Rust case/regex) are opt-in behind `allowIncompatible`. Remaining tail (parity-gated, minor):
+  number↔string `CAST`, narrowing-`VARCHAR`/cast-to-`CHAR(n)`, byte-exact decimal `/`/`%`, obscure funcs.
 - **Operators, native + identical to Flink:** filter/`WHERE` (via the native expression engine),
   tumbling / hopping / session / cumulative window aggregates (one- and two-phase), event-time
   `OVER` aggregation, event-time INNER interval and window joins, Parquet sink (exactly-once),
@@ -76,25 +85,18 @@ here when the ticket is deleted.
   below 1× (its `RowData → Arrow → RowData` round-trip); leave it on the host via the per-operator flag.
 
 ## Next, roughly in order
-1. **Expression layer stage 3 tail** (ticket 19): general projection (the planner's `Calc` node —
-   an optional filter plus projections in one node — handled natively) and a broad function set are
-   done (`/` `%`, COALESCE/NULLIF/NULL, narrow-int arithmetic, the common string/temporal/exact-math
-   functions with precision/locale-divergent ones opt-in, **exact `Decimal128` `+`/`-`/`*`**, and — new —
-   **narrowing integer / float→int `CAST`** via a wrapping/saturating kernel and **`CHAR`/`VARCHAR`→
-   `VARCHAR`** passthrough). Remaining tail (each parity-gated): number↔string `CAST`, narrowing a
-   `VARCHAR` / cast to `CHAR(n)`, byte-exact decimal `/`/`%`, and any further obscure functions.
-2. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
+1. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
    filesystems (`hdfs:`/`s3:`) for the native source/sink; currently `file:` only. **Deferred by
-   direction until generalized operator support lands** — broaden what we can run (item 1 and the
-   ticket 11 operators) before broadening where we read/write.
-3. **Operator-level perf** (ticket 20 backlog): per-row `GroupKey` allocation in aggregators, session
+   direction until generalized operator support lands** — broaden what we can run (the ticket 11
+   operators and any remaining expression tail) before broadening where we read/write.
+2. **Operator-level perf** (ticket 20 backlog): per-row `GroupKey` allocation in aggregators, session
    `update` one-row `take` batching. (The `RowData → Arrow` transpose was made row-major + pre-sized,
    ~25% faster; a native decoder was investigated and rejected on benchmark grounds — ticket 28.)
-4. **Nexmark benchmark vs Flink** (ticket 30): run the standard q0–q22 Flink SQL suite native-
+3. **Nexmark benchmark vs Flink** (ticket 30): run the standard q0–q22 Flink SQL suite native-
    substituted vs stock Flink (release), per-query routed-fraction + fallback reasons + throughput
    ratio. Use it as the prioritization engine for both coverage (which queries fall back, and why)
    and perf (which route but trail Flink) — re-run as a regression/impact gate after each change.
-5. **Native decode-to-Arrow at ingest** (ticket 32): skip the per-record `RowData` materialization on
+4. **Native decode-to-Arrow at ingest** (ticket 32): skip the per-record `RowData` materialization on
    source formats, two source kinds handled differently. **File sources — done for ORC + Parquet:**
    read through DataFusion's file scan with the framework's file source owning enumeration/splits/
    checkpointing, splittable at row-group/stripe granularity, projection pushed down (Avro OCF dropped —

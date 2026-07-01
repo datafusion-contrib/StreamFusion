@@ -40,8 +40,8 @@ For us it does three things our current benches cannot:
    query that motivates it:
    - **Coverage gaps** — operators/expressions/types a query needs that we do not yet
      accelerate (non-windowed GROUP BY, regular joins, and append-only Top-N now route via the
-     changelog operators; remaining tails — outer joins, rank-number Top-N — and `CAST`/functions
-     from [ticket 19]). These prioritize the operator backlog by Nexmark impact.
+     changelog operators; remaining tails — outer joins, rank-number Top-N — and the `CAST`/function
+     tail in `docs/coverage-and-fallbacks.md` §3). These prioritize the operator backlog by Nexmark impact.
    - **Perf hotspots** — queries that route natively but trail Flink, pointing at the
      hot path to profile next (feeds [ticket 20](20-profiling-and-benchmarks.md): e.g.
      per-row `GroupKey` allocation, the row↔Arrow transpose).

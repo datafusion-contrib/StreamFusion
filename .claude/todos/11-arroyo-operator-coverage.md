@@ -69,7 +69,8 @@ is picked up. Operators are in `~/data/arroyo/crates/arroyo-worker/src/arrow/`.
 ## Stateless
 - [x] Filter + projection routed from SQL via the native expression engine — the
       planner's `Calc` node (optional filter + projections) and a broad function set
-      (ticket 19 / divergences/07). Remaining: narrowing/`CAST` and obscure functions.
+      (see `docs/coverage-and-fallbacks.md` §3 / divergences/07). Remaining tail:
+      number↔string `CAST` and obscure functions.
 
 ## Connectors (later)
 - [x] Parquet source + sink (local `file:`), exactly-once sink.
