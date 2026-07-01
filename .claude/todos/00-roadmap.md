@@ -131,10 +131,13 @@ here when the ticket is deleted.
   `open()`, deregister at `close()`). The same upcall now also carries `REGEXP_EXTRACT` and `UPPER`/`LOWER`
   by default (host-exact regex/case folding), so q21 accelerates with no flag; these builtins hit the same
   distributed-registry limitation until ticket 38 lands.
-- **Nexmark q6 / q13 — documented exclusions** (ticket 39): every Flink-runnable Nexmark query now
-  accelerates fully and by default. q6 (`OVER` can't consume the retractions its winning-bid Top-N emits —
-  Flink SQL can't run it) and q13 (processing-time lookup join to a bounded side input — async external
-  I/O, outside the columnar island) stay out for reasons that aren't StreamFusion's to fix. Not planned.
+- **Nexmark q6 / q13 — documented exclusions** (ticket 39): every Flink 2.2.1-runnable Nexmark query now
+  accelerates fully and by default. q6 does not run in Flink SQL (invalid as written; wrapped, Flink
+  rejects the bounded `OVER` over the Top-N's non-time-attribute `dateTime` — note FLINK-19059, the
+  retraction limit the nexmark README cites, is fixed in 2.1.0, so that specific barrier is gone). q13
+  runs in Flink as an async processing-time lookup join (`StreamPhysicalLookupJoin`) — external I/O, not
+  columnar compute, so StreamFusion leaves it on Flink (native temporal join covers event-time
+  versioned-table joins only). Neither is StreamFusion's to fix; reasons re-verified 2026-07-01.
 - **Disaggregated state store** (ticket 37): move operator state off-heap to a remote/tiered store
   (likely Fluss's PK-table KV) with a local working-set cache — decoupling state size from worker RAM
   and enabling incremental checkpoints + lazy rescale (Flink 2.0 ForSt / RisingWave Hummock direction).

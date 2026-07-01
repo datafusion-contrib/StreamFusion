@@ -383,13 +383,17 @@ and no flags (the explain diagnostic `NexmarkExplainTest` enumerates them) — i
   references the reserved identifier `dateTime` bare; the quoted form (as the DDL declares it) parses and
   accelerates identically.
 
-Two queries stay outside the runnable set for reasons that are not StreamFusion's to fix. **q6**
-(`AVG(…) OVER (ROWS BETWEEN 10 PRECEDING …)` over a retracting Top-1) cannot run in Flink SQL at all —
-its `OVER` window can't consume the retractions the winning-bid Top-N emits — so there is no host plan to
-mirror and no host output to verify against; StreamFusion accelerates Flink's plan, it does not invent
-semantics Flink lacks. **q13** is a processing-time temporal/lookup join (`FOR SYSTEM_TIME AS OF`) to a
-bounded side input — an async external-I/O operator, outside the columnar-streaming island (the same
-reason a Kafka source's I/O is Flink's, not the native engine's). Both are tracked in
+Two queries stay outside for reasons that are not StreamFusion's to fix (re-verified on Flink 2.2.1).
+**q6** (`AVG(…) OVER (ROWS BETWEEN 10 PRECEDING …)` over a retracting winning-bid Top-1) does not run in
+Flink SQL: the nexmark file is invalid as written (`WHERE rownum` can't see the same-level `ROW_NUMBER`
+alias), and even wrapped correctly Flink rejects it with *"Non-time attribute sort is not supported for
+bounded OVER window"* — the Top-N strips `dateTime`'s time-attribute property that a `ROWS` frame needs.
+(FLINK-19059, the retraction limit the nexmark README pins q6 on, is fixed in Flink 2.1.0 — that barrier
+is gone; a different one remains.) With no host plan there is nothing to override or parity-check. **q13**
+does run in Flink (✅) as a processing-time lookup join (`StreamPhysicalLookupJoin`, async
+`LookupJoinRunner`) to a bounded side input; StreamFusion leaves it on Flink because a lookup join is
+async external I/O, not columnar compute — the native temporal-join operator covers only event-time
+versioned-table joins. Both are analyzed in
 [.claude/todos/39-nexmark-q6-q13-exclusions.md](.claude/todos/39-nexmark-q6-q13-exclusions.md).
 
 **Non-builtin UDFs** run natively too: a Flink `ScalarFunction` the expression engine can't implement
