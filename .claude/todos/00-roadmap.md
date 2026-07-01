@@ -124,6 +124,11 @@ here when the ticket is deleted.
   fourth source in the Nexmark matrix; its columnar format may let the native island ingest Arrow with
   little/no row transpose — the perimeter transpose is a visible share of the remaining stateful-query
   cost, so Fluss is the source most likely to show the engine's largest end-to-end margin.
+- **Serialize native UDFs for distributed execution** (ticket 38): non-builtin Flink `ScalarFunction`s
+  now run natively via a native→JVM columnar Arrow upcall (`NativeUdf`/`JvmUdf`), but the function lives in
+  a process-global plan-time registry — local/embedded/benchmark JVM only. Distributed task managers need
+  the function serialized into the operator (thread it through the `Calc` rel/exec/operator, register at
+  `open()`, deregister at `close()`).
 - **Disaggregated state store** (ticket 37): move operator state off-heap to a remote/tiered store
   (likely Fluss's PK-table KV) with a local working-set cache — decoupling state size from worker RAM
   and enabling incremental checkpoints + lazy rescale (Flink 2.0 ForSt / RisingWave Hummock direction).
