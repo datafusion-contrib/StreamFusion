@@ -35,6 +35,7 @@ public class NativeColumnarTemporalSortOperator extends AbstractStreamOperator<A
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient ManagedMemoryBudget memoryBudget;
 
   public NativeColumnarTemporalSortOperator(int rowtimeColumn) {
     this.rowtimeColumn = rowtimeColumn;
@@ -54,10 +55,11 @@ public class NativeColumnarTemporalSortOperator extends AbstractStreamOperator<A
     for (byte[] entry : handleState.get()) {
       snapshot = entry;
     }
+    memoryBudget = ManagedMemoryBudget.reserveFor(this);
     handle =
         snapshot == null
-            ? Native.createTemporalSorter(rowtimeColumn)
-            : Native.restoreTemporalSorter(rowtimeColumn, snapshot);
+            ? Native.createTemporalSorter(rowtimeColumn, memoryBudget.bytes())
+            : Native.restoreTemporalSorter(rowtimeColumn, snapshot, memoryBudget.bytes());
   }
 
   @Override
@@ -111,6 +113,10 @@ public class NativeColumnarTemporalSortOperator extends AbstractStreamOperator<A
     if (handle != 0) {
       Native.closeTemporalSorter(handle);
       handle = 0;
+    }
+    if (memoryBudget != null) {
+      memoryBudget.close();
+      memoryBudget = null;
     }
     super.close();
   }

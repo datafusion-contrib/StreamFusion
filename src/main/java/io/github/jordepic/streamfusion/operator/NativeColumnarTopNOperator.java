@@ -38,6 +38,7 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient ManagedMemoryBudget memoryBudget;
 
   public NativeColumnarTopNOperator(
       int[] partitionColumns,
@@ -72,6 +73,7 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
     for (byte[] entry : handleState.get()) {
       snapshot = entry;
     }
+    memoryBudget = ManagedMemoryBudget.reserveFor(this);
     handle =
         snapshot == null
             ? Native.createTopNRanker(
@@ -82,7 +84,8 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
                 offset,
                 limit,
                 outputRankNumber,
-                retracting)
+                retracting,
+                memoryBudget.bytes())
             : Native.restoreTopNRanker(
                 partitionColumns,
                 sortIndices,
@@ -92,7 +95,8 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
                 limit,
                 outputRankNumber,
                 retracting,
-                snapshot);
+                snapshot,
+                memoryBudget.bytes());
   }
 
   @Override
@@ -142,6 +146,10 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
     if (handle != 0) {
       Native.closeTopNRanker(handle);
       handle = 0;
+    }
+    if (memoryBudget != null) {
+      memoryBudget.close();
+      memoryBudget = null;
     }
     super.close();
   }

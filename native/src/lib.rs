@@ -966,17 +966,14 @@ struct TumblingAggregator {
     // The highest watermark flushed so far; a row whose window ends at or before it is late (its
     // window already closed) and is dropped, matching the host's per-row late-data handling.
     current_watermark: i64,
-    // Managed-memory accounting: the estimated heap footprint of the open windows, tracked
-    // incrementally (per touched group, not by rescanning all state) and resized against the
-    // reservation after every state change. `None` when the host gave no budget — the accounting
-    // branch then costs one predicted-false test per group.
-    memory: Option<MemoryReservation>,
-    state_bytes: usize,
+    // Managed-memory accounting: open-window footprint tracked per touched group (not by
+    // rescanning all state) and resized against the reservation after every state change.
+    memory: OperatorMemory,
 }
 
-/// Estimated heap footprint of one (window, key) group entry beyond its key and accumulators: the
-/// hash-map entry and the accumulator `Vec`'s spine. An estimate, as DataFusion's own operators
-/// estimate — accounting bounds state honestly without bit-exact malloc introspection.
+/// Estimated heap footprint of one state entry (a group, session, buffered row, …) beyond its key
+/// and payload: the map/set entry and a small container spine. An estimate, as DataFusion's own
+/// operators estimate — accounting bounds state honestly without bit-exact malloc introspection.
 const GROUP_ENTRY_OVERHEAD: usize = 64;
 
 /// Estimated heap footprint of a composite group key (the map-entry overhead is counted once in
@@ -988,6 +985,89 @@ fn group_key_bytes(key: &GroupKey) -> usize {
 /// Estimated heap footprint of one group's accumulators.
 fn accumulators_bytes(accumulators: &[Box<dyn Accumulator>]) -> usize {
     accumulators.iter().map(|a| a.size()).sum()
+}
+
+/// Managed-memory accounting for one native operator handle: a reservation against a bounded pool
+/// sized by the budget the host reserved for the operator, plus the incrementally tracked estimate
+/// of the state's heap footprint. Unaccounted (no budget) it is inert — the tracking branches cost
+/// one predicted-false test per touch. `account()` resizes the reservation to the tracked bytes; a
+/// denial is the budget-exceeded signal, surfaced to the host as a clear failure instead of the
+/// container OOM-killing the process (these operators have no runtime spill to fall back to).
+struct OperatorMemory {
+    reservation: Option<MemoryReservation>,
+    state_bytes: usize,
+}
+
+impl OperatorMemory {
+    fn unaccounted() -> Self {
+        OperatorMemory { reservation: None, state_bytes: 0 }
+    }
+
+    /// Attaches a budget (negative = unaccounted), accounting `current_state_bytes` immediately —
+    /// the restore path, where state rebuilt from a snapshot must fit the budget up front.
+    fn attach(
+        &mut self,
+        consumer: &str,
+        budget_bytes: i64,
+        current_state_bytes: usize,
+    ) -> Result<(), DataFusionError> {
+        if budget_bytes < 0 {
+            return Ok(());
+        }
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(budget_bytes as usize));
+        self.attach_pool(consumer, &pool, current_state_bytes)
+    }
+
+    /// [`attach`](Self::attach) against a caller-owned pool (shared in tests to observe the pool's
+    /// balance from outside).
+    fn attach_pool(
+        &mut self,
+        consumer: &str,
+        pool: &Arc<dyn MemoryPool>,
+        current_state_bytes: usize,
+    ) -> Result<(), DataFusionError> {
+        self.reservation = Some(MemoryConsumer::new(consumer.to_string()).register(pool));
+        self.state_bytes = current_state_bytes;
+        self.account()
+    }
+
+    /// Whether a budget is attached — gate for any per-touch measurement work.
+    fn tracking(&self) -> bool {
+        self.reservation.is_some()
+    }
+
+    /// Folds a touched entry's footprint change into the tracked total.
+    fn record(&mut self, delta: isize) {
+        self.state_bytes = self.state_bytes.saturating_add_signed(delta);
+    }
+
+    /// Removes a dropped entry's footprint (an eviction or flush).
+    fn forget(&mut self, bytes: usize) {
+        self.state_bytes = self.state_bytes.saturating_sub(bytes);
+    }
+
+    /// Replaces the tracked total — for mutation paths that rebuild whole containers (an eviction
+    /// that reslices buffered batches) where recomputing is cheaper than delta bookkeeping.
+    fn set(&mut self, bytes: usize) {
+        self.state_bytes = bytes;
+    }
+
+    fn account(&mut self) -> Result<(), DataFusionError> {
+        let Some(reservation) = &mut self.reservation else {
+            return Ok(());
+        };
+        reservation.try_resize(self.state_bytes).map_err(|e| {
+            DataFusionError::ResourcesExhausted(format!(
+                "native operator state exceeded its managed-memory budget; raise \
+                 taskmanager.memory.managed.size or the operator's managed-memory weight ({e})"
+            ))
+        })
+    }
+
+    /// `account()` on a path where the tracked size can only have shrunk.
+    fn account_shrink(&mut self) {
+        self.account().expect("shrinking a reservation cannot fail");
+    }
 }
 
 impl TumblingAggregator {
@@ -1006,8 +1086,7 @@ impl TumblingAggregator {
             windows: BTreeMap::new(),
             key_types: Vec::new(),
             current_watermark: i64::MIN,
-            memory: None,
-            state_bytes: 0,
+            memory: OperatorMemory::unaccounted(),
         }
     }
 
@@ -1015,20 +1094,15 @@ impl TumblingAggregator {
     /// (a negative budget means unaccounted). Registers a reservation against a pool of that size and
     /// accounts any state already present (the restore path), so a restored snapshot that no longer
     /// fits fails here rather than as a container OOM.
-    fn with_memory_budget(self, budget_bytes: i64) -> Result<Self, DataFusionError> {
-        if budget_bytes < 0 {
-            return Ok(self);
-        }
-        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(budget_bytes as usize));
-        self.with_memory_pool(&pool)
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        self.memory.attach("window-aggregate", budget_bytes, self.computed_state_bytes())?;
+        Ok(self)
     }
 
     /// [`with_memory_budget`](Self::with_memory_budget) against a caller-owned pool (shared in tests
     /// to observe the pool's balance from outside).
     fn with_memory_pool(mut self, pool: &Arc<dyn MemoryPool>) -> Result<Self, DataFusionError> {
-        self.memory = Some(MemoryConsumer::new("window-aggregate").register(pool));
-        self.state_bytes = self.computed_state_bytes();
-        self.account()?;
+        self.memory.attach_pool("window-aggregate", pool, self.computed_state_bytes())?;
         Ok(self)
     }
 
@@ -1048,27 +1122,10 @@ impl TumblingAggregator {
             .sum()
     }
 
-    /// Resizes the reservation to the tracked footprint. A denial is the budget-exceeded signal —
-    /// surfaced as a clear failure the host can report, instead of the container OOM-killing the
-    /// process (this operator has no runtime spill to fall back to).
-    fn account(&mut self) -> Result<(), DataFusionError> {
-        let Some(reservation) = &mut self.memory else {
-            return Ok(());
-        };
-        reservation.try_resize(self.state_bytes).map_err(|e| {
-            DataFusionError::ResourcesExhausted(format!(
-                "native window state exceeded the operator's managed-memory budget; raise \
-                 taskmanager.memory.managed.size or the operator's managed-memory weight ({e})"
-            ))
-        })
-    }
-
     /// Removes a dropped group's footprint from the tracked state size (a flush closing its window).
     fn forget_group_bytes(&mut self, key: &GroupKey, accumulators: &[Box<dyn Accumulator>]) {
-        if self.memory.is_some() {
-            self.state_bytes = self
-                .state_bytes
-                .saturating_sub(group_key_bytes(key) + accumulators_bytes(accumulators));
+        if self.memory.tracking() {
+            self.memory.forget(group_key_bytes(key) + accumulators_bytes(accumulators));
         }
     }
 
@@ -1167,7 +1224,7 @@ impl TumblingAggregator {
         grouped: ahash::HashMap<(i64, i64, GroupKey), Vec<u32>>,
         values: &[&ArrayRef],
     ) -> Result<(), DataFusionError> {
-        let track = self.memory.is_some();
+        let track = self.memory.tracking();
         for ((start, end, key), rows) in grouped {
             let indices = UInt32Array::from(rows);
             let columns: Vec<ArrayRef> =
@@ -1185,10 +1242,10 @@ impl TumblingAggregator {
             }
             if track {
                 delta += accumulators_bytes(accumulators) as isize;
-                self.state_bytes = self.state_bytes.saturating_add_signed(delta);
+                self.memory.record(delta);
             }
         }
-        self.account()
+        self.memory.account()
     }
 
     /// Finalizes and removes closed windows, emitting
@@ -1218,7 +1275,7 @@ impl TumblingAggregator {
                 }
             }
         }
-        self.account().expect("shrinking a reservation cannot fail");
+        self.memory.account_shrink();
 
         let mut fields = key_fields(&self.key_types);
         let mut columns = key_columns(&keys, &self.key_types);
@@ -1257,7 +1314,7 @@ impl TumblingAggregator {
                 }
             }
         }
-        self.account().expect("shrinking a reservation cannot fail");
+        self.memory.account_shrink();
 
         let mut fields = key_fields(&self.key_types);
         let mut columns = key_columns(&keys, &self.key_types);
@@ -1284,7 +1341,7 @@ impl TumblingAggregator {
         let partials: Vec<&ArrayRef> =
             (0..n).map(|i| batch.column_by_name(&format!("partial{i}")).expect("partial")).collect();
 
-        let track = self.memory.is_some();
+        let track = self.memory.tracking();
         for row in 0..batch.num_rows() {
             let slice_end = slice_ends.value(row);
             let key = read_key(&key_arrays, row);
@@ -1304,11 +1361,11 @@ impl TumblingAggregator {
                 }
                 if track {
                     delta += accumulators_bytes(accumulators) as isize;
-                    self.state_bytes = self.state_bytes.saturating_add_signed(delta);
+                    self.memory.record(delta);
                 }
             }
         }
-        self.account()
+        self.memory.account()
     }
 
     /// The `(start, end)` windows a slice ending at `slice_end` belongs to in the global merge.
@@ -1813,6 +1870,10 @@ struct OverAggregator {
     value_types: Vec<DataType>,
     keys: HashMap<GroupKey, Vec<RunningAgg>>,
     key_types: Vec<DataType>,
+    // Managed-memory accounting (driven by the owning OVER operator): per-key state is fixed-size,
+    // so the tracked bytes move only when a key is created.
+    track: bool,
+    bytes: usize,
 }
 
 impl OverAggregator {
@@ -1822,7 +1883,18 @@ impl OverAggregator {
             kinds,
             keys: HashMap::new(),
             key_types: Vec::new(),
+            track: false,
+            bytes: 0,
         }
+    }
+
+    /// One key's fixed state footprint (the running aggregates plus the map entry).
+    fn key_state_bytes(&self, key: &GroupKey) -> usize {
+        group_key_bytes(key) + self.kinds.len() * std::mem::size_of::<RunningAgg>()
+    }
+
+    fn recompute_bytes(&mut self) {
+        self.bytes = self.keys.keys().map(|key| self.key_state_bytes(key)).sum();
     }
 
     /// The running aggregate state for a key, created on first touch.
@@ -1863,11 +1935,15 @@ impl OverAggregator {
             // key share the post-fold value); a null value is skipped, but the key's state is touched
             // so the row still emits the running value.
             for &row in &order[start..end] {
+                let keys_before = self.keys.len();
                 let states = self.states(row_keys[row].clone());
                 for (a, state) in states.iter_mut().enumerate() {
                     if let Some(num) = value_columns[a].at(row) {
                         state.fold(num);
                     }
+                }
+                if self.track && self.keys.len() > keys_before {
+                    self.bytes += self.key_state_bytes(&row_keys[row]);
                 }
             }
             for &row in &order[start..end] {
@@ -1966,6 +2042,9 @@ struct BoundedOverAggregator {
     /// Per key, the buffered rows sorted ascending by rowtime (stable for ties).
     keys: HashMap<GroupKey, Vec<BufferedRow>>,
     key_types: Vec<DataType>,
+    // Managed-memory accounting: buffered rows are fixed-size, tracked on append and eviction.
+    track: bool,
+    bytes: usize,
 }
 
 impl BoundedOverAggregator {
@@ -1977,7 +2056,24 @@ impl BoundedOverAggregator {
             offset,
             keys: HashMap::new(),
             key_types: Vec::new(),
+            track: false,
+            bytes: 0,
         }
+    }
+
+    /// One buffered row's fixed footprint (its rowtime and per-aggregate values).
+    fn row_bytes(&self) -> usize {
+        std::mem::size_of::<BufferedRow>()
+            + self.kinds.len() * std::mem::size_of::<Option<Num>>()
+    }
+
+    fn recompute_bytes(&mut self) {
+        let row = self.row_bytes();
+        self.bytes = self
+            .keys
+            .iter()
+            .map(|(key, buffer)| group_key_bytes(key) + buffer.len() * row)
+            .sum();
     }
 
     /// Folds the batch (`rt` i64, `value0..`, optional `key0..`) into the per-key buffer and returns
@@ -2008,9 +2104,16 @@ impl BoundedOverAggregator {
             let row_rt = rt.value(row);
             max_rt = max_rt.max(row_rt);
             let values: Vec<Option<Num>> = value_columns.iter().map(|c| c.at(row)).collect();
+            let keys_before = self.keys.len();
             let buffer = self.keys.entry(row_keys[row].clone()).or_default();
             buffer.push(BufferedRow { rt: row_rt, values });
             buffer_index[row] = buffer.len() - 1;
+            if self.track {
+                self.bytes += self.row_bytes();
+                if self.keys.len() > keys_before {
+                    self.bytes += group_key_bytes(&row_keys[row]);
+                }
+            }
         }
 
         let mut results: Vec<Vec<ScalarValue>> = vec![vec![ScalarValue::Null; n]; num_agg];
@@ -2060,21 +2163,33 @@ impl BoundedOverAggregator {
     /// frame can reach back). Empty partitions are removed to bound memory.
     fn evict(&mut self, max_rt: i64) {
         let (rows_frame, offset) = (self.rows_frame, self.offset);
-        self.keys.retain(|_, buffer| {
-            if rows_frame {
+        let (track, row_bytes) = (self.track, self.row_bytes());
+        let mut freed = 0usize;
+        self.keys.retain(|key, buffer| {
+            let dropped = if rows_frame {
                 let keep = offset as usize;
-                if buffer.len() > keep {
-                    buffer.drain(0..buffer.len() - keep);
+                let dropped = buffer.len().saturating_sub(keep);
+                if dropped > 0 {
+                    buffer.drain(0..dropped);
                 }
+                dropped
             } else {
                 let bound = max_rt - offset;
                 let cut = buffer.partition_point(|r| r.rt < bound);
                 if cut > 0 {
                     buffer.drain(0..cut);
                 }
+                cut
+            };
+            if track {
+                freed += dropped * row_bytes;
+                if buffer.is_empty() {
+                    freed += group_key_bytes(key);
+                }
             }
             !buffer.is_empty()
         });
+        self.bytes = self.bytes.saturating_sub(freed);
     }
 
     /// Serializes the per-key buffer (`[key0.., rt, value0..]`, one row per buffered row, one value
@@ -2441,6 +2556,33 @@ struct GroupAggregator {
     keys: ahash::HashMap<OwnedRow, GroupKeyState>,
     key_converter: Option<RowConverter>,
     key_types: Vec<DataType>,
+    memory: OperatorMemory,
+}
+
+/// Estimated per-entry footprint of a MIN/MAX or DISTINCT multiset node (key enum + count + node
+/// overhead). String contents are under-counted by design: measuring them would make the per-row
+/// state measurement O(multiset), and the estimate only has to bound growth, not audit it.
+const MULTISET_ENTRY_BYTES: usize = 64;
+
+/// O(1) estimated footprint of one aggregate's per-key state (multisets counted by `len`).
+fn group_agg_state_bytes(state: &GroupAggState) -> usize {
+    let inner = match state {
+        GroupAggState::Running { .. } => 0,
+        GroupAggState::Extremes { counts, .. } => counts.len() * MULTISET_ENTRY_BYTES,
+        GroupAggState::Distinct(counts) => counts.len() * MULTISET_ENTRY_BYTES,
+    };
+    std::mem::size_of::<GroupAggState>() + inner
+}
+
+/// Estimated footprint of one group's full state (all aggregates plus the record counter).
+fn group_key_state_bytes(state: &GroupKeyState) -> usize {
+    state.aggs.iter().map(group_agg_state_bytes).sum::<usize>()
+        + std::mem::size_of::<GroupKeyState>()
+}
+
+/// Estimated footprint of an arrow-row byte key plus its map entry.
+fn owned_row_bytes(row: &OwnedRow) -> usize {
+    row.row().as_ref().len() + GROUP_ENTRY_OVERHEAD
 }
 
 /// An arrow-row codec over a set of key columns (memcomparable; used to key group/distinct state by
@@ -2515,7 +2657,20 @@ impl GroupAggregator {
             key_converter: None,
             key_types: Vec::new(),
             filter_columns,
+            memory: OperatorMemory::unaccounted(),
         }
+    }
+
+    /// Bounds this aggregator's state by the operator's managed-memory budget (negative =
+    /// unaccounted), accounting any restored groups immediately.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        let state: usize = self
+            .keys
+            .iter()
+            .map(|(key, state)| owned_row_bytes(key) + group_key_state_bytes(state))
+            .sum();
+        self.memory.attach("group-aggregate", budget_bytes, state)?;
+        Ok(self)
     }
 
     /// Sets the per-aggregate FILTER columns (-1 = unfiltered). A builder so the many existing
@@ -2544,7 +2699,7 @@ impl GroupAggregator {
 
     /// Folds the batch's rows into per-key state in input order, honoring each row's `RowKind`, and
     /// returns the changelog rows produced, in emission order.
-    fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
+    fn update(&mut self, batch: &RecordBatch) -> Result<RecordBatch, DataFusionError> {
         let n = batch.num_rows();
         let num_agg = self.kinds.len();
         // `None` is a COUNT(*) aggregate (no argument column): it counts every row. A present column
@@ -2631,12 +2786,18 @@ impl GroupAggregator {
             out_kinds.push(kind);
         };
 
+        let track = self.memory.tracking();
         for row in 0..n {
             let key = keys_encoded.row(row).owned();
             // RowKind: 0 +I, 1 -U, 2 +U, 3 -D (absent column ⇒ INSERT). UB/delete retract; I/UA add.
             let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
             let retract = kind == 1 || kind == 3;
             let exists = self.keys.contains_key(&key);
+            let before = if track && exists {
+                group_key_state_bytes(self.keys.get(&key).expect("key present")) as isize
+            } else {
+                0
+            };
             if !exists && retract {
                 continue; // no accumulator for a key's first message being a retraction (host skips it)
             }
@@ -2726,8 +2887,22 @@ impl GroupAggregator {
                 push(3, &key, &prev.expect("a retraction implies the key existed")); // -D
                 self.keys.remove(&key);
             }
+            if track {
+                // The touched group's footprint change, plus its key when created or deleted.
+                let mut delta = -before;
+                if let Some(state) = self.keys.get(&key) {
+                    delta += group_key_state_bytes(state) as isize;
+                    if !exists {
+                        delta += owned_row_bytes(&key) as isize;
+                    }
+                } else if exists {
+                    delta -= owned_row_bytes(&key) as isize;
+                }
+                self.memory.record(delta);
+            }
         }
         drop(push);
+        self.memory.account()?;
 
         let mut fields = key_fields(&self.key_types);
         let mut columns = decode_keys(self.key_converter.as_ref(), &out_keys, &self.key_types);
@@ -2737,8 +2912,8 @@ impl GroupAggregator {
         }
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
         columns.push(Arc::new(Int8Array::from(out_kinds)));
-        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build group-by changelog batch")
+        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build group-by changelog batch"))
     }
 
     /// Serializes per-key state. A main batch carries `[key0.., records, state{i}, nonnull{i}…]` (the
@@ -3119,11 +3294,29 @@ struct WindowFunctionOver {
     kinds: Vec<i64>,
     keys: HashMap<GroupKey, Vec<WindowFnState>>,
     key_types: Vec<DataType>,
+    // Managed-memory accounting (see OverAggregator): fixed per-key state, tracked on key creation.
+    track: bool,
+    bytes: usize,
 }
 
 impl WindowFunctionOver {
     fn new(kinds: Vec<i64>) -> Self {
-        WindowFunctionOver { kinds, keys: HashMap::new(), key_types: Vec::new() }
+        WindowFunctionOver {
+            kinds,
+            keys: HashMap::new(),
+            key_types: Vec::new(),
+            track: false,
+            bytes: 0,
+        }
+    }
+
+    /// One key's fixed state footprint (the window-function states plus the map entry).
+    fn key_state_bytes(&self, key: &GroupKey) -> usize {
+        group_key_bytes(key) + self.kinds.len() * std::mem::size_of::<WindowFnState>()
+    }
+
+    fn recompute_bytes(&mut self) {
+        self.bytes = self.keys.keys().map(|key| self.key_state_bytes(key)).sum();
     }
 
     fn states(&mut self, key: GroupKey) -> &mut Vec<WindowFnState> {
@@ -3145,8 +3338,12 @@ impl WindowFunctionOver {
         order.sort_by_key(|&row| rt.value(row));
         let mut results: Vec<Vec<ScalarValue>> = vec![vec![ScalarValue::Null; n]; num];
         for &row in &order {
+            let keys_before = self.keys.len();
             for (i, state) in self.states(row_keys[row].clone()).iter_mut().enumerate() {
                 results[i][row] = state.next(rt.value(row));
+            }
+            if self.track && self.keys.len() > keys_before {
+                self.bytes += self.key_state_bytes(&row_keys[row]);
             }
         }
         let mut fields = Vec::with_capacity(num);
@@ -3256,6 +3453,33 @@ impl OverInner {
         }
     }
 
+    /// Turns on state tracking and computes the current footprint (the restore path scans once).
+    fn start_tracking(&mut self) {
+        match self {
+            OverInner::Aggregates(inner) => {
+                inner.track = true;
+                inner.recompute_bytes();
+            }
+            OverInner::Bounded(inner) => {
+                inner.track = true;
+                inner.recompute_bytes();
+            }
+            OverInner::WindowFunctions(inner) => {
+                inner.track = true;
+                inner.recompute_bytes();
+            }
+        }
+    }
+
+    /// The tracked per-key state footprint (zero until tracking starts).
+    fn state_bytes(&self) -> usize {
+        match self {
+            OverInner::Aggregates(inner) => inner.bytes,
+            OverInner::Bounded(inner) => inner.bytes,
+            OverInner::WindowFunctions(inner) => inner.bytes,
+        }
+    }
+
     fn restore(value_types: Vec<i64>, kinds: Vec<i64>, frame_kind: i64, frame_offset: i64, bytes: &[u8]) -> Self {
         if kinds.iter().all(|&k| is_window_function_kind(k)) {
             OverInner::WindowFunctions(WindowFunctionOver::restore(kinds, bytes))
@@ -3292,6 +3516,7 @@ struct OverWindowAggregator {
     /// existing rowtime fold/frames apply unchanged; `next_seq` is the running counter.
     proctime: bool,
     next_seq: i64,
+    memory: OperatorMemory,
 }
 
 impl OverWindowAggregator {
@@ -3314,12 +3539,37 @@ impl OverWindowAggregator {
             input_schema: None,
             proctime,
             next_seq: 0,
+            memory: OperatorMemory::unaccounted(),
         }
     }
 
-    fn push(&mut self, batch: RecordBatch) {
+    /// Bounds this operator's state (buffered batches plus the inner per-key fold state) by the
+    /// operator's managed-memory budget (negative = unaccounted), accounting restored state
+    /// immediately.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        if budget_bytes < 0 {
+            return Ok(self);
+        }
+        self.inner.start_tracking();
+        let state = buffered_batches_bytes(&self.buffered) + self.inner.state_bytes();
+        self.memory.attach("over-aggregate", budget_bytes, state)?;
+        Ok(self)
+    }
+
+    /// Re-accounts after a state change: the buffered batches are recounted (cheap, per batch not
+    /// per row) and the inner fold state reports its tracked bytes.
+    fn account(&mut self) -> Result<(), DataFusionError> {
+        if self.memory.tracking() {
+            self.memory.set(buffered_batches_bytes(&self.buffered) + self.inner.state_bytes());
+            self.memory.account()?;
+        }
+        Ok(())
+    }
+
+    fn push(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
         self.input_schema = Some(batch.schema());
         self.buffered.push(batch);
+        self.account()
     }
 
     /// Proctime OVER: fold the whole batch in arrival order and emit every row immediately (proctime
@@ -3327,12 +3577,13 @@ impl OverWindowAggregator {
     /// ordering key, so the per-key fold and any frame behave exactly as in the rowtime path — the
     /// sequence is distinct and increasing, hence rows fold one at a time in arrival order. The
     /// proctime order column's (non-deterministic) value is never read.
-    fn push_proctime(&mut self, batch: RecordBatch) -> RecordBatch {
+    fn push_proctime(&mut self, batch: RecordBatch) -> Result<RecordBatch, DataFusionError> {
         self.input_schema = Some(batch.schema());
         let n = batch.num_rows();
         let seq: Int64Array = (0..n as i64).map(|i| self.next_seq + i).collect();
         self.next_seq += n as i64;
         let aggregates = self.inner.update(&self.keyed_subbatch(&batch, Arc::new(seq)));
+        self.account()?;
         let mut fields: Vec<Field> =
             batch.schema().fields().iter().map(|f| f.as_ref().clone()).collect();
         let mut columns: Vec<ArrayRef> = batch.columns().to_vec();
@@ -3340,16 +3591,16 @@ impl OverWindowAggregator {
             fields.push(field.as_ref().clone());
             columns.push(aggregates.column(i).clone());
         }
-        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build proctime over output batch")
+        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build proctime over output batch"))
     }
 
     /// Emits the rows the watermark has completed (input columns + running aggregates) and keeps the
     /// rest buffered. Returns an empty batch when nothing is complete.
-    fn flush(&mut self, watermark: i64) -> RecordBatch {
+    fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         let schema = match &self.input_schema {
             Some(schema) => schema.clone(),
-            None => return RecordBatch::new_empty(Arc::new(Schema::empty())),
+            None => return Ok(RecordBatch::new_empty(Arc::new(Schema::empty()))),
         };
         let all = concat_batches(&schema, &self.buffered).expect("failed to concat over buffer");
         let rt_millis = rt_to_millis(all.column(self.rt_column));
@@ -3359,11 +3610,15 @@ impl OverWindowAggregator {
         let pending = filter_record_batch(&all, &pending_mask).expect("failed to filter pending");
         self.buffered = if pending.num_rows() > 0 { vec![pending] } else { Vec::new() };
         if complete.num_rows() == 0 {
-            return RecordBatch::new_empty(Arc::new(Schema::empty()));
+            self.account()?;
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
 
         let rt = Arc::new(rt_to_millis(complete.column(self.rt_column)));
+        // The inner fold grows here (completed rows enter the per-key state), so even a flush can
+        // exceed the budget.
         let aggregates = self.inner.update(&self.keyed_subbatch(&complete, rt));
+        self.account()?;
         let mut fields: Vec<Field> =
             complete.schema().fields().iter().map(|f| f.as_ref().clone()).collect();
         let mut columns: Vec<ArrayRef> = complete.columns().to_vec();
@@ -3371,8 +3626,8 @@ impl OverWindowAggregator {
             fields.push(field.as_ref().clone());
             columns.push(aggregates.column(i).clone());
         }
-        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build over output batch")
+        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build over output batch"))
     }
 
     /// The `[rt(i64), value0.., key0..]` batch the inner per-key fold reads, projected from `source`.
@@ -3450,6 +3705,7 @@ impl OverWindowAggregator {
             input_schema: None,
             proctime,
             next_seq,
+            memory: OperatorMemory::unaccounted(),
         };
         let buffer = &bytes[12 + accumulators_len..];
         if !buffer.is_empty() {
@@ -3475,16 +3731,39 @@ struct TemporalSorter {
     rt_column: usize,
     buffered: Vec<RecordBatch>,
     input_schema: Option<SchemaRef>,
+    memory: OperatorMemory,
+}
+
+/// Total Arrow buffer footprint of a set of buffered batches.
+fn buffered_batches_bytes(batches: &[RecordBatch]) -> usize {
+    batches.iter().map(RecordBatch::get_array_memory_size).sum()
 }
 
 impl TemporalSorter {
     fn new(rt_column: usize) -> Self {
-        TemporalSorter { rt_column, buffered: Vec::new(), input_schema: None }
+        TemporalSorter {
+            rt_column,
+            buffered: Vec::new(),
+            input_schema: None,
+            memory: OperatorMemory::unaccounted(),
+        }
     }
 
-    fn push(&mut self, batch: RecordBatch) {
+    /// Bounds the sort buffer by the operator's managed-memory budget (negative = unaccounted),
+    /// accounting any restored buffer immediately.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        let state = buffered_batches_bytes(&self.buffered);
+        self.memory.attach("temporal-sort", budget_bytes, state)?;
+        Ok(self)
+    }
+
+    fn push(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
         self.input_schema = Some(batch.schema());
+        if self.memory.tracking() {
+            self.memory.record(batch.get_array_memory_size() as isize);
+        }
         self.buffered.push(batch);
+        self.memory.account()
     }
 
     /// Emits the rows the watermark has completed, sorted ascending by rowtime, and keeps the rest
@@ -3502,6 +3781,10 @@ impl TemporalSorter {
         let pending_mask = arrow::compute::not(&complete_mask).expect("failed to negate mask");
         let pending = filter_record_batch(&all, &pending_mask).expect("failed to filter pending");
         self.buffered = if pending.num_rows() > 0 { vec![pending] } else { Vec::new() };
+        if self.memory.tracking() {
+            self.memory.set(buffered_batches_bytes(&self.buffered));
+            self.memory.account_shrink();
+        }
         if complete.num_rows() == 0 {
             return RecordBatch::new_empty(schema);
         }
@@ -3649,7 +3932,11 @@ struct IntervalJoiner {
     right_matched: HashSet<i64>,
     left_next_id: i64,
     right_next_id: i64,
+    memory: OperatorMemory,
 }
+
+/// Estimated footprint of one matched-row-id set entry (an i64 plus the hash-set slot).
+const MATCHED_ID_BYTES: usize = 48;
 
 impl IntervalJoiner {
     #[allow(clippy::too_many_arguments)]
@@ -3682,7 +3969,32 @@ impl IntervalJoiner {
             right_matched: HashSet::new(),
             left_next_id: 0,
             right_next_id: 0,
+            memory: OperatorMemory::unaccounted(),
         }
+    }
+
+    /// Bounds the buffered rows (plus the outer-join match flags) by the operator's managed-memory
+    /// budget (negative = unaccounted), accounting any restored state immediately.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        if budget_bytes >= 0 {
+            self.memory.attach("interval-join", budget_bytes, 0)?;
+            self.account()?;
+        }
+        Ok(self)
+    }
+
+    /// Re-accounts after a state change: the buffered batches are recounted per batch (far cheaper
+    /// than the per-row concat/join work of the same call), the match-flag sets by `len`.
+    fn account(&mut self) -> Result<(), DataFusionError> {
+        if self.memory.tracking() {
+            self.memory.set(
+                buffered_batches_bytes(&self.left_buffered)
+                    + buffered_batches_bytes(&self.right_buffered)
+                    + (self.left_matched.len() + self.right_matched.len()) * MATCHED_ID_BYTES,
+            );
+            self.memory.account()?;
+        }
+        Ok(())
     }
 
     fn key_pairs(&self) -> Vec<(usize, usize)> {
@@ -3703,7 +4015,7 @@ impl IntervalJoiner {
     /// the residual non-equi predicate), then buffers it. Empty until the right side has rows. A
     /// proctime join stamps every row's time with the operator's clock (passed in) before joining, so
     /// the interval is measured in processing time rather than read from a rowtime column.
-    fn push_left(&mut self, batch: RecordBatch, proctime_now: Option<i64>) -> RecordBatch {
+    fn push_left(&mut self, batch: RecordBatch, proctime_now: Option<i64>) -> Result<RecordBatch, DataFusionError> {
         let batch = match proctime_now {
             Some(now) => {
                 let target = self.left_data_schema.field(self.left_time).data_type().clone();
@@ -3727,7 +4039,8 @@ impl IntervalJoiner {
                 hash_join_inner(batch.clone(), right, &self.key_pairs(), filter)
             };
             self.left_buffered.push(batch);
-            return result;
+            self.account()?;
+            return Ok(result);
         }
         // Outer: tag with row-ids, join, record matches on both sides, then buffer the tagged batch.
         let tagged = append_rowids(&batch, &mut self.left_next_id);
@@ -3739,12 +4052,13 @@ impl IntervalJoiner {
             self.join_tagged(tagged.clone(), right, filter)
         };
         self.left_buffered.push(tagged);
-        result
+        self.account()?;
+        Ok(result)
     }
 
     /// Joins an incoming right batch against the buffered left rows, then buffers it. As with {@link
     /// push_left}, a proctime join stamps the row time with the clock before joining.
-    fn push_right(&mut self, batch: RecordBatch, proctime_now: Option<i64>) -> RecordBatch {
+    fn push_right(&mut self, batch: RecordBatch, proctime_now: Option<i64>) -> Result<RecordBatch, DataFusionError> {
         let batch = match proctime_now {
             Some(now) => {
                 let target = self.right_data_schema.field(self.right_time).data_type().clone();
@@ -3768,7 +4082,8 @@ impl IntervalJoiner {
                 hash_join_inner(left, batch.clone(), &self.key_pairs(), filter)
             };
             self.right_buffered.push(batch);
-            return result;
+            self.account()?;
+            return Ok(result);
         }
         let tagged = append_rowids(&batch, &mut self.right_next_id);
         let result = if self.left_buffered.is_empty() {
@@ -3779,7 +4094,8 @@ impl IntervalJoiner {
             self.join_tagged(left, tagged.clone(), filter)
         };
         self.right_buffered.push(tagged);
-        result
+        self.account()?;
+        Ok(result)
     }
 
     /// Runs the (always INNER) hash join of two row-id-tagged operands `[left data.., left __rowid__]`
@@ -3831,10 +4147,12 @@ impl IntervalJoiner {
             Self::evict_inner(&mut self.right_buffered, &self.right_data_schema, self.right_time, |rt| {
                 rt + upper > watermark
             });
+            self.account().expect("eviction only shrinks state");
             return empty_batch();
         }
         let left_pads = self.evict_outer(true, |rt| rt - lower > watermark);
         let right_pads = self.evict_outer(false, |rt| rt + upper > watermark);
+        self.account().expect("eviction only shrinks state");
         match (left_pads, right_pads) {
             (None, None) => empty_batch(),
             (Some(b), None) | (None, Some(b)) => b,
@@ -4270,6 +4588,7 @@ struct WindowJoiner {
     right_schema: Option<SchemaRef>,
     left_buffered: Vec<RecordBatch>,
     right_buffered: Vec<RecordBatch>,
+    memory: OperatorMemory,
 }
 
 impl WindowJoiner {
@@ -4301,17 +4620,42 @@ impl WindowJoiner {
             right_schema: None,
             left_buffered: Vec::new(),
             right_buffered: Vec::new(),
+            memory: OperatorMemory::unaccounted(),
         }
     }
 
-    fn push_left(&mut self, batch: RecordBatch) {
-        self.left_schema = Some(batch.schema());
-        self.left_buffered.push(batch);
+    /// Bounds the buffered rows by the operator's managed-memory budget (negative = unaccounted),
+    /// accounting any restored buffers immediately.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        if budget_bytes >= 0 {
+            self.memory.attach("window-join", budget_bytes, 0)?;
+            self.account()?;
+        }
+        Ok(self)
     }
 
-    fn push_right(&mut self, batch: RecordBatch) {
+    /// Re-accounts the buffered batches (recounted per batch, not per row).
+    fn account(&mut self) -> Result<(), DataFusionError> {
+        if self.memory.tracking() {
+            self.memory.set(
+                buffered_batches_bytes(&self.left_buffered)
+                    + buffered_batches_bytes(&self.right_buffered),
+            );
+            self.memory.account()?;
+        }
+        Ok(())
+    }
+
+    fn push_left(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
+        self.left_schema = Some(batch.schema());
+        self.left_buffered.push(batch);
+        self.account()
+    }
+
+    fn push_right(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
         self.right_schema = Some(batch.schema());
         self.right_buffered.push(batch);
+        self.account()
     }
 
     /// Splits a side's buffer into the rows whose window has closed (`window_end <= watermark`,
@@ -4344,6 +4688,7 @@ impl WindowJoiner {
         let left = Self::split_closed(&mut self.left_buffered, &self.left_schema, self.left_wend, watermark);
         let right =
             Self::split_closed(&mut self.right_buffered, &self.right_schema, self.right_wend, watermark);
+        self.account().expect("closing windows only shrinks the buffers");
         // Join on the user keys plus the window bounds, so only rows of the same window match.
         let mut on: Vec<(usize, usize)> =
             self.left_keys.iter().zip(&self.right_keys).map(|(&l, &r)| (l, r)).collect();
@@ -4664,6 +5009,22 @@ struct UpdatingJoiner {
     right_null: OwnedRow,
     left_state: ahash::HashMap<OwnedRow, ahash::HashMap<OwnedRow, RowMeta>>,
     right_state: ahash::HashMap<OwnedRow, ahash::HashMap<OwnedRow, RowMeta>>,
+    memory: OperatorMemory,
+}
+
+/// Estimated footprint of one stored join row (arrow-row bytes + its appear-count meta + map entry).
+fn join_row_entry_bytes(row: &OwnedRow) -> usize {
+    row.row().as_ref().len() + std::mem::size_of::<RowMeta>() + GROUP_ENTRY_OVERHEAD
+}
+
+/// Estimated footprint of one side of the updating join's state (for the restore-time account).
+fn join_state_bytes(state: &ahash::HashMap<OwnedRow, ahash::HashMap<OwnedRow, RowMeta>>) -> usize {
+    state
+        .iter()
+        .map(|(key, bucket)| {
+            owned_row_bytes(key) + bucket.keys().map(join_row_entry_bytes).sum::<usize>()
+        })
+        .sum()
 }
 
 impl UpdatingJoiner {
@@ -4699,7 +5060,16 @@ impl UpdatingJoiner {
             right_null,
             left_state: ahash::HashMap::default(),
             right_state: ahash::HashMap::default(),
+            memory: OperatorMemory::unaccounted(),
         }
+    }
+
+    /// Bounds both sides' row state by the operator's managed-memory budget (negative =
+    /// unaccounted), accounting any restored rows immediately.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        let state = join_state_bytes(&self.left_state) + join_state_bytes(&self.right_state);
+        self.memory.attach("updating-join", budget_bytes, state)?;
+        Ok(self)
     }
 
     /// The joined `[left fields.., right fields..]` schema (columns named `c0..`) the non-equi
@@ -4782,8 +5152,15 @@ impl UpdatingJoiner {
         key: &OwnedRow,
         row: &OwnedRow,
         num_assoc: i32,
+        track: bool,
+        delta: &mut isize,
     ) {
         let bucket = state.entry(key.clone()).or_default();
+        // An empty bucket was just created (retract_record removes emptied buckets).
+        if track && bucket.is_empty() {
+            *delta += owned_row_bytes(key) as isize;
+        }
+        let rows_before = bucket.len();
         bucket
             .entry(row.clone())
             .and_modify(|m| {
@@ -4791,6 +5168,9 @@ impl UpdatingJoiner {
                 m.num_assoc = num_assoc;
             })
             .or_insert(RowMeta { count: 1, num_assoc });
+        if track && bucket.len() > rows_before {
+            *delta += join_row_entry_bytes(row) as isize;
+        }
     }
 
     /// `state.updateNumOfAssociations(record, num_assoc)` — sets the degree of an existing row.
@@ -4799,12 +5179,21 @@ impl UpdatingJoiner {
         key: &OwnedRow,
         row: &OwnedRow,
         num_assoc: i32,
+        track: bool,
+        delta: &mut isize,
     ) {
         let bucket = state.entry(key.clone()).or_default();
+        if track && bucket.is_empty() {
+            *delta += owned_row_bytes(key) as isize;
+        }
+        let rows_before = bucket.len();
         bucket
             .entry(row.clone())
             .and_modify(|m| m.num_assoc = num_assoc)
             .or_insert(RowMeta { count: 1, num_assoc });
+        if track && bucket.len() > rows_before {
+            *delta += join_row_entry_bytes(row) as isize;
+        }
     }
 
     /// `state.retractRecord(record)` — drops one appear-time, removing the row (and emptied key) at 0.
@@ -4812,22 +5201,30 @@ impl UpdatingJoiner {
         state: &mut ahash::HashMap<OwnedRow, ahash::HashMap<OwnedRow, RowMeta>>,
         key: &OwnedRow,
         row: &OwnedRow,
+        track: bool,
+        delta: &mut isize,
     ) {
         if let Some(bucket) = state.get_mut(key) {
             if let Some(meta) = bucket.get_mut(row) {
                 meta.count -= 1;
                 if meta.count <= 0 {
                     bucket.remove(row);
+                    if track {
+                        *delta -= join_row_entry_bytes(row) as isize;
+                    }
                 }
             }
             if bucket.is_empty() {
                 state.remove(key);
+                if track {
+                    *delta -= owned_row_bytes(key) as isize;
+                }
             }
         }
     }
 
     /// Folds an input batch into its side and emits the join changelog it produces.
-    fn push(&mut self, batch: &RecordBatch, is_left: bool) -> RecordBatch {
+    fn push(&mut self, batch: &RecordBatch, is_left: bool) -> Result<RecordBatch, DataFusionError> {
         let arity = data_arity(batch);
         let key_indices = if is_left { &self.left_keys } else { &self.right_keys };
         let key_arrays: Vec<ArrayRef> = key_indices.iter().map(|&i| batch.column(i).clone()).collect();
@@ -4853,6 +5250,8 @@ impl UpdatingJoiner {
             return self.push_inner(is_left, &keys, &payloads, &key_null, row_kinds);
         }
 
+        let track = self.memory.tracking();
+        let mut delta = 0isize;
         let mut out_left: Vec<OwnedRow> = Vec::new();
         let mut out_right: Vec<OwnedRow> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
@@ -4863,14 +5262,20 @@ impl UpdatingJoiner {
             let key = keys.row(row).owned();
             let full = payloads.row(row).owned();
             if self.kind.is_semi_anti() {
-                self.process_semi_anti(&key, &full, kind, is_left, key_null[row], &mut out_left, &mut out_kinds);
+                self.process_semi_anti(
+                    &key, &full, kind, is_left, key_null[row], &mut out_left, &mut out_kinds, track,
+                    &mut delta,
+                );
             } else {
                 self.process_inner_outer(
-                    &key, &full, kind, is_left, key_null[row], &mut out_left, &mut out_right, &mut out_kinds,
+                    &key, &full, kind, is_left, key_null[row], &mut out_left, &mut out_right,
+                    &mut out_kinds, track, &mut delta,
                 );
             }
         }
-        self.emit(out_left, out_right, out_kinds)
+        self.memory.record(delta);
+        self.memory.account()?;
+        Ok(self.emit(out_left, out_right, out_kinds))
     }
 
     /// Rebuilds the joined changelog batch from the emitted byte rows: one vectorized `convert_rows`
@@ -4909,9 +5314,11 @@ impl UpdatingJoiner {
         payloads: &Rows,
         key_null: &[bool],
         row_kinds: Option<&Int8Array>,
-    ) -> RecordBatch {
+    ) -> Result<RecordBatch, DataFusionError> {
         // Split the two state maps so the input side can be mutated while the probe side is borrowed
         // (INNER never mutates the probe side, so the gathered match rows stay valid for the batch).
+        let track = self.memory.tracking();
+        let mut delta = 0isize;
         let (input_state, other_state) = if is_left {
             (&mut self.left_state, &self.right_state)
         } else {
@@ -4940,18 +5347,28 @@ impl UpdatingJoiner {
             // that avoids add_record's re-clone of both the key and the row (2 allocs/row on the state,
             // the SYS_ALLOC a differential profile flagged vs Flink's reused BinaryRowData).
             if kind == 0 || kind == 2 {
-                input_state
-                    .entry(key)
-                    .or_default()
+                let key_bytes = if track { owned_row_bytes(&key) } else { 0 };
+                let row_bytes = if track { join_row_entry_bytes(&full) } else { 0 };
+                let bucket = input_state.entry(key).or_default();
+                if track && bucket.is_empty() {
+                    delta += key_bytes as isize;
+                }
+                let rows_before = bucket.len();
+                bucket
                     .entry(full)
                     .and_modify(|m| m.count += 1)
                     .or_insert(RowMeta { count: 1, num_assoc: -1 });
+                if track && bucket.len() > rows_before {
+                    delta += row_bytes as isize;
+                }
             } else {
-                Self::retract_record(input_state, &key, &full);
+                Self::retract_record(input_state, &key, &full, track, &mut delta);
             }
         }
+        self.memory.record(delta);
+        self.memory.account()?;
         if cand_input_idx.is_empty() {
-            return RecordBatch::new_empty(Arc::new(Schema::empty()));
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
 
         // Decode the matched other-side rows in one pass (releases the probe-side borrow), then the
@@ -4989,10 +5406,10 @@ impl UpdatingJoiner {
         columns.push(Arc::new(Int8Array::from(cand_kind)));
         let full_batch =
             RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("build inner-join batch");
-        match mask {
+        Ok(match mask {
             Some(mask) => filter_record_batch(&full_batch, &mask).expect("filter inner-join batch"),
             None => full_batch,
-        }
+        })
     }
 
     /// INNER/LEFT/RIGHT/FULL — a faithful port of `StreamingJoinOperator.processElement`. `is_left`
@@ -5008,6 +5425,8 @@ impl UpdatingJoiner {
         out_left: &mut Vec<OwnedRow>,
         out_right: &mut Vec<OwnedRow>,
         out_kinds: &mut Vec<i8>,
+        track: bool,
+        delta: &mut isize,
     ) {
         let accumulate = kind == 0 || kind == 2;
         let input_is_outer = if is_left { self.kind.left_is_outer() } else { self.kind.right_is_outer() };
@@ -5042,7 +5461,7 @@ impl UpdatingJoiner {
                     out_left.push(l);
                     out_right.push(r);
                     out_kinds.push(0); // +I[record+null]
-                    Self::add_record(self.input_state(is_left), key, full, 0);
+                    Self::add_record(self.input_state(is_left), key, full, 0, track, delta);
                 } else {
                     let num = associated.len() as i32;
                     for other in &associated {
@@ -5053,17 +5472,17 @@ impl UpdatingJoiner {
                                 out_right.push(r);
                                 out_kinds.push(3); // -D[null+other]
                             }
-                            Self::update_num_assoc(self.other_state(is_left), key, &other.record, other.num_assoc + 1);
+                            Self::update_num_assoc(self.other_state(is_left), key, &other.record, other.num_assoc + 1, track, delta);
                         }
                         let (l, r) = paired(&other.record);
                         out_left.push(l);
                         out_right.push(r);
                         out_kinds.push(0); // +I[record+other]
                     }
-                    Self::add_record(self.input_state(is_left), key, full, num);
+                    Self::add_record(self.input_state(is_left), key, full, num, track, delta);
                 }
             } else {
-                Self::add_record(self.input_state(is_left), key, full, -1);
+                Self::add_record(self.input_state(is_left), key, full, -1, track, delta);
                 for other in &associated {
                     if other_is_outer {
                         if other.num_assoc == 0 {
@@ -5072,7 +5491,7 @@ impl UpdatingJoiner {
                             out_right.push(r);
                             out_kinds.push(3); // -D[null+other]
                         }
-                        Self::update_num_assoc(self.other_state(is_left), key, &other.record, other.num_assoc + 1);
+                        Self::update_num_assoc(self.other_state(is_left), key, &other.record, other.num_assoc + 1, track, delta);
                         let (l, r) = paired(&other.record);
                         out_left.push(l);
                         out_right.push(r);
@@ -5086,7 +5505,7 @@ impl UpdatingJoiner {
                 }
             }
         } else {
-            Self::retract_record(self.input_state(is_left), key, full);
+            Self::retract_record(self.input_state(is_left), key, full, track, delta);
             if associated.is_empty() {
                 if input_is_outer {
                     let (l, r) = input_padded;
@@ -5107,7 +5526,7 @@ impl UpdatingJoiner {
                             out_right.push(r);
                             out_kinds.push(0); // +I[null+other]
                         }
-                        Self::update_num_assoc(self.other_state(is_left), key, &other.record, other.num_assoc - 1);
+                        Self::update_num_assoc(self.other_state(is_left), key, &other.record, other.num_assoc - 1, track, delta);
                     }
                 }
             }
@@ -5136,6 +5555,8 @@ impl UpdatingJoiner {
         key_has_null: bool,
         out_rows: &mut Vec<OwnedRow>,
         out_kinds: &mut Vec<i8>,
+        track: bool,
+        delta: &mut isize,
     ) {
         let accumulate = kind == 0 || kind == 2;
         let is_anti = self.kind == JoinKind::Anti;
@@ -5151,9 +5572,9 @@ impl UpdatingJoiner {
                 out_kinds.push(kind); // forward input RowKind
             }
             if accumulate {
-                Self::add_record(&mut self.left_state, key, full, associated.len() as i32);
+                Self::add_record(&mut self.left_state, key, full, associated.len() as i32, track, delta);
             } else {
-                Self::retract_record(&mut self.left_state, key, full);
+                Self::retract_record(&mut self.left_state, key, full, track, delta);
             }
         } else {
             // processElement2: a right row flips associated left rows' degree across 0↔1, emitting or
@@ -5162,24 +5583,24 @@ impl UpdatingJoiner {
                 if key_has_null { Vec::new() } else { Self::associated(&self.left_state, key) };
             self.filter_associated(full, false, &mut associated);
             if accumulate {
-                Self::add_record(&mut self.right_state, key, full, -1);
+                Self::add_record(&mut self.right_state, key, full, -1, track, delta);
                 for other in &associated {
                     if other.num_assoc == 0 {
                         // anti: -D[left]; semi: +I/+U[left] (input RowKind)
                         out_rows.push(other.record.clone());
                         out_kinds.push(if is_anti { 3 } else { kind });
                     }
-                    Self::update_num_assoc(&mut self.left_state, key, &other.record, other.num_assoc + 1);
+                    Self::update_num_assoc(&mut self.left_state, key, &other.record, other.num_assoc + 1, track, delta);
                 }
             } else {
-                Self::retract_record(&mut self.right_state, key, full);
+                Self::retract_record(&mut self.right_state, key, full, track, delta);
                 for other in &associated {
                     if other.num_assoc == 1 {
                         // semi: -D/-U[left] (input RowKind); anti: +I[left]
                         out_rows.push(other.record.clone());
                         out_kinds.push(if is_anti { 0 } else { kind });
                     }
-                    Self::update_num_assoc(&mut self.left_state, key, &other.record, other.num_assoc - 1);
+                    Self::update_num_assoc(&mut self.left_state, key, &other.record, other.num_assoc - 1, track, delta);
                 }
             }
         }
@@ -5306,6 +5727,17 @@ struct TemporalJoiner {
     predicate: Option<JoinPredicate>,
     left_state: HashMap<GroupKey, Vec<LeftEntry>>,
     right_state: HashMap<GroupKey, BTreeMap<i64, (JoinRow, i8)>>,
+    memory: OperatorMemory,
+}
+
+/// Estimated footprint of one buffered probe row (its scalars, time, kind, and container entry).
+fn left_entry_bytes(entry: &LeftEntry) -> usize {
+    scalar_row_bytes(&entry.row) + GROUP_ENTRY_OVERHEAD
+}
+
+/// Estimated footprint of one build-side version (its scalars, kind, and tree entry).
+fn right_version_bytes(row: &JoinRow) -> usize {
+    scalar_row_bytes(row) + GROUP_ENTRY_OVERHEAD
 }
 
 impl TemporalJoiner {
@@ -5331,7 +5763,30 @@ impl TemporalJoiner {
             predicate,
             left_state: HashMap::new(),
             right_state: HashMap::new(),
+            memory: OperatorMemory::unaccounted(),
         }
+    }
+
+    /// Bounds both sides' state by the operator's managed-memory budget (negative = unaccounted),
+    /// accounting any restored state immediately.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        let left: usize = self
+            .left_state
+            .iter()
+            .map(|(key, entries)| {
+                group_key_bytes(key) + entries.iter().map(left_entry_bytes).sum::<usize>()
+            })
+            .sum();
+        let right: usize = self
+            .right_state
+            .iter()
+            .map(|(key, versions)| {
+                group_key_bytes(key)
+                    + versions.values().map(|(row, _)| right_version_bytes(row)).sum::<usize>()
+            })
+            .sum();
+        self.memory.attach("temporal-join", budget_bytes, left + right)?;
+        Ok(self)
     }
 
     fn left_types(&self) -> Vec<DataType> {
@@ -5344,41 +5799,68 @@ impl TemporalJoiner {
 
     /// Buffers a probe-side batch (no output until a watermark). Each row is stored under its
     /// equi-join key with its event time and changelog kind, in arrival order within the key.
-    fn push_left(&mut self, batch: &RecordBatch) {
+    fn push_left(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         let arity = data_arity(batch);
         let key_arrays: Vec<&ArrayRef> = self.left_keys.iter().map(|&i| batch.column(i)).collect();
         let times = rt_to_millis(batch.column(self.left_time));
         let kinds = row_kind_column(batch);
+        let track = self.memory.tracking();
+        let mut delta = 0isize;
         for row in 0..batch.num_rows() {
             let key = read_key(&key_arrays, row);
             let jrow: JoinRow = (0..arity)
                 .map(|i| ScalarValue::try_from_array(batch.column(i), row).expect("temporal left scalar"))
                 .collect();
-            self.left_state.entry(key).or_default().push(LeftEntry {
+            if track && !self.left_state.contains_key(&key) {
+                delta += group_key_bytes(&key) as isize;
+            }
+            let entry = LeftEntry {
                 row: jrow,
                 time: times.value(row),
                 kind: kinds.map_or(0, |k| k.value(row)),
-            });
+            };
+            if track {
+                delta += left_entry_bytes(&entry) as isize;
+            }
+            self.left_state.entry(key).or_default().push(entry);
         }
+        self.memory.record(delta);
+        self.memory.account()
     }
 
     /// Folds a build-side changelog batch into the versioned state, keyed by equi-join key and indexed
     /// by right rowtime (last-write-wins per timestamp, every RowKind kept — Flink's `rightState.put`).
-    fn push_right(&mut self, batch: &RecordBatch) {
+    fn push_right(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         let arity = data_arity(batch);
         let key_arrays: Vec<&ArrayRef> = self.right_keys.iter().map(|&i| batch.column(i)).collect();
         let times = rt_to_millis(batch.column(self.right_time));
         let kinds = row_kind_column(batch);
+        let track = self.memory.tracking();
+        let mut delta = 0isize;
         for row in 0..batch.num_rows() {
             let key = read_key(&key_arrays, row);
             let jrow: JoinRow = (0..arity)
                 .map(|i| ScalarValue::try_from_array(batch.column(i), row).expect("temporal right scalar"))
                 .collect();
-            self.right_state
+            if track && !self.right_state.contains_key(&key) {
+                delta += group_key_bytes(&key) as isize;
+            }
+            if track {
+                delta += right_version_bytes(&jrow) as isize;
+            }
+            let replaced = self
+                .right_state
                 .entry(key)
                 .or_default()
                 .insert(times.value(row), (jrow, kinds.map_or(0, |k| k.value(row))));
+            if track {
+                if let Some((old, _)) = replaced {
+                    delta -= right_version_bytes(&old) as isize; // last-write-wins per timestamp
+                }
+            }
         }
+        self.memory.record(delta);
+        self.memory.account()
     }
 
     /// Emits the joined rows for every buffered left row the watermark has passed and drops the build
@@ -5393,6 +5875,8 @@ impl TemporalJoiner {
         let mut decisions: Vec<(JoinRow, i8, Option<JoinRow>)> = Vec::new();
         let mut pred_pairs: Vec<JoinRow> = Vec::new();
         let mut pred_idx: Vec<usize> = Vec::new();
+        let track = self.memory.tracking();
+        let mut freed = 0usize;
         let keys: Vec<GroupKey> = self.left_state.keys().cloned().collect();
         for key in &keys {
             let entries = self.left_state.remove(key).expect("left key present");
@@ -5402,6 +5886,9 @@ impl TemporalJoiner {
                 if e.time > watermark {
                     remaining.push(e);
                     continue;
+                }
+                if track {
+                    freed += left_entry_bytes(&e);
                 }
                 let valid = versions
                     .and_then(|m| m.range(..=e.time).next_back())
@@ -5418,7 +5905,11 @@ impl TemporalJoiner {
                 }
                 decisions.push((e.row, e.kind, valid));
             }
-            if !remaining.is_empty() {
+            if remaining.is_empty() {
+                if track {
+                    freed += group_key_bytes(key);
+                }
+            } else {
                 self.left_state.insert(key.clone(), remaining);
             }
         }
@@ -5458,10 +5949,16 @@ impl TemporalJoiner {
             if let Some((&keep_from, _)) = versions.range(..=watermark).next_back() {
                 let stale: Vec<i64> = versions.range(..keep_from).map(|(&t, _)| t).collect();
                 for t in stale {
-                    versions.remove(&t);
+                    if let Some((old, _)) = versions.remove(&t) {
+                        if track {
+                            freed += right_version_bytes(&old);
+                        }
+                    }
                 }
             }
         }
+        self.memory.forget(freed);
+        self.memory.account_shrink();
 
         if out_rows.is_empty() {
             return empty_batch();
@@ -5686,6 +6183,12 @@ struct TopNRanker {
     schema: Option<SchemaRef>,
     converters: Option<TopNConverters>,
     groups: HashMap<OwnedRow, Vec<TopNRow>>,
+    memory: OperatorMemory,
+}
+
+/// Estimated footprint of one buffered Top-N entry (sort key + payload row + container overhead).
+fn topn_entry_bytes(entry: &TopNRow) -> usize {
+    entry.0.row().as_ref().len() + entry.1.row().as_ref().len() + GROUP_ENTRY_OVERHEAD
 }
 
 impl TopNRanker {
@@ -5703,7 +6206,22 @@ impl TopNRanker {
             schema: None,
             converters: None,
             groups: HashMap::new(),
+            memory: OperatorMemory::unaccounted(),
         }
+    }
+
+    /// Bounds the per-partition buffers by the operator's managed-memory budget (negative =
+    /// unaccounted), accounting any restored buffers immediately.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        let state: usize = self
+            .groups
+            .iter()
+            .map(|(key, buffer)| {
+                owned_row_bytes(key) + buffer.iter().map(topn_entry_bytes).sum::<usize>()
+            })
+            .sum();
+        self.memory.attach("top-n", budget_bytes, state)?;
+        Ok(self)
     }
 
     /// Builds the three arrow-row converters from a batch's column types, once.
@@ -5743,7 +6261,7 @@ impl TopNRanker {
         self.converters = Some(TopNConverters { partition, sort, payload });
     }
 
-    fn push(&mut self, batch: &RecordBatch) -> RecordBatch {
+    fn push(&mut self, batch: &RecordBatch) -> Result<RecordBatch, DataFusionError> {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         self.ensure_converters(batch, arity);
@@ -5761,6 +6279,8 @@ impl TopNRanker {
 
         let limit = self.limit as usize;
         let output_rank = self.output_rank_number;
+        let track = self.memory.tracking();
+        let mut delta = 0isize;
         let groups = &mut self.groups;
         let mut out_rows: Vec<Arc<OwnedRow>> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
@@ -5771,6 +6291,10 @@ impl TopNRanker {
             // is known to enter (the common case for a bounded Top-N is a row that does not).
             let key_row = keys.row(row);
             let buffer = groups.entry(parts.row(row).owned()).or_default();
+            // An empty buffer means the partition entry was just created (buffers never empty out).
+            if track && buffer.is_empty() {
+                delta += (parts.row(row).as_ref().len() + GROUP_ENTRY_OVERHEAD) as isize;
+            }
             // Insert after any rows that order equal-or-before, preserving arrival order for ties
             // (byte compare of the memcomparable sort key).
             let pos = buffer.partition_point(|(k, _)| k.row() <= key_row);
@@ -5781,6 +6305,9 @@ impl TopNRanker {
                 }
                 let old_len = buffer.len();
                 buffer.insert(pos, (key_row.owned(), Arc::new(payloads.row(row).owned())));
+                if track {
+                    delta += topn_entry_bytes(&buffer[pos]) as isize;
+                }
                 // Cascade from the new row's rank to the buffer end (capped at the limit): each rank's
                 // occupant changes, so retract the old and append the new; a brand-new rank inserts.
                 let upper = (old_len + 1).min(limit); // highest 1-based rank to emit
@@ -5800,13 +6327,22 @@ impl TopNRanker {
                     }
                 }
                 if buffer.len() > limit {
+                    if track {
+                        delta -= buffer[limit..].iter().map(topn_entry_bytes).sum::<usize>() as isize;
+                    }
                     buffer.truncate(limit); // the row past N was retracted by the -U at rank=limit
                 }
             } else {
                 let payload = Arc::new(payloads.row(row).owned());
                 buffer.insert(pos, (key_row.owned(), Arc::clone(&payload)));
+                if track {
+                    delta += topn_entry_bytes(&buffer[pos]) as isize;
+                }
                 if buffer.len() > limit {
                     let evicted = buffer.pop().expect("buffer over limit is non-empty");
+                    if track {
+                        delta -= topn_entry_bytes(&evicted) as isize;
+                    }
                     if *evicted.1 == *payload {
                         continue; // the new row was itself rank N+1 — it never entered the top-N
                     }
@@ -5817,7 +6353,9 @@ impl TopNRanker {
                 out_kinds.push(0); // +I the new row
             }
         }
-        self.emit(out_rows, out_kinds, out_ranks)
+        self.memory.record(delta);
+        self.memory.account()?;
+        Ok(self.emit(out_rows, out_kinds, out_ranks))
     }
 
     fn emit(&self, out_rows: Vec<Arc<OwnedRow>>, out_kinds: Vec<i8>, out_ranks: Vec<i64>) -> RecordBatch {
@@ -5908,6 +6446,7 @@ struct RetractableTopNRanker {
     output_rank_number: bool,
     schema: Option<SchemaRef>,
     groups: HashMap<GroupKey, Vec<JoinRow>>,
+    memory: OperatorMemory,
 }
 
 impl RetractableTopNRanker {
@@ -5926,10 +6465,26 @@ impl RetractableTopNRanker {
             output_rank_number,
             schema: None,
             groups: HashMap::new(),
+            memory: OperatorMemory::unaccounted(),
         }
     }
 
-    fn push(&mut self, batch: &RecordBatch) -> RecordBatch {
+    /// Bounds the full per-partition buffers by the operator's managed-memory budget (negative =
+    /// unaccounted), accounting any restored buffers immediately.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        let state: usize = self
+            .groups
+            .iter()
+            .map(|(key, buffer)| {
+                group_key_bytes(key)
+                    + buffer.iter().map(|r| scalar_row_bytes(r) + GROUP_ENTRY_OVERHEAD).sum::<usize>()
+            })
+            .sum();
+        self.memory.attach("retracting-top-n", budget_bytes, state)?;
+        Ok(self)
+    }
+
+    fn push(&mut self, batch: &RecordBatch) -> Result<RecordBatch, DataFusionError> {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         let partition_arrays: Vec<&ArrayRef> =
@@ -5938,6 +6493,8 @@ impl RetractableTopNRanker {
         let row_kinds = row_kind_column(batch);
         // Output window: buffer indices [offset, limit) = ranks [offset+1, limit], clamped to len.
         let (offset, limit) = (self.offset as usize, self.limit as usize);
+        let track = self.memory.tracking();
+        let mut delta = 0isize;
 
         let mut out_rows: Vec<JoinRow> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
@@ -5945,6 +6502,9 @@ impl RetractableTopNRanker {
 
         for row in 0..batch.num_rows() {
             let key = read_key(&partition_arrays, row);
+            if track && !self.groups.contains_key(&key) {
+                delta += group_key_bytes(&key) as isize;
+            }
             let full: JoinRow = data_arrays
                 .iter()
                 .map(|a| ScalarValue::try_from_array(a, row).expect("retract top-n row scalar"))
@@ -5957,18 +6517,26 @@ impl RetractableTopNRanker {
                 buffer[offset.min(buffer.len())..limit.min(buffer.len())].to_vec();
             if retract {
                 if let Some(pos) = buffer.iter().position(|r| *r == full) {
+                    if track {
+                        delta -= (scalar_row_bytes(&buffer[pos]) + GROUP_ENTRY_OVERHEAD) as isize;
+                    }
                     buffer.remove(pos);
                 }
             } else {
                 let pos = buffer
                     .partition_point(|r| compare_rows(r, &full, sort) != std::cmp::Ordering::Greater);
+                if track {
+                    delta += (scalar_row_bytes(&full) + GROUP_ENTRY_OVERHEAD) as isize;
+                }
                 buffer.insert(pos, full.clone());
             }
             let new_top: Vec<JoinRow> =
                 buffer[offset.min(buffer.len())..limit.min(buffer.len())].to_vec();
             self.diff(&old_top, &new_top, &mut out_rows, &mut out_kinds, &mut out_ranks);
         }
-        self.emit(out_rows, out_kinds, out_ranks)
+        self.memory.record(delta);
+        self.memory.account()?;
+        Ok(self.emit(out_rows, out_kinds, out_ranks))
     }
 
     /// Appends the changelog transitioning the top-N from `old_top` to `new_top` (see the struct doc).
@@ -6102,11 +6670,19 @@ enum TopNHandle {
 }
 
 impl TopNHandle {
-    fn push(&mut self, batch: &RecordBatch) -> RecordBatch {
+    fn push(&mut self, batch: &RecordBatch) -> Result<RecordBatch, DataFusionError> {
         match self {
             TopNHandle::Append(r) => r.push(batch),
             TopNHandle::Retract(r) => r.push(batch),
         }
+    }
+
+    /// Bounds the ranker's buffers by the operator's managed-memory budget (negative = unaccounted).
+    fn with_memory_budget(self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        Ok(match self {
+            TopNHandle::Append(r) => TopNHandle::Append(r.with_memory_budget(budget_bytes)?),
+            TopNHandle::Retract(r) => TopNHandle::Retract(r.with_memory_budget(budget_bytes)?),
+        })
     }
 
     fn snapshot(&self) -> Vec<u8> {
@@ -6137,6 +6713,7 @@ struct KeepFirstDeduplicator {
     /// Keys whose first row has already been emitted; later rows for them are ignored.
     emitted: std::collections::HashSet<GroupKey>,
     schema: Option<SchemaRef>,
+    memory: OperatorMemory,
 }
 
 impl KeepFirstDeduplicator {
@@ -6148,10 +6725,20 @@ impl KeepFirstDeduplicator {
             pending: None,
             emitted: std::collections::HashSet::new(),
             schema: None,
+            memory: OperatorMemory::unaccounted(),
         }
     }
 
-    fn push(&mut self, batch: &RecordBatch) {
+    /// Bounds this deduplicator's state (the pending batch plus the emitted-key set) by the
+    /// operator's managed-memory budget (negative = unaccounted).
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        let state = self.pending.as_ref().map_or(0, |b| b.get_array_memory_size())
+            + self.emitted.iter().map(group_key_bytes).sum::<usize>();
+        self.memory.attach("keep-first-deduplicate", budget_bytes, state)?;
+        Ok(self)
+    }
+
+    fn push(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         let schema = batch.schema();
         self.schema = Some(schema.clone());
         // Drop late rows (rowtime already below the watermark) with a columnar filter.
@@ -6160,12 +6747,24 @@ impl KeepFirstDeduplicator {
             rt.iter().map(|v| Some(v.unwrap() >= self.current_watermark)).collect();
         let live = filter_record_batch(batch, &live_mask).expect("dedup late filter");
         // Merge with the standing candidates and reduce to one minimum-rowtime row per pending key.
+        let track = self.memory.tracking();
+        let mut delta = 0isize;
         let combined = match self.pending.take() {
-            Some(prev) => concat_batches(&schema, [&prev, &live]).expect("dedup concat"),
+            Some(prev) => {
+                if track {
+                    delta -= prev.get_array_memory_size() as isize;
+                }
+                concat_batches(&schema, [&prev, &live]).expect("dedup concat")
+            }
             None => live,
         };
         let reduced = self.min_per_key(&combined);
+        if track && reduced.num_rows() > 0 {
+            delta += reduced.get_array_memory_size() as isize;
+        }
         self.pending = (reduced.num_rows() > 0).then_some(reduced);
+        self.memory.record(delta);
+        self.memory.account()
     }
 
     /// Reduces a batch to one row per non-emitted key: the row with the minimum rowtime, ties going to
@@ -6200,26 +6799,41 @@ impl KeepFirstDeduplicator {
 
     /// Emits each pending key's candidate whose rowtime the watermark has now reached (insert-only),
     /// records those keys as emitted, and keeps the rest. Both partitions are columnar filters.
-    fn flush(&mut self, watermark: i64) -> RecordBatch {
+    fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         self.current_watermark = watermark;
         let Some(pending) = self.pending.take() else {
-            return self.empty();
+            return Ok(self.empty());
         };
+        let track = self.memory.tracking();
+        let mut delta = 0isize;
+        if track {
+            delta -= pending.get_array_memory_size() as isize;
+        }
         let rt = rt_to_millis(pending.column(self.rt_column));
         let ready_mask: BooleanArray = rt.iter().map(|v| Some(v.unwrap() <= watermark)).collect();
         let ready = filter_record_batch(&pending, &ready_mask).expect("dedup ready filter");
         let not_ready =
             filter_record_batch(&pending, &arrow::compute::not(&ready_mask).expect("dedup not"))
                 .expect("dedup keep filter");
+        if track && not_ready.num_rows() > 0 {
+            delta += not_ready.get_array_memory_size() as isize;
+        }
         self.pending = (not_ready.num_rows() > 0).then_some(not_ready);
         if ready.num_rows() > 0 {
             let key_arrays: Vec<&ArrayRef> =
                 self.partition_columns.iter().map(|&i| ready.column(i)).collect();
             for row in 0..ready.num_rows() {
-                self.emitted.insert(read_key(&key_arrays, row));
+                let key = read_key(&key_arrays, row);
+                let key_bytes = if track { group_key_bytes(&key) } else { 0 };
+                // The emitted-key set grows for the operator's lifetime, so a flush can grow state.
+                if self.emitted.insert(key) {
+                    delta += key_bytes as isize;
+                }
             }
         }
-        ready
+        self.memory.record(delta);
+        self.memory.account()?;
+        Ok(ready)
     }
 
     fn empty(&self) -> RecordBatch {
@@ -6305,6 +6919,12 @@ struct KeepLastDeduplicator {
     /// Per key: the stored row's rowtime (millis, 0 in proctime) and its full row as arrow-row bytes —
     /// no per-cell `ScalarValue`, so storing/replacing a row moves one byte buffer (cf. the Top-N).
     rows: HashMap<OwnedRow, (i64, OwnedRow)>,
+    memory: OperatorMemory,
+}
+
+/// Estimated footprint of one stored last-row entry (arrow-row key + payload + map entry).
+fn dedup_entry_bytes(key: &OwnedRow, payload: &OwnedRow) -> usize {
+    key.row().as_ref().len() + payload.row().as_ref().len() + GROUP_ENTRY_OVERHEAD
 }
 
 impl KeepLastDeduplicator {
@@ -6325,7 +6945,17 @@ impl KeepLastDeduplicator {
             partition_converter: None,
             payload_converter: None,
             rows: HashMap::new(),
+            memory: OperatorMemory::unaccounted(),
         }
+    }
+
+    /// Bounds this deduplicator's stored rows by the operator's managed-memory budget (negative =
+    /// unaccounted), accounting any restored rows immediately.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        let state: usize =
+            self.rows.iter().map(|(key, (_, payload))| dedup_entry_bytes(key, payload)).sum();
+        self.memory.attach("deduplicate", budget_bytes, state)?;
+        Ok(self)
     }
 
     /// Builds the partition-key and full-row arrow-row converters from a batch's column types, once.
@@ -6350,7 +6980,7 @@ impl KeepLastDeduplicator {
         );
     }
 
-    fn push(&mut self, batch: &RecordBatch) -> RecordBatch {
+    fn push(&mut self, batch: &RecordBatch) -> Result<RecordBatch, DataFusionError> {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         self.ensure_converters(batch, arity);
@@ -6367,6 +6997,8 @@ impl KeepLastDeduplicator {
         let keep_first = self.keep_first;
         let rowtime_ordered = self.rowtime_ordered;
         let generate_update_before = self.generate_update_before;
+        let track = self.memory.tracking();
+        let mut delta = 0isize;
         let rows = &mut self.rows;
         let mut out_rows: Vec<OwnedRow> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
@@ -6378,6 +7010,9 @@ impl KeepLastDeduplicator {
                     continue;
                 }
                 let payload = payloads.row(row).owned();
+                if track {
+                    delta += dedup_entry_bytes(&key, &payload) as isize;
+                }
                 out_rows.push(payload.clone());
                 out_kinds.push(0); // +I — first row for the key
                 rows.insert(key, (0, payload));
@@ -6387,6 +7022,9 @@ impl KeepLastDeduplicator {
             let payload = payloads.row(row).owned();
             match rows.get(&key) {
                 None => {
+                    if track {
+                        delta += dedup_entry_bytes(&key, &payload) as isize;
+                    }
                     out_rows.push(payload.clone());
                     out_kinds.push(0); // +I — first row for the key
                 }
@@ -6395,6 +7033,11 @@ impl KeepLastDeduplicator {
                     continue;
                 }
                 Some((_, prev)) => {
+                    if track {
+                        // Same key: only the payload is replaced.
+                        delta += payload.row().as_ref().len() as isize
+                            - prev.row().as_ref().len() as isize;
+                    }
                     if generate_update_before {
                         out_rows.push(prev.clone());
                         out_kinds.push(1); // -U the previous row
@@ -6405,7 +7048,9 @@ impl KeepLastDeduplicator {
             }
             rows.insert(key, (rowtime, payload));
         }
-        self.emit(out_rows, out_kinds)
+        self.memory.record(delta);
+        self.memory.account()?;
+        Ok(self.emit(out_rows, out_kinds))
     }
 
     fn emit(&self, out_rows: Vec<OwnedRow>, out_kinds: Vec<i8>) -> RecordBatch {
@@ -6494,6 +7139,13 @@ struct ChangelogNormalizer {
     generate_update_before: bool,
     schema: Option<SchemaRef>,
     rows: HashMap<GroupKey, JoinRow>,
+    memory: OperatorMemory,
+}
+
+/// Estimated footprint of one stored full row (scalar cells, no entry overhead — the key side
+/// carries it via [`group_key_bytes`]).
+fn scalar_row_bytes(row: &[ScalarValue]) -> usize {
+    row.iter().map(ScalarValue::size).sum()
 }
 
 impl ChangelogNormalizer {
@@ -6503,12 +7155,27 @@ impl ChangelogNormalizer {
             generate_update_before,
             schema: None,
             rows: HashMap::new(),
+            memory: OperatorMemory::unaccounted(),
         }
     }
 
-    fn push(&mut self, batch: &RecordBatch) -> RecordBatch {
+    /// Bounds the stored last-row-per-key state by the operator's managed-memory budget (negative =
+    /// unaccounted), accounting any restored rows immediately.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        let state: usize = self
+            .rows
+            .iter()
+            .map(|(key, row)| group_key_bytes(key) + scalar_row_bytes(row))
+            .sum();
+        self.memory.attach("changelog-normalize", budget_bytes, state)?;
+        Ok(self)
+    }
+
+    fn push(&mut self, batch: &RecordBatch) -> Result<RecordBatch, DataFusionError> {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
+        let track = self.memory.tracking();
+        let mut delta = 0isize;
         let key_arrays: Vec<&ArrayRef> =
             self.key_columns.iter().map(|&i| batch.column(i)).collect();
         let data_arrays: Vec<&ArrayRef> = (0..arity).map(|i| batch.column(i)).collect();
@@ -6528,6 +7195,9 @@ impl ChangelogNormalizer {
             if kind == 0 || kind == 2 {
                 match self.rows.get(&key) {
                     None => {
+                        if track {
+                            delta += (group_key_bytes(&key) + scalar_row_bytes(&current)) as isize;
+                        }
                         out_rows.push(current.clone());
                         out_kinds.push(0); // +I
                     }
@@ -6535,6 +7205,11 @@ impl ChangelogNormalizer {
                         continue; // unchanged — emit nothing (no state TTL)
                     }
                     Some(prev) => {
+                        if track {
+                            // Same key: only the stored row is replaced.
+                            delta += scalar_row_bytes(&current) as isize
+                                - scalar_row_bytes(prev) as isize;
+                        }
                         if self.generate_update_before {
                             out_rows.push(prev.clone());
                             out_kinds.push(1); // -U the previous row
@@ -6545,11 +7220,16 @@ impl ChangelogNormalizer {
                 }
                 self.rows.insert(key, current);
             } else if let Some(prev) = self.rows.remove(&key) {
+                if track {
+                    delta -= (group_key_bytes(&key) + scalar_row_bytes(&prev)) as isize;
+                }
                 out_rows.push(prev); // emit the stored full row, not the (maybe key-only) tombstone
                 out_kinds.push(3); // -D
             }
         }
-        self.emit(out_rows, out_kinds)
+        self.memory.record(delta);
+        self.memory.account()?;
+        Ok(self.emit(out_rows, out_kinds))
     }
 
     fn emit(&self, out_rows: Vec<JoinRow>, out_kinds: Vec<i8>) -> RecordBatch {
@@ -6624,6 +7304,7 @@ struct WindowRanker {
     /// Bounded, sorted top-N buffer per (window_end, window_start, partition key).
     groups: HashMap<(i64, i64, GroupKey), Vec<JoinRow>>,
     schema: Option<SchemaRef>,
+    memory: OperatorMemory,
 }
 
 impl WindowRanker {
@@ -6645,10 +7326,26 @@ impl WindowRanker {
             current_watermark: i64::MIN,
             groups: HashMap::new(),
             schema: None,
+            memory: OperatorMemory::unaccounted(),
         }
     }
 
-    fn push(&mut self, batch: &RecordBatch) {
+    /// Bounds the per-window buffers by the operator's managed-memory budget (negative =
+    /// unaccounted), accounting any restored buffers immediately.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        let state: usize = self
+            .groups
+            .iter()
+            .map(|((_, _, key), buffer)| {
+                group_key_bytes(key)
+                    + buffer.iter().map(|r| scalar_row_bytes(r) + GROUP_ENTRY_OVERHEAD).sum::<usize>()
+            })
+            .sum();
+        self.memory.attach("window-rank", budget_bytes, state)?;
+        Ok(self)
+    }
+
+    fn push(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         let ws = rt_to_millis(batch.column(self.window_start_col));
@@ -6656,6 +7353,8 @@ impl WindowRanker {
         let partition_arrays: Vec<&ArrayRef> =
             self.partition_columns.iter().map(|&i| batch.column(i)).collect();
         let data_arrays: Vec<&ArrayRef> = (0..arity).map(|i| batch.column(i)).collect();
+        let track = self.memory.tracking();
+        let mut delta = 0isize;
         for row in 0..batch.num_rows() {
             let window_end = we.value(row);
             if window_end <= self.current_watermark {
@@ -6667,16 +7366,32 @@ impl WindowRanker {
                 .iter()
                 .map(|a| ScalarValue::try_from_array(a, row).expect("window-rank row scalar"))
                 .collect();
+            if track {
+                delta += (scalar_row_bytes(&full) + GROUP_ENTRY_OVERHEAD) as isize;
+            }
+            let key_bytes = if track { group_key_bytes(&key) } else { 0 };
             let buffer = self.groups.entry((window_end, window_start, key)).or_default();
+            // An empty buffer means the (window, key) entry was just created (never emptied by push).
+            if track && buffer.is_empty() {
+                delta += key_bytes as isize;
+            }
             // Insert after rows ordering equal-or-before, preserving arrival order for ties (the
             // ROW_NUMBER tie-break), then drop anything past rank N.
             let pos = buffer
                 .partition_point(|r| compare_rows(r, &full, &self.sort_columns) != std::cmp::Ordering::Greater);
             buffer.insert(pos, full);
             if buffer.len() as i64 > self.limit {
+                if track {
+                    delta -= buffer[self.limit as usize..]
+                        .iter()
+                        .map(|r| scalar_row_bytes(r) + GROUP_ENTRY_OVERHEAD)
+                        .sum::<usize>() as isize;
+                }
                 buffer.truncate(self.limit as usize);
             }
         }
+        self.memory.record(delta);
+        self.memory.account()
     }
 
     /// Emits the top-N rows of every window the watermark has closed, in rank order (with the rank
@@ -6689,13 +7404,21 @@ impl WindowRanker {
         ready.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
         let mut rows: Vec<JoinRow> = Vec::new();
         let mut ranks: Vec<i64> = Vec::new();
+        let track = self.memory.tracking();
+        let mut freed = 0usize;
         for group in ready {
             let buffer = self.groups.remove(&group).expect("ready group present");
+            if track {
+                freed += GROUP_ENTRY_OVERHEAD;
+                freed += buffer.iter().map(|r| scalar_row_bytes(r) + GROUP_ENTRY_OVERHEAD).sum::<usize>();
+            }
             for (rank, row) in buffer.into_iter().enumerate() {
                 rows.push(row);
                 ranks.push(rank as i64 + 1);
             }
         }
+        self.memory.forget(freed);
+        self.memory.account_shrink();
         self.emit(rows, ranks)
     }
 
@@ -6788,6 +7511,12 @@ struct SessionAggregator {
     aggregates: Vec<WindowAggregate>,
     sessions: HashMap<GroupKey, BTreeMap<i64, Session>>,
     key_types: Vec<DataType>,
+    memory: OperatorMemory,
+}
+
+/// Estimated heap footprint of one open session (its accumulators plus the map entry).
+fn session_bytes(session: &Session) -> usize {
+    accumulators_bytes(&session.accumulators) + GROUP_ENTRY_OVERHEAD
 }
 
 impl SessionAggregator {
@@ -6797,10 +7526,25 @@ impl SessionAggregator {
             aggregates: build_aggregates(&kinds, &value_types),
             sessions: HashMap::new(),
             key_types: Vec::new(),
+            memory: OperatorMemory::unaccounted(),
         }
     }
 
-    fn update(&mut self, batch: &RecordBatch) {
+    /// Bounds this aggregator's state by the operator's managed-memory budget (negative =
+    /// unaccounted), accounting any restored sessions immediately.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        let state: usize = self
+            .sessions
+            .iter()
+            .map(|(key, map)| {
+                group_key_bytes(key) + map.values().map(session_bytes).sum::<usize>()
+            })
+            .sum();
+        self.memory.attach("session-aggregate", budget_bytes, state)?;
+        Ok(self)
+    }
+
+    fn update(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         let ts = column_i64(batch, "ts");
         // One value column per aggregate (value0, value1, …); each accumulator reads its own.
         let values: Vec<&ArrayRef> = (0..self.aggregates.len())
@@ -6817,6 +7561,11 @@ impl SessionAggregator {
             let row_values: Vec<ArrayRef> =
                 values.iter().map(|v| take(v, &row_indices, None).expect("take value")).collect();
 
+            let track = self.memory.tracking();
+            let mut delta = 0isize;
+            if track && !self.sessions.contains_key(&key) {
+                delta += group_key_bytes(&key) as isize;
+            }
             let map = self.sessions.entry(key).or_default();
             // Existing sessions are maximal and pairwise separated, but a `gap`-wide candidate can
             // still straddle more than one, so absorb every session it intersects. Intersection is
@@ -6834,6 +7583,9 @@ impl SessionAggregator {
                 self.aggregates.iter().map(WindowAggregate::create_accumulator).collect();
             for overlap in overlapping {
                 let session = map.remove(&overlap).expect("session present");
+                if track {
+                    delta -= session_bytes(&session) as isize;
+                }
                 start = start.min(overlap);
                 end = end.max(session.end);
                 merge_into(&mut accumulators, session.accumulators);
@@ -6841,8 +7593,14 @@ impl SessionAggregator {
             for (i, accumulator) in accumulators.iter_mut().enumerate() {
                 accumulator.update_batch(std::slice::from_ref(&row_values[i])).expect("update");
             }
-            map.insert(start, Session { end, accumulators });
+            let session = Session { end, accumulators };
+            if track {
+                delta += session_bytes(&session) as isize;
+                self.memory.record(delta);
+            }
+            map.insert(start, session);
         }
+        self.memory.account()
     }
 
     /// Finalizes and removes sessions the watermark has closed, emitting
@@ -6851,11 +7609,16 @@ impl SessionAggregator {
     fn flush(&mut self, watermark: i64) -> RecordBatch {
         let n = self.aggregates.len();
         let mut rows: Vec<(GroupKey, i64, i64, Vec<ScalarValue>)> = Vec::new();
+        let track = self.memory.tracking();
+        let mut freed = 0usize;
         for (key, map) in self.sessions.iter_mut() {
             let closed: Vec<i64> =
                 map.iter().filter(|(_, s)| s.end <= watermark).map(|(start, _)| *start).collect();
             for start in closed {
                 let mut session = map.remove(&start).expect("session present");
+                if track {
+                    freed += session_bytes(&session);
+                }
                 let results = session
                     .accumulators
                     .iter_mut()
@@ -6864,7 +7627,19 @@ impl SessionAggregator {
                 rows.push((key.clone(), start, session.end, results));
             }
         }
-        self.sessions.retain(|_, map| !map.is_empty());
+        self.sessions.retain(|key, map| {
+            if map.is_empty() {
+                if track {
+                    freed += group_key_bytes(key);
+                }
+                return false;
+            }
+            true
+        });
+        if track {
+            self.memory.forget(freed);
+            self.memory.account_shrink();
+        }
         rows.sort_by(|a, b| (&a.0, a.1).partial_cmp(&(&b.0, b.1)).unwrap_or(std::cmp::Ordering::Equal));
 
         let keys: Vec<GroupKey> = rows.iter().map(|(key, ..)| key.clone()).collect();
@@ -9027,14 +9802,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTumblin
     boxed_or_throw(&mut env, aggregator)
 }
 
-/// Boxes a built aggregator into an opaque handle, or raises the memory-limit exception and returns
+/// Boxes a built operator into an opaque handle, or raises the memory-limit exception and returns
 /// a null handle when its budget was already exceeded (a restore larger than the budget).
-fn boxed_or_throw(
-    env: &mut JNIEnv,
-    aggregator: Result<TumblingAggregator, DataFusionError>,
-) -> jlong {
-    match aggregator {
-        Ok(aggregator) => Box::into_raw(Box::new(aggregator)) as jlong,
+fn boxed_or_throw<T>(env: &mut JNIEnv, operator: Result<T, DataFusionError>) -> jlong {
+    match operator {
+        Ok(operator) => Box::into_raw(Box::new(operator)) as jlong,
         Err(e) => {
             throw_memory_limit(env, &e.to_string());
             0
@@ -9279,7 +10051,7 @@ fn read_columns(env: &JNIEnv, columns: &JIntArray) -> Vec<usize> {
 /// indices locate those columns within the buffered input batch.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createOverAggregator<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     value_types: JIntArray<'local>,
     aggregate_kinds: JIntArray<'local>,
@@ -9289,12 +10061,13 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createOverAgg
     frame_kind: jint,
     frame_offset: jlong,
     proctime: jboolean,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
     let value_types = read_int_array(&env, &value_types);
     let values = read_columns(&env, &value_columns);
     let keys = read_columns(&env, &key_columns);
-    Box::into_raw(Box::new(OverWindowAggregator::new(
+    let aggregator = OverWindowAggregator::new(
         value_types,
         kinds,
         rt_column as usize,
@@ -9303,27 +10076,34 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createOverAgg
         frame_kind as i64,
         frame_offset,
         proctime != 0,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, aggregator)
 }
 
 /// Buffers an input batch (no output); the rows are emitted later when a watermark completes them.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushOverAggregator<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
     in_schema_address: jlong,
 ) {
     let aggregator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
-    aggregator.push(import_record_batch(in_array_address, in_schema_address));
+    // The pushed batch is retained in the buffer (not dropped), so no JVM release upcall runs
+    // between a failed account and the throw (see updateTumblingAggregator).
+    let result = aggregator.push(import_record_batch(in_array_address, in_schema_address));
+    if let Err(e) = result {
+        throw_memory_limit(&mut env, &e.to_string());
+    }
 }
 
 /// Proctime OVER: folds a batch in arrival order and exports its rows immediately (no watermark),
 /// each with the running aggregate / window-function column(s) appended.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushProctimeOverAggregator<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
@@ -9332,14 +10112,21 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushProctimeO
     out_schema_address: jlong,
 ) {
     let aggregator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
-    let result = aggregator.push_proctime(import_record_batch(in_array_address, in_schema_address));
-    export_record_batch(result, out_array_address, out_schema_address);
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        aggregator.push_proctime(batch)
+    };
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Exports the rows the watermark has completed (input columns + running aggregates).
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushOverAggregator<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     watermark_millis: jlong,
@@ -9347,8 +10134,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushOverAggr
     out_schema_address: jlong,
 ) {
     let aggregator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
-    let result = aggregator.flush(watermark_millis);
-    export_record_batch(result, out_array_address, out_schema_address);
+    // The inner per-key fold grows on flush, so even a flush can exceed the budget.
+    match aggregator.flush(watermark_millis) {
+        Ok(result) => export_record_batch(result, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Releases the OVER aggregator and its native state.
@@ -9379,7 +10169,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotOverA
 /// Rebuilds an OVER aggregator from a snapshot taken by a prior run and returns a fresh handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreOverAggregator<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     value_types: JIntArray<'local>,
     aggregate_kinds: JIntArray<'local>,
@@ -9390,13 +10180,14 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreOverAg
     frame_offset: jlong,
     proctime: jboolean,
     snapshot: JByteArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
     let value_types = read_int_array(&env, &value_types);
     let values = read_columns(&env, &value_columns);
     let keys = read_columns(&env, &key_columns);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read over snapshot");
-    Box::into_raw(Box::new(OverWindowAggregator::restore(
+    let aggregator = OverWindowAggregator::restore(
         value_types,
         kinds,
         rt_column as usize,
@@ -9406,31 +10197,40 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreOverAg
         frame_offset,
         proctime != 0,
         &bytes,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, aggregator)
 }
 
 /// Creates an event-time sorter over the given rowtime column and returns an opaque handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTemporalSorter<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     rt_column: jint,
+    memory_budget_bytes: jlong,
 ) -> jlong {
-    Box::into_raw(Box::new(TemporalSorter::new(rt_column as usize))) as jlong
+    let sorter = TemporalSorter::new(rt_column as usize).with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, sorter)
 }
 
 /// Buffers an input batch (no output); the rows are emitted later, in rowtime order, as watermarks
 /// complete them.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushTemporalSorter<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
     in_schema_address: jlong,
 ) {
     let sorter = unsafe { &mut *(handle as *mut TemporalSorter) };
-    sorter.push(import_record_batch(in_array_address, in_schema_address));
+    // The pushed batch is retained in the sort buffer (not dropped), so no JVM release upcall runs
+    // between a failed account and the throw (see updateTumblingAggregator).
+    let result = sorter.push(import_record_batch(in_array_address, in_schema_address));
+    if let Err(e) = result {
+        throw_memory_limit(&mut env, &e.to_string());
+    }
 }
 
 /// Exports the rows the watermark has completed, sorted ascending by rowtime.
@@ -9476,45 +10276,58 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTempo
 /// Rebuilds an event-time sorter from a snapshot taken by a prior run and returns a fresh handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTemporalSorter<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     rt_column: jint,
     snapshot: JByteArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read sort snapshot");
-    Box::into_raw(Box::new(TemporalSorter::restore(rt_column as usize, &bytes))) as jlong
+    let sorter =
+        TemporalSorter::restore(rt_column as usize, &bytes).with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, sorter)
 }
 
 /// Creates a keep-first deduplicator over the given partition-key columns and rowtime column.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createKeepFirstDeduplicator<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     partition_columns: JIntArray<'local>,
     rt_column: jint,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let partitions = read_columns(&env, &partition_columns);
-    Box::into_raw(Box::new(KeepFirstDeduplicator::new(partitions, rt_column as usize))) as jlong
+    let dedup = KeepFirstDeduplicator::new(partitions, rt_column as usize)
+        .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, dedup)
 }
 
 /// Buffers an input batch (no output); each key's minimum-rowtime row is emitted later, on the
 /// watermark that reaches its rowtime.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushKeepFirstDeduplicator<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
     in_schema_address: jlong,
 ) {
     let dedup = unsafe { &mut *(handle as *mut KeepFirstDeduplicator) };
-    dedup.push(&import_record_batch(in_array_address, in_schema_address));
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        dedup.push(&batch)
+    };
+    if let Err(e) = result {
+        throw_memory_limit(&mut env, &e.to_string());
+    }
 }
 
 /// Exports each key's first (minimum-rowtime) row whose rowtime the watermark has reached.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushKeepFirstDeduplicator<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     watermark_millis: jlong,
@@ -9522,8 +10335,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushKeepFirs
     out_schema_address: jlong,
 ) {
     let dedup = unsafe { &mut *(handle as *mut KeepFirstDeduplicator) };
-    let result = dedup.flush(watermark_millis);
-    export_record_batch(result, out_array_address, out_schema_address);
+    // The emitted-key set grows here, so even a flush can exceed the budget.
+    match dedup.flush(watermark_millis) {
+        Ok(result) => export_record_batch(result, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Releases the deduplicator and its per-key state.
@@ -9554,44 +10370,49 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotKeepF
 /// Rebuilds a keep-first deduplicator from a snapshot taken by a prior run and returns a fresh handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepFirstDeduplicator<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     partition_columns: JIntArray<'local>,
     rt_column: jint,
     snapshot: JByteArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let partitions = read_columns(&env, &partition_columns);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read dedup snapshot");
-    Box::into_raw(Box::new(KeepFirstDeduplicator::restore(partitions, rt_column as usize, &bytes)))
-        as jlong
+    let dedup = KeepFirstDeduplicator::restore(partitions, rt_column as usize, &bytes)
+        .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, dedup)
 }
 
 /// Creates an eager deduplicator (rowtime/proctime keep-last, or proctime keep-first) and returns an
 /// opaque handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createKeepLastDeduplicator<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     partition_columns: JIntArray<'local>,
     rt_column: jint,
     generate_update_before: jboolean,
     rowtime_ordered: jboolean,
     keep_first: jboolean,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let partitions = read_columns(&env, &partition_columns);
-    Box::into_raw(Box::new(KeepLastDeduplicator::new(
+    let dedup = KeepLastDeduplicator::new(
         partitions,
         rt_column as usize,
         generate_update_before != 0,
         rowtime_ordered != 0,
         keep_first != 0,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, dedup)
 }
 
 /// Folds an input batch and returns the retract changelog it produces (emitted eagerly per row).
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushKeepLastDeduplicator<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
@@ -9600,8 +10421,15 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushKeepLastD
     out_schema_address: jlong,
 ) {
     let dedup = unsafe { &mut *(handle as *mut KeepLastDeduplicator) };
-    let result = dedup.push(&import_record_batch(in_array_address, in_schema_address));
-    export_record_batch(result, out_array_address, out_schema_address);
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        dedup.push(&batch)
+    };
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 #[no_mangle]
@@ -9631,7 +10459,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotKeepL
 /// Rebuilds an eager deduplicator from a snapshot and returns a fresh handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepLastDeduplicator<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     partition_columns: JIntArray<'local>,
     rt_column: jint,
@@ -9639,24 +10467,27 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepLa
     rowtime_ordered: jboolean,
     keep_first: jboolean,
     snapshot: JByteArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let partitions = read_columns(&env, &partition_columns);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read dedup snapshot");
-    Box::into_raw(Box::new(KeepLastDeduplicator::restore(
+    let dedup = KeepLastDeduplicator::restore(
         partitions,
         rt_column as usize,
         generate_update_before != 0,
         rowtime_ordered != 0,
         keep_first != 0,
         &bytes,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, dedup)
 }
 
 /// Creates a window-rank ranker (window Top-N / window deduplication) over the attached
 /// window_start/window_end columns and returns an opaque handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createWindowRanker<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     window_start_col: jint,
     window_end_col: jint,
@@ -9666,31 +10497,41 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createWindowR
     sort_nulls_first: JIntArray<'local>,
     limit: jlong,
     output_rank_number: jboolean,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let partitions = read_columns(&env, &partition_columns);
     let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
-    Box::into_raw(Box::new(WindowRanker::new(
+    let ranker = WindowRanker::new(
         window_start_col as usize,
         window_end_col as usize,
         partitions,
         sort,
         limit,
         output_rank_number != 0,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, ranker)
 }
 
 /// Buffers an input batch (no output); each window's top-N rows are emitted when the watermark
 /// closes the window.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushWindowRanker<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
     in_schema_address: jlong,
 ) {
     let ranker = unsafe { &mut *(handle as *mut WindowRanker) };
-    ranker.push(&import_record_batch(in_array_address, in_schema_address));
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        ranker.push(&batch)
+    };
+    if let Err(e) = result {
+        throw_memory_limit(&mut env, &e.to_string());
+    }
 }
 
 /// Exports the top-N rows of every window the watermark has closed (with the rank number appended
@@ -9737,7 +10578,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotWindo
 /// Rebuilds a window-rank ranker from a snapshot and returns a fresh handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreWindowRanker<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     window_start_col: jint,
     window_end_col: jint,
@@ -9748,11 +10589,12 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreWindow
     limit: jlong,
     output_rank_number: jboolean,
     snapshot: JByteArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let partitions = read_columns(&env, &partition_columns);
     let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read window-rank snapshot");
-    Box::into_raw(Box::new(WindowRanker::restore(
+    let ranker = WindowRanker::restore(
         window_start_col as usize,
         window_end_col as usize,
         partitions,
@@ -9760,7 +10602,9 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreWindow
         limit,
         output_rank_number != 0,
         &bytes,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, ranker)
 }
 
 /// Creates a non-windowed `GROUP BY` aggregator and returns an opaque handle. The aggregate kinds
@@ -9768,7 +10612,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreWindow
 /// per-node changelog flag. Grouping keys travel as `key0..` columns on each input batch.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createGroupAggregator<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     aggregate_kinds: JIntArray<'local>,
     value_types: JIntArray<'local>,
@@ -9776,23 +10620,25 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createGroupAg
     key_columns: JIntArray<'local>,
     filter_columns: JIntArray<'local>,
     generate_update_before: jboolean,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
     let value_types = read_int_array(&env, &value_types);
     let value_columns = read_int_array(&env, &value_columns);
     let filter_columns = read_int_array(&env, &filter_columns);
     let key_columns = read_columns(&env, &key_columns);
-    Box::into_raw(Box::new(
+    let aggregator =
         GroupAggregator::new(kinds, value_types, value_columns, key_columns, generate_update_before != 0)
-            .with_filter_columns(filter_columns),
-    )) as jlong
+            .with_filter_columns(filter_columns)
+            .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, aggregator)
 }
 
 /// Folds an input batch into per-key state and exports the changelog rows it produces (the row kinds
 /// ride the `$row_kind$` column of the result).
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateGroupAggregator<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
@@ -9801,8 +10647,15 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateGroupAg
     out_schema_address: jlong,
 ) {
     let aggregator = unsafe { &mut *(handle as *mut GroupAggregator) };
-    let result = aggregator.update(&import_record_batch(in_array_address, in_schema_address));
-    export_record_batch(result, out_array_address, out_schema_address);
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        aggregator.update(&batch)
+    };
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Serializes the aggregator's per-key state for a checkpoint.
@@ -9821,7 +10674,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotGroup
 /// Rebuilds a `GROUP BY` aggregator from a snapshot taken by a prior run and returns a fresh handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupAggregator<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     aggregate_kinds: JIntArray<'local>,
     value_types: JIntArray<'local>,
@@ -9830,6 +10683,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
     filter_columns: JIntArray<'local>,
     generate_update_before: jboolean,
     snapshot: JByteArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
     let value_types = read_int_array(&env, &value_types);
@@ -9837,17 +10691,17 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
     let filter_columns = read_int_array(&env, &filter_columns);
     let key_columns = read_columns(&env, &key_columns);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read group-by snapshot");
-    Box::into_raw(Box::new(
-        GroupAggregator::restore(
-            kinds,
-            value_types,
-            value_columns,
-            key_columns,
-            generate_update_before != 0,
-            &bytes,
-        )
-        .with_filter_columns(filter_columns),
-    )) as jlong
+    let aggregator = GroupAggregator::restore(
+        kinds,
+        value_types,
+        value_columns,
+        key_columns,
+        generate_update_before != 0,
+        &bytes,
+    )
+    .with_filter_columns(filter_columns)
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, aggregator)
 }
 
 /// Releases the `GROUP BY` aggregator and its native state.
@@ -11401,6 +12255,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createInterva
     pred_longs: JLongArray<'local>,
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
@@ -11415,7 +12270,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createInterva
         &pred_doubles,
         &pred_strings,
     );
-    Box::into_raw(Box::new(IntervalJoiner::new(
+    let joiner = IntervalJoiner::new(
         left,
         right,
         left_time as usize,
@@ -11426,13 +12281,15 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createInterva
         JoinKind::from_code(join_type),
         left_schema,
         right_schema,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, joiner)
 }
 
 /// Pushes a left batch, probing the buffered right rows and exporting the matched pairs.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftIntervalJoiner<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
@@ -11443,15 +12300,20 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftInter
     proctime_now_millis: jlong,
 ) {
     let joiner = unsafe { &mut *(handle as *mut IntervalJoiner) };
+    // The pushed batch is retained in the buffer (not dropped), so no JVM release upcall runs
+    // between a failed account and the throw (see updateTumblingAggregator).
     let batch = import_record_batch(in_array_address, in_schema_address);
     let result = joiner.push_left(batch, (proctime != 0).then_some(proctime_now_millis));
-    export_record_batch(result, out_array_address, out_schema_address);
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Pushes a right batch, probing the buffered left rows and exporting the matched pairs.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightIntervalJoiner<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
@@ -11462,9 +12324,14 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightInte
     proctime_now_millis: jlong,
 ) {
     let joiner = unsafe { &mut *(handle as *mut IntervalJoiner) };
+    // The pushed batch is retained in the buffer (not dropped), so no JVM release upcall runs
+    // between a failed account and the throw (see updateTumblingAggregator).
     let batch = import_record_batch(in_array_address, in_schema_address);
     let result = joiner.push_right(batch, (proctime != 0).then_some(proctime_now_millis));
-    export_record_batch(result, out_array_address, out_schema_address);
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Advances the combined watermark, evicting rows no future arrival can match, and exporting the
@@ -11530,6 +12397,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreInterv
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
     snapshot: JByteArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
@@ -11545,7 +12413,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreInterv
         &pred_strings,
     );
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read join snapshot");
-    Box::into_raw(Box::new(IntervalJoiner::restore(
+    let joiner = IntervalJoiner::restore(
         left,
         right,
         left_time as usize,
@@ -11557,7 +12425,9 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreInterv
         left_schema,
         right_schema,
         &bytes,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, joiner)
 }
 
 /// Creates an event-time temporal-table joiner (`FOR SYSTEM_TIME AS OF probe.rowtime`) and returns an
@@ -11583,6 +12453,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTempora
     pred_longs: JLongArray<'local>,
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
@@ -11592,7 +12463,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTempora
         &mut env, &pred_kinds, &pred_payload, &pred_child_counts, &pred_longs, &pred_doubles,
         &pred_strings,
     );
-    Box::into_raw(Box::new(TemporalJoiner::new(
+    let joiner = TemporalJoiner::new(
         left,
         right,
         left_time as usize,
@@ -11601,35 +12472,49 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTempora
         left_schema,
         right_schema,
         predicate,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, joiner)
 }
 
 /// Buffers a probe-side (left) batch (no output until a watermark).
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftTemporalJoiner<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
     in_schema_address: jlong,
 ) {
     let joiner = unsafe { &mut *(handle as *mut TemporalJoiner) };
-    let batch = import_record_batch(in_array_address, in_schema_address);
-    joiner.push_left(&batch);
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        joiner.push_left(&batch)
+    };
+    if let Err(e) = result {
+        throw_memory_limit(&mut env, &e.to_string());
+    }
 }
 
 /// Folds a build-side (right) changelog batch into the versioned state (no output until a watermark).
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightTemporalJoiner<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
     in_schema_address: jlong,
 ) {
     let joiner = unsafe { &mut *(handle as *mut TemporalJoiner) };
-    let batch = import_record_batch(in_array_address, in_schema_address);
-    joiner.push_right(&batch);
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        joiner.push_right(&batch)
+    };
+    if let Err(e) = result {
+        throw_memory_limit(&mut env, &e.to_string());
+    }
 }
 
 /// Advances the watermark, emitting the joined rows for buffered probe rows it has passed and dropping
@@ -11693,6 +12578,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTempor
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
     snapshot: JByteArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
@@ -11703,7 +12589,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTempor
         &pred_strings,
     );
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read temporal-join snapshot");
-    Box::into_raw(Box::new(TemporalJoiner::restore(
+    let joiner = TemporalJoiner::restore(
         left,
         right,
         left_time as usize,
@@ -11713,7 +12599,9 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTempor
         right_schema,
         predicate,
         &bytes,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, joiner)
 }
 
 /// Reads the encoded residual non-equi join predicate (empty `kinds` ⇒ no predicate). It compiles
@@ -11763,6 +12651,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createUpdatin
     pred_longs: JLongArray<'local>,
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
@@ -11777,21 +12666,23 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createUpdatin
         &pred_doubles,
         &pred_strings,
     );
-    Box::into_raw(Box::new(UpdatingJoiner::new(
+    let joiner = UpdatingJoiner::new(
         left,
         right,
         JoinKind::from_code(join_type),
         left_schema,
         right_schema,
         predicate,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, joiner)
 }
 
 /// Folds a left batch into state and exports the join changelog it produces (left cols, right cols,
 /// then `$row_kind$`).
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftUpdatingJoiner<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
@@ -11800,14 +12691,21 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftUpdat
     out_schema_address: jlong,
 ) {
     let joiner = unsafe { &mut *(handle as *mut UpdatingJoiner) };
-    let result = joiner.push(&import_record_batch(in_array_address, in_schema_address), true);
-    export_record_batch(result, out_array_address, out_schema_address);
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        joiner.push(&batch, true)
+    };
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Folds a right batch into state and exports the join changelog it produces.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightUpdatingJoiner<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
@@ -11816,8 +12714,15 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightUpda
     out_schema_address: jlong,
 ) {
     let joiner = unsafe { &mut *(handle as *mut UpdatingJoiner) };
-    let result = joiner.push(&import_record_batch(in_array_address, in_schema_address), false);
-    export_record_batch(result, out_array_address, out_schema_address);
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        joiner.push(&batch, false)
+    };
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Serializes the updating joiner's per-side state for a checkpoint.
@@ -11851,6 +12756,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreUpdati
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
     snapshot: JByteArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
@@ -11866,7 +12772,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreUpdati
         &pred_strings,
     );
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read updating-join snapshot");
-    Box::into_raw(Box::new(UpdatingJoiner::restore(
+    let joiner = UpdatingJoiner::restore(
         left,
         right,
         JoinKind::from_code(join_type),
@@ -11874,7 +12780,9 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreUpdati
         right_schema,
         predicate,
         &bytes,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, joiner)
 }
 
 /// Releases an updating joiner handle.
@@ -11915,7 +12823,7 @@ fn read_sort_columns(
 /// and returns an opaque handle. The JVM owns it and must release it with the matching close.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTopNRanker<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     partition_columns: JIntArray<'local>,
     sort_indices: JIntArray<'local>,
@@ -11925,6 +12833,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTopNRan
     limit: jlong,
     output_rank_number: jboolean,
     retracting: jboolean,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let partitions = read_columns(&env, &partition_columns);
     let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
@@ -11940,14 +12849,14 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTopNRan
         // The append-only ranker is the no-OFFSET path (offset always 0).
         TopNHandle::Append(TopNRanker::new(partitions, sort, limit, output_rank_number != 0))
     };
-    Box::into_raw(Box::new(handle)) as jlong
+    boxed_or_throw(&mut env, handle.with_memory_budget(memory_budget_bytes))
 }
 
 /// Folds an input batch into the per-partition top-N and exports the changelog it produces (the
 /// input columns plus `$row_kind$`).
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushTopNRanker<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
@@ -11956,8 +12865,15 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushTopNRanke
     out_schema_address: jlong,
 ) {
     let ranker = unsafe { &mut *(handle as *mut TopNHandle) };
-    let result = ranker.push(&import_record_batch(in_array_address, in_schema_address));
-    export_record_batch(result, out_array_address, out_schema_address);
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        ranker.push(&batch)
+    };
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Serializes the ranker's per-partition buffers for a checkpoint.
@@ -11976,7 +12892,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTopNR
 /// Rebuilds a Top-N ranker from a snapshot and returns a fresh handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTopNRanker<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     partition_columns: JIntArray<'local>,
     sort_indices: JIntArray<'local>,
@@ -11987,6 +12903,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTopNRa
     output_rank_number: jboolean,
     retracting: jboolean,
     snapshot: JByteArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let partitions = read_columns(&env, &partition_columns);
     let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
@@ -12003,7 +12920,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTopNRa
     } else {
         TopNHandle::Append(TopNRanker::restore(partitions, sort, limit, output_rank_number != 0, &bytes))
     };
-    Box::into_raw(Box::new(handle)) as jlong
+    boxed_or_throw(&mut env, handle.with_memory_budget(memory_budget_bytes))
 }
 
 /// Releases a Top-N ranker handle.
@@ -12021,19 +12938,22 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeTopNRank
 /// Creates a changelog normalizer (keep-last per unique key) and returns an opaque handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createChangelogNormalizer<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     key_columns: JIntArray<'local>,
     generate_update_before: jboolean,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let keys = read_columns(&env, &key_columns);
-    Box::into_raw(Box::new(ChangelogNormalizer::new(keys, generate_update_before != 0))) as jlong
+    let normalizer = ChangelogNormalizer::new(keys, generate_update_before != 0)
+        .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, normalizer)
 }
 
 /// Folds an input changelog batch into the keep-last state and exports the normalized changelog.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushChangelogNormalizer<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
@@ -12042,8 +12962,15 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushChangelog
     out_schema_address: jlong,
 ) {
     let normalizer = unsafe { &mut *(handle as *mut ChangelogNormalizer) };
-    let result = normalizer.push(&import_record_batch(in_array_address, in_schema_address));
-    export_record_batch(result, out_array_address, out_schema_address);
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        normalizer.push(&batch)
+    };
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Serializes the normalizer's per-key last rows for a checkpoint.
@@ -12062,16 +12989,18 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotChang
 /// Rebuilds a changelog normalizer from a snapshot and returns a fresh handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreChangelogNormalizer<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     key_columns: JIntArray<'local>,
     generate_update_before: jboolean,
     snapshot: JByteArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let keys = read_columns(&env, &key_columns);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read changelog-normalize snapshot");
-    Box::into_raw(Box::new(ChangelogNormalizer::restore(keys, generate_update_before != 0, &bytes)))
-        as jlong
+    let normalizer = ChangelogNormalizer::restore(keys, generate_update_before != 0, &bytes)
+        .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, normalizer)
 }
 
 /// Releases a changelog normalizer handle.
@@ -12109,6 +13038,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createWindowJ
     pred_longs: JLongArray<'local>,
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
@@ -12123,7 +13053,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createWindowJ
         &pred_doubles,
         &pred_strings,
     );
-    Box::into_raw(Box::new(WindowJoiner::new(
+    let joiner = WindowJoiner::new(
         left,
         right,
         left_window_start as usize,
@@ -12134,33 +13064,45 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createWindowJ
         JoinKind::from_code(join_type),
         left_schema,
         right_schema,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, joiner)
 }
 
 /// Buffers a left batch (no output); its rows are joined later when the watermark closes their window.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftWindowJoiner<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
     in_schema_address: jlong,
 ) {
     let joiner = unsafe { &mut *(handle as *mut WindowJoiner) };
-    joiner.push_left(import_record_batch(in_array_address, in_schema_address));
+    // The pushed batch is retained in the buffer (not dropped), so no JVM release upcall runs
+    // between a failed account and the throw (see updateTumblingAggregator).
+    let result = joiner.push_left(import_record_batch(in_array_address, in_schema_address));
+    if let Err(e) = result {
+        throw_memory_limit(&mut env, &e.to_string());
+    }
 }
 
 /// Buffers a right batch (no output).
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightWindowJoiner<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
     in_schema_address: jlong,
 ) {
     let joiner = unsafe { &mut *(handle as *mut WindowJoiner) };
-    joiner.push_right(import_record_batch(in_array_address, in_schema_address));
+    // The pushed batch is retained in the buffer (not dropped), so no JVM release upcall runs
+    // between a failed account and the throw (see updateTumblingAggregator).
+    let result = joiner.push_right(import_record_batch(in_array_address, in_schema_address));
+    if let Err(e) = result {
+        throw_memory_limit(&mut env, &e.to_string());
+    }
 }
 
 /// Exports the INNER matches of every window the watermark has closed (then evicts those windows).
@@ -12225,6 +13167,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreWindow
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
     snapshot: JByteArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
     let right = read_columns(&env, &right_keys);
@@ -12240,7 +13183,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreWindow
         &pred_strings,
     );
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read window-join snapshot");
-    Box::into_raw(Box::new(WindowJoiner::restore(
+    let joiner = WindowJoiner::restore(
         left,
         right,
         left_window_start as usize,
@@ -12252,36 +13195,47 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreWindow
         left_schema,
         right_schema,
         &bytes,
-    ))) as jlong
+    )
+    .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, joiner)
 }
 
 /// Creates a stateful session-window aggregator and returns an opaque handle. As with the tumbling
 /// handle, the JVM owns the native state across calls and must release it with the matching close.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createSessionAggregator<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     gap_millis: jlong,
     value_types: JIntArray<'local>,
     aggregate_kinds: JIntArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
     let value_types = read_int_array(&env, &value_types);
-    Box::into_raw(Box::new(SessionAggregator::new(gap_millis, value_types, kinds))) as jlong
+    let aggregator = SessionAggregator::new(gap_millis, value_types, kinds)
+        .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, aggregator)
 }
 
 /// Folds a batch from the JVM into the session aggregator, merging sessions as elements bridge them.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateSessionAggregator<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
     in_schema_address: jlong,
 ) {
     let aggregator = unsafe { &mut *(handle as *mut SessionAggregator) };
-    let batch = import_record_batch(in_array_address, in_schema_address);
-    aggregator.update(&batch);
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        aggregator.update(&batch)
+    };
+    if let Err(e) = result {
+        throw_memory_limit(&mut env, &e.to_string());
+    }
 }
 
 /// Emits the sessions the given watermark has closed as a batch and drops them from state.
@@ -12327,18 +13281,20 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotSessi
 /// Rebuilds a session aggregator from a snapshot taken by a prior run and returns a fresh handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreSessionAggregator<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     gap_millis: jlong,
     value_types: JIntArray<'local>,
     aggregate_kinds: JIntArray<'local>,
     snapshot: JByteArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
     let value_types = read_int_array(&env, &value_types);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read snapshot");
-    Box::into_raw(Box::new(SessionAggregator::restore(gap_millis, value_types, kinds, &bytes)))
-        as jlong
+    let aggregator = SessionAggregator::restore(gap_millis, value_types, kinds, &bytes)
+        .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, aggregator)
 }
 
 /// Thin wrappers exposing the engine hot paths to the Criterion benchmark harness, without leaking
@@ -12418,7 +13374,7 @@ pub mod bench {
         }
 
         pub fn update(&mut self, batch: &RecordBatch) {
-            self.0.update(batch);
+            self.0.update(batch).expect("budget exceeded");
         }
 
         pub fn flush(&mut self, watermark: i64) -> RecordBatch {
@@ -12448,11 +13404,11 @@ pub mod bench {
         }
 
         pub fn push(&mut self, batch: RecordBatch) {
-            self.0.push(batch);
+            self.0.push(batch).expect("budget exceeded");
         }
 
         pub fn flush(&mut self, watermark: i64) -> RecordBatch {
-            self.0.flush(watermark)
+            self.0.flush(watermark).expect("budget exceeded")
         }
     }
 
@@ -12483,7 +13439,7 @@ pub mod bench {
         }
 
         pub fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
-            self.0.update(batch)
+            self.0.update(batch).expect("budget exceeded")
         }
     }
 
@@ -12517,11 +13473,11 @@ pub mod bench {
         }
 
         pub fn push_left(&mut self, batch: RecordBatch) -> RecordBatch {
-            self.0.push_left(batch, None)
+            self.0.push_left(batch, None).expect("budget exceeded")
         }
 
         pub fn push_right(&mut self, batch: RecordBatch) -> RecordBatch {
-            self.0.push_right(batch, None)
+            self.0.push_right(batch, None).expect("budget exceeded")
         }
     }
 
@@ -12556,11 +13512,11 @@ pub mod bench {
         }
 
         pub fn push_left(&mut self, batch: RecordBatch) {
-            self.0.push_left(batch);
+            self.0.push_left(batch).expect("budget exceeded");
         }
 
         pub fn push_right(&mut self, batch: RecordBatch) {
-            self.0.push_right(batch);
+            self.0.push_right(batch).expect("budget exceeded");
         }
 
         pub fn flush(&mut self, watermark: i64) -> RecordBatch {
@@ -12986,14 +13942,14 @@ mod tests {
         let mut over = OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 0, 0, false);
         over.push(batch);
         // Watermark 2000ms completes the first three rows (rt 0/1000/500); the rt=9000 row stays.
-        let out = over.flush(2000);
+        let out = over.flush(2000).unwrap();
         assert_eq!(out.num_rows(), 3);
         assert_eq!(values(&out, 0), vec![1, 1, 2]); // k passed through
         assert_eq!(values(&out, 1), vec![10, 20, 100]); // v passed through
         // running SUM per key: key 1 -> 10, 30; key 2 -> 100 (result is the last column).
         assert_eq!(values(&out, 3), vec![10, 30, 100]);
         // The pending row flushes once the watermark passes it.
-        let rest = over.flush(10_000);
+        let rest = over.flush(10_000).unwrap();
         assert_eq!(rest.num_rows(), 1);
         assert_eq!(values(&rest, 1), vec![40]); // v
         assert_eq!(values(&rest, 3), vec![70]); // key 1 running sum 10+20+40
@@ -13020,7 +13976,7 @@ mod tests {
         // frame_kind 1 = bounded ROWS, offset 1 = one preceding row.
         let mut over = OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 1, 1, false);
         over.push(batch);
-        let out = over.flush(2000);
+        let out = over.flush(2000).unwrap();
         assert_eq!(out.num_rows(), 4);
         // SUM over {self, prev}: key 1 -> 10, 10+20, 20+30; key 2 (lone row) -> 100.
         assert_eq!(values(&out, 1), vec![10, 20, 30, 100]); // v passed through
@@ -13047,7 +14003,7 @@ mod tests {
         // frame_kind 2 = bounded RANGE, offset 1000 = a 1000ms preceding interval.
         let mut over = OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 2, 1000, false);
         over.push(batch);
-        let out = over.flush(2000);
+        let out = over.flush(2000).unwrap();
         assert_eq!(out.num_rows(), 3);
         // SUM over rows within 1000ms: rt0 -> {10}, rt1000 -> {10,20}, rt2000 -> {20,30}.
         assert_eq!(values(&out, 3), vec![10, 30, 50]);
@@ -13066,7 +14022,7 @@ mod tests {
         let batch = RecordBatch::try_new(schema, vec![k, v]).unwrap();
         // rt_column is ignored in proctime mode (arrival order); value col 1, key col 0, unbounded.
         let mut over = OverWindowAggregator::new(vec![0], vec![0], 0, vec![1], vec![0], 0, 0, true);
-        let out = over.push_proctime(batch);
+        let out = over.push_proctime(batch).unwrap();
         assert_eq!(out.num_rows(), 3);
         assert_eq!(values(&out, 1), vec![10, 100, 20]); // v passed through
         assert_eq!(values(&out, 2), vec![10, 100, 30]); // running SUM per key, in arrival order
@@ -13094,7 +14050,7 @@ mod tests {
         let mut over =
             OverWindowAggregator::new(vec![0, 0], vec![0, 2], 3, vec![1, 2], vec![0], 0, 0, false);
         over.push(batch);
-        let out = over.flush(2000);
+        let out = over.flush(2000).unwrap();
         assert_eq!(out.num_rows(), 3);
         assert_eq!(values(&out, 4), vec![10, 30, 60]); // running SUM(v0)
         assert_eq!(values(&out, 5), vec![5, 15, 15]); // running MAX(v1)
@@ -13185,11 +14141,11 @@ mod tests {
         agg.update(&keyed_window_batch(0, (0..50).collect())).unwrap();
         agg.update(&keyed_window_batch(1500, (0..20).collect())).unwrap();
         assert!(pool.reserved() > 0);
-        assert_eq!(agg.state_bytes, agg.computed_state_bytes()); // incremental tracking must not drift
+        assert_eq!(agg.memory.state_bytes, agg.computed_state_bytes()); // incremental tracking must not drift
         let both_windows = pool.reserved();
 
         agg.flush(1000); // closes the first window only
-        assert_eq!(agg.state_bytes, agg.computed_state_bytes());
+        assert_eq!(agg.memory.state_bytes, agg.computed_state_bytes());
         assert!(pool.reserved() > 0 && pool.reserved() < both_windows);
 
         agg.flush(2000); // closes the rest
@@ -13208,6 +14164,105 @@ mod tests {
         assert!(err.to_string().contains("managed-memory budget"), "{err}");
     }
 
+    // Every rolled-out state shape enforces its budget: exceeding it is an error, not an overrun.
+    // One test per shape (accumulator maps, byte-row maps, buffered batches, bounded buffers).
+    #[test]
+    fn session_state_over_budget_fails_clearly() {
+        let mut agg = SessionAggregator::new(1000, vec![0], vec![0])
+            .with_memory_budget(256)
+            .unwrap();
+        let err = agg.update(&keyed_window_batch(0, (0..100).collect())).unwrap_err();
+        assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    }
+
+    #[test]
+    fn group_state_over_budget_fails_and_deletes_release() {
+        // A generous budget: inserts fit, and retracting every record shrinks the tracking to zero.
+        let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true)
+            .with_memory_budget(1 << 20)
+            .unwrap();
+        agg.update(&group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![0, 0])).unwrap();
+        assert!(agg.memory.state_bytes > 0);
+        agg.update(&group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![3, 3])).unwrap();
+        assert_eq!(agg.memory.state_bytes, 0); // both groups deleted -> fully released
+
+        let mut tight = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true)
+            .with_memory_budget(128)
+            .unwrap();
+        let keys: Vec<i64> = (0..100).collect();
+        let values: Vec<Option<i64>> = keys.iter().map(|&k| Some(k)).collect();
+        let err = tight
+            .update(&group_changelog(keys, values, vec![0; 100]))
+            .unwrap_err();
+        assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    }
+
+    #[test]
+    fn dedup_state_over_budget_fails_clearly() {
+        // Keep-last over distinct keys stores one row per key; 100 keys cannot fit 64 bytes.
+        let mut dedup = KeepLastDeduplicator::new(vec![0], 2, true, false, false)
+            .with_memory_budget(64)
+            .unwrap();
+        let keys: Vec<i64> = (0..100).collect();
+        let values: Vec<i64> = (0..100).collect();
+        let rts: Vec<i64> = vec![0; 100];
+        let err = dedup.push(&join_batch(keys, values, rts)).unwrap_err();
+        assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    }
+
+    #[test]
+    fn sort_buffer_over_budget_fails_and_flush_releases() {
+        let mut sorter = TemporalSorter::new(2).with_memory_budget(1 << 20).unwrap();
+        sorter.push(join_batch(vec![1, 2], vec![10, 20], vec![0, 1000])).unwrap();
+        assert!(sorter.memory.state_bytes > 0);
+        sorter.flush(i64::MAX);
+        assert_eq!(sorter.memory.state_bytes, 0); // everything emitted -> buffer released
+
+        let mut tight = TemporalSorter::new(2).with_memory_budget(16).unwrap();
+        let err = tight.push(join_batch(vec![1], vec![10], vec![0])).unwrap_err();
+        assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    }
+
+    #[test]
+    fn interval_join_buffers_over_budget_fail_clearly() {
+        let mut joiner = inner_interval_joiner(-1000, 1000).with_memory_budget(16).unwrap();
+        let err = joiner.push_left(join_batch(vec![1], vec![10], vec![0]), None).unwrap_err();
+        assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    }
+
+    #[test]
+    fn updating_join_state_over_budget_fails_and_retract_releases() {
+        let mut joiner = inner_joiner().with_memory_budget(1 << 20).unwrap();
+        joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true).unwrap();
+        assert!(joiner.memory.state_bytes > 0);
+        joiner.push(&changelog_join_batch(vec![1], vec![10], vec![3]), true).unwrap();
+        assert_eq!(joiner.memory.state_bytes, 0); // the only stored row retracted -> released
+
+        let mut tight = inner_joiner().with_memory_budget(64).unwrap();
+        let keys: Vec<i64> = (0..100).collect();
+        let values: Vec<i64> = (0..100).collect();
+        let err = tight
+            .push(&changelog_join_batch(keys, values, vec![0; 100]), true)
+            .unwrap_err();
+        assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    }
+
+    #[test]
+    fn topn_buffer_stays_within_budget_under_eviction() {
+        // A bounded Top-3 keeps its reservation bounded no matter how many rows stream through.
+        let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 3, false)
+            .with_memory_budget(1 << 20)
+            .unwrap();
+        for i in 0..50 {
+            ranker.push(&topn_batch(vec![1], vec![i])).unwrap();
+        }
+        let bounded = ranker.memory.state_bytes;
+        for i in 50..100 {
+            ranker.push(&topn_batch(vec![1], vec![i])).unwrap();
+        }
+        assert_eq!(ranker.memory.state_bytes, bounded); // eviction keeps the tracked state flat
+    }
+
     // A restored snapshot is accounted the moment the budget attaches, so state that no longer fits
     // fails at restore rather than silently exceeding the budget.
     #[test]
@@ -13220,8 +14275,8 @@ mod tests {
 
         let restored = TumblingAggregator::restore(1000, 1000, false, vec![0], vec![0], &snapshot);
         let fits = restored.with_memory_budget(1 << 20).unwrap();
-        assert_eq!(fits.state_bytes, fits.computed_state_bytes());
-        assert!(fits.state_bytes > 0);
+        assert_eq!(fits.memory.state_bytes, fits.computed_state_bytes());
+        assert!(fits.memory.state_bytes > 0);
     }
 
     // A `[key0, value0, $row_kind$]` changelog batch (key/value bigint) for the GROUP BY tests;
@@ -13266,7 +14321,7 @@ mod tests {
         // SUM(bigint) over value column 1, grouping on key column 0, emitting -U.
         let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true);
         // keys a,a,b,a with values 1,2,5,0 — the last adds 0, leaving a's sum at 3 (suppressed).
-        let out = agg.update(&group_batch(vec![1, 1, 2, 1], vec![1, 2, 5, 0]));
+        let out = agg.update(&group_batch(vec![1, 1, 2, 1], vec![1, 2, 5, 0])).unwrap();
         assert_eq!(row_kinds(&out), vec![0, 1, 2, 0]);
         assert_eq!(values(&out, 0), vec![1, 1, 1, 2]); // key
         assert_eq!(values(&out, 1), vec![1, 1, 3, 5]); // running sum (prev on -U, new on +U)
@@ -13277,7 +14332,7 @@ mod tests {
     fn group_by_counts_every_row_for_count_star() {
         // kinds COUNT(*), SUM; COUNT(*) has no column (-1), SUM reads column 1; group on column 0.
         let mut agg = GroupAggregator::new(vec![3, 0], vec![0, 0], vec![-1, 1], vec![0], true);
-        let out = agg.update(&group_batch(vec![1, 1], vec![10, 5]));
+        let out = agg.update(&group_batch(vec![1, 1], vec![10, 5])).unwrap();
         assert_eq!(row_kinds(&out), vec![0, 1, 2]); // +I, then -U/+U
         assert_eq!(values(&out, 1), vec![1, 1, 2]); // COUNT(*): 1, then 1->2
         assert_eq!(values(&out, 2), vec![10, 10, 15]); // SUM: 10, then 10->15
@@ -13289,7 +14344,7 @@ mod tests {
     fn group_by_avg_truncates_toward_zero() {
         let mut agg = GroupAggregator::new(vec![4], vec![0], vec![1], vec![0], true);
         // One key, values 10 then 1 → avg 10, then 11/2 = 5 (truncated from 5.5, not rounded).
-        let out = agg.update(&group_batch(vec![1, 1], vec![10, 1]));
+        let out = agg.update(&group_batch(vec![1, 1], vec![10, 1])).unwrap();
         assert_eq!(row_kinds(&out), vec![0, 1, 2]); // +I, then -U/+U
         assert_eq!(values(&out, 1), vec![10, 10, 5]);
     }
@@ -13311,7 +14366,7 @@ mod tests {
         // COUNT(*) over a boolean filter in column 1; group on column 0.
         let mut agg = GroupAggregator::new(vec![3], vec![0], vec![-1], vec![0], true)
             .with_filter_columns(vec![1]);
-        let out = agg.update(&batch);
+        let out = agg.update(&batch).unwrap();
         // Only the TRUE row counts → +I count=1; the FALSE/NULL rows leave it unchanged (suppressed).
         assert_eq!(row_kinds(&out), vec![0]);
         assert_eq!(values(&out, 1), vec![1]);
@@ -13334,7 +14389,7 @@ mod tests {
         .unwrap();
         // MIN, MAX over the string column 1; group on column 0; value type code 3 (Utf8).
         let mut agg = GroupAggregator::new(vec![1, 2], vec![3, 3], vec![1, 1], vec![0], true);
-        let out = agg.update(&batch);
+        let out = agg.update(&batch).unwrap();
         let last = out.num_rows() - 1;
         let min = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
         let max = out.column(2).as_any().downcast_ref::<StringArray>().unwrap();
@@ -13358,7 +14413,7 @@ mod tests {
             ],
         )
         .unwrap();
-        let out = agg.update(&batch);
+        let out = agg.update(&batch).unwrap();
         assert_eq!(row_kinds(&out), vec![0, 1, 2]); // +I(10); -U(10)/+U(30)
         assert_eq!(values(&out, 1), vec![10, 10, 30]);
     }
@@ -13367,7 +14422,7 @@ mod tests {
     #[test]
     fn group_by_omits_update_before_when_disabled() {
         let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], false);
-        let out = agg.update(&group_batch(vec![1, 1], vec![10, 5]));
+        let out = agg.update(&group_batch(vec![1, 1], vec![10, 5])).unwrap();
         assert_eq!(row_kinds(&out), vec![0, 2]); // +I(10), +U(15)
         assert_eq!(values(&out, 1), vec![10, 15]);
     }
@@ -13381,7 +14436,7 @@ mod tests {
         let snapshot = agg.snapshot();
         let mut restored =
             GroupAggregator::restore(vec![0], vec![0], vec![1], vec![0], true, &snapshot);
-        let out = restored.update(&group_batch(vec![1], vec![5]));
+        let out = restored.update(&group_batch(vec![1], vec![5])).unwrap();
         assert_eq!(row_kinds(&out), vec![1, 2]); // -U(10), +U(15) — continues from 10
         assert_eq!(values(&out, 1), vec![10, 15]);
     }
@@ -13395,7 +14450,7 @@ mod tests {
             vec![1, 1, 1],
             vec![Some(10), Some(20), Some(10)],
             vec![0, 0, 1],
-        ));
+        )).unwrap();
         assert_eq!(row_kinds(&out), vec![0, 1, 2, 1, 2]);
         assert_eq!(values(&out, 1), vec![10, 10, 30, 30, 20]); // +I10; -U10/+U30; -U30/+U20
     }
@@ -13404,7 +14459,7 @@ mod tests {
     #[test]
     fn group_by_deletes_when_last_record_retracted() {
         let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true);
-        let out = agg.update(&group_changelog(vec![1, 1], vec![Some(10), Some(10)], vec![0, 3]));
+        let out = agg.update(&group_changelog(vec![1, 1], vec![Some(10), Some(10)], vec![0, 3])).unwrap();
         assert_eq!(row_kinds(&out), vec![0, 3]); // +I(10), then -D(10)
         assert_eq!(values(&out, 1), vec![10, 10]);
     }
@@ -13419,7 +14474,7 @@ mod tests {
             vec![1, 1, 1],
             vec![Some(5), None, Some(5)],
             vec![0, 0, 1],
-        ));
+        )).unwrap();
         assert_eq!(row_kinds(&out), vec![0, 1, 2]); // +I(5); -U(5)/+U(NULL)
         let result = out.column(1);
         assert_eq!(result.len(), 3);
@@ -13438,7 +14493,7 @@ mod tests {
             vec![1, 1, 1, 1],
             vec![Some(5), Some(3), Some(8), Some(3)],
             vec![0, 0, 0, 1],
-        ));
+        )).unwrap();
         assert_eq!(row_kinds(&out), vec![0, 1, 2, 1, 2]);
         // min: 5; 5->3; (8 leaves min 3, suppressed); 3->5 after retracting the 3.
         assert_eq!(values(&out, 1), vec![5, 5, 3, 3, 5]);
@@ -13454,7 +14509,7 @@ mod tests {
         let mut restored =
             GroupAggregator::restore(vec![1], vec![0], vec![1], vec![0], true, &snapshot);
         // Retract the 3 — the restored multiset still holds the 5, so the min becomes 5.
-        let out = restored.update(&group_changelog(vec![1], vec![Some(3)], vec![1]));
+        let out = restored.update(&group_changelog(vec![1], vec![Some(3)], vec![1])).unwrap();
         assert_eq!(row_kinds(&out), vec![1, 2]); // -U(3), +U(5)
         assert_eq!(values(&out, 1), vec![3, 5]);
     }
@@ -13489,7 +14544,7 @@ mod tests {
         // partition col 0, ORDER BY col 1 ASC, limit 2.
         let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 2, false);
         // s = 5, 3, 8, 1 for partition 1.
-        let out = ranker.push(&topn_batch(vec![1, 1, 1, 1], vec![5, 3, 8, 1]));
+        let out = ranker.push(&topn_batch(vec![1, 1, 1, 1], vec![5, 3, 8, 1])).unwrap();
         // 5: +I5. 3: +I3 (top2 = {3,5}). 8: rank 3 -> nothing. 1: +I1, -D5 (top2 = {1,3}).
         assert_eq!(row_kinds(&out), vec![0, 0, 3, 0]);
         assert_eq!(values(&out, 1), vec![5, 3, 5, 1]); // the sort-key column of each emitted row
@@ -13500,7 +14555,7 @@ mod tests {
     #[test]
     fn topn_with_rank_number_emits_cascade() {
         let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 2, true);
-        let out = ranker.push(&topn_batch(vec![1, 1, 1, 1], vec![5, 3, 8, 1]));
+        let out = ranker.push(&topn_batch(vec![1, 1, 1, 1], vec![5, 3, 8, 1])).unwrap();
         // 5: +I(5,1). 3: -U(5,1) +U(3,1) +I(5,2). 8: rank 3 -> nothing.
         // 1: -U(3,1) +U(1,1) -U(5,2) +U(3,2)  [5 pushed past rank 2, retracted by the -U].
         assert_eq!(row_kinds(&out), vec![0, 1, 2, 0, 1, 2, 1, 2]);
@@ -13512,7 +14567,7 @@ mod tests {
     #[test]
     fn topn_is_per_partition() {
         let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 1, false);
-        let out = ranker.push(&topn_batch(vec![1, 2, 1], vec![5, 7, 3]));
+        let out = ranker.push(&topn_batch(vec![1, 2, 1], vec![5, 7, 3])).unwrap();
         // p1: +I5; p2: +I7; p1 sees 3 < 5 -> -D5 then +I3 (delete first, as the host emits).
         assert_eq!(row_kinds(&out), vec![0, 0, 3, 0]);
         assert_eq!(values(&out, 0), vec![1, 2, 1, 1]); // partition of each emitted row
@@ -13527,7 +14582,7 @@ mod tests {
         let snapshot = ranker.snapshot();
         let mut restored = TopNRanker::restore(vec![0], vec![asc(1)], 2, false, &snapshot);
         // A 1 enters the restored top-2 and displaces the 5.
-        let out = restored.push(&topn_batch(vec![1], vec![1]));
+        let out = restored.push(&topn_batch(vec![1], vec![1])).unwrap();
         assert_eq!(row_kinds(&out), vec![3, 0]); // -D5, +I1
         assert_eq!(values(&out, 1), vec![5, 1]);
     }
@@ -13568,18 +14623,18 @@ mod tests {
         let mut joiner = inner_joiner();
         // Buffer a left row (k=1, v=10); no right yet, so nothing emits.
         assert_eq!(
-            joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true).num_rows(),
+            joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true).unwrap().num_rows(),
             0
         );
         // A right row (k=1, v=100) matches it: emit +I (left ++ right).
-        let out = joiner.push(&changelog_join_batch(vec![1], vec![100], vec![0]), false);
+        let out = joiner.push(&changelog_join_batch(vec![1], vec![100], vec![0]), false).unwrap();
         assert_eq!(row_kinds(&out), vec![0]);
         assert_eq!(values(&out, 0), vec![1]); // left k
         assert_eq!(values(&out, 1), vec![10]); // left v
         assert_eq!(values(&out, 2), vec![1]); // right k
         assert_eq!(values(&out, 3), vec![100]); // right v
         // Retracting the left row emits the matching pair as a retraction.
-        let retract = joiner.push(&changelog_join_batch(vec![1], vec![10], vec![3]), true);
+        let retract = joiner.push(&changelog_join_batch(vec![1], vec![10], vec![3]), true).unwrap();
         assert_eq!(row_kinds(&retract), vec![3]); // -D
         assert_eq!(values(&retract, 1), vec![10]);
         assert_eq!(values(&retract, 3), vec![100]);
@@ -13591,7 +14646,7 @@ mod tests {
     fn updating_join_is_cartesian_per_key() {
         let mut joiner = inner_joiner();
         joiner.push(&changelog_join_batch(vec![1, 1, 2], vec![100, 200, 300], vec![0, 0, 0]), false);
-        let out = joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true);
+        let out = joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true).unwrap();
         assert_eq!(out.num_rows(), 2); // matches both k=1 right rows, not the k=2 one
         let mut right_vs = values(&out, 3);
         right_vs.sort();
@@ -13628,7 +14683,7 @@ mod tests {
             ],
         )
         .unwrap();
-        let out = joiner.push(&left, true);
+        let out = joiner.push(&left, true).unwrap();
         assert_eq!(out.num_rows(), 1); // only key=1 pair, not the null-key rows
         assert_eq!(values(&out, 1), vec![20]); // left v
         assert_eq!(values(&out, 3), vec![200]); // right v
@@ -13642,7 +14697,7 @@ mod tests {
         let snapshot = joiner.snapshot();
         let mut restored =
             UpdatingJoiner::restore(vec![0], vec![0], JoinKind::Inner, kv_schema(), kv_schema(), None, &snapshot);
-        let out = restored.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true);
+        let out = restored.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true).unwrap();
         assert_eq!(out.num_rows(), 1);
         assert_eq!(values(&out, 1), vec![10]);
         assert_eq!(values(&out, 3), vec![100]);
@@ -13655,12 +14710,12 @@ mod tests {
         let mut joiner =
             UpdatingJoiner::new(vec![0], vec![0], JoinKind::LeftOuter, kv_schema(), kv_schema(), None);
         // Left row k=1, v=10: no right match → +I[left + null].
-        let out = joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true);
+        let out = joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true).unwrap();
         assert_eq!(row_kinds(&out), vec![0]);
         assert_eq!(values(&out, 1), vec![10]); // left v
         assert!(out.column(3).is_null(0)); // right v nulled
         // Right row k=1, v=100 arrives: -D[left + null], +I[left + right].
-        let out = joiner.push(&changelog_join_batch(vec![1], vec![100], vec![0]), false);
+        let out = joiner.push(&changelog_join_batch(vec![1], vec![100], vec![0]), false).unwrap();
         assert_eq!(row_kinds(&out), vec![3, 0]);
         assert!(out.column(3).is_null(0)); // the retracted null-pad's right v
         assert!(!out.column(3).is_null(1)); // the matched pair's right v is present
@@ -13673,9 +14728,9 @@ mod tests {
     fn updating_join_left_outer_unmatched_retract() {
         let mut joiner =
             UpdatingJoiner::new(vec![0], vec![0], JoinKind::LeftOuter, kv_schema(), kv_schema(), None);
-        let out = joiner.push(&changelog_join_batch(vec![7], vec![70], vec![0]), true);
+        let out = joiner.push(&changelog_join_batch(vec![7], vec![70], vec![0]), true).unwrap();
         assert_eq!(row_kinds(&out), vec![0]); // +I[left + null]
-        let out = joiner.push(&changelog_join_batch(vec![7], vec![70], vec![3]), true);
+        let out = joiner.push(&changelog_join_batch(vec![7], vec![70], vec![3]), true).unwrap();
         assert_eq!(row_kinds(&out), vec![3]); // -D[left + null]
         assert!(out.column(3).is_null(0));
     }
@@ -13685,9 +14740,9 @@ mod tests {
     fn updating_join_semi_emits_on_match() {
         let mut joiner = UpdatingJoiner::new(vec![0], vec![0], JoinKind::Semi, kv_schema(), kv_schema(), None);
         // Left row with no right match → nothing (semi).
-        assert_eq!(joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true).num_rows(), 0);
+        assert_eq!(joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true).unwrap().num_rows(), 0);
         // Right row arrives → emit the left row (+I), one column-set (left only).
-        let out = joiner.push(&changelog_join_batch(vec![1], vec![100], vec![0]), false);
+        let out = joiner.push(&changelog_join_batch(vec![1], vec![100], vec![0]), false).unwrap();
         assert_eq!(row_kinds(&out), vec![0]);
         assert_eq!(out.num_columns(), 3); // left k, left v, $row_kind$ (no right columns)
         assert_eq!(values(&out, 1), vec![10]);
@@ -13697,9 +14752,9 @@ mod tests {
     #[test]
     fn updating_join_anti_retracts_on_match() {
         let mut joiner = UpdatingJoiner::new(vec![0], vec![0], JoinKind::Anti, kv_schema(), kv_schema(), None);
-        let out = joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true);
+        let out = joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true).unwrap();
         assert_eq!(row_kinds(&out), vec![0]); // +I[left] (no match yet)
-        let out = joiner.push(&changelog_join_batch(vec![1], vec![100], vec![0]), false);
+        let out = joiner.push(&changelog_join_batch(vec![1], vec![100], vec![0]), false).unwrap();
         assert_eq!(row_kinds(&out), vec![3]); // -D[left] (now matched)
         assert_eq!(values(&out, 1), vec![10]);
     }
@@ -13857,7 +14912,7 @@ mod tests {
         // Buffer two right rows for k=1: v=5 and v=20.
         joiner.push(&changelog_join_batch(vec![1, 1], vec![5, 20], vec![0, 0]), false);
         // Left row k=1, v=10 → matches only the right v=5 (10 > 5), not v=20.
-        let out = joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true);
+        let out = joiner.push(&changelog_join_batch(vec![1], vec![10], vec![0]), true).unwrap();
         assert_eq!(out.num_rows(), 1);
         assert_eq!(values(&out, 3), vec![5]); // the one right row passing left.v > right.v
     }
@@ -13879,7 +14934,7 @@ mod tests {
             None,
             &snapshot,
         );
-        let out = restored.push(&changelog_join_batch(vec![1], vec![100], vec![0]), false);
+        let out = restored.push(&changelog_join_batch(vec![1], vec![100], vec![0]), false).unwrap();
         assert_eq!(row_kinds(&out), vec![3, 0]); // -D[left+null], +I[left+right]
     }
 
@@ -13925,9 +14980,9 @@ mod tests {
         // a.rt BETWEEN b.rt - 1000 AND b.rt + 1000, single equi-key on column 0, rt is column 2.
         let mut joiner = inner_interval_joiner(-1000, 1000);
         // Buffer two right rows for key 1 (rt 5500 in range of left 5000, rt 7000 out of range).
-        assert_eq!(joiner.push_right(join_batch(vec![1, 1], vec![100, 200], vec![5500, 7000]), None).num_rows(), 0);
+        assert_eq!(joiner.push_right(join_batch(vec![1, 1], vec![100, 200], vec![5500, 7000]), None).unwrap().num_rows(), 0);
         // A left row (k=1, rt=5000): matches the rt=5500 right row only (delta -500 in [-1000,1000]).
-        let out = joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None);
+        let out = joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None).unwrap();
         assert_eq!(out.num_rows(), 1);
         assert_eq!(values(&out, 0), vec![1]); // left k
         assert_eq!(values(&out, 1), vec![10]); // left v
@@ -13943,11 +14998,11 @@ mod tests {
     fn interval_join_matches_on_key_and_emits_once() {
         let mut joiner = inner_interval_joiner(-1000, 1000);
         // Left first: buffer a left row, no right yet.
-        assert_eq!(joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None).num_rows(), 0);
+        assert_eq!(joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None).unwrap().num_rows(), 0);
         // A right row with a different key does not match.
-        assert_eq!(joiner.push_right(join_batch(vec![2], vec![100], vec![5000]), None).num_rows(), 0);
+        assert_eq!(joiner.push_right(join_batch(vec![2], vec![100], vec![5000]), None).unwrap().num_rows(), 0);
         // A matching right row emits the pair exactly once.
-        let out = joiner.push_right(join_batch(vec![1], vec![100], vec![5500]), None);
+        let out = joiner.push_right(join_batch(vec![1], vec![100], vec![5500]), None).unwrap();
         assert_eq!(out.num_rows(), 1);
         assert_eq!(values(&out, 1), vec![10]);
         assert_eq!(values(&out, 4), vec![100]);
@@ -13962,7 +15017,7 @@ mod tests {
         // Watermark 6000: left.rt - lower = 5000 - (-1000) = 6000, not > 6000, so the row is evicted.
         joiner.advance(6000);
         // A right row that would otherwise match (delta -500) finds nothing buffered.
-        assert_eq!(joiner.push_right(join_batch(vec![1], vec![100], vec![5500]), None).num_rows(), 0);
+        assert_eq!(joiner.push_right(join_batch(vec![1], vec![100], vec![5500]), None).unwrap().num_rows(), 0);
     }
 
     // The `[k, v, window_start, window_end]` data schema the window-join tests carry.
@@ -14084,7 +15139,7 @@ mod tests {
             interval_schema(),
             &snapshot,
         );
-        let out = restored.push_left(join_batch(vec![1], vec![10], vec![5000]), None);
+        let out = restored.push_left(join_batch(vec![1], vec![10], vec![5000]), None).unwrap();
         assert_eq!(out.num_rows(), 1);
         assert_eq!(values(&out, 4), vec![100]);
     }
@@ -14110,7 +15165,7 @@ mod tests {
     fn interval_left_join_null_pads_unmatched_on_eviction() {
         let mut joiner = left_interval_joiner(-1000, 1000);
         // Left row k=1, v=10, rt=5000; no right buffered → no immediate match.
-        assert_eq!(joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None).num_rows(), 0);
+        assert_eq!(joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None).unwrap().num_rows(), 0);
         // Watermark below the eviction point: not yet evicted, nothing emitted.
         assert_eq!(joiner.advance(5000).num_rows(), 0);
         // Watermark at/above 5000 - (-1000) = 6000: the left row is evicted unmatched → [left+null]
@@ -14129,7 +15184,7 @@ mod tests {
         let mut joiner = left_interval_joiner(-1000, 1000);
         joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None);
         // Right row k=1, rt=5000 within [rt-1000, rt+1000] of the left → emits the matched pair.
-        let out = joiner.push_right(join_batch(vec![1], vec![100], vec![5000]), None);
+        let out = joiner.push_right(join_batch(vec![1], vec![100], vec![5000]), None).unwrap();
         assert_eq!(out.num_rows(), 1);
         assert_eq!(values(&out, 4), vec![100]);
         // Evict the left row: it matched, so no null-pad.

@@ -87,27 +87,30 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     Transformation<ArrowBatch> right =
         (Transformation<ArrowBatch>) getInputEdges().get(1).translateToPlan(planner);
-    return ExecNodeUtil.createTwoInputTransformation(
-        left,
-        right,
-        createTransformationMeta(TRANSFORMATION, config),
-        new NativeWindowJoinOperator(
-            leftKeys,
-            rightKeys,
-            leftWindowStart,
-            leftWindowEnd,
-            rightWindowStart,
-            rightWindowEnd,
-            joinType,
-            leftType,
-            rightType,
-            RexExpression.toEncodedPredicate(predicate),
-            proctime,
-            windowMillis,
-            slideMillis,
-            cumulative),
-        ArrowBatchTypeInformation.INSTANCE,
-        left.getParallelism(),
-        false);
+    Transformation<ArrowBatch> transformation =
+        ExecNodeUtil.createTwoInputTransformation(
+            left,
+            right,
+            createTransformationMeta(TRANSFORMATION, config),
+            new NativeWindowJoinOperator(
+                leftKeys,
+                rightKeys,
+                leftWindowStart,
+                leftWindowEnd,
+                rightWindowStart,
+                rightWindowEnd,
+                joinType,
+                leftType,
+                rightType,
+                RexExpression.toEncodedPredicate(predicate),
+                proctime,
+                windowMillis,
+                slideMillis,
+                cumulative),
+            ArrowBatchTypeInformation.INSTANCE,
+            left.getParallelism(),
+            false);
+    NativeManagedMemory.declareOperatorWeight(transformation);
+    return transformation;
   }
 }

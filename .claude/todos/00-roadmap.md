@@ -114,15 +114,14 @@ here when the ticket is deleted.
    ~25% faster; a native decoder was investigated and rejected on benchmark grounds — ticket 28.)
 
 ## Production-readiness (not yet load-bearing)
-- **Memory accounting** (ticket 05): the mechanism shipped for the aligned-window aggregate family —
-  the transformation declares an operator-scope managed-memory weight, the operator reserves the
+- **Memory accounting** (ticket 05): shipped for every stateful native operator — the
+  transformation declares an operator-scope managed-memory weight, the operator reserves the
   fraction from Flink's `MemoryManager` for its lifetime, and the native side enforces it as a
   bounded DataFusion pool with incrementally tracked state bytes (`NativeMemoryLimitException` on
   exceed, restore included; up-front reservation, not comet's per-grow upcall — divergences/16).
-  Remaining: the other stateful operators (joins, GROUP BY, OVER, Top-N, dedup, session) and the
-  DataFusion-executed fragments' `RuntimeEnv` pool wiring. Distinct from the FFI Arrow allocator
-  (one shared, long-lived allocator, as comet does) — accounting is the pool's job, not the
-  allocator's.
+  Remaining tail: the `RuntimeEnv` pool wiring for DataFusion-executed fragments (join match, file
+  scans) and the mini-batch local pre-aggregate. Distinct from the FFI Arrow allocator (one shared,
+  long-lived allocator, as comet does) — accounting is the pool's job, not the allocator's.
 - **Mailbox threading** (ticket 01): native execution should integrate with the task mailbox
   (non-blocking), not block the task thread.
 - **Memory profiling + leak detection** (ticket 41): introspect the native allocator/pool (metrics +

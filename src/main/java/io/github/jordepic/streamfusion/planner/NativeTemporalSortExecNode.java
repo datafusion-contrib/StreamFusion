@@ -49,12 +49,15 @@ public class NativeTemporalSortExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
-    return ExecNodeUtil.createOneInputTransformation(
-        input,
-        createTransformationMeta(TRANSFORMATION, config),
-        new NativeColumnarTemporalSortOperator(rowtimeColumn),
-        ArrowBatchTypeInformation.INSTANCE,
-        input.getParallelism(),
-        false);
+    Transformation<ArrowBatch> transformation =
+        ExecNodeUtil.createOneInputTransformation(
+            input,
+            createTransformationMeta(TRANSFORMATION, config),
+            new NativeColumnarTemporalSortOperator(rowtimeColumn),
+            ArrowBatchTypeInformation.INSTANCE,
+            input.getParallelism(),
+            false);
+    NativeManagedMemory.declareOperatorWeight(transformation);
+    return transformation;
   }
 }

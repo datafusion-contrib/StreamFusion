@@ -37,6 +37,7 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient ManagedMemoryBudget memoryBudget;
 
   public NativeColumnarGroupAggregateOperator(
       int[] aggregateKinds,
@@ -67,13 +68,15 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
     for (byte[] entry : handleState.get()) {
       snapshot = entry;
     }
+    memoryBudget = ManagedMemoryBudget.reserveFor(this);
     handle =
         snapshot == null
             ? Native.createGroupAggregator(
-                aggregateKinds, valueTypes, valueColumns, keyColumns, filterColumns, generateUpdateBefore)
+                aggregateKinds, valueTypes, valueColumns, keyColumns, filterColumns,
+                generateUpdateBefore, memoryBudget.bytes())
             : Native.restoreGroupAggregator(
                 aggregateKinds, valueTypes, valueColumns, keyColumns, filterColumns,
-                generateUpdateBefore, snapshot);
+                generateUpdateBefore, snapshot, memoryBudget.bytes());
   }
 
   @Override
@@ -123,6 +126,10 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
     if (handle != 0) {
       Native.closeGroupAggregator(handle);
       handle = 0;
+    }
+    if (memoryBudget != null) {
+      memoryBudget.close();
+      memoryBudget = null;
     }
     super.close();
   }

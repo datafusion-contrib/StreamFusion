@@ -59,6 +59,7 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
   private transient ZoneId zone;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient ManagedMemoryBudget memoryBudget;
   private transient long registeredTimer;
   private transient long maxOpenEnd;
 
@@ -105,6 +106,7 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
     for (byte[] entry : handleState.get()) {
       snapshot = entry;
     }
+    memoryBudget = ManagedMemoryBudget.reserveFor(this);
     handle =
         snapshot == null
             ? Native.createWindowRanker(
@@ -115,7 +117,8 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
                 sortAscending,
                 sortNullsFirst,
                 limit,
-                outputRankNumber)
+                outputRankNumber,
+                memoryBudget.bytes())
             : Native.restoreWindowRanker(
                 windowStartColumn,
                 windowEndColumn,
@@ -125,7 +128,8 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
                 sortNullsFirst,
                 limit,
                 outputRankNumber,
-                snapshot);
+                snapshot,
+                memoryBudget.bytes());
   }
 
   @Override
@@ -244,6 +248,10 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
     if (handle != 0) {
       Native.closeWindowRanker(handle);
       handle = 0;
+    }
+    if (memoryBudget != null) {
+      memoryBudget.close();
+      memoryBudget = null;
     }
     super.close();
   }

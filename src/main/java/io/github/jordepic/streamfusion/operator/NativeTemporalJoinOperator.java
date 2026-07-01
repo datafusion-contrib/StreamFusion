@@ -55,6 +55,7 @@ public class NativeTemporalJoinOperator extends AbstractStreamOperator<ArrowBatc
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient ManagedMemoryBudget memoryBudget;
 
   public NativeTemporalJoinOperator(
       int[] leftKeys,
@@ -98,6 +99,7 @@ public class NativeTemporalJoinOperator extends AbstractStreamOperator<ArrowBatc
       Data.exportSchema(alloc, ArrowConversion.toArrowSchema(leftType), dicts, leftSchema);
       Data.exportSchema(alloc, ArrowConversion.toArrowSchema(rightType), dicts, rightSchema);
       predicate.bind();
+      memoryBudget = ManagedMemoryBudget.reserveFor(this);
       handle =
           snapshot == null
               ? Native.createTemporalJoiner(
@@ -113,7 +115,8 @@ public class NativeTemporalJoinOperator extends AbstractStreamOperator<ArrowBatc
                   predicate.childCounts,
                   predicate.boundLongs(),
                   predicate.doubles,
-                  predicate.strings)
+                  predicate.strings,
+                  memoryBudget.bytes())
               : Native.restoreTemporalJoiner(
                   leftKeys,
                   rightKeys,
@@ -128,7 +131,8 @@ public class NativeTemporalJoinOperator extends AbstractStreamOperator<ArrowBatc
                   predicate.boundLongs(),
                   predicate.doubles,
                   predicate.strings,
-                  snapshot);
+                  snapshot,
+                  memoryBudget.bytes());
     }
   }
 
@@ -205,6 +209,10 @@ public class NativeTemporalJoinOperator extends AbstractStreamOperator<ArrowBatc
     if (handle != 0) {
       Native.closeTemporalJoiner(handle);
       handle = 0;
+    }
+    if (memoryBudget != null) {
+      memoryBudget.close();
+      memoryBudget = null;
     }
     predicate.unbind();
     super.close();

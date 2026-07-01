@@ -41,6 +41,7 @@ public class NativeColumnarKeepLastDeduplicateOperator extends AbstractStreamOpe
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient ManagedMemoryBudget memoryBudget;
 
   public NativeColumnarKeepLastDeduplicateOperator(
       int[] partitionColumns,
@@ -69,17 +70,24 @@ public class NativeColumnarKeepLastDeduplicateOperator extends AbstractStreamOpe
     for (byte[] entry : handleState.get()) {
       snapshot = entry;
     }
+    memoryBudget = ManagedMemoryBudget.reserveFor(this);
     handle =
         snapshot == null
             ? Native.createKeepLastDeduplicator(
-                partitionColumns, rowtimeColumn, generateUpdateBefore, rowtimeOrdered, keepFirst)
+                partitionColumns,
+                rowtimeColumn,
+                generateUpdateBefore,
+                rowtimeOrdered,
+                keepFirst,
+                memoryBudget.bytes())
             : Native.restoreKeepLastDeduplicator(
                 partitionColumns,
                 rowtimeColumn,
                 generateUpdateBefore,
                 rowtimeOrdered,
                 keepFirst,
-                snapshot);
+                snapshot,
+                memoryBudget.bytes());
   }
 
   @Override
@@ -129,6 +137,10 @@ public class NativeColumnarKeepLastDeduplicateOperator extends AbstractStreamOpe
     if (handle != 0) {
       Native.closeKeepLastDeduplicator(handle);
       handle = 0;
+    }
+    if (memoryBudget != null) {
+      memoryBudget.close();
+      memoryBudget = null;
     }
     super.close();
   }

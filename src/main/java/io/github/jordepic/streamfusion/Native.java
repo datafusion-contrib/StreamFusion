@@ -467,6 +467,7 @@ public final class Native {
    * @param frameOffset n preceding rows (ROWS) or the preceding interval in millis (RANGE); 0 when
    *     unbounded
    * @param proctime whether the order is processing time (arrival order, eager emit) vs a rowtime
+   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
    */
   public static native long createOverAggregator(
       int[] valueTypes,
@@ -476,7 +477,8 @@ public final class Native {
       int[] keyColumns,
       int frameKind,
       long frameOffset,
-      boolean proctime);
+      boolean proctime,
+      long memoryBudgetBytes);
 
   /** Buffers an input batch; its rows are emitted later when a watermark completes them (rowtime). */
   public static native void pushOverAggregator(
@@ -512,7 +514,8 @@ public final class Native {
       int frameKind,
       long frameOffset,
       boolean proctime,
-      byte[] snapshot);
+      byte[] snapshot,
+      long memoryBudgetBytes);
 
   /**
    * Creates an event-time sorter over the given rowtime column and returns an opaque handle. Each
@@ -520,7 +523,7 @@ public final class Native {
    * it, ascending by rowtime (stable for ties), and keeps the rest. Released with {@link
    * #closeTemporalSorter}.
    */
-  public static native long createTemporalSorter(int rtColumn);
+  public static native long createTemporalSorter(int rtColumn, long memoryBudgetBytes);
 
   /** Buffers an input batch; rows are emitted in rowtime order as watermarks complete them. */
   public static native void pushTemporalSorter(
@@ -537,7 +540,8 @@ public final class Native {
   public static native byte[] snapshotTemporalSorter(long handle);
 
   /** Rebuilds an event-time sorter from a snapshot and returns a fresh handle. */
-  public static native long restoreTemporalSorter(int rtColumn, byte[] snapshot);
+  public static native long restoreTemporalSorter(
+      int rtColumn, byte[] snapshot, long memoryBudgetBytes);
 
   /**
    * Creates a keep-first deduplicator over the partition-key columns and rowtime column, and returns
@@ -545,7 +549,8 @@ public final class Native {
    * minimum-rowtime row (insert-only) once the watermark reaches that rowtime, and drops every later
    * row for the key. Released with {@link #closeKeepFirstDeduplicator}.
    */
-  public static native long createKeepFirstDeduplicator(int[] partitionColumns, int rtColumn);
+  public static native long createKeepFirstDeduplicator(
+      int[] partitionColumns, int rtColumn, long memoryBudgetBytes);
 
   /** Buffers an input batch; each key's first row is emitted on the watermark that reaches it. */
   public static native void pushKeepFirstDeduplicator(
@@ -563,7 +568,7 @@ public final class Native {
 
   /** Rebuilds a keep-first deduplicator from a snapshot and returns a fresh handle. */
   public static native long restoreKeepFirstDeduplicator(
-      int[] partitionColumns, int rtColumn, byte[] snapshot);
+      int[] partitionColumns, int rtColumn, byte[] snapshot, long memoryBudgetBytes);
 
   /**
    * Creates an eager (push→emit) deduplicator and returns an opaque handle. Per partition key, keep-
@@ -578,7 +583,8 @@ public final class Native {
       int rtColumn,
       boolean generateUpdateBefore,
       boolean rowtimeOrdered,
-      boolean keepFirst);
+      boolean keepFirst,
+      long memoryBudgetBytes);
 
   /** Folds an input batch and returns the changelog (or insert-only rows) it produces. */
   public static native void pushKeepLastDeduplicator(
@@ -597,7 +603,8 @@ public final class Native {
       boolean generateUpdateBefore,
       boolean rowtimeOrdered,
       boolean keepFirst,
-      byte[] snapshot);
+      byte[] snapshot,
+      long memoryBudgetBytes);
 
   /**
    * Creates a window-rank ranker (window Top-N / window deduplication) over the attached
@@ -614,7 +621,8 @@ public final class Native {
       int[] sortAscending,
       int[] sortNullsFirst,
       long limit,
-      boolean outputRankNumber);
+      boolean outputRankNumber,
+      long memoryBudgetBytes);
 
   /** Buffers an input batch; each window's top-N rows are emitted when a watermark closes it. */
   public static native void pushWindowRanker(
@@ -640,7 +648,8 @@ public final class Native {
       int[] sortNullsFirst,
       long limit,
       boolean outputRankNumber,
-      byte[] snapshot);
+      byte[] snapshot,
+      long memoryBudgetBytes);
 
   /**
    * Creates a non-windowed {@code GROUP BY} aggregator and returns an opaque handle. Each input batch
@@ -652,6 +661,7 @@ public final class Native {
    * @param valueColumns per-aggregate value-column index in the input batch ({@code -1} for COUNT(*))
    * @param keyColumns grouping-key column indices in the input batch (empty for global aggregation)
    * @param generateUpdateBefore whether to emit an UPDATE_BEFORE row before each UPDATE_AFTER
+   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
    */
   public static native long createGroupAggregator(
       int[] aggregateKinds,
@@ -659,7 +669,8 @@ public final class Native {
       int[] valueColumns,
       int[] keyColumns,
       int[] filterColumns,
-      boolean generateUpdateBefore);
+      boolean generateUpdateBefore,
+      long memoryBudgetBytes);
 
   /**
    * Folds an input batch into per-key state, exporting the changelog rows it produces (grouping keys,
@@ -682,7 +693,8 @@ public final class Native {
       int[] keyColumns,
       int[] filterColumns,
       boolean generateUpdateBefore,
-      byte[] snapshot);
+      byte[] snapshot,
+      long memoryBudgetBytes);
 
   /**
    * Creates a changelog normalizer (keep-last per unique key) and returns an opaque handle. Each
@@ -692,9 +704,10 @@ public final class Native {
    *
    * @param keyColumns unique-key column indices in the input batch
    * @param generateUpdateBefore whether to emit an UPDATE_BEFORE row before each UPDATE_AFTER
+   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
    */
   public static native long createChangelogNormalizer(
-      int[] keyColumns, boolean generateUpdateBefore);
+      int[] keyColumns, boolean generateUpdateBefore, long memoryBudgetBytes);
 
   /**
    * Folds an input changelog batch into per-key keep-last state, exporting the normalized changelog
@@ -708,7 +721,7 @@ public final class Native {
 
   /** Rebuilds a changelog normalizer from a snapshot and returns a fresh handle. */
   public static native long restoreChangelogNormalizer(
-      int[] keyColumns, boolean generateUpdateBefore, byte[] snapshot);
+      int[] keyColumns, boolean generateUpdateBefore, byte[] snapshot, long memoryBudgetBytes);
 
   /** Releases a changelog normalizer handle. */
   public static native void closeChangelogNormalizer(long handle);
@@ -915,6 +928,7 @@ public final class Native {
    * @param rightSchemaAddress C Data Interface address of the right input's (data-only) Arrow schema
    * @param predKinds residual non-equi predicate over the joined {@code [left.., right..]} row (empty
    *     ⇒ none), ANDed with the interval bounds; same encoding {@link #createFilterExpression} takes
+   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
    */
   public static native long createIntervalJoiner(
       int[] leftKeys,
@@ -931,7 +945,8 @@ public final class Native {
       int[] predChildCounts,
       long[] predLongs,
       double[] predDoubles,
-      String[] predStrings);
+      String[] predStrings,
+      long memoryBudgetBytes);
 
   /**
    * Pushes a left batch, exporting the matched pairs (left columns then right columns). For a
@@ -987,7 +1002,8 @@ public final class Native {
       long[] predLongs,
       double[] predDoubles,
       String[] predStrings,
-      byte[] snapshot);
+      byte[] snapshot,
+      long memoryBudgetBytes);
 
   /**
    * Creates an event-time temporal-table joiner ({@code FOR SYSTEM_TIME AS OF probe.rowtime}) and
@@ -1004,6 +1020,7 @@ public final class Native {
    * @param rightSchemaAddress C Data Interface address of the right input's (data-only) Arrow schema
    * @param predKinds residual non-equi predicate over the joined {@code [left.., right..]} row (empty
    *     ⇒ none); same encoding {@link #createFilterExpression} takes
+   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
    */
   public static native long createTemporalJoiner(
       int[] leftKeys,
@@ -1018,7 +1035,8 @@ public final class Native {
       int[] predChildCounts,
       long[] predLongs,
       double[] predDoubles,
-      String[] predStrings);
+      String[] predStrings,
+      long memoryBudgetBytes);
 
   /** Buffers a probe-side (left) batch (no output until a watermark). */
   public static native void pushLeftTemporalJoiner(
@@ -1056,7 +1074,8 @@ public final class Native {
       long[] predLongs,
       double[] predDoubles,
       String[] predStrings,
-      byte[] snapshot);
+      byte[] snapshot,
+      long memoryBudgetBytes);
 
   /**
    * Creates a regular (non-windowed) updating joiner and returns an opaque handle. It keeps a
@@ -1074,6 +1093,7 @@ public final class Native {
    * @param predKinds residual non-equi predicate, encoded over the joined {@code [left.., right..]}
    *     row (empty {@code predKinds} ⇒ no predicate); the {@code pred*} arrays are the same encoding
    *     {@link #createFilterExpression} consumes
+   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
    */
   public static native long createUpdatingJoiner(
       int[] leftKeys,
@@ -1086,7 +1106,8 @@ public final class Native {
       int[] predChildCounts,
       long[] predLongs,
       double[] predDoubles,
-      String[] predStrings);
+      String[] predStrings,
+      long memoryBudgetBytes);
 
   /** Pushes a left batch, exporting the join changelog (left columns, right columns, row kind). */
   public static native void pushLeftUpdatingJoiner(
@@ -1115,7 +1136,8 @@ public final class Native {
       long[] predLongs,
       double[] predDoubles,
       String[] predStrings,
-      byte[] snapshot);
+      byte[] snapshot,
+      long memoryBudgetBytes);
 
   /**
    * Creates an append-only streaming Top-N ranker ({@code ROW_NUMBER() OVER (PARTITION BY … ORDER BY
@@ -1132,6 +1154,7 @@ public final class Native {
    *     shift cascade and appends the rank); false for the plain Top-N and the global LIMIT
    * @param retracting whether the input is a changelog (use the retracting ranker, which keeps the
    *     full buffer to promote on delete) rather than insert-only (the append-only bounded ranker)
+   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
    */
   public static native long createTopNRanker(
       int[] partitionColumns,
@@ -1141,7 +1164,8 @@ public final class Native {
       long offset,
       long limit,
       boolean outputRankNumber,
-      boolean retracting);
+      boolean retracting,
+      long memoryBudgetBytes);
 
   /** Pushes an input batch, exporting the top-N changelog (input columns plus the row kind). */
   public static native void pushTopNRanker(
@@ -1163,7 +1187,8 @@ public final class Native {
       long limit,
       boolean outputRankNumber,
       boolean retracting,
-      byte[] snapshot);
+      byte[] snapshot,
+      long memoryBudgetBytes);
 
   /**
    * Creates an event-time INNER window joiner and returns an opaque handle. It buffers both inputs
@@ -1177,6 +1202,7 @@ public final class Native {
    * @param leftWindowEnd window-end column index in the left input batch
    * @param rightWindowStart window-start column index in the right input batch
    * @param rightWindowEnd window-end column index in the right input batch
+   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
    */
   public static native long createWindowJoiner(
       int[] leftKeys,
@@ -1193,7 +1219,8 @@ public final class Native {
       int[] predChildCounts,
       long[] predLongs,
       double[] predDoubles,
-      String[] predStrings);
+      String[] predStrings,
+      long memoryBudgetBytes);
 
   /** Buffers a left batch; its rows are joined when a watermark closes their window. */
   public static native void pushLeftWindowJoiner(
@@ -1233,7 +1260,8 @@ public final class Native {
       long[] predLongs,
       double[] predDoubles,
       String[] predStrings,
-      byte[] snapshot);
+      byte[] snapshot,
+      long memoryBudgetBytes);
 
   /**
    * Creates a stateful cumulative-window aggregator and returns an opaque handle. Cumulative windows
@@ -1272,9 +1300,10 @@ public final class Native {
    * @param gapMillis the inactivity gap in milliseconds that separates sessions
    * @param valueTypes value-column type per aggregate (see {@link #createTumblingAggregator})
    * @param aggregateKinds one code per aggregate: 0=SUM, 1=MIN, 2=MAX, 3=COUNT, 4=AVG
+   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
    */
   public static native long createSessionAggregator(
-      long gapMillis, int[] valueTypes, int[] aggregateKinds);
+      long gapMillis, int[] valueTypes, int[] aggregateKinds, long memoryBudgetBytes);
 
   /**
    * Folds a batch (columns {@code ts}, {@code value}, optional {@code key}) into the aggregator's
@@ -1304,7 +1333,8 @@ public final class Native {
    * @param valueTypes value-column type per aggregate (see {@link #createSessionAggregator})
    * @param aggregateKinds aggregate codes (see {@link #createSessionAggregator})
    * @param snapshot bytes produced by {@link #snapshotSessionAggregator(long)}
+   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
    */
   public static native long restoreSessionAggregator(
-      long gapMillis, int[] valueTypes, int[] aggregateKinds, byte[] snapshot);
+      long gapMillis, int[] valueTypes, int[] aggregateKinds, byte[] snapshot, long memoryBudgetBytes);
 }

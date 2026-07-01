@@ -16,12 +16,14 @@ import org.junit.jupiter.api.Test;
 
 class StatefulSessionTest {
 
+  private static final long UNBOUNDED = -1;
+
   @Test
   void mergesSessionsAcrossBatchesAndEmitsOnWatermark() {
     try (BufferAllocator allocator = new RootAllocator();
         CDataDictionaryProvider provider = new CDataDictionaryProvider()) {
 
-      long handle = Native.createSessionAggregator(1000, new int[] {0}, new int[] {0}); // SUM, gap 1s
+      long handle = Native.createSessionAggregator(1000, new int[] {0}, new int[] {0}, UNBOUNDED); // SUM, gap 1s
       try {
         // Two separate sessions open across two batches.
         update(allocator, provider, handle, new long[] {0}, new long[] {1});
@@ -41,7 +43,7 @@ class StatefulSessionTest {
     try (BufferAllocator allocator = new RootAllocator();
         CDataDictionaryProvider provider = new CDataDictionaryProvider()) {
 
-      long handle = Native.createSessionAggregator(1000, new int[] {0}, new int[] {0}); // SUM, gap 1s
+      long handle = Native.createSessionAggregator(1000, new int[] {0}, new int[] {0}, UNBOUNDED); // SUM, gap 1s
       byte[] snapshot;
       try {
         update(allocator, provider, handle, new long[] {0, 500}, new long[] {1, 2});
@@ -50,7 +52,8 @@ class StatefulSessionTest {
         Native.closeSessionAggregator(handle);
       }
 
-      long restored = Native.restoreSessionAggregator(1000, new int[] {0}, new int[] {0}, snapshot);
+      long restored =
+          Native.restoreSessionAggregator(1000, new int[] {0}, new int[] {0}, snapshot, UNBOUNDED);
       try {
         // An element at ts=700 extends the restored session [0, 1500) to [0, 1700), sum 1+2+4=7.
         update(allocator, provider, restored, new long[] {700}, new long[] {4});

@@ -78,24 +78,27 @@ public class NativeIntervalJoinExecNode extends ExecNodeBase<ArrowBatch>
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     Transformation<ArrowBatch> right =
         (Transformation<ArrowBatch>) getInputEdges().get(1).translateToPlan(planner);
-    return ExecNodeUtil.createTwoInputTransformation(
-        left,
-        right,
-        createTransformationMeta(TRANSFORMATION, config),
-        new NativeIntervalJoinOperator(
-            leftKeys,
-            rightKeys,
-            leftTime,
-            rightTime,
-            lowerMillis,
-            upperMillis,
-            joinType,
-            leftType,
-            rightType,
-            RexExpression.toEncodedPredicate(predicate),
-            proctime),
-        ArrowBatchTypeInformation.INSTANCE,
-        left.getParallelism(),
-        false);
+    Transformation<ArrowBatch> transformation =
+        ExecNodeUtil.createTwoInputTransformation(
+            left,
+            right,
+            createTransformationMeta(TRANSFORMATION, config),
+            new NativeIntervalJoinOperator(
+                leftKeys,
+                rightKeys,
+                leftTime,
+                rightTime,
+                lowerMillis,
+                upperMillis,
+                joinType,
+                leftType,
+                rightType,
+                RexExpression.toEncodedPredicate(predicate),
+                proctime),
+            ArrowBatchTypeInformation.INSTANCE,
+            left.getParallelism(),
+            false);
+    NativeManagedMemory.declareOperatorWeight(transformation);
+    return transformation;
   }
 }

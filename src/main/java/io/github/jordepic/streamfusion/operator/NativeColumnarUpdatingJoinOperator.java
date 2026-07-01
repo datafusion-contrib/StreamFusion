@@ -54,6 +54,7 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient ManagedMemoryBudget memoryBudget;
 
   public NativeColumnarUpdatingJoinOperator(
       int[] leftKeys,
@@ -105,6 +106,7 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
       Data.exportSchema(alloc, ArrowConversion.toArrowSchema(leftType), dicts, leftSchema);
       Data.exportSchema(alloc, ArrowConversion.toArrowSchema(rightType), dicts, rightSchema);
       long[] boundPredLongs = predBinding.bind(predLongs);
+      memoryBudget = ManagedMemoryBudget.reserveFor(this);
       handle =
           snapshot == null
               ? Native.createUpdatingJoiner(
@@ -118,7 +120,8 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
                   predChildCounts,
                   boundPredLongs,
                   predDoubles,
-                  predStrings)
+                  predStrings,
+                  memoryBudget.bytes())
               : Native.restoreUpdatingJoiner(
                   leftKeys,
                   rightKeys,
@@ -131,7 +134,8 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
                   boundPredLongs,
                   predDoubles,
                   predStrings,
-                  snapshot);
+                  snapshot,
+                  memoryBudget.bytes());
     }
   }
 
@@ -194,6 +198,10 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
     if (handle != 0) {
       Native.closeUpdatingJoiner(handle);
       handle = 0;
+    }
+    if (memoryBudget != null) {
+      memoryBudget.close();
+      memoryBudget = null;
     }
     predBinding.unbind();
     super.close();

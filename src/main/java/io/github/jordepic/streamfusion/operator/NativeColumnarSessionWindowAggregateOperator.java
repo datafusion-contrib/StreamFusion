@@ -64,12 +64,13 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
 
   @Override
   protected long createHandle() {
-    return Native.createSessionAggregator(gapMillis, valueTypes, aggregateKinds);
+    return Native.createSessionAggregator(gapMillis, valueTypes, aggregateKinds, memoryBudgetBytes());
   }
 
   @Override
   protected long restoreHandle(byte[] snapshot) {
-    return Native.restoreSessionAggregator(gapMillis, valueTypes, aggregateKinds, snapshot);
+    return Native.restoreSessionAggregator(
+        gapMillis, valueTypes, aggregateKinds, snapshot, memoryBudgetBytes());
   }
 
   @Override

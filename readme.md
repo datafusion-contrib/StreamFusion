@@ -119,9 +119,10 @@ Acceleration is configured by JVM system properties (mirroring DataFusion Comet'
   resulting share of the slot's managed memory from Flink's `MemoryManager` for its lifetime, and the
   native side bounds its state by that budget — state growth past it fails the task with a
   `NativeMemoryLimitException` naming the remedy instead of an unattributed container OOM
-  ([divergences/16](divergences/16-upfront-managed-memory-reservation.md)). Shipped for the
-  aligned-window aggregate family so far; the rollout to the remaining stateful operators is tracked
-  in the todos.
+  ([divergences/16](divergences/16-upfront-managed-memory-reservation.md)). Covers every stateful
+  native operator: the window aggregates (one- and two-phase, session included), the non-windowed
+  GROUP BY, changelog normalize, both dedups, OVER, event-time sort, Top-N (append-only, retracting,
+  and windowed), and the interval/window/temporal/updating joins.
 
 ### Deployment JVM flags
 

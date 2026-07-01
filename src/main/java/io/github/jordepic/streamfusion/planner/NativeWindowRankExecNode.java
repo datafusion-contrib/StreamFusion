@@ -84,25 +84,28 @@ public class NativeWindowRankExecNode extends ExecNodeBase<ArrowBatch>
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     String timeZoneId = planner.getTableConfig().getLocalTimeZone().getId();
-    return ExecNodeUtil.createOneInputTransformation(
-        input,
-        createTransformationMeta(TRANSFORMATION, config),
-        new NativeColumnarWindowRankOperator(
-            windowStartColumn,
-            windowEndColumn,
-            partitionColumns,
-            sortIndices,
-            sortAscending,
-            sortNullsFirst,
-            limit,
-            outputRankNumber,
-            timeZoneId,
-            proctime,
-            windowMillis,
-            slideMillis,
-            cumulative),
-        ArrowBatchTypeInformation.INSTANCE,
-        input.getParallelism(),
-        false);
+    Transformation<ArrowBatch> transformation =
+        ExecNodeUtil.createOneInputTransformation(
+            input,
+            createTransformationMeta(TRANSFORMATION, config),
+            new NativeColumnarWindowRankOperator(
+                windowStartColumn,
+                windowEndColumn,
+                partitionColumns,
+                sortIndices,
+                sortAscending,
+                sortNullsFirst,
+                limit,
+                outputRankNumber,
+                timeZoneId,
+                proctime,
+                windowMillis,
+                slideMillis,
+                cumulative),
+            ArrowBatchTypeInformation.INSTANCE,
+            input.getParallelism(),
+            false);
+    NativeManagedMemory.declareOperatorWeight(transformation);
+    return transformation;
   }
 }

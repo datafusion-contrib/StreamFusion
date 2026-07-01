@@ -71,25 +71,28 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     Transformation<ArrowBatch> right =
         (Transformation<ArrowBatch>) getInputEdges().get(1).translateToPlan(planner);
-    return ExecNodeUtil.createTwoInputTransformation(
-        left,
-        right,
-        createTransformationMeta(TRANSFORMATION, config),
-        new NativeColumnarUpdatingJoinOperator(
-            leftKeys,
-            rightKeys,
-            joinType,
-            leftType,
-            rightType,
-            predicate == null ? EMPTY_INT : predicate.kinds(),
-            predicate == null ? EMPTY_INT : predicate.payload(),
-            predicate == null ? EMPTY_INT : predicate.childCounts(),
-            predicate == null ? EMPTY_LONG : predicate.longs(),
-            predicate == null ? EMPTY_DOUBLE : predicate.doubles(),
-            predicate == null ? EMPTY_STRING : predicate.strings(),
-            predicate == null ? NativeUdf.Binding.EMPTY : predicate.udfBinding()),
-        ArrowBatchTypeInformation.INSTANCE,
-        left.getParallelism(),
-        false);
+    Transformation<ArrowBatch> transformation =
+        ExecNodeUtil.createTwoInputTransformation(
+            left,
+            right,
+            createTransformationMeta(TRANSFORMATION, config),
+            new NativeColumnarUpdatingJoinOperator(
+                leftKeys,
+                rightKeys,
+                joinType,
+                leftType,
+                rightType,
+                predicate == null ? EMPTY_INT : predicate.kinds(),
+                predicate == null ? EMPTY_INT : predicate.payload(),
+                predicate == null ? EMPTY_INT : predicate.childCounts(),
+                predicate == null ? EMPTY_LONG : predicate.longs(),
+                predicate == null ? EMPTY_DOUBLE : predicate.doubles(),
+                predicate == null ? EMPTY_STRING : predicate.strings(),
+                predicate == null ? NativeUdf.Binding.EMPTY : predicate.udfBinding()),
+            ArrowBatchTypeInformation.INSTANCE,
+            left.getParallelism(),
+            false);
+    NativeManagedMemory.declareOperatorWeight(transformation);
+    return transformation;
   }
 }

@@ -34,6 +34,7 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient ManagedMemoryBudget memoryBudget;
 
   public NativeColumnarChangelogNormalizeOperator(int[] keyColumns, boolean generateUpdateBefore) {
     this.keyColumns = keyColumns;
@@ -54,10 +55,13 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
     for (byte[] entry : handleState.get()) {
       snapshot = entry;
     }
+    memoryBudget = ManagedMemoryBudget.reserveFor(this);
     handle =
         snapshot == null
-            ? Native.createChangelogNormalizer(keyColumns, generateUpdateBefore)
-            : Native.restoreChangelogNormalizer(keyColumns, generateUpdateBefore, snapshot);
+            ? Native.createChangelogNormalizer(
+                keyColumns, generateUpdateBefore, memoryBudget.bytes())
+            : Native.restoreChangelogNormalizer(
+                keyColumns, generateUpdateBefore, snapshot, memoryBudget.bytes());
   }
 
   @Override
@@ -107,6 +111,10 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
     if (handle != 0) {
       Native.closeChangelogNormalizer(handle);
       handle = 0;
+    }
+    if (memoryBudget != null) {
+      memoryBudget.close();
+      memoryBudget = null;
     }
     super.close();
   }

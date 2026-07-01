@@ -41,6 +41,7 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient ManagedMemoryBudget memoryBudget;
 
   public NativeOverAggregateOperator(
       int timeColumn,
@@ -75,6 +76,7 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
     for (byte[] entry : handleState.get()) {
       snapshot = entry;
     }
+    memoryBudget = ManagedMemoryBudget.reserveFor(this);
     handle =
         snapshot == null
             ? Native.createOverAggregator(
@@ -85,7 +87,8 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
                 keyColumns,
                 frameKind,
                 frameOffset,
-                proctime)
+                proctime,
+                memoryBudget.bytes())
             : Native.restoreOverAggregator(
                 valueTypes,
                 aggregateKinds,
@@ -95,7 +98,8 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
                 frameKind,
                 frameOffset,
                 proctime,
-                snapshot);
+                snapshot,
+                memoryBudget.bytes());
   }
 
   @Override
@@ -173,6 +177,10 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
     if (handle != 0) {
       Native.closeOverAggregator(handle);
       handle = 0;
+    }
+    if (memoryBudget != null) {
+      memoryBudget.close();
+      memoryBudget = null;
     }
     super.close();
   }

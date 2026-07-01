@@ -59,6 +59,7 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient ManagedMemoryBudget memoryBudget;
   private transient long registeredTimer;
 
   public NativeIntervalJoinOperator(
@@ -109,6 +110,7 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
       Data.exportSchema(alloc, ArrowConversion.toArrowSchema(leftType), dicts, leftSchema);
       Data.exportSchema(alloc, ArrowConversion.toArrowSchema(rightType), dicts, rightSchema);
       predicate.bind();
+      memoryBudget = ManagedMemoryBudget.reserveFor(this);
       handle =
           snapshot == null
               ? Native.createIntervalJoiner(
@@ -126,7 +128,8 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
                   predicate.childCounts,
                   predicate.boundLongs(),
                   predicate.doubles,
-                  predicate.strings)
+                  predicate.strings,
+                  memoryBudget.bytes())
               : Native.restoreIntervalJoiner(
                   leftKeys,
                   rightKeys,
@@ -143,7 +146,8 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
                   predicate.boundLongs(),
                   predicate.doubles,
                   predicate.strings,
-                  snapshot);
+                  snapshot,
+                  memoryBudget.bytes());
     }
   }
 
@@ -267,6 +271,10 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
     if (handle != 0) {
       Native.closeIntervalJoiner(handle);
       handle = 0;
+    }
+    if (memoryBudget != null) {
+      memoryBudget.close();
+      memoryBudget = null;
     }
     predicate.unbind();
     super.close();

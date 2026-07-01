@@ -73,12 +73,15 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
             ? new NativeColumnarKeepLastDeduplicateOperator(
                 partitionColumns, rowtimeColumn, generateUpdateBefore, !proctime, !keepLast)
             : new NativeColumnarDeduplicateOperator(partitionColumns, rowtimeColumn);
-    return ExecNodeUtil.createOneInputTransformation(
-        input,
-        createTransformationMeta(TRANSFORMATION, config),
-        operator,
-        ArrowBatchTypeInformation.INSTANCE,
-        input.getParallelism(),
-        false);
+    Transformation<ArrowBatch> transformation =
+        ExecNodeUtil.createOneInputTransformation(
+            input,
+            createTransformationMeta(TRANSFORMATION, config),
+            operator,
+            ArrowBatchTypeInformation.INSTANCE,
+            input.getParallelism(),
+            false);
+    NativeManagedMemory.declareOperatorWeight(transformation);
+    return transformation;
   }
 }

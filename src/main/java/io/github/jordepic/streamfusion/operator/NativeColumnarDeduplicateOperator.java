@@ -37,6 +37,7 @@ public class NativeColumnarDeduplicateOperator extends AbstractStreamOperator<Ar
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
   private transient ListState<byte[]> handleState;
+  private transient ManagedMemoryBudget memoryBudget;
 
   public NativeColumnarDeduplicateOperator(int[] partitionColumns, int rowtimeColumn) {
     this.partitionColumns = partitionColumns;
@@ -57,10 +58,13 @@ public class NativeColumnarDeduplicateOperator extends AbstractStreamOperator<Ar
     for (byte[] entry : handleState.get()) {
       snapshot = entry;
     }
+    memoryBudget = ManagedMemoryBudget.reserveFor(this);
     handle =
         snapshot == null
-            ? Native.createKeepFirstDeduplicator(partitionColumns, rowtimeColumn)
-            : Native.restoreKeepFirstDeduplicator(partitionColumns, rowtimeColumn, snapshot);
+            ? Native.createKeepFirstDeduplicator(
+                partitionColumns, rowtimeColumn, memoryBudget.bytes())
+            : Native.restoreKeepFirstDeduplicator(
+                partitionColumns, rowtimeColumn, snapshot, memoryBudget.bytes());
   }
 
   @Override
@@ -112,6 +116,10 @@ public class NativeColumnarDeduplicateOperator extends AbstractStreamOperator<Ar
     if (handle != 0) {
       Native.closeKeepFirstDeduplicator(handle);
       handle = 0;
+    }
+    if (memoryBudget != null) {
+      memoryBudget.close();
+      memoryBudget = null;
     }
     super.close();
   }
