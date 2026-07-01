@@ -20,6 +20,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalJ
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLimit;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLocalGroupAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLocalWindowAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLookupJoin;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalMiniBatchAssigner;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalOverAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRank;
@@ -1107,6 +1108,27 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       }
     }
 
+    if (current instanceof StreamPhysicalLookupJoin) {
+      StreamPhysicalLookupJoin join = (StreamPhysicalLookupJoin) current;
+      if (LookupJoinMatcher.matches(join)) {
+        if (!NativeConfig.operatorEnabled("lookupJoin")) {
+          return noteDisabled(current, "lookupJoin");
+        }
+        substitutions++;
+        // A synchronous lookup join is stateless (no keyed shuffle); the probe input passes through
+        // as-is, and the dimension is a LookupFunction the operator holds — not an input.
+        return new StreamPhysicalNativeLookupJoin(
+            join.getCluster(),
+            join.getTraitSet(),
+            join.getInput(),
+            join.getRowType(),
+            LookupJoinMatcher.temporalTable(join),
+            LookupJoinMatcher.orderedDimKeys(join),
+            LookupJoinMatcher.probeKeyIndices(join),
+            LookupJoinMatcher.joinTypeCode(join));
+      }
+    }
+
     if (current instanceof StreamPhysicalGlobalWindowAggregate) {
       StreamPhysicalGlobalWindowAggregate agg = (StreamPhysicalGlobalWindowAggregate) current;
       if (GlobalWindowAggregateMatcher.matches(agg)) {
@@ -1193,6 +1215,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     }
     if (node instanceof StreamPhysicalTemporalJoin) {
       return TemporalJoinMatcher.unsupportedReason((StreamPhysicalTemporalJoin) node);
+    }
+    if (node instanceof StreamPhysicalLookupJoin) {
+      return LookupJoinMatcher.unsupportedReason((StreamPhysicalLookupJoin) node);
     }
     if (node instanceof StreamPhysicalWindowTableFunction) {
       return WindowTableFunctionMatcher.unsupportedReason((StreamPhysicalWindowTableFunction) node);
