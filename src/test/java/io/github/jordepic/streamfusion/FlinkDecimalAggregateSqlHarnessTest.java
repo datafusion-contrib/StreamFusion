@@ -27,7 +27,11 @@ class FlinkDecimalAggregateSqlHarnessTest {
   void globalDecimalSumMatchesHost() throws Exception {
     Path input = Files.createTempDirectory("dec-global-in");
     writeInput(input);
-    NativeParity.assertParity(() -> readEnvironment(input), "SELECT SUM(d) AS s FROM t");
+    // A global (no GROUP BY) running SUM emits a retract changelog whose intermediate values depend on
+    // input arrival order; the native and host source paths need not read the parquet in the same order,
+    // so the raw changelog is legitimately incomparable. The net materialized state is the contract —
+    // compare the collapsed changelog.
+    NativeParity.assertChangelogParity(() -> readEnvironment(input), "SELECT SUM(d) AS s FROM t");
   }
 
   @Test

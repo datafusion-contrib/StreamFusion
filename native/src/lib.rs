@@ -2265,15 +2265,37 @@ struct GroupAggregator {
 }
 
 /// An arrow-row codec over a set of key columns (memcomparable; used to key group/distinct state by
-/// bytes instead of `Vec<ScalarValue>`).
+/// bytes instead of `Vec<ScalarValue>`). A global aggregate (no GROUP BY) has zero key columns; since
+/// arrow-row derives the row count from the first column and so cannot encode N rows of no columns, the
+/// converter carries a single dummy field there, and `encode_group_keys` feeds it a constant column —
+/// every row then encodes to one shared key, i.e. the single global group.
 fn key_row_converter(arrays: &[&ArrayRef]) -> RowConverter {
-    RowConverter::new(arrays.iter().map(|a| SortField::new(a.data_type().clone())).collect())
-        .expect("group key converter")
+    let fields: Vec<SortField> = if arrays.is_empty() {
+        vec![SortField::new(DataType::Boolean)]
+    } else {
+        arrays.iter().map(|a| SortField::new(a.data_type().clone())).collect()
+    };
+    RowConverter::new(fields).expect("group key converter")
+}
+
+/// Encodes `n` rows of key columns to memcomparable byte rows. With no key columns (global aggregate),
+/// encodes a constant dummy column so all `n` rows collapse to one shared key (see `key_row_converter`).
+fn encode_group_keys(conv: &RowConverter, key_owned: &[ArrayRef], n: usize) -> arrow::row::Rows {
+    if key_owned.is_empty() {
+        let dummy: ArrayRef = Arc::new(BooleanArray::from(vec![false; n]));
+        conv.convert_columns(std::slice::from_ref(&dummy)).expect("encode global group key")
+    } else {
+        conv.convert_columns(key_owned).expect("encode group keys")
+    }
 }
 
 /// Decodes memcomparable group-key byte rows back to their key columns (inverse of `key_row_converter`).
-/// With no rows (or no converter yet) it yields one empty, correctly-typed array per key column.
+/// A global aggregate has no key columns, so it yields none; otherwise, with no rows (or no converter
+/// yet) it yields one empty, correctly-typed array per key column.
 fn decode_keys(conv: Option<&RowConverter>, keys: &[OwnedRow], key_types: &[DataType]) -> Vec<ArrayRef> {
+    if key_types.is_empty() {
+        return Vec::new();
+    }
     match conv {
         Some(c) if !keys.is_empty() => {
             c.convert_rows(keys.iter().map(|k| k.row())).expect("decode group keys")
@@ -2382,7 +2404,7 @@ impl GroupAggregator {
         // a byte slice, not a freshly allocated Vec<ScalarValue>.
         let key_owned: Vec<ArrayRef> = key_arrays.iter().map(|a| (*a).clone()).collect();
         let keys_encoded =
-            self.key_converter.as_ref().unwrap().convert_columns(&key_owned).expect("encode group keys");
+            encode_group_keys(self.key_converter.as_ref().unwrap(), &key_owned, n);
         let row_kinds = row_kind_column(batch);
         // Per aggregate, the value column index for a COUNT(DISTINCT) (kind 7), else None. Captured
         // before the per-row loop so the loop body reads no `self` field while `state` is borrowed.
@@ -2645,7 +2667,7 @@ impl GroupAggregator {
         aggregator.key_converter = Some(key_row_converter(&key_arrays));
         let key_owned: Vec<ArrayRef> = key_arrays.iter().map(|a| (*a).clone()).collect();
         let keys_encoded =
-            aggregator.key_converter.as_ref().unwrap().convert_columns(&key_owned).expect("encode restored keys");
+            encode_group_keys(aggregator.key_converter.as_ref().unwrap(), &key_owned, main.num_rows());
         let records = column_i64(main, "records");
         for row in 0..main.num_rows() {
             let key = keys_encoded.row(row).owned();
@@ -2676,12 +2698,11 @@ impl GroupAggregator {
             let side_arity = side.num_columns() - 2;
             let side_keys: Vec<&ArrayRef> = (0..side_arity).map(|j| side.column(j)).collect();
             let side_key_owned: Vec<ArrayRef> = side_keys.iter().map(|a| (*a).clone()).collect();
-            let side_keys_enc = aggregator
-                .key_converter
-                .as_ref()
-                .expect("key converter set by the main batch")
-                .convert_columns(&side_key_owned)
-                .expect("encode multiset keys");
+            let side_keys_enc = encode_group_keys(
+                aggregator.key_converter.as_ref().expect("key converter set by the main batch"),
+                &side_key_owned,
+                side.num_rows(),
+            );
             let values = side.column(side_arity);
             let counts = column_i64(side, "count");
             for row in 0..side.num_rows() {
