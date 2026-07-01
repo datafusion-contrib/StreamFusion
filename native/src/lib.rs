@@ -5532,7 +5532,12 @@ struct TopNConverters {
 /// byte buffer rather than deep-cloning every column (notably the heap strings that dominated the
 /// `ScalarValue` path's malloc/clone churn). `OwnedRow` is `Ord`/`Eq` by those bytes, so ordering and
 /// the full-row equality the eviction needs are byte compares.
-type TopNRow = (OwnedRow, OwnedRow);
+/// A buffered Top-N row: the memcomparable sort key and the value-encoded full row. The payload is an
+/// `Arc` because the with-rank cascade emits the same buffered row multiple times (as a `-U` at one
+/// rank and a `+U` at the next); sharing it makes those emits refcount bumps rather than a byte-buffer
+/// clone each — the allocator churn a differential profile pinned as the Top-N's cost over Flink (which
+/// reuses `BinaryRowData`). The decode back to Arrow still happens once per emitted row, on flush.
+type TopNRow = (OwnedRow, Arc<OwnedRow>);
 
 struct TopNRanker {
     partition_columns: Vec<usize>,
@@ -5618,24 +5623,25 @@ impl TopNRanker {
         let limit = self.limit as usize;
         let output_rank = self.output_rank_number;
         let groups = &mut self.groups;
-        let mut out_rows: Vec<OwnedRow> = Vec::new();
+        let mut out_rows: Vec<Arc<OwnedRow>> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
         let mut out_ranks: Vec<i64> = Vec::new();
 
         for row in 0..batch.num_rows() {
-            let key = keys.row(row).owned();
-            let payload = payloads.row(row).owned();
+            // Compare the memcomparable sort key by borrow — no per-row `owned()` alloc until the row
+            // is known to enter (the common case for a bounded Top-N is a row that does not).
+            let key_row = keys.row(row);
             let buffer = groups.entry(parts.row(row).owned()).or_default();
             // Insert after any rows that order equal-or-before, preserving arrival order for ties
             // (byte compare of the memcomparable sort key).
-            let pos = buffer.partition_point(|(k, _)| *k <= key);
+            let pos = buffer.partition_point(|(k, _)| k.row() <= key_row);
 
             if output_rank {
                 if pos >= limit {
-                    continue; // beyond rank N — the new row never enters the top-N
+                    continue; // beyond rank N — the new row never enters the top-N (nothing allocated)
                 }
                 let old_len = buffer.len();
-                buffer.insert(pos, (key.clone(), payload.clone()));
+                buffer.insert(pos, (key_row.owned(), Arc::new(payloads.row(row).owned())));
                 // Cascade from the new row's rank to the buffer end (capped at the limit): each rank's
                 // occupant changes, so retract the old and append the new; a brand-new rank inserts.
                 let upper = (old_len + 1).min(limit); // highest 1-based rank to emit
@@ -5658,10 +5664,11 @@ impl TopNRanker {
                     buffer.truncate(limit); // the row past N was retracted by the -U at rank=limit
                 }
             } else {
-                buffer.insert(pos, (key, payload.clone()));
+                let payload = Arc::new(payloads.row(row).owned());
+                buffer.insert(pos, (key_row.owned(), Arc::clone(&payload)));
                 if buffer.len() > limit {
                     let evicted = buffer.pop().expect("buffer over limit is non-empty");
-                    if evicted.1 == payload {
+                    if *evicted.1 == *payload {
                         continue; // the new row was itself rank N+1 — it never entered the top-N
                     }
                     out_rows.push(evicted.1);
@@ -5674,7 +5681,7 @@ impl TopNRanker {
         self.emit(out_rows, out_kinds, out_ranks)
     }
 
-    fn emit(&self, out_rows: Vec<OwnedRow>, out_kinds: Vec<i8>, out_ranks: Vec<i64>) -> RecordBatch {
+    fn emit(&self, out_rows: Vec<Arc<OwnedRow>>, out_kinds: Vec<i8>, out_ranks: Vec<i64>) -> RecordBatch {
         if out_rows.is_empty() {
             return RecordBatch::new_empty(Arc::new(Schema::empty()));
         }
@@ -5733,7 +5740,7 @@ impl TopNRanker {
                 groups
                     .entry(parts.row(row).owned())
                     .or_default()
-                    .push((keys.row(row).owned(), payloads.row(row).owned()));
+                    .push((keys.row(row).owned(), Arc::new(payloads.row(row).owned())));
             }
         }
         ranker
