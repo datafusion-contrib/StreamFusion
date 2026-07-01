@@ -23,11 +23,12 @@ import org.testcontainers.utility.DockerImageName;
  * transpose, Rust decode with a JVM poll, fully native Rust poll+decode). One table, ten native cells
  * per query, each a speedup over the Flink baseline for that same source.
  *
- * <p>The query set is the accelerating subset reported by {@link NexmarkExplainTest}: q0–q4, q7–q12,
- * q15–q20, q22 (q1's decimal is now exact and native by default — no flag). q5 (window-attached
- * re-aggregate + windows-only join) and q21 (REGEXP_EXTRACT, under allowIncompatible) also accelerate and
- * are covered by their own harness tests but are not yet wired into this throughput matrix; q14's
- * non-builtin UDF, q6/q13's temporal/OVER-retraction shapes, and q23's parse keep them out.
+ * <p>The query set is every query StreamFusion accelerates: q0–q5, q7–q23 (q1's and q14's decimal are
+ * exact and native by default; q21's REGEXP_EXTRACT/LOWER and q14's HOUR route through the host
+ * implementation via the columnar JVM upcall; q13 is a synchronous lookup join against a bounded
+ * {@code test-lookup} dimension). Only q6 is out — Flink itself cannot run it (ticket 39). q10/q14/q15/
+ * q16/q17 report on the generator only, since their {@code DATE_FORMAT}/{@code HOUR} need a plain
+ * {@code TIMESTAMP} and would partially fall back over the Kafka {@code TIMESTAMP_LTZ} rowtime.
  * Each query runs over the same logical {@code person}/{@code auction}/{@code bid} views the published
  * Nexmark SQL uses, off a watermarked event-time {@code dateTime}; the only thing that changes between
  * cells is how those rows are produced and transposed into the columnar island. The perimeter transposes
@@ -81,16 +82,33 @@ class NexmarkMatrixBenchmark {
   private static final class Query {
     final String label;
     final boolean approximateDecimal;
-    final String extraView; // an extra view created before the insert (q12's proctime view); else null
+    final String[] setup; // extra SQL run before the insert (q12 proctime view, q13 dim+proctime); else null
     final String sinkDdl; // %TS% substituted with the harness's event-time type
     final String insertSql;
 
-    Query(String label, boolean approximateDecimal, String extraView, String sinkDdl, String insertSql) {
+    Query(String label, boolean approximateDecimal, String[] setup, String sinkDdl, String insertSql) {
       this.label = label;
       this.approximateDecimal = approximateDecimal;
-      this.extraView = extraView;
+      this.setup = setup;
       this.sinkDdl = sinkDdl;
       this.insertSql = insertSql;
+    }
+  }
+
+  /** Nexmark q14's UDF ({@code count_char(extra, 'c')}); registered in every matrix environment. */
+  public static class CountChar extends org.apache.flink.table.functions.ScalarFunction {
+    public long eval(String s, String c) {
+      if (s == null || c == null || c.isEmpty()) {
+        return 0L;
+      }
+      long count = 0;
+      char target = c.charAt(0);
+      for (int i = 0; i < s.length(); i++) {
+        if (s.charAt(i) == target) {
+          count++;
+        }
+      }
+      return count;
     }
   }
 
@@ -191,7 +209,7 @@ class NexmarkMatrixBenchmark {
     new Query(
         "q12",
         false,
-        "CREATE TEMPORARY VIEW bid_proc AS SELECT *, PROCTIME() AS p_time FROM bid",
+        new String[] {"CREATE TEMPORARY VIEW bid_proc AS SELECT *, PROCTIME() AS p_time FROM bid"},
         "CREATE TABLE sink (bidder BIGINT, bid_count BIGINT, starttime %WTS%, endtime %WTS%) WITH"
             + " ('connector' = 'blackhole')",
         "INSERT INTO sink SELECT bidder, count(*) AS bid_count, window_start AS starttime,"
@@ -286,13 +304,70 @@ class NexmarkMatrixBenchmark {
             + " dir2 STRING, dir3 STRING) WITH ('connector' = 'blackhole')",
         "INSERT INTO sink SELECT auction, bidder, price, channel, SPLIT_INDEX(url, '/', 3) AS dir1,"
             + " SPLIT_INDEX(url, '/', 4) AS dir2, SPLIT_INDEX(url, '/', 5) AS dir3 FROM bid"),
+    new Query(
+        "q5",
+        false,
+        null,
+        "CREATE TABLE sink (auction BIGINT, num BIGINT) WITH ('connector' = 'blackhole')",
+        "INSERT INTO sink SELECT AuctionBids.auction, AuctionBids.num FROM (SELECT auction, count(*) AS"
+            + " num, window_start AS starttime, window_end AS endtime FROM TABLE(HOP(TABLE bid,"
+            + " DESCRIPTOR(`dateTime`), INTERVAL '2' SECOND, INTERVAL '10' SECOND)) GROUP BY auction,"
+            + " window_start, window_end) AS AuctionBids JOIN (SELECT max(CountBids.num) AS maxn,"
+            + " CountBids.starttime, CountBids.endtime FROM (SELECT count(*) AS num, window_start AS"
+            + " starttime, window_end AS endtime FROM TABLE(HOP(TABLE bid, DESCRIPTOR(`dateTime`),"
+            + " INTERVAL '2' SECOND, INTERVAL '10' SECOND)) GROUP BY auction, window_start, window_end)"
+            + " AS CountBids GROUP BY CountBids.starttime, CountBids.endtime) AS MaxBids ON"
+            + " AuctionBids.starttime = MaxBids.starttime AND AuctionBids.endtime = MaxBids.endtime AND"
+            + " AuctionBids.num >= MaxBids.maxn"),
+    new Query(
+        "q13",
+        false,
+        new String[] {
+          "CREATE TEMPORARY VIEW bid_lookup AS SELECT *, PROCTIME() AS p_time FROM bid",
+          "CREATE TABLE dim (k BIGINT, val STRING) WITH ('connector' = 'test-lookup')",
+        },
+        "CREATE TABLE sink (auction BIGINT, price BIGINT, val STRING) WITH ('connector' = 'blackhole')",
+        "INSERT INTO sink SELECT B.auction, B.price, D.val FROM bid_lookup AS B JOIN dim"
+            + " FOR SYSTEM_TIME AS OF B.p_time AS D ON MOD(B.auction, 5) = D.k"),
+    new Query(
+        "q14",
+        false,
+        null,
+        "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price DECIMAL(23, 3), bidTimeType STRING,"
+            + " `dateTime` %TS%, extra STRING, c_counts BIGINT) WITH ('connector' = 'blackhole')",
+        "INSERT INTO sink SELECT auction, bidder, 0.908 * price AS price, CASE WHEN HOUR(`dateTime`) >="
+            + " 8 AND HOUR(`dateTime`) <= 18 THEN 'dayTime' WHEN HOUR(`dateTime`) <= 6 OR"
+            + " HOUR(`dateTime`) >= 20 THEN 'nightTime' ELSE 'otherTime' END AS bidTimeType,"
+            + " `dateTime`, extra, count_char(extra, 'c') AS c_counts FROM bid"),
+    new Query(
+        "q21",
+        false,
+        null,
+        "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price BIGINT, channel STRING,"
+            + " channel_id STRING) WITH ('connector' = 'blackhole')",
+        "INSERT INTO sink SELECT auction, bidder, price, channel, CASE WHEN lower(channel) = 'apple'"
+            + " THEN '0' WHEN lower(channel) = 'google' THEN '1' WHEN lower(channel) = 'facebook' THEN"
+            + " '2' WHEN lower(channel) = 'baidu' THEN '3' ELSE REGEXP_EXTRACT(url,"
+            + " '(&|^)channel_id=([^&]*)', 2) END AS channel_id FROM bid WHERE REGEXP_EXTRACT(url,"
+            + " '(&|^)channel_id=([^&]*)', 2) IS NOT NULL OR lower(channel) IN ('apple', 'google',"
+            + " 'facebook', 'baidu')"),
+    new Query(
+        "q23",
+        false,
+        null,
+        "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price BIGINT, itemName STRING,"
+            + " auction_dateTime %TS%, seller BIGINT) WITH ('connector' = 'blackhole')",
+        "INSERT INTO sink SELECT B.auction, B.bidder, B.price, A.itemName, A.`dateTime`, A.seller"
+            + " FROM bid B JOIN person P ON P.id = B.bidder JOIN auction A ON A.seller = B.bidder"),
   };
 
   // DATE_FORMAT is native only over a plain TIMESTAMP (LTZ formatting is session-zone dependent), but
   // the Kafka source's event-time column is TIMESTAMP_LTZ (the epoch-millis decode + a TO_TIMESTAMP_LTZ
   // rowtime). These queries therefore run on the generator (plain TIMESTAMP) only; on Kafka they would
   // partially fall back, so they are skipped rather than reported as a half-native comparison.
-  private static final Set<String> GENERATOR_ONLY = Set.of("q10", "q15", "q16", "q17");
+  // q14's HOUR() joins the DATE_FORMAT queries here for the same reason (a plain-TIMESTAMP-only field
+  // extraction; over the Kafka LTZ rowtime it would fall back), so it is reported on the generator only.
+  private static final Set<String> GENERATOR_ONLY = Set.of("q10", "q14", "q15", "q16", "q17");
 
   @Test
   void matrix() throws Exception {
@@ -394,6 +469,14 @@ class NexmarkMatrixBenchmark {
     return picked.toArray(new Query[0]);
   }
 
+  private static void runSetup(TableEnvironment tEnv, Query q) {
+    if (q.setup != null) {
+      for (String statement : q.setup) {
+        tEnv.executeSql(statement);
+      }
+    }
+  }
+
   private static String cell(String source, double flink, double nativeRun) {
     return String.format(
         "%-10s Flink %6.3fs (%,.0f ev/s)  |  Native %6.3fs (%,.0f ev/s)  %.2fx",
@@ -415,9 +498,8 @@ class NexmarkMatrixBenchmark {
 
   private static double runGeneratorOnce(Query q, boolean nativeRun) throws Exception {
     TableEnvironment tEnv = NexmarkBenchmark.environment(ROWS);
-    if (q.extraView != null) {
-      tEnv.executeSql(q.extraView);
-    }
+    tEnv.createTemporarySystemFunction("count_char", CountChar.class);
+    runSetup(tEnv, q);
     PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
     return execute(tEnv, scan, q, nativeRun, "TIMESTAMP(3)");
   }
@@ -492,9 +574,8 @@ class NexmarkMatrixBenchmark {
         "CREATE TEMPORARY VIEW bid AS SELECT bid.auction AS auction, bid.bidder AS bidder, bid.price"
             + " AS price, bid.channel AS channel, bid.url AS url, rowtime AS `dateTime`, bid.extra AS"
             + " extra FROM src WHERE event_type = 2");
-    if (q.extraView != null) {
-      tEnv.executeSql(q.extraView);
-    }
+    tEnv.createTemporarySystemFunction("count_char", CountChar.class);
+    runSetup(tEnv, q);
     PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
     return execute(tEnv, scan, q, nativeRun, "TIMESTAMP_LTZ(3)");
   }
