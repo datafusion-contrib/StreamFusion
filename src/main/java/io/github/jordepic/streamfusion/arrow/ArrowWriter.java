@@ -40,6 +40,13 @@ public final class ArrowWriter<IN> {
      */
     private final ArrowFieldWriter<IN>[] fieldWriters;
 
+    /**
+     * Rows written since the last {@link #reset()}. Tracked independently of the field writers so the
+     * batch's row count is well-defined even when there are zero columns (an all-constant projection,
+     * e.g. {@code SELECT 'x' FROM t}), where there is no field writer to read the count from.
+     */
+    private int rowCount;
+
     public ArrowWriter(VectorSchemaRoot root, ArrowFieldWriter<IN>[] fieldWriters) {
         this.root = Preconditions.checkNotNull(root);
         this.fieldWriters = Preconditions.checkNotNull(fieldWriters);
@@ -55,11 +62,12 @@ public final class ArrowWriter<IN> {
         for (int i = 0; i < fieldWriters.length; i++) {
             fieldWriters[i].write(row, i);
         }
+        rowCount++;
     }
 
     /** Finishes the writing of the current row batch. */
     public void finish() {
-        root.setRowCount(fieldWriters[0].getCount());
+        root.setRowCount(rowCount);
         for (ArrowFieldWriter<IN> fieldWriter : fieldWriters) {
             fieldWriter.finish();
         }
@@ -68,6 +76,7 @@ public final class ArrowWriter<IN> {
     /** Resets the state of the writer to write the next batch of rows. */
     public void reset() {
         root.setRowCount(0);
+        rowCount = 0;
         for (ArrowFieldWriter fieldWriter : fieldWriters) {
             fieldWriter.reset();
         }
