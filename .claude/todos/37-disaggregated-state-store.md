@@ -35,5 +35,5 @@ ticket 36 (Fluss as a *source*) — one Fluss dependency serving both ingest and
 object-store + LSM (Hummock/ForSt-style) the better primitive with Fluss only for the changelog? Benchmark
 state-heavy Nexmark (q4/q9/q16 — large keyspaces) under disaggregated vs in-memory before committing.
 
-Relates to: ticket 36 (Fluss source), ticket 05 (memory accounting), ticket 01 (mailbox/async),
+Relates to: ticket 36 (Fluss source), memory accounting (shipped — divergences/16), ticket 01 (mailbox/async),
 and the changelog-operator byte-state refactors (the on-the-wire format is ready).

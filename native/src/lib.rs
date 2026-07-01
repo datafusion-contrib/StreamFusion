@@ -13,6 +13,8 @@ use datafusion::common::{DFSchema, DataFusionError, JoinSide, JoinType, NullEqua
 use datafusion::execution::memory_pool::{
     GreedyMemoryPool, MemoryConsumer, MemoryPool, MemoryReservation,
 };
+use datafusion::execution::runtime_env::RuntimeEnvBuilder;
+use datafusion::execution::TaskContext;
 use datafusion::functions_aggregate::count::count_udaf;
 use datafusion::functions_aggregate::min_max::{max_udaf, min_udaf};
 use datafusion::functions_aggregate::sum::sum_udaf;
@@ -996,11 +998,15 @@ fn accumulators_bytes(accumulators: &[Box<dyn Accumulator>]) -> usize {
 struct OperatorMemory {
     reservation: Option<MemoryReservation>,
     state_bytes: usize,
+    // A TaskContext sharing the bounded pool, for fragments the operator delegates to DataFusion's
+    // execution (the joins' HashJoinExec) — their transient working memory then draws on the same
+    // budget as the operator's state.
+    task_ctx: Option<Arc<TaskContext>>,
 }
 
 impl OperatorMemory {
     fn unaccounted() -> Self {
-        OperatorMemory { reservation: None, state_bytes: 0 }
+        OperatorMemory { reservation: None, state_bytes: 0, task_ctx: None }
     }
 
     /// Attaches a budget (negative = unaccounted), accounting `current_state_bytes` immediately —
@@ -1027,6 +1033,8 @@ impl OperatorMemory {
         current_state_bytes: usize,
     ) -> Result<(), DataFusionError> {
         self.reservation = Some(MemoryConsumer::new(consumer.to_string()).register(pool));
+        let runtime = RuntimeEnvBuilder::new().with_memory_pool(Arc::clone(pool)).build_arc()?;
+        self.task_ctx = Some(Arc::new(TaskContext::default().with_runtime(runtime)));
         self.state_bytes = current_state_bytes;
         self.account()
     }
@@ -1034,6 +1042,12 @@ impl OperatorMemory {
     /// Whether a budget is attached — gate for any per-touch measurement work.
     fn tracking(&self) -> bool {
         self.reservation.is_some()
+    }
+
+    /// The TaskContext DataFusion-executed fragments must run under: pool-bounded when a budget is
+    /// attached, a plain default (unbounded, as before accounting) otherwise.
+    fn task_ctx(&self) -> Arc<TaskContext> {
+        self.task_ctx.clone().unwrap_or_default()
     }
 
     /// Folds a touched entry's footprint change into the tracked total.
@@ -3095,6 +3109,13 @@ struct LocalGroupAggregator {
     order: Vec<GroupKey>,
     states: HashMap<GroupKey, Vec<GroupAggState>>,
     key_types: Vec<DataType>,
+    memory: OperatorMemory,
+}
+
+/// Estimated footprint of one buffered local-aggregate entry: the key is held twice (the states map
+/// and the first-appearance order), plus the per-aggregate partial states.
+fn local_entry_bytes(key: &GroupKey, states: &[GroupAggState]) -> usize {
+    group_key_bytes(key) * 2 + states.iter().map(group_agg_state_bytes).sum::<usize>()
 }
 
 impl LocalGroupAggregator {
@@ -3119,12 +3140,22 @@ impl LocalGroupAggregator {
             order: Vec::new(),
             states: HashMap::new(),
             key_types: Vec::new(),
+            memory: OperatorMemory::unaccounted(),
         }
+    }
+
+    /// Bounds the buffered partials by a managed-memory budget (negative = unaccounted). The buffer
+    /// drains at every mini-batch flush, but a high-cardinality interval can still spike.
+    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+        let current =
+            self.states.iter().map(|(key, states)| local_entry_bytes(key, states)).sum();
+        self.memory.attach("local-group-aggregate", budget_bytes, current)?;
+        Ok(self)
     }
 
     /// Folds the batch's rows into the buffered per-key accumulators (append-only — the local's input
     /// is insert-only, so there is no retraction). Nothing is emitted until a flush.
-    fn update(&mut self, batch: &RecordBatch) {
+    fn update(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         let n = batch.num_rows();
         let num_agg = self.kinds.len();
         // `None` is a COUNT(*) aggregate (no argument); a present column folds/counts non-null rows.
@@ -3144,8 +3175,10 @@ impl LocalGroupAggregator {
             .collect();
         let key_arrays: Vec<&ArrayRef> = self.key_columns.iter().map(|&i| batch.column(i)).collect();
         self.key_types = key_types(&key_arrays);
+        let track = self.memory.tracking();
         for row in 0..n {
             let key = read_key(&key_arrays, row);
+            let mut delta = 0isize;
             if !self.states.contains_key(&key) {
                 let init: Vec<GroupAggState> = self
                     .kinds
@@ -3153,10 +3186,16 @@ impl LocalGroupAggregator {
                     .zip(&self.value_types)
                     .map(|(&kind, vt)| GroupAggState::new(kind, vt))
                     .collect();
+                if track {
+                    delta += (group_key_bytes(&key) * 2) as isize;
+                }
                 self.order.push(key.clone());
                 self.states.insert(key.clone(), init);
             }
             let entry = self.states.get_mut(&key).expect("key present");
+            if track {
+                delta -= entry.iter().map(group_agg_state_bytes).sum::<usize>() as isize;
+            }
             for i in 0..num_agg {
                 match &cols[i] {
                     None => entry[i].accumulate(Num::I64(0)),
@@ -3167,7 +3206,12 @@ impl LocalGroupAggregator {
                     }
                 }
             }
+            if track {
+                delta += entry.iter().map(group_agg_state_bytes).sum::<usize>() as isize;
+                self.memory.record(delta);
+            }
         }
+        self.memory.account()
     }
 
     /// Emits the buffered partials (`[key0.., partial0..]`, in first-appearance order) and clears the
@@ -3175,6 +3219,8 @@ impl LocalGroupAggregator {
     fn flush(&mut self) -> RecordBatch {
         let order = std::mem::take(&mut self.order);
         let states = std::mem::take(&mut self.states);
+        self.memory.set(0);
+        self.memory.account_shrink();
         let mut fields = key_fields(&self.key_types);
         let mut columns = key_columns(&order, &self.key_types);
         for (i, rt) in self.result_types.iter().enumerate() {
@@ -4036,7 +4082,7 @@ impl IntervalJoiner {
             } else {
                 let right = concat_batches(&self.buf_schema(false), self.right_buffered.iter())
                     .expect("concat right interval buffer");
-                hash_join_inner(batch.clone(), right, &self.key_pairs(), filter)
+                hash_join_inner(batch.clone(), right, &self.key_pairs(), filter, self.memory.task_ctx())?
             };
             self.left_buffered.push(batch);
             self.account()?;
@@ -4049,7 +4095,7 @@ impl IntervalJoiner {
         } else {
             let right = concat_batches(&self.buf_schema(false), self.right_buffered.iter())
                 .expect("concat right interval buffer");
-            self.join_tagged(tagged.clone(), right, filter)
+            self.join_tagged(tagged.clone(), right, filter)?
         };
         self.left_buffered.push(tagged);
         self.account()?;
@@ -4079,7 +4125,7 @@ impl IntervalJoiner {
             } else {
                 let left = concat_batches(&self.buf_schema(true), self.left_buffered.iter())
                     .expect("concat left interval buffer");
-                hash_join_inner(left, batch.clone(), &self.key_pairs(), filter)
+                hash_join_inner(left, batch.clone(), &self.key_pairs(), filter, self.memory.task_ctx())?
             };
             self.right_buffered.push(batch);
             self.account()?;
@@ -4091,7 +4137,7 @@ impl IntervalJoiner {
         } else {
             let left = concat_batches(&self.buf_schema(true), self.left_buffered.iter())
                 .expect("concat left interval buffer");
-            self.join_tagged(left, tagged.clone(), filter)
+            self.join_tagged(left, tagged.clone(), filter)?
         };
         self.right_buffered.push(tagged);
         self.account()?;
@@ -4106,11 +4152,12 @@ impl IntervalJoiner {
         left_tagged: RecordBatch,
         right_tagged: RecordBatch,
         filter: Option<JoinFilter>,
-    ) -> RecordBatch {
+    ) -> Result<RecordBatch, DataFusionError> {
         let left_arity = self.left_data_schema.fields().len();
-        let joined = hash_join_inner(left_tagged, right_tagged, &self.key_pairs(), filter);
+        let joined =
+            hash_join_inner(left_tagged, right_tagged, &self.key_pairs(), filter, self.memory.task_ctx())?;
         if joined.num_rows() == 0 {
-            return empty_batch();
+            return Ok(empty_batch());
         }
         // Layout after the join (renamed c0..): [left data.., left rid, right data.., right rid].
         let total = joined.num_columns();
@@ -4129,7 +4176,7 @@ impl IntervalJoiner {
             .map(|(j, &i)| Field::new(format!("c{j}"), joined.schema().field(i).data_type().clone(), true))
             .collect();
         let columns: Vec<ArrayRef> = keep.iter().map(|&i| joined.column(i).clone()).collect();
-        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("project interval pairs")
+        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("project interval pairs"))
     }
 
     /// Drops the rows the watermark has made dead and, for an outer join, returns the null-padded
@@ -4437,12 +4484,16 @@ fn rename_positional(batch: &RecordBatch) -> RecordBatch {
 /// columns, fields renamed `c0..`). Empty when nothing matches. We own the buffering, keying, and
 /// eviction of join state; the match itself is delegated to DataFusion's `HashJoinExec` — the same
 /// split Arroyo's joins use (it runs a DataFusion join plan over the batches it has buffered).
+/// The join runs under the caller's `TaskContext`, so with a managed-memory budget attached its
+/// transient working memory (the build side `HashJoinExec` reserves) draws on the operator's pool;
+/// a denial fails the join with the budget remedy rather than growing unaccounted.
 fn hash_join_inner(
     left: RecordBatch,
     right: RecordBatch,
     key_pairs: &[(usize, usize)],
     filter: Option<JoinFilter>,
-) -> RecordBatch {
+    ctx: Arc<TaskContext>,
+) -> Result<RecordBatch, DataFusionError> {
     let left_schema = left.schema();
     let right_schema = right.schema();
     let on: JoinOn = key_pairs
@@ -4471,15 +4522,21 @@ fn hash_join_inner(
         false,
     )
     .expect("failed to build hash join");
-    let batches = runtime()
-        .block_on(collect(Arc::new(join), SessionContext::new().task_ctx()))
-        .expect("failed to run hash join");
+    let batches = runtime().block_on(collect(Arc::new(join), ctx)).map_err(|e| {
+        match e.find_root() {
+            DataFusionError::ResourcesExhausted(_) => DataFusionError::ResourcesExhausted(format!(
+                "native join working memory exceeded the operator's managed-memory budget; raise \
+                 taskmanager.memory.managed.size or the operator's managed-memory weight ({e})"
+            )),
+            _ => e,
+        }
+    })?;
     if batches.iter().all(|batch| batch.num_rows() == 0) {
-        return RecordBatch::new_empty(Arc::new(Schema::empty()));
+        return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
     }
     let schema = batches[0].schema();
     let joined = concat_batches(&schema, &batches).expect("failed to concat join output");
-    rename_positional(&joined)
+    Ok(rename_positional(&joined))
 }
 
 /// Builds the residual `JoinFilter` for a time-bounded join: the interval bounds (if any) AND the
@@ -4683,8 +4740,9 @@ impl WindowJoiner {
     /// Joins and evicts the windows the watermark has closed. For an outer join the unmatched rows of
     /// the closed windows are null-padded here too: because a window's rows on both sides close in the
     /// same flush, the INNER join over the closed rows sees every potential match, so a closed row that
-    /// does not appear in it never matched. Empty batch when nothing is emitted.
-    fn flush(&mut self, watermark: i64) -> RecordBatch {
+    /// does not appear in it never matched. Empty batch when nothing is emitted. Fallible because
+    /// the join's working memory draws on the operator's budget.
+    fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         let left = Self::split_closed(&mut self.left_buffered, &self.left_schema, self.left_wend, watermark);
         let right =
             Self::split_closed(&mut self.right_buffered, &self.right_schema, self.right_wend, watermark);
@@ -4700,9 +4758,9 @@ impl WindowJoiner {
         if self.join_type == JoinKind::Inner {
             return match (left, right) {
                 (Some(left), Some(right)) if left.num_rows() > 0 && right.num_rows() > 0 => {
-                    hash_join_inner(left, right, &on, filter)
+                    hash_join_inner(left, right, &on, filter, self.memory.task_ctx())
                 }
-                _ => empty_batch(),
+                _ => Ok(empty_batch()),
             };
         }
 
@@ -4724,7 +4782,8 @@ impl WindowJoiner {
                 append_rowids(right, &mut rc),
                 &on,
                 filter,
-            );
+                self.memory.task_ctx(),
+            )?;
             if joined.num_rows() > 0 {
                 let total = joined.num_columns();
                 let lrid = joined.column(left_types.len()).as_any().downcast_ref::<Int64Array>().expect("lrid");
@@ -4758,11 +4817,11 @@ impl WindowJoiner {
                 }
             }
         }
-        match outputs.len() {
+        Ok(match outputs.len() {
             0 => empty_batch(),
             1 => outputs.pop().expect("one output"),
             _ => concat_batches(&outputs[0].schema(), outputs.iter()).expect("concat window outputs"),
-        }
+        })
     }
 
     /// Serializes both buffers (`[u32 left_len][left ipc][right ipc]`) for a checkpoint.
@@ -9278,32 +9337,42 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_expand<'local
 /// checkpoint on the JVM side), so there is no snapshot/restore.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createLocalGroupAggregator<'local>(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     aggregate_kinds: JIntArray<'local>,
     value_types: JIntArray<'local>,
     value_columns: JIntArray<'local>,
     key_columns: JIntArray<'local>,
+    memory_budget_bytes: jlong,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
     let value_types = read_int_array(&env, &value_types);
     let value_columns = read_int_array(&env, &value_columns);
     let key_cols = read_columns(&env, &key_columns);
-    Box::into_raw(Box::new(LocalGroupAggregator::new(kinds, value_types, value_columns, key_cols)))
-        as jlong
+    let aggregator = LocalGroupAggregator::new(kinds, value_types, value_columns, key_cols)
+        .with_memory_budget(memory_budget_bytes);
+    boxed_or_throw(&mut env, aggregator)
 }
 
 /// Folds an Arrow batch the JVM exported into the buffered per-key accumulators; emits nothing.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateLocalGroupAggregator<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
     in_schema_address: jlong,
 ) {
     let aggregator = unsafe { &mut *(handle as *mut LocalGroupAggregator) };
-    aggregator.update(&import_record_batch(in_array_address, in_schema_address));
+    // The batch must drop before a throw: its release callback upcalls into the JVM, which would
+    // clear the pending exception (see updateTumblingAggregator).
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        aggregator.update(&batch)
+    };
+    if let Err(e) = result {
+        throw_memory_limit(&mut env, &e.to_string());
+    }
 }
 
 /// Emits the buffered partials (one row per key) and clears the buffer.
@@ -13108,7 +13177,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightWind
 /// Exports the INNER matches of every window the watermark has closed (then evicts those windows).
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushWindowJoiner<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     watermark_millis: jlong,
@@ -13116,8 +13185,10 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushWindowJo
     out_schema_address: jlong,
 ) {
     let joiner = unsafe { &mut *(handle as *mut WindowJoiner) };
-    let result = joiner.flush(watermark_millis);
-    export_record_batch(result, out_array_address, out_schema_address);
+    match joiner.flush(watermark_millis) {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Releases the window joiner and its native state.
@@ -13520,7 +13591,7 @@ pub mod bench {
         }
 
         pub fn flush(&mut self, watermark: i64) -> RecordBatch {
-            self.0.flush(watermark)
+            self.0.flush(watermark).expect("budget exceeded")
         }
     }
 }
@@ -14227,6 +14298,44 @@ mod tests {
     fn interval_join_buffers_over_budget_fail_clearly() {
         let mut joiner = inner_interval_joiner(-1000, 1000).with_memory_budget(16).unwrap();
         let err = joiner.push_left(join_batch(vec![1], vec![10], vec![0]), None).unwrap_err();
+        assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    }
+
+    // The hash join the operator delegates to DataFusion runs under the operator's pool, so its
+    // transient build side draws on the same budget as the buffered state: a buffer that fits can
+    // still fail at join time when the build side does not.
+    #[test]
+    fn join_working_memory_draws_on_the_operator_budget() {
+        let n = 20_000usize;
+        let keys: Vec<i64> = vec![1; n];
+        let values: Vec<i64> = (0..n as i64).collect();
+        let rts: Vec<i64> = vec![0; n];
+        let big = join_batch(keys, values, rts);
+        let budget = (big.get_array_memory_size() + (64 << 10)) as i64;
+
+        let mut joiner = inner_interval_joiner(-1000, 1000).with_memory_budget(budget).unwrap();
+        joiner.push_left(big, None).unwrap(); // buffers fit the budget
+        let err =
+            joiner.push_right(join_batch(vec![1], vec![100], vec![0]), None).unwrap_err();
+        assert!(err.to_string().contains("join working memory"), "{err}");
+    }
+
+    #[test]
+    fn local_group_state_over_budget_fails_and_flush_releases() {
+        let mut agg = LocalGroupAggregator::new(vec![0], vec![0], vec![1], vec![0])
+            .with_memory_budget(1 << 20)
+            .unwrap();
+        agg.update(&join_batch(vec![1, 2], vec![10, 20], vec![0, 0])).unwrap();
+        assert!(agg.memory.state_bytes > 0);
+        agg.flush();
+        assert_eq!(agg.memory.state_bytes, 0); // the mini-batch drained -> fully released
+
+        let mut tight = LocalGroupAggregator::new(vec![0], vec![0], vec![1], vec![0])
+            .with_memory_budget(64)
+            .unwrap();
+        let keys: Vec<i64> = (0..100).collect();
+        let values: Vec<i64> = (0..100).collect();
+        let err = tight.update(&join_batch(keys, values, vec![0; 100])).unwrap_err();
         assert!(err.to_string().contains("managed-memory budget"), "{err}");
     }
 
@@ -15069,11 +15178,11 @@ mod tests {
         joiner.push_right(window_batch(vec![1], vec![400], vec![1000], vec![2000]));
 
         // Watermark 1000 closes only [0,1000): k=1 matches (2 left × 1 right = 2 rows), k=2/k=3 don't.
-        let out = joiner.flush(1000);
+        let out = joiner.flush(1000).expect("window join flush");
         assert_eq!(left_right_values(&out), vec![(10, 100), (11, 100)]);
 
         // Watermark 2000 closes [1000,2000): k=1 matches once.
-        let rest = joiner.flush(2000);
+        let rest = joiner.flush(2000).expect("window join flush");
         assert_eq!(left_right_values(&rest), vec![(40, 400)]);
     }
 
@@ -15097,7 +15206,7 @@ mod tests {
             window_schema(),
             &snapshot,
         );
-        let out = restored.flush(1000);
+        let out = restored.flush(1000).expect("window join flush");
         assert_eq!(left_right_values(&out), vec![(10, 100)]);
     }
 
@@ -15109,7 +15218,7 @@ mod tests {
         // Window [0,1000): left k=1 (matches right) and k=2 (no right match); right k=1 only.
         joiner.push_left(window_batch(vec![1, 2], vec![10, 20], vec![0, 0], vec![1000, 1000]));
         joiner.push_right(window_batch(vec![1], vec![100], vec![0], vec![1000]));
-        let out = joiner.flush(1000);
+        let out = joiner.flush(1000).expect("window join flush");
         // k=1 emits the matched pair [10,100]; k=2 emits [20, null].
         assert_eq!(out.num_rows(), 2);
         let mut left_vs = values(&out, 1);

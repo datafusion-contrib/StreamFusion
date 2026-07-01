@@ -40,21 +40,24 @@ Current benches:
 
 ### Results
 
-Numbers are only comparable within a machine; record the host (CPU) alongside.
+Numbers are only comparable within a machine; record the host (CPU) alongside. The release
+profile pins `codegen-units = 1` (see `native/Cargo.toml`): with the default parallel split,
+hot-loop numbers swung ~50% from unrelated code additions elsewhere in the crate, so numbers
+measured before the pin (or without it) are not comparable to these.
 
 **Apple M1 Max** (median of 100 Criterion samples):
 
 | Benchmark | Rows/batch | Time/batch | Elements/s | Notes |
 |---|---|---|---|---|
-| `filter/gt_literal` | 4096 | 2.56 µs | ~1.60 Gelem/s | compiled predicate, ~50% selectivity |
-| `tumbling/sum_update_flush` | 4096 | 106 µs | ~38.6 Melem/s | 16 windows, no key |
-| `tumbling/sum_keyed_update_flush` | 4096 | 252 µs | ~16.3 Melem/s | 16 windows, 64 bigint keys |
-| `tumbling/sum_keyed_update_flush_accounted` | 4096 | 260 µs | ~15.8 Melem/s | same, managed-memory budget attached (~2% overhead) |
-| `interval_join/equi_key_push` | 4096 | 100 µs | ~41 Melem/s | INNER, 1:1, equi-key + interval filter |
-| `window_join/equi_key_flush` | 4096 | 175 µs | ~23 Melem/s | INNER, 1:1, equi-key + window bounds |
-| `over/running_sum_keyed` | 4096 | 0.60 ms | ~6.8 Melem/s | running aggregate, specialized fold, 64 keys |
-| `over/row_number_keyed` | 4096 | 465 µs | ~8.8 Melem/s | per-key counter, 64 keys |
-| `session/sum_keyed_update_flush` | 4096 | ~3 ms | ~1.4 Melem/s | gap merge, 64 keys (high-variance) |
+| `filter/gt_literal` | 4096 | 2.5 µs | ~1.63 Gelem/s | compiled predicate, ~50% selectivity |
+| `tumbling/sum_update_flush` | 4096 | 84 µs | ~48.8 Melem/s | 16 windows, no key |
+| `tumbling/sum_keyed_update_flush` | 4096 | 245 µs | ~16.7 Melem/s | 16 windows, 64 bigint keys |
+| `tumbling/sum_keyed_update_flush_accounted` | 4096 | 246 µs | ~16.6 Melem/s | same, managed-memory budget attached (≤1% overhead) |
+| `interval_join/equi_key_push` | 4096 | 63 µs | ~65 Melem/s | INNER, 1:1, equi-key + interval filter |
+| `window_join/equi_key_flush` | 4096 | 130 µs | ~31.5 Melem/s | INNER, 1:1, equi-key + window bounds |
+| `over/running_sum_keyed` | 4096 | 515 µs | ~8.0 Melem/s | running aggregate, specialized fold, 64 keys |
+| `over/row_number_keyed` | 4096 | 410 µs | ~10.0 Melem/s | per-key counter, 64 keys |
+| `session/sum_keyed_update_flush` | 4096 | ~2.5 ms | ~1.7 Melem/s | gap merge, 64 keys (high-variance) |
 
 The gap between filter and aggregation is the signal: the filter is a compiled
 expression plus one Arrow kernel, while the tumbling aggregator groups every row by a
@@ -65,17 +68,23 @@ Profiling-driven cuts so far (tumbling, 4096-row batch):
 - moving the row's key into its last window instead of cloning it for every window
   (181 → 171 µs unkeyed, 395 → 323 µs keyed);
 - a fast hash (`ahash`) for the grouping map instead of the stdlib SipHash
-  (171 → ~106 µs unkeyed, 323 → ~252 µs keyed).
+  (171 → ~106 µs unkeyed, 323 → ~252 µs keyed);
+- one codegen unit for the release build (~106 → ~84 µs unkeyed; most operators gained
+  10–17%, and the numbers stopped drifting with unrelated code churn);
+- the joins stopped rebuilding a full DataFusion `SessionContext` (its entire function
+  registry) per pushed batch — a bare `TaskContext` (or the operator's cached pool-wired
+  one, when accounted) is all a hash join needs (interval join ~115 → ~63 µs, window join
+  ~184 → ~130 µs at equal codegen settings).
 
-Net so far: the unkeyed path is ~2.3× faster (244 → ~106 µs) and the keyed path ~1.6×
-(395 → ~252 µs). The remaining per-row `GroupKey` allocation is the next target
+Net so far: the unkeyed tumbling path is ~2.9× faster (244 → ~84 µs) and the keyed path ~1.6×
+(395 → ~245 µs). The remaining per-row `GroupKey` allocation is the next target
 (row-format or dictionary-encoded keys) — see the [profiling
 ticket](../.claude/todos/20-profiling-and-benchmarks.md).
 
 The running `OVER` aggregate was the per-row outlier (~2.6 Melem/s, a DataFusion accumulator
 `update_batch` + `evaluate` per row); replacing it with a specialized typed running fold —
 matching the accumulators exactly (wrapping integer sum, null-skipping) but without the per-row
-call — took it to ~6.8 Melem/s (2.6×). The session aggregator (~1.4 Melem/s, high-variance) is
+call — took it to ~8 Melem/s (3×). The session aggregator (~1.7 Melem/s, high-variance) is
 now the remaining per-row outlier: it merges open windows over a per-key `BTreeMap` and slices the
 value column one row at a time.
 

@@ -57,13 +57,16 @@ public class NativeColumnarLocalGroupAggExecNode extends ExecNodeBase<ArrowBatch
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     // The size trigger that caps the bundle, like Flink's CountBundleTrigger (mini-batch.size).
     long miniBatchSize = config.get(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE);
-    return ExecNodeUtil.createOneInputTransformation(
-        input,
-        createTransformationMeta(TRANSFORMATION, config),
-        new NativeColumnarLocalGroupAggregateOperator(
-            aggregateKinds, valueTypes, valueColumns, keyColumns, miniBatchSize),
-        ArrowBatchTypeInformation.INSTANCE,
-        input.getParallelism(),
-        false);
+    Transformation<ArrowBatch> transformation =
+        ExecNodeUtil.createOneInputTransformation(
+            input,
+            createTransformationMeta(TRANSFORMATION, config),
+            new NativeColumnarLocalGroupAggregateOperator(
+                aggregateKinds, valueTypes, valueColumns, keyColumns, miniBatchSize),
+            ArrowBatchTypeInformation.INSTANCE,
+            input.getParallelism(),
+            false);
+    NativeManagedMemory.declareOperatorWeight(transformation);
+    return transformation;
   }
 }

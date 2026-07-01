@@ -191,7 +191,11 @@ public final class Native {
    * Released with {@link #closeLocalGroupAggregator(long)}.
    */
   public static native long createLocalGroupAggregator(
-      int[] aggregateKinds, int[] valueTypes, int[] valueColumns, int[] keyColumns);
+      int[] aggregateKinds,
+      int[] valueTypes,
+      int[] valueColumns,
+      int[] keyColumns,
+      long memoryBudgetBytes);
 
   /** Folds a batch into the buffered per-key accumulators; emits nothing. */
   public static native void updateLocalGroupAggregator(

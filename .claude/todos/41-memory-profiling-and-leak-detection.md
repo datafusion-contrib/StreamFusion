@@ -1,8 +1,9 @@
 # Memory profiling + leak detection for the native side
 
 **Status:** open
-**Source:** requested alongside ticket 05 (memory accounting) — accounting tells Flink how much we
-hold; this ticket is about *verifying* those numbers are honest and that nothing leaks.
+**Source:** requested alongside the memory-accounting work (shipped — divergences/16) — accounting
+tells Flink how much we hold; this ticket is about *verifying* those numbers are honest and that
+nothing leaks.
 
 ## Problem
 Native memory is invisible to the JVM's tooling: a leaked Arrow buffer, an operator whose state map
@@ -17,8 +18,8 @@ frees all of it," and so regressions are caught by tests, not production OOMs.
 
 ## What to build
 1. **Allocator/pool introspection.** Expose the native side's current usage — the shared FFI Arrow
-   allocator and the per-operator memory pool's reserved bytes (shipped for the window aggregate
-   family by ticket 05; more operators as that ticket progresses) — over JNI, and surface it as
+   allocator and the per-operator memory pool's reserved bytes (shipped for every stateful native
+   operator — divergences/16) — over JNI, and surface it as
    Flink operator metrics so a running job's native footprint is visible in the Flink UI/metrics
    reporter next to its JVM numbers.
 2. **Leak assertions in tests.** At operator `close()` the pool/allocator balance must return to
@@ -42,8 +43,8 @@ frees all of it," and so regressions are caught by tests, not production OOMs.
 - A soak test exists that would have caught an unbounded-state or dropped-release leak.
 
 ## Pointers
-- Ticket 05 (memory accounting) — the pool this ticket introspects; shipped for the window
-  aggregate family, remaining operators tracked there.
+- divergences/16 (memory accounting) — the pool this ticket introspects; shipped for every
+  stateful native operator.
 - Comet's memory-pool stats and Arrow Java's allocator leak detection for prior art.
 - `.claude/todos/20-profiling-and-benchmarks.md` item 2 (native timing/counter hook) — same
   feature-flagged native introspection surface; consider building them together.

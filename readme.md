@@ -121,8 +121,10 @@ Acceleration is configured by JVM system properties (mirroring DataFusion Comet'
   `NativeMemoryLimitException` naming the remedy instead of an unattributed container OOM
   ([divergences/16](divergences/16-upfront-managed-memory-reservation.md)). Covers every stateful
   native operator: the window aggregates (one- and two-phase, session included), the non-windowed
-  GROUP BY, changelog normalize, both dedups, OVER, event-time sort, Top-N (append-only, retracting,
-  and windowed), and the interval/window/temporal/updating joins.
+  GROUP BY (its mini-batch local pre-aggregate included), changelog normalize, both dedups, OVER,
+  event-time sort, Top-N (append-only, retracting, and windowed), and the
+  interval/window/temporal/updating joins. The interval/window joins' transient working memory (the
+  DataFusion hash join they delegate the match to) draws on the same budget as their buffered state.
 
 ### Deployment JVM flags
 
@@ -166,22 +168,22 @@ run with `cd native && cargo bench`. Method and running table:
 
 | Operator | Benchmark | Batch | Time | Throughput |
 |---|---|---|---|---|
-| Filter (`WHERE`) | compiled predicate `v > 0`, ~50% pass | 4096 rows | 2.56 µs | ~1.60 Gelem/s |
-| Tumbling window aggregate | `SUM` over 16 windows, no key | 4096 rows | 106 µs | ~38.6 Melem/s |
-| Tumbling window aggregate | `SUM` over 16 windows, 64 bigint keys | 4096 rows | 252 µs | ~16.3 Melem/s |
-| Interval join | INNER, 1:1 on key, equi-key + interval filter | 4096 rows | 100 µs | ~41 Melem/s |
-| Window join | INNER, 1:1 on key + window bounds | 4096 rows | 175 µs | ~23 Melem/s |
-| Non-windowed `GROUP BY` | `SUM`, 256 string keys (changelog out) | 4096 rows | 1.85 ms | ~2.2 Melem/s |
-| `OVER` running `SUM` | running aggregate (specialized fold), 64 keys | 4096 rows | 0.60 ms | ~6.8 Melem/s |
-| `OVER` `ROW_NUMBER` | per-key counter, 64 keys | 4096 rows | 465 µs | ~8.8 Melem/s |
-| Session window aggregate | `SUM`, 64 bigint keys, 500 ms gap | 4096 rows | ~3 ms | ~1.4 Melem/s |
+| Filter (`WHERE`) | compiled predicate `v > 0`, ~50% pass | 4096 rows | 2.5 µs | ~1.63 Gelem/s |
+| Tumbling window aggregate | `SUM` over 16 windows, no key | 4096 rows | 84 µs | ~48.8 Melem/s |
+| Tumbling window aggregate | `SUM` over 16 windows, 64 bigint keys | 4096 rows | 245 µs | ~16.7 Melem/s |
+| Interval join | INNER, 1:1 on key, equi-key + interval filter | 4096 rows | 63 µs | ~65 Melem/s |
+| Window join | INNER, 1:1 on key + window bounds | 4096 rows | 130 µs | ~31.5 Melem/s |
+| Non-windowed `GROUP BY` | `SUM`, 256 string keys (changelog out) | 4096 rows | 0.82 ms | ~5.0 Melem/s |
+| `OVER` running `SUM` | running aggregate (specialized fold), 64 keys | 4096 rows | 515 µs | ~8.0 Melem/s |
+| `OVER` `ROW_NUMBER` | per-key counter, 64 keys | 4096 rows | 410 µs | ~10.0 Melem/s |
+| Session window aggregate | `SUM`, 64 bigint keys, 500 ms gap | 4096 rows | ~2.5 ms | ~1.7 Melem/s |
 
 The native compute is fast where it batches (a filter clears ~1.6 G elem/s; the joins
-delegate to a DataFusion hash join at 20–40 Melem/s). The running `OVER` aggregate folds a
+delegate to a DataFusion hash join at 30–65 Melem/s). The running `OVER` aggregate folds a
 small typed state per row (matching DataFusion's accumulators — wrapping integer sum,
-null-skipping — without the per-row accumulator call), at ~6.8 Melem/s. The session
+null-skipping — without the per-row accumulator call), at ~8 Melem/s. The session
 aggregate, which merges open windows over a per-key `BTreeMap`, is the remaining per-row
-outlier (~1.4 Melem/s, high-variance).
+outlier (~1.7 Melem/s, high-variance).
 
 ### End to end vs. Flink
 

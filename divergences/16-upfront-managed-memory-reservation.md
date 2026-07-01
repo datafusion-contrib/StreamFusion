@@ -40,6 +40,30 @@ RocksDB block cache via `getSharedMemoryResourceForManagedMemory`):
   replacement for an unattributed container OOM, since streaming operators here have no
   runtime spill to fall back to (research §4).
 
+## Scope: what draws on the budget, and what deliberately does not
+
+- **Operator state** — every stateful native operator tracks its footprint against its
+  reservation (the list lives in the readme's "Controlling acceleration" section).
+- **DataFusion-executed fragments** — where an operator delegates work to DataFusion's
+  execution (the interval/window joins run their match as a `HashJoinExec` over the
+  buffered batches), that plan runs under a `TaskContext` built on a `RuntimeEnv` sharing
+  the operator's bounded pool (comet's `RuntimeEnvBuilder::with_memory_pool`), so the
+  join's transient build side draws on the same budget as the buffered state and a denial
+  fails with the same remedy message.
+- **File scans are NOT pool-wired, on purpose.** DataFusion 53's scan path (the Parquet
+  opener/source and the datasource file streams) registers no memory consumers — only its
+  `ParquetSink` does, and our sink writes via arrow's `ArrowWriter` directly. Wiring a pool
+  into the scan's `TaskContext` would enforce nothing, while plumbing a budget to the
+  reader would add host surface (a `BulkFormat` has no `MemoryManager` access) for zero
+  effect. Revisit if a DataFusion upgrade adds scan-side reservations.
+- **The Java-side FFI Arrow allocator** (`NativeAllocator.SHARED`) stays outside the
+  budget: its buffers are transient per-batch and refcounted — accounting is the pool's
+  job, not the allocator's (see the class comment). Revisit only if transpose buffering
+  ever becomes long-lived.
+- **No runtime spill**: a denied reservation is a hard failure because these streaming
+  operators have nothing to spill to; the structural answer is disaggregated/cached state
+  (ticket 37).
+
 ## What this costs, and the escape hatch
 
 Elasticity: one operator cannot borrow another's unused budget mid-flight (Comet's

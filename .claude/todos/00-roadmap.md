@@ -114,19 +114,19 @@ here when the ticket is deleted.
    ~25% faster; a native decoder was investigated and rejected on benchmark grounds — ticket 28.)
 
 ## Production-readiness (not yet load-bearing)
-- **Memory accounting** (ticket 05): shipped for every stateful native operator — the
-  transformation declares an operator-scope managed-memory weight, the operator reserves the
-  fraction from Flink's `MemoryManager` for its lifetime, and the native side enforces it as a
-  bounded DataFusion pool with incrementally tracked state bytes (`NativeMemoryLimitException` on
-  exceed, restore included; up-front reservation, not comet's per-grow upcall — divergences/16).
-  Remaining tail: the `RuntimeEnv` pool wiring for DataFusion-executed fragments (join match, file
-  scans) and the mini-batch local pre-aggregate. Distinct from the FFI Arrow allocator (one shared,
-  long-lived allocator, as comet does) — accounting is the pool's job, not the allocator's.
+- **Memory accounting**: shipped for every stateful native operator (mini-batch local pre-aggregate
+  included) — the transformation declares an operator-scope managed-memory weight, the operator
+  reserves the fraction from Flink's `MemoryManager` for its lifetime, and the native side enforces
+  it as a bounded DataFusion pool with incrementally tracked state bytes
+  (`NativeMemoryLimitException` on exceed, restore included; up-front reservation, not comet's
+  per-grow upcall). DataFusion-executed join fragments run under the same pool; file scans are
+  deliberately not pool-wired (DF 53's scan path registers no consumers) and the FFI Arrow
+  allocator is deliberately outside the budget — scope and rationale in divergences/16.
 - **Mailbox threading** (ticket 01): native execution should integrate with the task mailbox
   (non-blocking), not block the task thread.
 - **Memory profiling + leak detection** (ticket 41): introspect the native allocator/pool (metrics +
   close-time leak assertions in tests), a documented native heap-profiling workflow, and a soak test —
-  the verification counterpart to ticket 05.
+  the verification counterpart to the shipped memory accounting.
 
 ## Breadth / longer horizon
 - **Arroyo operator coverage tracker** (ticket 11): what remains is async UDF (ticket 01) plus operator

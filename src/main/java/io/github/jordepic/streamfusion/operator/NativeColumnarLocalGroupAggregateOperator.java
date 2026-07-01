@@ -38,6 +38,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
   private transient long bufferedRows;
+  private transient ManagedMemoryBudget memoryBudget;
 
   public NativeColumnarLocalGroupAggregateOperator(
       int[] aggregateKinds,
@@ -57,8 +58,10 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
     super.open();
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
+    memoryBudget = ManagedMemoryBudget.reserveFor(this);
     handle =
-        Native.createLocalGroupAggregator(aggregateKinds, valueTypes, valueColumns, keyColumns);
+        Native.createLocalGroupAggregator(
+            aggregateKinds, valueTypes, valueColumns, keyColumns, memoryBudget.bytes());
     bufferedRows = 0;
   }
 
@@ -121,6 +124,10 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
     if (handle != 0) {
       Native.closeLocalGroupAggregator(handle);
       handle = 0;
+    }
+    if (memoryBudget != null) {
+      memoryBudget.close();
+      memoryBudget = null;
     }
     super.close();
   }
