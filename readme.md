@@ -77,45 +77,48 @@ engines (standard tuned-prod setting).
 
 StreamFusion runs **every runnable Nexmark query** (q0–q5, q7–q23) natively end-to-end with no
 fallback and no flags; only q6 stays out, because Flink SQL itself can't run it
-([analysis](.claude/todos/39-nexmark-q6-exclusion.md)). Native vs. stock Flink over the generator
-source, 500K events, sorted by speedup:
+([analysis](.claude/todos/39-nexmark-q6-exclusion.md)). Native vs. stock Flink, 500K events, from a
+rowwise `RowData` source and from each Kafka value format, sorted by the `RowData` speedup:
 
-| Query | Shape | Native vs. Flink |
-|---|---|---|
-| q11 | session-window `COUNT` per bidder | **2.23×** |
-| q12 | proctime tumble `COUNT` per bidder | **1.45×** |
-| q7 | tumble `MAX` ⋈ bid | **1.37×** |
-| q2 | filter `WHERE MOD(auction, 123) = 0` | **1.30×** |
-| q0 | pass-through projection of `bid` | **1.27×** |
-| q22 | `SPLIT_INDEX(url, '/', n)` projection | **1.22×** |
-| q1 | `0.908 * price` — exact `Decimal128` (byte-parity) | **1.19×** |
-| q4 | regular join → `MAX` → `AVG` per category | **1.07×** |
-| q10 | `DATE_FORMAT` projection | **1.01×** |
-| q14 | `HOUR`/`CASE` + `count_char` UDF + decimal | **1.00×** |
-| q9 | regular join → `ROW_NUMBER` (≤ 1) | 0.97× |
-| q15 | multi-`DISTINCT` `COUNT`s per day | 0.96× |
-| q23 | three-way join `bid ⋈ person ⋈ auction` | 0.96× |
-| q5 | Hot Items (window re-agg + window join) | 0.94× |
-| q17 | group agg + `AVG`/`MIN`/`MAX`/`SUM` | 0.94× |
-| q13 | lookup join (bounded dimension) | 0.91× |
-| q19 | `ROW_NUMBER` topN (≤ 10) | 0.91× |
-| q3 | updating join `auction ⋈ person` | 0.83× |
-| q18 | `ROW_NUMBER` dedup (≤ 1) | 0.82× |
-| q21 | `CASE` + `REGEXP_EXTRACT`/`LOWER` — JVM upcall (byte-parity) | 0.76× |
-| q20 | updating join (`category = 10`) | 0.75× |
-| q16 | multi-`DISTINCT` per channel/day | 0.75× |
-| q8 | tumble windowed-distinct ⋈ join | 0.71× |
+| Query | Shape | From RowData | From JSON on Kafka | From Avro on Kafka | From Protobuf on Kafka |
+|---|---|---|---|---|---|
+| q11 | session-window `COUNT` per bidder | **2.23×** | **1.68×** | **2.09×** | **2.10×** |
+| q12 | proctime tumble `COUNT` per bidder | **1.45×** | **1.13×** | **1.50×** | **1.24×** |
+| q7 | tumble `MAX` ⋈ bid | **1.37×** | **1.32×** | **1.52×** | **1.35×** |
+| q2 | filter `WHERE MOD(auction, 123) = 0` | **1.30×** | **1.04×** | **1.45×** | **1.15×** |
+| q0 | pass-through projection of `bid` | **1.27×** | **1.11×** | **1.50×** | **1.21×** |
+| q22 | `SPLIT_INDEX(url, '/', n)` projection | **1.22×** | **1.14×** | **1.51×** | **1.19×** |
+| q1 | `0.908 * price` — exact `Decimal128` (byte-parity) | **1.19×** | **1.04×** | **1.42×** | **1.14×** |
+| q4 | regular join → `MAX` → `AVG` per category | **1.07×** | **1.03×** | **1.45×** | **1.18×** |
+| q10 | `DATE_FORMAT` projection | **1.01×** | — | — | — |
+| q14 | `HOUR`/`CASE` + `count_char` UDF + decimal | **1.00×** | — | — | — |
+| q9 | regular join → `ROW_NUMBER` (≤ 1) | 0.97× | **1.11×** | **1.14×** | **1.18×** |
+| q15 | multi-`DISTINCT` `COUNT`s per day | 0.96× | — | — | — |
+| q23 | three-way join `bid ⋈ person ⋈ auction` | 0.96× | **1.03×** | **1.40×** | **1.24×** |
+| q5 | Hot Items (window re-agg + window join) | 0.94× | **1.15×** | **1.59×** | **1.38×** |
+| q17 | group agg + `AVG`/`MIN`/`MAX`/`SUM` | 0.94× | — | — | — |
+| q13 | lookup join (bounded dimension) | 0.91× | 0.98× | **1.26×** | **1.12×** |
+| q19 | `ROW_NUMBER` topN (≤ 10) | 0.91× | **1.08×** | **1.15×** | **1.10×** |
+| q3 | updating join `auction ⋈ person` | 0.83× | **1.03×** | **1.40×** | **1.10×** |
+| q18 | `ROW_NUMBER` dedup (≤ 1) | 0.82× | **1.03×** | **1.14×** | **1.02×** |
+| q21 | `CASE` + `REGEXP_EXTRACT`/`LOWER` — JVM upcall (byte-parity) | 0.76× | **1.02×** | **1.14×** | 0.94× |
+| q20 | updating join (`category = 10`) | 0.75× | **1.04×** | **1.37×** | **1.12×** |
+| q16 | multi-`DISTINCT` per channel/day | 0.75× | — | — | — |
+| q8 | tumble windowed-distinct ⋈ join | 0.71× | **1.00×** | **1.37×** | **1.14×** |
 
-Projection/filter/scalar and the windowed and group aggregates win outright; the queries that
-still trail 1× are the wide changelog joins and multi-`DISTINCT` aggregates, whose remaining cost
-is the per-row state store that Flink pools (native pays it in the system allocator). q21's default
-`0.76×` is the price of running `REGEXP_EXTRACT`/`LOWER` through a byte-identical JVM upcall; the
-opt-in pure-Rust path (`-Dstreamfusion.expression.allowIncompatible=true`) is **1.57×**.
+From `RowData`, projection/filter/scalar and the windowed and group aggregates win outright; the
+queries that still trail 1× there are the wide changelog joins and multi-`DISTINCT` aggregates, whose
+remaining cost is the per-row state store that Flink pools (native pays it in the system allocator).
+q21's `RowData` `0.76×` is the price of running `REGEXP_EXTRACT`/`LOWER` through a byte-identical JVM
+upcall; the opt-in pure-Rust path (`-Dstreamfusion.expression.allowIncompatible=true`) is **1.57×**.
 
-**From a Kafka source** the native decode compounds the operator verdict: on Avro/protobuf the Rust
+**From a Kafka source the native decode compounds the operator verdict**: on Avro/protobuf the Rust
 decode stacks on top (q11 reaches **2.1×**, most queries land **1.1–1.6×**), while JSON is
-tokenize-bound and stays nearer parity. The full method, the row→columnar source ladder, the
-end-to-end-vs-Flink table, and the Criterion micro-benchmarks are in
+tokenize-bound and stays nearer parity. Each Kafka cell is that format's best of three source rungs
+(JVM transpose / native decode / native rdkafka source) — for Avro and Protobuf almost always the
+native decode. `—` marks generator-only queries: they format or extract from the event-time column,
+which arrives as `TIMESTAMP_LTZ` on Kafka where the native `DATE_FORMAT`/extraction path needs a plain
+`TIMESTAMP`. The full per-rung ladder, method, and end-to-end tables are in
 **[docs/benchmarks.md](docs/benchmarks.md)**.
 
 _Apple M1 Max; numbers are comparable only within a machine._
