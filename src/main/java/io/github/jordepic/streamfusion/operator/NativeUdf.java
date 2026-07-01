@@ -81,6 +81,20 @@ public final class NativeUdf {
   }
 
   /**
+   * Registers a builtin scalar function backed by a {@code static} method (no receiver) for native
+   * invocation. Used to route a SQL builtin whose native semantics can't be guaranteed to match the
+   * host — e.g. {@code REGEXP_EXTRACT}, whose Rust {@code regex} result may differ from Java's {@code
+   * java.util.regex} — through the host's own implementation, keeping it byte-identical while the rest
+   * of the expression stays native.
+   */
+  public static int registerBuiltin(Method staticMethod, int[] argTypes, int returnType) {
+    staticMethod.setAccessible(true);
+    int id = NEXT_ID.getAndIncrement();
+    REGISTRY.put(id, new Registered(null, staticMethod, argTypes, returnType));
+    return id;
+  }
+
+  /**
    * Invoked from native code (via JNI) once per batch: imports the argument columns from the Rust-owned
    * C Data pointers, runs {@code eval} row by row, and exports the single result column to the output
    * pointers. Called on the task thread that drove the native evaluation, so it is JVM-attached already.

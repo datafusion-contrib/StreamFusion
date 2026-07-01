@@ -158,12 +158,13 @@ class FlinkCalcSqlHarnessTest {
   }
 
   @Test
-  void upperFallsBack() throws Exception {
-    // UPPER/LOWER are not admitted: native case folding diverges from the JVM's locale-sensitive
-    // folding on some characters, a silent non-ASCII divergence (Comet routes case conversion
-    // through the JVM by default). So they fall back, naming UPPER.
-    NativeParity.assertFallbackReasonContains(
-        FlinkCalcSqlHarnessTest::environment, "SELECT UPPER(s) FROM f", "UPPER");
+  void upperLowerMatchHost() throws Exception {
+    // Native (Rust) case folding diverges from the JVM's locale-sensitive folding on some characters,
+    // so by default UPPER/LOWER route through the host's own BinaryStringData case folding via a JVM
+    // upcall — running natively and byte-identically (the pure-Rust path stays opt-in behind
+    // allowIncompatible). The pure-native divergence is checked separately below.
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::environment, "SELECT UPPER(s), LOWER(s) FROM f");
   }
 
   @Test

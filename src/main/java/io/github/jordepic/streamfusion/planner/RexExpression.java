@@ -784,17 +784,26 @@ final class RexExpression {
   }
 
   /**
-   * Emits {@code REGEXP_EXTRACT(str, pattern, groupIndex)} (op 88), opt-in behind the allowIncompatible
-   * flag: Rust's {@code regex} engine and Java's {@code java.util.regex} agree on common syntax but
-   * diverge on advanced features (backreferences, lookaround, some Unicode/class edges), which can't be
-   * statically ruled out — so, like Comet's regex handling, this admits only under the flag. The pattern
-   * must be a string literal (so the native side compiles it once per batch) and the group index a
-   * literal ≥ 0. The two-argument form (no explicit index) falls back.
+   * Emits {@code REGEXP_EXTRACT(str, pattern[, groupIndex])}. By default it routes through the host's own
+   * {@code SqlFunctionUtils.regexpExtract} as a JVM-upcall node (see {@link #emitRegexpExtractJvm}), so the
+   * regex is evaluated by {@code java.util.regex} exactly as Flink would — byte-identical, and the rest of
+   * the expression still runs natively. Under the {@code allowIncompatible} flag it instead uses the pure
+   * native Rust {@code regex} path (op 88, faster, no JVM crossing), which agrees with Java on common
+   * syntax but can diverge on advanced features (backreferences, lookaround, some Unicode/class edges).
    */
   private boolean emitRegexpExtract(List<RexNode> args) {
-    if (!NativeConfig.allowsIncompatible("REGEXP_EXTRACT")) {
-      return reject(incompatibleReason("REGEXP_EXTRACT"));
+    if (NativeConfig.allowsIncompatible("REGEXP_EXTRACT")) {
+      return emitRegexpExtractNative(args);
     }
+    return emitRegexpExtractJvm(args);
+  }
+
+  /**
+   * The pure-native REGEXP_EXTRACT (op 88), opt-in behind the allowIncompatible flag. The pattern must be
+   * a string literal (so the native side compiles it once per batch) and the group index a literal ≥ 0.
+   * The two-argument form (no explicit index) falls back.
+   */
+  private boolean emitRegexpExtractNative(List<RexNode> args) {
     if (args.size() != 3) {
       return reject("REGEXP_EXTRACT requires 3 arguments (str, pattern, groupIndex)");
     }
@@ -805,6 +814,74 @@ final class RexExpression {
       return reject("REGEXP_EXTRACT requires a literal group index ≥ 0");
     }
     add(KIND_CALL, 88, 3);
+    for (RexNode arg : args) {
+      if (!emit(arg)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Emits {@code REGEXP_EXTRACT} as a JVM-upcall node (op {@link #KIND_UDF}) backed by the host's
+   * {@code org.apache.flink.table.runtime.functions.SqlFunctionUtils.regexpExtract} — the very method
+   * Flink's codegen calls. The native engine packs the argument columns and upcalls per batch, so the
+   * match runs under {@code java.util.regex} and is byte-identical to the host for every pattern (the
+   * two- and three-argument forms both apply). The string arguments must be string-typed and the group
+   * index INTEGER or BIGINT; anything else falls back.
+   */
+  private boolean emitRegexpExtractJvm(List<RexNode> args) {
+    if (args.size() != 2 && args.size() != 3) {
+      return reject("REGEXP_EXTRACT requires 2 or 3 arguments (str, pattern[, groupIndex])");
+    }
+    for (int i = 0; i < 2; i++) {
+      if (udfTypeCode(args.get(i).getType().getSqlTypeName())
+          != io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_STRING) {
+        return reject("REGEXP_EXTRACT requires string str/pattern arguments");
+      }
+    }
+    Class<?>[] signature;
+    int[] argCodes;
+    if (args.size() == 3) {
+      int indexCode = udfTypeCode(args.get(2).getType().getSqlTypeName());
+      Class<?> indexClass;
+      if (indexCode == io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_INT) {
+        indexClass = int.class;
+      } else if (indexCode == io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_LONG) {
+        indexClass = long.class;
+      } else {
+        return reject("REGEXP_EXTRACT group index must be INTEGER or BIGINT");
+      }
+      signature = new Class<?>[] {String.class, String.class, indexClass};
+      argCodes =
+          new int[] {
+            io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_STRING,
+            io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_STRING,
+            indexCode
+          };
+    } else {
+      signature = new Class<?>[] {String.class, String.class};
+      argCodes =
+          new int[] {
+            io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_STRING,
+            io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_STRING
+          };
+    }
+    java.lang.reflect.Method regexpExtract;
+    try {
+      regexpExtract =
+          Class.forName("org.apache.flink.table.runtime.functions.SqlFunctionUtils")
+              .getMethod("regexpExtract", signature);
+    } catch (ReflectiveOperationException e) {
+      return reject("REGEXP_EXTRACT host implementation unavailable: " + e.getMessage());
+    }
+    int returnCode = io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_STRING;
+    int id =
+        io.github.jordepic.streamfusion.operator.NativeUdf.registerBuiltin(
+            regexpExtract, argCodes, returnCode);
+    add(KIND_UDF, longs.size(), args.size());
+    longs.add((long) id);
+    longs.add((long) returnCode);
     for (RexNode arg : args) {
       if (!emit(arg)) {
         return false;
@@ -1073,6 +1150,15 @@ final class RexExpression {
   private boolean emitIncompatibleUnary(RexCall call, int op) {
     String name = call.getOperator().getName();
     if (!NativeConfig.allowsIncompatible(name)) {
+      // UPPER/LOWER have an exact default: route to the host's own case folding via a JVM upcall, so
+      // they run natively and byte-identically without the flag. The transcendental math ops (last-ULP
+      // divergence) have no such cheap exact path, so they still fall back unless opted in.
+      if (op == 50) {
+        return emitStringCaseJvm(call, "upper");
+      }
+      if (op == 51) {
+        return emitStringCaseJvm(call, "lower");
+      }
       return reject(incompatibleReason(name));
     }
     if (call.getOperands().size() != 1) {
@@ -1080,6 +1166,39 @@ final class RexExpression {
     }
     add(KIND_CALL, op, 1);
     return emit(call.getOperands().get(0));
+  }
+
+  /**
+   * Emits {@code UPPER}/{@code LOWER} as a JVM-upcall node (op {@link #KIND_UDF}) backed by {@link
+   * io.github.jordepic.streamfusion.operator.NativeBuiltinFunctions}, which calls Flink's own {@code
+   * BinaryStringData} case folding — byte-identical to the host, with the rest of the expression still
+   * native. The argument must be string-typed.
+   */
+  private boolean emitStringCaseJvm(RexCall call, String method) {
+    List<RexNode> args = call.getOperands();
+    if (args.size() != 1) {
+      return reject(method + " requires one argument");
+    }
+    if (udfTypeCode(args.get(0).getType().getSqlTypeName())
+        != io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_STRING) {
+      return reject(method + " requires a string argument");
+    }
+    java.lang.reflect.Method impl;
+    try {
+      impl =
+          io.github.jordepic.streamfusion.operator.NativeBuiltinFunctions.class.getMethod(
+              method, String.class);
+    } catch (ReflectiveOperationException e) {
+      return reject(method + " host implementation unavailable: " + e.getMessage());
+    }
+    int returnCode = io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_STRING;
+    int id =
+        io.github.jordepic.streamfusion.operator.NativeUdf.registerBuiltin(
+            impl, new int[] {io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_STRING}, returnCode);
+    add(KIND_UDF, longs.size(), 1);
+    longs.add((long) id);
+    longs.add((long) returnCode);
+    return emit(args.get(0));
   }
 
   /** {@code POWER(base, exp)} (also the lowering of {@code SQRT}), native only under the flag. */
