@@ -5,7 +5,7 @@ use arrow::array::{
     TimestampNanosecondArray, UInt32Array,
 };
 use arrow::compute::{concat_batches, filter_record_batch, take, SortOptions};
-use arrow::row::{OwnedRow, Row, RowConverter, SortField};
+use arrow::row::{OwnedRow, Row, RowConverter, Rows, SortField};
 use arrow::datatypes::{DataType, Field, FieldRef, Fields, Schema, SchemaRef};
 use arrow::ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema};
 use datafusion::catalog::memory::MemorySourceConfig;
@@ -4457,8 +4457,10 @@ impl JoinPredicate {
         physical
     }
 
-    /// Evaluates the predicate over the candidate `[left.., right..]` rows (laid out by `schema`),
-    /// returning one boolean per row (a null result is `false` — not a match).
+    /// Evaluates the predicate over candidate `[left.., right..]` rows carried as scalars (the temporal
+    /// join keeps its state as `ScalarValue` rows). Builds the columnar batch then defers to
+    /// {@link evaluate_batch}. The updating join, whose state is arrow-row bytes, assembles the batch
+    /// itself and calls `evaluate_batch` directly — no scalar round-trip.
     fn evaluate(&mut self, schema: &SchemaRef, rows: &[JoinRow]) -> Vec<bool> {
         let types: Vec<DataType> = schema.fields().iter().map(|f| f.data_type().clone()).collect();
         let columns: Vec<ArrayRef> = (0..types.len())
@@ -4466,9 +4468,16 @@ impl JoinPredicate {
             .collect();
         let batch = RecordBatch::try_new(schema.clone(), columns)
             .expect("failed to build join-predicate batch");
+        self.evaluate_batch(schema, &batch)
+    }
+
+    /// Evaluates the compiled predicate over a candidate `[left.., right..]` batch the caller has
+    /// assembled columnar (laid out by `schema`), returning one boolean per row (a null result is
+    /// `false` — not a match). Batch-in avoids materializing the candidate rows as `ScalarValue`s.
+    fn evaluate_batch(&mut self, schema: &SchemaRef, batch: &RecordBatch) -> Vec<bool> {
         let predicate = self.compiled(schema);
         let evaluated = predicate
-            .evaluate(&batch)
+            .evaluate(batch)
             .expect("failed to evaluate join predicate")
             .into_array(batch.num_rows())
             .expect("failed to materialize join predicate");
@@ -4505,13 +4514,6 @@ fn encode_null_row(conv: &RowConverter, schema: &SchemaRef) -> OwnedRow {
     let columns: Vec<ArrayRef> =
         schema.fields().iter().map(|f| arrow::array::new_null_array(f.data_type(), 1)).collect();
     conv.convert_columns(&columns).expect("encode null row").row(0).owned()
-}
-
-/// Decodes one value-encoded row back to scalars (only the residual-predicate path needs this; the
-/// hot accumulate/emit paths stay in bytes).
-fn decode_row(conv: &RowConverter, owned: &OwnedRow, ncols: usize) -> JoinRow {
-    let arrays = conv.convert_rows([owned.row()]).expect("decode join row");
-    (0..ncols).map(|j| ScalarValue::try_from_array(&arrays[j], 0).expect("join scalar")).collect()
 }
 
 struct UpdatingJoiner {
@@ -4591,31 +4593,32 @@ impl UpdatingJoiner {
             return;
         }
         let joined = Self::joined_schema(&self.left_schema, &self.right_schema);
-        let lcols = self.left_schema.fields().len();
-        let rcols = self.right_schema.fields().len();
-        // The predicate evaluates over scalar `[left.., right..]` rows, so decode the byte rows back
-        // here (the uncommon path — only joins with a residual non-equi condition, e.g. q7).
-        let input_scalars =
-            decode_row(if is_left { &self.left_payload } else { &self.right_payload }, full, if is_left { lcols } else { rcols });
-        // Decode all associated other-side rows in ONE vectorized pass — a per-row convert_rows here
-        // was a measured regression on q7, whose price-equi predicate join builds large associated sets.
+        let n = associated.len();
+        // Assemble the candidate `[left.., right..]` batch directly from arrows, no ScalarValue
+        // round-trip: decode the input row's columns once (length-1 arrays), broadcast them to `n`
+        // rows via a zero-index gather, and decode all associated other-side rows in ONE vectorized
+        // pass (a per-row convert_rows here was a measured regression on q7, whose price-equi predicate
+        // builds large associated sets). Only joins with a residual non-equi condition reach this.
+        let input_conv = if is_left { &self.left_payload } else { &self.right_payload };
+        let input_cols = input_conv.convert_rows([full.row()]).expect("decode join input row");
+        let zero = UInt32Array::from(vec![0u32; n]);
+        let input_broadcast: Vec<ArrayRef> = input_cols
+            .iter()
+            .map(|a| take(a.as_ref(), &zero, None).expect("broadcast join input row"))
+            .collect();
         let other_conv = if is_left { &self.right_payload } else { &self.left_payload };
-        let other_ncols = if is_left { rcols } else { lcols };
         let other_cols =
             other_conv.convert_rows(associated.iter().map(|o| o.record.row())).expect("decode associated rows");
-        let pairs: Vec<JoinRow> = (0..associated.len())
-            .map(|r| {
-                let other: Vec<ScalarValue> = (0..other_ncols)
-                    .map(|j| ScalarValue::try_from_array(&other_cols[j], r).expect("associated scalar"))
-                    .collect();
-                if is_left {
-                    input_scalars.iter().chain(&other).cloned().collect()
-                } else {
-                    other.iter().chain(&input_scalars).cloned().collect()
-                }
-            })
-            .collect();
-        let mask = self.predicate.as_mut().expect("predicate present").evaluate(&joined, &pairs);
+        let mut columns: Vec<ArrayRef> = Vec::with_capacity(input_broadcast.len() + other_cols.len());
+        if is_left {
+            columns.extend(input_broadcast);
+            columns.extend(other_cols);
+        } else {
+            columns.extend(other_cols);
+            columns.extend(input_broadcast);
+        }
+        let batch = RecordBatch::try_new(joined.clone(), columns).expect("build join-predicate batch");
+        let mask = self.predicate.as_mut().expect("predicate present").evaluate_batch(&joined, &batch);
         let mut keep = mask.into_iter();
         associated.retain(|_| keep.next().unwrap_or(false));
     }
@@ -4711,6 +4714,15 @@ impl UpdatingJoiner {
         let key_null: Vec<bool> =
             (0..batch.num_rows()).map(|r| key_arrays.iter().any(|a| a.is_null(r))).collect();
 
+        // INNER keeps no degree and never mutates the probe (other) side, so the whole batch's rows are
+        // independent: each probes a fixed other-side state. That lets us gather every candidate pair,
+        // decode/evaluate the residual predicate once per batch, and emit by filtering — no per-row
+        // convert_rows/predicate batch, no per-pair row clone, no emit round-trip (the hot q3/q9/q23
+        // path). The per-row state machine below still serves the degree-bearing outer/semi/anti kinds.
+        if self.kind == JoinKind::Inner {
+            return self.push_inner(is_left, &keys, &payloads, &key_null, row_kinds);
+        }
+
         let mut out_left: Vec<OwnedRow> = Vec::new();
         let mut out_right: Vec<OwnedRow> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
@@ -4751,6 +4763,97 @@ impl UpdatingJoiner {
         columns.push(Arc::new(Int8Array::from(out_kinds)));
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build updating-join changelog batch")
+    }
+
+    /// Batched INNER push (the common case for q3/q9/q23). Because INNER keeps no degree and never
+    /// touches the probe side, every input row associates against the same fixed other-side state, so
+    /// the rows are independent: gather all candidate `[left.., right..]` pairs for the batch, decode
+    /// and evaluate the residual predicate once, and emit by filtering. Byte-identical to the per-row
+    /// `process_inner_outer` path (same match order, multiplicity, and per-row RowKind) but with one
+    /// pair of `convert_rows` and one predicate eval per batch instead of per row, and the output built
+    /// directly by `filter_record_batch` (no per-pair `OwnedRow` clone or emit round-trip).
+    fn push_inner(
+        &mut self,
+        is_left: bool,
+        keys: &Rows,
+        payloads: &Rows,
+        key_null: &[bool],
+        row_kinds: Option<&Int8Array>,
+    ) -> RecordBatch {
+        // Split the two state maps so the input side can be mutated while the probe side is borrowed
+        // (INNER never mutates the probe side, so the gathered match rows stay valid for the batch).
+        let (input_state, other_state) = if is_left {
+            (&mut self.left_state, &self.right_state)
+        } else {
+            (&mut self.right_state, &self.left_state)
+        };
+        let mut cand_input_idx: Vec<usize> = Vec::new();
+        let mut cand_other: Vec<Row> = Vec::new();
+        let mut cand_kind: Vec<i8> = Vec::new();
+        for row in 0..keys.num_rows() {
+            let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
+            let key = keys.row(row).owned();
+            let full = payloads.row(row).owned();
+            if !key_null[row] {
+                if let Some(bucket) = other_state.get(&key) {
+                    for (other, meta) in bucket.iter() {
+                        for _ in 0..meta.count.max(0) {
+                            cand_input_idx.push(row);
+                            cand_other.push(other.row());
+                            cand_kind.push(kind);
+                        }
+                    }
+                }
+            }
+            if kind == 0 || kind == 2 {
+                Self::add_record(input_state, &key, &full, -1);
+            } else {
+                Self::retract_record(input_state, &key, &full);
+            }
+        }
+        if cand_input_idx.is_empty() {
+            return RecordBatch::new_empty(Arc::new(Schema::empty()));
+        }
+
+        // Decode the matched other-side rows in one pass (releases the probe-side borrow), then the
+        // input rows repeated per candidate — assembled into the joined `[left.., right..]` layout.
+        let other_conv = if is_left { &self.right_payload } else { &self.left_payload };
+        let other_cols = other_conv.convert_rows(cand_other).expect("decode associated rows");
+        let input_conv = if is_left { &self.left_payload } else { &self.right_payload };
+        let input_cols = input_conv
+            .convert_rows(cand_input_idx.iter().map(|&r| payloads.row(r)))
+            .expect("decode join input rows");
+        let joined = Self::joined_schema(&self.left_schema, &self.right_schema);
+        let mut data_columns: Vec<ArrayRef> = Vec::with_capacity(input_cols.len() + other_cols.len());
+        if is_left {
+            data_columns.extend(input_cols);
+            data_columns.extend(other_cols);
+        } else {
+            data_columns.extend(other_cols);
+            data_columns.extend(input_cols);
+        }
+        let data_batch =
+            RecordBatch::try_new(joined.clone(), data_columns).expect("build join candidate batch");
+
+        // A residual non-equi condition (Flink's `condition.apply`) is evaluated once over the whole
+        // candidate batch; no condition means every pair is a match (q3/q20/q23) — skip the filter.
+        let mask = self
+            .predicate
+            .as_mut()
+            .map(|pred| BooleanArray::from(pred.evaluate_batch(&joined, &data_batch)));
+
+        let mut fields: Vec<Field> = (0..data_batch.num_columns())
+            .map(|j| Field::new(format!("c{j}"), data_batch.column(j).data_type().clone(), true))
+            .collect();
+        fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
+        let mut columns: Vec<ArrayRef> = data_batch.columns().to_vec();
+        columns.push(Arc::new(Int8Array::from(cand_kind)));
+        let full_batch =
+            RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("build inner-join batch");
+        match mask {
+            Some(mask) => filter_record_batch(&full_batch, &mask).expect("filter inner-join batch"),
+            None => full_batch,
+        }
     }
 
     /// INNER/LEFT/RIGHT/FULL — a faithful port of `StreamingJoinOperator.processElement`. `is_left`
