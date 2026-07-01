@@ -162,6 +162,7 @@ Three native Flink accelerators exist, all **closed source**:
 - **Flash** (Alibaba Cloud) — a C++ native + SIMD vectorized engine with a custom state backend
   (ForStDB). Stateful, production-deployed at scale; claims 5–10× on streaming Nexmark, 3×+ on batch
   TPC-DS, and ~50% cost reduction across 100k+ compute units. Proprietary, on Alibaba Cloud.
+  ([blog](https://www.alibabacloud.com/blog/flash-a-next-gen-vectorized-stream-processing-engine-compatible-with-apache-flink_602088))
 - **Vera X** (Ververica, the original Flink creators) — a proprietary native vectorized engine with
   a drop-in compatibility layer and a new state store. Stateful; claims 5–10× on Nexmark SQL and
   ~52% lower resource usage. Implementation undisclosed.
