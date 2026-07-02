@@ -201,19 +201,22 @@ so it builds only the read columns/fields. `SF_BENCHMARK=true mvn test -Pbench
 
 | Query | JSON (Flink → Native) | Avro (Flink → Native) | Protobuf (Flink → Native) |
 |---|---|---|---|
-| q0 pass-through | 0.72 → 0.73 M ev/s — **1.02×** | 0.81 → 1.33 M ev/s — **1.64×** | 1.15 → 1.45 M ev/s — **1.26×** |
-| q1 currency | 0.76 → 0.74 M ev/s — **0.98×** | 0.82 → 1.34 M ev/s — **1.63×** | 1.14 → 1.49 M ev/s — **1.30×** |
-| q2 filter | 0.80 → 0.77 M ev/s — **0.97×** | 0.83 → 1.52 M ev/s — **1.83×** | 1.17 → 1.60 M ev/s — **1.36×** |
+| q0 pass-through | 0.67 → 0.86 M ev/s — **1.27×** | 0.81 → 1.33 M ev/s — **1.64×** | 1.15 → 1.45 M ev/s — **1.26×** |
+| q1 currency | 0.77 → 0.85 M ev/s — **1.10×** | 0.82 → 1.34 M ev/s — **1.63×** | 1.14 → 1.49 M ev/s — **1.30×** |
+| q2 filter | 0.80 → 0.93 M ev/s — **1.17×** | 0.83 → 1.52 M ev/s — **1.83×** | 1.17 → 1.60 M ev/s — **1.36×** |
 
-**JSON is ~parity; Avro is a 1.6–1.8× win — and the profiles predicted exactly that.** Both share a
-large Kafka-I/O + thread-sync cost (~38–45%) with the Flink run. The decode itself is bound by different
-work: **JSON is tokenize-bound** (~19% `arrow-json` tape parse of the whole document, only ~5% building
-the Arrow arrays, so pruning's ceiling is ~5% and Flink's mature deserializer edges it to parity);
-**Avro is build/copy-bound** (~27% `memmove` + ~15% decode, of which `append_null` for the mostly-null
-`person`/`auction` union branches was ~15% alone — pushing the projection into the decode removed that
-build/copy of unread fields). **Protobuf** is also build/copy-bound (~25% `memmove` + ~16% ptars
-decode); pruning via a **pruned descriptor** (ptars builds a column per descriptor field and skips wire
-tags it has no field for) flipped it from 0.88–0.94× to 1.26–1.36×.
+**Every format now clears 1× (JSON 1.1–1.3×, Avro 1.6–1.8×, Protobuf 1.3×) — each after attacking
+what its profile said it was bound by.** All formats share a large Kafka-I/O + thread-sync cost
+(~38–45%) with the Flink run; the decode itself is bound by different work. **JSON was
+tokenize-bound** (~19% of CPU in `arrow-json`'s scalar tape parse of the whole document, only ~5%
+building the Arrow arrays — so projection pruning couldn't help, and Flink's mature deserializer held
+it to ~parity, 0.97–1.02×); swapping the tokenizer for a **simd-json** SIMD parse walked straight
+into Arrow builders ([divergences/18](../divergences/18-simd-json-decode.md)) lifted it to
+1.10–1.27×. **Avro is build/copy-bound** (~27% `memmove` + ~15% decode, of which `append_null` for
+the mostly-null `person`/`auction` union branches was ~15% alone — pushing the projection into the
+decode removed that build/copy of unread fields). **Protobuf** is also build/copy-bound (~25%
+`memmove` + ~16% ptars decode); pruning via a **pruned descriptor** (ptars builds a column per
+descriptor field and skips wire tags it has no field for) flipped it from 0.88–0.94× to 1.26–1.36×.
 
 ### The row→columnar ladder (Kafka)
 
@@ -232,9 +235,9 @@ stock Flink. Three rungs, each one layer more native (projection pushed in at ev
 
 | Format | Flink (ev/s) | JVM transpose | Rust transpose, JVM poll | Rust poll + Rust transpose |
 |---|---|---|---|---|
-| JSON q0 | 0.76 M | 1.07× | 0.99× | **1.23×** |
-| JSON q1 | 0.80 M | 1.04× | 0.93× | **1.19×** |
-| JSON q2 | 0.81 M | 1.10× | 1.03× | **1.18×** |
+| JSON q0 | 0.74 M | 1.07× | 1.17× | **1.27×** |
+| JSON q1 | 0.77 M | 1.03× | 1.12× | **1.23×** |
+| JSON q2 | 0.65 M | 1.09× | 1.30× | **1.41×** |
 | Avro q0 | 0.85 M | 1.03× | **1.63×** | 1.57× |
 | Avro q1 | 0.85 M | 0.96× | **1.65×** | 1.57× |
 | Avro q2 | 0.84 M | 1.07× | **1.80×** | 1.61× |
@@ -242,13 +245,15 @@ stock Flink. Three rungs, each one layer more native (projection pushed in at ev
 | Protobuf q1 | 1.20 M | 1.04× | **1.29×** | 1.13× |
 | Protobuf q2 | 1.21 M | 1.14× | **1.37×** | 1.10× |
 
-**The best rung depends on the format.** **JSON → the full native source wins (1.18–1.23×)**: JSON
-decode is tokenize-bound, so the Rust decode alone is only ~parity; the win comes from owning the
-**poll**. **Avro / Protobuf → the Rust decode (JVM poll) wins** (1.6–1.8× / 1.3–1.4×): the full native
-source *trails* it because it plateaus at a **~1.33–1.36 M ev/s ceiling regardless of format** (its
-per-poll FFI drain + per-partition batching + emit overhead — fine when decode is the bottleneck, a cap
-once the binary decode is faster than it). Next lever: lift that source ceiling (fewer FFI round-trips /
-larger drains) and attack the JSON tokenize itself.
+**The best rung depends on the format.** **JSON → the full native source wins (1.23–1.41×)**, and
+every rung now stacks: the simd-json decode alone is 1.12–1.30× (it was ~parity when the decode was
+tokenize-bound on arrow-json's scalar parse), and owning the **poll** adds another ~0.1× on top.
+**Avro / Protobuf → the Rust decode (JVM poll) wins** (1.6–1.8× / 1.3–1.4×): the full native source
+*trails* it because it plateaus at a **~1.33–1.36 M ev/s ceiling regardless of format** (its per-poll
+FFI drain + per-partition batching + emit overhead — fine when decode is the bottleneck, a cap once
+the binary decode is faster than it; JSON's ~0.94 M ev/s stays under that ceiling, which is why the
+source rung still stacks for it). Next lever: lift that source ceiling (fewer FFI round-trips /
+larger drains).
 
 **Reference — the transpose floor (no Kafka).** The same q0/q1/q2 with the source replaced by the
 in-process `nexmark` datagen emitting `RowData` directly — no Kafka client, no format decode, just the
@@ -277,11 +282,11 @@ across the ladder — all vs stock Flink, same steelmanned perimeter. 500K event
 -Dtest=NexmarkMatrixBenchmark` (Testcontainers Kafka; native source needs the `kafka` feature). Column
 toggles: `SF_MATRIX_GENERATOR` / `SF_MATRIX_PARQUET` / `SF_MATRIX_KAFKA` (`false` skips one).
 
-The matrix is a **throughput** measurement, so the native managed-memory cap is off for it
-(`-Dsf.extraJvmArgs=-Dstreamfusion.memory.accounting.enabled=false`): the test minicluster's managed
-pool is only a few MB, and a columnar source draws from the same pool, so the unbounded updating joins
-(q3/q9/q20/q23) would otherwise trip the cap before finishing. The cap itself is a separate correctness
-feature, exercised by the memory-accounting tests, not here.
+The matrix runs with the native managed-memory cap **in force**: the shared test cluster declares a
+deployment-like managed-memory size (flink-test-utils' default gave each slot ~10 MB, which the
+accounted updating joins outgrow at 500K events; a real TaskManager's 40%-of-process managed memory
+holds that state easily, so the benchmark cluster is sized to match). Reserving managed memory is
+bookkeeping, not allocation — the budget costs nothing until state actually grows into it.
 
 All the stateful operators run **columnar on Arrow byte-state**: Top-N, keep-last dedup, the updating
 join, and the group/`DISTINCT` aggregate key and buffer their state as memcomparable arrow-row bytes (à
@@ -390,37 +395,40 @@ by the JSON speedup:
 
 | Query | JSON | Avro | Protobuf |
 |---|---|---|---|
-| q11 | **1.58×** (jvm) | **2.18×** (decode) | **2.21×** (decode) |
-| q12 | **1.18×** (jvm) | **1.51×** (decode) | **1.23×** (decode) |
-| q22 | **1.15×** (jvm) | **1.52×** (decode) | **1.20×** (decode) |
-| q15 § | **1.14×** (jvm) | **1.35×** (decode) | **1.09×** (decode) |
-| q19 | **1.14×** (jvm) | **1.17×** (jvm) | **1.17×** (jvm) |
-| q7 | **1.13×** (jvm) | **1.39×** (decode) | **1.31×** (decode) |
-| q0 | **1.11×** (jvm) | **1.47×** (decode) | **1.14×** (decode) |
-| q5 | **1.10×** (jvm) | **1.45×** (decode) | **1.32×** (decode) |
-| q9 | **1.09×** (jvm) | **1.07×** (jvm) | **1.21×** (jvm) |
-| q2 | **1.06×** (jvm) | **1.43×** (decode) | **1.19×** (decode) |
-| q23 | **1.04×** (decode) | **1.42×** (decode) | **1.27×** (jvm) |
+| q11 | **1.95×** (decode) | **2.18×** (decode) | **2.21×** (decode) |
+| q7 | **1.30×** (jvm) | **1.39×** (decode) | **1.31×** (decode) |
+| q0 | **1.25×** (decode) | **1.47×** (decode) | **1.14×** (decode) |
+| q4 | **1.22×** (decode) | **1.39×** (decode) | **1.26×** (decode) |
+| q1 | **1.19×** (decode) | **1.41×** (decode) | **1.16×** (decode) |
+| q15 § | **1.18×** (decode) | **1.35×** (decode) | **1.09×** (decode) |
+| q9 | **1.15×** (jvm) | **1.07×** (jvm) | **1.21×** (jvm) |
+| q2 | **1.14×** (decode) | **1.43×** (decode) | **1.19×** (decode) |
+| q22 | **1.13×** (jvm) | **1.52×** (decode) | **1.20×** (decode) |
+| q5 | **1.11×** (decode) | **1.45×** (decode) | **1.32×** (decode) |
+| q16 § | **1.10×** (jvm) | **1.07×** (jvm) | **1.01×** (jvm) |
+| q23 | **1.10×** (decode) | **1.42×** (decode) | **1.27×** (jvm) |
+| q12 | **1.09×** (decode) | **1.51×** (decode) | **1.23×** (decode) |
+| q8 | **1.08×** (decode) | **1.30×** (decode) | **1.12×** (decode) |
+| q20 | **1.07×** (jvm) | **1.39×** (decode) | **1.12×** (decode) |
 | q21 | **1.04×** (source) | **1.15×** (decode) | 0.94× (decode) |
 | q21 † | **1.21×** (decode) | **1.63×** (decode) | **1.41×** (decode) |
-| q1 | **1.02×** (jvm) | **1.41×** (decode) | **1.16×** (decode) |
-| q17 § | **1.02×** (jvm) | **1.25×** (decode) | **1.07×** (decode) |
-| q10 § | **1.01×** (source) | **1.18×** (decode) | **1.03×** (decode) |
+| q10 § | **1.03×** (decode) | **1.18×** (decode) | **1.03×** (decode) |
 | q13 | **1.00×** (jvm) | **1.24×** (decode) | **1.02×** (decode) |
-| q16 § | 0.99× (jvm) | **1.07×** (jvm) | **1.01×** (jvm) |
-| q4 | 0.97× (jvm) | **1.39×** (decode) | **1.26×** (decode) |
-| q20 | 0.97× (jvm) | **1.39×** (decode) | **1.12×** (decode) |
-| q18 | 0.96× (jvm) | **1.14×** (decode) | 0.96× (decode) |
-| q14 § | 0.95× (decode) | **1.28×** (decode) | **1.07×** (decode) |
-| q8 | 0.94× (jvm) | **1.30×** (decode) | **1.12×** (decode) |
-| q3 | 0.91× (jvm) | **1.26×** (decode) | **1.10×** (decode) |
+| q17 § | **1.00×** (jvm) | **1.25×** (decode) | **1.07×** (decode) |
+| q19 | **1.00×** (jvm) | **1.17×** (jvm) | **1.17×** (jvm) |
+| q14 § | 0.97× (jvm) | **1.28×** (decode) | **1.07×** (decode) |
+| q3 | 0.95× (decode) | **1.26×** (decode) | **1.10×** (decode) |
+| q18 | 0.94× (jvm) | **1.14×** (decode) | 0.96× (decode) |
 
-Two things the Kafka columns add: **the source rung compounds the operator verdict** — on the binary
-formats the Rust decode stacks on top of the operator work (q11 reaches **2.1×**; several queries that
-trailed on the bare generator turn clearly positive on avro once the decode saving is added). And **the
-changelog-heavy queries win on the JVM-transpose rung, and pushing decode into Rust doesn't add for
-them** (q9/q19: a compute/emit-bound operator gets no lift from decoding faster, it only fills sooner) —
-so native decode is the lever for source- and aggregate-bound queries, and a no-op (not a hazard) for
-changelog-bound ones.
+Two things the Kafka columns add: **the source rung compounds the operator verdict** — the Rust decode
+stacks on top of the operator work (q11 reaches **2.2×** on the binary formats and **1.95×** on JSON;
+several queries that trailed on the bare generator turn clearly positive once the decode saving is
+added). The JSON column was re-measured after the decoder swapped arrow-json's scalar tokenizer for a
+simd-json parse walked straight into Arrow builders (`divergences/18`): previously the JVM-transpose
+rung led nearly every JSON row (the Rust decode was tokenize-bound at ~parity); now the Rust decode is
+JSON's best rung on most queries, the same shape as the binary formats. And **the changelog-heavy
+queries still win on the JVM-transpose rung** (q9/q19: a compute/emit-bound operator gets no lift from
+decoding faster, it only fills sooner) — native decode is the lever for source- and aggregate-bound
+queries, and a no-op (not a hazard) for changelog-bound ones.
 
 _Apple M1 Max; numbers are comparable only within a machine._
