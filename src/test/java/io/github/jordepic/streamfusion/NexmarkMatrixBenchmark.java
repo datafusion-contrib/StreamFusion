@@ -2,6 +2,8 @@ package io.github.jordepic.streamfusion;
 
 import io.github.jordepic.streamfusion.planner.NativePlanner;
 import io.github.jordepic.streamfusion.planner.PhysicalPlanScan;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -19,9 +21,16 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * The full Nexmark matrix: every query StreamFusion currently accelerates end-to-end, each run against
  * stock Flink and against native execution from every source it can be fed by — the generator (rowwise
- * RowData) and Kafka json/avro/protobuf, the Kafka formats climbing the source→columnar ladder (JVM
- * transpose, Rust decode with a JVM poll, fully native Rust poll+decode). One table, ten native cells
- * per query, each a speedup over the Flink baseline for that same source.
+ * RowData), a local Parquet file (a columnar file source read straight to Arrow, no ingest transpose),
+ * and Kafka json/avro/protobuf, the Kafka formats climbing the source→columnar ladder (JVM transpose,
+ * Rust decode with a JVM poll, fully native Rust poll+decode). One table per query, a native cell per
+ * source, each a speedup over the Flink baseline for that same source.
+ *
+ * <p>The Parquet source is the columnar-source case: the same wide event row is written once to a local
+ * Parquet directory, then read back through the native {@code filesystem}/{@code parquet} scan — the
+ * rows never become {@code RowData} at ingest, so a fully native pipeline pays only the sink transpose.
+ * Its rowtime is a plain {@code TIMESTAMP(3)} (unlike the Kafka {@code TIMESTAMP_LTZ}), so the {@code
+ * DATE_FORMAT}/{@code HOUR} queries that are generator-only on Kafka run here too.
  *
  * <p>The query set is every query StreamFusion accelerates: q0–q5, q7–q23 (q1's and q14's decimal are
  * exact and native by default; q21's REGEXP_EXTRACT/LOWER and q14's HOUR route through the host
@@ -39,7 +48,8 @@ import org.testcontainers.utility.DockerImageName;
  * --features kafka" -Dtest=NexmarkMatrixBenchmark}. {@code SF_ROWS} overrides the event count (default
  * 500,000), {@code SF_MATRIX_QUERIES} a comma-separated query subset (e.g. {@code q0,q7,q15}), {@code
  * SF_LADDER_FORMATS} the Kafka formats (default {@code json,avro,protobuf}), {@code SF_MATRIX_GENERATOR}
- * ({@code false} to skip the generator column), {@code SF_MATRIX_KAFKA} ({@code false} to skip Kafka).
+ * ({@code false} to skip the generator column), {@code SF_MATRIX_PARQUET} ({@code false} to skip the
+ * Parquet column), {@code SF_MATRIX_KAFKA} ({@code false} to skip Kafka).
  */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class NexmarkMatrixBenchmark {
@@ -394,10 +404,24 @@ class NexmarkMatrixBenchmark {
   // extraction; over the Kafka LTZ rowtime it would fall back), so it is reported on the generator only.
   private static final Set<String> GENERATOR_ONLY = Set.of("q10", "q14", "q15", "q16", "q17");
 
+  // The wide nested event row written to / read from Parquet. Same shape as the generator's event row,
+  // with a plain TIMESTAMP(3) rowtime (so DATE_FORMAT/HOUR stay native, unlike the Kafka LTZ rowtime).
+  private static final String PARQUET_SCHEMA =
+      "event_type INT,"
+          + " person ROW<id BIGINT, name STRING, emailAddress STRING, creditCard STRING, city STRING,"
+          + " state STRING, `dateTime` TIMESTAMP(3), extra STRING>,"
+          + " auction ROW<id BIGINT, itemName STRING, description STRING, initialBid BIGINT,"
+          + " reserve BIGINT, `dateTime` TIMESTAMP(3), expires TIMESTAMP(3), seller BIGINT,"
+          + " category BIGINT, extra STRING>,"
+          + " bid ROW<auction BIGINT, bidder BIGINT, price BIGINT, channel STRING, url STRING,"
+          + " `dateTime` TIMESTAMP(3), extra STRING>,"
+          + " `dateTime` TIMESTAMP(3)";
+
   @Test
   void matrix() throws Exception {
     Query[] queries = selectQueries();
     boolean runGenerator = !"false".equals(System.getenv("SF_MATRIX_GENERATOR"));
+    boolean runParquet = !"false".equals(System.getenv("SF_MATRIX_PARQUET"));
     boolean runKafka = !"false".equals(System.getenv("SF_MATRIX_KAFKA"));
     String formatsEnv = System.getenv("SF_LADDER_FORMATS");
     String[] formats =
@@ -420,6 +444,19 @@ class NexmarkMatrixBenchmark {
         if (q.nativeVariantProps != null) {
           double variant = generatorBest(q, true, q.nativeVariantProps);
           report.get(q.label).add(variantCell("generator", q.nativeVariantLabel, flink, variant));
+        }
+      }
+    }
+
+    if (runParquet) {
+      Path dir = writeParquetSource();
+      for (Query q : queries) {
+        double flink = parquetBest(dir, q, false, null);
+        double nativeRun = parquetBest(dir, q, true, null);
+        report.get(q.label).add(cell("parquet", flink, nativeRun));
+        if (q.nativeVariantProps != null) {
+          double variant = parquetBest(dir, q, true, q.nativeVariantProps);
+          report.get(q.label).add(variantCell("parquet", q.nativeVariantLabel, flink, variant));
         }
       }
     }
@@ -539,6 +576,70 @@ class NexmarkMatrixBenchmark {
 
   private static double runGeneratorOnce(Query q, boolean nativeRun) throws Exception {
     TableEnvironment tEnv = NexmarkBenchmark.environment(ROWS);
+    tEnv.createTemporarySystemFunction("count_char", CountChar.class);
+    runSetup(tEnv, q);
+    PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
+    return execute(tEnv, scan, q, nativeRun, "TIMESTAMP(3)");
+  }
+
+  // ----- parquet file source -----
+
+  /** Writes the wide event row to a fresh local Parquet directory once; every query reads it back. */
+  private static Path writeParquetSource() throws Exception {
+    Path dir = Files.createTempDirectory("bench-nexmark-parquet");
+    TableEnvironment tEnv = NexmarkBenchmark.environment(ROWS);
+    tEnv.executeSql(
+        "CREATE TABLE parquet_write ("
+            + PARQUET_SCHEMA
+            + ") WITH ('connector' = 'filesystem', 'path' = '"
+            + dir.toUri()
+            + "', 'format' = 'parquet')");
+    tEnv.executeSql(
+            "INSERT INTO parquet_write SELECT event_type, person, auction, bid, `dateTime` FROM events")
+        .await();
+    return dir;
+  }
+
+  private static double parquetBest(Path dir, Query q, boolean nativeRun, Map<String, String> extra)
+      throws Exception {
+    double best = Double.MAX_VALUE;
+    for (int run = 0; run < WARMUP + RUNS; run++) {
+      double seconds = withProps(q, nativeRun, extra, () -> runParquetOnce(dir, nativeRun, q));
+      if (run >= WARMUP) {
+        best = Math.min(best, seconds);
+      }
+    }
+    return best;
+  }
+
+  private static double runParquetOnce(Path dir, boolean nativeRun, Query q) throws Exception {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    env.getConfig().enableObjectReuse();
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.executeSql(
+        "CREATE TABLE src ("
+            + PARQUET_SCHEMA
+            + ", WATERMARK FOR `dateTime` AS `dateTime` - INTERVAL '4' SECOND"
+            + ") WITH ('connector' = 'filesystem', 'path' = '"
+            + dir.toUri()
+            + "', 'format' = 'parquet')");
+    // The same person/auction/bid logical streams as the generator, off the watermarked event-time
+    // `dateTime` (a plain TIMESTAMP(3) here, so DATE_FORMAT/HOUR stay native).
+    tEnv.executeSql(
+        "CREATE TEMPORARY VIEW person AS SELECT person.id AS id, person.name AS name,"
+            + " person.emailAddress AS emailAddress, person.creditCard AS creditCard, person.city AS"
+            + " city, person.state AS state, `dateTime`, person.extra AS extra FROM src WHERE"
+            + " event_type = 0");
+    tEnv.executeSql(
+        "CREATE TEMPORARY VIEW auction AS SELECT auction.id AS id, auction.itemName AS itemName,"
+            + " auction.description AS description, auction.initialBid AS initialBid, auction.reserve"
+            + " AS reserve, `dateTime`, auction.expires AS expires, auction.seller AS seller,"
+            + " auction.category AS category, auction.extra AS extra FROM src WHERE event_type = 1");
+    tEnv.executeSql(
+        "CREATE TEMPORARY VIEW bid AS SELECT bid.auction AS auction, bid.bidder AS bidder, bid.price"
+            + " AS price, bid.channel AS channel, bid.url AS url, `dateTime`, bid.extra AS extra FROM"
+            + " src WHERE event_type = 2");
     tEnv.createTemporarySystemFunction("count_char", CountChar.class);
     runSetup(tEnv, q);
     PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;

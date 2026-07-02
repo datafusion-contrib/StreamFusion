@@ -264,11 +264,18 @@ ever materialized to `RowData`).
 
 `NexmarkMatrixBenchmark` runs **every query StreamFusion accelerates** (q0–q5, q7–q23 — only q6 is out;
 see [.claude/todos/39-nexmark-q6-exclusion.md](../.claude/todos/39-nexmark-q6-exclusion.md)) over **every
-source it can be fed by** — the rowwise generator and Kafka json/avro/protobuf across the ladder — all vs
-stock Flink, same steelmanned perimeter. 500K events.
+source it can be fed by** — the rowwise generator, a local Parquet file, and Kafka json/avro/protobuf
+across the ladder — all vs stock Flink, same steelmanned perimeter. 500K events.
 
 `SF_BENCHMARK=true mvn test -Pbench -Dnative.cargo.args="build --release --features kafka"
--Dtest=NexmarkMatrixBenchmark` (Testcontainers Kafka; native source needs the `kafka` feature).
+-Dtest=NexmarkMatrixBenchmark` (Testcontainers Kafka; native source needs the `kafka` feature). Column
+toggles: `SF_MATRIX_GENERATOR` / `SF_MATRIX_PARQUET` / `SF_MATRIX_KAFKA` (`false` skips one).
+
+The matrix is a **throughput** measurement, so the native managed-memory cap is off for it
+(`-Dsf.extraJvmArgs=-Dstreamfusion.memory.accounting.enabled=false`): the test minicluster's managed
+pool is only a few MB, and a columnar source draws from the same pool, so the unbounded updating joins
+(q3/q9/q20/q23) would otherwise trip the cap before finishing. The cap itself is a separate correctness
+feature, exercised by the memory-accounting tests, not here.
 
 All the stateful operators run **columnar on Arrow byte-state**: Top-N, keep-last dedup, the updating
 join, and the group/`DISTINCT` aggregate key and buffer their state as memcomparable arrow-row bytes (à
@@ -308,6 +315,33 @@ each appear twice — parity default and opt-in path, see ‡/† below):
 | q20 | updating join (`category = 10`) | 0.75× |
 | q16 | multi-`DISTINCT` per channel/day | 0.75× |
 | q8 | tumble windowed-distinct ⋈ join | 0.71× |
+
+**Parquet file** — the columnar-source case: the native island reads Arrow straight from the
+`filesystem`/`parquet` scan, so there is no `RowData → Arrow` transpose at ingest (only the sink
+transpose remains). Same queries, same order as the generator table above:
+
+| Query | Native vs. Flink | | Query | Native vs. Flink |
+|---|---|---|---|---|
+| q8 | **4.66×** | | q3 | **2.60×** |
+| q12 | **4.21×** | | q4 | **2.17×** |
+| q2 | **4.02×** | | q0 | **2.11×** |
+| q14 | **3.66×** | | q10 | **2.08×** |
+| q22 | **3.39×** | | q13 | **1.78×** |
+| q20 | **3.09×** | | q15 | **1.66×** |
+| q5 | **3.07×** | | q21 | **1.54×** (5.70× native regex/case) |
+| q23 | **2.87×** | | q17 | **1.47×** |
+| q7 | **2.82×** | | q9 | **1.22×** |
+| q1 | **2.74×** (3.91× approx decimal) | | q19 | **1.21×** |
+| q11 | **2.65×** | | q18 | **1.15×** |
+| | | | q16 | 0.80× |
+
+Every query but q16 clears 1× by a wide margin — **2–4.7×** — because the ingest transpose is gone: the
+scan feeds Arrow batches directly into the operator, and only the `blackhole` sink pays a transpose.
+The queries that are transpose-bound on the generator (q8 at 0.71×, q20 at 0.75×) are exactly the ones
+that jump the most here (q8 4.66×, q20 3.09×) — confirming their generator cost was the `RowData`
+perimeter, not the operator. Parquet's rowtime is a plain `TIMESTAMP(3)`, so the `DATE_FORMAT`/`HOUR`
+queries (q10/q14/q15/q16/q17) that fall back over the Kafka `TIMESTAMP_LTZ` run natively here. Only
+q16's multi-`DISTINCT` accumulator (still `ScalarValue`-boxed) stays below 1×.
 
 **Ten clear 1.0× even on this conservative combined run, and another seven (q9/q13/q15/q17/q19/q23/q5)
 sit within noise of parity.** The **updating-join family is the big mover**: a CPU profile put ~40% of
