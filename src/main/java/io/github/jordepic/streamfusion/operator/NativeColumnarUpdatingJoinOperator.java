@@ -149,11 +149,20 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
   @Override
   public void processElement1(StreamRecord<ArrowBatch> element) {
     join(element.getValue(), true);
+    publishStateBytes();
   }
 
   @Override
   public void processElement2(StreamRecord<ArrowBatch> element) {
     join(element.getValue(), false);
+    publishStateBytes();
+  }
+
+  /** Samples the native state size for the operator's gauges; task-thread only. */
+  private void publishStateBytes() {
+    if (memoryBudget.bounded()) {
+      memoryBudget.publishStateBytes(Native.updatingJoinerStateBytes(handle));
+    }
   }
 
   private void join(ArrowBatch batch, boolean left) {

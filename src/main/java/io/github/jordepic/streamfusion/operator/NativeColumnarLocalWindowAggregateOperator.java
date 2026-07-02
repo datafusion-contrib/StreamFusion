@@ -65,6 +65,7 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
         updateColumnar(in, timeColumn, valueColumns, keyColumns, keyTypes);
       }
     }
+    publishStateBytes();
   }
 
   @Override

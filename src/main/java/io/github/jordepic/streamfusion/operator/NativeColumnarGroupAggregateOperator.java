@@ -112,6 +112,14 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
     } finally {
       in.close();
     }
+    publishStateBytes();
+  }
+
+  /** Samples the native state size for the operator's gauges; task-thread only. */
+  private void publishStateBytes() {
+    if (memoryBudget.bounded()) {
+      memoryBudget.publishStateBytes(Native.groupAggregatorStateBytes(handle));
+    }
   }
 
   @Override

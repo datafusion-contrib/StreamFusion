@@ -162,11 +162,20 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
   @Override
   public void processElement1(StreamRecord<ArrowBatch> element) {
     join(element.getValue(), true);
+    publishStateBytes();
   }
 
   @Override
   public void processElement2(StreamRecord<ArrowBatch> element) {
     join(element.getValue(), false);
+    publishStateBytes();
+  }
+
+  /** Samples the native state size for the operator's gauges; task-thread only. */
+  private void publishStateBytes() {
+    if (memoryBudget.bounded()) {
+      memoryBudget.publishStateBytes(Native.intervalJoinerStateBytes(handle));
+    }
   }
 
   /** Pushes a batch to its side of the joiner and emits the matched pairs it returns (if any). */
@@ -225,6 +234,7 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
   @Override
   public void onProcessingTime(long time) {
     advance(getProcessingTimeService().getCurrentProcessingTime());
+    publishStateBytes();
   }
 
   @Override
@@ -240,6 +250,7 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
     // Proctime joins evict on the processing-time clock, not the watermark; just forward it.
     if (!proctime) {
       advance(mark.getTimestamp());
+      publishStateBytes();
     }
     super.processWatermark(mark);
   }

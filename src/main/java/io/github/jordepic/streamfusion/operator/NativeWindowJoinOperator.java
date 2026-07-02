@@ -170,12 +170,21 @@ public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
   public void processElement1(StreamRecord<ArrowBatch> element) {
     buffer(element.getValue(), true);
     onProctimeInput();
+    publishStateBytes();
   }
 
   @Override
   public void processElement2(StreamRecord<ArrowBatch> element) {
     buffer(element.getValue(), false);
     onProctimeInput();
+    publishStateBytes();
+  }
+
+  /** Samples the native state size for the operator's gauges; task-thread only. */
+  private void publishStateBytes() {
+    if (memoryBudget.bounded()) {
+      memoryBudget.publishStateBytes(Native.windowJoinerStateBytes(handle));
+    }
   }
 
   /**
@@ -198,6 +207,7 @@ public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
     long now = getProcessingTimeService().getCurrentProcessingTime();
     flush(now);
     scheduleNextTimer(now);
+    publishStateBytes();
   }
 
   private void scheduleNextTimer(long now) {
@@ -245,6 +255,7 @@ public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
     // Proctime joins close on the processing-time clock, not the watermark; just forward it.
     if (!proctime) {
       flush(mark.getTimestamp());
+      publishStateBytes();
     }
     super.processWatermark(mark);
   }

@@ -86,6 +86,7 @@ public class NativeColumnarDeduplicateOperator extends AbstractStreamOperator<Ar
     } finally {
       in.close();
     }
+    publishStateBytes();
   }
 
   @Override
@@ -101,7 +102,15 @@ public class NativeColumnarDeduplicateOperator extends AbstractStreamOperator<Ar
         out.close(); // no key's first row was completed by this watermark
       }
     }
+    publishStateBytes();
     super.processWatermark(mark);
+  }
+
+  /** Samples the native state size for the operator's gauges; task-thread only. */
+  private void publishStateBytes() {
+    if (memoryBudget.bounded()) {
+      memoryBudget.publishStateBytes(Native.keepFirstDeduplicatorStateBytes(handle));
+    }
   }
 
   @Override

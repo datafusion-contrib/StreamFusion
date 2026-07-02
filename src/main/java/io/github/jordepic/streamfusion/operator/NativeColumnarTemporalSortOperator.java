@@ -83,6 +83,7 @@ public class NativeColumnarTemporalSortOperator extends AbstractStreamOperator<A
     } finally {
       in.close();
     }
+    publishStateBytes();
   }
 
   @Override
@@ -98,7 +99,15 @@ public class NativeColumnarTemporalSortOperator extends AbstractStreamOperator<A
         out.close(); // nothing completed this watermark
       }
     }
+    publishStateBytes();
     super.processWatermark(mark);
+  }
+
+  /** Samples the native state size for the operator's gauges; task-thread only. */
+  private void publishStateBytes() {
+    if (memoryBudget.bounded()) {
+      memoryBudget.publishStateBytes(Native.temporalSorterStateBytes(handle));
+    }
   }
 
   @Override

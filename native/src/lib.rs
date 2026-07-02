@@ -8083,6 +8083,52 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_liveNativeHan
         .into_raw()
 }
 
+/// Generates a per-type JNI getter for an operator's tracked native state footprint in bytes (zero
+/// when unaccounted). Must be called on the task thread between batches — handles are not
+/// thread-safe — so the Java side samples it per batch into an atomic its metrics thread reads.
+macro_rules! state_bytes_getter {
+    ($fn_name:ident, $ty:ty) => {
+        #[no_mangle]
+        pub extern "system" fn $fn_name<'local>(
+            _env: JNIEnv<'local>,
+            _class: JClass<'local>,
+            handle: jlong,
+        ) -> jlong {
+            let operator = unsafe { &*(handle as *const $ty) };
+            operator.memory.state_bytes as jlong
+        }
+    };
+}
+
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_tumblingAggregatorStateBytes, TumblingAggregator);
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_sessionAggregatorStateBytes, SessionAggregator);
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_groupAggregatorStateBytes, GroupAggregator);
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_localGroupAggregatorStateBytes, LocalGroupAggregator);
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_overAggregatorStateBytes, OverWindowAggregator);
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_temporalSorterStateBytes, TemporalSorter);
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_keepFirstDeduplicatorStateBytes, KeepFirstDeduplicator);
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_keepLastDeduplicatorStateBytes, KeepLastDeduplicator);
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_windowRankerStateBytes, WindowRanker);
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_intervalJoinerStateBytes, IntervalJoiner);
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_temporalJoinerStateBytes, TemporalJoiner);
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_updatingJoinerStateBytes, UpdatingJoiner);
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_changelogNormalizerStateBytes, ChangelogNormalizer);
+state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_windowJoinerStateBytes, WindowJoiner);
+
+/// [`state_bytes_getter`] for the Top-N handle, which wraps its two ranker variants in an enum.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_topNRankerStateBytes<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let ranker = unsafe { &*(handle as *const TopNHandle) };
+    (match ranker {
+        TopNHandle::Append(r) => r.memory.state_bytes,
+        TopNHandle::Retract(r) => r.memory.state_bytes,
+    }) as jlong
+}
+
 /// Drives a trivial asynchronous computation to completion on the shared runtime, proving the
 /// blocking pull bridge a JVM thread will use to await native plan execution.
 #[no_mangle]

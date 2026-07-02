@@ -1,6 +1,8 @@
 package io.github.jordepic.streamfusion.operator;
 
+import java.util.concurrent.atomic.AtomicLong;
 import org.apache.flink.core.memory.ManagedMemoryUseCase;
+import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.runtime.memory.MemoryManager;
 import org.apache.flink.runtime.memory.MemoryReservationException;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
@@ -29,6 +31,9 @@ public final class ManagedMemoryBudget implements AutoCloseable {
 
   private final MemoryManager memoryManager;
   private final long bytes;
+  // The native side's tracked state footprint, sampled by the operator on the task thread after
+  // each batch (handles are not thread-safe) and read here by the metrics reporter's thread.
+  private final AtomicLong stateBytes = new AtomicLong();
 
   private ManagedMemoryBudget(MemoryManager memoryManager, long bytes) {
     this.memoryManager = memoryManager;
@@ -64,7 +69,30 @@ public final class ManagedMemoryBudget implements AutoCloseable {
     }
     ManagedMemoryBudget budget = new ManagedMemoryBudget(memoryManager, bytes);
     memoryManager.reserveMemory(budget, bytes);
+    budget.registerMetrics(operator.getMetricGroup());
     return budget;
+  }
+
+  /**
+   * Surfaces the native footprint in the Flink UI/metrics reporter next to the JVM numbers: the
+   * reserved budget, the tracked state bytes drawing on it, and the process-wide Arrow FFI
+   * allocator (the transient batch buffers crossing the JNI boundary — the same value on every
+   * operator, repeated so it is visible wherever one looks).
+   */
+  private void registerMetrics(MetricGroup group) {
+    group.gauge("nativeStateBudgetBytes", () -> bytes);
+    group.gauge("nativeStateBytes", stateBytes::get);
+    group.gauge("nativeArrowAllocatorBytes", NativeAllocator.SHARED::getAllocatedMemory);
+  }
+
+  /** Whether a budget was reserved — the native side tracks its state footprint only then. */
+  public boolean bounded() {
+    return bytes != UNBOUNDED;
+  }
+
+  /** Publishes the native side's tracked state size to the gauges; call from the task thread. */
+  public void publishStateBytes(long value) {
+    stateBytes.set(value);
   }
 
   /** The reserved budget in bytes, or {@link #UNBOUNDED} when none was reserved. */

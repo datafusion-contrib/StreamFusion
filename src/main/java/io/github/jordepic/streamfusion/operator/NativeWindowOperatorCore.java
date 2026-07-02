@@ -189,6 +189,22 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
     Native.closeTumblingAggregator(handle);
   }
 
+  /** The native aggregator's tracked state footprint in bytes (zero when unaccounted). */
+  protected long stateBytesHandle() {
+    return Native.tumblingAggregatorStateBytes(handle);
+  }
+
+  /**
+   * Samples the native state size and publishes it to the operator's gauges; call after batches and
+   * flushes on the task thread (the handle is not thread-safe). No-op without a budget — the native
+   * side only tracks its footprint when accounted.
+   */
+  protected final void publishStateBytes() {
+    if (memoryBudget.bounded()) {
+      memoryBudget.publishStateBytes(stateBytesHandle());
+    }
+  }
+
   @Override
   public void initializeState(StateInitializationContext context) throws Exception {
     super.initializeState(context);
@@ -226,6 +242,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
   public void processWatermark(Watermark mark) throws Exception {
     flushPending();
     emitClosedWindows(mark.getTimestamp());
+    publishStateBytes();
     super.processWatermark(mark);
   }
 

@@ -19,6 +19,39 @@ public final class Native {
    */
   public static native String liveNativeHandles();
 
+  // A stateful operator's tracked native state footprint in bytes (zero when unaccounted), one
+  // getter per handle type. Handles are not thread-safe, so operators sample these on the task
+  // thread after each batch and publish the value to their metric gauges (ManagedMemoryBudget).
+  public static native long tumblingAggregatorStateBytes(long handle);
+
+  public static native long sessionAggregatorStateBytes(long handle);
+
+  public static native long groupAggregatorStateBytes(long handle);
+
+  public static native long localGroupAggregatorStateBytes(long handle);
+
+  public static native long overAggregatorStateBytes(long handle);
+
+  public static native long temporalSorterStateBytes(long handle);
+
+  public static native long keepFirstDeduplicatorStateBytes(long handle);
+
+  public static native long keepLastDeduplicatorStateBytes(long handle);
+
+  public static native long windowRankerStateBytes(long handle);
+
+  public static native long intervalJoinerStateBytes(long handle);
+
+  public static native long temporalJoinerStateBytes(long handle);
+
+  public static native long updatingJoinerStateBytes(long handle);
+
+  public static native long topNRankerStateBytes(long handle);
+
+  public static native long changelogNormalizerStateBytes(long handle);
+
+  public static native long windowJoinerStateBytes(long handle);
+
   /**
    * Awaits a trivial async computation on the native runtime, proving the blocking bridge a JVM
    * thread uses to drive native plan execution.

@@ -84,12 +84,21 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
     if (miniBatchSize > 0 && bufferedRows >= miniBatchSize) {
       flushBundle();
     }
+    publishStateBytes();
   }
 
   @Override
   public void processWatermark(Watermark mark) throws Exception {
     flushBundle(); // the mini-batch marker — flush the bundle, then propagate the watermark
+    publishStateBytes();
     super.processWatermark(mark);
+  }
+
+  /** Samples the native state size for the operator's gauges; task-thread only. */
+  private void publishStateBytes() {
+    if (memoryBudget.bounded()) {
+      memoryBudget.publishStateBytes(Native.localGroupAggregatorStateBytes(handle));
+    }
   }
 
   @Override

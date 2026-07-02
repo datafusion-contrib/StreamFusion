@@ -160,6 +160,7 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
       maxOpenEnd = Math.max(maxOpenEnd, latestWindowEnd(now));
       scheduleNextTimer(now);
     }
+    publishStateBytes();
   }
 
   @Override
@@ -167,6 +168,7 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
     // Proctime ranks close on the processing-time clock, not the watermark; just forward it.
     if (!proctime) {
       flush(mark.getTimestamp());
+      publishStateBytes();
     }
     super.processWatermark(mark);
   }
@@ -176,6 +178,14 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
     long now = getProcessingTimeService().getCurrentProcessingTime();
     flush(now);
     scheduleNextTimer(now);
+    publishStateBytes();
+  }
+
+  /** Samples the native state size for the operator's gauges; task-thread only. */
+  private void publishStateBytes() {
+    if (memoryBudget.bounded()) {
+      memoryBudget.publishStateBytes(Native.windowRankerStateBytes(handle));
+    }
   }
 
   @Override

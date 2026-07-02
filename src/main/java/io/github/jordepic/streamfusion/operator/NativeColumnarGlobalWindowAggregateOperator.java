@@ -76,6 +76,7 @@ public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindow
     } finally {
       in.close(); // the partial batch is consumed
     }
+    publishStateBytes();
   }
 
   @Override

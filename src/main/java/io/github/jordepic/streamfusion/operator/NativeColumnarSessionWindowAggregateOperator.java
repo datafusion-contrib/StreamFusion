@@ -94,6 +94,11 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   }
 
   @Override
+  protected long stateBytesHandle() {
+    return Native.sessionAggregatorStateBytes(handle);
+  }
+
+  @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
     try (VectorSchemaRoot in = element.getValue().root()) {
       if (proctime) {
@@ -112,6 +117,7 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
         updateColumnar(in, timeColumn, valueColumns, keyColumns, keyTypes);
       }
     }
+    publishStateBytes();
   }
 
   @Override

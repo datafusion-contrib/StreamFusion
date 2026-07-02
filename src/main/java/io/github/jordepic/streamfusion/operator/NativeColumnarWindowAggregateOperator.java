@@ -103,6 +103,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
         updateColumnar(in, timeColumn, valueColumns, keyColumns, keyTypes);
       }
     }
+    publishStateBytes();
   }
 
   @Override
@@ -110,6 +111,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
     long now = getProcessingTimeService().getCurrentProcessingTime();
     emitClosedWindows(now);
     scheduleNextTimer(now); // chain to the next slide boundary while windows remain open
+    publishStateBytes();
   }
 
   /**

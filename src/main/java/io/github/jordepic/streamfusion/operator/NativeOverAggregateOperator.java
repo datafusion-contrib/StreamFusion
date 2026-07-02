@@ -143,6 +143,14 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
     } finally {
       in.close();
     }
+    publishStateBytes();
+  }
+
+  /** Samples the native state size for the operator's gauges; task-thread only. */
+  private void publishStateBytes() {
+    if (memoryBudget.bounded()) {
+      memoryBudget.publishStateBytes(Native.overAggregatorStateBytes(handle));
+    }
   }
 
   @Override
@@ -162,6 +170,7 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
         out.close(); // nothing completed this watermark
       }
     }
+    publishStateBytes();
     super.processWatermark(mark);
   }
 

@@ -127,11 +127,13 @@ here when the ticket is deleted.
   allocator is deliberately outside the budget — scope and rationale in divergences/16.
 - **Mailbox threading** (ticket 01): native execution should integrate with the task mailbox
   (non-blocking), not block the task thread.
-- **Memory profiling + leak detection** (ticket 41): the close-time leak assertions shipped — every
-  test now fails if native handles or Arrow FFI bytes remain outstanding, and the first audit caught
-  and fixed the dropped-in-flight-record leak (batches abandoned at failover now freed by a Cleaner
-  backstop). Remaining: native-footprint Flink metrics, a documented heap-profiling workflow, and a
-  soak test.
+- **Memory verification**: shipped — every test doubles as a native leak check (live handles and
+  the Arrow FFI allocator must drain to zero at close; the first audit caught and fixed the
+  dropped-in-flight-record failover leak, now freed by the columnar record's Cleaner backstop),
+  accounted operators export their budget/state/allocator bytes as Flink operator metrics, an
+  opt-in soak (`SF_SOAK=true`) asserts memory plateaus over a long evicting job, and
+  `docs/native-memory-profiling.md` carries the heap-profiler recipe with a findings log (first
+  run: clean).
 
 ## Breadth / longer horizon
 - **Arroyo operator coverage tracker** (ticket 11): what remains is async UDF (ticket 01) plus operator

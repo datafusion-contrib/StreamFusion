@@ -146,11 +146,20 @@ public class NativeTemporalJoinOperator extends AbstractStreamOperator<ArrowBatc
   @Override
   public void processElement1(StreamRecord<ArrowBatch> element) {
     buffer(element.getValue(), true);
+    publishStateBytes();
   }
 
   @Override
   public void processElement2(StreamRecord<ArrowBatch> element) {
     buffer(element.getValue(), false);
+    publishStateBytes();
+  }
+
+  /** Samples the native state size for the operator's gauges; task-thread only. */
+  private void publishStateBytes() {
+    if (memoryBudget.bounded()) {
+      memoryBudget.publishStateBytes(Native.temporalJoinerStateBytes(handle));
+    }
   }
 
   /** Hands a batch to its side of the joiner, which buffers it (no output until a watermark). */
@@ -174,6 +183,7 @@ public class NativeTemporalJoinOperator extends AbstractStreamOperator<ArrowBatc
   @Override
   public void processWatermark(Watermark mark) throws Exception {
     advance(mark.getTimestamp());
+    publishStateBytes();
     super.processWatermark(mark);
   }
 
