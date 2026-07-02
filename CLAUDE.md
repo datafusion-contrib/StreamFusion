@@ -107,6 +107,14 @@ per-operator matcher declines, expression/type/connector limits). Keep it curren
 to coverage: when an operator/type/expression/connector gains or loses support, or a matcher condition changes,
 update this file so it always answers "why didn't my query accelerate?" precisely.
 
+`docs/optimizations.md` is the **running ledger of performance optimizations** — every deliberate technique we
+use to keep throughput high, from the foundational bets (DataFusion + Rust + Arrow, columnar operators,
+transposes only at the island edges) down to targeted wins (SIMD decode, allocator churn cuts, batched state
+updates). Whenever a commit lands whose purpose is to make us faster — not to add coverage, but to speed up what
+we already run — add an entry to this file in the same commit: what the optimization is, why it works, and the
+measured improvement if we benchmarked one. Coverage work does not belong here unless the *technique* it
+introduced is itself a speed lever.
+
 The `divergences/` directory (at the repo root) records where we deviate from the datafusion-comet / arroyo
 architectural decisions — this project should start with little divergence from them. If you make such a
 decision, describe it in `divergences/` and why.
