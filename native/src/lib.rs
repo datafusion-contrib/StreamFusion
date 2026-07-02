@@ -8391,6 +8391,16 @@ fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prel
         // EXTRACT(unit FROM ts): unit is a literal chrono field name (see ExtractField).
         return datafusion::logical_expr::ScalarUDF::new_from_impl(ExtractField::new()).call(args);
     }
+    if op == 90 {
+        // DATE_FORMAT(ltz, fmt) with a session zone (opt-in) — see DateFormatLtz. Args: ts, chrono fmt,
+        // zone id. Converts the instant to the zone's local wall-clock before formatting.
+        return datafusion::logical_expr::ScalarUDF::new_from_impl(DateFormatLtz::new()).call(args);
+    }
+    if op == 91 {
+        // EXTRACT(unit FROM ltz) with a session zone (opt-in) — see ExtractFieldLtz. Args: ts, field,
+        // zone id. Converts the instant to the zone's local wall-clock before extracting.
+        return datafusion::logical_expr::ScalarUDF::new_from_impl(ExtractFieldLtz::new()).call(args);
+    }
     if op == 87 {
         // TO_TIMESTAMP_LTZ(millis, 3): the single operand is epoch millis (the Java side admits only
         // the precision-3 form). Casting Int64 -> Timestamp(ms) reads the int as millis-since-epoch
@@ -8782,6 +8792,168 @@ impl datafusion::logical_expr::ScalarUDFImpl for ExtractField {
             match chrono::DateTime::from_timestamp_millis(times.value(row)) {
                 Some(instant) => {
                     let dt = instant.naive_utc();
+                    let value = match units.value(row) {
+                        "year" => dt.year() as i64,
+                        "month" => dt.month() as i64,
+                        "day" => dt.day() as i64,
+                        "hour" => dt.hour() as i64,
+                        "minute" => dt.minute() as i64,
+                        "second" => dt.second() as i64,
+                        other => panic!("unsupported EXTRACT unit: {other}"),
+                    };
+                    builder.append_value(value);
+                }
+                None => builder.append_null(),
+            }
+        }
+        Ok(ColumnarValue::Array(Arc::new(builder.finish())))
+    }
+}
+
+/// Converts an epoch-millis instant to its wall-clock `NaiveDateTime` in the given session time zone —
+/// the shift Flink applies to a `TIMESTAMP_LTZ` before formatting/extracting. The zone is either a fixed
+/// offset (`+HH:MM`) or an IANA name (incl. `UTC`); the JVM encoder (`nativeZoneSupported`) gates the
+/// accepted forms, so an unparseable zone (returning None → NULL) should not occur. This uses chrono-tz's
+/// bundled IANA database, which can differ from the JVM's tzdb at edges (version skew, DST beyond ~2100,
+/// deep history) — the reason this whole path is opt-in behind allowIncompatible.
+fn instant_local(millis: i64, zone: &str) -> Option<chrono::NaiveDateTime> {
+    let instant = chrono::DateTime::from_timestamp_millis(millis)?;
+    if zone.starts_with('+') || zone.starts_with('-') {
+        let (hh, mm) = zone[1..].split_once(':')?;
+        let secs = hh.parse::<i32>().ok()? * 3600 + mm.parse::<i32>().ok()? * 60;
+        let offset = if zone.starts_with('-') {
+            chrono::FixedOffset::west_opt(secs)?
+        } else {
+            chrono::FixedOffset::east_opt(secs)?
+        };
+        Some(instant.with_timezone(&offset).naive_local())
+    } else {
+        let tz: chrono_tz::Tz = zone.parse().ok()?;
+        Some(instant.with_timezone(&tz).naive_local())
+    }
+}
+
+/// `DATE_FORMAT` over a `TIMESTAMP_LTZ` (opt-in, allowIncompatible): like `DateFormat`, but converts the
+/// instant to the session zone's local wall-clock (`instant_local`) before formatting, matching Flink's
+/// `formatTimestamp(ts, pattern, zone)`. Args: the timestamp, the chrono pattern, the zone id. The
+/// byte-parity default routes this through Flink's own code via the JVM upcall instead (see `NativeUdf`).
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct DateFormatLtz {
+    signature: datafusion::logical_expr::Signature,
+}
+
+impl DateFormatLtz {
+    fn new() -> Self {
+        Self {
+            signature: datafusion::logical_expr::Signature::variadic_any(
+                datafusion::logical_expr::Volatility::Immutable,
+            ),
+        }
+    }
+}
+
+impl datafusion::logical_expr::ScalarUDFImpl for DateFormatLtz {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &str {
+        "date_format_ltz"
+    }
+    fn signature(&self) -> &datafusion::logical_expr::Signature {
+        &self.signature
+    }
+    fn return_type(&self, _: &[DataType]) -> datafusion::common::Result<DataType> {
+        Ok(DataType::Utf8)
+    }
+    fn invoke_with_args(
+        &self,
+        args: datafusion::logical_expr::ScalarFunctionArgs,
+    ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
+        use datafusion::logical_expr::ColumnarValue;
+        let rows = args.number_rows;
+        let arrays = ColumnarValue::values_to_arrays(&args.args)?;
+        let times = arrow::compute::cast(
+            &arrays[0],
+            &DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
+        )?;
+        let times =
+            times.as_any().downcast_ref::<TimestampMillisecondArray>().expect("timestamp ms");
+        let formats = arrow::compute::cast(&arrays[1], &DataType::Utf8)?;
+        let formats = formats.as_any().downcast_ref::<StringArray>().expect("utf8 format");
+        let zones = arrow::compute::cast(&arrays[2], &DataType::Utf8)?;
+        let zones = zones.as_any().downcast_ref::<StringArray>().expect("utf8 zone");
+        let mut builder = arrow::array::StringBuilder::new();
+        for row in 0..rows {
+            if times.is_null(row) || formats.is_null(row) || zones.is_null(row) {
+                builder.append_null();
+                continue;
+            }
+            match instant_local(times.value(row), zones.value(row)) {
+                Some(local) => builder.append_value(local.format(formats.value(row)).to_string()),
+                None => builder.append_null(),
+            }
+        }
+        Ok(ColumnarValue::Array(Arc::new(builder.finish())))
+    }
+}
+
+/// `EXTRACT(unit FROM ltz)` over a `TIMESTAMP_LTZ` (opt-in, allowIncompatible): like `ExtractField`, but
+/// extracts from the session zone's local wall-clock (`instant_local`), matching Flink's
+/// `extractFromTimestamp(unit, ts, zone)`. Args: the timestamp, the chrono field name, the zone id.
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct ExtractFieldLtz {
+    signature: datafusion::logical_expr::Signature,
+}
+
+impl ExtractFieldLtz {
+    fn new() -> Self {
+        Self {
+            signature: datafusion::logical_expr::Signature::variadic_any(
+                datafusion::logical_expr::Volatility::Immutable,
+            ),
+        }
+    }
+}
+
+impl datafusion::logical_expr::ScalarUDFImpl for ExtractFieldLtz {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &str {
+        "extract_field_ltz"
+    }
+    fn signature(&self) -> &datafusion::logical_expr::Signature {
+        &self.signature
+    }
+    fn return_type(&self, _: &[DataType]) -> datafusion::common::Result<DataType> {
+        Ok(DataType::Int64)
+    }
+    fn invoke_with_args(
+        &self,
+        args: datafusion::logical_expr::ScalarFunctionArgs,
+    ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
+        use chrono::{Datelike, Timelike};
+        use datafusion::logical_expr::ColumnarValue;
+        let rows = args.number_rows;
+        let arrays = ColumnarValue::values_to_arrays(&args.args)?;
+        let times = arrow::compute::cast(
+            &arrays[0],
+            &DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
+        )?;
+        let times =
+            times.as_any().downcast_ref::<TimestampMillisecondArray>().expect("timestamp ms");
+        let units = arrow::compute::cast(&arrays[1], &DataType::Utf8)?;
+        let units = units.as_any().downcast_ref::<StringArray>().expect("utf8 unit");
+        let zones = arrow::compute::cast(&arrays[2], &DataType::Utf8)?;
+        let zones = zones.as_any().downcast_ref::<StringArray>().expect("utf8 zone");
+        let mut builder = Int64Array::builder(rows);
+        for row in 0..rows {
+            if times.is_null(row) || units.is_null(row) || zones.is_null(row) {
+                builder.append_null();
+                continue;
+            }
+            match instant_local(times.value(row), zones.value(row)) {
+                Some(dt) => {
                     let value = match units.value(row) {
                         "year" => dt.year() as i64,
                         "month" => dt.month() as i64,

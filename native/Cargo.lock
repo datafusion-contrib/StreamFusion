@@ -3095,6 +3095,7 @@ dependencies = [
  "arrow",
  "arrow-avro",
  "chrono",
+ "chrono-tz",
  "criterion",
  "datafusion",
  "datafusion-orc",

@@ -242,6 +242,16 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   diverge from the JVM on non-ASCII case folding / advanced regex (backreferences, lookaround, some
   Unicode classes), so it is not the default. Neither falls back to the host for supported argument types
   (a non-string argument, or the pure-native `REGEXP_EXTRACT`'s non-literal pattern/index, does fall back).
+- **`DATE_FORMAT`/`EXTRACT` over `TIMESTAMP_LTZ` — native by default, *not* a fallback.** A local-zoned
+  timestamp's calendar fields depend on the session time zone (`table.local-time-zone`), which the naive
+  native formatter (UTC wall-clock) can't reproduce. Like case folding/regex, the **default** routes the
+  LTZ case through Flink's own zone-aware `DateTimeUtils.formatTimestamp`/`extractFromTimestamp` via the
+  columnar JVM upcall — byte-identical. The **pure-Rust `chrono-tz`** path is opt-in under
+  `-Dstreamfusion.expression.<DATE_FORMAT|EXTRACT>.allowIncompatible=true` (or the blanket flag); it can
+  diverge from the JVM at tz-database edges (bundled-tzdb-version skew, DST beyond ~2100, deep history) —
+  see [divergences/17](../divergences/17-ltz-datetime-session-zone.md). A **legacy zone form** the native
+  parser can't read (`GMT+1`, `PST`) makes the opt-in path fall back; the default (upcall) handles any
+  zone. A plain `TIMESTAMP` argument stays on the pure-native path (no zone, no upcall) as before.
 - **Incompatible math — off by default, native only under
   `-Dstreamfusion.expression.<NAME>.allowIncompatible=true` (or the blanket flag):** `EXP`, `LN`, `SIN`,
   `COS`, `TAN`, `ASIN`, `ACOS`, `ATAN`, `LOG10`, `POWER`/`SQRT` (last-ULP libm divergence), and `ROUND`
@@ -250,9 +260,11 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 - **Literal/arity guards** — unsupported literal type; `SUBSTRING` non-literal or out-of-range
   start/length; `LEFT`/`RIGHT`/`REPEAT`/`LPAD`/`RPAD` non-literal or negative count; `TRIM` other than
   default BOTH-whitespace; `POSITION` with a FROM start; `SPLIT_INDEX` empty/non-literal separator;
-  `DATE_FORMAT` a non-literal or non-translatable pattern (text/fraction/zone fields) or a local-zoned
-  timestamp; `EXTRACT` a fractional/convention-divergent field (`SECOND`/`DOW`/`WEEK`/`QUARTER`) or a
-  non-plain-`TIMESTAMP` argument; `TO_TIMESTAMP_LTZ` precision ≠ 3; wrong arity for any admitted function.
+  `DATE_FORMAT` a non-literal pattern, or (on the pure-native path) a non-translatable pattern
+  (text/fraction/zone fields) — the JVM-upcall LTZ path accepts any pattern Flink's formatter does;
+  `EXTRACT` a fractional/convention-divergent field (`SECOND`/`DOW`/`WEEK`/`QUARTER`); a `TIMESTAMP_LTZ`
+  argument to either now runs natively (session-zone aware — see the datetime bullet above);
+  `TO_TIMESTAMP_LTZ` precision ≠ 3; wrong arity for any admitted function.
 
 ### 4. Type level
 - **Scalar leaf types.** Every column (and every nested leaf) must be a type the boundary converter

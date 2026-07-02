@@ -115,6 +115,10 @@ final class RexExpression {
   private String[] outputNames = new String[0];
   // Why the encode declined, set at the first (innermost) un-admitted node; null if it succeeded.
   private String reason;
+  // The session time zone (table.local-time-zone) — needed to format/extract a TIMESTAMP_LTZ, whose
+  // calendar fields depend on it. Set only on the Calc path (where DATE_FORMAT/EXTRACT live); null
+  // elsewhere, so an LTZ date/extract in a bare-RexNode context (e.g. a join residual) safely falls back.
+  private String sessionZoneId;
 
   private RexExpression() {}
 
@@ -170,6 +174,10 @@ final class RexExpression {
   }
 
   private boolean tryEncodeCalc(Calc calc) {
+    sessionZoneId =
+        org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(calc)
+            .getLocalTimeZone()
+            .getId();
     RexProgram program = calc.getProgram();
     if (program.getCondition() != null) {
       RexNode condition =
@@ -1063,8 +1071,10 @@ final class RexExpression {
       return reject("unsupported EXTRACT form");
     }
     RexNode source = operands.get(1);
-    if (source.getType().getSqlTypeName() != SqlTypeName.TIMESTAMP) {
-      return reject("EXTRACT: only a plain TIMESTAMP argument is supported");
+    SqlTypeName sourceType = source.getType().getSqlTypeName();
+    if (sourceType != SqlTypeName.TIMESTAMP
+        && sourceType != SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
+      return reject("EXTRACT: only a TIMESTAMP or TIMESTAMP_LTZ argument is supported");
     }
     SqlTypeName returnType = call.getType().getSqlTypeName();
     if (returnType != SqlTypeName.BIGINT && returnType != SqlTypeName.INTEGER) {
@@ -1075,6 +1085,9 @@ final class RexExpression {
     if (field == null) {
       return reject("EXTRACT: unsupported time unit " + unit);
     }
+    if (sourceType == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
+      return emitExtractLtz(source, unit, field, returnType);
+    }
     add(KIND_CALL, 89, 2);
     if (!emit(source)) {
       return false;
@@ -1082,6 +1095,41 @@ final class RexExpression {
     add(KIND_LIT_STRING, strings.size(), 0);
     strings.add(field);
     return true;
+  }
+
+  /**
+   * {@code EXTRACT} over a {@code TIMESTAMP_LTZ}, whose fields depend on the session time zone. By default
+   * routes through Flink's own {@code DateTimeUtils.extractFromTimestamp(unit, ts, zone)} via the JVM
+   * upcall (byte-identical); behind {@code allowIncompatible} emits the native {@code chrono-tz} path
+   * (op 91: the timestamp, the chrono field name, the zone id).
+   */
+  private boolean emitExtractLtz(RexNode source, Object unit, String field, SqlTypeName returnType) {
+    if (sessionZoneId == null) {
+      return reject("EXTRACT over TIMESTAMP_LTZ: session time zone unavailable");
+    }
+    int returnCode =
+        returnType == SqlTypeName.INTEGER
+            ? io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_INT
+            : io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_LONG;
+    if (NativeConfig.allowsIncompatible("EXTRACT")) {
+      if (!nativeZoneSupported(sessionZoneId)) {
+        return reject("EXTRACT: native path needs an IANA or fixed-offset session time zone");
+      }
+      add(KIND_CALL, 91, 3);
+      if (!emit(source)) {
+        return false;
+      }
+      add(KIND_LIT_STRING, strings.size(), 0);
+      strings.add(field);
+      add(KIND_LIT_STRING, strings.size(), 0);
+      strings.add(sessionZoneId);
+      return true;
+    }
+    return emitLtzUpcall(
+        source,
+        new io.github.jordepic.streamfusion.operator.LtzDateTimeFunctions.Extract(
+            unit.toString(), sessionZoneId),
+        returnCode);
   }
 
   /** The chrono field name for a Calcite {@code TimeUnitRange}, or null if not a supported integer field. */
@@ -1153,13 +1201,18 @@ final class RexExpression {
       return reject("DATE_FORMAT requires 2 arguments");
     }
     RexNode timestamp = args.get(0);
-    if (timestamp.getType().getSqlTypeName() != SqlTypeName.TIMESTAMP) {
-      return reject("DATE_FORMAT: only a plain TIMESTAMP argument is supported");
+    SqlTypeName tsType = timestamp.getType().getSqlTypeName();
+    if (tsType != SqlTypeName.TIMESTAMP && tsType != SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
+      return reject("DATE_FORMAT: only a TIMESTAMP or TIMESTAMP_LTZ argument is supported");
     }
     if (!(args.get(1) instanceof RexLiteral)) {
       return reject("DATE_FORMAT: format must be a literal");
     }
-    String chrono = toChronoFormat(((RexLiteral) args.get(1)).getValueAs(String.class));
+    String javaPattern = ((RexLiteral) args.get(1)).getValueAs(String.class);
+    if (tsType == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
+      return emitDateFormatLtz(timestamp, javaPattern);
+    }
+    String chrono = toChronoFormat(javaPattern);
     if (chrono == null) {
       return reject("DATE_FORMAT: unsupported format pattern");
     }
@@ -1170,6 +1223,81 @@ final class RexExpression {
     add(KIND_LIT_STRING, strings.size(), 0);
     strings.add(chrono);
     return true;
+  }
+
+  /**
+   * {@code DATE_FORMAT} over a {@code TIMESTAMP_LTZ}, whose formatting depends on the session time zone.
+   * By default it routes through Flink's own {@code DateTimeUtils.formatTimestamp(ts, pattern, zone)} via
+   * the columnar JVM upcall — byte-identical. Behind {@code allowIncompatible} it emits the pure-native
+   * {@code chrono-tz} path (op 90: the timestamp, the chrono pattern, the zone id), which can diverge from
+   * the JVM at tz-database edges (see the divergences note).
+   */
+  private boolean emitDateFormatLtz(RexNode timestamp, String javaPattern) {
+    if (sessionZoneId == null) {
+      return reject("DATE_FORMAT over TIMESTAMP_LTZ: session time zone unavailable");
+    }
+    if (NativeConfig.allowsIncompatible("DATE_FORMAT")) {
+      String chrono = toChronoFormat(javaPattern);
+      if (chrono == null) {
+        return reject("DATE_FORMAT: unsupported format pattern");
+      }
+      if (!nativeZoneSupported(sessionZoneId)) {
+        return reject("DATE_FORMAT: native path needs an IANA or fixed-offset session time zone");
+      }
+      add(KIND_CALL, 90, 3);
+      if (!emit(timestamp)) {
+        return false;
+      }
+      add(KIND_LIT_STRING, strings.size(), 0);
+      strings.add(chrono);
+      add(KIND_LIT_STRING, strings.size(), 0);
+      strings.add(sessionZoneId);
+      return true;
+    }
+    return emitLtzUpcall(
+        timestamp,
+        new io.github.jordepic.streamfusion.operator.LtzDateTimeFunctions.DateFormat(
+            javaPattern, sessionZoneId),
+        io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_STRING);
+  }
+
+  /**
+   * Emits an arity-1 JVM upcall over a single {@code TIMESTAMP_LTZ} column (marshalled as epoch millis),
+   * backed by the given serializable {@link org.apache.flink.table.functions.ScalarFunction} that calls
+   * Flink's own zone-aware datetime code — the LTZ parity path, mirroring {@link #emitRegexpExtractJvm}.
+   */
+  private boolean emitLtzUpcall(
+      RexNode timestamp,
+      org.apache.flink.table.functions.ScalarFunction function,
+      int returnCode) {
+    java.lang.reflect.Method eval;
+    try {
+      eval = function.getClass().getMethod("eval", Long.class);
+    } catch (ReflectiveOperationException e) {
+      return reject("LTZ datetime host implementation unavailable: " + e.getMessage());
+    }
+    int localIndex =
+        addUdf(
+            io.github.jordepic.streamfusion.operator.NativeUdf.Descriptor.forFunction(
+                function,
+                eval,
+                new int[] {io.github.jordepic.streamfusion.operator.NativeUdf.TYPE_TIMESTAMP},
+                returnCode));
+    add(KIND_UDF, longs.size(), 1);
+    longs.add((long) localIndex);
+    longs.add((long) returnCode);
+    return emit(timestamp);
+  }
+
+  /**
+   * Whether the native {@code chrono-tz} path accepts this session zone: IANA names ({@code Region/City}),
+   * {@code UTC}, and fixed offsets ({@code +HH:MM}). Legacy JVM forms ({@code GMT+1}, {@code PST}) that
+   * {@code chrono-tz} rejects fall back, so we never diverge silently on an unparseable zone.
+   */
+  private static boolean nativeZoneSupported(String zoneId) {
+    return "UTC".equals(zoneId)
+        || zoneId.indexOf('/') >= 0
+        || zoneId.matches("[+-]\\d{2}:\\d{2}");
   }
 
   /**

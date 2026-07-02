@@ -59,6 +59,14 @@ class NexmarkMatrixBenchmark {
   private static final int WARMUP = 1;
   private static final int RUNS = 2;
 
+  // The opt-in native path for DATE_FORMAT/EXTRACT over TIMESTAMP_LTZ (chrono-tz in Rust instead of the
+  // byte-parity JVM upcall) — reported as a second "incompatible" row for the datetime queries, exactly
+  // as q21 reports its native-regex path. Divergence surface: tzdb-version skew, DST beyond ~2100, deep
+  // history, and legacy zone forms (which the encoder rejects → fall back).
+  private static final String DATETIME_VARIANT = "native datetime (incompatible)";
+  private static final Map<String, String> ALLOW_INCOMPATIBLE =
+      Map.of("streamfusion.expression.allowIncompatible", "true");
+
   /** A rung of the Kafka source→columnar ladder (mirrors {@link NexmarkKafkaLadderBenchmark}). */
   private enum Rung {
     FLINK("Flink", Map.of("streamfusion.native.enabled", "false")),
@@ -228,7 +236,9 @@ class NexmarkMatrixBenchmark {
         "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price BIGINT, `dateTime` %TS%,"
             + " extra STRING, dt STRING, hm STRING) WITH ('connector' = 'blackhole')",
         "INSERT INTO sink SELECT auction, bidder, price, `dateTime`, extra,"
-            + " DATE_FORMAT(`dateTime`, 'yyyy-MM-dd'), DATE_FORMAT(`dateTime`, 'HH:mm') FROM bid"),
+            + " DATE_FORMAT(`dateTime`, 'yyyy-MM-dd'), DATE_FORMAT(`dateTime`, 'HH:mm') FROM bid",
+        DATETIME_VARIANT,
+        ALLOW_INCOMPATIBLE),
     new Query(
         "q11",
         false,
@@ -266,7 +276,9 @@ class NexmarkMatrixBenchmark {
             + " total_auctions, count(distinct auction) filter (where price < 10000) AS rank1_auctions,"
             + " count(distinct auction) filter (where price >= 10000 and price < 1000000) AS"
             + " rank2_auctions, count(distinct auction) filter (where price >= 1000000) AS"
-            + " rank3_auctions FROM bid GROUP BY DATE_FORMAT(`dateTime`, 'yyyy-MM-dd')"),
+            + " rank3_auctions FROM bid GROUP BY DATE_FORMAT(`dateTime`, 'yyyy-MM-dd')",
+        DATETIME_VARIANT,
+        ALLOW_INCOMPATIBLE),
     new Query(
         "q16",
         false,
@@ -287,7 +299,9 @@ class NexmarkMatrixBenchmark {
             + " filter (where price < 10000) AS rank1_auctions, count(distinct auction) filter (where"
             + " price >= 10000 and price < 1000000) AS rank2_auctions, count(distinct auction) filter"
             + " (where price >= 1000000) AS rank3_auctions FROM bid GROUP BY channel,"
-            + " DATE_FORMAT(`dateTime`, 'yyyy-MM-dd')"),
+            + " DATE_FORMAT(`dateTime`, 'yyyy-MM-dd')",
+        DATETIME_VARIANT,
+        ALLOW_INCOMPATIBLE),
     new Query(
         "q17",
         false,
@@ -300,7 +314,9 @@ class NexmarkMatrixBenchmark {
             + " price >= 10000 and price < 1000000) AS rank2_bids, count(*) filter (where price >="
             + " 1000000) AS rank3_bids, min(price) AS min_price, max(price) AS max_price, avg(price) AS"
             + " avg_price, sum(price) AS sum_price FROM bid GROUP BY auction, DATE_FORMAT(`dateTime`,"
-            + " 'yyyy-MM-dd')"),
+            + " 'yyyy-MM-dd')",
+        DATETIME_VARIANT,
+        ALLOW_INCOMPATIBLE),
     new Query(
         "q18",
         false,
@@ -371,7 +387,9 @@ class NexmarkMatrixBenchmark {
         "INSERT INTO sink SELECT auction, bidder, 0.908 * price AS price, CASE WHEN HOUR(`dateTime`) >="
             + " 8 AND HOUR(`dateTime`) <= 18 THEN 'dayTime' WHEN HOUR(`dateTime`) <= 6 OR"
             + " HOUR(`dateTime`) >= 20 THEN 'nightTime' ELSE 'otherTime' END AS bidTimeType,"
-            + " `dateTime`, extra, count_char(extra, 'c') AS c_counts FROM bid"),
+            + " `dateTime`, extra, count_char(extra, 'c') AS c_counts FROM bid",
+        DATETIME_VARIANT,
+        ALLOW_INCOMPATIBLE),
     new Query(
         "q21",
         false,
@@ -395,14 +413,6 @@ class NexmarkMatrixBenchmark {
         "INSERT INTO sink SELECT B.auction, B.bidder, B.price, A.itemName, A.`dateTime`, A.seller"
             + " FROM bid B JOIN person P ON P.id = B.bidder JOIN auction A ON A.seller = B.bidder"),
   };
-
-  // DATE_FORMAT is native only over a plain TIMESTAMP (LTZ formatting is session-zone dependent), but
-  // the Kafka source's event-time column is TIMESTAMP_LTZ (the epoch-millis decode + a TO_TIMESTAMP_LTZ
-  // rowtime). These queries therefore run on the generator (plain TIMESTAMP) only; on Kafka they would
-  // partially fall back, so they are skipped rather than reported as a half-native comparison.
-  // q14's HOUR() joins the DATE_FORMAT queries here for the same reason (a plain-TIMESTAMP-only field
-  // extraction; over the Kafka LTZ rowtime it would fall back), so it is reported on the generator only.
-  private static final Set<String> GENERATOR_ONLY = Set.of("q10", "q14", "q15", "q16", "q17");
 
   // The wide nested event row written to / read from Parquet. Same shape as the generator's event row,
   // with a plain TIMESTAMP(3) rowtime (so DATE_FORMAT/HOUR stay native, unlike the Kafka LTZ rowtime).
@@ -469,18 +479,15 @@ class NexmarkMatrixBenchmark {
           String brokers = kafka.getBootstrapServers();
           NexmarkKafkaBenchmark.produce(brokers, "nexmark", format, ROWS);
           for (Query q : queries) {
-            if (GENERATOR_ONLY.contains(q.label)) {
-              report.get(q.label).add(String.format("kafka/%-8s skipped (DATE_FORMAT needs plain TIMESTAMP)", format));
-              continue;
+            double flink = kafkaBest(brokers, format, Rung.FLINK, q, null);
+            report.get(q.label).add(kafkaCell(brokers, format, q, flink, null, null));
+            // The opt-in path (q21 native regex/case; q10/q14/q15/q16/q17 native chrono-tz datetime) is
+            // measured on Kafka too, so the incompatible row has per-format numbers like the default.
+            if (q.nativeVariantProps != null) {
+              report
+                  .get(q.label)
+                  .add(kafkaCell(brokers, format, q, flink, q.nativeVariantLabel, q.nativeVariantProps));
             }
-            double flink = kafkaBest(brokers, format, Rung.FLINK, q);
-            StringBuilder cell = new StringBuilder();
-            cell.append(String.format("kafka/%-8s Flink %6.3fs", format, flink));
-            for (Rung rung : new Rung[] {Rung.JVM_TRANSPOSE, Rung.RUST_DECODE, Rung.RUST_SOURCE}) {
-              double s = kafkaBest(brokers, format, rung, q);
-              cell.append(String.format("  | %s %6.3fs %.2fx", rung.label, s, flink / s));
-            }
-            report.get(q.label).add(cell.toString());
           }
         }
       }
@@ -648,12 +655,42 @@ class NexmarkMatrixBenchmark {
 
   // ----- kafka source -----
 
-  private static double kafkaBest(String brokers, String format, Rung rung, Query q) throws Exception {
+  /**
+   * One Kafka cell for a query: the Flink baseline plus the three source rungs, under the given extra
+   * native props (null = the byte-parity default; the variant props = the allowIncompatible path). The
+   * label prefix distinguishes the two rows.
+   */
+  private static String kafkaCell(
+      String brokers,
+      String format,
+      Query q,
+      double flink,
+      String variantLabel,
+      Map<String, String> extraProps)
+      throws Exception {
+    StringBuilder cell = new StringBuilder();
+    cell.append(
+        variantLabel == null
+            ? String.format("kafka/%-8s Flink %6.3fs", format, flink)
+            : String.format("kafka/%-8s [%s]", format, variantLabel));
+    for (Rung rung : new Rung[] {Rung.JVM_TRANSPOSE, Rung.RUST_DECODE, Rung.RUST_SOURCE}) {
+      double s = kafkaBest(brokers, format, rung, q, extraProps);
+      cell.append(String.format("  | %s %6.3fs %.2fx", rung.label, s, flink / s));
+    }
+    return cell.toString();
+  }
+
+  private static double kafkaBest(
+      String brokers, String format, Rung rung, Query q, Map<String, String> extraProps)
+      throws Exception {
     Map<String, String> previous = new LinkedHashMap<>();
     boolean nativeRun = !"false".equals(rung.properties.get("streamfusion.native.enabled"));
     Map<String, String> props = new LinkedHashMap<>(rung.properties);
     if (nativeRun && q.approximateDecimal) {
       props.put("streamfusion.expression.decimalArithmetic.approximate", "true");
+    }
+    if (nativeRun && extraProps != null) {
+      props.putAll(extraProps);
     }
     props.forEach((k, v) -> previous.put(k, System.getProperty(k)));
     props.forEach(System::setProperty);

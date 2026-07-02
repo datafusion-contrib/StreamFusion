@@ -15,6 +15,8 @@ import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.SmallIntVector;
+import org.apache.arrow.vector.TimeStampMilliVector;
+import org.apache.arrow.vector.TimeStampNanoVector;
 import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
@@ -54,6 +56,10 @@ public final class NativeUdf {
   public static final int TYPE_FLOAT = 5;
   public static final int TYPE_SHORT = 6;
   public static final int TYPE_BYTE = 7;
+  // A TIMESTAMP argument, marshalled to the eval as epoch millis (a boxed Long). Native pins every
+  // timestamp column to Timestamp(nanos, no-tz); the upcall reads that instant as millis. Used by the
+  // LTZ DATE_FORMAT/EXTRACT parity path — an argument-only code (no UDF returns a timestamp today).
+  public static final int TYPE_TIMESTAMP = 8;
 
   private static final class Registered {
     final ScalarFunction function;
@@ -320,6 +326,16 @@ public final class NativeUdf {
         return ((Float4Vector) vector).get(row);
       case TYPE_BOOLEAN:
         return ((BitVector) vector).get(row) != 0;
+      case TYPE_TIMESTAMP:
+        // Native pins timestamps to Timestamp(nanos, no-tz); hand the eval epoch millis (its instant).
+        if (vector instanceof TimeStampNanoVector) {
+          return ((TimeStampNanoVector) vector).get(row) / 1_000_000L;
+        }
+        if (vector instanceof TimeStampMilliVector) {
+          return ((TimeStampMilliVector) vector).get(row);
+        }
+        throw new IllegalArgumentException(
+            "unexpected timestamp vector for a TIMESTAMP UDF arg: " + vector.getClass());
       default:
         throw new IllegalArgumentException("unsupported UDF type code " + code);
     }
