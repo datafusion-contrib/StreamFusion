@@ -239,6 +239,29 @@ fn bench_session_keyed(c: &mut Criterion) {
             BatchSize::SmallInput,
         )
     });
+    // Dense sessions: same 64 keys, but consecutive rows for a key fall within the gap, so each
+    // key's rows chain into one long session — the multi-row-run shape where the per-run (rather
+    // than per-row) value slice pays off.
+    let dense_ts: Vec<i64> = (0..ROWS as i64).map(|i| i * 5).collect();
+    let dense_batch = RecordBatch::try_new(
+        batch.schema(),
+        vec![
+            Arc::new(Int64Array::from(dense_ts)) as ArrayRef,
+            batch.column(1).clone(),
+            batch.column(2).clone(),
+        ],
+    )
+    .unwrap();
+    group.bench_function("sum_keyed_dense_update_flush", |b| {
+        b.iter_batched(
+            || Session::new(gap_millis, 0, vec![0]),
+            |mut aggregator| {
+                aggregator.update(black_box(&dense_batch));
+                black_box(aggregator.flush(i64::MAX));
+            },
+            BatchSize::SmallInput,
+        )
+    });
     group.finish();
 }
 

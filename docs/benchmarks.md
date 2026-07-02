@@ -32,7 +32,10 @@ Current benches:
   The `_accounted` variant attaches a managed-memory budget, measuring the per-touched-group
   footprint tracking an operator pays when the host hands it one (default off in the plain bench,
   so the unaccounted number is the like-for-like baseline).
-- `session/sum_keyed_update_flush` — a session `SUM` grouped by key (gap merge).
+- `session/sum_keyed_update_flush` — a session `SUM` grouped by key (gap merge). Its rows are
+  spaced beyond the gap, so every row opens its own one-row session — the worst case for session
+  state (4096 open sessions). `session/sum_keyed_dense_update_flush` is the complementary shape:
+  each key's rows chain within the gap into one long session, the common real workload.
 - `over/running_sum_keyed`, `over/row_number_keyed` — the columnar `OVER` push+flush, for a
   running `SUM` (DataFusion accumulator per row) and `ROW_NUMBER` (per-key counter).
 - `interval_join/equi_key_push`, `window_join/equi_key_flush` — the two joins with a unique key
@@ -57,7 +60,8 @@ measured before the pin (or without it) are not comparable to these.
 | `window_join/equi_key_flush` | 4096 | 130 µs | ~31.5 Melem/s | INNER, 1:1, equi-key + window bounds |
 | `over/running_sum_keyed` | 4096 | 515 µs | ~8.0 Melem/s | running aggregate, specialized fold, 64 keys |
 | `over/row_number_keyed` | 4096 | 410 µs | ~10.0 Melem/s | per-key counter, 64 keys |
-| `session/sum_keyed_update_flush` | 4096 | ~2.5 ms | ~1.7 Melem/s | gap merge, 64 keys (high-variance) |
+| `session/sum_keyed_update_flush` | 4096 | ~2.4 ms | ~1.7 Melem/s | one-row sessions, 64 keys (high-variance) |
+| `session/sum_keyed_dense_update_flush` | 4096 | 217 µs | ~18.8 Melem/s | gap-chained sessions, 64 keys |
 | `json_decode/three_field_object` | 4096 | 610 µs | ~6.7 Melem/s | ~46 B docs, simd-json tape walk |
 | `json_decode/nexmark_bid_shape` | 4096 | 985 µs | ~4.2 Melem/s | ~210 B docs, 4 of 7 fields skipped |
 
@@ -80,7 +84,14 @@ Profiling-driven cuts so far (tumbling, 4096-row batch):
 - the Kafka JSON/CDC decode swapped arrow-json's scalar tokenizer for a simd-json (SIMD
   stage-1) parse walked straight into typed Arrow builders — ~8% on tiny 3-field documents,
   ~27% on a realistic Nexmark-bid-sized document (1.36 ms → 985 µs; decimal-bearing schemas
-  keep the arrow-json raw-literal path for exactness — see `divergences/18`).
+  keep the arrow-json raw-literal path for exactness — see `divergences/18`);
+- the session aggregator stopped slicing the value column one row at a time: rows are grouped
+  per key and segmented (in timestamp order) into gap-connected runs — the connected components
+  the row-at-a-time walk would build — so a run pays one `take` + one accumulator update
+  (2.04 ms → 217 µs, 9.4×, on the dense gap-chained shape; the one-row-session shape is
+  per-session-bound and unchanged). The open-session merge scan also became a bounded
+  `BTreeMap` range probe instead of a walk of every open session, which matters when a key
+  holds many not-yet-closed sessions.
 
 Net so far: the unkeyed tumbling path is ~2.9× faster (244 → ~84 µs) and the keyed path ~1.6×
 (395 → ~245 µs). The remaining per-row `GroupKey` allocation is the next target
@@ -90,9 +101,10 @@ ticket](../.claude/todos/20-profiling-and-benchmarks.md).
 The running `OVER` aggregate was the per-row outlier (~2.6 Melem/s, a DataFusion accumulator
 `update_batch` + `evaluate` per row); replacing it with a specialized typed running fold —
 matching the accumulators exactly (wrapping integer sum, null-skipping) but without the per-row
-call — took it to ~8 Melem/s (3×). The session aggregator (~1.7 Melem/s, high-variance) is
-now the remaining per-row outlier: it merges open windows over a per-key `BTreeMap` and slices the
-value column one row at a time.
+call — took it to ~8 Melem/s (3×). The session aggregator's dense (gap-chained) shape now runs at
+tumbling-level throughput (~18.8 Melem/s); its sparse shape (~1.7 Melem/s, high-variance) is bound
+by genuinely per-session costs — accumulator creation and flush materialization for 4096 one-row
+sessions — not by the update loop.
 
 ## End to end vs. Flink
 

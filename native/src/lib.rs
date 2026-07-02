@@ -7621,52 +7621,86 @@ impl SessionAggregator {
         let key_arrays = key_arrays(batch);
         self.key_types = key_types(&key_arrays);
 
+        // Group row positions per key, then segment each key's rows (in timestamp order) into
+        // gap-connected runs — within a run every row is within `gap` of the next, so the run forms
+        // a single candidate session and its value slice + accumulator update happen once, not once
+        // per row (Arroyo's session operator likewise partitions the batch per key and feeds
+        // sessions batch slices). The runs are exactly the connected components the row-at-a-time
+        // walk would build, so merging each run against the stored sessions gives the same result.
+        let mut by_key: ahash::HashMap<GroupKey, Vec<u32>> = ahash::HashMap::default();
         for row in 0..batch.num_rows() {
-            let key = read_key(&key_arrays, row);
-            let candidate_start = ts.value(row);
-            let candidate_end = candidate_start + self.gap_millis;
-            let row_indices = UInt32Array::from(vec![row as u32]);
-            let row_values: Vec<ArrayRef> =
-                values.iter().map(|v| take(v, &row_indices, None).expect("take value")).collect();
-
-            let track = self.memory.tracking();
+            by_key.entry(read_key(&key_arrays, row)).or_default().push(row as u32);
+        }
+        let track = self.memory.tracking();
+        for (key, mut rows) in by_key {
+            rows.sort_by_key(|&row| ts.value(row as usize));
             let mut delta = 0isize;
             if track && !self.sessions.contains_key(&key) {
                 delta += group_key_bytes(&key) as isize;
             }
             let map = self.sessions.entry(key).or_default();
-            // Existing sessions are maximal and pairwise separated, but a `gap`-wide candidate can
-            // still straddle more than one, so absorb every session it intersects. Intersection is
-            // inclusive at the bounds (a gap of exactly `gap` still merges), matching the host's
-            // `TimeWindow.intersects`.
-            let overlapping: Vec<i64> = map
-                .iter()
-                .filter(|(start, session)| **start <= candidate_end && candidate_start <= session.end)
-                .map(|(start, _)| *start)
-                .collect();
-
-            let mut start = candidate_start;
-            let mut end = candidate_end;
-            let mut accumulators: Vec<Box<dyn Accumulator>> =
-                self.aggregates.iter().map(WindowAggregate::create_accumulator).collect();
-            for overlap in overlapping {
-                let session = map.remove(&overlap).expect("session present");
-                if track {
-                    delta -= session_bytes(&session) as isize;
+            let mut run_start = 0;
+            while run_start < rows.len() {
+                let mut run_end = run_start + 1;
+                let mut last_ts = ts.value(rows[run_start] as usize);
+                while run_end < rows.len()
+                    && ts.value(rows[run_end] as usize) <= last_ts + self.gap_millis
+                {
+                    last_ts = ts.value(rows[run_end] as usize);
+                    run_end += 1;
                 }
-                start = start.min(overlap);
-                end = end.max(session.end);
-                merge_into(&mut accumulators, session.accumulators);
+                let candidate_start = ts.value(rows[run_start] as usize);
+                let candidate_end = last_ts + self.gap_millis;
+                // Restore arrival order within the run so accumulators fold rows in the same order
+                // as the input batch (float sums are order-sensitive bitwise).
+                let mut run_rows = rows[run_start..run_end].to_vec();
+                run_rows.sort_unstable();
+                let indices = UInt32Array::from(run_rows);
+                let run_values: Vec<ArrayRef> =
+                    values.iter().map(|v| take(v, &indices, None).expect("take value")).collect();
+
+                // Existing sessions are maximal and pairwise separated, but a run's candidate window
+                // can still straddle more than one, so absorb every session it intersects.
+                // Intersection is inclusive at the bounds (a gap of exactly `gap` still merges),
+                // matching the host's `TimeWindow.intersects`. Separation means starts and ends are
+                // sorted together, so the intersecting sessions are a contiguous tail of the starts
+                // at or before `candidate_end`: walk it backwards and stop at the first session that
+                // ends before the candidate — a bounded probe instead of a scan of every open
+                // session, which dominates when a key holds many not-yet-closed sessions.
+                let mut overlapping: Vec<i64> = map
+                    .range(..=candidate_end)
+                    .rev()
+                    .take_while(|(_, session)| session.end >= candidate_start)
+                    .map(|(start, _)| *start)
+                    .collect();
+                overlapping.reverse();
+
+                let mut start = candidate_start;
+                let mut end = candidate_end;
+                let mut accumulators: Vec<Box<dyn Accumulator>> =
+                    self.aggregates.iter().map(WindowAggregate::create_accumulator).collect();
+                for overlap in overlapping {
+                    let session = map.remove(&overlap).expect("session present");
+                    if track {
+                        delta -= session_bytes(&session) as isize;
+                    }
+                    start = start.min(overlap);
+                    end = end.max(session.end);
+                    merge_into(&mut accumulators, session.accumulators);
+                }
+                for (i, accumulator) in accumulators.iter_mut().enumerate() {
+                    accumulator.update_batch(std::slice::from_ref(&run_values[i])).expect("update");
+                }
+                let session = Session { end, accumulators };
+                if track {
+                    delta += session_bytes(&session) as isize;
+                }
+                map.insert(start, session);
+                run_start = run_end;
             }
-            for (i, accumulator) in accumulators.iter_mut().enumerate() {
-                accumulator.update_batch(std::slice::from_ref(&row_values[i])).expect("update");
-            }
-            let session = Session { end, accumulators };
             if track {
-                delta += session_bytes(&session) as isize;
                 self.memory.record(delta);
             }
-            map.insert(start, session);
         }
         self.memory.account()
     }
