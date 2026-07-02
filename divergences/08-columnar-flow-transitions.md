@@ -57,3 +57,10 @@ because the planner recognizes the trio.
 - Arrow across a shuffle (two-phase local→global) is where the columnar record type needs
   its IPC byte serializer; within a chained task only an in-memory hand-off (reference or
   `copy()`) happens, never byte serialization.
+- Riding Flink's record queues gives batches a lifetime hole Comet doesn't have (Spark's
+  columnar batches stay inside task-owned iterators, closed by a task-completion listener):
+  Flink drops in-flight records at teardown with no close hook, which for an off-heap batch
+  means leaked buffers on every failover. The columnar record type carries a `Cleaner`
+  backstop for exactly this — a batch dropped without any consumer having taken its root is
+  freed once unreachable, and taking the root disarms it (ownership contract in the
+  `ArrowBatch` javadoc).

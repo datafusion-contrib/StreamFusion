@@ -65,10 +65,12 @@ public class NativeColumnarWatermarkAssignerOperator extends AbstractStreamOpera
 
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
+    // Taking the root disarms the batch's abandoned-record backstop, so the forward-as-is paths
+    // below re-wrap it in a fresh ArrowBatch rather than forwarding the disarmed element.
     VectorSchemaRoot root = element.getValue().root();
     int rows = root.getRowCount();
     if (rows == 0) {
-      output.collect(element);
+      output.collect(element.replace(new ArrowBatch(root)));
       return;
     }
     TimeStampVector rt = (TimeStampVector) root.getVector(rowtimeColumn);
@@ -77,7 +79,7 @@ public class NativeColumnarWatermarkAssignerOperator extends AbstractStreamOpera
       // No row can be late within a monotonic batch, so the host would drop nothing either: forward
       // the whole batch (the max is the last row) with a single eager watermark.
       currentWatermark = Math.max(currentWatermark, toMillis(rt.get(rows - 1), type) - delayMillis);
-      output.collect(element);
+      output.collect(element.replace(new ArrowBatch(root)));
       if (currentWatermark - lastWatermark > watermarkInterval) {
         advanceWatermark();
       }
