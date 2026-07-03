@@ -121,9 +121,11 @@ here when the ticket is deleted.
    `SUM`/`MIN`/`MAX` `DISTINCT`, byte-exact number↔string `CAST`, byte-exact decimal division.
 4. **Legacy group windows** (ticket 43): map `GROUP BY TUMBLE/HOP(...)` onto the existing native
    window operators — the event-time `SESSION` exception is the template.
-5. **Cheap wins, interleaved:** lookup-join residual/calc/constant-keys (ticket 40), CDC
-   `ignore-parse-errors` skip mode and the time-based decode flush (ticket 32). (`avro-confluent`
-   routing shipped 2026-07-03 — registry-fed writer schemas by frame id, decode path.)
+5. **Cheap wins, interleaved:** CDC `ignore-parse-errors` skip mode and the time-based decode flush
+   (ticket 32). (Shipped 2026-07-03: `avro-confluent` routing — registry-fed writer schemas by frame
+   id, decode path — and the lookup-join extensions: calc/residual/pre-filter/constant-keys +
+   distributed execution, via Flink's own generated runners driven per Arrow batch — ticket 40 now
+   holds only the columnar-assembly perf item.)
 6. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
    filesystems (`hdfs:`/`s3:`) for the native source/sink; currently `file:` only. **Deferred by
    direction until generalized operator support lands** — broaden what we can run (the ticket 11
@@ -173,13 +175,13 @@ here when the ticket is deleted.
   fourth source in the Nexmark matrix; its columnar format may let the native island ingest Arrow with
   little/no row transpose — the perimeter transpose is a visible share of the remaining stateful-query
   cost, so Fluss is the source most likely to show the engine's largest end-to-end margin.
-- **Native lookup join** (ticket 40): **sync + async DONE.** `NativeLookupJoinOperator` (sync) and
-  `NativeAsyncLookupJoinOperator` (async) accelerate a processing-time lookup join (Nexmark q13) — Arrow
-  probe batches stay in the island while the connector's real `LookupFunction`/`asyncLookup` runs
-  (byte-identical to Flink); INNER + LEFT, field-ref keys, no calc/residual. Async fires a batch's
-  distinct-key lookups concurrently and awaits them on the task thread (Arroyo/RisingWave within-batch
-  model — no operator mailbox). Follow-ups in ticket 40: calc-on-temporal-table + residual condition,
-  constant keys, columnar/preload assembly, distributed serialization.
+- **Native lookup join** (ticket 40): **coverage DONE** (2026-07-03). The native operators drive
+  Flink's own generated lookup runners over each Arrow probe batch, so a processing-time lookup join
+  (Nexmark q13) — INNER + LEFT, sync + async, field-ref *and constant* keys, pre-filter, dim-side
+  calc, residual condition — is byte-identical to the host by construction and serializes to task
+  managers like Flink's own exec node. Async fires a batch's lookups concurrently and awaits on the
+  task thread (within-batch model — no operator mailbox). Only the upsert-materialized lookup falls
+  back; ticket 40 now holds the columnar-assembly / bounded-dim-preload perf item.
 - **Disaggregated state store** (ticket 37): move operator state off-heap to a remote/tiered store
   (likely Fluss's PK-table KV) with a local working-set cache — decoupling state size from worker RAM
   and enabling incremental checkpoints + lazy rescale (Flink 2.0 ForSt / RisingWave Hummock direction).

@@ -8,10 +8,11 @@ I/O-bound and don't fit a compute accelerator (see "What the async pattern unloc
 **Update (2026-07-01): async lookup join shipped *without* the async bridge.** An async
 lookup connector now routes natively (`NativeAsyncLookupJoinOperator`, ticket 40) — but
 using the **within-batch concurrent** model (Arroyo/RisingWave), not Flink's
-`AsyncWaitOperator`. It fires a batch's distinct-key lookups concurrently and
-`join()`s them on the task thread inside `processElement`, so no mailbox, no ordered
-queue, and no in-flight-across-batches snapshot/replay — nothing is in flight when a
-barrier runs. This *confirms* the decision below: we still don't build the
+`AsyncWaitOperator`. It fires a batch's lookups concurrently (per probe row, through
+Flink's own generated async runner as of 2026-07-03, bounded by the host's
+async-lookup buffer capacity) and awaits them on the task thread inside
+`processElement`, so no mailbox, no ordered queue, and no in-flight-across-batches
+snapshot/replay — nothing is in flight when a barrier runs. This *confirms* the decision below: we still don't build the
 `AsyncWaitOperator` bridge, because the Arrow batch is already the I/O-overlap unit.
 
 ## Decision
@@ -112,7 +113,7 @@ Ticket 1's `AsyncWaitOperator` pattern would enable three Arroyo operators. They
   JVM I/O call with no compute to accelerate. That still holds for the *`AsyncWaitOperator`
   port*. But the actual value is **island continuity** (same reason the sync operator
   exists — an async-preferred connector otherwise breaks the columnar island around the
-  lookup) plus a real win: firing a batch's distinct-key lookups concurrently overlaps the
+  lookup) plus a real win: firing a batch's lookups concurrently overlaps the
   I/O (≈ one round-trip vs N serial). Both are captured by the **within-batch** operator
   (ticket 40) with none of this ticket's machinery. So async lookup join is done; the
   `AsyncWaitOperator` bridge is not.

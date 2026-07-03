@@ -1,7 +1,6 @@
 package io.github.jordepic.streamfusion.planner;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.rel.core.JoinRelType;
@@ -11,25 +10,19 @@ import org.apache.flink.table.planner.plan.utils.FunctionCallUtil;
 
 /**
  * Recognizes the processing-time lookup joins the native operator runs: {@code probe JOIN dim FOR
- * SYSTEM_TIME AS OF probe.proctime ON probe.k = dim.key}. The native {@code NativeLookupJoinOperator}
- * keeps the query inside the columnar island — the probe batches stay Arrow — while the dimension
- * lookup itself calls the connector's real synchronous {@code LookupFunction} per row (like a UDF
- * upcall), so the result is byte-identical to Flink's {@code LookupJoinRunner}.
+ * SYSTEM_TIME AS OF probe.proctime ON probe.k = dim.key}. The native operator keeps the query inside
+ * the columnar island — the probe batches stay Arrow — while the row-level join core is Flink's own
+ * generated lookup runner (key building over field references and constants, the connector's real
+ * sync or async lookup function, pre-filter, projection/filter on the temporal table, and the
+ * residual non-equi condition), so the result is byte-identical to the host across all those shapes.
  *
- * <p>Admitted for the shape the operators implement: a lookup against a non-legacy {@link
- * TableSourceTable}, INNER or LEFT join, every lookup key a field reference into the probe (constants
- * and computed keys are pushed to an upstream Calc by the planner, so this is the normal case), no
- * projection/filter on the temporal table, no residual (non-equi) or pre-filter condition, and no
- * upsert materialization. Both synchronous ({@code NativeLookupJoinOperator}) and asynchronous
- * ({@code NativeAsyncLookupJoinOperator}) connectors are supported; {@link #isAsync} tells the exec
- * node which function to build. The calc/residual variants fall back to the host — see ticket 40.
+ * <p>Admitted for a lookup against a non-legacy {@link TableSourceTable}, INNER or LEFT join, with no
+ * upsert materialization (a keyed-state lookup over a changelog probe — the island is insert-only
+ * anyway). See ticket 40 for the remaining follow-ups (columnar assembly, bounded-dim preload).
  */
 final class LookupJoinMatcher {
 
   private LookupJoinMatcher() {}
-
-  static final int JOIN_INNER = 0;
-  static final int JOIN_LEFT = 1;
 
   static boolean matches(StreamPhysicalLookupJoin join) {
     return unsupportedReason(join) == null;
@@ -39,73 +32,36 @@ final class LookupJoinMatcher {
     if (join.upsertMaterialize()) {
       return "lookup join: upsert-materialized (keyed-state) lookup not supported";
     }
-    if (join.calcOnTemporalTable().isDefined()) {
-      return "lookup join: projection/filter on the temporal table not supported";
-    }
-    if (join.finalRemainingCondition().isDefined()) {
-      return "lookup join: residual (non-equi) join condition not supported";
-    }
-    if (join.finalPreFilterCondition().isDefined()) {
-      return "lookup join: pre-filter condition not supported";
-    }
-    if (joinTypeCode(join) < 0) {
+    if (join.joinType() != JoinRelType.INNER && join.joinType() != JoinRelType.LEFT) {
       return "lookup join: only INNER and LEFT are supported";
     }
     if (!(unwrapTable(join.temporalTable()) instanceof TableSourceTable)) {
       return "lookup join: temporal table is not a (non-legacy) table source";
     }
-    for (Map.Entry<Object, FunctionCallUtil.FunctionParam> entry : lookupKeys(join).entrySet()) {
-      if (!(entry.getValue() instanceof FunctionCallUtil.FieldRef)) {
-        return "lookup join: only field-reference lookup keys are supported";
+    for (FunctionCallUtil.FunctionParam param : lookupKeys(join).values()) {
+      if (!(param instanceof FunctionCallUtil.FieldRef)
+          && !(param instanceof FunctionCallUtil.Constant)) {
+        return "lookup join: unsupported lookup key shape " + param.getClass().getSimpleName();
       }
     }
     return null;
   }
 
-  /** The dimension-table key column indices, ascending — the order the lookup key row is built in. */
-  static int[] orderedDimKeys(StreamPhysicalLookupJoin join) {
-    List<Integer> keys = new ArrayList<>(lookupKeys(join).keySet().size());
-    for (Object key : lookupKeys(join).keySet()) {
-      keys.add((Integer) key);
-    }
-    keys.sort(Integer::compareTo);
-    return keys.stream().mapToInt(Integer::intValue).toArray();
+  /** The dimension key → probe field/constant map the generated fetcher builds its key row from. */
+  static Map<Integer, FunctionCallUtil.FunctionParam> lookupKeys(StreamPhysicalLookupJoin join) {
+    Map<Integer, FunctionCallUtil.FunctionParam> keys = new HashMap<>();
+    scala.collection.JavaConverters.mapAsJavaMapConverter(join.allLookupKeys())
+        .asJava()
+        .forEach((index, param) -> keys.put((Integer) index, param));
+    return keys;
   }
 
-  /** The probe field index feeding each ordered dimension key (parallel to {@link #orderedDimKeys}). */
-  static int[] probeKeyIndices(StreamPhysicalLookupJoin join) {
-    Map<Object, FunctionCallUtil.FunctionParam> keys = lookupKeys(join);
-    int[] dimKeys = orderedDimKeys(join);
-    int[] probeIndices = new int[dimKeys.length];
-    for (int i = 0; i < dimKeys.length; i++) {
-      probeIndices[i] = ((FunctionCallUtil.FieldRef) keys.get(dimKeys[i])).index;
-    }
-    return probeIndices;
-  }
-
-  /** Whether the connector offers an async lookup function (the planner's chosen path). */
-  static boolean isAsync(StreamPhysicalLookupJoin join) {
-    return join.isAsyncEnabled();
-  }
-
-  static int joinTypeCode(StreamPhysicalLookupJoin join) {
-    JoinRelType type = join.joinType();
-    if (type == JoinRelType.INNER) {
-      return JOIN_INNER;
-    }
-    if (type == JoinRelType.LEFT) {
-      return JOIN_LEFT;
-    }
-    return -1;
+  static boolean isLeftOuterJoin(StreamPhysicalLookupJoin join) {
+    return join.joinType() == JoinRelType.LEFT;
   }
 
   static RelOptTable temporalTable(StreamPhysicalLookupJoin join) {
     return join.temporalTable();
-  }
-
-  private static Map<Object, FunctionCallUtil.FunctionParam> lookupKeys(
-      StreamPhysicalLookupJoin join) {
-    return scala.collection.JavaConverters.mapAsJavaMapConverter(join.allLookupKeys()).asJava();
   }
 
   private static Object unwrapTable(RelOptTable table) {
