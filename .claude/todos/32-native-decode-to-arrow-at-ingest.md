@@ -6,7 +6,10 @@ built, wired (`NativeKafkaDecodeExecNode`, routed by `KafkaTables`), and parity-
 Confluent/bare Avro, CSV, protobuf, and Debezium/OGG CDC. **Remaining tail only:** (a) a **time-based
 flush** for an unbounded stream that stays below the batch size (latency); (b) **Maxwell/Canal**
 exact-parity auto-routing (decoded, but parity-gated to fallback today); (c) **CSV/JSON *file*** sources
-(the lower-priority file formats — Avro OCF was dropped, arrow-avro can't read Flink's top-level-union).
+(the lower-priority file formats — Avro OCF was dropped, arrow-avro can't read Flink's top-level-union);
+(d) **`avro-confluent` table routing** — the Confluent-framed decoder (format 1) is built and tested,
+but the plan-time step that populates its `SchemaStore` from the schema registry isn't wired, so an
+`avro-confluent` table still falls back (coverage doc §5).
 **Source:** every record we ingest from Kafka (or any non-Parquet source) is decoded on the
 JVM `bytes → GenericRecord/JsonNode/… → RowData` and only *then* transposed to Arrow by our
 source-edge `StreamPhysicalRowDataToArrow`. That row materialization is the single highest-traffic

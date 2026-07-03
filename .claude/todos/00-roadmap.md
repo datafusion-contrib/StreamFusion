@@ -105,12 +105,25 @@ here when the ticket is deleted.
   It is the standing prioritization + regression gate; the coverage/perf gaps it surfaces feed the
   backlog below.
 
-## Next, roughly in order
-1. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
+## Next, roughly in order (coverage push, prioritized 2026-07-03)
+1. **Finish the native Kafka source and flip its gate** (ticket 33): per-partition
+   watermarks/idleness, specific-offsets / topic-pattern startup, `key.format`, Linux mimalloc
+   link-alias verification — then default `kafkaSource` on so the fast path is reachable.
+2. **Mini-batch coverage** (ticket 41): `IncrementalGroupAggregate` (what any distinct aggregate
+   plans to under mini-batch), two-phase `AVG`, widening partials (`SUM(INT)`), two-phase decimal
+   `SUM`, row-time mini-batch.
+3. **High-frequency aggregate/expression tail** (ticket 42): decimal `AVG` (plain + windowed),
+   `SUM`/`MIN`/`MAX` `DISTINCT`, byte-exact number↔string `CAST`, byte-exact decimal division.
+4. **Legacy group windows** (ticket 43): map `GROUP BY TUMBLE/HOP(...)` onto the existing native
+   window operators — the event-time `SESSION` exception is the template.
+5. **Cheap wins, interleaved:** wire `avro-confluent` (decoder exists, not wired — ticket 32),
+   lookup-join residual/calc/constant-keys (ticket 40), CDC `ignore-parse-errors` skip mode and the
+   time-based decode flush (ticket 32).
+6. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
    filesystems (`hdfs:`/`s3:`) for the native source/sink; currently `file:` only. **Deferred by
    direction until generalized operator support lands** — broaden what we can run (the ticket 11
    operators and any remaining expression tail) before broadening where we read/write.
-2. **Operator-level perf** (ticket 20 backlog): the scalar `GroupKey` remaining in the smaller
+7. **Operator-level perf** (ticket 20 backlog): the scalar `GroupKey` remaining in the smaller
    keyed loops (dedup, `OVER` partitions, Top-N, exchange split) — swap to arrow-row keys only
    with a bench showing it pays. (All aggregators now use arrow-row keys — keyed tumbling 2.2×;
    session `update` batches gap-connected runs — dense shape 20× vs per-row; the `RowData → Arrow`
