@@ -316,7 +316,11 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   non-Parquet/ORC source format; any non-Parquet sink format.
 - **Kafka** — value format outside JSON/CSV/raw/bare-Avro/`avro-confluent`/protobuf; a `key.format`;
   a `scan.bounded.mode` other than unbounded/latest-offset; protobuf fields needing representation
-  reconciliation (enum/unsigned/bytes/proto3-defaults/well-known types). `avro-confluent` (decode
+  reconciliation (enum/unsigned/bytes/proto3-defaults/well-known types); **`ignore-parse-errors` on a
+  CSV or protobuf table** (Flink skips malformed messages; those native decoders fail on them — the
+  JSON-decoded formats, plain `json` and the CDC envelopes, honor the skip natively via the decode
+  path; a JSON table with it set therefore takes the decode path, not the native source).
+  `avro-confluent` (decode
   path only, not the native source) fetches each frame's writer schema from the registry by id at
   runtime — the same lazy per-id lookup Flink's deserializer makes, following mid-stream schema
   evolution — but falls back when the registry options need more than a plain URL: an explicit
@@ -339,4 +343,6 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   runs masked this: the final MAX_WATERMARK closes all windows regardless) — so with the native
   source off or unbuilt, a watermarked Kafka table runs entirely on Flink, with the reason recorded.
 - **CDC** — anything other than Debezium/OGG full-image JSON: Maxwell/Canal (partial-`old` not
-  bit-identical), `schema-include` envelope, `ignore-parse-errors`, metadata/computed columns.
+  bit-identical), `schema-include` envelope, metadata/computed columns. (`ignore-parse-errors` is
+  native — the decoder skips an undecodable message per Flink's catch-everything-per-message
+  semantics.)

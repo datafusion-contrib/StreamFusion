@@ -11,7 +11,13 @@ native store — following mid-stream schema evolution like Flink's own deserial
 schema registry options fall back (coverage doc §5). **Remaining tail only:** (a) a **time-based
 flush** for an unbounded stream that stays below the batch size (latency); (b) **Maxwell/Canal**
 exact-parity auto-routing (decoded, but parity-gated to fallback today); (c) **CSV/JSON *file*** sources
-(the lower-priority file formats — Avro OCF was dropped, arrow-avro can't read Flink's top-level-union).
+(the lower-priority file formats — Avro OCF was dropped, arrow-avro can't read Flink's top-level-union);
+(d) a **format-option parity audit** (found 2026-07-03 while wiring `ignore-parse-errors`): the JSON
+decode ignores `json.fail-on-missing-field=true` and `json.timestamp-format.standard` (the native
+timestamp parser is lenient — it accepts ISO-8601 `T`-separated strings where Flink's default `SQL`
+standard throws), and the CSV decode ignores its delimiter/quote/null-literal options — each is a
+potential accept-where-Flink-rejects divergence on malformed-for-Flink data; audit the accept/reject
+envelope per option and either match it natively or gate the option to fall back.
 **Source:** every record we ingest from Kafka (or any non-Parquet source) is decoded on the
 JVM `bytes → GenericRecord/JsonNode/… → RowData` and only *then* transposed to Arrow by our
 source-edge `StreamPhysicalRowDataToArrow`. That row materialization is the single highest-traffic
@@ -184,7 +190,8 @@ tail (time-based flush; Maxwell/Canal auto-routing; CSV/JSON file sources).
   `cdc_debezium_decode_emits_changelog`, `cdc_debezium_skips_tombstone_and_unknown_op`,
   `cdc_ogg_dialect_uses_op_type`, `cdc_maxwell_merges_partial_old_image`,
   `cdc_canal_fans_out_arrays_and_merges_old` (49 Rust tests pass).
-- **Strictness = Flink parity (2026-06-26):** the decoder does **not** silently drop bad rows. An unknown op
+- **Strictness = Flink parity (2026-06-26; skip mode added 2026-07-03):** in default mode the decoder
+  does **not** silently drop bad rows; with `ignore-parse-errors` it skips per message, like Flink. An unknown op
   or a null pre-image on an update/delete **fails** (`panic`, the codebase's bad-data convention), matching
   Flink's default *throw* — so the result is identical (both produce no wrong output), never a silent
   divergence. Only a tombstone/empty message is skipped (Flink skips those too). Canal `CREATE` (DDL) is the
@@ -199,8 +206,12 @@ tail (time-based flush; Maxwell/Canal auto-routing; CSV/JSON file sources).
     decodes `old`; Flink uses raw JSON key-presence). Decoders + unit tests stay (correct for the
     no-null-change case); just not planner-routed.
   - `<format>.schema-include` ≠ true (the `{schema, payload}` wrapper isn't handled).
-  - `<format>.ignore-parse-errors` ≠ true (Flink *skips* bad rows then; the native decoder *fails* like
-    Flink's default — we only match the default, so the skip mode falls back).
+  - ~~`<format>.ignore-parse-errors` ≠ true~~ — **lifted 2026-07-03**: skip mode is native. Flink
+    implements it as a catch-everything around each message's decode; the native decode mirrors that
+    with per-message isolation (decode the batch optimistically; if anything in it fails, redo it
+    message by message, dropping the failures — fresh state per try). Wired for the JSON-decoded
+    formats (plain `json` and the CDC envelopes); CSV/protobuf with the flag fall back, and the
+    native *source* declines flagged tables so the decode path (which honors the skip) takes them.
   - **all columns physical** (`FilesystemTables.allPhysicalColumns` via the resolved schema) — metadata/
     computed columns aren't produced by the value decode.
   A CDC source emits a changelog, so — like the native GROUP BY/join/Top-N — `isCdcDecode` is checked
@@ -214,14 +225,13 @@ tail (time-based flush; Maxwell/Canal auto-routing; CSV/JSON file sources).
   (asserts the query stays on Flink and still matches Flink's result).
 - **Remaining CDC follow-ups (each would lift one fallback restriction):** (a) **Maxwell/Canal exact parity** —
   needs JSON key-presence in `old` (a light per-message scan, or carry presence out of the decode) to match
-  Flink's "absent ⇒ copy data, present-null ⇒ keep null"; then route them. (b) **`ignore-parse-errors=true`** —
-  make the decoder *skip* malformed rows (per-record error isolation in the decode feed) instead of
-  failing, so we match Flink's skip mode and can route it. (c) **`schema-include`** (`{schema, payload}`
-  wrapper) + CDC **metadata columns** (ts_ms, source.*) — decode the wrapper / project metadata, then drop
-  those fallback gates. (d) **debezium-avro-confluent** — same envelope shape, Avro decoder inside (arrow-avro
-  against a `ROW<before,after,op>` reader schema). (e) **primary-key/upsert** CDC tables get a
-  `ChangelogNormalize` above the scan — verify/handle the wrapper. (f) Canal uneven `data`/`old` arrays
-  (length mismatch) — current decoder falls back to post-image; reconcile with Flink's `getRow(i)` throw.
+  Flink's "absent ⇒ copy data, present-null ⇒ keep null"; then route them. (b) **`schema-include`**
+  (`{schema, payload}` wrapper) + CDC **metadata columns** (ts_ms, source.*) — decode the wrapper / project
+  metadata, then drop those fallback gates. (c) **debezium-avro-confluent** — same envelope shape, Avro
+  decoder inside (arrow-avro against a `ROW<before,after,op>` reader schema). (d) **primary-key/upsert**
+  CDC tables get a `ChangelogNormalize` above the scan — verify/handle the wrapper. (e) Canal uneven
+  `data`/`old` arrays (length mismatch) — current decoder falls back to post-image; reconcile with Flink's
+  `getRow(i)` throw. (`ignore-parse-errors` shipped 2026-07-03 — see the planner-wiring bullet.)
 
 #### Original design notes (retained)
 - Flink (all emit a 4-way `RowKind` changelog via the `Collector` variant):

@@ -54,6 +54,8 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
   // fetched by the id each message is framed with and registered into the native decoder as they
   // first appear, following the topic's schema evolution like Flink's own deserializer.
   private final ConfluentSchemaRegistry registry;
+  // Flink's ignore-parse-errors: an undecodable message contributes no rows instead of failing.
+  private final boolean skipParseErrors;
 
   private transient BufferAllocator allocator;
   private transient long handle;
@@ -80,7 +82,8 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
         schemaId,
         protoDescriptor,
         protoMessageName,
-        null);
+        null,
+        false);
   }
 
   public NativeBytesDecodeOperator(
@@ -92,7 +95,8 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
       int schemaId,
       byte[] protoDescriptor,
       String protoMessageName,
-      ConfluentSchemaRegistry registry) {
+      ConfluentSchemaRegistry registry,
+      boolean skipParseErrors) {
     this.outputType = outputType;
     this.batchSize = batchSize;
     this.format = format;
@@ -102,6 +106,7 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
     this.protoDescriptor = protoDescriptor;
     this.protoMessageName = protoMessageName;
     this.registry = registry;
+    this.skipParseErrors = skipParseErrors;
   }
 
   @Override
@@ -131,13 +136,14 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
       }
     }
     if (format == 1 || format == 4) {
-      return Native.createDecoder(format, 0L, 0L, avroSchema, readerAvroSchema, schemaId);
+      return Native.createDecoder(format, 0L, 0L, avroSchema, readerAvroSchema, schemaId, false);
     }
     try (VectorSchemaRoot template = RowDataArrowConverter.write(List.of(), outputType, allocator);
         ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(allocator, template, NativeAllocator.DICTIONARIES, array, schema);
-      return Native.createDecoder(format, array.memoryAddress(), schema.memoryAddress(), "", "", 0);
+      return Native.createDecoder(
+          format, array.memoryAddress(), schema.memoryAddress(), "", "", 0, skipParseErrors);
     }
   }
 

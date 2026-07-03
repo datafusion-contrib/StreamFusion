@@ -86,6 +86,27 @@ class NativeCdcDecodeSqlHarnessTest {
                   + "\"after\":{\"id\":1,\"info\":{\"x\":20,\"y\":\"b\"}},\"op\":\"u\"}",
               "{\"before\":{\"id\":2,\"info\":{\"x\":30,\"y\":\"c\"}},\"after\":null,\"op\":\"d\"}"));
 
+      // Debezium with ignore-parse-errors: the native decode skips an undecodable message (malformed
+      // JSON, an unknown op) exactly as Flink's catch-everything-per-message skip does, so the table
+      // still routes natively and the surviving changelog matches.
+      produce(
+          brokers,
+          "cdc-skip",
+          List.of(
+              "{\"before\":null,\"after\":{\"id\":1,\"name\":\"a\",\"score\":1.5},\"op\":\"c\"}",
+              "{\"before\":null,\"after\":{\"id\":2,", // malformed: skipped by both
+              "{\"before\":null,\"after\":{\"id\":3,\"name\":\"x\",\"score\":3.5},\"op\":\"x\"}",
+              "{\"before\":{\"id\":1,\"name\":\"a\",\"score\":1.5},"
+                  + "\"after\":{\"id\":1,\"name\":\"a2\",\"score\":1.5},\"op\":\"u\"}"));
+      NativeParity.assertChangelogParity(
+          environment(
+              brokers,
+              "cdc-skip",
+              "debezium-json",
+              SCALAR_COLUMNS,
+              ", 'debezium-json.ignore-parse-errors' = 'true'"),
+          "SELECT * FROM cdc");
+
       // Maxwell: partial `old` merge — must fall back to Flink (not bit-identical natively).
       assertFallback(
           brokers,
@@ -135,16 +156,22 @@ class NativeCdcDecodeSqlHarnessTest {
 
   private static Supplier<TableEnvironment> environment(
       String brokers, String topic, String format, String columns) {
+    return environment(brokers, topic, format, columns, "");
+  }
+
+  private static Supplier<TableEnvironment> environment(
+      String brokers, String topic, String format, String columns, String extraOptions) {
     return () -> {
       StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
       env.setParallelism(1);
       StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
-      tEnv.executeSql(cdcTable(brokers, topic, format, columns));
+      tEnv.executeSql(cdcTable(brokers, topic, format, columns, extraOptions));
       return tEnv;
     };
   }
 
-  private static String cdcTable(String brokers, String topic, String format, String columns) {
+  private static String cdcTable(
+      String brokers, String topic, String format, String columns, String extraOptions) {
     return "CREATE TABLE cdc ("
         + columns
         + ") WITH ("
@@ -158,7 +185,9 @@ class NativeCdcDecodeSqlHarnessTest {
         + "', 'scan.startup.mode' = 'earliest-offset', 'scan.bounded.mode' = 'latest-offset', "
         + "'format' = '"
         + format
-        + "')";
+        + "'"
+        + extraOptions
+        + ")";
   }
 
   private static void produce(String brokers, String topic, List<String> messages) {

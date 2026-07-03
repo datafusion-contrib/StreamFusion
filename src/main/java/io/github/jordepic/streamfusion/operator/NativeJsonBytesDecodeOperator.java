@@ -49,7 +49,7 @@ public class NativeJsonBytesDecodeOperator extends AbstractStreamOperator<ArrowB
         ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(allocator, template, NativeAllocator.DICTIONARIES, array, schema);
-      handle = Native.createDecoder(0, array.memoryAddress(), schema.memoryAddress(), "", "", 0);
+      handle = Native.createDecoder(0, array.memoryAddress(), schema.memoryAddress(), "", "", 0, false);
     }
     newBody();
   }

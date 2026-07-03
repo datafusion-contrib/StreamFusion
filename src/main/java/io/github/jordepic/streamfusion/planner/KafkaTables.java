@@ -68,9 +68,14 @@ final class KafkaTables {
    * source decodes in Rust the same insert-only value formats the shallow decode path does — JSON (0),
    * bare Avro (4), and protobuf (5) — over the consume/topic/offset prerequisites in {@link
    * #decodeCommon}, plus a librdkafka-translatable consumer config (the native source owns the consume,
-   * so its config must render to librdkafka). */
+   * so its config must render to librdkafka). A table with {@code ignore-parse-errors} set stays off
+   * the native source (its decoder fails on a bad message where Flink would skip it); a JSON one falls
+   * through to the decode path, which honors the skip mode. */
   private static boolean supports(Map<String, String> options) {
     if (!decodeCommon(options)) {
+      return false;
+    }
+    if (ignoreParseErrors(options)) {
       return false;
     }
     int code = decodeFormatCode(options);
@@ -83,6 +88,13 @@ final class KafkaTables {
       return false; // JSON / bare Avro / protobuf only — CSV/raw/Confluent-Avro/CDC stay on the decode path
     }
     return KafkaConfigTranslator.translate(consumerProperties(options)).isTranslated();
+  }
+
+  /** Whether the table's value format sets Flink's {@code ignore-parse-errors} (skip malformed
+   * messages instead of failing). The option key is prefixed by the format identifier. */
+  private static boolean ignoreParseErrors(Map<String, String> options) {
+    String format = options.getOrDefault("value.format", options.get("format"));
+    return "true".equalsIgnoreCase(options.get(format + ".ignore-parse-errors"));
   }
 
   /** Builds the native source for a table {@link #isNativeKafka} accepted. The decode runs in Rust, so
@@ -244,6 +256,11 @@ final class KafkaTables {
       return false;
     }
     int code = decodeFormatCode(options);
+    // Flink's ignore-parse-errors drops malformed messages; only the JSON decode honors that skip
+    // natively so far. A CSV/protobuf table with it set would fail where Flink skips — fall back.
+    if (ignoreParseErrors(options) && code != 0) {
+      return false;
+    }
     if (code == 5) {
       // Protobuf routes for any message whose fields (recursively — nested messages, repeated, maps) are
       // types the decode reproduces identically to Flink; enums, unsigned/fixed ints, bytes, and
@@ -261,11 +278,12 @@ final class KafkaTables {
 
   /** Whether this scan is a CDC changelog format the native decode reproduces <em>identically</em> to
    * Flink. Only Debezium/OGG JSON (full pre/post images) qualify, and only when the table uses the
-   * options whose semantics we match exactly. Anything else — Maxwell/Canal (their partial-{@code old}
-   * merge can't be reproduced from the decoded image alone), a {@code schema-include} wrapper,
-   * {@code ignore-parse-errors} (Flink skips bad rows; the native decoder fails on them like Flink's
-   * default), or metadata/computed columns the value decode doesn't produce — falls back to Flink. See
-   * ticket 32 for the follow-ups that would lift each restriction. */
+   * options whose semantics we match exactly. {@code ignore-parse-errors} is supported both ways — the
+   * native decoder skips an undecodable message per Flink's catch-everything-per-message semantics.
+   * Anything else — Maxwell/Canal (their partial-{@code old} merge can't be reproduced from the decoded
+   * image alone), a {@code schema-include} wrapper, or metadata/computed columns the value decode
+   * doesn't produce — falls back to Flink. See ticket 32 for the follow-ups that would lift each
+   * restriction. */
   static boolean isCdcDecode(RelNode node) {
     if (!(node instanceof StreamPhysicalTableSourceScan)) {
       return false;
@@ -286,9 +304,6 @@ final class KafkaTables {
     String format = options.getOrDefault("value.format", options.get("format"));
     if ("true".equalsIgnoreCase(options.get(format + ".schema-include"))) {
       return false; // the {schema, payload} envelope wrapper isn't handled
-    }
-    if ("true".equalsIgnoreCase(options.get(format + ".ignore-parse-errors"))) {
-      return false; // Flink skips malformed rows; the native decoder fails, matching the default only
     }
     return FilesystemTables.allPhysicalColumns(scan); // metadata/computed columns aren't decoded natively
   }

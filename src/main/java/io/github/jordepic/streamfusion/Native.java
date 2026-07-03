@@ -792,6 +792,9 @@ public final class Native {
    * @param readerAvroSchema reader-schema JSON projecting the Avro writer record to a subset of fields
    *     via Avro resolution (the query's columns); pass "" for no projection / non-Avro
    * @param schemaId Confluent schema id the Avro writer schema is registered under (ignored for JSON)
+   * @param skipParseErrors Flink's {@code ignore-parse-errors}: an undecodable message contributes no
+   *     rows instead of failing the decode (honored by the JSON-decoded formats — plain JSON and the
+   *     CDC envelopes; other formats are only routed with it off)
    */
   public static native long createDecoder(
       int format,
@@ -799,7 +802,8 @@ public final class Native {
       long schemaAddress,
       String avroSchema,
       String readerAvroSchema,
-      int schemaId);
+      int schemaId,
+      boolean skipParseErrors);
 
   /**
    * Creates a protobuf message decoder (Flink's {@code protobuf} format: bare message bytes, no

@@ -12182,7 +12182,8 @@ enum RowSource {
 /// batch: the physical columns plus a trailing `$row_kind$` byte, with one input message fanning out to
 /// 0–2 output rows (an update becomes UPDATE_BEFORE + UPDATE_AFTER; a tombstone/empty message, zero).
 /// An unknown op or a null pre-image on an update/delete *fails* (Flink's default throw), never a silent
-/// drop — the planner only routes here when `ignore-parse-errors` is off, so failing matches Flink.
+/// drop — matching Flink's default mode; with `ignore-parse-errors` the wrapping [`MessageDecoder`]
+/// isolates each message and turns those failures into per-message skips, matching Flink's skip mode.
 /// This mirrors Flink's `*JsonDeserializationSchema` — decode the envelope to a row, then emit the
 /// physical row(s) by op with a `RowKind` — but vectorized: every body's envelope is decoded in one
 /// `arrow-json` pass, then each physical column is gathered with a single `interleave` choosing the
@@ -12331,7 +12332,17 @@ impl CdcJsonDecoder {
 /// `CdcJsonDecoder`, and `raw` is a passthrough. Both the shallow path (Flink polls bytes, hands them
 /// here) and the native source (rdkafka polls bytes, hands them here) feed the *same* `MessageDecoder`;
 /// only who produces the body batch differs.
-enum MessageDecoder {
+///
+/// `skip_errors` is Flink's `ignore-parse-errors`: an undecodable message contributes no rows instead
+/// of failing the decode. Flink implements it as a catch-everything around each message's decode, so
+/// the native equivalent is per-message isolation of the whole pipeline (JSON parse, envelope shape,
+/// value conversion) — see [`MessageDecoder::decode`].
+struct MessageDecoder {
+    decoder: FormatDecoder,
+    skip_errors: bool,
+}
+
+enum FormatDecoder {
     Json(JsonDecoder),
     Csv(CsvDecoder),
     Raw(RawDecoder),
@@ -12347,6 +12358,54 @@ enum MessageDecoder {
     Cdc(CdcJsonDecoder),
 }
 
+impl FormatDecoder {
+    fn decode(&self, body: &RecordBatch) -> RecordBatch {
+        match self {
+            FormatDecoder::Json(decoder) => decoder.decode(body),
+            FormatDecoder::Csv(decoder) => decoder.decode(body),
+            FormatDecoder::Raw(decoder) => decoder.decode(body),
+            FormatDecoder::Avro(store, reader) => decode_avro_body(store, reader, body, false),
+            FormatDecoder::BareAvro(store, reader) => decode_avro_body(store, reader, body, true),
+            FormatDecoder::Protobuf(decoder) => decoder.decode(body),
+            FormatDecoder::Cdc(decoder) => decoder.decode(body),
+        }
+    }
+
+    /// The output schema an empty skip-mode batch is built with.
+    fn output_schema(&self) -> SchemaRef {
+        match self {
+            FormatDecoder::Json(decoder) => decoder.schema.clone(),
+            FormatDecoder::Cdc(decoder) => decoder.output.clone(),
+            _ => panic!("skip-mode decode is only wired for JSON and CDC formats"),
+        }
+    }
+}
+
+/// Marks the current thread as inside a skip-mode per-message decode, silencing the panic hook for
+/// the expected decode failures (Flink's `ignore-parse-errors` skips silently; a hook line per bad
+/// message would flood the log). The hook replacement happens once, delegating to the previous hook
+/// for every panic outside a skip-mode decode.
+fn silence_expected_decode_panics<R>(work: impl FnOnce() -> R) -> R {
+    use std::cell::Cell;
+    use std::sync::Once;
+    thread_local! {
+        static IN_SKIP_DECODE: Cell<bool> = const { Cell::new(false) };
+    }
+    static INSTALL_HOOK: Once = Once::new();
+    INSTALL_HOOK.call_once(|| {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if !IN_SKIP_DECODE.with(Cell::get) {
+                previous(info);
+            }
+        }));
+    });
+    IN_SKIP_DECODE.with(|flag| flag.set(true));
+    let result = work();
+    IN_SKIP_DECODE.with(|flag| flag.set(false));
+    result
+}
+
 impl MessageDecoder {
     /// `format`: 0 = JSON, 2 = CSV, 3 = `raw`, 6 = debezium-json, 7 = ogg-json, 8 = maxwell-json,
     /// 9 = canal-json — all decoded against `output_schema` (CDC treats it as the physical columns);
@@ -12359,6 +12418,7 @@ impl MessageDecoder {
         avro_schema: &str,
         reader_avro_schema: &str,
         schema_id: i32,
+        skip_errors: bool,
     ) -> MessageDecoder {
         // A non-empty reader schema projects the writer record to a subset of fields (Avro resolution),
         // set when the planner pushes the query's projection into the decode.
@@ -12367,29 +12427,53 @@ impl MessageDecoder {
         } else {
             Some(arrow_avro::schema::AvroSchema::new(reader_avro_schema.to_string()))
         };
-        match format {
-            1 => MessageDecoder::Avro(avro_store(avro_schema, schema_id as u32), reader),
-            4 => MessageDecoder::BareAvro(avro_store(avro_schema, 0), reader),
-            2 => MessageDecoder::Csv(CsvDecoder::new(output_schema)),
-            3 => MessageDecoder::Raw(RawDecoder::new(output_schema)),
-            6 => MessageDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Debezium)),
-            7 => MessageDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Ogg)),
-            8 => MessageDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Maxwell)),
-            9 => MessageDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Canal)),
-            _ => MessageDecoder::Json(JsonDecoder::new(output_schema)),
-        }
+        let decoder = match format {
+            1 => FormatDecoder::Avro(avro_store(avro_schema, schema_id as u32), reader),
+            4 => FormatDecoder::BareAvro(avro_store(avro_schema, 0), reader),
+            2 => FormatDecoder::Csv(CsvDecoder::new(output_schema)),
+            3 => FormatDecoder::Raw(RawDecoder::new(output_schema)),
+            6 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Debezium)),
+            7 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Ogg)),
+            8 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Maxwell)),
+            9 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Canal)),
+            _ => FormatDecoder::Json(JsonDecoder::new(output_schema)),
+        };
+        MessageDecoder { decoder, skip_errors }
     }
 
     fn decode(&self, body: &RecordBatch) -> RecordBatch {
-        match self {
-            MessageDecoder::Json(decoder) => decoder.decode(body),
-            MessageDecoder::Csv(decoder) => decoder.decode(body),
-            MessageDecoder::Raw(decoder) => decoder.decode(body),
-            MessageDecoder::Avro(store, reader) => decode_avro_body(store, reader, body, false),
-            MessageDecoder::BareAvro(store, reader) => decode_avro_body(store, reader, body, true),
-            MessageDecoder::Protobuf(decoder) => decoder.decode(body),
-            MessageDecoder::Cdc(decoder) => decoder.decode(body),
+        if !self.skip_errors {
+            return self.decoder.decode(body);
         }
+        // `ignore-parse-errors`: Flink wraps each message's whole decode in a catch-everything and
+        // skips the message on any failure — malformed JSON, a bad envelope shape, an unconvertible
+        // value alike. The native equivalent: decode the batch optimistically, and only when
+        // something in it fails, redo it message by message, dropping the messages that fail. The
+        // per-message state is fresh each try, so a failed attempt leaves nothing behind.
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+        silence_expected_decode_panics(|| {
+            if let Ok(batch) = catch_unwind(AssertUnwindSafe(|| self.decoder.decode(body))) {
+                return batch;
+            }
+            let mut kept = Vec::new();
+            for row in 0..body.num_rows() {
+                let single = body.slice(row, 1);
+                if let Ok(batch) = catch_unwind(AssertUnwindSafe(|| self.decoder.decode(&single))) {
+                    if batch.num_rows() > 0 {
+                        kept.push(batch);
+                    }
+                }
+            }
+            match kept.len() {
+                0 => RecordBatch::new_empty(self.decoder.output_schema()),
+                1 => kept.into_iter().next().unwrap(),
+                _ => {
+                    let schema = kept[0].schema();
+                    arrow::compute::concat_batches(&schema, &kept)
+                        .expect("skip-mode batch concat failed")
+                }
+            }
+        })
     }
 
     /// Registers a writer schema under a Confluent schema id, so subsequent decodes resolve messages
@@ -12397,8 +12481,8 @@ impl MessageDecoder {
     /// this on any other format is a wiring bug.
     fn register_writer_schema(&mut self, id: u32, schema: &str) {
         use arrow_avro::schema::{AvroSchema, Fingerprint};
-        match self {
-            MessageDecoder::Avro(store, _) => {
+        match &mut self.decoder {
+            FormatDecoder::Avro(store, _) => {
                 store
                     .set(Fingerprint::Id(id), AvroSchema::new(schema.to_string()))
                     .expect("failed to register avro schema");
@@ -12438,6 +12522,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createDecoder
     avro_schema: JString<'local>,
     reader_avro_schema: JString<'local>,
     schema_id: jint,
+    skip_parse_errors: jboolean,
 ) -> jlong {
     // Avro (1, 4) derives its own schema from the writer schema, so those callers pass 0/0 for the
     // schema C structs; JSON/CSV/raw (0, 2, 3) decode against the exported target schema.
@@ -12456,6 +12541,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createDecoder
         &avro_schema,
         &reader_avro_schema,
         schema_id,
+        skip_parse_errors != 0,
     ))
 }
 
@@ -12484,7 +12570,10 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createProtobu
     } else {
         descriptor
     };
-    let decoder = MessageDecoder::Protobuf(ProtobufDecoder::new(&descriptor, &message_name));
+    let decoder = MessageDecoder {
+        decoder: FormatDecoder::Protobuf(ProtobufDecoder::new(&descriptor, &message_name)),
+        skip_errors: false,
+    };
     into_handle(decoder)
 }
 
@@ -12706,9 +12795,12 @@ impl KafkaSplitReader {
             // Prune the descriptor to the output schema's fields so ptars builds only those columns
             // (projection pushed into the source); a no-op when the schema is the full message.
             let pruned = prune_descriptor_set(&proto_descriptor, &proto_message_name, &output_schema);
-            MessageDecoder::Protobuf(ProtobufDecoder::new(&pruned, &proto_message_name))
+            MessageDecoder {
+                decoder: FormatDecoder::Protobuf(ProtobufDecoder::new(&pruned, &proto_message_name)),
+                skip_errors: false,
+            }
         } else {
-            MessageDecoder::new(format, output_schema, avro_schema, reader_avro_schema, schema_id)
+            MessageDecoder::new(format, output_schema, avro_schema, reader_avro_schema, schema_id, false)
         };
 
         KafkaSplitReader {
@@ -13273,7 +13365,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_benchmarkNati
     let queue = unsafe { rdsys::rd_kafka_queue_get_consumer(consumer.client().native_ptr()) };
 
     // The same decoder the pipelined path builds, just driven inline.
-    let decoder = MessageDecoder::new(format, schema, &avro_schema, "", schema_id);
+    let decoder = MessageDecoder::new(format, schema, &avro_schema, "", schema_id, false);
     let body_schema = Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)]));
 
     // Callback drain (one queue lock per poll, not per message — see benchmarkConsumeOnly); each
@@ -14860,7 +14952,7 @@ mod tests {
     #[test]
     fn csv_decode_emits_one_row_per_record() {
         let body = bodies(vec![Some(b"1,a,1.5"), Some(b"2,b,2.5")]);
-        let out = MessageDecoder::new(2, json_schema(), "", "", 0).decode(&body);
+        let out = MessageDecoder::new(2, json_schema(), "", "", 0, false).decode(&body);
         assert_eq!(out.num_rows(), 2);
         let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
         assert_eq!(id.values(), &[1, 2]);
@@ -14876,7 +14968,7 @@ mod tests {
         let schema: SchemaRef =
             Arc::new(Schema::new(vec![Field::new("payload", DataType::Utf8, true)]));
         let body = bodies(vec![Some(b"hello"), Some(b"world")]);
-        let out = MessageDecoder::new(3, schema, "", "", 0).decode(&body);
+        let out = MessageDecoder::new(3, schema, "", "", 0, false).decode(&body);
         assert_eq!(out.num_rows(), 2);
         let col = out.column(0).as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
         assert_eq!((col.value(0), col.value(1)), ("hello", "world"));
@@ -14916,7 +15008,7 @@ mod tests {
         let m1 = datum(2, "b", 2.5);
         let body = bodies(vec![Some(m0.as_slice()), Some(m1.as_slice())]);
 
-        let out = MessageDecoder::new(4, Arc::new(Schema::empty()), reader_schema, "", 0).decode(&body);
+        let out = MessageDecoder::new(4, Arc::new(Schema::empty()), reader_schema, "", 0, false).decode(&body);
 
         assert_eq!(out.num_rows(), 2);
         let id = out.column_by_name("id").unwrap().as_any().downcast_ref::<Int64Array>().unwrap();
@@ -14974,7 +15066,7 @@ mod tests {
             "aliases":["org.apache.flink.avro.generated.record"],"fields":[
             {"name":"name","type":"string"},{"name":"id","type":"long"}]}"#;
 
-        let mut decoder = MessageDecoder::new(1, Arc::new(Schema::empty()), "", reader, 0);
+        let mut decoder = MessageDecoder::new(1, Arc::new(Schema::empty()), "", reader, 0, false);
         decoder.register_writer_schema(7, writer_v1);
         decoder.register_writer_schema(9, writer_v2);
 
@@ -15014,7 +15106,7 @@ mod tests {
         let delete = br#"{"before":{"id":3,"name":"c","score":4.5},"after":null,"op":"d"}"#;
         let body = bodies(vec![Some(insert.as_slice()), Some(update), Some(delete)]);
 
-        let out = MessageDecoder::new(6, json_schema(), "", "", 0).decode(&body);
+        let out = MessageDecoder::new(6, json_schema(), "", "", 0, false).decode(&body);
 
         // 1 (insert) + 2 (update) + 1 (delete) physical rows.
         assert_eq!(out.num_rows(), 4);
@@ -15040,7 +15132,7 @@ mod tests {
         let insert = br#"{"before":null,"after":{"id":1,"name":"a","score":1.5},"op":"r"}"#;
         let body = bodies(vec![None, Some(insert.as_slice())]);
 
-        let out = MessageDecoder::new(6, json_schema(), "", "", 0).decode(&body);
+        let out = MessageDecoder::new(6, json_schema(), "", "", 0, false).decode(&body);
 
         assert_eq!(out.num_rows(), 1);
         let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
@@ -15056,7 +15148,7 @@ mod tests {
     #[should_panic(expected = "unknown CDC operation")]
     fn cdc_unknown_op_fails() {
         let unknown = br#"{"before":null,"after":{"id":9,"name":"z","score":9.5},"op":"x"}"#;
-        MessageDecoder::new(6, json_schema(), "", "", 0).decode(&bodies(vec![Some(unknown.as_slice())]));
+        MessageDecoder::new(6, json_schema(), "", "", 0, false).decode(&bodies(vec![Some(unknown.as_slice())]));
     }
 
     // A null "before" on an update fails (Flink's REPLICA_IDENTITY error), not a silent drop.
@@ -15064,7 +15156,64 @@ mod tests {
     #[should_panic(expected = "null \"before\"")]
     fn cdc_debezium_null_before_update_fails() {
         let update = br#"{"before":null,"after":{"id":2,"name":"b","score":2.5},"op":"u"}"#;
-        MessageDecoder::new(6, json_schema(), "", "", 0).decode(&bodies(vec![Some(update.as_slice())]));
+        MessageDecoder::new(6, json_schema(), "", "", 0, false).decode(&bodies(vec![Some(update.as_slice())]));
+    }
+
+    // Skip mode (`ignore-parse-errors`): every per-message failure — malformed JSON, an unknown op, a
+    // null pre-image on an update — drops that message, and the surrounding good messages still decode,
+    // matching Flink's catch-everything-per-message skip.
+    #[test]
+    fn cdc_debezium_skip_mode_drops_undecodable_messages() {
+        let insert = br#"{"before":null,"after":{"id":1,"name":"a","score":1.5},"op":"c"}"#;
+        let malformed = br#"{"before":null,"after":{"id":2,"#;
+        let unknown_op = br#"{"before":null,"after":{"id":3,"name":"x","score":3.5},"op":"x"}"#;
+        let null_before = br#"{"before":null,"after":{"id":4,"name":"y","score":4.5},"op":"u"}"#;
+        let delete = br#"{"before":{"id":5,"name":"c","score":5.5},"after":null,"op":"d"}"#;
+        let body = bodies(vec![
+            Some(insert.as_slice()),
+            Some(malformed),
+            Some(unknown_op),
+            Some(null_before),
+            Some(delete),
+        ]);
+
+        let out = MessageDecoder::new(6, json_schema(), "", "", 0, true).decode(&body);
+
+        assert_eq!(out.num_rows(), 2);
+        let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(id.values(), &[1, 5]);
+        let kinds = out.column(3).as_any().downcast_ref::<Int8Array>().unwrap();
+        assert_eq!(kinds.values(), &[0, 3]); // INSERT + DELETE; the three bad messages vanish
+    }
+
+    // Skip mode on the plain JSON decode (`json` + ignore-parse-errors): a malformed body or an
+    // unconvertible value drops only that message.
+    #[test]
+    fn json_skip_mode_drops_undecodable_messages() {
+        let good = br#"{"id":1,"name":"a","score":1.5}"#;
+        let malformed = br#"{"id":2,"name":"#;
+        let bad_type = br#"{"id":"abc","name":"c","score":3.5}"#;
+        let also_good = br#"{"id":4,"name":"d","score":4.5}"#;
+        let body =
+            bodies(vec![Some(good.as_slice()), Some(malformed), Some(bad_type), Some(also_good)]);
+
+        let out = MessageDecoder::new(0, json_schema(), "", "", 0, true).decode(&body);
+
+        assert_eq!(out.num_rows(), 2);
+        let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(id.values(), &[1, 4]);
+    }
+
+    // Skip mode with nothing to skip takes the batched fast path and decodes everything.
+    #[test]
+    fn json_skip_mode_clean_batch_decodes_in_full() {
+        let a = br#"{"id":1,"name":"a","score":1.5}"#;
+        let b = br#"{"id":2,"name":"b","score":2.5}"#;
+        let body = bodies(vec![Some(a.as_slice()), Some(b)]);
+
+        let out = MessageDecoder::new(0, json_schema(), "", "", 0, true).decode(&body);
+
+        assert_eq!(out.num_rows(), 2);
     }
 
     // OGG JSON (format 7): same nested before/after layout as Debezium, but the op field is `op_type`
@@ -15077,7 +15226,7 @@ mod tests {
         let delete = br#"{"before":{"id":3,"name":"c","score":4.5},"after":null,"op_type":"D"}"#;
         let body = bodies(vec![Some(insert.as_slice()), Some(update), Some(delete)]);
 
-        let out = MessageDecoder::new(7, json_schema(), "", "", 0).decode(&body);
+        let out = MessageDecoder::new(7, json_schema(), "", "", 0, false).decode(&body);
 
         assert_eq!(out.num_rows(), 4); // insert + (update→2) + delete
         let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
@@ -15097,7 +15246,7 @@ mod tests {
         let delete = br#"{"data":{"id":3,"name":"c","score":3.5},"type":"delete"}"#;
         let body = bodies(vec![Some(insert.as_slice()), Some(update), Some(delete)]);
 
-        let out = MessageDecoder::new(8, json_schema(), "", "", 0).decode(&body);
+        let out = MessageDecoder::new(8, json_schema(), "", "", 0, false).decode(&body);
 
         assert_eq!(out.num_rows(), 4);
         let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
@@ -15125,7 +15274,7 @@ mod tests {
         let ddl = br#"{"data":null,"type":"CREATE"}"#;
         let body = bodies(vec![Some(insert.as_slice()), Some(update), Some(ddl)]);
 
-        let out = MessageDecoder::new(9, json_schema(), "", "", 0).decode(&body);
+        let out = MessageDecoder::new(9, json_schema(), "", "", 0, false).decode(&body);
 
         // 2 inserts + (update → UB + UA); CREATE dropped.
         assert_eq!(out.num_rows(), 4);

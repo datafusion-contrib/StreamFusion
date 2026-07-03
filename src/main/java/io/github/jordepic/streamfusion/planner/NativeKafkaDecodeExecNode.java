@@ -97,6 +97,12 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
             : "";
     ConfluentSchemaRegistry registry =
         format == CONFLUENT_AVRO ? ConfluentSchemaRegistry.fromOptions(options) : null;
+    // Flink's ignore-parse-errors: the native decode skips an undecodable message the way Flink's
+    // catch-everything-per-message does. Honored by the JSON-decoded formats (plain JSON and the CDC
+    // envelopes); the planner only routes other formats with it off.
+    String formatName = options.getOrDefault("value.format", options.get("format"));
+    boolean skipParseErrors =
+        "true".equalsIgnoreCase(options.get(formatName + ".ignore-parse-errors"));
     // Protobuf decodes against the descriptor of the generated message class the table names — extracted
     // by reflection so this carries no compile-time protobuf-java dependency (the class and its runtime
     // are supplied by the Flink distribution, like the protobuf format itself).
@@ -117,7 +123,8 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
                 0,
                 protoDescriptor,
                 protoMessageName,
-                registry));
+                registry,
+                skipParseErrors));
     return decoded.getTransformation();
   }
 }

@@ -310,7 +310,7 @@ class KafkaIngestBenchmark {
               allocator,
               dictionaries,
               (arrayAddress, schemaAddress) ->
-                  Native.createDecoder(0, arrayAddress, schemaAddress, "", "", 0));
+                  Native.createDecoder(0, arrayAddress, schemaAddress, "", "", 0, false));
       try {
         while (seen < MESSAGES) {
           ConsumerRecords<byte[], byte[]> records = consumer.poll(Duration.ofSeconds(5));
@@ -431,7 +431,7 @@ class KafkaIngestBenchmark {
         CDataDictionaryProvider dictionaries = new CDataDictionaryProvider();
         KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(props)) {
       consumer.subscribe(List.of(AVRO_TOPIC));
-      long handle = Native.createDecoder(1, 0, 0, avroSchema, "", SCHEMA_ID);
+      long handle = Native.createDecoder(1, 0, 0, avroSchema, "", SCHEMA_ID, false);
       try {
         while (seen < MESSAGES) {
           ConsumerRecords<byte[], byte[]> records = consumer.poll(Duration.ofSeconds(5));
