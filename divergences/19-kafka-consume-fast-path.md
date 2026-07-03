@@ -64,13 +64,17 @@ bounded reads.
 
 ## Net effect (10M msgs, 1 partition, M1 Max; consume+decode to Arrow, counted in Rust)
 
-The production split reader vs the shallow path, after all four changes (measured with the
-benchmark-grade `alloc-override` active; the default build keeps changes 2–4 and gives up the
-allocator's share until the targeted redirect ships):
+The production split reader vs the shallow path, after all four changes:
 
-| | shallow | native before | native after |
-|---|---|---|---|
-| Avro | 4.11M/s | 0.91x shallow | 5.21M/s (1.27x) |
-| JSON | 2.75M/s | 1.13x shallow | 3.87M/s (1.41x) |
+| 10M msgs | with `alloc-override` | default build (no override) |
+|---|---|---|
+| Avro | 5.21M/s (1.27x shallow) | 3.87M/s (0.98x) |
+| JSON | 3.87M/s (1.41x shallow) | 2.49M/s (1.16x) |
+| raw consume | 5.34M/s (1.21x the Java client) | 3.94M/s (0.85x; was 0.73x) |
 
-Raw consume (no decode): 3.33M/s (0.73x the Java client) → 5.34M/s (1.21x).
+The allocator carries a large share of the micro-benchmark win — which is why the targeted
+librdkafka→mimalloc redirect is the priority follow-up. The end-to-end SQL picture is stronger
+than the micro-benchmark even on the default build: in the Nexmark Kafka ladder (2M events,
+q0–q2), the native source rung runs ~2x stock Flink and 1.5–1.7x the shallow rung on every format
+(docs/benchmarks.md) — Nexmark's decode is heavier than the 3-field micro-messages, and the SQL
+shallow rung carries Flink source-operator overhead the plain-JVM micro-harness does not.

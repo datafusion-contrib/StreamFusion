@@ -254,25 +254,23 @@ stock Flink. Three rungs, each one layer more native (projection pushed in at ev
 
 | Format | Flink (ev/s) | JVM transpose | Rust transpose, JVM poll | Rust poll + Rust transpose |
 |---|---|---|---|---|
-| JSON q0 | 0.74 M | 1.07× | 1.17× | **1.27×** |
-| JSON q1 | 0.77 M | 1.03× | 1.12× | **1.23×** |
-| JSON q2 | 0.65 M | 1.09× | 1.30× | **1.41×** |
-| Avro q0 | 0.85 M | 1.03× | **1.63×** | 1.57× |
-| Avro q1 | 0.85 M | 0.96× | **1.65×** | 1.57× |
-| Avro q2 | 0.84 M | 1.07× | **1.80×** | 1.61× |
-| Protobuf q0 | 1.18 M | 1.07× | **1.33×** | 1.15× |
-| Protobuf q1 | 1.20 M | 1.04× | **1.29×** | 1.13× |
-| Protobuf q2 | 1.21 M | 1.14× | **1.37×** | 1.10× |
+| JSON q0 | 0.75 M | 1.07× | 1.22× | **2.07×** |
+| JSON q1 | 0.78 M | 1.03× | 1.12× | **1.96×** |
+| JSON q2 | 0.82 M | 1.07× | 1.13× | **1.97×** |
+| Avro q0 | 0.90 M | 0.98× | 1.59× | **2.43×** |
+| Avro q1 | 0.90 M | 0.92× | 1.49× | **2.47×** |
+| Avro q2 | 0.88 M | 1.07× | 1.67× | **2.63×** |
+| Protobuf q0 | 1.20 M | 1.07× | 1.28× | **2.05×** |
+| Protobuf q1 | 1.23 M | 0.99× | 1.21× | **1.98×** |
+| Protobuf q2 | 1.23 M | 1.17× | 1.35× | **2.03×** |
 
-**The best rung depends on the format.** **JSON → the full native source wins (1.23–1.41×)**, and
-every rung now stacks: the simd-json decode alone is 1.12–1.30× (it was ~parity when the decode was
-tokenize-bound on arrow-json's scalar parse), and owning the **poll** adds another ~0.1× on top.
-**Avro / Protobuf → the Rust decode (JVM poll) wins** (1.6–1.8× / 1.3–1.4×): the full native source
-*trails* it because it plateaus at a **~1.33–1.36 M ev/s ceiling regardless of format** (its per-poll
-FFI drain + per-partition batching + emit overhead — fine when decode is the bottleneck, a cap once
-the binary decode is faster than it; JSON's ~0.94 M ev/s stays under that ceiling, which is why the
-source rung still stacks for it). Next lever: lift that source ceiling (fewer FFI round-trips /
-larger drains).
+**The full native source is the best rung on every format — roughly 2× stock Flink** and 1.5–1.7×
+the shallow decode rung. An earlier version of this table had the source rung *trailing* the
+shallow rung on Avro/Protobuf, capped at a ~1.35 M ev/s ceiling; the consume fast path
+(divergences/19 — one-lock callback drain, inline decode instead of a decode thread, metadata
+warm-up before assign, and the `check.crcs` default) removed that ceiling, and the source rung
+now runs 2.2–2.5 M ev/s end to end. These numbers are the default build — the benchmark-grade
+allocator override (another ~19% of raw consume) is not included.
 
 **Reference — the transpose floor (no Kafka).** The same q0/q1/q2 with the source replaced by the
 in-process `nexmark` datagen emitting `RowData` directly — no Kafka client, no format decode, just the

@@ -127,7 +127,8 @@ thread is gone — with consume this fast, inline decode won on every format (Fl
 pipelines fetcher vs task thread) — and the reader primes broker metadata before `assign()`
 (a cold assign parks partitions in leader-query for ~0.5s until the periodic refresh). Net:
 production consume+decode past the shallow path on both formats — Avro 5.21M/s (1.27x), JSON
-3.87M/s (1.41x) — within noise of a hand-rolled ideal consume loop.
+3.87M/s (1.41x) with the override; on the default build the end-to-end Nexmark Kafka ladder has
+the native source rung at ~2x stock Flink and 1.5–1.7x the shallow rung on every format.
 
 **Projection pushdown into every decoder** (`64ddc2a`, `83b3d69`, `86908f1`, `4af9d63`). The query's
 projection narrows what the decoder builds: JSON decodes straight to the narrowed schema, Avro keeps
