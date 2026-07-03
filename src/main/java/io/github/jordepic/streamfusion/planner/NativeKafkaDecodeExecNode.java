@@ -36,6 +36,10 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
   // Bytes accumulated into one Arrow body batch before a native decode (matches the columnar batch size
   // the rest of the pipeline uses).
   private static final int BATCH_SIZE = 8192;
+  // Longest a buffered record waits before a partial batch flushes — the latency bound the batching
+  // trades against per-batch decode efficiency (the native Kafka source's poll timeout is the same
+  // order, so both ingest paths cap tail latency alike).
+  private static final long FLUSH_INTERVAL_MILLIS = 100;
   // The MessageDecoder codes for the formats whose decode needs a derived Avro schema.
   private static final int CONFLUENT_AVRO = 1;
   private static final int BARE_AVRO = 4;
@@ -124,7 +128,8 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
                 protoDescriptor,
                 protoMessageName,
                 registry,
-                skipParseErrors));
+                skipParseErrors,
+                FLUSH_INTERVAL_MILLIS));
     return decoded.getTransformation();
   }
 }

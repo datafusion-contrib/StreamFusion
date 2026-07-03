@@ -8,11 +8,10 @@ the operator fetches each frame's writer schema from the registry by id on first
 `GET /schemas/ids/<id>`, no Confluent client dependency), patches the reader's record names onto it as
 aliases (arrow-avro enforces the spec's name check; Avro Java skips it), and registers it into the
 native store — following mid-stream schema evolution like Flink's own deserializer; auth/SSL/explicit-
-schema registry options fall back (coverage doc §5). **Remaining tail only:** (a) a **time-based
-flush** for an unbounded stream that stays below the batch size (latency); (b) **Maxwell/Canal**
-exact-parity auto-routing (decoded, but parity-gated to fallback today); (c) **CSV/JSON *file*** sources
+schema registry options fall back (coverage doc §5). **Remaining tail only:** (a) **Maxwell/Canal**
+exact-parity auto-routing (decoded, but parity-gated to fallback today); (b) **CSV/JSON *file*** sources
 (the lower-priority file formats — Avro OCF was dropped, arrow-avro can't read Flink's top-level-union);
-(d) a **format-option parity audit** (found 2026-07-03 while wiring `ignore-parse-errors`): the JSON
+(c) a **format-option parity audit** (found 2026-07-03 while wiring `ignore-parse-errors`): the JSON
 decode ignores `json.fail-on-missing-field=true` and `json.timestamp-format.standard` (the native
 timestamp parser is lenient — it accepts ISO-8601 `T`-separated strings where Flink's default `SQL`
 standard throws), and the CSV decode ignores its delimiter/quote/null-literal options — each is a
@@ -128,7 +127,7 @@ BUILT and unit-tested** in `MessageDecoder` (native/src/lib.rs). `createDecoder(
 The CDC family (Debezium/OGG/Maxwell/Canal) is also built, and the planner rule that auto-routes a SQL
 `format=…` table to the native decode operator is wired (`KafkaTables` → `NativeKafkaDecodeExecNode`)
 for JSON, Confluent/bare Avro, CSV, protobuf, and Debezium/OGG. See the Status line for the residual
-tail (time-based flush; Maxwell/Canal auto-routing; CSV/JSON file sources).
+tail (Maxwell/Canal auto-routing; CSV/JSON file sources; format-option parity audit).
 
 ### JSON — ✅ built (format 0)
 - Flink: `~/data/flink/flink-formats/flink-json/src/main/java/org/apache/flink/formats/json/JsonRowDataDeserializationSchema.java`
@@ -394,9 +393,11 @@ The native **decoders** are shared; the two source kinds wrap them differently:
   though we replace the decode). **Remaining:** wire Avro (the `AvroSchemaConverter` top-level-union
   schema handling) and protobuf (reflective descriptor extraction off `message-class-name`) into
   `decodeFormatCode`/the exec node — the decoders already exist (formats 1/4/Protobuf); only the
-  schema/descriptor extraction at plan time is left. Also: the operator flushes per batch or at
-  end-of-input — an unbounded stream below the batch size needs a time-based flush (latency), a
-  follow-up. (`NativeJsonBytesDecodeOperator` is now superseded by the general `NativeBytesDecodeOperator`
+  schema/descriptor extraction at plan time is left. The operator flushes on batch size, end of
+  input, a processing-time interval (the latency bound for a stream below the batch size — shipped
+  2026-07-03), and before each checkpoint barrier (buffered bytes are records the source's checkpoint
+  already covers; the pre-barrier flush keeps them from being lost on restore).
+  (`NativeJsonBytesDecodeOperator` is now superseded by the general `NativeBytesDecodeOperator`
   — only a benchmark still references the old one.)
 - **Phase 3 — CDC family. DONE for Debezium + OGG JSON (2026-06-26).** `CdcJsonDecoder` decodes the
   `{before, after, op}` envelope in one JSON-decode pass and `interleave`s the right before/after struct

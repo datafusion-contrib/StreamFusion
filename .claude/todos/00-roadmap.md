@@ -121,12 +121,12 @@ here when the ticket is deleted.
    `SUM`/`MIN`/`MAX` `DISTINCT`, byte-exact number↔string `CAST`, byte-exact decimal division.
 4. **Legacy group windows** (ticket 43): map `GROUP BY TUMBLE/HOP(...)` onto the existing native
    window operators — the event-time `SESSION` exception is the template.
-5. **Cheap wins, interleaved:** the time-based decode flush and the format-option parity audit
-   (ticket 32). (Shipped 2026-07-03: `avro-confluent` routing — registry-fed writer schemas by frame
-   id, decode path; the lookup-join extensions: calc/residual/pre-filter/constant-keys + distributed
-   execution, via Flink's own generated runners driven per Arrow batch — ticket 40 now holds only
-   the columnar-assembly perf item; and `ignore-parse-errors` skip mode, native for the JSON-decoded
-   formats incl. CDC, gated to fallback for CSV/protobuf.)
+5. **Cheap wins, interleaved:** the format-option parity audit (ticket 32). (Shipped 2026-07-03:
+   `avro-confluent` routing — registry-fed writer schemas by frame id, decode path; the lookup-join
+   extensions: calc/residual/pre-filter/constant-keys + distributed execution, via Flink's own
+   generated runners driven per Arrow batch — ticket 40 now holds only the columnar-assembly perf
+   item; `ignore-parse-errors` skip mode, native for the JSON-decoded formats incl. CDC, gated to
+   fallback for CSV/protobuf; and the decode operator's time-based + pre-barrier flushes.)
 6. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
    filesystems (`hdfs:`/`s3:`) for the native source/sink; currently `file:` only. **Deferred by
    direction until generalized operator support lands** — broaden what we can run (the ticket 11

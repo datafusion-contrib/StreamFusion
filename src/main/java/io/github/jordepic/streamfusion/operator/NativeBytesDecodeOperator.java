@@ -17,6 +17,7 @@ import org.apache.avro.Schema;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.BoundedOneInput;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
+import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
 
@@ -33,8 +34,12 @@ import org.apache.flink.table.types.logical.RowType;
  * {@code $row_kind$} byte); Avro variants against {@code avroSchema} (registered at {@code schemaId} for
  * Confluent, synthetic id 0 for bare) — or, for Confluent with a {@code registry}, against writer
  * schemas fetched by frame id at runtime and resolved to {@code readerAvroSchema}; protobuf against
- * {@code protoDescriptor}/{@code protoMessageName}. Stateless across batches; flushes the partial batch
- * at end of input.
+ * {@code protoDescriptor}/{@code protoMessageName}. Stateless across batches — kept so by flushing the
+ * partial batch wherever it would otherwise linger: at end of input, before each checkpoint barrier
+ * (buffered bytes are records the source's checkpoint already covers; unflushed they would be lost on
+ * restore), and on a processing-time timer {@code flushIntervalMillis} after a batch starts filling, so
+ * a stream running below the batch size is delayed by at most that bound (Flink's own decode emits per
+ * record; the timer caps the latency the batching trades for throughput).
  */
 public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<byte[], ArrowBatch>, BoundedOneInput {
@@ -56,6 +61,8 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
   private final ConfluentSchemaRegistry registry;
   // Flink's ignore-parse-errors: an undecodable message contributes no rows instead of failing.
   private final boolean skipParseErrors;
+  // Longest a buffered record waits before a partial batch flushes (0 = no time-based flush).
+  private final long flushIntervalMillis;
 
   private transient BufferAllocator allocator;
   private transient long handle;
@@ -63,6 +70,7 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
   private transient int count;
   private transient Set<Integer> registeredSchemaIds;
   private transient Schema readerSchema;
+  private transient boolean flushTimerPending;
 
   public NativeBytesDecodeOperator(
       RowType outputType,
@@ -83,7 +91,8 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
         protoDescriptor,
         protoMessageName,
         null,
-        false);
+        false,
+        0);
   }
 
   public NativeBytesDecodeOperator(
@@ -96,7 +105,8 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
       byte[] protoDescriptor,
       String protoMessageName,
       ConfluentSchemaRegistry registry,
-      boolean skipParseErrors) {
+      boolean skipParseErrors,
+      long flushIntervalMillis) {
     this.outputType = outputType;
     this.batchSize = batchSize;
     this.format = format;
@@ -107,6 +117,7 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
     this.protoMessageName = protoMessageName;
     this.registry = registry;
     this.skipParseErrors = skipParseErrors;
+    this.flushIntervalMillis = flushIntervalMillis;
   }
 
   @Override
@@ -158,11 +169,37 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
     body.setSafe(count++, element.getValue());
     if (count >= batchSize) {
       flush();
+    } else if (count == 1 && flushIntervalMillis > 0 && !flushTimerPending) {
+      // The first record of a batch starts the latency clock: whatever has buffered by then flushes,
+      // so a stream below the batch size waits at most the interval. One timer is outstanding at a
+      // time — a firing re-arms on the next batch's first record.
+      flushTimerPending = true;
+      ProcessingTimeService timeService = getProcessingTimeService();
+      timeService.registerTimer(
+          timeService.getCurrentProcessingTime() + flushIntervalMillis,
+          timestamp -> {
+            flushTimerPending = false;
+            if (count > 0) {
+              flush();
+            }
+          });
     }
   }
 
   @Override
   public void endInput() {
+    if (count > 0) {
+      flush();
+    }
+  }
+
+  /**
+   * Flushes the partial batch before the checkpoint barrier is forwarded: the buffered bytes are
+   * records the source's checkpointed offsets already count as delivered, and this operator snapshots
+   * no state — unflushed they would vanish on restore. The same contract as Flink's bundle operators.
+   */
+  @Override
+  public void prepareSnapshotPreBarrier(long checkpointId) {
     if (count > 0) {
       flush();
     }
