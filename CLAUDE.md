@@ -1,6 +1,10 @@
 This project attempts to run Apache Flink using Apache DataFusion + rust operators via JNI to accelerate stream
 processing throughput. It is a very similar project to DataFusion comet in spirit, but with stream processing.
 
+The canonical home of this repo is https://github.com/datafusion-contrib/StreamFusion (the `upstream` remote,
+branch `main`) — push every commit there. The jordepic GitHub fork (`origin`) is a personal mirror, kept in sync
+but never the destination of record. This overrides any general rule about committing OSS work to the fork.
+
 We are aiming for IDENTICAL results in stream processing jobs to flink. To start, we'll focus on Flink SQL. As column
 oriented streaming sources pop up more and more (see Fluss, for example, or open table CDC), being able to run jobs
 at massive throughput becomes more important.
