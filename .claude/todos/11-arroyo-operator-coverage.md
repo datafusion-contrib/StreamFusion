@@ -1,11 +1,13 @@
 # Arroyo operator coverage — route everything Arroyo supports
 
-**Status:** open (tracking) — all window aggregates, OVER (subset), event-time INNER
-joins, the non-windowed `GROUP BY` aggregate (changelog emission *and* consumption, incl.
-MIN/MAX retraction), filter/projection, watermark, shuffle, and Parquet source/sink are done.
-Lookup join (sync + async) is done via the within-batch model. What remains is async UDF (ticket 01 —
-low priority, pure I/O) plus operator feature tails (outer/semi/anti joins, rank-number / RANK /
-retracting-input Top-N, OVER frames).
+**Status:** open (tracking) — all window aggregates, OVER (running + bounded frames, event-time and
+proctime), interval/window joins (event-time and proctime, INNER/LEFT/RIGHT/FULL + residual), the
+non-windowed `GROUP BY` aggregate (changelog emission *and* consumption, incl. MIN/MAX retraction),
+the regular updating join (INNER/LEFT/RIGHT/FULL/SEMI/ANTI), Top-N (rank number, `OFFSET`, retracting
+input), all four deduplication variants, window Top-N/dedup, event-time sort, filter/projection,
+watermark, shuffle, and Parquet source/sink are done. Lookup join (sync + async) is done via the
+within-batch model. What remains is async UDF (ticket 01 — low priority, pure I/O) plus the OVER
+aggregate tail: `AVG`, `COUNT(*)`, and decimal value columns (the matcher declines them today).
 **Source:** user direction — "everything Arroyo already supports, routed over"
 
 Goal: reach Flink parity (identical results, verified by the parity harness) for
@@ -29,15 +31,18 @@ is picked up. Operators are in `~/data/arroyo/crates/arroyo-worker/src/arrow/`.
       grouping keys (see `docs/aggregate-type-support.md`).
 
 ## Other stateful operators
-- [x] Window functions / OVER (`window_fn.rs`) — event-time running aggregates
-      (SUM/MIN/MAX/COUNT/AVG, UNBOUNDED PRECEDING) and ROW_NUMBER/RANK/DENSE_RANK,
-      incremental per-key state (divergences/11). Remaining: FIRST_VALUE/LAST_VALUE,
-      LAG/LEAD, NTILE, bounded frames, and proctime.
+- [x] Window functions / OVER (`window_fn.rs`) — running (UNBOUNDED PRECEDING), bounded-ROWS, and
+      bounded-RANGE event-time frames, plus proctime running/bounded-ROWS; aggregates
+      SUM/MIN/MAX/COUNT/FIRST_VALUE/LAST_VALUE over numeric value columns, and the window functions
+      ROW_NUMBER/RANK/DENSE_RANK; incremental per-key state (divergences/11). Remaining: `AVG`,
+      `COUNT(*)`, and decimal value columns (matcher declines). LAG/LEAD, FOLLOWING/descending
+      frames, and multiple window groups are parity (Flink rejects them in streaming).
 - [x] Interval/temporal join (`join_with_expiration.rs`) — event-time equi-join
       with an interval on the rowtimes; buffer + delegate the match to a DataFusion
       hash join, own watermark eviction (divergences/12). INNER/LEFT/RIGHT/FULL with
-      outer null-pads at watermark eviction, plus a residual non-equi predicate.
-      Remaining: proctime. (Semi/anti are regular joins, not time-bounded.)
+      outer null-pads at watermark eviction, plus a residual non-equi predicate. Proctime
+      bounds are native too (clock-timed rows, processing-time-timer eviction). Done —
+      no remaining tail. (Semi/anti are regular joins, not time-bounded.)
 - [~] Instant join (`instant_join.rs`) — its main use, a windowed equi-join, is covered
       by our window join (INNER, on shared window bounds, divergences/12) via a hash
       join rather than a direct port. The general per-instant primitive is not ported.
@@ -51,14 +56,14 @@ is picked up. Operators are in `~/data/arroyo/crates/arroyo-worker/src/arrow/`.
       delegation — divergences/14). INNER/LEFT/RIGHT/FULL/SEMI/ANTI, equi-key, null keys
       dropped, plus a residual non-equi predicate (per-row match-degree, RisingWave's
       degree table). Done — no remaining tail.
-- [x] Streaming Top-N (`ROW_NUMBER`) — append-only, rank ≤ N, rank number not projected;
-      per-partition bounded buffer emitting the insert/delete changelog (divergences/14).
-      Remaining: rank-number output (rank-shift updates), `RANK`/`DENSE_RANK`, an offset,
-      and a retracting input.
-- [x] Keep-first deduplication — `ROW_NUMBER() OVER (PARTITION BY k ORDER BY rowtime ASC) = 1`,
-      a rowtime-ordered rank-1 the host plans as an insert-only row-time deduplicate. Per key,
-      emit the minimum-rowtime row once the watermark reaches it; drop late rows. Keep-last
-      (descending) is retracting and falls back.
+- [x] Streaming Top-N (`ROW_NUMBER`) — append-only and retracting-input, rank ≤ N with an
+      optional `OFFSET`, rank number optionally projected (the rank-shift cascade);
+      per-partition buffer emitting the insert/delete changelog (divergences/14). Done — the
+      one matcher decline is a non-constant (variable) rank range; `RANK`/`DENSE_RANK` are
+      parity (Flink rejects them in streaming).
+- [x] Deduplication — all four variants: rowtime keep-first (insert-only, watermark-released)
+      and keep-last (retracting), and proctime keep-first/keep-last (arrival order, eager
+      emit). A value-ordered rank-1 is a Top-N (handled separately). Done — no remaining tail.
 - [x] Window Top-N / window deduplication — `WindowRank`/`WindowDeduplicate` over the windowing
       TVF: per window and partition key, keep the top-N (or first/last) rows and emit them when a
       watermark closes the window. Append-only; one native window-rank operator serves both

@@ -66,11 +66,13 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   bounded `RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW` frame (recomputed over the rowtime
   interval), over one ascending rowtime, each aggregate over its own (possibly different)
   bigint/int/smallint/tinyint/double/float value column (narrow ints / 4-byte float keep the host's
-  narrow result type). **Proctime** order is native too (arrival order, eager emit) for the running
-  and bounded-ROWS frames. Real gap: none beyond the parity cases — a bounded-RANGE frame over
-  proctime (wall-clock interval, non-deterministic), more than one window group, decimal bounded
-  frames, `FOLLOWING` frames, non-time/descending order, and `LAG`/`LEAD` are all parity (Flink
-  rejects or single-groups them in streaming).
+  narrow result type); `FIRST_VALUE`/`LAST_VALUE` and the window functions
+  `ROW_NUMBER`/`RANK`/`DENSE_RANK` (no value column, unbounded frame) are admitted too. **Proctime**
+  order is native as well (arrival order, eager emit) for the running and bounded-ROWS frames. Real
+  gaps: **`AVG`**, **`COUNT(*)`**, and a decimal/non-numeric value column (the matcher declines them
+  — see §2). A bounded-RANGE frame over proctime (wall-clock interval, non-deterministic), more than
+  one window group, decimal bounded frames, `FOLLOWING` frames, non-time/descending order, and
+  `LAG`/`LEAD` are all parity (Flink rejects or single-groups them in streaming).
 - **Deduplication** — all four variants are native: rowtime keep-first (insert-only, watermark-
   released) and keep-last (retracting), and proctime keep-first/keep-last (arrival order, no
   watermark). The proctime order key is materialized by the native `PROCTIME()` expression.

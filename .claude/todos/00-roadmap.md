@@ -43,8 +43,8 @@ here when the ticket is deleted.
   row↔Arrow conversion is paid only at host edges, so a native changelog chain has no per-operator
   transpose. Streaming Top-N now also projects the **rank number** (the `AppendOnlyTopNFunction`
   shift cascade — UPDATE_BEFORE/UPDATE_AFTER per shifted rank, plus the appended rank column).
-  Feature tails — `RANK`/`DENSE_RANK`, an offset, and retracting-input Top-N — are tracked in the
-  coverage tracker (ticket 11).
+  Top-N also handles an `OFFSET` and a retracting input; `RANK`/`DENSE_RANK` are parity (Flink
+  rejects them in streaming).
 - **Window aggregate input schemas:** all five aggregates over every non-decimal
   numeric value type (custom accumulators keep the host's type/precision) plus decimal MIN/MAX/COUNT;
   multiple value columns (`SUM(a), SUM(b)`); bigint/int/string/boolean/date/timestamp/decimal grouping
@@ -60,7 +60,8 @@ here when the ticket is deleted.
   table function** (stateless `TUMBLE`/`HOP`/`CUMULATE` window assignment, fanning rows out for
   hopping/cumulative; shares the window aggregate's assignment math). Columnar today: source, sink,
   filter/calc, all window aggregates (one- and two-phase), `OVER`, both joins, the windowing TVF,
-  **event-time sort** (`ORDER BY rowtime`), **keep-first deduplication** (rowtime `ROW_NUMBER … = 1`),
+  **event-time sort** (`ORDER BY rowtime`), **deduplication** (all four rowtime/proctime
+  keep-first/keep-last variants),
   **window Top-N / window deduplication** (over the windowing TVF), **`UNION ALL`** (a pure
   stream merge — no operator, just a `UnionTransformation` over the inputs' Arrow streams), and
   **`GROUPING SETS`/`CUBE`/`ROLLUP`** (a stateless `Expand` fan-out feeding the native GROUP BY) — a
@@ -136,12 +137,12 @@ here when the ticket is deleted.
   run: clean).
 
 ## Breadth / longer horizon
-- **Arroyo operator coverage tracker** (ticket 11): what remains is async UDF (ticket 01) plus operator
-  feature tails (rank-number / `RANK` / retracting-input Top-N, OVER
-  frames / `FIRST_VALUE`/`LAST_VALUE`, proctime variants). (Two-phase cumulative windows, event-time
-  joins incl. outer/semi/anti, the non-windowed GROUP BY aggregate, the regular updating join,
-  append-only Top-N, keep-first deduplication, window Top-N / window deduplication, and event-time
-  sort are now done.)
+- **Arroyo operator coverage tracker** (ticket 11): what remains is async UDF (ticket 01) plus the
+  OVER aggregate tail (`AVG`, `COUNT(*)`, decimal value columns). (Bounded/proctime OVER frames,
+  `FIRST_VALUE`/`LAST_VALUE`, proctime interval/window joins, joins incl. outer/semi/anti, the
+  non-windowed GROUP BY aggregate, the regular updating join, Top-N incl. rank number / offset /
+  retracting input, all four deduplication variants, window Top-N / window deduplication, and
+  event-time sort are now done.)
 - **Native Kafka source** (ticket 33): built, and now decisively faster than the shallow path on
   every format (divergences/19 — malloc override, `check.crcs` default, callback drain + inline
   decode; raw consume 1.21x the Java client). Remaining before the `kafkaSource` gate can default
