@@ -11,11 +11,13 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 
 /**
- * Non-windowed {@code GROUP BY COUNT(DISTINCT x)}: the native aggregate keeps a per-key
+ * Non-windowed {@code GROUP BY} DISTINCT aggregates. {@code COUNT(DISTINCT x)} keeps a per-key
  * value→multiplicity map (Flink's {@code DistinctAccumulator}) and reports the number of live
  * distinct values, growing it when a value first appears and shrinking it when its last occurrence is
- * retracted. The collapsed changelog must match the host. {@code SUM}/{@code MIN}/{@code MAX} DISTINCT
- * still fall back.
+ * retracted. {@code SUM(DISTINCT x)} shares the map and folds a running sum only as values enter and
+ * leave the set; {@code MIN}/{@code MAX(DISTINCT x)} run as their plain forms (the extreme ignores
+ * multiplicity). The collapsed changelog must match the host. A windowed DISTINCT aggregate falls
+ * back — the window operators fold every row, so routing it would over-count.
  */
 class FlinkCountDistinctSqlHarnessTest {
 
@@ -35,6 +37,51 @@ class FlinkCountDistinctSqlHarnessTest {
             + "FROM t GROUP BY k");
   }
 
+  @Test
+  void sumDistinctMatchesHost() throws Exception {
+    // Duplicates per key make SUM(DISTINCT v) differ from SUM(v); running both proves the distinct
+    // sum folds each value once while the plain sum folds every row.
+    NativeParity.assertChangelogParity(
+        FlinkCountDistinctSqlHarnessTest::environment,
+        "SELECT k, SUM(DISTINCT v) AS sdv, SUM(v) AS sv FROM t GROUP BY k");
+  }
+
+  @Test
+  void sumDistinctDoubleAndDecimalMatchesHost() throws Exception {
+    NativeParity.assertChangelogParity(
+        FlinkCountDistinctSqlHarnessTest::environment,
+        "SELECT k, SUM(DISTINCT d) AS sdd, SUM(DISTINCT dcm) AS sdec FROM t GROUP BY k");
+  }
+
+  @Test
+  void minMaxDistinctMatchesHost() throws Exception {
+    // MIN/MAX(DISTINCT) equal their plain forms; run both to pin that.
+    NativeParity.assertChangelogParity(
+        FlinkCountDistinctSqlHarnessTest::environment,
+        "SELECT k, MIN(DISTINCT v) AS mn, MAX(DISTINCT v) AS mx, MIN(DISTINCT s) AS ms "
+            + "FROM t GROUP BY k");
+  }
+
+  @Test
+  void sumDistinctOverRetractingInputMatchesHost() throws Exception {
+    // The inner GROUP BY emits a changelog, so the outer SUM(DISTINCT) sees retractions: a value
+    // must leave the running sum only when its last occurrence retracts.
+    NativeParity.assertChangelogParity(
+        FlinkCountDistinctSqlHarnessTest::environment,
+        "SELECT cnt, SUM(DISTINCT mx) AS sd FROM "
+            + "(SELECT k, COUNT(*) AS cnt, MAX(v) AS mx FROM t GROUP BY k) GROUP BY cnt");
+  }
+
+  @Test
+  void windowedDistinctFallsBack() throws Exception {
+    // The windowed form dedups inside the window; the native window operators would over-count, so
+    // the whole query must stay on Flink and still match.
+    NativeParity.assertFallback(
+        FlinkCountDistinctSqlHarnessTest::environment,
+        "SELECT window_start, SUM(DISTINCT v) AS sdv FROM TABLE(TUMBLE(TABLE t, DESCRIPTOR(ts),"
+            + " INTERVAL '1' SECOND)) GROUP BY window_start, window_end");
+  }
+
   private static TableEnvironment environment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
@@ -43,13 +90,20 @@ class FlinkCountDistinctSqlHarnessTest {
     // Repeats per key so distinct < total: k=1 has v {10,20} (10 twice), s {a,b}; k=2 has v {5}, s {c}.
     DataStream<Row> source =
         env.fromData(
-            Types.ROW_NAMED(new String[] {"k", "v", "s"}, Types.LONG, Types.LONG, Types.STRING),
-            Row.of(1L, 10L, "a"),
-            Row.of(1L, 10L, "a"),
-            Row.of(1L, 20L, "b"),
-            Row.of(2L, 5L, "c"),
-            Row.of(2L, 5L, "c"),
-            Row.of(1L, 20L, "b"));
+            Types.ROW_NAMED(
+                new String[] {"k", "v", "s", "d", "dcm", "millis"},
+                Types.LONG,
+                Types.LONG,
+                Types.STRING,
+                Types.DOUBLE,
+                Types.BIG_DEC,
+                Types.LONG),
+            Row.of(1L, 10L, "a", 1.5, new java.math.BigDecimal("10.25"), 1_000L),
+            Row.of(1L, 10L, "a", 1.5, new java.math.BigDecimal("10.25"), 1_100L),
+            Row.of(1L, 20L, "b", 2.5, new java.math.BigDecimal("20.75"), 2_200L),
+            Row.of(2L, 5L, "c", 0.5, new java.math.BigDecimal("5.50"), 1_300L),
+            Row.of(2L, 5L, "c", 0.5, new java.math.BigDecimal("5.50"), 2_400L),
+            Row.of(1L, 20L, "b", 2.5, new java.math.BigDecimal("20.75"), 3_500L));
     tEnv.createTemporaryView(
         "t",
         source,
@@ -57,6 +111,11 @@ class FlinkCountDistinctSqlHarnessTest {
             .column("k", DataTypes.BIGINT())
             .column("v", DataTypes.BIGINT())
             .column("s", DataTypes.STRING())
+            .column("d", DataTypes.DOUBLE())
+            .column("dcm", DataTypes.DECIMAL(10, 2))
+            .column("millis", DataTypes.BIGINT())
+            .columnByExpression("ts", "TO_TIMESTAMP_LTZ(millis, 3)")
+            .watermark("ts", "ts - INTERVAL '0.001' SECOND")
             .build());
     return tEnv;
   }

@@ -118,7 +118,9 @@ here when the ticket is deleted.
    mini-batch. (Two-phase `AVG` shipped 2026-07-03; the "widening partials" item was a misdiagnosis
    — Flink's SUM partial keeps the value type and already routes.)
 3. **High-frequency aggregate/expression tail** (ticket 42): decimal `AVG` (plain + windowed),
-   `SUM`/`MIN`/`MAX` `DISTINCT`, byte-exact number↔string `CAST`, byte-exact decimal division.
+   byte-exact number↔string `CAST`, byte-exact decimal division. (`SUM`/`MIN`/`MAX` `DISTINCT`
+   shipped 2026-07-03, and windowed DISTINCT aggregates — previously admitted as plain folds, a
+   wrong-results bug — now fall back.)
 4. **Legacy group windows** (ticket 43): map `GROUP BY TUMBLE/HOP(...)` onto the existing native
    window operators — the event-time `SESSION` exception is the template.
 5. **Cheap wins, interleaved:** the format-option parity audit (ticket 32). (Shipped 2026-07-03:

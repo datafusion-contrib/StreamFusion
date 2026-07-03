@@ -278,6 +278,12 @@ final class WindowAggregateMatcher {
       if (kind < 0) {
         return false;
       }
+      // A windowed DISTINCT aggregate dedups values inside the window; the native window operators
+      // fold every row, so admitting it would silently over-count. Fall back (the non-windowed
+      // GROUP BY path handles DISTINCT natively).
+      if (call.isDistinct()) {
+        return false;
+      }
       if (call.getArgList().isEmpty()) {
         continue; // COUNT(*) — only the zero-arg aggregate; the value column is synthesized
       }

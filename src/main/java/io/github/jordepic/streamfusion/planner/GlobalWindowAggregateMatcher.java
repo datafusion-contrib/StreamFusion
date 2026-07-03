@@ -75,6 +75,10 @@ final class GlobalWindowAggregateMatcher {
     for (int i = 0; i < aggregate.aggCalls().size(); i++) {
       AggregateCall call = aggregate.aggCalls().apply(i);
       int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+      // A DISTINCT merge dedups values the plain partial merge would double-count — fall back.
+      if (call.isDistinct()) {
+        return "global window aggregate: DISTINCT aggregates are not supported";
+      }
       // Single-field mergeable partial only: sum (also count's merge), min, max.
       if (kind < 0 || kind == WindowAggregateMatcher.KIND_AVG || call.getArgList().size() > 1) {
         return "global window aggregate: only single-field SUM/MIN/MAX/COUNT partials (no AVG)";

@@ -19,7 +19,9 @@ import scala.collection.Seq;
  * <p>Scope: SUM/MIN/MAX/COUNT over bigint/int/double value columns (SUM/MIN/MAX also decimal), plus
  * AVG over bigint/int/smallint/tinyint/float/double (a running sum + non-null count, result cast back
  * to the input type — decimal AVG falls back), with any grouping keys and pass-through columns the
- * row/Arrow conversion supports. The input may be append-only or a changelog; SUM/COUNT/AVG retract a
+ * row/Arrow conversion supports. DISTINCT is native for COUNT (a per-key value set), SUM (the set plus
+ * a running sum folded as values enter/leave), and MIN/MAX (semantically their plain forms); only
+ * AVG(DISTINCT) falls back. The input may be append-only or a changelog; SUM/COUNT/AVG retract a
  * running value and MIN/MAX retract via a per-key value multiset, so all work over either input.
  */
 final class GroupAggregateMatcher {
@@ -59,14 +61,19 @@ final class GroupAggregateMatcher {
       if (call.getArgList().size() > 1) {
         return false;
       }
-      // DISTINCT is native only for COUNT(DISTINCT x) over one argument — the value→multiplicity set
-      // counts distinct values (Flink's DistinctAccumulator). SUM/MIN/MAX DISTINCT fall back. The
-      // value may be any type the row already admits (read as a scalar set key).
+      // DISTINCT: COUNT(DISTINCT x) keeps a value→multiplicity set (Flink's DistinctAccumulator) over
+      // any type the row admits; SUM(DISTINCT x) adds a running sum folded as values enter/leave the
+      // set (same value types as plain SUM, gated below); MIN/MAX(DISTINCT x) are semantically the
+      // plain MIN/MAX — the extreme of the live values ignores multiplicity — so they run as such.
+      // AVG(DISTINCT) falls back (its count-of-distinct division isn't modelled).
       if (call.isDistinct()) {
-        if (kind != WindowAggregateMatcher.KIND_COUNT || call.getArgList().isEmpty()) {
+        if (call.getArgList().size() != 1 || kind == WindowAggregateMatcher.KIND_AVG) {
           return false;
         }
-        continue;
+        if (kind == WindowAggregateMatcher.KIND_COUNT) {
+          continue;
+        }
+        // SUM/MIN/MAX DISTINCT fall through to their plain forms' value-type gates.
       }
       // SUM/MIN/MAX read a present argument as a typed running value, so it must be a running type or
       // DECIMAL: SUM folds an i128 at the input scale → DECIMAL(38, s); MIN/MAX keep the extreme as an
@@ -118,6 +125,9 @@ final class GroupAggregateMatcher {
   /** Native aggregate kind 7 (COUNT(DISTINCT)); matches the convention in the Rust GroupAggState. */
   private static final int KIND_COUNT_DISTINCT = 7;
 
+  /** Native aggregate kind 9 (SUM(DISTINCT)); matches the convention in the Rust GroupAggState. */
+  private static final int KIND_SUM_DISTINCT = 9;
+
   /** Native MIN/MAX kinds (the Rust GroupAggState routes these to the Extremes multiset). */
   private static final int KIND_MIN = 1;
   private static final int KIND_MAX = 2;
@@ -133,10 +143,13 @@ final class GroupAggregateMatcher {
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
       int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
-      kinds[i] =
-          call.isDistinct() && kind == WindowAggregateMatcher.KIND_COUNT
-              ? KIND_COUNT_DISTINCT
-              : kind;
+      if (call.isDistinct() && kind == WindowAggregateMatcher.KIND_COUNT) {
+        kind = KIND_COUNT_DISTINCT;
+      } else if (call.isDistinct() && kind == WindowAggregateMatcher.KIND_SUM) {
+        kind = KIND_SUM_DISTINCT;
+      }
+      // MIN/MAX(DISTINCT) stay their plain kinds: the extreme ignores multiplicity either way.
+      kinds[i] = kind;
     }
     return kinds;
   }

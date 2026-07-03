@@ -1723,6 +1723,9 @@ impl RunningAgg {
         if kind == 3 || kind == 7 {
             return Count(0); // COUNT and COUNT(DISTINCT) both report a bigint count
         }
+        // SUM(DISTINCT) (kind 9) runs a plain SUM inside its distinct set (GroupAggState wraps it);
+        // its running/result/state types are exactly SUM's.
+        let kind = if kind == 9 { 0 } else { kind };
         // kind: 0=SUM, 1=MIN, 2=MAX, 5=FIRST_VALUE, 6=LAST_VALUE (3=COUNT handled above).
         match (kind, value_type) {
             (0, DataType::Int64) => SumI64(None),
@@ -2503,6 +2506,10 @@ enum GroupAggState {
     // the number of live entries; a value's multiplicity tracks how many input rows carry it so a
     // retraction removes it only when the last one is retracted. Nulls are never inserted.
     Distinct(ahash::HashMap<ScalarValue, i64>),
+    // SUM(DISTINCT x): the same value→multiplicity map plus a running SUM folded only when a value
+    // enters the set and retracted only when its last occurrence leaves — Flink's DistinctAccumulator
+    // wrapping the SUM accumulator, kept incremental so the emit stays O(1).
+    DistinctRunning { counts: ahash::HashMap<ScalarValue, i64>, agg: RunningAgg },
 }
 
 impl GroupAggState {
@@ -2511,6 +2518,11 @@ impl GroupAggState {
             1 => GroupAggState::Extremes { is_min: true, counts: BTreeMap::new() }, // MIN
             2 => GroupAggState::Extremes { is_min: false, counts: BTreeMap::new() }, // MAX
             7 => GroupAggState::Distinct(ahash::HashMap::default()), // COUNT(DISTINCT)
+            // SUM(DISTINCT): the inner running aggregate is a plain SUM (kind 0) over the value type.
+            9 => GroupAggState::DistinctRunning {
+                counts: ahash::HashMap::default(),
+                agg: RunningAgg::new(0, value_type),
+            },
             _ => GroupAggState::Running { agg: RunningAgg::new(kind, value_type), non_null: 0 },
         }
     }
@@ -2524,7 +2536,9 @@ impl GroupAggState {
             GroupAggState::Extremes { counts, .. } => {
                 *counts.entry(MinMaxKey::of(value)).or_insert(0) += 1;
             }
-            GroupAggState::Distinct(_) => unreachable!("distinct folds a scalar, not a Num"),
+            GroupAggState::Distinct(_) | GroupAggState::DistinctRunning { .. } => {
+                unreachable!("distinct folds a scalar, not a Num")
+            }
         }
     }
 
@@ -2568,7 +2582,9 @@ impl GroupAggState {
                     }
                 }
             }
-            GroupAggState::Distinct(_) => unreachable!("distinct retracts a scalar, not a Num"),
+            GroupAggState::Distinct(_) | GroupAggState::DistinctRunning { .. } => {
+                unreachable!("distinct retracts a scalar, not a Num")
+            }
         }
     }
 
@@ -2599,15 +2615,24 @@ impl GroupAggState {
         }
     }
 
-    /// Adds one occurrence of a distinct value (COUNT(DISTINCT)); a new value grows the count.
+    /// Adds one occurrence of a distinct value (COUNT/SUM DISTINCT); a value entering the set for the
+    /// first time also folds into a distinct SUM's running aggregate — later duplicates don't.
     fn accumulate_distinct(&mut self, value: ScalarValue) {
         match self {
             GroupAggState::Distinct(counts) => *counts.entry(value).or_insert(0) += 1,
+            GroupAggState::DistinctRunning { counts, agg } => {
+                let count = counts.entry(value.clone()).or_insert(0);
+                *count += 1;
+                if *count == 1 {
+                    agg.fold(distinct_num(&value));
+                }
+            }
             _ => unreachable!("accumulate_distinct on a non-distinct aggregate"),
         }
     }
 
-    /// Removes one occurrence; the value leaves the distinct set when its last occurrence is retracted.
+    /// Removes one occurrence; the value leaves the distinct set when its last occurrence is retracted
+    /// (which is also when a distinct SUM's running aggregate retracts it).
     fn retract_distinct(&mut self, value: ScalarValue) {
         match self {
             GroupAggState::Distinct(counts) => {
@@ -2615,6 +2640,15 @@ impl GroupAggState {
                     *count -= 1;
                     if *count <= 0 {
                         counts.remove(&value);
+                    }
+                }
+            }
+            GroupAggState::DistinctRunning { counts, agg } => {
+                if let Some(count) = counts.get_mut(&value) {
+                    *count -= 1;
+                    if *count <= 0 {
+                        counts.remove(&value);
+                        agg.retract(distinct_num(&value));
                     }
                 }
             }
@@ -2642,7 +2676,27 @@ impl GroupAggState {
             }
             // COUNT(DISTINCT) is the number of live distinct values (never NULL — empty is 0).
             GroupAggState::Distinct(counts) => ScalarValue::Int64(Some(counts.len() as i64)),
+            // SUM(DISTINCT) reports NULL with no live values, like SUM.
+            GroupAggState::DistinctRunning { counts, agg } => {
+                if counts.is_empty() {
+                    null_scalar(result_type)
+                } else {
+                    agg.emit()
+                }
+            }
         }
+    }
+}
+
+/// The numeric fold value of a distinct-SUM scalar — the value types the matcher admits for SUM
+/// (bigint/int/double, and DECIMAL as its unscaled i128).
+fn distinct_num(value: &ScalarValue) -> Num {
+    match value {
+        ScalarValue::Int64(Some(v)) => Num::I64(*v),
+        ScalarValue::Int32(Some(v)) => Num::I32(*v),
+        ScalarValue::Float64(Some(v)) => Num::F64(*v),
+        ScalarValue::Decimal128(Some(v), _, _) => Num::I128(*v),
+        other => panic!("unsupported distinct SUM value {other:?}"),
     }
 }
 
@@ -2720,6 +2774,7 @@ fn group_agg_state_bytes(state: &GroupAggState) -> usize {
         GroupAggState::Running { .. } => 0,
         GroupAggState::Extremes { counts, .. } => counts.len() * MULTISET_ENTRY_BYTES,
         GroupAggState::Distinct(counts) => counts.len() * MULTISET_ENTRY_BYTES,
+        GroupAggState::DistinctRunning { counts, .. } => counts.len() * MULTISET_ENTRY_BYTES,
     };
     std::mem::size_of::<GroupAggState>() + inner
 }
@@ -2901,10 +2956,11 @@ impl GroupAggregator {
         let keys_encoded =
             encode_group_keys(self.key_converter.as_ref().unwrap(), &key_owned, n);
         let row_kinds = row_kind_column(batch);
-        // Per aggregate, the value column index for a COUNT(DISTINCT) (kind 7), else None. Captured
-        // before the per-row loop so the loop body reads no `self` field while `state` is borrowed.
+        // Per aggregate, the value column index for a COUNT(DISTINCT) (kind 7) or SUM(DISTINCT)
+        // (kind 9), else None. Captured before the per-row loop so the loop body reads no `self`
+        // field while `state` is borrowed.
         let distinct_cols: Vec<Option<usize>> = (0..num_agg)
-            .map(|i| (self.kinds[i] == 7).then_some(self.value_columns[i] as usize))
+            .map(|i| matches!(self.kinds[i], 7 | 9).then_some(self.value_columns[i] as usize))
             .collect();
         // Per aggregate, a string MIN/MAX value column (kind 1/2 over Utf8) — folded as a scalar into
         // the Extremes multiset, not through the numeric Num path.
@@ -3146,6 +3202,16 @@ impl GroupAggregator {
                             multiset_counts[i].push(*count);
                         }
                     }
+                    GroupAggState::DistinctRunning { counts, .. } => {
+                        // The running sum is refolded from the side batch's values on restore.
+                        state_columns[i].push(null_scalar(&self.result_types[i]));
+                        non_null_columns[i].push(0);
+                        for (value, count) in counts.iter() {
+                            multiset_keys[i].push(key.clone());
+                            multiset_values[i].push(value.clone());
+                            multiset_counts[i].push(*count);
+                        }
+                    }
                 }
             }
         }
@@ -3163,13 +3229,13 @@ impl GroupAggregator {
         let mut batches =
             vec![RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("main snapshot")];
         for i in 0..num_agg {
-            if matches!(self.kinds[i], 1 | 2 | 7) {
+            if matches!(self.kinds[i], 1 | 2 | 7 | 9) {
                 let mut f = key_fields(&self.key_types);
                 let mut c = decode_keys(self.key_converter.as_ref(), &multiset_keys[i], &self.key_types);
                 // MIN/MAX values take the aggregate's result type; a distinct value keeps its own type
-                // (the count's bigint result type does not describe it), inferred from the scalars.
+                // (a COUNT's bigint result type does not describe it), inferred from the scalars.
                 let values = std::mem::take(&mut multiset_values[i]);
-                let value_array: ArrayRef = if self.kinds[i] == 7 {
+                let value_array: ArrayRef = if matches!(self.kinds[i], 7 | 9) {
                     if values.is_empty() {
                         new_empty_array(&DataType::Int64) // 0 rows — type is immaterial on restore
                     } else {
@@ -3234,7 +3300,7 @@ impl GroupAggregator {
         // One side batch per MIN/MAX or DISTINCT aggregate, in aggregate order: key0.., value, count.
         let mut frame = 1;
         for i in 0..num_agg {
-            if !matches!(aggregator.kinds[i], 1 | 2 | 7) {
+            if !matches!(aggregator.kinds[i], 1 | 2 | 7 | 9) {
                 continue;
             }
             let side = &batches[frame];
@@ -3257,6 +3323,11 @@ impl GroupAggregator {
                         map.insert(MinMaxKey::from_scalar(&value), counts.value(row));
                     }
                     Some(GroupAggState::Distinct(map)) => {
+                        map.insert(value, counts.value(row));
+                    }
+                    // SUM(DISTINCT): rebuild the set and refold each live value into the running sum.
+                    Some(GroupAggState::DistinctRunning { counts: map, agg }) => {
+                        agg.fold(distinct_num(&value));
                         map.insert(value, counts.value(row));
                     }
                     _ => {}

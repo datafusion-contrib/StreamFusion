@@ -185,12 +185,17 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   slide divides its size, or a single-phase `SESSION`; anything else proctime (the two-phase local/
   global path) is not yet on the processing-time-timer path; `HOP` slide / `CUMULATE` step doesn't
   divide size; key type outside bigint/int/string/boolean/date/timestamp/decimal; value type/aggregate
-  mismatch; `AVG` (where noted); two-phase partials not single-field bigint/double. A **zero-aggregate**
+  mismatch; `AVG` (where noted); two-phase partials not single-field bigint/double; a **windowed
+  `DISTINCT` aggregate** (`SUM(DISTINCT …)` etc. inside a window — it dedups per window, which the
+  native window operators' every-row fold would over-count; the non-windowed `GROUP BY` handles
+  `DISTINCT` natively). A **zero-aggregate**
   grouping-only window (`GROUP BY key + window`, no aggregate function) is a windowed distinct and **is**
   supported (single- and two-phase), emitting one row per (key, window).
 - **GROUP BY (non-windowed)** — a UDAF, or `AVG`/`SUM`/`MIN`/`MAX` over a value type outside its
-  supported set (`AVG` over decimal; see `aggregate-type-support.md`); a `DISTINCT` aggregate other
-  than `COUNT(DISTINCT x)` (`SUM`/`MIN`/`MAX` `DISTINCT` fall back); an approximate aggregate;
+  supported set (`AVG` over decimal; see `aggregate-type-support.md`); `AVG(DISTINCT)` (the only
+  non-native `DISTINCT` form — `COUNT(DISTINCT x)` keeps a per-key value set, `SUM(DISTINCT x)` adds
+  a running sum folded as values enter/leave it, and `MIN`/`MAX(DISTINCT)` run as their plain forms,
+  the extreme being multiplicity-blind); an approximate aggregate;
   idle-state TTL ≠ 0; an unsupported key/value column type. `SUM`/`MIN`/`MAX`/`COUNT` all admit
   `DECIMAL` (`SUM` → `DECIMAL(38, s)`, `MIN`/`MAX` → `DECIMAL(p, s)`); **`MIN`/`MAX` also admit a
   string** (`CHAR`/`VARCHAR`), ordered byte-lexicographically — matching Flink's `BinaryStringData`
