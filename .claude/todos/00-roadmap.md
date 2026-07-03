@@ -13,8 +13,12 @@ here when the ticket is deleted.
   **exact `Decimal128` `+`/`-`/`*`**, widening + **narrowing/float→int** `CAST` (wrapping/saturating
   kernel) and `CHAR`/`VARCHAR`→`VARCHAR` passthrough; precision/locale-divergent ops (`ROUND`/transcendental,
   pure-Rust case/regex) are opt-in behind `allowIncompatible`. Remaining tail (parity-gated, minor):
-  number↔string `CAST`, narrowing-`VARCHAR`/cast-to-`CHAR(n)`, obscure funcs. (Byte-exact decimal
-  `/`/`%` shipped 2026-07-03 — a fused kernel reproducing Flink's two HALF_UP rounding steps.)
+  obscure funcs only. (Shipped 2026-07-03, retiring ticket 42: byte-exact decimal `/`/`%` — a fused
+  kernel reproducing Flink's two HALF_UP rounding steps — plus number↔string `CAST`,
+  narrowing-`VARCHAR`/cast-to-`CHAR(n)`, and float→`DECIMAL`, all running Flink's own `CastExecutor`
+  through the columnar JVM upcall, byte-identical by construction; the tier-3 aggregate items —
+  `SUM`/`MIN`/`MAX` `DISTINCT`, decimal `AVG`, single-phase windowed decimal `SUM`/`AVG` — landed the
+  same day, with windowed DISTINCT aggregates gated off a wrong-results plain-fold path.)
 - **JVM-upcall UDFs — done, distributed-safe.** A function the native engine can't evaluate itself runs
   via a native→JVM columnar Arrow upcall (`NativeUdf`/`JvmUdf`, one JNI crossing per batch, byte-identical
   to Flink): non-builtin Flink `ScalarFunction`s (q14) and the host-exact builtins `REGEXP_EXTRACT` /
@@ -119,28 +123,22 @@ here when the ticket is deleted.
    plans to under mini-batch), two-phase decimal `SUM`, wider two-phase value types, row-time
    mini-batch. (Two-phase `AVG` shipped 2026-07-03; the "widening partials" item was a misdiagnosis
    — Flink's SUM partial keeps the value type and already routes.)
-3. **High-frequency aggregate/expression tail** (ticket 42): byte-exact number↔string `CAST`.
-   (Shipped 2026-07-03: `SUM`/`MIN`/`MAX` `DISTINCT` — and windowed DISTINCT aggregates, previously
-   admitted as plain folds (a wrong-results bug), now fall back; byte-exact decimal `/`/`%` by
-   default, retiring the approximate flag for arithmetic; and decimal `AVG` + windowed decimal
-   `SUM`/`AVG` (single-phase) via the exact division. The two-phase decimal split moved to
-   ticket 41.)
-4. **Legacy group windows** (ticket 43): map `GROUP BY TUMBLE/HOP(...)` onto the existing native
+3. **Legacy group windows** (ticket 43): map `GROUP BY TUMBLE/HOP(...)` onto the existing native
    window operators — the event-time `SESSION` exception is the template.
-5. **Cheap wins, interleaved:** the format-option parity audit (ticket 32). (Shipped 2026-07-03:
+4. **Cheap wins, interleaved:** the format-option parity audit (ticket 32). (Shipped 2026-07-03:
    `avro-confluent` routing — registry-fed writer schemas by frame id, decode path; the lookup-join
    extensions: calc/residual/pre-filter/constant-keys + distributed execution, via Flink's own
    generated runners driven per Arrow batch — ticket 40 now holds only the columnar-assembly perf
    item; `ignore-parse-errors` skip mode, native for the JSON-decoded formats incl. CDC, gated to
    fallback for CSV/protobuf; and the decode operator's time-based + pre-barrier flushes.)
-6. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
+5. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
    filesystems (`hdfs:`/`s3:`) for the native source/sink; currently `file:` only. **Deferred by
    direction until generalized operator support lands** — broaden what we can run (the ticket 11
    operators and any remaining expression tail) before broadening where we read/write.
-7. **Flaky test** (ticket 44): `NativeMemoryMetricsTest` intermittently fails full-suite runs
+6. **Flaky test** (ticket 44): `NativeMemoryMetricsTest` intermittently fails full-suite runs
    ("no metric named X was registered", varying X); green in isolation. Costs a suite re-run when
    it fires — root-cause when convenient.
-8. **Operator-level perf** (ticket 20 backlog): the scalar `GroupKey` remaining in the smaller
+7. **Operator-level perf** (ticket 20 backlog): the scalar `GroupKey` remaining in the smaller
    keyed loops (dedup, `OVER` partitions, Top-N, exchange split) — swap to arrow-row keys only
    with a bench showing it pays. (All aggregators now use arrow-row keys — keyed tumbling 2.2×;
    session `update` batches gap-connected runs — dense shape 20× vs per-row; the `RowData → Arrow`

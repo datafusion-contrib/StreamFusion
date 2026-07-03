@@ -9810,7 +9810,8 @@ impl datafusion::logical_expr::ScalarUDFImpl for RegexpExtract {
     }
 }
 
-/// Arrow type of a UDF argument/result value-type code (mirrors NativeUdf's TYPE_* constants).
+/// Arrow type of a UDF argument/result value-type code (mirrors NativeUdf's TYPE_* constants; a code
+/// ≥ 1000 is a DECIMAL(p, s) packed as 1000 + p*100 + s).
 fn udf_data_type(code: i64) -> DataType {
     match code {
         0 => DataType::Utf8,
@@ -9821,6 +9822,9 @@ fn udf_data_type(code: i64) -> DataType {
         5 => DataType::Float32,
         6 => DataType::Int16,
         7 => DataType::Int8,
+        code if code >= 1000 => {
+            DataType::Decimal128(((code - 1000) / 100) as u8, ((code - 1000) % 100) as i8)
+        }
         other => panic!("unsupported UDF type code: {other}"),
     }
 }

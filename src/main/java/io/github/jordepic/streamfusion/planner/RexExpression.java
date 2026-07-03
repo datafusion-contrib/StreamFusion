@@ -130,6 +130,9 @@ final class RexExpression {
   // calendar fields depend on it. Set only on the Calc path (where DATE_FORMAT/EXTRACT live); null
   // elsewhere, so an LTZ date/extract in a bare-RexNode context (e.g. a join residual) safely falls back.
   private String sessionZoneId;
+  // Whether table.exec.legacy-cast-behaviour is enabled — known only when encoding a Calc (the config
+  // rides the node). null (a bare predicate encode) declines the host-exact casts, conservatively.
+  private Boolean legacyCastBehaviour;
 
   private RexExpression() {}
 
@@ -185,10 +188,15 @@ final class RexExpression {
   }
 
   private boolean tryEncodeCalc(Calc calc) {
-    sessionZoneId =
-        org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(calc)
-            .getLocalTimeZone()
-            .getId();
+    org.apache.flink.table.api.TableConfig tableConfig =
+        org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(calc);
+    sessionZoneId = tableConfig.getLocalTimeZone().getId();
+    legacyCastBehaviour =
+        tableConfig
+            .get(
+                org.apache.flink.table.api.config.ExecutionConfigOptions
+                    .TABLE_EXEC_LEGACY_CAST_BEHAVIOUR)
+            .isEnabled();
     RexProgram program = calc.getProgram();
     if (program.getCondition() != null) {
       RexNode condition =
@@ -677,14 +685,14 @@ final class RexExpression {
         && resultType.getPrecision() >= sourceType.getPrecision()) {
       return emit(call.getOperands().get(0));
     }
-    // A cast to DECIMAL. From an exact source (another DECIMAL, e.g. coercing q1's `0.908 * price` to
-    // the sink's DECIMAL(23,3), or an integer) it is byte-exact: Arrow rescales Decimal128 with HALF_UP
-    // rounding, the same mode Flink uses. From a float/double source it is not (the binary value is
-    // already inexact), so that stays behind the approximate-decimal flag.
+    // A cast to DECIMAL from an exact source (another DECIMAL, e.g. coercing q1's `0.908 * price` to
+    // the sink's DECIMAL(23,3), or an integer) is byte-exact natively: Arrow rescales Decimal128 with
+    // HALF_UP rounding, the same mode Flink uses. A float/double or string source falls through to
+    // the host-exact cast upcall below.
     if (targetType == SqlTypeName.DECIMAL) {
       boolean exactSource =
           source == SqlTypeName.DECIMAL || numericRank(source) >= 0 && numericRank(source) <= 3;
-      if (exactSource || NativeConfig.allowsApproximateDecimal()) {
+      if (exactSource) {
         add(KIND_CAST_DECIMAL, resultType.getPrecision() * 100 + resultType.getScale(), 1);
         return emit(call.getOperands().get(0));
       }
@@ -705,7 +713,77 @@ final class RexExpression {
       add(KIND_CAST_NARROW, narrowTarget, 1);
       return emit(call.getOperands().get(0));
     }
+    // The casts whose formatting/parsing the native engine cannot reproduce byte-for-byte — a number
+    // (incl. decimal) to/from a string, narrowing a string / padding to CHAR(n), and the inexact
+    // float/double→DECIMAL — run Flink's own CastExecutor through the columnar JVM upcall, so
+    // trailing zeros, scientific-notation thresholds, trim semantics, and failure behavior are the
+    // host's own (see HostCastFunction).
+    if (hostCastSupported(sourceType, resultType)) {
+      return emitHostCast(call, sourceType, resultType);
+    }
     return reject("unsupported CAST " + source + "→" + targetType);
+  }
+
+  /** The number↔string / string-length / float→decimal casts routed through the host's cast rules. */
+  private static boolean hostCastSupported(RelDataType sourceType, RelDataType resultType) {
+    SqlTypeName source = sourceType.getSqlTypeName();
+    SqlTypeName target = resultType.getSqlTypeName();
+    boolean sourceString = source == SqlTypeName.VARCHAR || source == SqlTypeName.CHAR;
+    boolean targetString = target == SqlTypeName.VARCHAR || target == SqlTypeName.CHAR;
+    boolean sourceNumeric = numericRank(source) >= 0 || source == SqlTypeName.DECIMAL;
+    boolean targetNumeric = numericRank(target) >= 0 || target == SqlTypeName.DECIMAL;
+    boolean sourceFloat =
+        source == SqlTypeName.FLOAT || source == SqlTypeName.REAL || source == SqlTypeName.DOUBLE;
+    return (sourceNumeric && targetString)
+        || (sourceString && targetNumeric)
+        || (sourceString && targetString)
+        || (sourceFloat && target == SqlTypeName.DECIMAL);
+  }
+
+  /** The UDF marshalling code for a host-cast operand/result, or -1 for a type the upcall can't carry. */
+  private static int hostCastTypeCode(RelDataType type) {
+    if (type.getSqlTypeName() == SqlTypeName.DECIMAL) {
+      return io.github.jordepic.streamfusion.operator.NativeUdf.decimalType(
+          type.getPrecision(), type.getScale());
+    }
+    return udfTypeCode(type.getSqlTypeName());
+  }
+
+  /** Emits a host-exact cast as a JVM-upcall node running Flink's own {@code CastExecutor}. */
+  private boolean emitHostCast(RexCall call, RelDataType sourceType, RelDataType resultType) {
+    if (legacyCastBehaviour == null || legacyCastBehaviour) {
+      // The executor is built with the default cast behavior; legacy mode's null-on-failure (or an
+      // unknown setting, on a bare predicate encode) would diverge from it.
+      return reject(
+          "CAST "
+              + sourceType.getSqlTypeName()
+              + "→"
+              + resultType.getSqlTypeName()
+              + ": host-exact cast runs only under the default (non-legacy) cast behavior");
+    }
+    int sourceCode = hostCastTypeCode(sourceType);
+    int targetCode = hostCastTypeCode(resultType);
+    if (sourceCode < 0 || targetCode < 0) {
+      return reject("unsupported host-cast operand type " + sourceType.getSqlTypeName());
+    }
+    HostCastFunction function =
+        new HostCastFunction(
+            org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalType(sourceType),
+            org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalType(resultType));
+    java.lang.reflect.Method eval;
+    try {
+      eval = HostCastFunction.class.getMethod("eval", Object.class);
+    } catch (ReflectiveOperationException e) {
+      return reject("host cast unavailable: " + e.getMessage());
+    }
+    int localIndex =
+        addUdf(
+            io.github.jordepic.streamfusion.operator.NativeUdf.Descriptor.forFunction(
+                function, eval, new int[] {sourceCode}, targetCode));
+    add(KIND_UDF, longs.size(), 1);
+    longs.add((long) localIndex);
+    longs.add((long) targetCode);
+    return emit(call.getOperands().get(0));
   }
 
   /** The target type code for a widening numeric cast {@code source → target}, or -1 if not safe. */

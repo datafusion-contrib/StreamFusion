@@ -61,6 +61,16 @@ public final class NativeUdf {
   // LTZ DATE_FORMAT/EXTRACT parity path — an argument-only code (no UDF returns a timestamp today).
   public static final int TYPE_TIMESTAMP = 8;
 
+  // DECIMAL(p, s) argument/result values, marshalled as BigDecimal. The precision and scale ride in
+  // the code itself so one int carries the full type: 1000 + p*100 + s. Used by the host-exact
+  // number<->string CAST upcall.
+  private static final int DECIMAL_BASE = 1000;
+
+  /** The packed value-type code for a {@code DECIMAL(precision, scale)} argument or result. */
+  public static int decimalType(int precision, int scale) {
+    return DECIMAL_BASE + precision * 100 + scale;
+  }
+
   private static final class Registered {
     final ScalarFunction function;
     final Method eval;
@@ -301,6 +311,9 @@ public final class NativeUdf {
       case TYPE_BOOLEAN:
         return ArrowType.Bool.INSTANCE;
       default:
+        if (code >= DECIMAL_BASE) {
+          return new ArrowType.Decimal((code - DECIMAL_BASE) / 100, (code - DECIMAL_BASE) % 100, 128);
+        }
         throw new IllegalArgumentException("unsupported UDF type code " + code);
     }
   }
@@ -337,6 +350,9 @@ public final class NativeUdf {
         throw new IllegalArgumentException(
             "unexpected timestamp vector for a TIMESTAMP UDF arg: " + vector.getClass());
       default:
+        if (code >= DECIMAL_BASE) {
+          return ((org.apache.arrow.vector.DecimalVector) vector).getObject(row);
+        }
         throw new IllegalArgumentException("unsupported UDF type code " + code);
     }
   }
@@ -372,6 +388,10 @@ public final class NativeUdf {
         ((BitVector) vector).setSafe(row, ((Boolean) value) ? 1 : 0);
         break;
       default:
+        if (code >= DECIMAL_BASE) {
+          ((org.apache.arrow.vector.DecimalVector) vector).setSafe(row, (java.math.BigDecimal) value);
+          break;
+        }
         throw new IllegalArgumentException("unsupported UDF type code " + code);
     }
   }

@@ -28,20 +28,6 @@ public final class NativeConfig {
   }
 
   /**
-   * Whether a cast to DECIMAL from an inexact (float/double) source may run natively — the binary
-   * source value is already inexact, so the result is not byte-identical to Flink's
-   * {@code BigDecimal.valueOf(double)} conversion. All decimal <em>arithmetic</em>
-   * ({@code +}/{@code -}/{@code *}/{@code /}/{@code %}) is byte-exact and native by default, so this
-   * flag no longer affects it. Off by default ({@code
-   * streamfusion.expression.decimalArithmetic.approximate}); also enabled by the blanket
-   * {@code allowIncompatible} switch.
-   */
-  public static boolean allowsApproximateDecimal() {
-    return Boolean.getBoolean("streamfusion.expression.allowIncompatible")
-        || Boolean.getBoolean("streamfusion.expression.decimalArithmetic.approximate");
-  }
-
-  /**
    * The master switch for native acceleration ({@code streamfusion.native.enabled}, default true).
    * When false the planner substitutes nothing and the query runs entirely on the host.
    */

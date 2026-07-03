@@ -243,11 +243,18 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   **narrowing integer→integer and float/double→integer** (the `NarrowingCast` kernel reproduces Flink's
   primitive Java cast — two's-complement wrap for an integer source, round-toward-zero-and-saturate with
   NaN→0 for a float source — which arrow's own cast can't, as it errors on overflow); **CHAR/VARCHAR→
-  VARCHAR** when the target length ≥ source (an unpadded no-op, e.g. `COALESCE(s,'x')`); and **→DECIMAL
-  from an exact source** (DECIMAL or integer, rescaled HALF_UP). Still falling back: **number↔string**
-  casts (`CAST(x AS VARCHAR)`, `CAST(s AS INT)` — formatting/parsing diverges), **narrowing a VARCHAR**
-  (truncation), **casting to CHAR(n)** (space-padding), and **→DECIMAL from a float/double** (inexact —
-  behind the approximate flag).
+  VARCHAR** when the target length ≥ source (an unpadded no-op, e.g. `COALESCE(s,'x')`); **→DECIMAL
+  from an exact source** (DECIMAL or integer, rescaled HALF_UP); and — **host-exact by default via the
+  columnar JVM upcall** — **number↔string** in both directions (`CAST(x AS VARCHAR)`,
+  `CAST(s AS INT)`, decimals included), **narrowing a VARCHAR** (truncation), **casting to CHAR(n)**
+  (space-padding), and **→DECIMAL from a float/double**: these run Flink's own `CastExecutor`
+  (`CastRuleProvider`), so trailing zeros, scientific-notation thresholds, trim semantics, and
+  failure behavior (an unparsable string fails the job, like the host's default cast) are the host's
+  by construction — Java's float/double rendering is even JDK-version-dependent, so no native port
+  could match the running host. The upcall casts decline (fall back) when the deprecated
+  `table.exec.legacy-cast-behaviour` is enabled — its null-on-failure semantics differ. Still
+  falling back: casts between strings and the non-numeric types (boolean/date/time/timestamp↔string)
+  and any other pair not listed above.
 - **Decimal arithmetic** — **all native and byte-exact by default, *not* a fallback.** `+`/`-`/`*`
   whose result type is `DECIMAL` (e.g. Nexmark q1's `0.908 * price`): operands are Decimal128
   (columns already are; literals emit as an exact Decimal128), Arrow's Decimal128 add/sub/mul carry
@@ -256,8 +263,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   (`DecimalDataUtils.divide`/`mod`): the quotient to 38 *significant digits* with HALF_UP
   (`BigDecimal`'s `MathContext(38, HALF_UP)`), then the rescale to the declared `DECIMAL(p, s)` with
   HALF_UP, NULL when the result exceeds `p` digits, and a division by zero failing the job — all as
-  the host. (The old `decimalArithmetic.approximate` flag no longer affects arithmetic; it only
-  gates the inexact float/double→DECIMAL cast.)
+  the host. (The old `decimalArithmetic.approximate` flag is retired entirely — the float/double→
+  DECIMAL cast it last gated now runs host-exact through the cast upcall; see the CAST bullet.)
 - **Case folding & regex — native by default, *not* a fallback.** `UPPER`/`LOWER` and `REGEXP_EXTRACT`
   run natively **by default** via a columnar JVM upcall to Flink's own `BinaryStringData` case folding /
   `SqlFunctionUtils.regexpExtract`, so they are byte-identical to the host and the rest of the expression
