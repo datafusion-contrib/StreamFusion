@@ -704,6 +704,9 @@ public final class Native {
    * @param valueTypes per-aggregate value-column types (see {@link #createTumblingAggregator})
    * @param valueColumns per-aggregate value-column index in the input batch ({@code -1} for COUNT(*))
    * @param keyColumns grouping-key column indices in the input batch (empty for global aggregation)
+   * @param countColumns per-aggregate two-phase AVG count-partial column ({@code -1} otherwise): the
+   *     value column is then the local's pre-summed sum partial, and each row bumps the count by this
+   *     column instead of by one
    * @param generateUpdateBefore whether to emit an UPDATE_BEFORE row before each UPDATE_AFTER
    * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
    */
@@ -713,6 +716,7 @@ public final class Native {
       int[] valueColumns,
       int[] keyColumns,
       int[] filterColumns,
+      int[] countColumns,
       boolean generateUpdateBefore,
       long memoryBudgetBytes);
 
@@ -736,6 +740,7 @@ public final class Native {
       int[] valueColumns,
       int[] keyColumns,
       int[] filterColumns,
+      int[] countColumns,
       boolean generateUpdateBefore,
       byte[] snapshot,
       long memoryBudgetBytes);

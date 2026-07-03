@@ -27,6 +27,9 @@ final class WindowAggregateMatcher {
   static final int KIND_SUM = 0;
   static final int KIND_COUNT = 3;
   static final int KIND_AVG = 4;
+  /** The local half of a two-phase AVG: the widened running sum alone (the count partial is a
+   * separate {@link #KIND_COUNT} state); the global divides after merging. */
+  static final int KIND_AVG_PARTIAL_SUM = 8;
 
   private WindowAggregateMatcher() {}
 

@@ -52,6 +52,27 @@ class FlinkTwoPhaseGroupAggregateSqlHarnessTest {
   }
 
   @Test
+  void avgTwoPhaseMatchesHost() throws Exception {
+    // AVG is the one two-phase aggregate whose partial spans TWO columns (the widened sum, then the
+    // non-null count); mixing it with single-partial aggregates exercises the positional offsets on
+    // both halves. Integer AVG must keep Flink's truncate-toward-zero division and cast-back.
+    Path input = Files.createTempDirectory("twophase-avg-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        readEnvironment(input),
+        "SELECT k, AVG(v) AS av, SUM(v) AS s, AVG(vi) AS avi, AVG(vd) AS avd, COUNT(*) AS c"
+            + " FROM t GROUP BY k");
+  }
+
+  @Test
+  void globalAvgTwoPhaseMatchesHost() throws Exception {
+    Path input = Files.createTempDirectory("twophase-avg-global-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        readEnvironment(input), "SELECT AVG(vi) AS avi, AVG(vd) AS avd FROM t");
+  }
+
+  @Test
   void perOperatorFlagKeepsTwoPhaseOnHost() throws Exception {
     Path input = Files.createTempDirectory("twophase-flag-in");
     writeInput(input);
@@ -76,9 +97,11 @@ class FlinkTwoPhaseGroupAggregateSqlHarnessTest {
             + " 'filesystem', 'path' = '"
             + directory.toUri()
             + "', 'format' = 'parquet')");
+    // The negative rows make integer AVG's truncate-toward-zero division observable (-7 + 4 + 9
+    // over key 2 divides negatively at some prefixes of the changelog).
     tEnv.executeSql(
             "INSERT INTO in_write VALUES (1, 10, 1.5, 7), (1, 20, 2.5, 3), (2, 5, 0.5, 9),"
-                + " (1, 30, 3.5, 1), (2, 15, 1.0, 4)")
+                + " (1, 30, 3.5, 1), (2, 15, 1.0, 4), (2, -7, -1.25, -8)")
         .await();
   }
 

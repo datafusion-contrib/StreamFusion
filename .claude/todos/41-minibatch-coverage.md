@@ -15,17 +15,12 @@ those shapes fall back today, dragging whole queries to the host via the all-or-
   `~/data/flink` `table/runtime .../aggregate/MiniBatchIncrementalGroupAggFunction` before design;
   we already have the per-key distinct value set (native `COUNT(DISTINCT)`) and the two-phase
   local/global operators to compose from.
-- **Two-phase `AVG`** — single-phase `AVG` is native; the local/global split is not modelled. The
-  partial is TWO columns per AVG — a widened sum (bigint for integer inputs, double for
-  float/double) plus a bigint non-null count, `(sum$i, count$j)` in the local's output row — merged
-  at the global by summing both, then the existing single-phase AVG finish (null on zero count,
-  integer division truncating, cast to the input type). Partial types verified against the planner:
-  AVG(int/smallint/tinyint/bigint) → `(BIGINT, BIGINT)`, AVG(float/double) → `(DOUBLE, BIGINT)` —
-  exactly the single-phase accumulator's widening. Note AVG breaks the matchers' one-partial-per-
-  aggregate positional assumption (`valueColumns[i] = base + i`): both halves need per-aggregate
-  partial OFFSETS once an AVG contributes two columns. The global merge is a new "AVG-merge" kind on
-  the shared group-aggregate operator: fold the pre-summed sum partial into the sum and the count
-  partial into the count (instead of +1 per non-null row); the finish is unchanged.
+- **Two-phase `AVG`: DONE (2026-07-03).** The local expands an AVG into a widened-sum state plus a
+  COUNT over the same column (its two positional partials), the matchers walk partials with
+  per-aggregate offsets, and the global folds the pre-summed `(sum, count)` pair into the ordinary
+  AVG state via a per-aggregate count-partial column — the divide/truncate/cast-back emit is the
+  single-phase code, byte-identical. Parity-tested keyed + global, mixed with single-partial
+  aggregates, negative values included. Scope matches the two-phase set (bigint/int/double).
 - **Wider two-phase value types** — smallint/tinyint/float value columns decline the local matcher
   today (the single-phase path takes them); extend the running types to match the single-phase set.
   (The previously-listed "widening partials" item was a misdiagnosis: Flink's SUM partial keeps the

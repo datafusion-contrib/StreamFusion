@@ -1710,6 +1710,11 @@ enum RunningAgg {
     // toward zero). Decimal AVG is not modelled (the matcher leaves it on the host).
     AvgInt { sum: i64, result: DataType },
     AvgFloat { sum: f64, result: DataType },
+    // The LOCAL half of a two-phase AVG (kind 8): the widened running sum alone — the count rides a
+    // separate COUNT partial state. Folds like AvgInt/AvgFloat (any integer / float input widens),
+    // but emits the raw sum, not a quotient; the global half divides after merging.
+    AvgPartialSumInt(i64),
+    AvgPartialSumFloat(f64),
 }
 
 impl RunningAgg {
@@ -1754,6 +1759,10 @@ impl RunningAgg {
             (4, DataType::Int64 | DataType::Int32 | DataType::Int16 | DataType::Int8) => {
                 AvgInt { sum: 0, result: value_type.clone() }
             }
+            // Two-phase AVG's local sum partial: the declared type is the WIDENED partial type
+            // (BIGINT for integer inputs, DOUBLE for float/double — Flink's AvgAggFunction).
+            (8, DataType::Int64) => AvgPartialSumInt(0),
+            (8, DataType::Float64) => AvgPartialSumFloat(0.0),
             // AVG(float/double) — sum in DOUBLE, result casts back to the input type on emit.
             (4, DataType::Float64 | DataType::Float32) => {
                 AvgFloat { sum: 0.0, result: value_type.clone() }
@@ -1812,6 +1821,12 @@ impl RunningAgg {
             (AvgInt { sum, .. }, Num::I8(v)) => *sum = sum.wrapping_add(v as i64),
             (AvgFloat { sum, .. }, Num::F64(v)) => *sum += v,
             (AvgFloat { sum, .. }, Num::F32(v)) => *sum += v as f64,
+            (AvgPartialSumInt(sum), Num::I64(v)) => *sum = sum.wrapping_add(v),
+            (AvgPartialSumInt(sum), Num::I32(v)) => *sum = sum.wrapping_add(v as i64),
+            (AvgPartialSumInt(sum), Num::I16(v)) => *sum = sum.wrapping_add(v as i64),
+            (AvgPartialSumInt(sum), Num::I8(v)) => *sum = sum.wrapping_add(v as i64),
+            (AvgPartialSumFloat(sum), Num::F64(v)) => *sum += v,
+            (AvgPartialSumFloat(sum), Num::F32(v)) => *sum += v as f64,
             _ => unreachable!("OVER value type does not match aggregate state"),
         }
     }
@@ -1838,6 +1853,9 @@ impl RunningAgg {
             (AvgInt { sum, .. }, Num::I8(v)) => *sum = sum.wrapping_sub(v as i64),
             (AvgFloat { sum, .. }, Num::F64(v)) => *sum -= v,
             (AvgFloat { sum, .. }, Num::F32(v)) => *sum -= v as f64,
+            (AvgPartialSumInt(sum), Num::I64(v)) => *sum = sum.wrapping_sub(v),
+            (AvgPartialSumInt(sum), Num::I32(v)) => *sum = sum.wrapping_sub(v as i64),
+            (AvgPartialSumFloat(sum), Num::F64(v)) => *sum -= v,
             _ => unreachable!("aggregate does not support retraction"),
         }
     }
@@ -1864,6 +1882,10 @@ impl RunningAgg {
             // the average itself is computed in GroupAggState::emit, where the count (non_null) lives.
             AvgInt { sum, .. } => ScalarValue::Int64(Some(*sum)),
             AvgFloat { sum, .. } => ScalarValue::Float64(Some(*sum)),
+            // The two-phase AVG's local sum partial IS the raw widened sum (the local is a transient
+            // bundle — this is its flush emit, never a checkpoint).
+            AvgPartialSumInt(sum) => ScalarValue::Int64(Some(*sum)),
+            AvgPartialSumFloat(sum) => ScalarValue::Float64(Some(*sum)),
         }
     }
 
@@ -1893,6 +1915,8 @@ impl RunningAgg {
             MinMaxDecimal { precision, scale } => DataType::Decimal128(*precision, *scale),
             MinMaxStr => DataType::Utf8,
             AvgInt { result, .. } | AvgFloat { result, .. } => result.clone(),
+            AvgPartialSumInt(_) => DataType::Int64,
+            AvgPartialSumFloat(_) => DataType::Float64,
         }
     }
 
@@ -2504,6 +2528,31 @@ impl GroupAggState {
         }
     }
 
+    /// Folds one two-phase AVG partial pair: the pre-summed sum partial and the partial's non-null
+    /// count (instead of +1 per row). The state is the ordinary AVG state, so the emit (divide,
+    /// truncate, cast back) is byte-identical to the single-phase path.
+    fn accumulate_merged(&mut self, value: Num, count: i64) {
+        match self {
+            GroupAggState::Running { agg, non_null } => {
+                agg.fold(value);
+                *non_null += count;
+            }
+            _ => unreachable!("merged accumulate on a non-running aggregate"),
+        }
+    }
+
+    /// The changelog reversal of {@link accumulate_merged} (the global's input is insert-only today;
+    /// kept symmetric with the other aggregate states).
+    fn retract_merged(&mut self, value: Num, count: i64) {
+        match self {
+            GroupAggState::Running { agg, non_null } => {
+                agg.retract(value);
+                *non_null -= count;
+            }
+            _ => unreachable!("merged retract on a non-running aggregate"),
+        }
+    }
+
     fn retract(&mut self, value: Num) {
         match self {
             GroupAggState::Running { agg, non_null } => {
@@ -2645,6 +2694,9 @@ struct GroupAggregator {
     // Per-aggregate FILTER column index (the boolean the host computes for `AGG(x) FILTER (WHERE p)`),
     // or -1 for an unfiltered aggregate. A row folds into aggregate i only when its filter is TRUE.
     filter_columns: Vec<i64>,
+    // Per-aggregate count-partial column for a two-phase AVG merge (-1 otherwise): the value column
+    // is then the local's pre-summed sum partial and each row bumps the count by this column.
+    count_columns: Vec<i64>,
     key_columns: Vec<usize>,
     generate_update_before: bool,
     // The group map is keyed by the arrow-row memcomparable encoding of the key columns, not a
@@ -2743,6 +2795,7 @@ impl GroupAggregator {
             .map(|(&kind, vt)| RunningAgg::new(kind, vt).state_type())
             .collect();
         let filter_columns = vec![-1; kinds.len()];
+        let count_columns = vec![-1; kinds.len()];
         GroupAggregator {
             kinds,
             value_types,
@@ -2755,6 +2808,7 @@ impl GroupAggregator {
             key_converter: None,
             key_types: Vec::new(),
             filter_columns,
+            count_columns,
             memory: OperatorMemory::unaccounted(),
         }
     }
@@ -2776,6 +2830,15 @@ impl GroupAggregator {
     fn with_filter_columns(mut self, filter_columns: Vec<i64>) -> Self {
         if !filter_columns.is_empty() {
             self.filter_columns = filter_columns;
+        }
+        self
+    }
+
+    /// Sets the per-aggregate two-phase AVG count-partial columns (-1 = not a merge). A builder for
+    /// the same reason as {@link with_filter_columns}.
+    fn with_count_columns(mut self, count_columns: Vec<i64>) -> Self {
+        if !count_columns.is_empty() {
+            self.count_columns = count_columns;
         }
         self
     }
@@ -2859,6 +2922,19 @@ impl GroupAggregator {
                 }
             })
             .collect();
+        // Per aggregate, the two-phase AVG count-partial column (None = not a merge): the value
+        // column is the pre-summed sum partial and the count folds from this column, not +1 per row.
+        let merge_count_cols: Vec<Option<&Int64Array>> = (0..num_agg)
+            .map(|i| {
+                (self.count_columns[i] >= 0).then(|| {
+                    batch
+                        .column(self.count_columns[i] as usize)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .expect("avg count partial column must be bigint")
+                })
+            })
+            .collect();
         // Per aggregate, the FILTER boolean column (None = unfiltered). A row folds into aggregate i
         // only where this is TRUE — a NULL or FALSE skips it, matching SQL FILTER / Flink's filterArg.
         let filter_cols: Vec<Option<&BooleanArray>> = (0..num_agg)
@@ -2914,6 +2990,22 @@ impl GroupAggregator {
                         if filter.is_null(row) || !filter.value(row) {
                             continue;
                         }
+                    }
+                    // Two-phase AVG merge: fold the pre-summed sum partial and bump the count by the
+                    // count partial. A NULL sum partial means the local saw no non-null input for the
+                    // key (its count partial is 0) — nothing to fold.
+                    if let Some(counts) = merge_count_cols[i] {
+                        if let Some(column) = &value_columns[i] {
+                            if let Some(num) = column.at(row) {
+                                let count = if counts.is_null(row) { 0 } else { counts.value(row) };
+                                if retract {
+                                    state.aggs[i].retract_merged(num, count);
+                                } else {
+                                    state.aggs[i].accumulate_merged(num, count);
+                                }
+                            }
+                        }
+                        continue;
                     }
                     // MIN/MAX over a string folds the value as a scalar into the Extremes multiset
                     // (skipping nulls — MIN/MAX ignore them), ordered by MinMaxKey.
@@ -11568,6 +11660,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createGroupAg
     value_columns: JIntArray<'local>,
     key_columns: JIntArray<'local>,
     filter_columns: JIntArray<'local>,
+    count_columns: JIntArray<'local>,
     generate_update_before: jboolean,
     memory_budget_bytes: jlong,
 ) -> jlong {
@@ -11575,10 +11668,12 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createGroupAg
     let value_types = read_int_array(&env, &value_types);
     let value_columns = read_int_array(&env, &value_columns);
     let filter_columns = read_int_array(&env, &filter_columns);
+    let count_columns = read_int_array(&env, &count_columns);
     let key_columns = read_columns(&env, &key_columns);
     let aggregator =
         GroupAggregator::new(kinds, value_types, value_columns, key_columns, generate_update_before != 0)
             .with_filter_columns(filter_columns)
+            .with_count_columns(count_columns)
             .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, aggregator)
 }
@@ -11630,6 +11725,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
     value_columns: JIntArray<'local>,
     key_columns: JIntArray<'local>,
     filter_columns: JIntArray<'local>,
+    count_columns: JIntArray<'local>,
     generate_update_before: jboolean,
     snapshot: JByteArray<'local>,
     memory_budget_bytes: jlong,
@@ -11638,6 +11734,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
     let value_types = read_int_array(&env, &value_types);
     let value_columns = read_int_array(&env, &value_columns);
     let filter_columns = read_int_array(&env, &filter_columns);
+    let count_columns = read_int_array(&env, &count_columns);
     let key_columns = read_columns(&env, &key_columns);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read group-by snapshot");
     let aggregator = GroupAggregator::restore(
@@ -11649,6 +11746,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
         &bytes,
     )
     .with_filter_columns(filter_columns)
+    .with_count_columns(count_columns)
     .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, aggregator)
 }

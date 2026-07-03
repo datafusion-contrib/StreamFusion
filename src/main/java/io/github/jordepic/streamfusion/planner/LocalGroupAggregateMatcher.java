@@ -1,6 +1,8 @@
 package io.github.jordepic.streamfusion.planner;
 
 import io.github.jordepic.streamfusion.operator.RowDataArrowConverter;
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.type.SqlTypeName;
@@ -12,16 +14,18 @@ import scala.collection.Seq;
  * Recognizes the local half of a two-phase non-windowed {@code GROUP BY}: a stateless per-batch
  * pre-aggregate that emits one partial row per key ({@code [grouping.., partial0..]}) for the
  * {@link GlobalGroupAggregateMatcher global half} to merge. Scope mirrors the single-phase
- * {@link GroupAggregateMatcher}: SUM/MIN/MAX/COUNT (no AVG/distinct) over bigint/int/double values,
+ * {@link GroupAggregateMatcher}: SUM/MIN/MAX/COUNT/AVG (no distinct) over bigint/int/double values,
  * with grouping keys the boundary carries.
  *
- * <p>The native local emits each aggregate's partial in its running type ({@code SUM/MIN/MAX} of a
- * value keep that value's type, COUNT is bigint). The global reads those partials by their declared
- * (Flink) type, so each partial column's declared type must equal what the native side emits —
- * otherwise the two halves disagree on the column type. Flink's SUM partial keeps the value's own
- * type (verified against the planner — only AVG widens its sum partial), so the equality check below
- * is defensive: a partial declared wider than its value would fall back cleanly rather than
- * mismatch at the boundary.
+ * <p>The native local emits each aggregate's partial in its running type: {@code SUM/MIN/MAX} keep
+ * the value's own type (Flink's SUM partial does not widen — verified against the planner), COUNT is
+ * bigint, and an AVG contributes <em>two</em> partial columns — the widened running sum (bigint for
+ * integer inputs, double for double, Flink's {@code AvgAggFunction}) and the bigint non-null count.
+ * Partials are positional, so the accessors below expand an AVG into its two native states (a
+ * widened-sum state plus a COUNT over the same column) and the type checks walk the output row with
+ * a per-aggregate offset. The global reads each partial by its declared (Flink) type, so every
+ * declared partial column must equal what the native side emits — anything else falls back cleanly
+ * rather than mismatching at the boundary.
  */
 final class LocalGroupAggregateMatcher {
 
@@ -43,17 +47,35 @@ final class LocalGroupAggregateMatcher {
     }
     RelDataType outputType = agg.getRowType(); // [grouping.., partial0..]
     Seq<AggregateCall> aggCalls = agg.aggCalls();
+    int offset = grouping.length;
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
       if (call.isDistinct() || call.isApproximate() || call.filterArg >= 0) {
         return false;
       }
       int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
-      if (kind < 0 || kind == WindowAggregateMatcher.KIND_AVG || call.getArgList().size() > 1) {
-        return false; // SUM/MIN/MAX/COUNT only
+      if (kind < 0 || call.getArgList().size() > 1) {
+        return false; // SUM/MIN/MAX/COUNT/AVG only
       }
-      SqlTypeName partialType =
-          outputType.getFieldList().get(grouping.length + i).getType().getSqlTypeName();
+      if (kind == WindowAggregateMatcher.KIND_AVG) {
+        // AVG spans two positional partials: the widened running sum, then the bigint count.
+        if (call.getArgList().isEmpty() || offset + 1 >= outputType.getFieldCount()) {
+          return false;
+        }
+        SqlTypeName valueType =
+            inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
+        SqlTypeName widened = widenedSumType(valueType);
+        if (widened == null
+            || outputType.getFieldList().get(offset).getType().getSqlTypeName() != widened
+            || outputType.getFieldList().get(offset + 1).getType().getSqlTypeName()
+                != SqlTypeName.BIGINT) {
+          return false;
+        }
+        offset += 2;
+        continue;
+      }
+      SqlTypeName partialType = outputType.getFieldList().get(offset).getType().getSqlTypeName();
+      offset++;
       if (kind == WindowAggregateMatcher.KIND_COUNT) {
         // COUNT(*) (empty argList) or COUNT(col); the partial is the bigint running count either way.
         if (partialType != SqlTypeName.BIGINT) {
@@ -62,8 +84,7 @@ final class LocalGroupAggregateMatcher {
         continue;
       }
       // SUM/MIN/MAX read a typed running value; it must be a running type, and the partial Flink
-      // declares must match the value type (no widening), so the native emit and the global read
-      // agree on the column type.
+      // declares must equal the value type, so the native emit and the global read agree.
       SqlTypeName valueType =
           inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
       if (!isRunningType(valueType) || partialType != valueType) {
@@ -73,25 +94,90 @@ final class LocalGroupAggregateMatcher {
     return true;
   }
 
+  /** The declared type of an AVG's widened sum partial, or null if the value type isn't admitted. */
+  private static SqlTypeName widenedSumType(SqlTypeName valueType) {
+    switch (valueType) {
+      case BIGINT:
+      case INTEGER:
+        return SqlTypeName.BIGINT;
+      case DOUBLE:
+        return SqlTypeName.DOUBLE;
+      default:
+        return null;
+    }
+  }
+
   private static boolean isRunningType(SqlTypeName type) {
     return type == SqlTypeName.BIGINT
         || type == SqlTypeName.INTEGER
         || type == SqlTypeName.DOUBLE;
   }
 
+  /** Expanded native kinds, one entry per partial column (an AVG is a widened sum plus a count). */
   static int[] kinds(StreamPhysicalLocalGroupAggregate agg) {
-    return WindowAggregateMatcher.kinds(agg.aggCalls());
+    List<Integer> kinds = new ArrayList<>();
+    Seq<AggregateCall> aggCalls = agg.aggCalls();
+    for (int i = 0; i < aggCalls.size(); i++) {
+      int kind = WindowAggregateMatcher.aggregateKind(aggCalls.apply(i).getAggregation().getKind());
+      if (kind == WindowAggregateMatcher.KIND_AVG) {
+        kinds.add(WindowAggregateMatcher.KIND_AVG_PARTIAL_SUM);
+        kinds.add(WindowAggregateMatcher.KIND_COUNT);
+      } else {
+        kinds.add(kind);
+      }
+    }
+    return toArray(kinds);
   }
 
+  /** Expanded value columns (an AVG's sum and count states both read its value column). */
   static int[] valueColumns(StreamPhysicalLocalGroupAggregate agg) {
-    return WindowAggregateMatcher.valueColumns(agg.aggCalls());
+    List<Integer> columns = new ArrayList<>();
+    Seq<AggregateCall> aggCalls = agg.aggCalls();
+    for (int i = 0; i < aggCalls.size(); i++) {
+      AggregateCall call = aggCalls.apply(i);
+      int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+      int column = call.getArgList().isEmpty() ? -1 : call.getArgList().get(0);
+      columns.add(column);
+      if (kind == WindowAggregateMatcher.KIND_AVG) {
+        columns.add(column);
+      }
+    }
+    return toArray(columns);
   }
 
+  /** Expanded value-type codes; an AVG's sum state is typed by its WIDENED partial type. */
   static int[] valueTypeCodes(StreamPhysicalLocalGroupAggregate agg) {
-    return WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType());
+    RelDataType inputType = agg.getInput().getRowType();
+    List<Integer> codes = new ArrayList<>();
+    Seq<AggregateCall> aggCalls = agg.aggCalls();
+    for (int i = 0; i < aggCalls.size(); i++) {
+      AggregateCall call = aggCalls.apply(i);
+      int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+      if (kind == WindowAggregateMatcher.KIND_AVG) {
+        SqlTypeName valueType =
+            inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
+        codes.add(valueType == SqlTypeName.DOUBLE ? 1 : 0); // the widened sum: double or bigint
+        codes.add(0); // the bigint count
+      } else if (call.getArgList().isEmpty()) {
+        codes.add(0);
+      } else {
+        SqlTypeName valueType =
+            inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
+        codes.add(valueType == SqlTypeName.DOUBLE ? 1 : valueType == SqlTypeName.INTEGER ? 2 : 0);
+      }
+    }
+    return toArray(codes);
   }
 
   static int[] keyColumns(StreamPhysicalLocalGroupAggregate agg) {
     return WindowAggregateMatcher.keyColumns(agg.grouping());
+  }
+
+  private static int[] toArray(List<Integer> values) {
+    int[] array = new int[values.size()];
+    for (int i = 0; i < array.length; i++) {
+      array[i] = values.get(i);
+    }
+    return array;
   }
 }
