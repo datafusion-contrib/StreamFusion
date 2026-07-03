@@ -77,6 +77,11 @@ final class RexExpression {
   // are admitted — see emitItem.
   private static final int KIND_ITEM = 19;
 
+  // Decimal `/` and `%`: payload packs the declared result's precision*100 + scale; two children (the
+  // operands). A fused native kernel reproduces Flink's 38-significant-digit quotient + rescale.
+  private static final int KIND_DECIMAL_DIVIDE = 20;
+  private static final int KIND_DECIMAL_MOD = 21;
+
   // Cast target type codes, mirrored on the native side.
   private static final int CAST_TINYINT = 0;
   private static final int CAST_SMALLINT = 1;
@@ -419,24 +424,28 @@ final class RexExpression {
     if (call.getKind() == SqlKind.EXTRACT) {
       return emitExtract(call);
     }
-    // Decimal-typed arithmetic. Add/subtract/multiply are exact: the operands reach the native side as
-    // Decimal128 (columns already are; literals now emit as exact Decimal128), and Arrow's Decimal128
+    // Decimal-typed arithmetic, all exact. Add/subtract/multiply: the operands reach the native side
+    // as Decimal128 (columns already are; literals emit as exact Decimal128), and Arrow's Decimal128
     // add/sub/multiply match Flink's — the products carry the full scale (sum of input scales for ×,
-    // aligned max scale for ±), and the wrapping cast to the declared DECIMAL(p, s) rounds HALF_UP, the
-    // same rounding Flink uses. Division/modulo derive a rounded quotient scale that Arrow and Flink
-    // disagree on, so those stay behind the approximate-decimal flag. The cast wrapper pins the output
-    // column to the declared type either way.
+    // aligned max scale for ±), and the wrapping cast to the declared DECIMAL(p, s) rounds HALF_UP,
+    // the same rounding Flink uses. Division/modulo need Flink's own two rounding steps (the
+    // 38-significant-digit quotient, then the rescale to the declared type), which Arrow's division
+    // cannot reproduce, so they run through a dedicated fused kernel.
     if (isDecimalArithmetic(call)) {
-      boolean exact = call.getKind() == SqlKind.PLUS
-          || call.getKind() == SqlKind.MINUS
-          || call.getKind() == SqlKind.TIMES;
-      if (!exact && !NativeConfig.allowsApproximateDecimal()) {
-        return reject(
-            "decimal division/modulo not native by default; enable approximate (non-exact) decimal"
-                + " with -Dstreamfusion.expression.decimalArithmetic.approximate=true");
-      }
       int precision = call.getType().getPrecision();
       int scale = call.getType().getScale();
+      if (call.getKind() == SqlKind.DIVIDE || call.getKind() == SqlKind.MOD) {
+        add(
+            call.getKind() == SqlKind.DIVIDE ? KIND_DECIMAL_DIVIDE : KIND_DECIMAL_MOD,
+            precision * 100 + scale,
+            2);
+        for (RexNode operand : call.getOperands()) {
+          if (!emit(operand)) {
+            return false;
+          }
+        }
+        return true;
+      }
       add(KIND_CAST_DECIMAL, precision * 100 + scale, 1);
       // fall through: the arithmetic op is emitted next as this cast's single child.
     }

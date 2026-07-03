@@ -12,11 +12,12 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 
 /**
- * Decimal arithmetic in a Calc — Nexmark q1's {@code 0.908 * price}. Add/subtract/multiply run natively
- * and byte-exactly: the operands reach the native side as Decimal128 (columns already are; literals emit
- * as exact Decimal128), Arrow's Decimal128 arithmetic matches Flink's, and the wrapping cast to the
- * declared DECIMAL rounds HALF_UP — the same rounding Flink uses. Division/modulo derive a rounded
- * quotient scale the two engines disagree on, so they stay behind the approximate-decimal flag.
+ * Decimal arithmetic in a Calc — Nexmark q1's {@code 0.908 * price}. All of it runs natively and
+ * byte-exactly. Add/subtract/multiply: the operands reach the native side as Decimal128 (columns
+ * already are; literals emit as exact Decimal128), Arrow's Decimal128 arithmetic matches Flink's, and
+ * the wrapping cast to the declared DECIMAL rounds HALF_UP — the same rounding Flink uses.
+ * Division/modulo run through a fused native kernel reproducing Flink's two rounding steps: the
+ * quotient to 38 significant digits (HALF_UP), then the rescale to the declared type.
  */
 class FlinkDecimalExprSqlHarnessTest {
 
@@ -52,24 +53,34 @@ class FlinkDecimalExprSqlHarnessTest {
   }
 
   @Test
-  void decimalDivisionFallsBackByDefault() throws Exception {
-    // Division's quotient scale is engine-specific, so it is not admitted without the flag.
-    NativeParity.assertFallbackReasonContains(
+  void decimalDivisionExactByDefault() throws Exception {
+    // Repeating quotients (÷3, ÷7) exercise both rounding steps; the negated column exercises
+    // HALF_UP's away-from-zero on negatives.
+    NativeParity.assertParity(
         FlinkDecimalExprSqlHarnessTest::decimalPriceEnvironment,
-        "SELECT auction, price / 3 AS price FROM t",
-        "decimal division/modulo not native by default");
+        "SELECT auction, price / 3 AS a, price / 7.77 AS b, (0 - price) / 3 AS c FROM t");
   }
 
   @Test
-  void decimalDivisionRoutesUnderFlag() throws Exception {
-    System.setProperty("streamfusion.expression.decimalArithmetic.approximate", "true");
-    try {
-      NativeParity.assertRoutes(
-          FlinkDecimalExprSqlHarnessTest::decimalPriceEnvironment,
-          "SELECT auction, price / 3 AS price FROM t");
-    } finally {
-      System.clearProperty("streamfusion.expression.decimalArithmetic.approximate");
-    }
+  void decimalDivisionByDecimalColumnExactByDefault() throws Exception {
+    NativeParity.assertParity(
+        FlinkDecimalExprSqlHarnessTest::decimalPriceEnvironment,
+        "SELECT auction, 1000.5 / price AS inv FROM t");
+  }
+
+  @Test
+  void decimalModuloExactByDefault() throws Exception {
+    NativeParity.assertParity(
+        FlinkDecimalExprSqlHarnessTest::decimalPriceEnvironment,
+        "SELECT auction, MOD(price, 2.1) AS m, MOD(0 - price, 2.1) AS mn FROM t");
+  }
+
+  @Test
+  void decimalDivisionCastDownExactByDefault() throws Exception {
+    // The declared quotient type then cast down further — both rescales HALF_UP, like Flink.
+    NativeParity.assertParity(
+        FlinkDecimalExprSqlHarnessTest::decimalPriceEnvironment,
+        "SELECT auction, CAST(price / 3 AS DECIMAL(10, 2)) AS a FROM t");
   }
 
   private static TableEnvironment decimalPriceEnvironment() {

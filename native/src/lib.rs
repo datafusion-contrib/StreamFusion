@@ -1671,6 +1671,11 @@ enum RunningAgg {
     // DECIMAL(38, s) (Flink's findSumAggType). `overflow` latches once the running sum no longer
     // fits DECIMAL(38, s) (|value| >= 10^38), at which point Flink reports NULL.
     SumDecimal { sum: i128, scale: i8, overflow: bool },
+    // AVG over DECIMAL(p, s): the running sum is SUM's DECIMAL(38, s) accumulator (overflow latches
+    // NULL, like SUM); the count lives in GroupAggState's `non_null`. The emit divides sum by count
+    // with Flink's exact decimal division and reports DECIMAL(38, max(6, s)) — findAvgAggType's
+    // derivation, the type the planner declares for the call.
+    AvgDecimal { sum: i128, scale: i8, overflow: bool },
     // MIN/MAX over DECIMAL(p, s): the value lives in the Extremes multiset (this variant is never
     // folded), so this carries only the precision/scale to report the result type DECIMAL(p, s).
     MinMaxDecimal { precision: u8, scale: i8 },
@@ -1772,6 +1777,8 @@ impl RunningAgg {
             }
             // SUM(DECIMAL(_, s)) — accumulate the unscaled i128 at scale s; result is DECIMAL(38, s).
             (0, DataType::Decimal128(_, s)) => SumDecimal { sum: 0, scale: *s, overflow: false },
+            // AVG(DECIMAL(_, s)) — SUM's accumulator plus the exact divide on emit.
+            (4, DataType::Decimal128(_, s)) => AvgDecimal { sum: 0, scale: *s, overflow: false },
             // MIN/MAX(DECIMAL(p, s)) — the extreme lives in the multiset; result is DECIMAL(p, s).
             (1 | 2, DataType::Decimal128(p, s)) => MinMaxDecimal { precision: *p, scale: *s },
             // MIN/MAX(string) — the extreme lives in the multiset; result is the converter's Utf8.
@@ -1795,6 +1802,7 @@ impl RunningAgg {
             (MaxF64(m), Num::F64(v)) => *m = Some(m.map_or(v, |x| x.max(v))),
             (Count(c), _) => *c += 1,
             (SumDecimal { sum, overflow, .. }, Num::I128(v)) => accumulate_decimal(sum, overflow, v),
+            (AvgDecimal { sum, overflow, .. }, Num::I128(v)) => accumulate_decimal(sum, overflow, v),
             // FIRST_VALUE keeps the earliest value (set once); LAST_VALUE takes the most recent.
             (FirstI64(f), Num::I64(v)) => *f = Some(f.unwrap_or(v)),
             (LastI64(l), Num::I64(v)) => *l = Some(v),
@@ -1850,6 +1858,9 @@ impl RunningAgg {
             (SumDecimal { sum, overflow, .. }, Num::I128(v)) => {
                 accumulate_decimal(sum, overflow, v.wrapping_neg())
             }
+            (AvgDecimal { sum, overflow, .. }, Num::I128(v)) => {
+                accumulate_decimal(sum, overflow, v.wrapping_neg())
+            }
             (AvgInt { sum, .. }, Num::I64(v)) => *sum = sum.wrapping_sub(v),
             (AvgInt { sum, .. }, Num::I32(v)) => *sum = sum.wrapping_sub(v as i64),
             (AvgInt { sum, .. }, Num::I16(v)) => *sum = sum.wrapping_sub(v as i64),
@@ -1885,6 +1896,9 @@ impl RunningAgg {
             // the average itself is computed in GroupAggState::emit, where the count (non_null) lives.
             AvgInt { sum, .. } => ScalarValue::Int64(Some(*sum)),
             AvgFloat { sum, .. } => ScalarValue::Float64(Some(*sum)),
+            AvgDecimal { sum, scale, overflow } => {
+                ScalarValue::Decimal128((!*overflow).then_some(*sum), 38, *scale)
+            }
             // The two-phase AVG's local sum partial IS the raw widened sum (the local is a transient
             // bundle — this is its flush emit, never a checkpoint).
             AvgPartialSumInt(sum) => ScalarValue::Int64(Some(*sum)),
@@ -1899,6 +1913,7 @@ impl RunningAgg {
         match self {
             AvgInt { .. } => DataType::Int64,
             AvgFloat { .. } => DataType::Float64,
+            AvgDecimal { scale, .. } => DataType::Decimal128(38, *scale),
             _ => self.result_type(),
         }
     }
@@ -1915,6 +1930,8 @@ impl RunningAgg {
             SumI8(_) | MinI8(_) | MaxI8(_) | FirstI8(_) | LastI8(_) => DataType::Int8,
             SumF32(_) | MinF32(_) | MaxF32(_) | FirstF32(_) | LastF32(_) => DataType::Float32,
             SumDecimal { scale, .. } => DataType::Decimal128(38, *scale),
+            // Flink's findAvgAggType for DECIMAL(p, s): DECIMAL(38, max(6, s)).
+            AvgDecimal { scale, .. } => DataType::Decimal128(38, (*scale).max(6)),
             MinMaxDecimal { precision, scale } => DataType::Decimal128(*precision, *scale),
             MinMaxStr => DataType::Utf8,
             AvgInt { result, .. } | AvgFloat { result, .. } => result.clone(),
@@ -1954,6 +1971,13 @@ impl RunningAgg {
             },
             // AVG restores the running sum; the count is restored from the `non_null` column separately.
             (AvgInt { sum, .. }, ScalarValue::Int64(Some(v))) => *sum = *v,
+            (AvgDecimal { sum, overflow, .. }, ScalarValue::Decimal128(v, _, _)) => match v {
+                Some(x) => {
+                    *sum = *x;
+                    *overflow = false;
+                }
+                None => *overflow = true,
+            },
             (AvgFloat { sum, .. }, ScalarValue::Float64(Some(v))) => *sum = *v,
             _ => panic!("OVER state type mismatch on restore"),
         }
@@ -2667,6 +2691,23 @@ impl GroupAggState {
                 RunningAgg::AvgInt { sum, result } => avg_int_scalar(*sum / *non_null, result),
                 RunningAgg::AvgFloat { sum, result } => {
                     avg_float_scalar(*sum / *non_null as f64, result)
+                }
+                // Decimal AVG divides with Flink's exact decimal division (38-significant-digit
+                // quotient, HALF_UP) and reports DECIMAL(38, max(6, s)) — findAvgAggType's type. An
+                // overflowed sum reports NULL, like SUM.
+                RunningAgg::AvgDecimal { sum, scale, overflow } => {
+                    let result_scale = (*scale).max(6);
+                    if *overflow {
+                        ScalarValue::Decimal128(None, 38, result_scale)
+                    } else {
+                        let (unscaled, qscale) =
+                            quotient_38_digits(*sum, *scale, *non_null as i128, 0);
+                        ScalarValue::Decimal128(
+                            rescale_half_up(unscaled, qscale, 38, result_scale),
+                            38,
+                            result_scale,
+                        )
+                    }
                 }
                 _ => agg.emit(),
             },
@@ -8635,6 +8676,26 @@ fn build_expr(
                 None,
             )
         }
+        // Decimal `/` (20) and `%` (21): `arg` packs the declared result's precision*100 + scale; the
+        // two children are the operands (Decimal128 or integer). The fused kernel reproduces Flink's
+        // two rounding steps — the 38-significant-digit quotient, then the rescale to (p, s) — which
+        // a plain division + cast cannot (arrow derives a different quotient scale).
+        20 | 21 => {
+            let precision = (arg / 100) as u8;
+            let scale = (arg % 100) as i8;
+            let left = build_expr(
+                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+            );
+            let right = build_expr(
+                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+            );
+            datafusion::logical_expr::ScalarUDF::new_from_impl(DecimalDivide::new(
+                precision,
+                scale,
+                kinds[node] == 21,
+            ))
+            .call(vec![left, right])
+        }
         // Decimal cast: `arg` packs precision*100 + scale; the one child is cast to DECIMAL(p, s). Arrow
         // rescales Decimal128 with HALF_UP rounding (matching Flink), so from an exact source (decimal or
         // integer) the result is byte-exact; from a float/double source it is approximate (flag-gated on
@@ -8984,6 +9045,220 @@ impl datafusion::logical_expr::ScalarUDFImpl for NarrowingCast {
             }
         };
         Ok(ColumnarValue::Array(result))
+    }
+}
+
+/// Byte-exact decimal `/` and `%` with Flink's semantics, which arrow's decimal division cannot
+/// reproduce (it derives a different quotient scale). Flink's runtime
+/// (`DecimalDataUtils.divide`/`mod`) computes `BigDecimal.divide(divisor, MathContext(38, HALF_UP))`
+/// — the exact quotient rounded to 38 *significant digits* — then `fromBigDecimal(bd, p, s)` rescales
+/// to the declared `DECIMAL(p, s)` with HALF_UP and reports NULL when the result exceeds `p` digits.
+/// Both steps are reproduced here on big integers (the intermediate can exceed 38 digits, hence
+/// num-bigint). Modulo follows `BigDecimal.remainder`: subtract the truncated integral quotient times
+/// the divisor, exactly. A zero divisor fails the evaluation, as Flink's ArithmeticException fails
+/// the job; a NULL operand yields NULL. Operands are Decimal128 columns or integers (scale 0).
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct DecimalDivide {
+    precision: u8,
+    scale: i8,
+    modulo: bool,
+    signature: datafusion::logical_expr::Signature,
+}
+
+impl DecimalDivide {
+    fn new(precision: u8, scale: i8, modulo: bool) -> Self {
+        Self {
+            precision,
+            scale,
+            modulo,
+            signature: datafusion::logical_expr::Signature::variadic_any(
+                datafusion::logical_expr::Volatility::Immutable,
+            ),
+        }
+    }
+}
+
+/// (unscaled, scale) view of a decimal-or-integer array cell, or None when null.
+fn decimal_cell(array: &ArrayRef, row: usize) -> Option<(i128, i8)> {
+    if array.is_null(row) {
+        return None;
+    }
+    match array.data_type() {
+        DataType::Decimal128(_, s) => {
+            let a = array.as_any().downcast_ref::<Decimal128Array>().expect("decimal128");
+            Some((a.value(row), *s))
+        }
+        DataType::Int64 => Some((
+            array.as_any().downcast_ref::<Int64Array>().expect("int64").value(row) as i128,
+            0,
+        )),
+        DataType::Int32 => Some((
+            array.as_any().downcast_ref::<Int32Array>().expect("int32").value(row) as i128,
+            0,
+        )),
+        DataType::Int16 => Some((
+            array.as_any().downcast_ref::<arrow::array::Int16Array>().expect("int16").value(row)
+                as i128,
+            0,
+        )),
+        DataType::Int8 => Some((
+            array.as_any().downcast_ref::<Int8Array>().expect("int8").value(row) as i128,
+            0,
+        )),
+        other => panic!("decimal divide over unsupported operand type {other:?}"),
+    }
+}
+
+/// `BigDecimal.setScale(scale, HALF_UP)` + `DecimalData.fromBigDecimal`'s precision check: rescale an
+/// (unscaled, scale) big value to `target_scale`, rounding half away from zero, and return None (SQL
+/// NULL) when the result needs more than `precision` digits.
+fn rescale_half_up(
+    unscaled: num_bigint::BigInt,
+    scale: i64,
+    precision: u8,
+    target_scale: i8,
+) -> Option<i128> {
+    use num_bigint::BigInt;
+    let diff = target_scale as i64 - scale;
+    let rescaled = if diff >= 0 {
+        unscaled * BigInt::from(10u8).pow(diff as u32)
+    } else {
+        let divisor = BigInt::from(10u8).pow((-diff) as u32);
+        // BigInt `/`/`%` truncate toward zero, so q/r carry the value's sign.
+        let q = &unscaled / &divisor;
+        let r = &unscaled % &divisor;
+        // HALF_UP: round away from zero when the dropped fraction is at least half.
+        if r.magnitude() * 2u8 >= *divisor.magnitude() {
+            if unscaled.sign() == num_bigint::Sign::Minus {
+                q - 1
+            } else {
+                q + 1
+            }
+        } else {
+            q
+        }
+    };
+    // BigDecimal.precision(): digits of the unscaled value (zero has precision 1 — always fits).
+    if rescaled.magnitude().to_string().len() > precision as usize
+        && rescaled.sign() != num_bigint::Sign::NoSign
+    {
+        return None;
+    }
+    i128::try_from(&rescaled).ok()
+}
+
+/// The exact quotient of two (unscaled, scale) decimals, rounded to 38 significant digits with
+/// HALF_UP — the value `BigDecimal.divide(divisor, MathContext(38, HALF_UP))` produces — returned as
+/// an (unscaled, scale) big pair. The divisor must be non-zero.
+fn quotient_38_digits(
+    a: i128,
+    s1: i8,
+    b: i128,
+    s2: i8,
+) -> (num_bigint::BigInt, i64) {
+    use num_bigint::{BigInt, Sign};
+    // v1 / v2 = (a·10^s2) / (b·10^s1).
+    let n = BigInt::from(a) * BigInt::from(10u8).pow(s2.max(0) as u32);
+    let d = BigInt::from(b) * BigInt::from(10u8).pow(s1.max(0) as u32);
+    let negative = (n.sign() == Sign::Minus) != (d.sign() == Sign::Minus)
+        && n.sign() != Sign::NoSign;
+    let (n, d) = (n.magnitude().clone(), d.magnitude().clone());
+    if n == num_bigint::BigUint::from(0u8) {
+        return (BigInt::from(0), 0);
+    }
+    // Scale the numerator so the integer quotient carries exactly 38 significant digits, then round
+    // once with HALF_UP off the exact remainder. digits(n·10^g / d) is monotone in g, so start from
+    // the digit-count estimate and step until it lands on 38.
+    let mut g: i64 = 38 - (n.to_string().len() as i64 - d.to_string().len() as i64) - 1;
+    loop {
+        // For a negative g, scale the denominator instead of truncating the numerator, so the
+        // division (and its remainder, which drives the rounding) stays exact.
+        let (num, den) = if g >= 0 {
+            (&n * num_bigint::BigUint::from(10u8).pow(g as u32), d.clone())
+        } else {
+            (n.clone(), &d * num_bigint::BigUint::from(10u8).pow((-g) as u32))
+        };
+        let q = &num / &den;
+        let digits = q.to_string().len() as i64;
+        if digits < 38 {
+            g += 38 - digits.max(1);
+            continue;
+        }
+        if digits > 38 {
+            g -= digits - 38;
+            continue;
+        }
+        let r = &num % &den;
+        let rounded = if &r * 2u8 >= den { q + 1u8 } else { q };
+        let signed = BigInt::from_biguint(
+            if negative { Sign::Minus } else { Sign::Plus },
+            rounded,
+        );
+        return (signed, g);
+    }
+}
+
+/// `BigDecimal.remainder`: v1 − trunc(v1/v2)·v2, computed exactly at scale max(s1, s2). The sign
+/// follows the dividend, like Java's remainder.
+fn remainder_exact(a: i128, s1: i8, b: i128, s2: i8) -> (num_bigint::BigInt, i64) {
+    use num_bigint::BigInt;
+    let n = BigInt::from(a) * BigInt::from(10u8).pow(s2.max(0) as u32);
+    let d = BigInt::from(b) * BigInt::from(10u8).pow(s1.max(0) as u32);
+    let q = &n / &d; // BigInt division truncates toward zero, like divideToIntegralValue
+    let sm = s1.max(s2) as i64;
+    let r = BigInt::from(a) * BigInt::from(10u8).pow((sm - s1 as i64) as u32)
+        - q * BigInt::from(b) * BigInt::from(10u8).pow((sm - s2 as i64) as u32);
+    (r, sm)
+}
+
+impl datafusion::logical_expr::ScalarUDFImpl for DecimalDivide {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &str {
+        if self.modulo {
+            "flink_decimal_mod"
+        } else {
+            "flink_decimal_divide"
+        }
+    }
+    fn signature(&self) -> &datafusion::logical_expr::Signature {
+        &self.signature
+    }
+    fn return_type(&self, _: &[DataType]) -> datafusion::common::Result<DataType> {
+        Ok(DataType::Decimal128(self.precision, self.scale))
+    }
+    fn invoke_with_args(
+        &self,
+        args: datafusion::logical_expr::ScalarFunctionArgs,
+    ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
+        use datafusion::logical_expr::ColumnarValue;
+        use num_bigint::BigInt;
+        let arrays = ColumnarValue::values_to_arrays(&args.args)?;
+        let (left, right) = (&arrays[0], &arrays[1]);
+        let mut out = Vec::with_capacity(left.len());
+        for row in 0..left.len() {
+            let (Some((a, s1)), Some((b, s2))) = (decimal_cell(left, row), decimal_cell(right, row))
+            else {
+                out.push(None);
+                continue;
+            };
+            if b == 0 {
+                return Err(datafusion::error::DataFusionError::Execution(
+                    "Division by zero".to_string(),
+                ));
+            }
+            let (unscaled, scale) = if self.modulo {
+                remainder_exact(a, s1, b, s2)
+            } else {
+                quotient_38_digits(a, s1, b, s2)
+            };
+            out.push(rescale_half_up(unscaled, scale, self.precision, self.scale));
+        }
+        let result = Decimal128Array::from(out)
+            .with_precision_and_scale(self.precision, self.scale)
+            .map_err(|e| datafusion::error::DataFusionError::ArrowError(Box::new(e), None))?;
+        Ok(ColumnarValue::Array(Arc::new(result)))
     }
 }
 
@@ -15087,6 +15362,50 @@ mod tests {
         let names =
             out.column_by_name("name").unwrap().as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
         assert_eq!((names.value(0), names.value(1)), ("a", "b"));
+    }
+
+    // Byte-exact decimal division/modulo: every expected value below was produced by running Java's
+    // own BigDecimal pipeline (divide with MathContext(38, HALF_UP), then setScale(s, HALF_UP), with
+    // DecimalData.fromBigDecimal's precision check) — the exact code Flink's runtime executes.
+    #[test]
+    fn decimal_divide_matches_bigdecimal() {
+        fn div(a: i128, s1: i8, b: i128, s2: i8, p: u8, s: i8) -> Option<i128> {
+            let (unscaled, scale) = quotient_38_digits(a, s1, b, s2);
+            rescale_half_up(unscaled, scale, p, s)
+        }
+        // 7.00 / 3.00 → DECIMAL(23,13): the repeating quotient rounds at the declared scale.
+        assert_eq!(div(700, 2, 300, 2, 23, 13), Some(23333333333333));
+        // 2 / 3 → DECIMAL(38,6): the 38-significant-digit intermediate then rescales with HALF_UP.
+        assert_eq!(div(2, 0, 3, 0, 38, 6), Some(666667));
+        // Negative dividend: HALF_UP rounds away from zero.
+        assert_eq!(div(-700, 2, 300, 2, 23, 13), Some(-23333333333333));
+        assert_eq!(div(1, 0, 3, 0, 10, 2), Some(33));
+        // 10.4 / 0.03 → 346.666667 (rounded up at the target scale).
+        assert_eq!(div(104, 1, 3, 2, 12, 6), Some(346666667));
+        // 99999999999999999999.5 / 0.1: an exact 21-digit quotient, rescaled to 22 digits — fits.
+        assert_eq!(
+            div(999999999999999999995, 1, 1, 1, 22, 1),
+            Some(9999999999999999999950)
+        );
+        assert_eq!(div(0, 2, 525, 2, 23, 13), Some(0));
+        // A quotient needing more digits than the declared precision reports NULL, like
+        // DecimalData.fromBigDecimal.
+        assert_eq!(div(123456789012345678901234567890123456, 6, 1, 6, 38, 6), None);
+    }
+
+    #[test]
+    fn decimal_mod_matches_bigdecimal() {
+        fn modulo(a: i128, s1: i8, b: i128, s2: i8, p: u8, s: i8) -> Option<i128> {
+            let (unscaled, scale) = remainder_exact(a, s1, b, s2);
+            rescale_half_up(unscaled, scale, p, s)
+        }
+        // 7.5 % 2.1 = 1.2; the sign follows the dividend (Java remainder), the divisor's sign is
+        // irrelevant.
+        assert_eq!(modulo(75, 1, 21, 1, 12, 6), Some(1_200_000));
+        assert_eq!(modulo(-75, 1, 21, 1, 12, 6), Some(-1_200_000));
+        assert_eq!(modulo(75, 1, -21, 1, 12, 6), Some(1_200_000));
+        // Mixed scales: 5.75 % 0.50 = 0.25.
+        assert_eq!(modulo(575, 2, 50, 2, 12, 6), Some(250_000));
     }
 
     // Confluent Avro (format 1), registry-driven: the store starts empty, writer schemas arrive by id

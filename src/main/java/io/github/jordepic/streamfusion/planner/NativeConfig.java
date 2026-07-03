@@ -28,10 +28,11 @@ public final class NativeConfig {
   }
 
   /**
-   * Whether decimal-typed arithmetic ({@code +}/{@code -}/{@code *}/{@code /} with a DECIMAL result)
-   * may run natively. It is computed in double and cast to the declared {@code DECIMAL(p, s)}, so it is
-   * <em>not</em> byte-identical to Flink's decimal semantics (precision/scale derivation, HALF_UP
-   * rounding) — intended for benchmarking throughput, not correctness. Off by default ({@code
+   * Whether a cast to DECIMAL from an inexact (float/double) source may run natively — the binary
+   * source value is already inexact, so the result is not byte-identical to Flink's
+   * {@code BigDecimal.valueOf(double)} conversion. All decimal <em>arithmetic</em>
+   * ({@code +}/{@code -}/{@code *}/{@code /}/{@code %}) is byte-exact and native by default, so this
+   * flag no longer affects it. Off by default ({@code
    * streamfusion.expression.decimalArithmetic.approximate}); also enabled by the blanket
    * {@code allowIncompatible} switch.
    */

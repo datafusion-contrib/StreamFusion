@@ -23,7 +23,7 @@ DataFusion: `sum(intN)→Int64`, `sum(floatN)→Float64`, `avg(int)→Float64`,
 | INT     | ✓ (custom wrapping) | ✓ (custom truncating) | ✓ | ✓ | ✓ |
 | SMALLINT / TINYINT | ✓ (custom wrapping) | ✓ (custom truncating) | ✓ | ✓ | ✓ |
 | FLOAT (REAL) | ✓ (custom f32) | ✓ (custom f64→f32) | ✓ | ✓ | ✓ |
-| DECIMAL | ✗ precision rules | ✗ precision rules | ✓ | ✓ | ✓ |
+| DECIMAL | ✓ non-windowed / ✗ windowed | ✓ non-windowed / ✗ windowed | ✓ | ✓ | ✓ |
 | CHAR / VARCHAR | ✗ | ✗ | ✓ (byte-lexicographic) | ✓ (byte-lexicographic) | ✓ |
 
 Notes / divergences this avoids:
@@ -41,10 +41,14 @@ Notes / divergences this avoids:
   narrows the quotient to float (as `FloatAvgAggFunction` does). Both fold in the
   same per-row order as the host, so the result is bit-identical — verified by a
   parity test over values whose float running sum carries rounding error.
-- **DECIMAL** carries `MIN`/`MAX`/`COUNT` (type-preserving comparisons/counts over an
-  Arrow decimal vector of the column's precision/scale). `SUM`/`AVG` over decimal stay
-  on the host: Flink's result precision (`DECIMAL(38, s)`) differs from DataFusion's
-  sum precision derivation.
+- **DECIMAL** carries `MIN`/`MAX`/`COUNT` everywhere (type-preserving comparisons/counts
+  over an Arrow decimal vector of the column's precision/scale). The **non-windowed
+  `GROUP BY`** also runs decimal `SUM` (an i128 running sum at the input scale,
+  reported as Flink's `DECIMAL(38, s)`, overflow → NULL) and decimal `AVG` (that sum
+  divided by the non-null count with Flink's exact decimal division — 38-significant-digit
+  quotient then HALF_UP rescale — reported as `findAvgAggType`'s `DECIMAL(38, max(6, s))`).
+  The **windowed** aggregates still leave decimal `SUM`/`AVG` on the host: their
+  accumulators don't carry the custom decimal state yet.
 
 ## Predicate arithmetic (filter expressions)
 The native expression engine admits `+`/`-`/`*` in filter predicates. DataFusion

@@ -50,8 +50,11 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   `count == 0 ? NULL : sum / count` with the result cast back to the input type and **integer division
   truncating toward zero** — a faithful port of Flink's `AvgAggFunction`, over
   bigint/int/smallint/tinyint/float/double, retract-aware — and **two-phase `AVG`** now runs native
-  too (bigint/int/double values; see the mini-batch bullet below). Still falling back: **decimal
-  `AVG`** (precision/scale derivation not modelled), two-phase decimal `SUM`, and window-aggregate
+  too (bigint/int/double values; see the mini-batch bullet below). **Decimal `AVG`** is also native
+  for the single-phase non-windowed `GROUP BY`: the sum is SUM's `DECIMAL(38, s)` accumulator and
+  the emit divides by the non-null count with Flink's exact decimal division (38-significant-digit
+  quotient, HALF_UP rescale), reporting `DECIMAL(38, max(6, s))` — `findAvgAggType`'s type. Still
+  falling back: two-phase decimal `SUM`/`AVG`, and window-aggregate
   decimal `SUM`/`AVG`; value types outside bigint/double/int/smallint/tinyint/float/decimal (see
   `aggregate-type-support.md`).
 - **Two-phase (mini-batch) `GROUP BY`** — all four operators run native: a native `MiniBatchAssigner`
@@ -192,7 +195,7 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   grouping-only window (`GROUP BY key + window`, no aggregate function) is a windowed distinct and **is**
   supported (single- and two-phase), emitting one row per (key, window).
 - **GROUP BY (non-windowed)** — a UDAF, or `AVG`/`SUM`/`MIN`/`MAX` over a value type outside its
-  supported set (`AVG` over decimal; see `aggregate-type-support.md`); `AVG(DISTINCT)` (the only
+  supported set (see `aggregate-type-support.md`); `AVG(DISTINCT)` (the only
   non-native `DISTINCT` form — `COUNT(DISTINCT x)` keeps a per-key value set, `SUM(DISTINCT x)` adds
   a running sum folded as values enter/leave it, and `MIN`/`MAX(DISTINCT)` run as their plain forms,
   the extreme being multiplicity-blind); an approximate aggregate;
@@ -244,15 +247,16 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   casts (`CAST(x AS VARCHAR)`, `CAST(s AS INT)` — formatting/parsing diverges), **narrowing a VARCHAR**
   (truncation), **casting to CHAR(n)** (space-padding), and **→DECIMAL from a float/double** (inexact —
   behind the approximate flag).
-- **Decimal arithmetic** — `+`/`-`/`*` whose result type is `DECIMAL` (e.g. Nexmark q1's `0.908 * price`)
-  run **natively and byte-exact by default**: operands are Decimal128 (columns already are; literals emit
-  as an exact Decimal128), Arrow's Decimal128 add/sub/mul carry Flink's scales, and the wrapping cast to
-  the declared `DECIMAL(p, s)` rounds HALF_UP as Flink does. **Division/modulo** (`/`/`%`) still fall
-  back by default — Arrow and Flink derive a different rounded quotient scale — and run only behind the
-  opt-in `-Dstreamfusion.expression.decimalArithmetic.approximate=true` (or the blanket
-  `allowIncompatible`), computed in double and cast to the declared `DECIMAL(p, s)`, which is **not**
-  byte-identical to Flink; intended for benchmarking throughput, not correctness. Byte-exact decimal
-  division remains future work.
+- **Decimal arithmetic** — **all native and byte-exact by default, *not* a fallback.** `+`/`-`/`*`
+  whose result type is `DECIMAL` (e.g. Nexmark q1's `0.908 * price`): operands are Decimal128
+  (columns already are; literals emit as an exact Decimal128), Arrow's Decimal128 add/sub/mul carry
+  Flink's scales, and the wrapping cast to the declared `DECIMAL(p, s)` rounds HALF_UP as Flink does.
+  **Division/modulo** (`/`/`%`) run through a fused native kernel reproducing Flink's exact runtime
+  (`DecimalDataUtils.divide`/`mod`): the quotient to 38 *significant digits* with HALF_UP
+  (`BigDecimal`'s `MathContext(38, HALF_UP)`), then the rescale to the declared `DECIMAL(p, s)` with
+  HALF_UP, NULL when the result exceeds `p` digits, and a division by zero failing the job — all as
+  the host. (The old `decimalArithmetic.approximate` flag no longer affects arithmetic; it only
+  gates the inexact float/double→DECIMAL cast.)
 - **Case folding & regex — native by default, *not* a fallback.** `UPPER`/`LOWER` and `REGEXP_EXTRACT`
   run natively **by default** via a columnar JVM upcall to Flink's own `BinaryStringData` case folding /
   `SqlFunctionUtils.regexpExtract`, so they are byte-identical to the host and the rest of the expression
@@ -312,8 +316,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
     itself rejects `MAX(array)` and `ORDER BY array`, so this matches the host.
 - **Key types** outside bigint/int/string/boolean/date/timestamp/decimal **(plus the nested types
   above)** for join/OVER/window/group keys.
-- **Aggregate value types** outside the parity matrix in `aggregate-type-support.md`. Non-windowed
-  `GROUP BY` `SUM`/`MIN`/`MAX`/`COUNT` now cover `DECIMAL`; decimal `AVG` and window-aggregate decimal
+- **Aggregate value types** outside the parity matrix in `aggregate-type-support.md`. The non-windowed
+  `GROUP BY` covers `DECIMAL` for `SUM`/`MIN`/`MAX`/`COUNT`/`AVG`; window-aggregate decimal
   `SUM`/`AVG` still fall back.
 
 ### 5. Source / sink / connector

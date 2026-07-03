@@ -84,10 +84,11 @@ final class GroupAggregateMatcher {
         SqlTypeName valueType =
             inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
         if (kind == WindowAggregateMatcher.KIND_AVG) {
-          // AVG keeps a (sum, count) running state: sum widens to bigint/double, result casts back to
-          // the input type. Over bigint/int/smallint/tinyint/float/double only; decimal AVG (whose
-          // precision/scale derivation is not modelled) falls back.
-          if (!isAvgType(valueType)) {
+          // AVG keeps a (sum, count) running state: for the numerics, the sum widens to bigint/double
+          // and the result casts back to the input type; for DECIMAL(p, s), the sum is SUM's
+          // DECIMAL(38, s) accumulator and the emit divides with Flink's exact decimal division,
+          // reporting DECIMAL(38, max(6, s)) — findAvgAggType's derivation.
+          if (!isAvgType(valueType) && valueType != SqlTypeName.DECIMAL) {
             return false;
           }
         } else if (kind == KIND_MIN || kind == KIND_MAX) {

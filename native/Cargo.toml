@@ -23,6 +23,10 @@ chrono-tz = "0.10"
 # REGEXP_EXTRACT (opt-in, allowIncompatible): Rust's regex engine differs from Java's, so the JVM
 # encoder gates it. Already in the tree transitively via datafusion; pinned here for direct use.
 regex = "1"
+# Byte-exact decimal division/modulo: emulating BigDecimal.divide's round-to-38-significant-digits
+# intermediate needs integers wider than i128/i256 in the worst case. Already in the tree
+# transitively via datafusion; pinned here for direct use.
+num-bigint = "0.4"
 # Native file readers, both driven through DataFusion's file-scan execution (projection pushdown,
 # row-group/stripe range selection) — datafusion's built-in Parquet source and datafusion-orc's ORC
 # source. datafusion-orc is not published for this datafusion version, so it is pinned by git rev;

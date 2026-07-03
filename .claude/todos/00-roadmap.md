@@ -13,7 +13,8 @@ here when the ticket is deleted.
   **exact `Decimal128` `+`/`-`/`*`**, widening + **narrowing/float→int** `CAST` (wrapping/saturating
   kernel) and `CHAR`/`VARCHAR`→`VARCHAR` passthrough; precision/locale-divergent ops (`ROUND`/transcendental,
   pure-Rust case/regex) are opt-in behind `allowIncompatible`. Remaining tail (parity-gated, minor):
-  number↔string `CAST`, narrowing-`VARCHAR`/cast-to-`CHAR(n)`, byte-exact decimal `/`/`%`, obscure funcs.
+  number↔string `CAST`, narrowing-`VARCHAR`/cast-to-`CHAR(n)`, obscure funcs. (Byte-exact decimal
+  `/`/`%` shipped 2026-07-03 — a fused kernel reproducing Flink's two HALF_UP rounding steps.)
 - **JVM-upcall UDFs — done, distributed-safe.** A function the native engine can't evaluate itself runs
   via a native→JVM columnar Arrow upcall (`NativeUdf`/`JvmUdf`, one JNI crossing per batch, byte-identical
   to Flink): non-builtin Flink `ScalarFunction`s (q14) and the host-exact builtins `REGEXP_EXTRACT` /
@@ -117,10 +118,11 @@ here when the ticket is deleted.
    plans to under mini-batch), two-phase decimal `SUM`, wider two-phase value types, row-time
    mini-batch. (Two-phase `AVG` shipped 2026-07-03; the "widening partials" item was a misdiagnosis
    — Flink's SUM partial keeps the value type and already routes.)
-3. **High-frequency aggregate/expression tail** (ticket 42): decimal `AVG` (plain + windowed),
-   byte-exact number↔string `CAST`, byte-exact decimal division. (`SUM`/`MIN`/`MAX` `DISTINCT`
-   shipped 2026-07-03, and windowed DISTINCT aggregates — previously admitted as plain folds, a
-   wrong-results bug — now fall back.)
+3. **High-frequency aggregate/expression tail** (ticket 42): byte-exact number↔string `CAST`,
+   windowed decimal `SUM`/`AVG`. (Shipped 2026-07-03: `SUM`/`MIN`/`MAX` `DISTINCT` — and windowed
+   DISTINCT aggregates, previously admitted as plain folds (a wrong-results bug), now fall back;
+   byte-exact decimal `/`/`%` by default, retiring the approximate flag for arithmetic; and
+   non-windowed decimal `AVG` via the exact division.)
 4. **Legacy group windows** (ticket 43): map `GROUP BY TUMBLE/HOP(...)` onto the existing native
    window operators — the event-time `SESSION` exception is the template.
 5. **Cheap wins, interleaved:** the format-option parity audit (ticket 32). (Shipped 2026-07-03:

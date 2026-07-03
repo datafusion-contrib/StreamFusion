@@ -3164,6 +3164,7 @@ dependencies = [
  "futures",
  "jni",
  "libmimalloc-sys",
+ "num-bigint",
  "num-traits",
  "orc-rust",
  "parquet",
