@@ -313,10 +313,14 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 ### 5. Source / sink / connector
 - **Filesystem** — non-local path (`hdfs:`/`s3:`/…) for the Parquet/ORC source and Parquet sink; any
   non-Parquet/ORC source format; any non-Parquet sink format.
-- **Kafka** — value format outside JSON/CSV/raw/bare-Avro/protobuf; `avro-confluent` (decoder exists,
-  not wired); a `key.format`; a `scan.bounded.mode` other than unbounded/latest-offset; protobuf
-  fields needing representation reconciliation (enum/unsigned/bytes/proto3-defaults/well-known
-  types). All startup modes are supported (earliest/latest/group-offsets/timestamp/specific-offsets),
+- **Kafka** — value format outside JSON/CSV/raw/bare-Avro/`avro-confluent`/protobuf; a `key.format`;
+  a `scan.bounded.mode` other than unbounded/latest-offset; protobuf fields needing representation
+  reconciliation (enum/unsigned/bytes/proto3-defaults/well-known types). `avro-confluent` (decode
+  path only, not the native source) fetches each frame's writer schema from the registry by id at
+  runtime — the same lazy per-id lookup Flink's deserializer makes, following mid-stream schema
+  evolution — but falls back when the registry options need more than a plain URL: an explicit
+  reader `schema`, basic/bearer auth, SSL stores, or pass-through client `properties`. All startup
+  modes are supported (earliest/latest/group-offsets/timestamp/specific-offsets),
   as are `topic` lists and `topic-pattern` — discovery and offset resolution run in Flink's own
   reused enumerator, so the native paths inherit its semantics.
 - **Kafka watermarks / event time** — Flink pushes a Kafka table's `WATERMARK` clause *into the scan*

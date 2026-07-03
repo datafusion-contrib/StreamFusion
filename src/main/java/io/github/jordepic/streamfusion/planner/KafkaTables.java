@@ -1,5 +1,6 @@
 package io.github.jordepic.streamfusion.planner;
 
+import io.github.jordepic.streamfusion.kafka.ConfluentSchemaRegistry;
 import io.github.jordepic.streamfusion.kafka.KafkaConfigTranslator;
 import io.github.jordepic.streamfusion.kafka.NativeKafkaSource;
 import java.util.Arrays;
@@ -155,22 +156,22 @@ final class KafkaTables {
   }
 
   // --- Shallow decode path (Phase 2/3): Flink's own KafkaSource consumes raw value bytes, a native
-  // operator decodes them to Arrow. Insert-only formats (JSON/CSV/raw) route via isNativeKafkaDecode;
-  // CDC changelog formats (Debezium/OGG) route via isCdcDecode, gated to the cases reproduced identically
-  // to Flink. Avro/protobuf decoders exist but aren't wired into this planner path yet — see ticket 32.
+  // operator decodes them to Arrow. Insert-only formats (JSON/CSV/raw/bare-Avro/Confluent-Avro/protobuf)
+  // route via isNativeKafkaDecode; CDC changelog formats (Debezium/OGG) route via isCdcDecode, gated to
+  // the cases reproduced identically to Flink.
 
   /**
    * Whether this table's decoder honors a pruned output schema — decoding only the columns and nested
    * sub-fields the schema names. JSON (the decode is schema-driven and JSON self-describing, so a
-   * narrowed schema skips the other keys), bare Avro (the decode carries the full writer schema and
-   * resolves the narrowed output as the reader schema), and protobuf (the descriptor is pruned to the
-   * read fields; ptars builds a column per descriptor field and skips unmatched wire tags) do. CSV/raw
-   * are positional/scalar, and Confluent Avro's writer schema comes from the registry by id; those
+   * narrowed schema skips the other keys), the Avro variants (the decode resolves the narrowed output
+   * as the reader schema — bare Avro against the RowType-derived writer schema, Confluent against the
+   * registry-fetched one), and protobuf (the descriptor is pruned to the read fields; ptars builds a
+   * column per descriptor field and skips unmatched wire tags) do. CSV/raw are positional/scalar and
    * decode in full.
    */
   static boolean decodeHonorsProjection(Map<String, String> options) {
     int code = decodeFormatCode(options);
-    return code == 0 || code == 4 || code == 5; // JSON, bare Avro, protobuf
+    return code == 0 || code == 1 || code == 4 || code == 5; // JSON, both Avros, protobuf
   }
 
   /** The {@code MessageDecoder} format code for this table's value format, or -1 if not decodable here. */
@@ -182,6 +183,8 @@ final class KafkaTables {
     switch (format) {
       case "json":
         return 0;
+      case "avro-confluent":
+        return 1; // writer schemas fetched from the registry by frame id; reader from the RowType
       case "csv":
         return 2;
       case "raw":
@@ -199,7 +202,7 @@ final class KafkaTables {
       case "canal-json":
         return 9;
       default:
-        return -1; // avro / avro-confluent / protobuf: decoder exists, planner wiring is a follow-up
+        return -1;
     }
   }
 
@@ -247,6 +250,11 @@ final class KafkaTables {
       // well-known types still fall back (see ProtobufDescriptors).
       String messageClass = options.get("protobuf.message-class-name");
       return messageClass != null && ProtobufDescriptors.isSupportedMessage(messageClass);
+    }
+    if (code == 1) {
+      // Confluent Avro routes when the registry options translate to the native fetch (a plain URL);
+      // an explicit reader schema, registry auth/SSL, or pass-through client properties fall back.
+      return ConfluentSchemaRegistry.fromOptions(options) != null;
     }
     return code == 0 || code == 2 || code == 3 || code == 4;
   }

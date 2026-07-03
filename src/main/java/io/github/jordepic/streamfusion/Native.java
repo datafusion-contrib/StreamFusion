@@ -786,7 +786,9 @@ public final class Native {
    *     {@code $row_kind$} byte), 1 = Confluent Avro, 4 = bare Avro
    * @param schemaArrayAddress address of an exported (empty) {@code ArrowArray} of the target schema
    * @param schemaAddress address of the matching exported {@code ArrowSchema}
-   * @param avroSchema writer-schema JSON for Avro (ignored for JSON; pass "")
+   * @param avroSchema writer-schema JSON for Avro (ignored for JSON; pass ""). For Confluent Avro an
+   *     empty string starts an empty schema store, fed by id at runtime via {@link
+   *     #registerAvroSchema} — the registry-driven path
    * @param readerAvroSchema reader-schema JSON projecting the Avro writer record to a subset of fields
    *     via Avro resolution (the query's columns); pass "" for no projection / non-Avro
    * @param schemaId Confluent schema id the Avro writer schema is registered under (ignored for JSON)
@@ -813,6 +815,14 @@ public final class Native {
    */
   public static native long createProtobufDecoder(
       byte[] descriptor, String messageName, long schemaArrayAddress, long schemaAddress);
+
+  /**
+   * Registers a writer schema under a Confluent schema id on an existing Confluent-Avro decoder
+   * (format 1). The decode operator calls this the first time a batch carries an id it hasn't seen,
+   * with the schema fetched from the schema registry — so the decoder's store follows the topic's
+   * schema evolution the way Flink's own {@code avro-confluent} deserializer does.
+   */
+  public static native void registerAvroSchema(long handle, int schemaId, String schema);
 
   /** Decodes one binary-column body batch into a typed batch, exported into the output C structs. */
   public static native void decodeInto(

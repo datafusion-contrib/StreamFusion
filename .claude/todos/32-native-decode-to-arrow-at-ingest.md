@@ -3,13 +3,15 @@
 **Status:** core DONE — trimmed to the tail. File sources (Parquet + ORC) land via DataFusion's file
 scan + the framework's split handoff; the streaming decode operator (`NativeBytesDecodeOperator`) is
 built, wired (`NativeKafkaDecodeExecNode`, routed by `KafkaTables`), and parity-tested for JSON,
-Confluent/bare Avro, CSV, protobuf, and Debezium/OGG CDC. **Remaining tail only:** (a) a **time-based
+Confluent/bare Avro, CSV, protobuf, and Debezium/OGG CDC. `avro-confluent` routing shipped 2026-07-03:
+the operator fetches each frame's writer schema from the registry by id on first sight (plain-HTTP
+`GET /schemas/ids/<id>`, no Confluent client dependency), patches the reader's record names onto it as
+aliases (arrow-avro enforces the spec's name check; Avro Java skips it), and registers it into the
+native store — following mid-stream schema evolution like Flink's own deserializer; auth/SSL/explicit-
+schema registry options fall back (coverage doc §5). **Remaining tail only:** (a) a **time-based
 flush** for an unbounded stream that stays below the batch size (latency); (b) **Maxwell/Canal**
 exact-parity auto-routing (decoded, but parity-gated to fallback today); (c) **CSV/JSON *file*** sources
-(the lower-priority file formats — Avro OCF was dropped, arrow-avro can't read Flink's top-level-union);
-(d) **`avro-confluent` table routing** — the Confluent-framed decoder (format 1) is built and tested,
-but the plan-time step that populates its `SchemaStore` from the schema registry isn't wired, so an
-`avro-confluent` table still falls back (coverage doc §5).
+(the lower-priority file formats — Avro OCF was dropped, arrow-avro can't read Flink's top-level-union).
 **Source:** every record we ingest from Kafka (or any non-Parquet source) is decoded on the
 JVM `bytes → GenericRecord/JsonNode/… → RowData` and only *then* transposed to Arrow by our
 source-edge `StreamPhysicalRowDataToArrow`. That row materialization is the single highest-traffic
@@ -141,12 +143,18 @@ tail (time-based flush; Maxwell/Canal auto-routing; CSV/JSON file sources).
   so we register the reader schema at **synthetic id 0** and **prepend the 5-byte id-0 Confluent header**
   to each datum — reusing the framed decoder. `decode_avro_body(.., bare=true)`.
 
-### Confluent-Avro — ✅ built (format 1)
+### Confluent-Avro — ✅ built and routed (format 1)
 - Flink: `~/data/flink/flink-formats/flink-avro/src/main/java/org/apache/flink/formats/avro/RegistryAvroDeserializationSchema.java`.
 - Rust: same `arrow-avro` `Decoder`; Confluent wire format (`0x00` + 4-byte BE schema id) is built in
   via `Fingerprint::Id` + `SchemaStore` (`~/data/arrow-rs/arrow-avro/src/schema.rs:687`), with
-  mid-stream schema switching (`reader/mod.rs:742-770`). Populate `SchemaStore` from the registry
-  at plan/open time (registry URLs are in repo `CLAUDE.md`).
+  mid-stream schema switching (`reader/mod.rs:742-770`).
+- **Routed (2026-07-03):** the store starts empty; the decode operator scans each batch's frame ids
+  and, on first sight of an id, fetches the writer schema from the registry (plain HTTP, mirroring
+  the client's one read endpoint), alias-patches the reader's record names onto it (Avro Java skips
+  the resolution name check; arrow-avro enforces it but honors aliases), and registers it natively —
+  so evolution mid-stream works exactly like Flink's lazy per-id lookup. Registry auth/SSL/explicit
+  `schema` options fall back. Parity: `NativeConfluentAvroDecodeSqlHarnessTest` (mock registry +
+  Kafka container, two writer versions, projection).
 
 ### Debezium / OGG / Maxwell / Canal (CDC JSON) — ✅ all four built (formats 6, 7, 8, 9)
 - **Built (2026-06-26):** `CdcJsonDecoder` (native/src/lib.rs) decodes a CDC envelope straight to a

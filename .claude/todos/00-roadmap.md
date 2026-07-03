@@ -121,9 +121,9 @@ here when the ticket is deleted.
    `SUM`/`MIN`/`MAX` `DISTINCT`, byte-exact number↔string `CAST`, byte-exact decimal division.
 4. **Legacy group windows** (ticket 43): map `GROUP BY TUMBLE/HOP(...)` onto the existing native
    window operators — the event-time `SESSION` exception is the template.
-5. **Cheap wins, interleaved:** wire `avro-confluent` (decoder exists, not wired — ticket 32),
-   lookup-join residual/calc/constant-keys (ticket 40), CDC `ignore-parse-errors` skip mode and the
-   time-based decode flush (ticket 32).
+5. **Cheap wins, interleaved:** lookup-join residual/calc/constant-keys (ticket 40), CDC
+   `ignore-parse-errors` skip mode and the time-based decode flush (ticket 32). (`avro-confluent`
+   routing shipped 2026-07-03 — registry-fed writer schemas by frame id, decode path.)
 6. **Richer columnar endpoints** (ticket 24): beyond local Parquet — Iceberg and remote
    filesystems (`hdfs:`/`s3:`) for the native source/sink; currently `file:` only. **Deferred by
    direction until generalized operator support lands** — broaden what we can run (the ticket 11

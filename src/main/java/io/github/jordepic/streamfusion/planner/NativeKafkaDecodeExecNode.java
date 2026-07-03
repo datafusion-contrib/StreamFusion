@@ -1,5 +1,6 @@
 package io.github.jordepic.streamfusion.planner;
 
+import io.github.jordepic.streamfusion.kafka.ConfluentSchemaRegistry;
 import io.github.jordepic.streamfusion.operator.ArrowBatch;
 import io.github.jordepic.streamfusion.operator.ArrowBatchTypeInformation;
 import io.github.jordepic.streamfusion.operator.NativeBytesDecodeOperator;
@@ -35,7 +36,8 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
   // Bytes accumulated into one Arrow body batch before a native decode (matches the columnar batch size
   // the rest of the pipeline uses).
   private static final int BATCH_SIZE = 8192;
-  // The MessageDecoder code for bare Avro (the only routed format whose decode needs a derived schema).
+  // The MessageDecoder codes for the formats whose decode needs a derived Avro schema.
+  private static final int CONFLUENT_AVRO = 1;
   private static final int BARE_AVRO = 4;
   // The operator's protobuf sentinel (decoder built from the message-class-name's descriptor).
   private static final int PROTOBUF = 5;
@@ -85,10 +87,16 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
         format == BARE_AVRO
             ? AvroSchemaConverter.convertToSchema(writerType.copy(false)).toString()
             : "";
+    // Confluent Avro has no plan-time writer schema at all — each message names its writer by
+    // registry id, fetched and registered by the operator as ids first appear. It therefore always
+    // decodes through a reader schema (the possibly-pruned output), the same resolution Flink's
+    // deserializer applies against the table-derived schema.
     String readerAvroSchema =
-        format == BARE_AVRO && pruned
+        format == CONFLUENT_AVRO || (format == BARE_AVRO && pruned)
             ? AvroSchemaConverter.convertToSchema(outputType.copy(false)).toString()
             : "";
+    ConfluentSchemaRegistry registry =
+        format == CONFLUENT_AVRO ? ConfluentSchemaRegistry.fromOptions(options) : null;
     // Protobuf decodes against the descriptor of the generated message class the table names — extracted
     // by reflection so this carries no compile-time protobuf-java dependency (the class and its runtime
     // are supplied by the Flink distribution, like the protobuf format itself).
@@ -108,7 +116,8 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
                 readerAvroSchema,
                 0,
                 protoDescriptor,
-                protoMessageName));
+                protoMessageName,
+                registry));
     return decoded.getTransformation();
   }
 }

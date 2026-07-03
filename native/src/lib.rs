@@ -12391,22 +12391,43 @@ impl MessageDecoder {
             MessageDecoder::Cdc(decoder) => decoder.decode(body),
         }
     }
+
+    /// Registers a writer schema under a Confluent schema id, so subsequent decodes resolve messages
+    /// framed with that id. Only the Confluent-framed Avro decoder carries an id-keyed store; calling
+    /// this on any other format is a wiring bug.
+    fn register_writer_schema(&mut self, id: u32, schema: &str) {
+        use arrow_avro::schema::{AvroSchema, Fingerprint};
+        match self {
+            MessageDecoder::Avro(store, _) => {
+                store
+                    .set(Fingerprint::Id(id), AvroSchema::new(schema.to_string()))
+                    .expect("failed to register avro schema");
+            }
+            _ => panic!("registerAvroSchema on a non-Confluent-Avro decoder"),
+        }
+    }
 }
 
-/// A single-schema arrow-avro writer store keyed by integer id (the Confluent / id-framing layout).
+/// An arrow-avro writer store keyed by integer id (the Confluent / id-framing layout). An empty
+/// schema string builds an empty store — the Confluent path starts with no writer schemas and feeds
+/// them in by id as the JVM fetches them from the schema registry (`registerAvroSchema`).
 fn avro_store(avro_schema: &str, id: u32) -> arrow_avro::schema::SchemaStore {
     use arrow_avro::schema::{AvroSchema, Fingerprint, FingerprintAlgorithm, SchemaStore};
     let mut store = SchemaStore::new_with_type(FingerprintAlgorithm::Id);
-    store
-        .set(Fingerprint::Id(id), AvroSchema::new(avro_schema.to_string()))
-        .expect("failed to register avro schema");
+    if !avro_schema.is_empty() {
+        store
+            .set(Fingerprint::Id(id), AvroSchema::new(avro_schema.to_string()))
+            .expect("failed to register avro schema");
+    }
     store
 }
 
 /// Creates a format-dispatched message decoder and returns an opaque handle, released with
 /// `closeDecoder`. Formats 0/2/3 (JSON/CSV/raw) decode against the target schema the JVM exports as an
 /// empty batch; formats 1/4 (Confluent/bare Avro) derive their schema from `avroSchema` (registered
-/// under `schemaId` for Confluent, synthetic id 0 for bare) and ignore the schema C structs.
+/// under `schemaId` for Confluent, synthetic id 0 for bare) and ignore the schema C structs. A format-1
+/// decoder built with an empty `avroSchema` starts with an empty store — the registry-driven path,
+/// where the JVM registers each writer schema by id via `registerAvroSchema` as messages carry it.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createDecoder<'local>(
     mut env: JNIEnv<'local>,
@@ -12465,6 +12486,23 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createProtobu
     };
     let decoder = MessageDecoder::Protobuf(ProtobufDecoder::new(&descriptor, &message_name));
     into_handle(decoder)
+}
+
+/// Registers a writer schema under a Confluent schema id on an existing Confluent-Avro decoder. The
+/// JVM operator calls this the first time a batch carries an id it hasn't seen: it fetches the schema
+/// from the schema registry (as Flink's own `avro-confluent` deserializer does) and feeds it here, so
+/// the store grows with the topic's schema evolution instead of being fixed at plan time.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_registerAvroSchema<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    schema_id: jint,
+    schema: JString<'local>,
+) {
+    let decoder = unsafe { &mut *(handle as *mut MessageDecoder) };
+    let schema: String = env.get_string(&schema).expect("failed to read avro schema").into();
+    decoder.register_writer_schema(schema_id as u32, &schema);
 }
 
 /// Decodes one body batch into a typed batch, exporting it into the consumer-allocated C structs.
@@ -12548,6 +12586,11 @@ fn decode_avro_body(
     }
     let mut decoder = builder.build_decoder().expect("failed to build avro decoder");
     let mut framed = Vec::new();
+    // A message framed with a different schema id than its predecessor makes the decoder stop
+    // consuming until the rows decoded so far are flushed (it can't mix writer schemas in one build),
+    // so decode in a loop, flushing whenever a message is only partially consumed. With a reader
+    // schema every flushed batch has the same (reader) shape, so the flushes concatenate.
+    let mut batches = Vec::new();
     for i in 0..column.len() {
         if !column.is_valid(i) {
             continue;
@@ -12560,9 +12603,31 @@ fn decode_avro_body(
         } else {
             column.value(i)
         };
-        decoder.decode(bytes).expect("avro decode failed");
+        let mut consumed = 0;
+        while consumed < bytes.len() {
+            let n = decoder.decode(&bytes[consumed..]).expect("avro decode failed");
+            consumed += n;
+            if consumed < bytes.len() {
+                match decoder.flush().expect("avro flush failed") {
+                    Some(batch) => batches.push(batch),
+                    // No progress and nothing to flush: the message is truncated/malformed.
+                    None if n == 0 => panic!("avro decode stalled on a malformed message"),
+                    None => {}
+                }
+            }
+        }
     }
-    decoder.flush().expect("avro flush failed").expect("empty avro batch")
+    if let Some(batch) = decoder.flush().expect("avro flush failed") {
+        batches.push(batch);
+    }
+    match batches.len() {
+        0 => panic!("empty avro batch"),
+        1 => batches.into_iter().next().unwrap(),
+        _ => {
+            let schema = batches[0].schema();
+            arrow::compute::concat_batches(&schema, &batches).expect("avro batch concat failed")
+        }
+    }
 }
 
 /// The production native Kafka consumer for one Flink subtask: a single rdkafka `BaseConsumer` that
@@ -14859,6 +14924,83 @@ mod tests {
         let names =
             out.column_by_name("name").unwrap().as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
         assert_eq!((names.value(0), names.value(1)), ("a", "b"));
+    }
+
+    // Confluent Avro (format 1), registry-driven: the store starts empty, writer schemas arrive by id
+    // (as the JVM fetches them from the schema registry), and each message resolves against the reader
+    // schema. Covers the two things the single-schema path never exercised: a mid-batch schema-id
+    // switch (the decoder flushes internally; the flushes concatenate under the one reader shape) and
+    // a writer record named differently from the reader (matched through the alias the JVM patches in,
+    // mirroring Avro Java's lenient name check).
+    #[test]
+    fn confluent_avro_decodes_evolving_writer_schemas_against_reader() {
+        fn zigzag_varint(n: i64) -> Vec<u8> {
+            let mut zz = ((n << 1) ^ (n >> 63)) as u64;
+            let mut out = Vec::new();
+            loop {
+                let mut b = (zz & 0x7f) as u8;
+                zz >>= 7;
+                if zz != 0 {
+                    b |= 0x80;
+                }
+                out.push(b);
+                if zz == 0 {
+                    break;
+                }
+            }
+            out
+        }
+        fn string_field(s: &str) -> Vec<u8> {
+            let mut v = zigzag_varint(s.len() as i64);
+            v.extend_from_slice(s.as_bytes());
+            v
+        }
+        fn framed(id: u32, datum: Vec<u8>) -> Vec<u8> {
+            let mut v = vec![0x00];
+            v.extend_from_slice(&id.to_be_bytes());
+            v.extend(datum);
+            v
+        }
+        let reader = r#"{"type":"record","name":"record","namespace":"org.apache.flink.avro.generated","fields":[
+            {"name":"id","type":"long"},{"name":"name","type":"string"}]}"#;
+        // Writer 7: a producer-named record with an extra trailing field the reader drops; the JVM
+        // patches in the reader's full name as an alias so arrow-avro's name check passes (Avro Java
+        // skips that check entirely).
+        let writer_v1 = r#"{"type":"record","name":"User","namespace":"com.example",
+            "aliases":["org.apache.flink.avro.generated.record"],"fields":[
+            {"name":"id","type":"long"},{"name":"name","type":"string"},{"name":"extra","type":"string"}]}"#;
+        // Writer 9: evolved — fields reordered; resolution matches them by name.
+        let writer_v2 = r#"{"type":"record","name":"UserV2","namespace":"com.example",
+            "aliases":["org.apache.flink.avro.generated.record"],"fields":[
+            {"name":"name","type":"string"},{"name":"id","type":"long"}]}"#;
+
+        let mut decoder = MessageDecoder::new(1, Arc::new(Schema::empty()), "", reader, 0);
+        decoder.register_writer_schema(7, writer_v1);
+        decoder.register_writer_schema(9, writer_v2);
+
+        let mut d1 = zigzag_varint(1);
+        d1.extend(string_field("a"));
+        d1.extend(string_field("dropped"));
+        let mut d2 = string_field("b");
+        d2.extend(zigzag_varint(2));
+        let mut d3 = zigzag_varint(3);
+        d3.extend(string_field("c"));
+        d3.extend(string_field("dropped"));
+        let (m1, m2, m3) = (framed(7, d1), framed(9, d2), framed(7, d3));
+        let body = bodies(vec![Some(&m1), Some(&m2), Some(&m3)]);
+
+        let out = decoder.decode(&body);
+
+        assert_eq!(out.num_rows(), 3);
+        let id = out.column_by_name("id").unwrap().as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(id.values(), &[1, 2, 3]);
+        let names = out
+            .column_by_name("name")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<arrow::array::StringArray>()
+            .unwrap();
+        assert_eq!((names.value(0), names.value(1), names.value(2)), ("a", "b", "c"));
     }
 
     // Debezium JSON (format 6): the `{before, after, op}` envelope fans out to a columnar changelog —

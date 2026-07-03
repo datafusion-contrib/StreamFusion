@@ -1,13 +1,19 @@
 package io.github.jordepic.streamfusion.operator;
 
 import io.github.jordepic.streamfusion.Native;
+import io.github.jordepic.streamfusion.kafka.ConfluentSchemaRegistry;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.avro.Schema;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.BoundedOneInput;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
@@ -25,8 +31,10 @@ import org.apache.flink.table.types.logical.RowType;
  * 7 = ogg-json, 8 = maxwell-json, 9 = canal-json, {@link #PROTOBUF} = protobuf. JSON/CSV/raw and the CDC
  * formats decode against {@code outputType} (CDC treats it as the physical columns and appends a
  * {@code $row_kind$} byte); Avro variants against {@code avroSchema} (registered at {@code schemaId} for
- * Confluent, synthetic id 0 for bare); protobuf against {@code protoDescriptor}/{@code protoMessageName}.
- * Stateless across batches; flushes the partial batch at end of input.
+ * Confluent, synthetic id 0 for bare) — or, for Confluent with a {@code registry}, against writer
+ * schemas fetched by frame id at runtime and resolved to {@code readerAvroSchema}; protobuf against
+ * {@code protoDescriptor}/{@code protoMessageName}. Stateless across batches; flushes the partial batch
+ * at end of input.
  */
 public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<byte[], ArrowBatch>, BoundedOneInput {
@@ -42,11 +50,17 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
   private final int schemaId;
   private final byte[] protoDescriptor;
   private final String protoMessageName;
+  // Non-null only for Confluent Avro (format 1) on the registry-driven path: writer schemas are
+  // fetched by the id each message is framed with and registered into the native decoder as they
+  // first appear, following the topic's schema evolution like Flink's own deserializer.
+  private final ConfluentSchemaRegistry registry;
 
   private transient BufferAllocator allocator;
   private transient long handle;
   private transient VarBinaryVector body;
   private transient int count;
+  private transient Set<Integer> registeredSchemaIds;
+  private transient Schema readerSchema;
 
   public NativeBytesDecodeOperator(
       RowType outputType,
@@ -57,6 +71,28 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
       int schemaId,
       byte[] protoDescriptor,
       String protoMessageName) {
+    this(
+        outputType,
+        batchSize,
+        format,
+        avroSchema,
+        readerAvroSchema,
+        schemaId,
+        protoDescriptor,
+        protoMessageName,
+        null);
+  }
+
+  public NativeBytesDecodeOperator(
+      RowType outputType,
+      int batchSize,
+      int format,
+      String avroSchema,
+      String readerAvroSchema,
+      int schemaId,
+      byte[] protoDescriptor,
+      String protoMessageName,
+      ConfluentSchemaRegistry registry) {
     this.outputType = outputType;
     this.batchSize = batchSize;
     this.format = format;
@@ -65,6 +101,7 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
     this.schemaId = schemaId;
     this.protoDescriptor = protoDescriptor;
     this.protoMessageName = protoMessageName;
+    this.registry = registry;
   }
 
   @Override
@@ -72,6 +109,10 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
     super.open();
     allocator = NativeAllocator.SHARED;
     handle = createDecoder();
+    if (registry != null) {
+      registeredSchemaIds = new HashSet<>();
+      readerSchema = new Schema.Parser().parse(readerAvroSchema);
+    }
     newBody();
   }
 
@@ -121,7 +162,42 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
     }
   }
 
+  /**
+   * Registers any writer schema this batch is the first to carry: each Confluent-framed message names
+   * its writer schema by id ({@code 0x00} + 4-byte BE id), fetched from the registry on first sight —
+   * the same lazy per-id lookup Flink's deserializer makes — and patched with the reader's record
+   * names as aliases (see {@link ConfluentSchemaRegistry#aliasedToReader}) before the native store
+   * learns it. A malformed frame is left for the native decode to reject, like Flink's magic-byte
+   * check.
+   */
+  private void registerNewWriterSchemas() {
+    for (int i = 0; i < count; i++) {
+      byte[] message = body.get(i);
+      if (message == null || message.length < 5 || message[0] != 0) {
+        continue;
+      }
+      int id =
+          ((message[1] & 0xff) << 24)
+              | ((message[2] & 0xff) << 16)
+              | ((message[3] & 0xff) << 8)
+              | (message[4] & 0xff);
+      if (registeredSchemaIds.add(id)) {
+        Schema writer;
+        try {
+          writer = registry.fetchWriterSchema(id);
+        } catch (IOException e) {
+          throw new UncheckedIOException(e);
+        }
+        Native.registerAvroSchema(
+            handle, id, ConfluentSchemaRegistry.aliasedToReader(writer, readerSchema).toString());
+      }
+    }
+  }
+
   private void flush() {
+    if (registry != null) {
+      registerNewWriterSchemas();
+    }
     body.setValueCount(count);
     try (VectorSchemaRoot in = new VectorSchemaRoot(List.of(body));
         ArrowArray inArray = ArrowArray.allocateNew(allocator);
