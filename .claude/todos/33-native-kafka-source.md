@@ -39,7 +39,10 @@ roughly ordered:
   the operator, or folding the decode into a source reader) is a follow-up if CSV/raw/CDC event-time
   tables matter. The ladder's middle (decode) rung therefore now equals the transpose rung on
   watermarked tables; re-measure before quoting it.
-- **Startup modes**: specific-offsets and topic-pattern subscribe fall back.
+- **Startup modes: DONE (2026-07-03).** specific-offsets (Flink's own `OffsetsInitializer.offsets`
+  over the factory-validated option) and topic-pattern (the pattern subscriber in the reused
+  enumerator — the reader only ever sees concrete splits) both route, on both native paths;
+  e2e-verified. Bounded modes beyond latest-offset still fall back.
 - **Formats**: `key.format` / multi-format tables fall back.
 - **SASL/SSL at runtime**: the bundled librdkafka is built without SSL/SASL (our clusters are
   PLAINTEXT; Kerberos is HDFS-only). A SASL/SSL cluster needs the `ssl` + `gssapi-vendored`

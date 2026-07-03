@@ -17,6 +17,7 @@ import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDe
 import org.apache.flink.formats.avro.typeutils.AvroSchemaConverter;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 
 /**
@@ -107,7 +108,6 @@ final class KafkaTables {
     for (int i = 0; i < keys.length; i++) {
       values[i] = librdkafka.get(keys[i]);
     }
-    List<String> topics = Arrays.asList(options.get("topic").split(";"));
     boolean bounded = "latest-offset".equals(options.get("scan.bounded.mode"));
     int format = decodeFormatCode(options);
     boolean pruned = !writerType.equals(outputType);
@@ -130,7 +130,7 @@ final class KafkaTables {
         format == PROTOBUF ? ProtobufDescriptors.descriptorSet(messageClass) : null;
     String protoMessageName = format == PROTOBUF ? ProtobufDescriptors.messageName(messageClass) : "";
     return new NativeKafkaSource(
-        KafkaSubscriber.getTopicListSubscriber(topics),
+        subscriber(options),
         mapStartupMode(options),
         bounded ? OffsetsInitializer.latest() : new NoStoppingOffsetsInitializer(),
         bounded ? Boundedness.BOUNDED : Boundedness.CONTINUOUS_UNBOUNDED,
@@ -206,7 +206,12 @@ final class KafkaTables {
     if (options.containsKey("key.format")) {
       return false; // a key column would be a second decode the native operator doesn't produce yet
     }
-    if (options.get("topic") == null || options.get(PROPERTIES_PREFIX + "bootstrap.servers") == null) {
+    // Exactly one of topic / topic-pattern (the factory enforces that); discovery for a pattern is
+    // the reused enumerator's job, so both forms work on both native paths.
+    if (options.get("topic") == null && options.get("topic-pattern") == null) {
+      return false;
+    }
+    if (options.get(PROPERTIES_PREFIX + "bootstrap.servers") == null) {
       return false;
     }
     return mapStartupMode(options) != null && boundedModeSupported(options);
@@ -310,17 +315,30 @@ final class KafkaTables {
    * decode) — the native decode operator turns those bytes into Arrow. Flink owns consume/offsets/auth. */
   static KafkaSource<byte[]> buildBytesSource(Map<String, String> options) {
     Properties props = consumerProperties(options);
-    List<String> topics = Arrays.asList(options.get("topic").split(";"));
     KafkaSourceBuilder<byte[]> builder =
         KafkaSource.<byte[]>builder()
             .setProperties(props)
-            .setTopics(topics)
             .setStartingOffsets(mapStartupMode(options))
             .setDeserializer(KafkaRecordDeserializationSchema.valueOnly(ByteArrayDeserializer.class));
+    if (options.get("topic") != null) {
+      builder.setTopics(Arrays.asList(options.get("topic").split(";")));
+    } else {
+      builder.setTopicPattern(java.util.regex.Pattern.compile(options.get("topic-pattern")));
+    }
     if ("latest-offset".equals(options.get("scan.bounded.mode"))) {
       builder.setBounded(OffsetsInitializer.latest());
     }
     return builder.build();
+  }
+
+  /** The subscriber: an explicit topic list, or the pattern subscriber for {@code topic-pattern} —
+   * discovery runs in the reused enumerator either way, the reader only ever sees concrete splits. */
+  private static KafkaSubscriber subscriber(Map<String, String> options) {
+    String topic = options.get("topic");
+    return topic != null
+        ? KafkaSubscriber.getTopicListSubscriber(Arrays.asList(topic.split(";")))
+        : KafkaSubscriber.getTopicPatternSubscriber(
+            java.util.regex.Pattern.compile(options.get("topic-pattern")));
   }
 
   /** Whether {@code scan.bounded.mode} is one the native source handles (unbounded or latest-offset). */
@@ -357,8 +375,40 @@ final class KafkaTables {
       case "timestamp":
         return OffsetsInitializer.timestamp(
             Long.parseLong(options.get("scan.startup.timestamp-millis")));
+      case "specific-offsets":
+        return specificOffsets(options);
       default:
-        return null; // specific-offsets and anything else
+        return null;
     }
+  }
+
+  /**
+   * {@code specific-offsets} startup, constructed exactly as Flink's own table source does
+   * ({@link OffsetsInitializer#offsets} over the parsed partition→offset map). The connector factory
+   * validated the option at DDL time (single topic, {@code partition:0,offset:42;…} format — its
+   * parser is package-private, so the format is mirrored here); null (fall back) on any shape the
+   * factory would have rejected anyway, defensively, rather than risk mis-reading a start position.
+   */
+  private static OffsetsInitializer specificOffsets(Map<String, String> options) {
+    String topic = options.get("topic");
+    String offsets = options.get("scan.startup.specific-offsets");
+    if (topic == null || topic.contains(";") || offsets == null) {
+      return null;
+    }
+    Map<TopicPartition, Long> byPartition = new java.util.HashMap<>();
+    for (String pair : offsets.split(";")) {
+      String[] kv = pair.split(",");
+      if (kv.length != 2 || !kv[0].startsWith("partition:") || !kv[1].startsWith("offset:")) {
+        return null;
+      }
+      try {
+        int partition = Integer.parseInt(kv[0].substring("partition:".length()));
+        long offset = Long.parseLong(kv[1].substring("offset:".length()));
+        byPartition.put(new TopicPartition(topic, partition), offset);
+      } catch (NumberFormatException e) {
+        return null;
+      }
+    }
+    return OffsetsInitializer.offsets(byPartition);
   }
 }

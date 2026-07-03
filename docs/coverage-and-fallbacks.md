@@ -303,9 +303,11 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 - **Filesystem** — non-local path (`hdfs:`/`s3:`/…) for the Parquet/ORC source and Parquet sink; any
   non-Parquet/ORC source format; any non-Parquet sink format.
 - **Kafka** — value format outside JSON/CSV/raw/bare-Avro/protobuf; `avro-confluent` (decoder exists,
-  not wired); a `key.format`; a topic pattern; specific-offsets / unsupported bounded startup mode;
-  protobuf fields needing representation reconciliation (enum/unsigned/bytes/proto3-defaults/well-known
-  types).
+  not wired); a `key.format`; a `scan.bounded.mode` other than unbounded/latest-offset; protobuf
+  fields needing representation reconciliation (enum/unsigned/bytes/proto3-defaults/well-known
+  types). All startup modes are supported (earliest/latest/group-offsets/timestamp/specific-offsets),
+  as are `topic` lists and `topic-pattern` — discovery and offset resolution run in Flink's own
+  reused enumerator, so the native paths inherit its semantics.
 - **Kafka watermarks / event time** — Flink pushes a Kafka table's `WATERMARK` clause *into the scan*
   (no assigner node survives), so whatever replaces the scan must regenerate the watermarks. Only the
   **native source** (`kafkaSource` operator + the `kafka` build feature) does: it reuses Flink's own

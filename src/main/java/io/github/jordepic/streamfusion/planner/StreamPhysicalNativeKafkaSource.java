@@ -102,7 +102,9 @@ public class StreamPhysicalNativeKafkaSource extends AbstractRelNode
 
   @Override
   public RelWriter explainTerms(RelWriter writer) {
-    RelWriter w = super.explainTerms(writer).item("topic", options.get("topic"));
+    RelWriter w =
+        super.explainTerms(writer)
+            .item("topic", options.getOrDefault("topic", options.get("topic-pattern")));
     if (writerRowType != outputRowType) {
       w = w.item("project", outputRowType.getFieldNames());
     }

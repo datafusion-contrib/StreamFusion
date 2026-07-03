@@ -125,6 +125,109 @@ class NativeKafkaSourceSqlHarnessTest {
   }
 
   @Test
+  void specificOffsetsStartupStartsEachPartitionWhereTold() throws Exception {
+    System.setProperty("streamfusion.operator.kafkaSource.enabled", "true");
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      String topic = "native-source-offsets-it";
+      createTopic(brokers, topic, 2);
+      produceIds(brokers, topic, 0, 0, 10);
+      produceIds(brokers, topic, 1, 100, 110);
+
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+      tEnv.executeSql(
+          "CREATE TABLE so (id BIGINT, name STRING, score DOUBLE) WITH ("
+              + "'connector' = 'kafka', 'topic' = '"
+              + topic
+              + "', 'properties.bootstrap.servers' = '"
+              + brokers
+              + "', 'properties.group.id' = 'native-source-offsets-it',"
+              + " 'scan.startup.mode' = 'specific-offsets',"
+              + " 'scan.startup.specific-offsets' = 'partition:0,offset:7;partition:1,offset:3',"
+              + " 'scan.bounded.mode' = 'latest-offset', 'format' = 'json')");
+      PhysicalPlanScan scan = NativePlanner.install(tEnv);
+
+      Set<Long> ids = new HashSet<>();
+      try (CloseableIterator<Row> iterator = tEnv.executeSql("SELECT * FROM so").collect()) {
+        while (iterator.hasNext()) {
+          ids.add((Long) iterator.next().getField("id"));
+        }
+      }
+      assertTrue(scan.substitutions() >= 1, "specific-offsets table did not route to native");
+      Set<Long> expected = new HashSet<>();
+      for (long i = 7; i < 10; i++) {
+        expected.add(i); // partition 0 from offset 7
+      }
+      for (long i = 103; i < 110; i++) {
+        expected.add(i); // partition 1 from offset 3
+      }
+      assertEquals(expected, ids, "each partition must start exactly at its given offset");
+    } finally {
+      System.clearProperty("streamfusion.operator.kafkaSource.enabled");
+    }
+  }
+
+  @Test
+  void topicPatternSubscribesEveryMatchingTopic() throws Exception {
+    System.setProperty("streamfusion.operator.kafkaSource.enabled", "true");
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      createTopic(brokers, "native-source-pattern-a", 1);
+      createTopic(brokers, "native-source-pattern-b", 1);
+      produceIds(brokers, "native-source-pattern-a", 0, 0, 10);
+      produceIds(brokers, "native-source-pattern-b", 0, 100, 110);
+
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+      tEnv.executeSql(
+          "CREATE TABLE tp (id BIGINT, name STRING, score DOUBLE) WITH ("
+              + "'connector' = 'kafka', 'topic-pattern' = 'native-source-pattern-.*',"
+              + " 'properties.bootstrap.servers' = '"
+              + brokers
+              + "', 'properties.group.id' = 'native-source-pattern-it',"
+              + " 'scan.startup.mode' = 'earliest-offset',"
+              + " 'scan.bounded.mode' = 'latest-offset', 'format' = 'json')");
+      PhysicalPlanScan scan = NativePlanner.install(tEnv);
+
+      Set<Long> ids = new HashSet<>();
+      try (CloseableIterator<Row> iterator = tEnv.executeSql("SELECT * FROM tp").collect()) {
+        while (iterator.hasNext()) {
+          ids.add((Long) iterator.next().getField("id"));
+        }
+      }
+      assertTrue(scan.substitutions() >= 1, "topic-pattern table did not route to native");
+      assertEquals(20, ids.size(), "expected both matching topics' rows: " + ids);
+      assertTrue(ids.contains(0L) && ids.contains(109L), "missing rows from one topic: " + ids);
+    } finally {
+      System.clearProperty("streamfusion.operator.kafkaSource.enabled");
+    }
+  }
+
+  /** Produces {@code {id, name, score}} JSON rows with ids {@code [from, to)} into one partition. */
+  private static void produceIds(String brokers, String topic, int partition, long from, long to) {
+    Properties props = new Properties();
+    props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
+    props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+    props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+    try (KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(props)) {
+      for (long i = from; i < to; i++) {
+        byte[] value =
+            String.format("{\"id\": %d, \"name\": \"row-%d\", \"score\": %d.5}", i, i, i % 100)
+                .getBytes(StandardCharsets.UTF_8);
+        producer.send(new ProducerRecord<>(topic, partition, null, value));
+      }
+      producer.flush();
+    }
+  }
+
+  @Test
   void watermarkedSourceHoldsWindowUntilEveryPartitionAdvances() throws Exception {
     // Per-partition (per-split) watermark semantics, the property the source must share with Flink's
     // own Kafka source: the combined watermark is the MIN over partitions, so a window can only fire
