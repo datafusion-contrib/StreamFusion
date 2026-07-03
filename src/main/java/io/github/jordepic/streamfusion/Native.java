@@ -897,6 +897,8 @@ public final class Native {
    * @param schemaId Confluent schema id the Avro writer schema is registered under (ignored for JSON)
    * @param descriptor encoded protobuf {@code FileDescriptorSet} for format 5 (else {@code null})
    * @param messageName fully-qualified protobuf message type for format 5 (else "")
+   * @param rowtimeIndex decoded-batch column whose per-batch max (epoch millis) feeds per-split source
+   *     watermarks, or -1 when the table declares no watermark
    */
   public static native long openKafkaConsumer(
       String[] configKeys,
@@ -908,7 +910,8 @@ public final class Native {
       String readerAvroSchema,
       int schemaId,
       byte[] descriptor,
-      String messageName);
+      String messageName,
+      int rowtimeIndex);
 
   /**
    * Adds splits to the reader and re-assigns the consumer: each new partition seeks to its start
@@ -940,12 +943,13 @@ public final class Native {
 
   /**
    * Drains one pending per-partition batch: exports typed Arrow into the consumer C structs, writes
-   * {@code [partition, nextOffset]} into {@code splitMeta}, and the topic into {@code outTopic[0]} so
-   * the JVM can form the split id and advance that split's checkpoint offset. Returns the decoded row
-   * count. Call it {@link #pollKafkaBatch}'s return-value times.
+   * {@code [partition, nextOffset, maxRowtimeMillis]} into {@code splitMeta}, and the topic into
+   * {@code outTopic[0]} so the JVM can form the split id, advance that split's checkpoint offset, and
+   * timestamp the batch for per-split watermarks ({@code Long.MIN_VALUE} = no timestamp). Returns the
+   * decoded row count. Call it {@link #pollKafkaBatch}'s return-value times.
    *
    * @param handle reader handle from {@link #openKafkaConsumer}
-   * @param splitMeta output {@code long[2]}: the partition id and the next offset for that split
+   * @param splitMeta output {@code long[3]}: partition id, next offset, and max rowtime millis
    * @param outTopic output {@code String[1]}: the topic of the drained split
    * @param outArrayAddress address of a consumer {@code ArrowArray} to receive the decoded batch
    * @param outSchemaAddress address of the matching {@code ArrowSchema}

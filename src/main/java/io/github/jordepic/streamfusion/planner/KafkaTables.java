@@ -44,16 +44,17 @@ final class KafkaTables {
 
   /** Whether the native Kafka source can faithfully run this scan's table. */
   static boolean isNativeKafka(org.apache.calcite.rel.RelNode node) {
-    if (!(node
-        instanceof org.apache.flink.table.planner.plan.nodes.physical.stream
-            .StreamPhysicalTableSourceScan)) {
+    if (!(node instanceof StreamPhysicalTableSourceScan)) {
       return false;
     }
-    Map<String, String> options =
-        FilesystemTables.options(
-            (org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan)
-                node);
-    return supports(options);
+    StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) node;
+    // A watermarked table routes only when the pushed watermark is a shape the source regenerates
+    // (per-split bounded out-of-orderness); the scan replaces the host source, so an unreproducible
+    // watermark must leave the whole scan on Flink.
+    if (KafkaWatermarkSpec.of(scan) == KafkaWatermarkSpec.UNSUPPORTED) {
+      return false;
+    }
+    return supports(FilesystemTables.options(scan));
   }
 
   /** The shared gate, also used by {@code build} to assume a translatable, supported table. The native
@@ -86,8 +87,12 @@ final class KafkaTables {
    * the source emits — narrower when a downstream Calc's projection was pushed in. They drive the
    * pruning: JSON decodes straight to {@code outputType} (arrow-json builds only those columns), bare
    * Avro keeps {@code writerType} as the writer schema and applies {@code outputType} as a reader schema
-   * (Avro resolution), and protobuf prunes its descriptor to {@code outputType}'s fields natively. */
-  static NativeKafkaSource build(Map<String, String> options, RowType writerType, RowType outputType) {
+   * (Avro resolution), and protobuf prunes its descriptor to {@code outputType}'s fields natively.
+   *
+   * <p>{@code rowtimeIndex} is the output column whose per-batch max feeds per-split source watermarks
+   * (-1 when the table declares no watermark). */
+  static NativeKafkaSource build(
+      Map<String, String> options, RowType writerType, RowType outputType, int rowtimeIndex) {
     Properties props = consumerProperties(options);
     Map<String, String> librdkafka =
         new java.util.HashMap<>(KafkaConfigTranslator.translate(props).config());
@@ -140,7 +145,8 @@ final class KafkaTables {
         protoDescriptor,
         protoMessageName,
         MAX_RECORDS,
-        POLL_TIMEOUT_MILLIS);
+        POLL_TIMEOUT_MILLIS,
+        rowtimeIndex);
   }
 
   // --- Shallow decode path (Phase 2/3): Flink's own KafkaSource consumes raw value bytes, a native
@@ -213,7 +219,14 @@ final class KafkaTables {
     if (!(node instanceof StreamPhysicalTableSourceScan)) {
       return false;
     }
-    Map<String, String> options = FilesystemTables.options((StreamPhysicalTableSourceScan) node);
+    StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) node;
+    // The decode path replaces the scan but regenerates no watermarks, so a watermarked table (the
+    // WATERMARK clause is pushed into the Kafka scan — no assigner node remains) must stay on the
+    // host; only the native source reproduces the per-split source watermarks.
+    if (KafkaWatermarkSpec.of(scan) != null) {
+      return false;
+    }
+    Map<String, String> options = FilesystemTables.options(scan);
     if (!decodeCommon(options)) {
       return false;
     }
@@ -240,6 +253,10 @@ final class KafkaTables {
       return false;
     }
     StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) node;
+    // Same watermark rule as isNativeKafkaDecode: the decode path regenerates no watermarks.
+    if (KafkaWatermarkSpec.of(scan) != null) {
+      return false;
+    }
     Map<String, String> options = FilesystemTables.options(scan);
     if (!decodeCommon(options)) {
       return false;
@@ -256,6 +273,37 @@ final class KafkaTables {
       return false; // Flink skips malformed rows; the native decoder fails, matching the default only
     }
     return FilesystemTables.allPhysicalColumns(scan); // metadata/computed columns aren't decoded natively
+  }
+
+  /**
+   * Whether this scan is a decodable insert-only Kafka table kept on the host because it declares a
+   * watermark (pushed into the scan) the decode path can't regenerate — the fallback reason to record.
+   * Checked after the native-source branch, so it is false when the table routed there instead.
+   */
+  static boolean watermarkBlocksAppendDecode(RelNode node) {
+    return watermarkBlocksDecode(node, false);
+  }
+
+  /** The CDC-format variant of {@link #watermarkBlocksAppendDecode} (checked above the insert-only
+   * guard, where the CDC branch lives). */
+  static boolean watermarkBlocksCdcDecode(RelNode node) {
+    return watermarkBlocksDecode(node, true);
+  }
+
+  private static boolean watermarkBlocksDecode(RelNode node, boolean cdc) {
+    if (!(node instanceof StreamPhysicalTableSourceScan)) {
+      return false;
+    }
+    StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) node;
+    if (KafkaWatermarkSpec.of(scan) == null) {
+      return false;
+    }
+    Map<String, String> options = FilesystemTables.options(scan);
+    if (!decodeCommon(options)) {
+      return false;
+    }
+    int code = decodeFormatCode(options);
+    return cdc ? code == 6 || code == 7 : code >= 0 && code <= 5;
   }
 
   /** Builds Flink's own {@link KafkaSource} producing each record's raw value as a {@code byte[]} (no

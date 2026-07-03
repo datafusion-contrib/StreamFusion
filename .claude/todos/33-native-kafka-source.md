@@ -28,9 +28,17 @@ roughly ordered:
   still says "FIXME: Hardware support on ARM"). Would let us re-pin `check.crcs=true` at ~no cost
   on ARM. (The bundled librdkafka is already current — rdkafka-sys 4.10 ships 2.12.1.)
 
-## Feature gaps (fall back to the shallow path today)
-- **Watermarks/event-time**: the source emits `noWatermarks()`; per-partition watermarking +
-  idleness matching Flink's model is not wired.
+## Feature gaps
+- **Watermarks/event-time: DONE (2026-07-03).** The source regenerates a pushed-down `WATERMARK`
+  via Flink's own per-split machinery (`fromSource` strategy; batch-max rowtime record timestamps;
+  min-combined per partition; idleness honored). Supported shapes and the decode-path decline are in
+  `docs/coverage-and-fallbacks.md` §5. E2e-verified: a silent partition holds the window back, the
+  idle timeout releases it (`NativeKafkaSourceSqlHarnessTest`). Note the decode path (`kafkaDecode`)
+  now declines watermarked tables outright — it silently dropped the pushed watermark before, which
+  bounded benchmark runs masked; its own watermark story (needs split-lifecycle visibility inside
+  the operator, or folding the decode into a source reader) is a follow-up if CSV/raw/CDC event-time
+  tables matter. The ladder's middle (decode) rung therefore now equals the transpose rung on
+  watermarked tables; re-measure before quoting it.
 - **Startup modes**: specific-offsets and topic-pattern subscribe fall back.
 - **Formats**: `key.format` / multi-format tables fall back.
 - **SASL/SSL at runtime**: the bundled librdkafka is built without SSL/SASL (our clusters are

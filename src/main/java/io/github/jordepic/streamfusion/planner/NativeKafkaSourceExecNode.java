@@ -1,6 +1,7 @@
 package io.github.jordepic.streamfusion.planner;
 
 import io.github.jordepic.streamfusion.kafka.NativeKafkaSource;
+import io.github.jordepic.streamfusion.kafka.NativeKafkaWatermarks;
 import io.github.jordepic.streamfusion.operator.ArrowBatch;
 import io.github.jordepic.streamfusion.operator.ArrowBatchTypeInformation;
 import java.util.Collections;
@@ -31,13 +32,15 @@ public class NativeKafkaSourceExecNode extends ExecNodeBase<ArrowBatch>
   private final RowType writerType;
   private final RowType outputType;
   private final Map<String, String> options;
+  private final KafkaWatermarkSpec watermark;
 
   public NativeKafkaSourceExecNode(
       ReadableConfig tableConfig,
       RowType writerType,
       RowType outputType,
       String description,
-      Map<String, String> options) {
+      Map<String, String> options,
+      KafkaWatermarkSpec watermark) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-kafka-source_1"),
@@ -48,16 +51,25 @@ public class NativeKafkaSourceExecNode extends ExecNodeBase<ArrowBatch>
     this.writerType = writerType;
     this.outputType = outputType;
     this.options = options;
+    this.watermark = watermark;
   }
 
   @Override
   protected Transformation<ArrowBatch> translateToPlanInternal(
       PlannerBase planner, ExecNodeConfig config) {
     StreamExecutionEnvironment env = planner.getExecEnv();
-    NativeKafkaSource source = KafkaTables.build(options, writerType, outputType);
+    NativeKafkaSource source =
+        KafkaTables.build(
+            options, writerType, outputType, watermark == null ? -1 : watermark.rowtimeIndex);
+    // A watermarked table's WATERMARK clause was pushed into the scan this node replaced, so the
+    // source regenerates it: Flink's own per-split machinery (one generator per partition, min
+    // combination, idleness, periodic emit) drives the batch-max timestamps the reader supplies.
+    WatermarkStrategy<ArrowBatch> strategy =
+        watermark == null
+            ? WatermarkStrategy.noWatermarks()
+            : NativeKafkaWatermarks.strategy(watermark.delayMillis, watermark.idleTimeoutMillis);
     DataStreamSource<ArrowBatch> stream =
-        env.fromSource(
-            source, WatermarkStrategy.noWatermarks(), TRANSFORMATION, ArrowBatchTypeInformation.INSTANCE);
+        env.fromSource(source, strategy, TRANSFORMATION, ArrowBatchTypeInformation.INSTANCE);
     return stream.getTransformation();
   }
 }

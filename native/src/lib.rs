@@ -12486,9 +12486,14 @@ struct KafkaSplitReader {
     next_offsets: HashMap<(String, i32), i64>,
     /// Topics whose broker metadata has been primed (see `reassign`).
     warmed_topics: std::collections::HashSet<String>,
+    /// Index of the rowtime column in the decoded batch, or -1 when the table declares no watermark.
+    /// When set, each pending batch carries the column's max (epoch millis) so the JVM source emits it
+    /// as the batch's record timestamp, feeding Flink's per-split source watermarks.
+    rowtime_index: i32,
     /// Decoded batches ready for the JVM to drain one split at a time, in arrival (offset) order so a
-    /// split's offset never goes backwards when several of its batches are drained in one cycle.
-    pending: std::collections::VecDeque<(String, i32, i64, RecordBatch)>,
+    /// split's offset never goes backwards when several of its batches are drained in one cycle. Fields:
+    /// (topic, partition, next offset, max rowtime millis or i64::MIN, batch).
+    pending: std::collections::VecDeque<(String, i32, i64, i64, RecordBatch)>,
 }
 
 #[cfg(feature = "kafka")]
@@ -12516,6 +12521,7 @@ impl KafkaSplitReader {
         schema_id: i32,
         proto_descriptor: Vec<u8>,
         proto_message_name: String,
+        rowtime_index: i32,
     ) -> KafkaSplitReader {
         use rdkafka::config::ClientConfig;
 
@@ -12549,6 +12555,7 @@ impl KafkaSplitReader {
             decoder,
             next_offsets: HashMap::new(),
             warmed_topics: std::collections::HashSet::new(),
+            rowtime_index,
             pending: std::collections::VecDeque::new(),
         }
     }
@@ -12719,9 +12726,40 @@ impl KafkaSplitReader {
                 .expect("failed to build kafka body batch");
             self.next_offsets.insert((topic.clone(), partition), next_offset);
             let batch = self.decoder.decode(&body);
-            self.pending.push_back((topic, partition, next_offset, batch));
+            let max_rowtime = if self.rowtime_index >= 0 {
+                max_rowtime_millis(&batch, self.rowtime_index as usize)
+            } else {
+                i64::MIN
+            };
+            self.pending.push_back((topic, partition, next_offset, max_rowtime, batch));
         }
         self.pending.len()
+    }
+}
+
+/// Max of a rowtime column in epoch millis, or `i64::MIN` when every value is null — the JVM side
+/// treats `i64::MIN` as "no timestamp" (Flink's `NO_TIMESTAMP` sentinel). Two column shapes, matching
+/// the two watermark forms the planner admits: a nanosecond timestamp (floor-divided to millis, so
+/// pre-epoch values round down like Flink's `TimestampData.getMillisecond`), and a bigint already
+/// holding epoch millis (a `TO_TIMESTAMP_LTZ(col, 3)` computed rowtime reads the column verbatim).
+#[cfg(any(feature = "kafka", test))]
+fn max_rowtime_millis(batch: &RecordBatch, index: usize) -> i64 {
+    use arrow::array::TimestampNanosecondArray;
+    let column = batch.column(index);
+    match column.data_type() {
+        DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, _) => {
+            let array = column
+                .as_any()
+                .downcast_ref::<TimestampNanosecondArray>()
+                .expect("nanosecond timestamp downcast");
+            arrow::compute::max(array).map(|ns| ns.div_euclid(1_000_000)).unwrap_or(i64::MIN)
+        }
+        DataType::Int64 => {
+            let array =
+                column.as_any().downcast_ref::<Int64Array>().expect("bigint rowtime downcast");
+            arrow::compute::max(array).unwrap_or(i64::MIN)
+        }
+        other => panic!("unsupported rowtime column type {other}"),
     }
 }
 
@@ -12730,7 +12768,9 @@ impl KafkaSplitReader {
 /// verbatim). `format` selects the decoder (the same codes the shallow decode path uses): 0 JSON
 /// (decoded against the schema in the C structs), 1 Confluent / 4 bare Avro (decoded against
 /// `avroSchema` registered at `schemaId`, optionally projected to `readerAvroSchema`), 5 protobuf
-/// (decoded against `descriptor`/`messageName`). Splits are added later via `assignKafkaSplits`.
+/// (decoded against `descriptor`/`messageName`). `rowtimeIndex` is the decoded batch's rowtime column
+/// for per-split source watermarks, or -1 when the table declares none. Splits are added later via
+/// `assignKafkaSplits`.
 #[cfg(feature = "kafka")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_openKafkaConsumer<'local>(
@@ -12746,6 +12786,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_openKafkaCons
     schema_id: jint,
     descriptor: JByteArray<'local>,
     message_name: JString<'local>,
+    rowtime_index: jint,
 ) -> jlong {
     let keys = read_string_array(&mut env, &config_keys);
     let values = read_string_array(&mut env, &config_values);
@@ -12770,6 +12811,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_openKafkaCons
         schema_id,
         proto_descriptor,
         proto_message_name,
+        rowtime_index,
     );
     into_handle(reader)
 }
@@ -12829,9 +12871,10 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pollKafkaBatc
 }
 
 /// Drains one pending per-partition batch: exports the decoded typed Arrow into the consumer C structs,
-/// writes `[partition, nextOffset]` into `splitMeta`, and the topic into `outTopic[0]`, so the JVM can
-/// form the split id and advance that split's checkpoint offset. Returns the decoded row count; call it
-/// `pollKafkaBatch`'s return-value times.
+/// writes `[partition, nextOffset, maxRowtimeMillis]` into `splitMeta` (the last is `i64::MIN` when the
+/// table has no watermark or the batch's rowtimes are all null), and the topic into `outTopic[0]`, so
+/// the JVM can form the split id, advance that split's checkpoint offset, and timestamp the batch for
+/// per-split watermarks. Returns the decoded row count; call it `pollKafkaBatch`'s return-value times.
 #[cfg(feature = "kafka")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_drainKafkaSplit<'local>(
@@ -12844,10 +12887,10 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_drainKafkaSpl
     out_schema_address: jlong,
 ) -> jint {
     let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
-    let (topic, partition, next_offset, batch) =
+    let (topic, partition, next_offset, max_rowtime, batch) =
         reader.pending.pop_front().expect("drainKafkaSplit called with no pending batch");
     let rows = batch.num_rows() as jint;
-    env.set_long_array_region(&split_meta, 0, &[partition as i64, next_offset])
+    env.set_long_array_region(&split_meta, 0, &[partition as i64, next_offset, max_rowtime])
         .expect("failed to write split meta");
     let topic_jstr = env.new_string(&topic).expect("failed to make topic string");
     env.set_object_array_element(&out_topic, 0, &topic_jstr)
@@ -12897,7 +12940,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_benchmarkNati
     let avro_schema: String = env.get_string(&avro_schema).map(Into::into).unwrap_or_default();
 
     let mut reader =
-        KafkaSplitReader::open(&config, format, schema, &avro_schema, "", schema_id, Vec::new(), String::new());
+        KafkaSplitReader::open(&config, format, schema, &avro_schema, "", schema_id, Vec::new(), String::new(), -1);
     reader.assign_splits(&[topic], &[0], &[-2]); // partition 0, earliest
 
     let timeout = std::time::Duration::from_millis(250);
@@ -12918,7 +12961,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_benchmarkNati
             continue;
         }
         idle = 0;
-        for (_topic, _partition, _next_offset, batch) in reader.pending.drain(..) {
+        for (_topic, _partition, _next_offset, _max_rowtime, batch) in reader.pending.drain(..) {
             rows += batch.num_rows() as i64; // consumed in Rust; no JVM export
         }
     }
@@ -14484,6 +14527,57 @@ pub mod bench {
 mod tests {
     use super::*;
     use arrow::array::BinaryArray;
+
+    #[test]
+    fn max_rowtime_skips_nulls_and_floors_millis() {
+        use arrow::array::TimestampNanosecondArray;
+        let rowtime: ArrayRef = Arc::new(TimestampNanosecondArray::from(vec![
+            Some(1_000_000_123i64), // 1.000000123s -> floors to 1000ms
+            None,
+            Some(999_999_999),
+        ]));
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "ts",
+                DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None),
+                true,
+            )])),
+            vec![rowtime],
+        )
+        .unwrap();
+        assert_eq!(1000, max_rowtime_millis(&batch, 0));
+    }
+
+    #[test]
+    fn max_rowtime_floors_pre_epoch_and_signals_all_null() {
+        use arrow::array::TimestampNanosecondArray;
+        // -1ns is inside the millisecond before the epoch: Flink's TimestampData stores it as
+        // millisecond -1 (floor), not 0 (truncation toward zero).
+        let pre_epoch: ArrayRef = Arc::new(TimestampNanosecondArray::from(vec![Some(-1i64)]));
+        let all_null: ArrayRef =
+            Arc::new(TimestampNanosecondArray::from(vec![None::<i64>]));
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "ts",
+            DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None),
+            true,
+        )]));
+        let pre = RecordBatch::try_new(schema.clone(), vec![pre_epoch]).unwrap();
+        let none = RecordBatch::try_new(schema, vec![all_null]).unwrap();
+        assert_eq!(-1, max_rowtime_millis(&pre, 0));
+        assert_eq!(i64::MIN, max_rowtime_millis(&none, 0));
+    }
+
+    #[test]
+    fn max_rowtime_reads_epoch_millis_bigint_verbatim() {
+        // A TO_TIMESTAMP_LTZ(col, 3) computed rowtime: the physical column already holds epoch millis.
+        let millis: ArrayRef = Arc::new(Int64Array::from(vec![Some(90_000i64), None, Some(10_000)]));
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new("dateTime", DataType::Int64, true)])),
+            vec![millis],
+        )
+        .unwrap();
+        assert_eq!(90_000, max_rowtime_millis(&batch, 0));
+    }
 
     fn sample_batch() -> RecordBatch {
         let a: ArrayRef = Arc::new(Int64Array::from(vec![1i64, 6, 3, 9]));

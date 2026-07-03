@@ -56,6 +56,7 @@ public final class NativeKafkaSource
   private final String protoMessageName;
   private final int maxRecords;
   private final long pollTimeoutMillis;
+  private final int rowtimeIndex;
 
   public NativeKafkaSource(
       KafkaSubscriber subscriber,
@@ -73,7 +74,8 @@ public final class NativeKafkaSource
       byte[] protoDescriptor,
       String protoMessageName,
       int maxRecords,
-      long pollTimeoutMillis) {
+      long pollTimeoutMillis,
+      int rowtimeIndex) {
     this.subscriber = subscriber;
     this.startingOffsets = startingOffsets;
     this.stoppingOffsets = stoppingOffsets;
@@ -95,6 +97,7 @@ public final class NativeKafkaSource
     this.protoMessageName = protoMessageName;
     this.maxRecords = maxRecords;
     this.pollTimeoutMillis = pollTimeoutMillis;
+    this.rowtimeIndex = rowtimeIndex;
   }
 
   @Override
@@ -117,7 +120,8 @@ public final class NativeKafkaSource
                 protoDescriptor,
                 protoMessageName,
                 maxRecords,
-                pollTimeoutMillis);
+                pollTimeoutMillis,
+                rowtimeIndex);
     return new NativeKafkaSourceReader(
         splitReaderSupplier, new NativeKafkaRecordEmitter(), toConfiguration(props), context);
   }

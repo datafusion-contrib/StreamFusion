@@ -399,6 +399,11 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     if (KafkaTables.isCdcDecode(current) && NativeConfig.operatorEnabled("kafkaDecode")) {
       return kafkaDecode(current);
     }
+    if (KafkaTables.watermarkBlocksCdcDecode(current)) {
+      fallbackReasons.add(
+          "kafka CDC decode: the table's WATERMARK is pushed into the scan, and the decode path does"
+              + " not regenerate source watermarks — the table stays on Flink");
+    }
 
     // A Calc transforms each row independently — a per-row projection plus an optional deterministic
     // filter — and the native operator carries the `$row_kind$` tag through unchanged, so it is
@@ -459,7 +464,10 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         // decode builds only the read columns/fields straight from the bytes (the columnar-source analog
         // of pruning the entry transpose). Only for formats whose decoder honors a pruned schema.
         StreamPhysicalNativeKafkaSource source = (StreamPhysicalNativeKafkaSource) input;
-        if (KafkaTables.decodeHonorsProjection(source.options())) {
+        // A watermarked source must keep decoding its rowtime column (the per-split watermark reads
+        // it), so a projection that drops it is not pushed — the Calc still runs natively, unpruned.
+        if (KafkaTables.decodeHonorsProjection(source.options())
+            && source.projectionKeepsRowtime(pruned.inputType)) {
           return new StreamPhysicalNativeCalc(
               calc.getCluster(),
               calc.getTraitSet(),
@@ -640,7 +648,11 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) current;
       substitutions++;
       return new StreamPhysicalNativeKafkaSource(
-          scan.getCluster(), scan.getTraitSet(), scan.getRowType(), FilesystemTables.options(scan));
+          scan.getCluster(),
+          scan.getTraitSet(),
+          scan.getRowType(),
+          FilesystemTables.options(scan),
+          KafkaWatermarkSpec.of(scan));
     }
 
     // Shallow native-decode path (the default for every value format): Flink's KafkaSource consumes raw
@@ -648,6 +660,17 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // and protobuf all route here; CDC changelog formats are handled by the branch above the guard.
     if (KafkaTables.isNativeKafkaDecode(current) && NativeConfig.operatorEnabled("kafkaDecode")) {
       return kafkaDecode(current);
+    }
+    // A watermarked Kafka table is only accelerable by the native source (the WATERMARK clause is
+    // pushed into the scan, so whatever replaces the scan must regenerate per-partition watermarks —
+    // the decode operator can't). Reaching here means the native-source branch above didn't take it:
+    // record the precise reason instead of silently leaving the query on Flink.
+    if (KafkaTables.watermarkBlocksAppendDecode(current)) {
+      fallbackReasons.add(
+          "kafka decode: the table's WATERMARK is pushed into the scan, and only the native Kafka"
+              + " source regenerates per-partition source watermarks — enable operator kafkaSource"
+              + " (with a kafka-feature native build) for a supported format/watermark shape, or the"
+              + " table stays on Flink");
     }
 
     // Substitute a watermark assigner only when its (already-rewritten) input is columnar — i.e. it

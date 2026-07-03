@@ -57,7 +57,8 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
       byte[] protoDescriptor,
       String protoMessageName,
       int maxRecords,
-      long pollTimeoutMillis) {
+      long pollTimeoutMillis,
+      int rowtimeIndex) {
     this.maxRecords = maxRecords;
     this.pollTimeoutMillis = pollTimeoutMillis;
     // Export an empty batch of the decoder's output schema so the native side can build the JSON
@@ -77,7 +78,8 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
               readerAvroSchema == null ? "" : readerAvroSchema,
               schemaId,
               protoDescriptor,
-              protoMessageName == null ? "" : protoMessageName);
+              protoMessageName == null ? "" : protoMessageName,
+              rowtimeIndex);
     }
   }
 
@@ -88,7 +90,7 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
     for (int i = 0; i < pending; i++) {
       try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
           ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-        long[] meta = new long[2];
+        long[] meta = new long[3];
         String[] topic = new String[1];
         Native.drainKafkaSplit(
             handle, meta, topic, outArray.memoryAddress(), outSchema.memoryAddress());
@@ -97,7 +99,7 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
         String splitId =
             KafkaPartitionSplit.toSplitId(new TopicPartition(topic[0], (int) meta[0]));
         positions.put(splitId, meta[1]);
-        builder.add(splitId, new NativeKafkaRecord(new ArrowBatch(root), meta[1]));
+        builder.add(splitId, new NativeKafkaRecord(new ArrowBatch(root), meta[1], meta[2]));
       }
     }
     // Bounded mode: a split is done once its next offset reaches its stopping offset. (No data exists

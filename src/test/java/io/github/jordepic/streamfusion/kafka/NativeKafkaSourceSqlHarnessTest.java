@@ -38,6 +38,8 @@ class NativeKafkaSourceSqlHarnessTest {
 
   private static final String TOPIC = "native-source-sql-it";
   private static final String PROTO_TOPIC = "native-source-proto-it";
+  private static final String WATERMARK_TOPIC = "native-source-watermark-it";
+  private static final String IDLE_TOPIC = "native-source-idle-it";
   private static final int MESSAGES = 2_000;
 
   @Test
@@ -119,6 +121,181 @@ class NativeKafkaSourceSqlHarnessTest {
       }
     } finally {
       System.clearProperty("streamfusion.operator.kafkaSource.enabled");
+    }
+  }
+
+  @Test
+  void watermarkedSourceHoldsWindowUntilEveryPartitionAdvances() throws Exception {
+    // Per-partition (per-split) watermark semantics, the property the source must share with Flink's
+    // own Kafka source: the combined watermark is the MIN over partitions, so a window can only fire
+    // once every partition has advanced past it. A global max-based watermark would fire early and
+    // drop the lagging partition's rows. This must run UNBOUNDED — a bounded run's final
+    // MAX_WATERMARK closes every window regardless, masking a broken watermark path entirely.
+    System.setProperty("streamfusion.operator.kafkaSource.enabled", "true");
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      createTopic(brokers, WATERMARK_TOPIC, 2);
+      // Partition 0 advances far past the first window; partition 1 stays silent.
+      produceTimed(brokers, WATERMARK_TOPIC, 0, new long[][] {{1, 10, 10_000}, {2, 100, 90_000}});
+
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+      tEnv.executeSql(watermarkedTable("w", brokers, WATERMARK_TOPIC, ""));
+      PhysicalPlanScan scan = NativePlanner.install(tEnv);
+
+      java.util.concurrent.BlockingQueue<Row> results =
+          new java.util.concurrent.LinkedBlockingQueue<>();
+      try (CloseableIterator<Row> iterator = tEnv.executeSql(windowQuery("w")).collect()) {
+        Thread drainer =
+            new Thread(
+                () -> {
+                  try {
+                    while (iterator.hasNext()) {
+                      results.add(iterator.next());
+                    }
+                  } catch (Exception ignored) {
+                    // the iterator is closed underneath us when the test ends
+                  }
+                });
+        drainer.setDaemon(true);
+        drainer.start();
+
+        // The [0s, 60s) window must NOT fire: partition 1's watermark is still at MIN, holding the
+        // combined watermark back no matter how far partition 0 ran ahead.
+        org.junit.jupiter.api.Assertions.assertNull(
+            results.poll(8, java.util.concurrent.TimeUnit.SECONDS),
+            "window fired despite a silent partition — watermark is not per-partition");
+
+        // Advance partition 1 past window end + delay: min(86s, 86s) >= 60s fires [0s, 60s) with
+        // both partitions' rows — including partition 1's 20s row, which a global max-based
+        // watermark (already at 86s) would have dropped as late.
+        produceTimed(brokers, WATERMARK_TOPIC, 1, new long[][] {{3, 7, 20_000}, {4, 200, 90_000}});
+        Row first = results.poll(30, java.util.concurrent.TimeUnit.SECONDS);
+        org.junit.jupiter.api.Assertions.assertNotNull(
+            first, "window did not fire after every partition advanced");
+        assertEquals(epochWindowStart(), first.getField(0));
+        assertEquals(17L, first.getField(1), "expected both partitions' in-window prices (10 + 7)");
+        assertEquals(2L, first.getField(2));
+      }
+      assertTrue(scan.substitutions() >= 1, "watermarked Kafka source did not route to native");
+    } finally {
+      System.clearProperty("streamfusion.operator.kafkaSource.enabled");
+    }
+  }
+
+  @Test
+  void idleTimeoutReleasesSilentPartition() throws Exception {
+    // With scan.watermark.idle-timeout, a silent partition is marked idle and stops holding the
+    // combined watermark back — the window fires with just the active partition's rows.
+    System.setProperty("streamfusion.operator.kafkaSource.enabled", "true");
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      createTopic(brokers, IDLE_TOPIC, 2);
+      produceTimed(brokers, IDLE_TOPIC, 0, new long[][] {{1, 10, 10_000}, {2, 100, 90_000}});
+
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+      tEnv.executeSql(
+          watermarkedTable("idle", brokers, IDLE_TOPIC, ", 'scan.watermark.idle-timeout' = '2 s'"));
+      PhysicalPlanScan scan = NativePlanner.install(tEnv);
+
+      java.util.concurrent.BlockingQueue<Row> results =
+          new java.util.concurrent.LinkedBlockingQueue<>();
+      try (CloseableIterator<Row> iterator = tEnv.executeSql(windowQuery("idle")).collect()) {
+        Thread drainer =
+            new Thread(
+                () -> {
+                  try {
+                    while (iterator.hasNext()) {
+                      results.add(iterator.next());
+                    }
+                  } catch (Exception ignored) {
+                    // the iterator is closed underneath us when the test ends
+                  }
+                });
+        drainer.setDaemon(true);
+        drainer.start();
+        Row first = results.poll(30, java.util.concurrent.TimeUnit.SECONDS);
+        org.junit.jupiter.api.Assertions.assertNotNull(
+            first, "idle timeout did not release the silent partition");
+        assertEquals(epochWindowStart(), first.getField(0));
+        assertEquals(10L, first.getField(1), "expected only the active partition's in-window price");
+        assertEquals(1L, first.getField(2));
+      }
+      assertTrue(scan.substitutions() >= 1, "watermarked Kafka source did not route to native");
+    } finally {
+      System.clearProperty("streamfusion.operator.kafkaSource.enabled");
+    }
+  }
+
+  /** An UNBOUNDED watermarked table in the common Kafka idiom: epoch-millis bigint + computed rowtime. */
+  private static String watermarkedTable(String name, String brokers, String topic, String extra) {
+    return "CREATE TABLE "
+        + name
+        + " (id BIGINT, price BIGINT, `dateTime` BIGINT,"
+        + " rowtime AS TO_TIMESTAMP_LTZ(`dateTime`, 3),"
+        + " WATERMARK FOR rowtime AS rowtime - INTERVAL '4' SECOND"
+        + ") WITH ('connector' = 'kafka', 'topic' = '"
+        + topic
+        + "', 'properties.bootstrap.servers' = '"
+        + brokers
+        + "', 'properties.group.id' = '"
+        + name
+        + "-it', 'scan.startup.mode' = 'earliest-offset', 'format' = 'json'"
+        + extra
+        + ")";
+  }
+
+  /** The first window's start: epoch, rendered as the session (system) zone's wall clock — the LTZ
+   * rowtime makes TUMBLE's window_start a session-zone TIMESTAMP. */
+  private static java.time.LocalDateTime epochWindowStart() {
+    return java.time.LocalDateTime.ofInstant(
+        java.time.Instant.EPOCH, java.time.ZoneId.systemDefault());
+  }
+
+  private static String windowQuery(String table) {
+    // Grouping on (window_start, window_end) plans a real window aggregate — emission gated on the
+    // watermark passing window end, which is the property under test. (Grouping on window_start
+    // alone re-plans as an incremental GroupAggregate that emits changelog updates immediately.)
+    return "SELECT window_start, SUM(price), COUNT(*) FROM TABLE(TUMBLE(TABLE "
+        + table
+        + ", DESCRIPTOR(rowtime), INTERVAL '1' MINUTE)) GROUP BY window_start, window_end";
+  }
+
+  private static void createTopic(String brokers, String topic, int partitions) throws Exception {
+    Properties props = new Properties();
+    props.put(org.apache.kafka.clients.admin.AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
+    try (org.apache.kafka.clients.admin.AdminClient admin =
+        org.apache.kafka.clients.admin.AdminClient.create(props)) {
+      admin
+          .createTopics(
+              java.util.List.of(
+                  new org.apache.kafka.clients.admin.NewTopic(topic, partitions, (short) 1)))
+          .all()
+          .get();
+    }
+  }
+
+  /** Produces {@code {id, price, dateTime}} JSON rows into one specific partition. */
+  private static void produceTimed(String brokers, String topic, int partition, long[][] rows) {
+    Properties props = new Properties();
+    props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
+    props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+    props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+    try (KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(props)) {
+      for (long[] row : rows) {
+        byte[] value =
+            String.format("{\"id\": %d, \"price\": %d, \"dateTime\": %d}", row[0], row[1], row[2])
+                .getBytes(StandardCharsets.UTF_8);
+        producer.send(new ProducerRecord<>(topic, partition, null, value));
+      }
+      producer.flush();
     }
   }
 

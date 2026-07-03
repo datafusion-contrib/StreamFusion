@@ -306,5 +306,19 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   not wired); a `key.format`; a topic pattern; specific-offsets / unsupported bounded startup mode;
   protobuf fields needing representation reconciliation (enum/unsigned/bytes/proto3-defaults/well-known
   types).
+- **Kafka watermarks / event time** — Flink pushes a Kafka table's `WATERMARK` clause *into the scan*
+  (no assigner node survives), so whatever replaces the scan must regenerate the watermarks. Only the
+  **native source** (`kafkaSource` operator + the `kafka` build feature) does: it reuses Flink's own
+  per-split machinery — one generator per partition, min-combined, an assigned-but-silent partition
+  holds the watermark back, `scan.watermark.idle-timeout` / `table.exec.source.idle-timeout` honored,
+  periodic emit — feeding it each per-partition batch's max rowtime (equivalent to Flink's per-row max
+  fold, since the delay is constant). Supported watermark shapes: `rt` or `rt - INTERVAL const` over a
+  physical rowtime column, and the computed-rowtime idiom `TO_TIMESTAMP_LTZ(bigintMillis, 3)`
+  (± interval). Anything else falls back: another computed-rowtime expression,
+  `scan.watermark.emit.strategy = 'on-event'`, watermark alignment, `SOURCE_WATERMARK()`. The
+  **decode path never takes a watermarked table** — it regenerates no watermarks, and silently
+  dropping the pushed strategy would stall every event-time timer on an unbounded stream (bounded
+  runs masked this: the final MAX_WATERMARK closes all windows regardless) — so with the native
+  source off or unbuilt, a watermarked Kafka table runs entirely on Flink, with the reason recorded.
 - **CDC** — anything other than Debezium/OGG full-image JSON: Maxwell/Canal (partial-`old` not
   bit-identical), `schema-include` envelope, `ignore-parse-errors`, metadata/computed columns.

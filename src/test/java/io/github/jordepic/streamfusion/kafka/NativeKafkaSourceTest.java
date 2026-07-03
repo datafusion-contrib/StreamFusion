@@ -125,7 +125,7 @@ class NativeKafkaSourceTest {
         Data.exportVectorSchemaRoot(allocator, template, dictionaries, array, schema);
         long handle =
             Native.openKafkaConsumer(
-                keys, values, 0, array.memoryAddress(), schema.memoryAddress(), "", "", 0, null, "");
+                keys, values, 0, array.memoryAddress(), schema.memoryAddress(), "", "", 0, null, "", -1);
         Native.assignKafkaSplits(handle, new String[] {TOPIC}, new long[] {0}, new long[] {startOffset});
         return handle;
       }
@@ -143,7 +143,7 @@ class NativeKafkaSourceTest {
     for (int p = 0; p < pending; p++) {
       try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
           ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-        long[] meta = new long[2];
+        long[] meta = new long[3];
         String[] topic = new String[1];
         int rows =
             Native.drainKafkaSplit(
