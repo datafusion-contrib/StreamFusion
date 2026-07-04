@@ -155,8 +155,8 @@ impl WindowJoiner {
         let right_types: Vec<DataType> =
             self.right_data_schema.fields().iter().map(|f| f.data_type().clone()).collect();
         let mut outputs: Vec<RecordBatch> = Vec::new();
-        let mut matched_left: HashSet<i64> = HashSet::new();
-        let mut matched_right: HashSet<i64> = HashSet::new();
+        let mut matched_left: HashSet<i64> = HashSet::default();
+        let mut matched_right: HashSet<i64> = HashSet::default();
         if let (Some(left), Some(right)) = (&left_closed, &right_closed) {
             let (mut lc, mut rc) = (0i64, 0i64);
             let joined = hash_join_inner(

@@ -205,7 +205,7 @@ impl StructJsonAppender {
         let children =
             fields.iter().map(|f| make_json_appender(f.data_type(), capacity)).collect();
         let index = (fields.len() >= 16).then(|| {
-            let mut map = HashMap::with_capacity(fields.len());
+            let mut map = HashMap::with_capacity_and_hasher(fields.len(), Default::default());
             for (i, field) in fields.iter().enumerate() {
                 map.entry(field.name().clone()).or_insert(i);
             }

@@ -42,7 +42,7 @@ impl SessionAggregator {
         SessionAggregator {
             gap_millis,
             aggregates: build_aggregates(&kinds, &value_types),
-            sessions: HashMap::new(),
+            sessions: HashMap::default(),
             key_converter: None,
             key_types: Vec::new(),
             memory: OperatorMemory::unaccounted(),

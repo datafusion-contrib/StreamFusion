@@ -44,7 +44,12 @@ pub(crate) use jni::objects::{
 };
 pub(crate) use jni::sys::{jboolean, jbyteArray, jint, jlong, jstring};
 pub(crate) use jni::JNIEnv;
-pub(crate) use std::collections::{BTreeMap, HashMap, HashSet};
+// ahash, not std's SipHash: every keyed hot loop in the crate hashes through these aliases, and
+// the CPU profiles showed SipHash as a top cost wherever an operator missed the explicit swap
+// (q18's keep-last dedup spent ~35% of its time in it). DoS-hardness is irrelevant for internal
+// operator state, so the fast hash is the right crate-wide default.
+pub(crate) use ahash::{HashMap, HashSet};
+pub(crate) use std::collections::BTreeMap;
 pub(crate) use std::sync::{Arc, Mutex, OnceLock};
 pub(crate) use tokio::runtime::Runtime;
 

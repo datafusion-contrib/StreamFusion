@@ -234,7 +234,7 @@ impl TumblingAggregator {
         let aggregates = &self.aggregates;
         self.windows
             .entry(end)
-            .or_insert_with(|| AlignedWindow { start, keys: HashMap::new() })
+            .or_insert_with(|| AlignedWindow { start, keys: HashMap::default() })
             .keys
             .entry(key)
             .or_insert_with(|| aggregates.iter().map(WindowAggregate::create_accumulator).collect())

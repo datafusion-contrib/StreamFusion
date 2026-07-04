@@ -30,7 +30,7 @@ impl OverAggregator {
         OverAggregator {
             value_types: value_types.iter().map(|&code| value_data_type(code)).collect(),
             kinds,
-            keys: HashMap::new(),
+            keys: HashMap::default(),
             key_types: Vec::new(),
             track: false,
             bytes: 0,
@@ -203,7 +203,7 @@ impl BoundedOverAggregator {
             kinds,
             rows_frame,
             offset,
-            keys: HashMap::new(),
+            keys: HashMap::default(),
             key_types: Vec::new(),
             track: false,
             bytes: 0,
@@ -508,7 +508,7 @@ impl WindowFunctionOver {
     pub(crate) fn new(kinds: Vec<i64>) -> Self {
         WindowFunctionOver {
             kinds,
-            keys: HashMap::new(),
+            keys: HashMap::default(),
             key_types: Vec::new(),
             track: false,
             bytes: 0,

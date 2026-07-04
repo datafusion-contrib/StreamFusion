@@ -112,7 +112,7 @@ impl TopNRanker {
             output_rank_number,
             schema: None,
             converters: None,
-            groups: HashMap::new(),
+            groups: HashMap::default(),
             memory: OperatorMemory::unaccounted(),
         }
     }
@@ -371,7 +371,7 @@ impl RetractableTopNRanker {
             limit,
             output_rank_number,
             schema: None,
-            groups: HashMap::new(),
+            groups: HashMap::default(),
             memory: OperatorMemory::unaccounted(),
         }
     }
@@ -483,7 +483,7 @@ impl RetractableTopNRanker {
             }
         } else {
             // No rank column — only membership matters; diff the two row multisets.
-            let mut old_counts: HashMap<&JoinRow, i32> = HashMap::new();
+            let mut old_counts: HashMap<&JoinRow, i32> = HashMap::default();
             for r in old_top {
                 *old_counts.entry(r).or_insert(0) += 1;
             }
@@ -637,7 +637,7 @@ impl WindowRanker {
             limit,
             output_rank_number,
             current_watermark: i64::MIN,
-            groups: HashMap::new(),
+            groups: HashMap::default(),
             schema: None,
             memory: OperatorMemory::unaccounted(),
         }

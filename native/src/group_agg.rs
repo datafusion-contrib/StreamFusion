@@ -914,7 +914,7 @@ impl LocalGroupAggregator {
             key_columns,
             result_types,
             order: Vec::new(),
-            states: HashMap::new(),
+            states: HashMap::default(),
             key_types: Vec::new(),
             memory: OperatorMemory::unaccounted(),
         }

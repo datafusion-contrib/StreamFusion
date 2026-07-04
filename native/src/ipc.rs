@@ -55,7 +55,7 @@ pub(crate) fn serialize_id_set(ids: &HashSet<i64>) -> Vec<u8> {
 }
 
 pub(crate) fn deserialize_id_set(bytes: &[u8]) -> HashSet<i64> {
-    let mut set = HashSet::new();
+    let mut set = HashSet::default();
     for batch in read_ipc_if_present(bytes) {
         let ids = batch.column(0).as_any().downcast_ref::<Int64Array>().expect("id column");
         for i in 0..ids.len() {

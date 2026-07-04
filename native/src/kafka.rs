@@ -89,8 +89,8 @@ impl KafkaSplitReader {
             consumer_queue,
             body_schema: Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)])),
             decoder,
-            next_offsets: HashMap::new(),
-            warmed_topics: std::collections::HashSet::new(),
+            next_offsets: HashMap::default(),
+            warmed_topics: std::collections::HashSet::default(),
             rowtime_index,
             pending: std::collections::VecDeque::new(),
         }

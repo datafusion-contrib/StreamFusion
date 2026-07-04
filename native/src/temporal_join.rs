@@ -74,8 +74,8 @@ impl TemporalJoiner {
             left_schema,
             right_schema,
             predicate,
-            left_state: HashMap::new(),
-            right_state: HashMap::new(),
+            left_state: HashMap::default(),
+            right_state: HashMap::default(),
             memory: OperatorMemory::unaccounted(),
         }
     }

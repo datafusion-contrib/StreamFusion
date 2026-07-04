@@ -25,7 +25,7 @@ pub(crate) fn prune_descriptor_set(bytes: &[u8], root_message: &str, schema: &Sc
     // names to retain; descend into a nested message via the proto field's type_name when the schema
     // field is a Struct. Read-only over `set` here.
     let mut keep: std::collections::HashMap<String, std::collections::HashSet<String>> =
-        std::collections::HashMap::new();
+        std::collections::HashMap::default();
     let mut work: Vec<(String, arrow::datatypes::Fields)> =
         vec![(root_message.trim_start_matches('.').to_string(), schema.fields().clone())];
     while let Some((name, fields)) = work.pop() {

@@ -18,7 +18,7 @@ pub(crate) struct KeepFirstDeduplicator {
     /// One row per pending key — that key's minimum-rowtime candidate — awaiting its release.
     pending: Option<RecordBatch>,
     /// Keys whose first row has already been emitted; later rows for them are ignored.
-    emitted: std::collections::HashSet<GroupKey>,
+    emitted: HashSet<GroupKey>,
     schema: Option<SchemaRef>,
     memory: OperatorMemory,
 }
@@ -30,7 +30,7 @@ impl KeepFirstDeduplicator {
             rt_column,
             current_watermark: i64::MIN,
             pending: None,
-            emitted: std::collections::HashSet::new(),
+            emitted: HashSet::default(),
             schema: None,
             memory: OperatorMemory::unaccounted(),
         }
@@ -82,7 +82,7 @@ impl KeepFirstDeduplicator {
         let key_arrays: Vec<&ArrayRef> =
             self.partition_columns.iter().map(|&i| batch.column(i)).collect();
         let rt = rt_to_millis(batch.column(self.rt_column));
-        let mut best: HashMap<GroupKey, (i64, u32)> = HashMap::new();
+        let mut best: HashMap<GroupKey, (i64, u32)> = HashMap::default();
         for row in 0..batch.num_rows() {
             let key = read_key(&key_arrays, row);
             if self.emitted.contains(&key) {
@@ -251,7 +251,7 @@ impl KeepLastDeduplicator {
             schema: None,
             partition_converter: None,
             payload_converter: None,
-            rows: HashMap::new(),
+            rows: HashMap::default(),
             memory: OperatorMemory::unaccounted(),
         }
     }

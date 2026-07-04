@@ -29,7 +29,7 @@ impl ChangelogNormalizer {
             key_columns,
             generate_update_before,
             schema: None,
-            rows: HashMap::new(),
+            rows: HashMap::default(),
             memory: OperatorMemory::unaccounted(),
         }
     }

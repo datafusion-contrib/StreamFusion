@@ -165,7 +165,11 @@ tumbling 245 → 110 µs, 2.2x, `eec31d5`). Mechanics in the deep dive below.
 use ahash (what Arrow and DataFusion use) instead of SipHash — the keys are never exposed to
 untrusted callers, so collision resistance buys nothing. Tumbling aggregation ~36% faster unkeyed /
 ~16% keyed; q15 0.77x → 0.99x once the GROUP BY and DISTINCT sets switched (profiling had shown
-~61% of that operator in hashing). Mechanics in the deep dive below.
+~61% of that operator in hashing). Mechanics in the deep dive below. ahash later became the
+**crate-wide default**: the shared `HashMap`/`HashSet` aliases now resolve to ahash, after the
+2026-07 profiling round caught the operators that had missed the explicit swap — the keep-last
+dedup (q18) was spending ~35% of its island in SipHash; the alias swap cut that island's CPU ~16%
+(11.6 → 9.8 samples/iteration) and closed the gap for every future operator by default.
 
 **Allocation discipline on the per-row paths.** Reuse the per-row window buffer instead of
 allocating one per row (26% on tumbling, `3833e8d`); move the grouping key into its last window

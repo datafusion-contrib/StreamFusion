@@ -2608,7 +2608,7 @@ fn partitions_a_batch_by_key() {
     for num_partitions in [1usize, 3, 8] {
         let parts = partition_batch(&batch, &[0], num_partitions);
         let mut rows = 0usize;
-        let mut key_to_partition: HashMap<i64, usize> = HashMap::new();
+        let mut key_to_partition: HashMap<i64, usize> = HashMap::default();
         for (partition, sub) in &parts {
             assert!(*partition < num_partitions);
             let keys = sub.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
