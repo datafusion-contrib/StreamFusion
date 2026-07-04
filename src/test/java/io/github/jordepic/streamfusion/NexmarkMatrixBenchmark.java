@@ -38,7 +38,8 @@ import org.testcontainers.utility.DockerImageName;
  * feasibility scaffold: it preloads the same wide event row into a local Fluss test cluster, then
  * reads it through Fluss's own Flink connector. Fluss 0.9 streaming reads are unbounded, so this
  * first finite baseline uses the connector's batch limit-read path ({@code LIMIT SF_ROWS}) and reports
- * only the stock connector timing; a native columnar Fluss source is follow-up work.
+ * only the stock connector timing; the stock limit-read path supports at most 2,048 rows, and a native
+ * columnar Fluss source is follow-up work.
  *
  * <p>The query set is every query StreamFusion accelerates: q0–q5, q7–q23 (q1's and q14's decimal are
  * exact and native by default; q21's REGEXP_EXTRACT/LOWER and q14's HOUR route through the host
@@ -437,6 +438,7 @@ class NexmarkMatrixBenchmark {
           + " `dateTime` TIMESTAMP(3)";
   private static final String FLUSS_CATALOG = "fluss_catalog";
   private static final String FLUSS_TABLE = FLUSS_CATALOG + ".fluss.nexmark_events";
+  private static final long FLUSS_LIMIT_READ_MAX_ROWS = 2_048L;
 
   @Test
   void matrix() throws Exception {
@@ -484,6 +486,14 @@ class NexmarkMatrixBenchmark {
     }
 
     if (runFluss) {
+      if (ROWS > FLUSS_LIMIT_READ_MAX_ROWS) {
+        throw new IllegalArgumentException(
+            "SF_MATRIX_FLUSS=true uses Fluss's stock batch limit-read path, which supports at most "
+                + FLUSS_LIMIT_READ_MAX_ROWS
+                + " rows; set SF_ROWS <= "
+                + FLUSS_LIMIT_READ_MAX_ROWS
+                + " or disable SF_MATRIX_FLUSS.");
+      }
       FlussClusterExtension cluster = FlussClusterExtension.builder().setNumOfTabletServers(1).build();
       cluster.start();
       try {
