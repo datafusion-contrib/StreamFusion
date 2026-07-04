@@ -33,3 +33,5 @@ build/
 
 ### Mac OS ###
 .DS_Store
+# Profiling artifacts (regenerable; see .claude/research/nexmark-operator-profiles-2026-07.md)
+.claude/profiles/

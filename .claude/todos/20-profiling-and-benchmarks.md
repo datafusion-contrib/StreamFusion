@@ -56,6 +56,11 @@ vs. Flink fallback, tracked over time so a regression is visible.
     partitions, Top-N bookkeeping, the exchange by-key split (`partition_batch`). Swap each to
     row keys only with a bench showing it pays; the exchange's consistent hash would change
     key→partition mapping, which is internal but worth a note when touched.
+    **The bench now exists for dedup** (2026-07-04 profiling round,
+    `.claude/research/nexmark-operator-profiles-2026-07.md`): q18's keep-last dedup spends ~35% of
+    its native island in stdlib SipHash (`sip::Hasher::write` + `hash_one`, plus `reserve_rehash`
+    from unsized maps) — the ahash + arrow-row-key swap pays there; do the sibling loops while in
+    the code.
 - **[fixed]** `windows_for` allocated a `Vec` per row in the update loop. Reusing one
   buffer across rows cut the tumbling bench ~26% (244 → 181 µs / 17 → 22.6 Melem/s).
 - **[fixed]** Session `update` sliced one row at a time. Now grouped per key and segmented into

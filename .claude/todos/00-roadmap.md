@@ -111,7 +111,18 @@ here when the ticket is deleted.
   It is the standing prioritization + regression gate; the coverage/perf gaps it surfaces feed the
   backlog below.
 
-## Next, roughly in order (coverage push, prioritized 2026-07-03)
+## Next, roughly in order (re-prioritized 2026-07-04 after the operator profiling round)
+
+0. **Profile-driven operator perf round toward the 5-10x target** (research:
+   `.claude/research/nexmark-operator-profiles-2026-07.md` — differential flame graphs of every
+   Nexmark query, native vs Flink, plus Arroyo/RisingWave/Proton technique survey and the
+   provenance of Alibaba's 5-10x claim). The ranked levers, each its own ticket:
+   ticket 45 (stop forking the rowwise prefix — sub-plan reuse scoped to columnar edges, an
+   exactly-2x source-conversion tax on 7+ queries today), ticket 46 (Top-N net-diff staging +
+   decode-free emit — q19's operator is 72% arrow-row decode), ticket 47 (DISTINCT dedup by
+   visibility masking + dirty-group emit — q15/q16/q17), ticket 48 (updating-join block state —
+   q3/q20/q9/q23), plus the now-evidenced items appended to tickets 20 (dedup SipHash, entry-
+   transpose string fast path) and 40 (q13 per-row copy).
 1. **Native Kafka source: gate FLIPPED (2026-07-03)** (ticket 33). Per-partition watermarks/idleness
    and specific-offsets/topic-pattern startup shipped; `kafkaSource` defaults on and the `kafka`
    cargo feature is a default build feature (probe-guarded for opt-out builds). Remaining tails in

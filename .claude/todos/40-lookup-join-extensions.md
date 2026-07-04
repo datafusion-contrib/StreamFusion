@@ -20,7 +20,11 @@ island doesn't admit anyway.
   row (through the runner's `JoinedRowData`). For a bounded side input, preload the whole dim into a
   native hash table once (RisingWave/Arroyo cache the dim side) and probe fully columnar — zero
   per-batch JVM crossing in steady state. Otherwise keep the per-row lookup but assemble the output
-  columnar (take probe cols by index + matched dim cols) instead of row copies. Only worth doing with
-  a benchmark showing the row assembly is a measurable share of q13-shaped queries.
+  columnar (take probe cols by index + matched dim cols) instead of row copies. **Now measured**
+  (2026-07-04 profiling round, `.claude/research/nexmark-operator-profiles-2026-07.md`): the
+  per-looked-up-row `RowDataSerializer.copy` is ~27% of q13's lookup-path samples (plus
+  `ensureMaterialized`/UTF-16 checks materializing strings), and q13 runs 0.92x on the generator —
+  this is the query's whole deficit. Arroyo also dedups keys within the batch and issues one
+  connector call for the misses (`lookup_join.rs`) — worth adopting alongside.
 - **Cross-batch async overlap** (`AsyncWaitOperator` port) — only if per-lookup latency is so high
   that blocking on a single batch stalls checkpoints unacceptably; not the case today.
