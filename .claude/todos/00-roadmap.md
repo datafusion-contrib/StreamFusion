@@ -120,11 +120,13 @@ here when the ticket is deleted.
    `.claude/research/nexmark-operator-profiles-2026-07.md` — differential flame graphs of every
    Nexmark query, native vs Flink, plus Arroyo/RisingWave/Proton technique survey and the
    provenance of Alibaba's 5-10x claim). The ranked levers, each its own ticket
-   (ticket 45 — the forked rowwise prefix — shipped 2026-07-04, see "Fully-columnar native
-   islands" above): ticket 46 (Top-N net-diff staging + decode-free emit — q19's operator is 72%
-   arrow-row decode), ticket 47 (DISTINCT dedup + cheaper per-row emit — q15/q16/q17), ticket 48
-   (updating-join block state — q3/q20/q9/q23), plus the now-evidenced items appended to tickets
-   20 (dedup SipHash — shipped; entry-transpose string fast path) and 40 (q13 per-row copy).
+   (shipped 2026-07-04: ticket 45 — the forked rowwise prefix, q3 +17%/q9 +9%/q20 +6%; ticket 46's
+   decode half — Top-N emit dedup, q19 +13%, its net-diff remainder parity-gated in the trimmed
+   ticket; ticket 47 — typed DISTINCT sets + cached changelog emit, q16 +17%/q17 +4%/q15 +3%; the
+   dedup SipHash item on ticket 20 via the crate-wide ahash default; the q21 upcall regex cache,
+   +12.5%): what remains is ticket 48 (updating-join state-store probes/blocks — q3/q20/q9/q23),
+   ticket 46's parity decision, and the ticket 20 (entry-transpose string fast path) / ticket 40
+   (q13 per-row copy) items.
 1. **Native Kafka source: gate FLIPPED (2026-07-03)** (ticket 33). Per-partition watermarks/idleness
    and specific-offsets/topic-pattern startup shipped; `kafkaSource` defaults on and the `kafka`
    cargo feature is a default build feature (probe-guarded for opt-out builds). Remaining tails in

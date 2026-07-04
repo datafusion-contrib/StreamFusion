@@ -180,6 +180,17 @@ q19 +13% end to end (generator profile loop), decode share 72% → 6%; the opera
 materializing the cascade's output volume itself, which is Flink's own changelog contract
 (the per-batch net-diff question is parity-gated — ticket 46).
 
+**Group-aggregate DISTINCT folds primitives; the changelog emit reads its cache.** The
+multi-`DISTINCT` day/channel aggregates (q15/q16/q17) owned the largest native islands, and their
+hot leaves were `ScalarValue` construct/hash/clone/drop: every row built a scalar per distinct agg
+call to probe the distinct sets, and materialized the group's full output tuple twice (the
+pre-update value for the `-U`, the post-update for the `+U`). Distinct sets are now typed — a
+BIGINT distinct column keys a plain `i64` map read straight off the array, no scalar — and each
+group caches its last-emitted tuple, so the pre-update value is a take-from-cache (recomputed only
+after restore) and the `-U` moves it out instead of cloning. Byte-identical emit protocol
+(including the unchanged-result suppression Flink applies). Measured: q16 +17%, q17 +4%, q15 +3%
+on the generator profile loop — q16, long the floor of the Parquet/Kafka tables, gains the most.
+
 **Allocation discipline on the per-row paths.** Reuse the per-row window buffer instead of
 allocating one per row (26% on tumbling, `3833e8d`); move the grouping key into its last window
 instead of cloning (~18% keyed, `ffec81e`); reach existing groups by `get_mut` and clone the key

@@ -80,6 +80,124 @@ impl MinMaxKey {
     }
 }
 
+/// A distinct-value multiplicity map, specialized by the value column's type: a BIGINT column (the
+/// common Nexmark shape — `COUNT(DISTINCT bidder)`) keys a plain `i64` map, so the per-row fold reads
+/// the primitive straight off the array with no `ScalarValue` construction, boxed hash, or per-value
+/// heap churn; any other type keys scalars as before. The q16 profile put ~half the group aggregate
+/// in exactly that scalar construct/hash/drop traffic.
+pub(crate) enum DistinctSet {
+    I64(ahash::HashMap<i64, i64>),
+    Scalar(ahash::HashMap<ScalarValue, i64>),
+}
+
+impl DistinctSet {
+    fn new(value_type: &DataType) -> Self {
+        match value_type {
+            DataType::Int64 => DistinctSet::I64(ahash::HashMap::default()),
+            _ => DistinctSet::Scalar(ahash::HashMap::default()),
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            DistinctSet::I64(m) => m.len(),
+            DistinctSet::Scalar(m) => m.len(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Adds one occurrence; returns true when the value enters the set (first occurrence).
+    fn add_i64(&mut self, value: i64) -> bool {
+        match self {
+            DistinctSet::I64(m) => {
+                let count = m.entry(value).or_insert(0);
+                *count += 1;
+                *count == 1
+            }
+            DistinctSet::Scalar(_) => self.add_scalar(ScalarValue::Int64(Some(value))),
+        }
+    }
+
+    /// Removes one occurrence; returns true when the value leaves the set (last occurrence).
+    fn remove_i64(&mut self, value: i64) -> bool {
+        match self {
+            DistinctSet::I64(m) => {
+                if let Some(count) = m.get_mut(&value) {
+                    *count -= 1;
+                    if *count <= 0 {
+                        m.remove(&value);
+                        return true;
+                    }
+                }
+                false
+            }
+            DistinctSet::Scalar(_) => self.remove_scalar(&ScalarValue::Int64(Some(value))),
+        }
+    }
+
+    fn add_scalar(&mut self, value: ScalarValue) -> bool {
+        match self {
+            DistinctSet::I64(_) => match value {
+                ScalarValue::Int64(Some(v)) => self.add_i64(v),
+                other => unreachable!("i64 distinct set fed a non-int64 scalar: {other:?}"),
+            },
+            DistinctSet::Scalar(m) => {
+                let count = m.entry(value).or_insert(0);
+                *count += 1;
+                *count == 1
+            }
+        }
+    }
+
+    fn remove_scalar(&mut self, value: &ScalarValue) -> bool {
+        match self {
+            DistinctSet::I64(_) => match value {
+                ScalarValue::Int64(Some(v)) => self.remove_i64(*v),
+                other => unreachable!("i64 distinct set retracting a non-int64 scalar: {other:?}"),
+            },
+            DistinctSet::Scalar(m) => {
+                if let Some(count) = m.get_mut(value) {
+                    *count -= 1;
+                    if *count <= 0 {
+                        m.remove(value);
+                        return true;
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    /// The live (value, multiplicity) pairs as scalars — the snapshot wire format, unchanged by the
+    /// typed specialization.
+    fn scalar_entries(&self) -> Vec<(ScalarValue, i64)> {
+        match self {
+            DistinctSet::I64(m) => {
+                m.iter().map(|(v, c)| (ScalarValue::Int64(Some(*v)), *c)).collect()
+            }
+            DistinctSet::Scalar(m) => m.iter().map(|(v, c)| (v.clone(), *c)).collect(),
+        }
+    }
+
+    /// Restores one snapshot entry with its multiplicity.
+    fn insert_restored(&mut self, value: ScalarValue, count: i64) {
+        match self {
+            DistinctSet::I64(m) => match value {
+                ScalarValue::Int64(Some(v)) => {
+                    m.insert(v, count);
+                }
+                other => unreachable!("i64 distinct set restoring a non-int64 scalar: {other:?}"),
+            },
+            DistinctSet::Scalar(m) => {
+                m.insert(value, count);
+            }
+        }
+    }
+}
+
 /// Per-(key, aggregate) state. SUM and COUNT fold/retract a single running value (SUM also keeps a
 /// non-null count so it reports NULL once fully retracted). MIN/MAX cannot be retracted from a single
 /// value, so they keep a value→count multiset and read the extreme off its ends — what makes them
@@ -90,11 +208,11 @@ pub(crate) enum GroupAggState {
     // COUNT(DISTINCT x): a value→multiplicity map (Flink's DistinctAccumulator MapView). The count is
     // the number of live entries; a value's multiplicity tracks how many input rows carry it so a
     // retraction removes it only when the last one is retracted. Nulls are never inserted.
-    Distinct(ahash::HashMap<ScalarValue, i64>),
+    Distinct(DistinctSet),
     // SUM(DISTINCT x): the same value→multiplicity map plus a running SUM folded only when a value
     // enters the set and retracted only when its last occurrence leaves — Flink's DistinctAccumulator
     // wrapping the SUM accumulator, kept incremental so the emit stays O(1).
-    DistinctRunning { counts: ahash::HashMap<ScalarValue, i64>, agg: RunningAgg },
+    DistinctRunning { counts: DistinctSet, agg: RunningAgg },
 }
 
 impl GroupAggState {
@@ -102,10 +220,10 @@ impl GroupAggState {
         match kind {
             1 => GroupAggState::Extremes { is_min: true, counts: BTreeMap::new() }, // MIN
             2 => GroupAggState::Extremes { is_min: false, counts: BTreeMap::new() }, // MAX
-            7 => GroupAggState::Distinct(ahash::HashMap::default()), // COUNT(DISTINCT)
+            7 => GroupAggState::Distinct(DistinctSet::new(value_type)), // COUNT(DISTINCT)
             // SUM(DISTINCT): the inner running aggregate is a plain SUM (kind 0) over the value type.
             9 => GroupAggState::DistinctRunning {
-                counts: ahash::HashMap::default(),
+                counts: DistinctSet::new(value_type),
                 agg: RunningAgg::new(0, value_type),
             },
             _ => GroupAggState::Running { agg: RunningAgg::new(kind, value_type), non_null: 0 },
@@ -204,12 +322,29 @@ impl GroupAggState {
     /// first time also folds into a distinct SUM's running aggregate — later duplicates don't.
     fn accumulate_distinct(&mut self, value: ScalarValue) {
         match self {
-            GroupAggState::Distinct(counts) => *counts.entry(value).or_insert(0) += 1,
+            GroupAggState::Distinct(counts) => {
+                counts.add_scalar(value);
+            }
             GroupAggState::DistinctRunning { counts, agg } => {
-                let count = counts.entry(value.clone()).or_insert(0);
-                *count += 1;
-                if *count == 1 {
-                    agg.fold(distinct_num(&value));
+                let num = distinct_num(&value);
+                if counts.add_scalar(value) {
+                    agg.fold(num);
+                }
+            }
+            _ => unreachable!("accumulate_distinct on a non-distinct aggregate"),
+        }
+    }
+
+    /// The BIGINT fast path of {@link accumulate_distinct}: the value comes straight off the Int64
+    /// array, no scalar is built.
+    fn accumulate_distinct_i64(&mut self, value: i64) {
+        match self {
+            GroupAggState::Distinct(counts) => {
+                counts.add_i64(value);
+            }
+            GroupAggState::DistinctRunning { counts, agg } => {
+                if counts.add_i64(value) {
+                    agg.fold(Num::I64(value));
                 }
             }
             _ => unreachable!("accumulate_distinct on a non-distinct aggregate"),
@@ -221,20 +356,26 @@ impl GroupAggState {
     fn retract_distinct(&mut self, value: ScalarValue) {
         match self {
             GroupAggState::Distinct(counts) => {
-                if let Some(count) = counts.get_mut(&value) {
-                    *count -= 1;
-                    if *count <= 0 {
-                        counts.remove(&value);
-                    }
-                }
+                counts.remove_scalar(&value);
             }
             GroupAggState::DistinctRunning { counts, agg } => {
-                if let Some(count) = counts.get_mut(&value) {
-                    *count -= 1;
-                    if *count <= 0 {
-                        counts.remove(&value);
-                        agg.retract(distinct_num(&value));
-                    }
+                if counts.remove_scalar(&value) {
+                    agg.retract(distinct_num(&value));
+                }
+            }
+            _ => unreachable!("retract_distinct on a non-distinct aggregate"),
+        }
+    }
+
+    /// The BIGINT fast path of {@link retract_distinct}.
+    fn retract_distinct_i64(&mut self, value: i64) {
+        match self {
+            GroupAggState::Distinct(counts) => {
+                counts.remove_i64(value);
+            }
+            GroupAggState::DistinctRunning { counts, agg } => {
+                if counts.remove_i64(value) {
+                    agg.retract(Num::I64(value));
                 }
             }
             _ => unreachable!("retract_distinct on a non-distinct aggregate"),
@@ -295,6 +436,11 @@ impl GroupAggState {
 pub(crate) struct GroupKeyState {
     aggs: Vec<GroupAggState>,
     records: i64,
+    /// The tuple last emitted for this group — the per-row changelog needs the pre-update value of
+    /// every touched group, and caching it halves the output materialization (the q16 profile put
+    /// ~half the operator in exactly that scalar build/clone churn). `None` after restore (the
+    /// snapshot doesn't carry it); the first touch then recomputes it from the aggregate state.
+    last_output: Option<Vec<ScalarValue>>,
 }
 
 /// Non-windowed `GROUP BY` aggregation over a changelog. Holds per-key state — no windows, no
@@ -351,7 +497,13 @@ pub(crate) fn group_agg_state_bytes(state: &GroupAggState) -> usize {
 /// Estimated footprint of one group's full state (all aggregates plus the record counter).
 pub(crate) fn group_key_state_bytes(state: &GroupKeyState) -> usize {
     state.aggs.iter().map(group_agg_state_bytes).sum::<usize>()
+        + state.last_output.as_ref().map_or(0, |v| scalar_row_bytes(v))
         + std::mem::size_of::<GroupKeyState>()
+}
+
+/// A group's current output tuple (each aggregate reports NULL while it has no live input).
+fn output_of(state: &GroupKeyState, result_types: &[DataType]) -> Vec<ScalarValue> {
+    state.aggs.iter().zip(result_types).map(|(agg, rt)| agg.emit(rt)).collect()
 }
 
 /// Estimated footprint of an arrow-row byte key plus its map entry.
@@ -433,14 +585,11 @@ impl GroupAggregator {
         self.keys.entry(key).or_insert_with(|| GroupKeyState {
             aggs: kinds.iter().zip(value_types).map(|(&kind, vt)| GroupAggState::new(kind, vt)).collect(),
             records: 0,
+            last_output: None,
         })
     }
 
-    /// A key's current output tuple (each aggregate reports NULL while it has no live input).
-    fn output_values(&self, key: &OwnedRow) -> Vec<ScalarValue> {
-        let state = self.keys.get(key).expect("key present");
-        state.aggs.iter().zip(&self.result_types).map(|(agg, rt)| agg.emit(rt)).collect()
-    }
+
 
     /// Folds the batch's rows into per-key state in input order, honoring each row's `RowKind`, and
     /// returns the changelog rows produced, in emission order.
@@ -491,6 +640,13 @@ impl GroupAggregator {
         let distinct_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| matches!(self.kinds[i], 7 | 9).then_some(self.value_columns[i] as usize))
             .collect();
+        // The BIGINT fast path per distinct aggregate: fold the primitive straight off the array
+        // (no per-row ScalarValue). Present exactly when the value column is Int64.
+        let distinct_i64_cols: Vec<Option<&Int64Array>> = (0..num_agg)
+            .map(|i| {
+                distinct_cols[i].and_then(|c| batch.column(c).as_any().downcast_ref::<Int64Array>())
+            })
+            .collect();
         // Per aggregate, a string MIN/MAX value column (kind 1/2 over Utf8) — folded as a scalar into
         // the Extremes multiset, not through the numeric Num path.
         let extreme_str_cols: Vec<Option<usize>> = (0..num_agg)
@@ -537,10 +693,10 @@ impl GroupAggregator {
         let mut out_keys: Vec<OwnedRow> = Vec::new();
         let mut out_results: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
         let mut out_kinds: Vec<i8> = Vec::new();
-        let mut push = |kind: i8, key: &OwnedRow, values: &[ScalarValue]| {
+        let mut push = |kind: i8, key: &OwnedRow, values: Vec<ScalarValue>| {
             out_keys.push(key.clone());
-            for (i, v) in values.iter().enumerate() {
-                out_results[i].push(v.clone());
+            for (i, v) in values.into_iter().enumerate() {
+                out_results[i].push(v);
             }
             out_kinds.push(kind);
         };
@@ -560,7 +716,15 @@ impl GroupAggregator {
             if !exists && retract {
                 continue; // no accumulator for a key's first message being a retraction (host skips it)
             }
-            let prev = if exists { Some(self.output_values(&key)) } else { None };
+            // The pre-update output comes from the group's cache (recomputed only after a restore,
+            // which does not carry it) — the second full materialization per row goes away.
+            let prev = if exists {
+                let state = self.keys.get_mut(&key).expect("key present");
+                let cached = state.last_output.take();
+                Some(cached.unwrap_or_else(|| output_of(state, &self.result_types)))
+            } else {
+                None
+            };
             {
                 // Clone the key into the map only when inserting a new group; an existing group
                 // (the steady state) is reached by reference, avoiding a per-row key allocation.
@@ -610,6 +774,16 @@ impl GroupAggregator {
                     // COUNT(DISTINCT x) (kind 7) folds the value itself, not a Num — read its scalar
                     // (skipping nulls, which DISTINCT ignores) and add/remove it from the value set.
                     if let Some(col_idx) = distinct_cols[i] {
+                        if let Some(ints) = distinct_i64_cols[i] {
+                            if !ints.is_null(row) {
+                                if retract {
+                                    state.aggs[i].retract_distinct_i64(ints.value(row));
+                                } else {
+                                    state.aggs[i].accumulate_distinct_i64(ints.value(row));
+                                }
+                            }
+                            continue;
+                        }
                         let column = batch.column(col_idx);
                         if !column.is_null(row) {
                             let scalar =
@@ -646,20 +820,28 @@ impl GroupAggregator {
             }
 
             if self.keys.get(&key).unwrap().records > 0 {
-                let new = self.output_values(&key);
+                let state = self.keys.get_mut(&key).expect("key present");
+                let new = output_of(state, &self.result_types);
                 match prev {
-                    None => push(0, &key, &new), // +I — first row for the key
-                    Some(prev) if new != prev => {
-                        if self.generate_update_before {
-                            push(1, &key, &prev); // -U
-                        }
-                        push(2, &key, &new); // +U
+                    None => {
+                        // +I — first row for the key; the emitted tuple seeds the cache.
+                        state.last_output = Some(new.clone());
+                        push(0, &key, new);
                     }
-                    Some(_) => {} // unchanged result — suppressed (state retention off)
+                    Some(prev) if new != prev => {
+                        state.last_output = Some(new.clone());
+                        if self.generate_update_before {
+                            push(1, &key, prev); // -U — moved out of the cache, not recomputed
+                        }
+                        push(2, &key, new); // +U
+                    }
+                    Some(prev) => {
+                        state.last_output = Some(prev); // unchanged result — suppressed
+                    }
                 }
             } else {
                 // The last record for the key was retracted: delete the group.
-                push(3, &key, &prev.expect("a retraction implies the key existed")); // -D
+                push(3, &key, prev.expect("a retraction implies the key existed")); // -D
                 self.keys.remove(&key);
             }
             if track {
@@ -725,20 +907,20 @@ impl GroupAggregator {
                         // The count is recomputed from the side batch on restore (placeholder here).
                         state_columns[i].push(null_scalar(&self.result_types[i]));
                         non_null_columns[i].push(0);
-                        for (value, count) in counts.iter() {
+                        for (value, count) in counts.scalar_entries() {
                             multiset_keys[i].push(key.clone());
-                            multiset_values[i].push(value.clone()); // the distinct value itself
-                            multiset_counts[i].push(*count);
+                            multiset_values[i].push(value); // the distinct value itself
+                            multiset_counts[i].push(count);
                         }
                     }
                     GroupAggState::DistinctRunning { counts, .. } => {
                         // The running sum is refolded from the side batch's values on restore.
                         state_columns[i].push(null_scalar(&self.result_types[i]));
                         non_null_columns[i].push(0);
-                        for (value, count) in counts.iter() {
+                        for (value, count) in counts.scalar_entries() {
                             multiset_keys[i].push(key.clone());
-                            multiset_values[i].push(value.clone());
-                            multiset_counts[i].push(*count);
+                            multiset_values[i].push(value);
+                            multiset_counts[i].push(count);
                         }
                     }
                 }
@@ -851,13 +1033,13 @@ impl GroupAggregator {
                     Some(GroupAggState::Extremes { counts: map, .. }) => {
                         map.insert(MinMaxKey::from_scalar(&value), counts.value(row));
                     }
-                    Some(GroupAggState::Distinct(map)) => {
-                        map.insert(value, counts.value(row));
+                    Some(GroupAggState::Distinct(set)) => {
+                        set.insert_restored(value, counts.value(row));
                     }
                     // SUM(DISTINCT): rebuild the set and refold each live value into the running sum.
-                    Some(GroupAggState::DistinctRunning { counts: map, agg }) => {
+                    Some(GroupAggState::DistinctRunning { counts: set, agg }) => {
                         agg.fold(distinct_num(&value));
-                        map.insert(value, counts.value(row));
+                        set.insert_restored(value, counts.value(row));
                     }
                     _ => {}
                 }
