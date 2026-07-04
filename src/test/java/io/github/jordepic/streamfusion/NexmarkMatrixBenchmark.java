@@ -10,9 +10,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.apache.flink.api.common.RuntimeExecutionMode;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
+import org.apache.fluss.server.testutils.FlussClusterExtension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.testcontainers.containers.KafkaContainer;
@@ -32,6 +34,12 @@ import org.testcontainers.utility.DockerImageName;
  * Its rowtime is a plain {@code TIMESTAMP(3)} (unlike the Kafka {@code TIMESTAMP_LTZ}), so the {@code
  * DATE_FORMAT}/{@code HOUR} queries that are generator-only on Kafka run here too.
  *
+ * <p>The optional Fluss rung ({@code SF_MATRIX_FLUSS=true}) is a stock Flink-on-Fluss baseline and
+ * feasibility scaffold: it preloads the same wide event row into a local Fluss test cluster, then
+ * reads it through Fluss's own Flink connector. Fluss 0.9 streaming reads are unbounded, so this
+ * first finite baseline uses the connector's batch limit-read path ({@code LIMIT SF_ROWS}) and reports
+ * only the stock connector timing; a native columnar Fluss source is follow-up work.
+ *
  * <p>The query set is every query StreamFusion accelerates: q0–q5, q7–q23 (q1's and q14's decimal are
  * exact and native by default; q21's REGEXP_EXTRACT/LOWER and q14's HOUR route through the host
  * implementation via the columnar JVM upcall; q13 is a synchronous lookup join against a bounded
@@ -49,7 +57,8 @@ import org.testcontainers.utility.DockerImageName;
  * 500,000), {@code SF_MATRIX_QUERIES} a comma-separated query subset (e.g. {@code q0,q7,q15}), {@code
  * SF_LADDER_FORMATS} the Kafka formats (default {@code json,avro,protobuf}), {@code SF_MATRIX_GENERATOR}
  * ({@code false} to skip the generator column), {@code SF_MATRIX_PARQUET} ({@code false} to skip the
- * Parquet column), {@code SF_MATRIX_KAFKA} ({@code false} to skip Kafka).
+ * Parquet column), {@code SF_MATRIX_KAFKA} ({@code false} to skip Kafka), {@code SF_MATRIX_FLUSS}
+ * ({@code true} to include the first stock Flink-on-Fluss baseline).
  */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class NexmarkMatrixBenchmark {
@@ -431,6 +440,8 @@ class NexmarkMatrixBenchmark {
           + " bid ROW<auction BIGINT, bidder BIGINT, price BIGINT, channel STRING, url STRING,"
           + " `dateTime` TIMESTAMP(3), extra STRING>,"
           + " `dateTime` TIMESTAMP(3)";
+  private static final String FLUSS_CATALOG = "fluss_catalog";
+  private static final String FLUSS_TABLE = FLUSS_CATALOG + ".fluss.nexmark_events";
 
   @Test
   void matrix() throws Exception {
@@ -438,6 +449,7 @@ class NexmarkMatrixBenchmark {
     boolean runGenerator = !"false".equals(System.getenv("SF_MATRIX_GENERATOR"));
     boolean runParquet = !"false".equals(System.getenv("SF_MATRIX_PARQUET"));
     boolean runKafka = !"false".equals(System.getenv("SF_MATRIX_KAFKA"));
+    boolean runFluss = "true".equals(System.getenv("SF_MATRIX_FLUSS"));
     String formatsEnv = System.getenv("SF_LADDER_FORMATS");
     String[] formats =
         formatsEnv != null ? formatsEnv.split(",") : new String[] {"json", "avro", "protobuf"};
@@ -473,6 +485,30 @@ class NexmarkMatrixBenchmark {
           double variant = parquetBest(dir, q, true, q.nativeVariantProps);
           report.get(q.label).add(variantCell("parquet", q.nativeVariantLabel, flink, variant));
         }
+      }
+    }
+
+    if (runFluss) {
+      FlussClusterExtension cluster = FlussClusterExtension.builder().setNumOfTabletServers(1).build();
+      cluster.start();
+      try {
+        String bootstrapServers = cluster.getBootstrapServers();
+        writeFlussSource(bootstrapServers);
+        for (Query q : queries) {
+          if (!flussBatchBaselineSupported(q)) {
+            report
+                .get(q.label)
+                .add(
+                    skipCell(
+                        "fluss",
+                        "plain-timestamp baseline does not cover time-attribute/proctime/lookup"));
+            continue;
+          }
+          double flink = flussBest(bootstrapServers, q);
+          report.get(q.label).add(baselineCell("fluss", flink));
+        }
+      } finally {
+        cluster.close();
       }
     }
 
@@ -633,6 +669,16 @@ class NexmarkMatrixBenchmark {
         source, flink, ROWS / flink, nativeRun, ROWS / nativeRun, flink / nativeRun);
   }
 
+  private static String baselineCell(String source, double flink) {
+    return String.format(
+        "%-10s Flink %6.3fs (%,.0f ev/s)  |  Native pending (baseline only)",
+        source, flink, ROWS / flink);
+  }
+
+  private static String skipCell(String source, String reason) {
+    return String.format("%-10s skipped (%s)", source, reason);
+  }
+
   private static String variantCell(String source, String label, double flink, double variant) {
     return String.format(
         "%-10s [%s]  Native %6.3fs (%,.0f ev/s)  %.2fx",
@@ -660,6 +706,78 @@ class NexmarkMatrixBenchmark {
     runSetup(tEnv, q);
     PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
     return execute(tEnv, scan, q, nativeRun, "TIMESTAMP(3)");
+  }
+
+  // ----- Fluss source -----
+
+  /** Writes the wide event row to a local Fluss log table once; every Fluss query reads it back. */
+  private static void writeFlussSource(String bootstrapServers) throws Exception {
+    TableEnvironment tEnv = NexmarkBenchmark.environment(ROWS);
+    createFlussCatalog(tEnv, bootstrapServers);
+    tEnv.executeSql("DROP TABLE IF EXISTS " + FLUSS_TABLE);
+    tEnv.executeSql(
+        "CREATE TABLE "
+            + FLUSS_TABLE
+            + " ("
+            + PARQUET_SCHEMA
+            + ") WITH ('bucket.num' = '1')");
+    tEnv.executeSql(
+            "INSERT INTO "
+                + FLUSS_TABLE
+                + " SELECT event_type, person, auction, bid, `dateTime` FROM events")
+        .await();
+  }
+
+  private static double flussBest(String bootstrapServers, Query q) throws Exception {
+    double best = Double.MAX_VALUE;
+    for (int run = 0; run < WARMUP + RUNS; run++) {
+      double seconds = runFlussOnce(bootstrapServers, q);
+      if (run >= WARMUP) {
+        best = Math.min(best, seconds);
+      }
+    }
+    return best;
+  }
+
+  private static double runFlussOnce(String bootstrapServers, Query q) throws Exception {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    env.setRuntimeMode(RuntimeExecutionMode.BATCH);
+    env.getConfig().enableObjectReuse();
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().getConfiguration().setString("execution.runtime-mode", "batch");
+    createFlussCatalog(tEnv, bootstrapServers);
+    tEnv.executeSql("CREATE TEMPORARY VIEW src AS SELECT * FROM " + FLUSS_TABLE + " LIMIT " + ROWS);
+    tEnv.executeSql(
+        "CREATE TEMPORARY VIEW person AS SELECT person.id AS id, person.name AS name,"
+            + " person.emailAddress AS emailAddress, person.creditCard AS creditCard, person.city AS"
+            + " city, person.state AS state, `dateTime`, person.extra AS extra FROM src WHERE"
+            + " event_type = 0");
+    tEnv.executeSql(
+        "CREATE TEMPORARY VIEW auction AS SELECT auction.id AS id, auction.itemName AS itemName,"
+            + " auction.description AS description, auction.initialBid AS initialBid, auction.reserve"
+            + " AS reserve, `dateTime`, auction.expires AS expires, auction.seller AS seller,"
+            + " auction.category AS category, auction.extra AS extra FROM src WHERE event_type = 1");
+    tEnv.executeSql(
+        "CREATE TEMPORARY VIEW bid AS SELECT bid.auction AS auction, bid.bidder AS bidder, bid.price"
+            + " AS price, bid.channel AS channel, bid.url AS url, `dateTime`, bid.extra AS extra FROM"
+            + " src WHERE event_type = 2");
+    tEnv.createTemporarySystemFunction("count_char", CountChar.class);
+    runSetup(tEnv, q);
+    return execute(tEnv, null, q, false, "TIMESTAMP(3)");
+  }
+
+  private static void createFlussCatalog(TableEnvironment tEnv, String bootstrapServers) {
+    tEnv.executeSql(
+        "CREATE CATALOG "
+            + FLUSS_CATALOG
+            + " WITH ('type' = 'fluss', 'bootstrap.servers' = '"
+            + bootstrapServers
+            + "')");
+  }
+
+  private static boolean flussBatchBaselineSupported(Query q) {
+    return !Set.of("q5", "q7", "q8", "q11", "q12", "q13").contains(q.label);
   }
 
   // ----- parquet file source -----
