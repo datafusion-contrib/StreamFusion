@@ -14,24 +14,36 @@ pub(crate) struct UpdatingJoiner {
     left_payload: RowConverter,
     right_payload: RowConverter,
     /// A value-encoded all-null row per side, used to null-pad the absent side of an outer join.
-    left_null: OwnedRow,
-    right_null: OwnedRow,
-    left_state: ahash::HashMap<OwnedRow, ahash::HashMap<OwnedRow, RowMeta>>,
-    right_state: ahash::HashMap<OwnedRow, ahash::HashMap<OwnedRow, RowMeta>>,
+    left_null: ByteKey,
+    right_null: ByteKey,
+    left_state: SideState,
+    right_state: SideState,
     pub(crate) memory: OperatorMemory,
 }
 
+/// One side's multiset state: equi-key bytes → (row bytes → appear-count/degree). Keys are
+/// `ByteKey`, so the steady-state probe — an input row whose key and content are already stored —
+/// hashes the borrowed arrow-row bytes and allocates nothing; only a first insert copies them.
+/// This was the differential profile's system-allocator signal vs Flink's pooled BinaryRowData.
+pub(crate) type SideState = ahash::HashMap<ByteKey, ahash::HashMap<ByteKey, RowMeta>>;
+
 /// Estimated footprint of one stored join row (arrow-row bytes + its appear-count meta + map entry).
-pub(crate) fn join_row_entry_bytes(row: &OwnedRow) -> usize {
-    row.row().as_ref().len() + std::mem::size_of::<RowMeta>() + GROUP_ENTRY_OVERHEAD
+pub(crate) fn join_row_entry_bytes(row: &[u8]) -> usize {
+    row.len() + std::mem::size_of::<RowMeta>() + GROUP_ENTRY_OVERHEAD
+}
+
+/// Estimated footprint of a stored key entry.
+pub(crate) fn join_key_entry_bytes(key: &[u8]) -> usize {
+    key.len() + GROUP_ENTRY_OVERHEAD
 }
 
 /// Estimated footprint of one side of the updating join's state (for the restore-time account).
-pub(crate) fn join_state_bytes(state: &ahash::HashMap<OwnedRow, ahash::HashMap<OwnedRow, RowMeta>>) -> usize {
+pub(crate) fn join_state_bytes(state: &SideState) -> usize {
     state
         .iter()
         .map(|(key, bucket)| {
-            owned_row_bytes(key) + bucket.keys().map(join_row_entry_bytes).sum::<usize>()
+            join_key_entry_bytes(&key.0)
+                + bucket.keys().map(|r| join_row_entry_bytes(&r.0)).sum::<usize>()
         })
         .sum()
 }
@@ -53,8 +65,8 @@ impl UpdatingJoiner {
         .expect("join key converter");
         let left_payload = payload_converter(&left_schema);
         let right_payload = payload_converter(&right_schema);
-        let left_null = encode_null_row(&left_payload, &left_schema);
-        let right_null = encode_null_row(&right_payload, &right_schema);
+        let left_null = ByteKey::from(encode_null_row(&left_payload, &left_schema).row().as_ref());
+        let right_null = ByteKey::from(encode_null_row(&right_payload, &right_schema).row().as_ref());
         UpdatingJoiner {
             left_keys,
             right_keys,
@@ -97,7 +109,7 @@ impl UpdatingJoiner {
     /// Drops the candidate matches whose `[left.., right..]` pair fails the residual non-equi
     /// predicate, so only condition-satisfying rows feed the degree and the emitted output (Flink's
     /// `condition.apply` filter). A no-op when there is no predicate.
-    fn filter_associated(&mut self, full: &OwnedRow, is_left: bool, associated: &mut Vec<OuterRecord>) {
+    fn filter_associated(&mut self, full: &[u8], is_left: bool, associated: &mut Vec<OuterRecord>) {
         if associated.is_empty() || self.predicate.is_none() {
             return;
         }
@@ -109,15 +121,19 @@ impl UpdatingJoiner {
         // pass (a per-row convert_rows here was a measured regression on q7, whose price-equi predicate
         // builds large associated sets). Only joins with a residual non-equi condition reach this.
         let input_conv = if is_left { &self.left_payload } else { &self.right_payload };
-        let input_cols = input_conv.convert_rows([full.row()]).expect("decode join input row");
+        let input_parser = input_conv.parser();
+        let input_cols =
+            input_conv.convert_rows([input_parser.parse(full)]).expect("decode join input row");
         let zero = UInt32Array::from(vec![0u32; n]);
         let input_broadcast: Vec<ArrayRef> = input_cols
             .iter()
             .map(|a| take(a.as_ref(), &zero, None).expect("broadcast join input row"))
             .collect();
         let other_conv = if is_left { &self.right_payload } else { &self.left_payload };
-        let other_cols =
-            other_conv.convert_rows(associated.iter().map(|o| o.record.row())).expect("decode associated rows");
+        let other_parser = other_conv.parser();
+        let other_cols = other_conv
+            .convert_rows(associated.iter().map(|o| other_parser.parse(&o.record.0)))
+            .expect("decode associated rows");
         let mut columns: Vec<ArrayRef> = Vec::with_capacity(input_broadcast.len() + other_cols.len());
         if is_left {
             columns.extend(input_broadcast);
@@ -136,10 +152,7 @@ impl UpdatingJoiner {
     /// appear-times (so multiplicity is preserved) and capturing its degree once per distinct row. A
     /// null in the equi-key matches nothing (Flink's null-filtering equi semantics), so an empty key
     /// match means "no associated rows".
-    fn associated(
-        other_state: &ahash::HashMap<OwnedRow, ahash::HashMap<OwnedRow, RowMeta>>,
-        key: &OwnedRow,
-    ) -> Vec<OuterRecord> {
+    fn associated(other_state: &SideState, key: &[u8]) -> Vec<OuterRecord> {
         // A null in the equi-key matches nothing (Flink's null-rejecting equality); the caller skips
         // association for null-key rows (a null can't be read back from the encoded key), so this just
         // gathers the matches for a non-null key.
@@ -154,65 +167,89 @@ impl UpdatingJoiner {
         out
     }
 
+    /// The bucket for `key`, creating it on first touch — the probe hashes the borrowed bytes and
+    /// copies them only when the key is new.
+    fn bucket_mut<'s>(
+        state: &'s mut SideState,
+        key: &[u8],
+        track: bool,
+        delta: &mut isize,
+    ) -> &'s mut ahash::HashMap<ByteKey, RowMeta> {
+        if !state.contains_key(key) {
+            if track {
+                *delta += join_key_entry_bytes(key) as isize;
+            }
+            state.insert(ByteKey::from(key), ahash::HashMap::default());
+        }
+        state.get_mut(key).expect("bucket just ensured")
+    }
+
+    /// Bumps `row`'s appear-times in `bucket`, applying `on_existing` to its meta when it is already
+    /// stored (the zero-allocation steady state) and inserting a fresh entry otherwise.
+    fn bump_row(
+        bucket: &mut ahash::HashMap<ByteKey, RowMeta>,
+        row: &[u8],
+        fresh: RowMeta,
+        on_existing: impl FnOnce(&mut RowMeta),
+        track: bool,
+        delta: &mut isize,
+    ) {
+        if let Some(meta) = bucket.get_mut(row) {
+            on_existing(meta);
+            return;
+        }
+        if track {
+            *delta += join_row_entry_bytes(row) as isize;
+        }
+        bucket.insert(ByteKey::from(row), fresh);
+    }
+
     /// `state.addRecord(record, num_assoc)` — bumps appear-times and (re)sets the degree, as Flink's
     /// no-unique-key `OuterJoinRecordStateView.addRecord`.
     fn add_record(
-        state: &mut ahash::HashMap<OwnedRow, ahash::HashMap<OwnedRow, RowMeta>>,
-        key: &OwnedRow,
-        row: &OwnedRow,
+        state: &mut SideState,
+        key: &[u8],
+        row: &[u8],
         num_assoc: i32,
         track: bool,
         delta: &mut isize,
     ) {
-        let bucket = state.entry(key.clone()).or_default();
-        // An empty bucket was just created (retract_record removes emptied buckets).
-        if track && bucket.is_empty() {
-            *delta += owned_row_bytes(key) as isize;
-        }
-        let rows_before = bucket.len();
-        bucket
-            .entry(row.clone())
-            .and_modify(|m| {
+        let bucket = Self::bucket_mut(state, key, track, delta);
+        Self::bump_row(
+            bucket,
+            row,
+            RowMeta { count: 1, num_assoc },
+            |m| {
                 m.count += 1;
                 m.num_assoc = num_assoc;
-            })
-            .or_insert(RowMeta { count: 1, num_assoc });
-        if track && bucket.len() > rows_before {
-            *delta += join_row_entry_bytes(row) as isize;
-        }
+            },
+            track,
+            delta,
+        );
     }
 
     /// `state.updateNumOfAssociations(record, num_assoc)` — sets the degree of an existing row.
     fn update_num_assoc(
-        state: &mut ahash::HashMap<OwnedRow, ahash::HashMap<OwnedRow, RowMeta>>,
-        key: &OwnedRow,
-        row: &OwnedRow,
+        state: &mut SideState,
+        key: &[u8],
+        row: &[u8],
         num_assoc: i32,
         track: bool,
         delta: &mut isize,
     ) {
-        let bucket = state.entry(key.clone()).or_default();
-        if track && bucket.is_empty() {
-            *delta += owned_row_bytes(key) as isize;
-        }
-        let rows_before = bucket.len();
-        bucket
-            .entry(row.clone())
-            .and_modify(|m| m.num_assoc = num_assoc)
-            .or_insert(RowMeta { count: 1, num_assoc });
-        if track && bucket.len() > rows_before {
-            *delta += join_row_entry_bytes(row) as isize;
-        }
+        let bucket = Self::bucket_mut(state, key, track, delta);
+        Self::bump_row(
+            bucket,
+            row,
+            RowMeta { count: 1, num_assoc },
+            |m| m.num_assoc = num_assoc,
+            track,
+            delta,
+        );
     }
 
     /// `state.retractRecord(record)` — drops one appear-time, removing the row (and emptied key) at 0.
-    fn retract_record(
-        state: &mut ahash::HashMap<OwnedRow, ahash::HashMap<OwnedRow, RowMeta>>,
-        key: &OwnedRow,
-        row: &OwnedRow,
-        track: bool,
-        delta: &mut isize,
-    ) {
+    fn retract_record(state: &mut SideState, key: &[u8], row: &[u8], track: bool, delta: &mut isize) {
         if let Some(bucket) = state.get_mut(key) {
             if let Some(meta) = bucket.get_mut(row) {
                 meta.count -= 1;
@@ -226,7 +263,7 @@ impl UpdatingJoiner {
             if bucket.is_empty() {
                 state.remove(key);
                 if track {
-                    *delta -= owned_row_bytes(key) as isize;
+                    *delta -= join_key_entry_bytes(key) as isize;
                 }
             }
         }
@@ -261,24 +298,25 @@ impl UpdatingJoiner {
 
         let track = self.memory.tracking();
         let mut delta = 0isize;
-        let mut out_left: Vec<OwnedRow> = Vec::new();
-        let mut out_right: Vec<OwnedRow> = Vec::new();
+        let mut out_left: Vec<ByteKey> = Vec::new();
+        let mut out_right: Vec<ByteKey> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
 
         for row in 0..batch.num_rows() {
             // Absent `$row_kind$` (insert-only columnar input) ⇒ every row is an INSERT.
             let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
-            let key = keys.row(row).owned();
-            let full = payloads.row(row).owned();
+            // Borrowed byte rows: the state probes hash these directly and copy only on first insert.
+            let key = keys.row(row);
+            let full = payloads.row(row);
             if self.kind.is_semi_anti() {
                 self.process_semi_anti(
-                    &key, &full, kind, is_left, key_null[row], &mut out_left, &mut out_kinds, track,
-                    &mut delta,
+                    key.as_ref(), full.as_ref(), kind, is_left, key_null[row], &mut out_left,
+                    &mut out_kinds, track, &mut delta,
                 );
             } else {
                 self.process_inner_outer(
-                    &key, &full, kind, is_left, key_null[row], &mut out_left, &mut out_right,
-                    &mut out_kinds, track, &mut delta,
+                    key.as_ref(), full.as_ref(), kind, is_left, key_null[row], &mut out_left,
+                    &mut out_right, &mut out_kinds, track, &mut delta,
                 );
             }
         }
@@ -289,15 +327,21 @@ impl UpdatingJoiner {
 
     /// Rebuilds the joined changelog batch from the emitted byte rows: one vectorized `convert_rows`
     /// per side (left, and right for non-semi joins), concatenated, then the `$row_kind$` byte column.
-    fn emit(&self, out_left: Vec<OwnedRow>, out_right: Vec<OwnedRow>, out_kinds: Vec<i8>) -> RecordBatch {
+    fn emit(&self, out_left: Vec<ByteKey>, out_right: Vec<ByteKey>, out_kinds: Vec<i8>) -> RecordBatch {
         if out_left.is_empty() {
             return RecordBatch::new_empty(Arc::new(Schema::empty()));
         }
-        let mut columns: Vec<ArrayRef> =
-            self.left_payload.convert_rows(out_left.iter().map(|r| r.row())).expect("decode left rows");
+        let left_parser = self.left_payload.parser();
+        let mut columns: Vec<ArrayRef> = self
+            .left_payload
+            .convert_rows(out_left.iter().map(|r| left_parser.parse(&r.0)))
+            .expect("decode left rows");
         if !self.kind.is_semi_anti() {
-            let right_columns =
-                self.right_payload.convert_rows(out_right.iter().map(|r| r.row())).expect("decode right rows");
+            let right_parser = self.right_payload.parser();
+            let right_columns = self
+                .right_payload
+                .convert_rows(out_right.iter().map(|r| right_parser.parse(&r.0)))
+                .expect("decode right rows");
             columns.extend(right_columns);
         }
         let mut fields: Vec<Field> = (0..columns.len())
@@ -334,44 +378,38 @@ impl UpdatingJoiner {
             (&mut self.right_state, &self.left_state)
         };
         let mut cand_input_idx: Vec<usize> = Vec::new();
-        let mut cand_other: Vec<Row> = Vec::new();
+        let mut cand_other: Vec<&ByteKey> = Vec::new();
         let mut cand_kind: Vec<i8> = Vec::new();
         for row in 0..keys.num_rows() {
             let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
-            let key = keys.row(row).owned();
-            let full = payloads.row(row).owned();
+            // Borrowed byte rows: probes hash these directly; a steady-state row (key and content
+            // already stored) allocates nothing — the SYS_ALLOC a differential profile flagged vs
+            // Flink's reused BinaryRowData.
+            let key = keys.row(row);
+            let full = payloads.row(row);
             if !key_null[row] {
-                if let Some(bucket) = other_state.get(&key) {
+                if let Some(bucket) = other_state.get(key.as_ref()) {
                     for (other, meta) in bucket.iter() {
                         for _ in 0..meta.count.max(0) {
                             cand_input_idx.push(row);
-                            cand_other.push(other.row());
+                            cand_other.push(other);
                             cand_kind.push(kind);
                         }
                     }
                 }
             }
-            // INNER never reuses key/full past this point (matches already gathered; candidate inputs
-            // are decoded from `payloads` by index), so move them into the state — an accumulate insert
-            // that avoids add_record's re-clone of both the key and the row (2 allocs/row on the state,
-            // the SYS_ALLOC a differential profile flagged vs Flink's reused BinaryRowData).
             if kind == 0 || kind == 2 {
-                let key_bytes = if track { owned_row_bytes(&key) } else { 0 };
-                let row_bytes = if track { join_row_entry_bytes(&full) } else { 0 };
-                let bucket = input_state.entry(key).or_default();
-                if track && bucket.is_empty() {
-                    delta += key_bytes as isize;
-                }
-                let rows_before = bucket.len();
-                bucket
-                    .entry(full)
-                    .and_modify(|m| m.count += 1)
-                    .or_insert(RowMeta { count: 1, num_assoc: -1 });
-                if track && bucket.len() > rows_before {
-                    delta += row_bytes as isize;
-                }
+                let bucket = Self::bucket_mut(input_state, key.as_ref(), track, &mut delta);
+                Self::bump_row(
+                    bucket,
+                    full.as_ref(),
+                    RowMeta { count: 1, num_assoc: -1 },
+                    |m| m.count += 1,
+                    track,
+                    &mut delta,
+                );
             } else {
-                Self::retract_record(input_state, &key, &full, track, &mut delta);
+                Self::retract_record(input_state, key.as_ref(), full.as_ref(), track, &mut delta);
             }
         }
         self.memory.record(delta);
@@ -383,7 +421,10 @@ impl UpdatingJoiner {
         // Decode the matched other-side rows in one pass (releases the probe-side borrow), then the
         // input rows repeated per candidate — assembled into the joined `[left.., right..]` layout.
         let other_conv = if is_left { &self.right_payload } else { &self.left_payload };
-        let other_cols = other_conv.convert_rows(cand_other).expect("decode associated rows");
+        let other_parser = other_conv.parser();
+        let other_cols = other_conv
+            .convert_rows(cand_other.iter().map(|b| other_parser.parse(&b.0)))
+            .expect("decode associated rows");
         let input_conv = if is_left { &self.left_payload } else { &self.right_payload };
         let input_cols = input_conv
             .convert_rows(cand_input_idx.iter().map(|&r| payloads.row(r)))
@@ -426,13 +467,13 @@ impl UpdatingJoiner {
     /// (0=+I,1=-U,2=+U,3=-D). Output rows are `[left cols.., right cols..]`.
     fn process_inner_outer(
         &mut self,
-        key: &OwnedRow,
-        full: &OwnedRow,
+        key: &[u8],
+        full: &[u8],
         kind: i8,
         is_left: bool,
         key_has_null: bool,
-        out_left: &mut Vec<OwnedRow>,
-        out_right: &mut Vec<OwnedRow>,
+        out_left: &mut Vec<ByteKey>,
+        out_right: &mut Vec<ByteKey>,
         out_kinds: &mut Vec<i8>,
         track: bool,
         delta: &mut isize,
@@ -444,12 +485,19 @@ impl UpdatingJoiner {
         let right_null = self.right_null.clone();
         // Each builder returns the `(left, right)` byte rows for one emitted output row; the input goes
         // on its own side, the other side is the match or a null pad.
-        let paired = |other: &OwnedRow| -> (OwnedRow, OwnedRow) {
-            if is_left { (full.clone(), other.clone()) } else { (other.clone(), full.clone()) }
+        let paired = |other: &ByteKey| -> (ByteKey, ByteKey) {
+            if is_left {
+                (ByteKey::from(full), other.clone())
+            } else {
+                (other.clone(), ByteKey::from(full))
+            }
         };
-        let input_padded: (OwnedRow, OwnedRow) =
-            if is_left { (full.clone(), right_null.clone()) } else { (left_null.clone(), full.clone()) };
-        let other_padded = |other: &OwnedRow| -> (OwnedRow, OwnedRow) {
+        let input_padded: (ByteKey, ByteKey) = if is_left {
+            (ByteKey::from(full), right_null.clone())
+        } else {
+            (left_null.clone(), ByteKey::from(full))
+        };
+        let other_padded = |other: &ByteKey| -> (ByteKey, ByteKey) {
             if is_left { (left_null.clone(), other.clone()) } else { (other.clone(), right_null.clone()) }
         };
 
@@ -481,7 +529,7 @@ impl UpdatingJoiner {
                                 out_right.push(r);
                                 out_kinds.push(3); // -D[null+other]
                             }
-                            Self::update_num_assoc(self.other_state(is_left), key, &other.record, other.num_assoc + 1, track, delta);
+                            Self::update_num_assoc(self.other_state(is_left), key, &other.record.0, other.num_assoc + 1, track, delta);
                         }
                         let (l, r) = paired(&other.record);
                         out_left.push(l);
@@ -500,7 +548,7 @@ impl UpdatingJoiner {
                             out_right.push(r);
                             out_kinds.push(3); // -D[null+other]
                         }
-                        Self::update_num_assoc(self.other_state(is_left), key, &other.record, other.num_assoc + 1, track, delta);
+                        Self::update_num_assoc(self.other_state(is_left), key, &other.record.0, other.num_assoc + 1, track, delta);
                         let (l, r) = paired(&other.record);
                         out_left.push(l);
                         out_right.push(r);
@@ -535,7 +583,7 @@ impl UpdatingJoiner {
                             out_right.push(r);
                             out_kinds.push(0); // +I[null+other]
                         }
-                        Self::update_num_assoc(self.other_state(is_left), key, &other.record, other.num_assoc - 1, track, delta);
+                        Self::update_num_assoc(self.other_state(is_left), key, &other.record.0, other.num_assoc - 1, track, delta);
                     }
                 }
             }
@@ -543,12 +591,12 @@ impl UpdatingJoiner {
     }
 
     /// The state map for the arriving (input) side.
-    fn input_state(&mut self, is_left: bool) -> &mut ahash::HashMap<OwnedRow, ahash::HashMap<OwnedRow, RowMeta>> {
+    fn input_state(&mut self, is_left: bool) -> &mut SideState {
         if is_left { &mut self.left_state } else { &mut self.right_state }
     }
 
     /// The state map for the side opposite the arriving one.
-    fn other_state(&mut self, is_left: bool) -> &mut ahash::HashMap<OwnedRow, ahash::HashMap<OwnedRow, RowMeta>> {
+    fn other_state(&mut self, is_left: bool) -> &mut SideState {
         if is_left { &mut self.right_state } else { &mut self.left_state }
     }
 
@@ -557,12 +605,12 @@ impl UpdatingJoiner {
     /// left columns only.
     fn process_semi_anti(
         &mut self,
-        key: &OwnedRow,
-        full: &OwnedRow,
+        key: &[u8],
+        full: &[u8],
         kind: i8,
         is_left: bool,
         key_has_null: bool,
-        out_rows: &mut Vec<OwnedRow>,
+        out_rows: &mut Vec<ByteKey>,
         out_kinds: &mut Vec<i8>,
         track: bool,
         delta: &mut isize,
@@ -577,7 +625,7 @@ impl UpdatingJoiner {
             self.filter_associated(full, true, &mut associated);
             let matched = !associated.is_empty();
             if matched != is_anti {
-                out_rows.push(full.clone());
+                out_rows.push(ByteKey::from(full));
                 out_kinds.push(kind); // forward input RowKind
             }
             if accumulate {
@@ -599,7 +647,7 @@ impl UpdatingJoiner {
                         out_rows.push(other.record.clone());
                         out_kinds.push(if is_anti { 3 } else { kind });
                     }
-                    Self::update_num_assoc(&mut self.left_state, key, &other.record, other.num_assoc + 1, track, delta);
+                    Self::update_num_assoc(&mut self.left_state, key, &other.record.0, other.num_assoc + 1, track, delta);
                 }
             } else {
                 Self::retract_record(&mut self.right_state, key, full, track, delta);
@@ -609,7 +657,7 @@ impl UpdatingJoiner {
                         out_rows.push(other.record.clone());
                         out_kinds.push(if is_anti { 0 } else { kind });
                     }
-                    Self::update_num_assoc(&mut self.left_state, key, &other.record, other.num_assoc - 1, track, delta);
+                    Self::update_num_assoc(&mut self.left_state, key, &other.record.0, other.num_assoc - 1, track, delta);
                 }
             }
         }
@@ -623,12 +671,13 @@ impl UpdatingJoiner {
         } else {
             (&self.right_schema, &self.right_state, &self.right_payload)
         };
-        let mut rows: Vec<Row> = Vec::new();
+        let parser = conv.parser();
+        let mut rows: Vec<&ByteKey> = Vec::new();
         let mut counts: Vec<i64> = Vec::new();
         let mut assocs: Vec<i32> = Vec::new();
         for bucket in state.values() {
             for (row, meta) in bucket.iter() {
-                rows.push(row.row());
+                rows.push(row);
                 counts.push(meta.count);
                 assocs.push(meta.num_assoc);
             }
@@ -637,7 +686,9 @@ impl UpdatingJoiner {
             return Vec::new();
         }
         let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
-        let mut columns: Vec<ArrayRef> = conv.convert_rows(rows).expect("decode join side rows");
+        let mut columns: Vec<ArrayRef> = conv
+            .convert_rows(rows.iter().map(|b| parser.parse(&b.0)))
+            .expect("decode join side rows");
         fields.push(Field::new("__count__", DataType::Int64, false));
         columns.push(Arc::new(Int64Array::from(counts)));
         fields.push(Field::new("__assoc__", DataType::Int32, false));
@@ -687,8 +738,8 @@ impl UpdatingJoiner {
                 .expect("encode join payload");
             let state = if is_left { &mut self.left_state } else { &mut self.right_state };
             for row in 0..batch.num_rows() {
-                state.entry(keys.row(row).owned()).or_default().insert(
-                    payloads.row(row).owned(),
+                state.entry(ByteKey::from(keys.row(row).as_ref())).or_default().insert(
+                    ByteKey::from(payloads.row(row).as_ref()),
                     RowMeta { count: counts.value(row), num_assoc: assocs.value(row) },
                 );
             }

@@ -126,3 +126,29 @@ pub(crate) fn column_i32<'a>(batch: &'a RecordBatch, name: &str) -> &'a Int32Arr
         .downcast_ref::<Int32Array>()
         .unwrap_or_else(|| panic!("column {name} must be int32"))
 }
+
+/// A state-map key of raw arrow-row bytes. Unlike `OwnedRow`, it can be probed by a **borrowed**
+/// byte slice (`Borrow<[u8]>` + boxed-slice hashing hash the same bytes), so a steady-state lookup
+/// — an input row whose key or content is already in state — allocates nothing; only a first
+/// insert copies the bytes. The row is reconstructed for decode via the converter's
+/// `parser().parse(&bytes)`, which is how emit/snapshot read stored entries back.
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) struct ByteKey(pub(crate) Box<[u8]>);
+
+impl std::borrow::Borrow<[u8]> for ByteKey {
+    fn borrow(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl From<&[u8]> for ByteKey {
+    fn from(bytes: &[u8]) -> Self {
+        ByteKey(bytes.into())
+    }
+}
+
+impl ByteKey {
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
+}

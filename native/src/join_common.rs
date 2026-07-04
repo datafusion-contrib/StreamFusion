@@ -262,7 +262,7 @@ impl JoinKind {
 /// degree is captured once per distinct row and shared across its copies, exactly as Flink's
 /// `OuterJoinRecordStateViews` iterator reuses one `numOfAssociations` for a record's appear-times.
 pub(crate) struct OuterRecord {
-    pub(crate) record: OwnedRow,
+    pub(crate) record: ByteKey,
     pub(crate) num_assoc: i32,
 }
 

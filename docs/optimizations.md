@@ -171,6 +171,15 @@ untrusted callers, so collision resistance buys nothing. Tumbling aggregation ~3
 dedup (q18) was spending ~35% of its island in SipHash; the alias swap cut that island's CPU ~16%
 (11.6 → 9.8 samples/iteration) and closed the gap for every future operator by default.
 
+**Updating-join state probes borrow their bytes.** Both sides' state maps key by raw arrow-row
+bytes (`ByteKey`, `Borrow<[u8]>`), so the per-row probe hashes the borrowed encoded key/row and
+allocates only when a key or distinct row first enters state — previously every input row paid two
+`OwnedRow` heap copies whether or not it was already stored, the system-allocator signal the
+differential profile flagged vs Flink's pooled `BinaryRowData`. Emit/snapshot reconstruct rows from
+stored bytes via the converter's parser (wire format unchanged). q20 +4% on the generator loop; the
+Proton-style block store (state as columnar blocks + row refs, emit by `take`) stays ticketed
+behind a post-round profile (ticket 48).
+
 **Top-N emit decodes distinct rows, not emitted rows.** The with-rank cascade emits the same
 `Arc`-shared buffered rows at many rank positions — in a hot partition, the same top-N rows over
 and over across the batch's cascades — while emit decoded arrow-row state bytes per *emitted* row
