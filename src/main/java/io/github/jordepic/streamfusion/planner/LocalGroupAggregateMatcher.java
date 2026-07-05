@@ -63,11 +63,15 @@ final class LocalGroupAggregateMatcher {
         if (call.getArgList().isEmpty() || offset + 1 >= outputType.getFieldCount()) {
           return false;
         }
-        SqlTypeName valueType =
-            inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
-        SqlTypeName widened = widenedSumType(valueType);
-        if (widened == null
-            || outputType.getFieldList().get(offset).getType().getSqlTypeName() != widened
+        RelDataType valueRel = inputType.getFieldList().get(call.getArgList().get(0)).getType();
+        RelDataType sumRel = outputType.getFieldList().get(offset).getType();
+        // A decimal AVG's sum partial is SUM's DECIMAL(38, s) accumulator at the value's scale; the
+        // other numerics widen to bigint/double.
+        boolean widenedOk =
+            valueRel.getSqlTypeName() == SqlTypeName.DECIMAL
+                ? isWidenedDecimal(sumRel, valueRel)
+                : sumRel.getSqlTypeName() == widenedSumType(valueRel.getSqlTypeName());
+        if (!widenedOk
             || outputType.getFieldList().get(offset + 1).getType().getSqlTypeName()
                 != SqlTypeName.BIGINT) {
           return false;
@@ -75,7 +79,8 @@ final class LocalGroupAggregateMatcher {
         offset += 2;
         continue;
       }
-      SqlTypeName partialType = outputType.getFieldList().get(offset).getType().getSqlTypeName();
+      RelDataType partialRel = outputType.getFieldList().get(offset).getType();
+      SqlTypeName partialType = partialRel.getSqlTypeName();
       offset++;
       if (kind == WindowAggregateMatcher.KIND_COUNT) {
         // COUNT(*) (empty argList) or COUNT(col); the partial is the bigint running count either way.
@@ -84,15 +89,36 @@ final class LocalGroupAggregateMatcher {
         }
         continue;
       }
-      // SUM/MIN/MAX read a typed running value; it must be a running type, and the partial Flink
-      // declares must equal the value type, so the native emit and the global read agree.
-      SqlTypeName valueType =
-          inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
+      // SUM/MIN/MAX read a typed running value; it must be a running type or DECIMAL, and the
+      // partial Flink declares must equal what the native side emits — the value type itself,
+      // except a decimal SUM whose partial widens to DECIMAL(38, s) — so the emit and the global
+      // read agree.
+      RelDataType valueRel = inputType.getFieldList().get(call.getArgList().get(0)).getType();
+      SqlTypeName valueType = valueRel.getSqlTypeName();
+      if (valueType == SqlTypeName.DECIMAL) {
+        boolean matches =
+            kind == WindowAggregateMatcher.KIND_SUM
+                ? isWidenedDecimal(partialRel, valueRel)
+                : partialType == SqlTypeName.DECIMAL
+                    && partialRel.getPrecision() == valueRel.getPrecision()
+                    && partialRel.getScale() == valueRel.getScale();
+        if (!matches) {
+          return false;
+        }
+        continue;
+      }
       if (!isRunningType(valueType) || partialType != valueType) {
         return false;
       }
     }
     return true;
+  }
+
+  /** True if {@code partial} is the widened decimal accumulator DECIMAL(38, s) of {@code value}. */
+  private static boolean isWidenedDecimal(RelDataType partial, RelDataType value) {
+    return partial.getSqlTypeName() == SqlTypeName.DECIMAL
+        && partial.getPrecision() == 38
+        && partial.getScale() == value.getScale();
   }
 
   /** The declared type of an AVG's widened sum partial, or null if the value type isn't admitted. */
@@ -159,19 +185,32 @@ final class LocalGroupAggregateMatcher {
       AggregateCall call = aggCalls.apply(i);
       int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
       if (kind == WindowAggregateMatcher.KIND_AVG) {
-        SqlTypeName valueType =
-            inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
-        codes.add(widenedSumType(valueType) == SqlTypeName.DOUBLE ? 1 : 0); // the widened sum
+        RelDataType valueRel = inputType.getFieldList().get(call.getArgList().get(0)).getType();
+        // The widened sum: a packed decimal code (the native partial reports DECIMAL(38, s)),
+        // double, or bigint.
+        codes.add(
+            valueRel.getSqlTypeName() == SqlTypeName.DECIMAL
+                ? decimalCode(valueRel)
+                : widenedSumType(valueRel.getSqlTypeName()) == SqlTypeName.DOUBLE ? 1 : 0);
         codes.add(0); // the bigint count
       } else if (call.getArgList().isEmpty()) {
         codes.add(0);
       } else {
-        SqlTypeName valueType =
-            inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
-        codes.add(valueType == SqlTypeName.DOUBLE ? 1 : valueType == SqlTypeName.INTEGER ? 2 : 0);
+        RelDataType valueRel = inputType.getFieldList().get(call.getArgList().get(0)).getType();
+        SqlTypeName valueType = valueRel.getSqlTypeName();
+        codes.add(
+            valueType == SqlTypeName.DECIMAL
+                ? decimalCode(valueRel)
+                : valueType == SqlTypeName.DOUBLE ? 1 : valueType == SqlTypeName.INTEGER ? 2 : 0);
       }
     }
     return toArray(codes);
+  }
+
+  /** The packed native code carrying a decimal's precision and scale. */
+  private static int decimalCode(RelDataType type) {
+    return io.github.jordepic.streamfusion.operator.NativeWindowOperatorCore.decimalCode(
+        type.getPrecision(), type.getScale());
   }
 
   static int[] keyColumns(StreamPhysicalLocalGroupAggregate agg) {

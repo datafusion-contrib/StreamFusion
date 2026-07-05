@@ -60,38 +60,52 @@ final class GlobalGroupAggregateMatcher {
         if (offset + 1 >= inputType.getFieldCount()) {
           return "global group aggregate: AVG expects a (sum, count) partial pair";
         }
-        SqlTypeName sumType = inputType.getFieldList().get(offset).getType().getSqlTypeName();
+        RelDataType sumRel = inputType.getFieldList().get(offset).getType();
+        SqlTypeName sumType = sumRel.getSqlTypeName();
         SqlTypeName countType =
             inputType.getFieldList().get(offset + 1).getType().getSqlTypeName();
-        SqlTypeName resultType =
-            agg.getRowType().getFieldList().get(grouping.length + i).getType().getSqlTypeName();
+        RelDataType resultRel = agg.getRowType().getFieldList().get(grouping.length + i).getType();
+        SqlTypeName resultType = resultRel.getSqlTypeName();
         boolean intAvg = sumType == SqlTypeName.BIGINT && isIntegerAvgResult(resultType);
         boolean doubleAvg = sumType == SqlTypeName.DOUBLE && isFloatAvgResult(resultType);
-        if (!(intAvg || doubleAvg) || countType != SqlTypeName.BIGINT) {
+        // A decimal AVG merges SUM's DECIMAL(38, s) partial and reports findAvgAggType's
+        // DECIMAL(38, max(6, s)) — the exact-division emit the single-phase state implements.
+        boolean decimalAvg =
+            sumType == SqlTypeName.DECIMAL
+                && resultType == SqlTypeName.DECIMAL
+                && resultRel.getPrecision() == 38
+                && resultRel.getScale() == Math.max(6, sumRel.getScale());
+        if (!(intAvg || doubleAvg || decimalAvg) || countType != SqlTypeName.BIGINT) {
           return "global group aggregate: AVG merge partials must be (bigint, bigint) for an"
-              + " integer average or (double, bigint) for a float/double one";
+              + " integer average, (double, bigint) for a float/double one, or"
+              + " (decimal(38, s), bigint) for a decimal one";
         }
         offset += 2;
         continue;
       }
-      SqlTypeName partialType = inputType.getFieldList().get(offset).getType().getSqlTypeName();
+      RelDataType partialRel = inputType.getFieldList().get(offset).getType();
       offset++;
-      if (partialCode(partialType) < 0) {
-        return "global group aggregate: partial columns must be bigint/int/double";
+      if (partialCode(partialRel) < 0) {
+        return "global group aggregate: partial columns must be bigint/int/double/decimal";
       }
     }
     return null;
   }
 
   /** Native value-type code for a partial column, or -1 if unsupported. */
-  private static int partialCode(SqlTypeName type) {
-    switch (type) {
+  private static int partialCode(RelDataType type) {
+    switch (type.getSqlTypeName()) {
       case BIGINT:
         return 0;
       case DOUBLE:
         return 1;
       case INTEGER:
         return 2;
+      case DECIMAL:
+        // A decimal SUM partial arrives pre-widened to DECIMAL(38, s); MIN/MAX keep DECIMAL(p, s).
+        // The packed code carries the partial's own precision/scale either way.
+        return io.github.jordepic.streamfusion.operator.NativeWindowOperatorCore.decimalCode(
+            type.getPrecision(), type.getScale());
       default:
         return -1;
     }
@@ -169,11 +183,16 @@ final class GlobalGroupAggregateMatcher {
     int offset = grouping;
     for (int i = 0; i < agg.aggCalls().size(); i++) {
       if (spanOf(agg, i) == 2) {
-        SqlTypeName resultType =
-            agg.getRowType().getFieldList().get(grouping + i).getType().getSqlTypeName();
-        codes.add(avgResultCode(resultType));
+        // An AVG state is typed by its final result — except decimal, whose state is the sum
+        // partial's DECIMAL(38, s) (the emit derives the result scale max(6, s) itself).
+        RelDataType sumRel = inputType.getFieldList().get(offset).getType();
+        RelDataType resultRel = agg.getRowType().getFieldList().get(grouping + i).getType();
+        codes.add(
+            sumRel.getSqlTypeName() == SqlTypeName.DECIMAL
+                ? partialCode(sumRel)
+                : avgResultCode(resultRel.getSqlTypeName()));
       } else {
-        codes.add(partialCode(inputType.getFieldList().get(offset).getType().getSqlTypeName()));
+        codes.add(partialCode(inputType.getFieldList().get(offset).getType()));
       }
       offset += spanOf(agg, i);
     }

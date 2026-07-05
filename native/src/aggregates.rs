@@ -721,9 +721,13 @@ pub(crate) enum RunningAgg {
     AvgFloat { sum: f64, result: DataType },
     // The LOCAL half of a two-phase AVG (kind 8): the widened running sum alone — the count rides a
     // separate COUNT partial state. Folds like AvgInt/AvgFloat (any integer / float input widens),
-    // but emits the raw sum, not a quotient; the global half divides after merging.
+    // but emits the raw sum, not a quotient; the global half divides after merging. Matching Flink's
+    // AvgAggFunction, the sum starts at 0 and stays non-NULL (an all-null bundle emits 0, and the
+    // count partial 0 lets the global ignore it); the decimal variant alone can go NULL, when the
+    // bundle's sum overflows DECIMAL(38, s).
     AvgPartialSumInt(i64),
     AvgPartialSumFloat(f64),
+    AvgPartialSumDecimal { sum: i128, scale: i8, overflow: bool },
 }
 
 impl RunningAgg {
@@ -775,6 +779,9 @@ impl RunningAgg {
             // (BIGINT for integer inputs, DOUBLE for float/double — Flink's AvgAggFunction).
             (8, DataType::Int64) => AvgPartialSumInt(0),
             (8, DataType::Float64) => AvgPartialSumFloat(0.0),
+            (8, DataType::Decimal128(_, s)) => {
+                AvgPartialSumDecimal { sum: 0, scale: *s, overflow: false }
+            }
             // AVG(float/double) — sum in DOUBLE, result casts back to the input type on emit.
             (4, DataType::Float64 | DataType::Float32) => {
                 AvgFloat { sum: 0.0, result: value_type.clone() }
@@ -842,6 +849,9 @@ impl RunningAgg {
             (AvgPartialSumInt(sum), Num::I8(v)) => *sum = sum.wrapping_add(v as i64),
             (AvgPartialSumFloat(sum), Num::F64(v)) => *sum += v,
             (AvgPartialSumFloat(sum), Num::F32(v)) => *sum += v as f64,
+            (AvgPartialSumDecimal { sum, overflow, .. }, Num::I128(v)) => {
+                accumulate_decimal(sum, overflow, v)
+            }
             _ => unreachable!("OVER value type does not match aggregate state"),
         }
     }
@@ -904,9 +914,13 @@ impl RunningAgg {
                 ScalarValue::Decimal128((!*overflow).then_some(*sum), 38, *scale)
             }
             // The two-phase AVG's local sum partial IS the raw widened sum (the local is a transient
-            // bundle — this is its flush emit, never a checkpoint).
+            // bundle — this is its flush emit, never a checkpoint). Only the decimal sum can be NULL
+            // (a bundle whose sum overflowed DECIMAL(38, s)).
             AvgPartialSumInt(sum) => ScalarValue::Int64(Some(*sum)),
             AvgPartialSumFloat(sum) => ScalarValue::Float64(Some(*sum)),
+            AvgPartialSumDecimal { sum, scale, overflow } => {
+                ScalarValue::Decimal128((!*overflow).then_some(*sum), 38, *scale)
+            }
         }
     }
 
@@ -941,6 +955,7 @@ impl RunningAgg {
             AvgInt { result, .. } | AvgFloat { result, .. } => result.clone(),
             AvgPartialSumInt(_) => DataType::Int64,
             AvgPartialSumFloat(_) => DataType::Float64,
+            AvgPartialSumDecimal { scale, .. } => DataType::Decimal128(38, *scale),
         }
     }
 

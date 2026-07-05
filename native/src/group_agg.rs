@@ -270,6 +270,22 @@ impl GroupAggState {
         }
     }
 
+    /// Folds a decimal AVG partial whose bundle sum overflowed (a NULL sum with a live count): the
+    /// merged sum latches NULL — sticky, the lost magnitude cannot be recovered — while the count
+    /// still moves, keeping the group's live-record bookkeeping exact.
+    fn merge_overflowed(&mut self, count: i64, retract: bool) {
+        match self {
+            GroupAggState::Running {
+                agg: RunningAgg::AvgDecimal { overflow, .. },
+                non_null,
+            } => {
+                *overflow = true;
+                *non_null += if retract { -count } else { count };
+            }
+            _ => unreachable!("a NULL sum partial with a live count is decimal-only"),
+        }
+    }
+
     fn retract(&mut self, value: Num) {
         match self {
             GroupAggState::Running { agg, non_null } => {
@@ -750,17 +766,23 @@ impl GroupAggregator {
                         }
                     }
                     // Two-phase AVG merge: fold the pre-summed sum partial and bump the count by the
-                    // count partial. A NULL sum partial means the local saw no non-null input for the
-                    // key (its count partial is 0) — nothing to fold.
+                    // count partial. A NULL sum partial with count 0 means the local saw no non-null
+                    // input for the key — nothing to fold; a NULL sum with a LIVE count is a decimal
+                    // partial whose bundle sum overflowed DECIMAL(38, s), which latches the merged
+                    // sum NULL (the lost magnitude cannot be recovered).
                     if let Some(counts) = merge_count_cols[i] {
                         if let Some(column) = &value_columns[i] {
-                            if let Some(num) = column.at(row) {
-                                let count = if counts.is_null(row) { 0 } else { counts.value(row) };
-                                if retract {
-                                    state.aggs[i].retract_merged(num, count);
-                                } else {
-                                    state.aggs[i].accumulate_merged(num, count);
+                            let count = if counts.is_null(row) { 0 } else { counts.value(row) };
+                            match column.at(row) {
+                                Some(num) => {
+                                    if retract {
+                                        state.aggs[i].retract_merged(num, count);
+                                    } else {
+                                        state.aggs[i].accumulate_merged(num, count);
+                                    }
                                 }
+                                None if count > 0 => state.aggs[i].merge_overflowed(count, retract),
+                                None => {}
                             }
                         }
                         continue;
@@ -1139,6 +1161,9 @@ impl LocalGroupAggregator {
                     DataType::Int8 => ValueColumn::I8(column.as_any().downcast_ref().expect("int8 value")),
                     DataType::Float64 => ValueColumn::F64(column.as_any().downcast_ref().expect("float64 value")),
                     DataType::Float32 => ValueColumn::F32(column.as_any().downcast_ref().expect("float32 value")),
+                    DataType::Decimal128(_, _) => {
+                        ValueColumn::Decimal128(column.as_any().downcast_ref().expect("decimal128 value"))
+                    }
                     _ => ValueColumn::NullOnly(column),
                 })
             })

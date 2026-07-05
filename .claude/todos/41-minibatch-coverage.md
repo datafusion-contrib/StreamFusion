@@ -26,10 +26,15 @@ those shapes fall back today, dragging whole queries to the host via the all-or-
   the single-phase set, which for SUM/MIN/MAX remains bigint/int/double. Fixing this surfaced and
   fixed a single-phase bug: the group aggregator's value-column downcast lacked the narrow arms, so
   admitted AVG(SMALLINT/TINYINT) folded zeros and AVG(FLOAT) panicked the native library.
-- **Two-phase decimal `SUM`/`AVG`** — the single-phase decimal SUM/AVG (i128, `DECIMAL(38, s)`,
-  exact division for AVG) are native, non-windowed and windowed alike; carry the same accumulators
-  through the local/global splits (both the mini-batch pair here and the windowed local/global —
-  their partial columns are gated to bigint/double today).
+- **Two-phase decimal `SUM`/`AVG`: mini-batch pair DONE (2026-07-05).** SUM's partial rides as
+  `DECIMAL(38, s)` (bundle overflow → NULL partial, skipped by the SUM merge and latched NULL by
+  the AVG merge — verified against the host), MIN/MAX keep `DECIMAL(p, s)` through the extremes
+  multiset, AVG merges the `(DECIMAL(38, s), bigint)` pair into the exact-division emit. Remaining:
+  the **windowed** local/global split — the native windowed local emits single-field partials
+  (matching Flink's one-column accumulators), but our decimal accumulator keeps a two-field
+  `(sum, count)` state, so decimal (and int/narrow, whose wrapping accumulators are also two-field)
+  stay gated to bigint/double there; carrying them needs split-specific single-field partial
+  accumulators with skip-NULL merge (Flink's own merge expression).
 - **Row-time mini-batch** — the mini-batch assigner over a rowtime (watermark-driven flush) falls
   back; only the proc-time marker is native.
 
