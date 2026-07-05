@@ -89,7 +89,9 @@ pub(crate) struct TopNRanker {
     output_rank_number: bool,
     schema: Option<SchemaRef>,
     converters: Option<TopNConverters>,
-    groups: HashMap<OwnedRow, Vec<TopNRow>>,
+    // Keyed by the partition key's encoded bytes (`ByteKey`): the per-row probe hashes the BORROWED
+    // bytes, so a row for an existing partition — or one dropped at rank > N — allocates nothing.
+    groups: HashMap<ByteKey, Vec<TopNRow>>,
     pub(crate) memory: OperatorMemory,
 }
 
@@ -124,7 +126,7 @@ impl TopNRanker {
             .groups
             .iter()
             .map(|(key, buffer)| {
-                owned_row_bytes(key) + buffer.iter().map(topn_entry_bytes).sum::<usize>()
+                byte_key_bytes(&key.0) + buffer.iter().map(topn_entry_bytes).sum::<usize>()
             })
             .sum();
         self.memory.attach("top-n", budget_bytes, state)?;
@@ -197,11 +199,18 @@ impl TopNRanker {
             // Compare the memcomparable sort key by borrow — no per-row `owned()` alloc until the row
             // is known to enter (the common case for a bounded Top-N is a row that does not).
             let key_row = keys.row(row);
-            let buffer = groups.entry(parts.row(row).owned()).or_default();
-            // An empty buffer means the partition entry was just created (buffers never empty out).
-            if track && buffer.is_empty() {
-                delta += (parts.row(row).as_ref().len() + GROUP_ENTRY_OVERHEAD) as isize;
-            }
+            // Borrowed partition-key probe; the key bytes are copied only when a partition first
+            // appears (buffers never empty out).
+            let part = parts.row(row).data();
+            let buffer = match groups.get_mut(part) {
+                Some(buffer) => buffer,
+                None => {
+                    if track {
+                        delta += (part.len() + GROUP_ENTRY_OVERHEAD) as isize;
+                    }
+                    groups.entry(ByteKey::from(part)).or_default()
+                }
+            };
             // Insert after any rows that order equal-or-before, preserving arrival order for ties
             // (byte compare of the memcomparable sort key).
             let pos = buffer.partition_point(|(k, _)| k.row() <= key_row);
@@ -342,7 +351,7 @@ impl TopNRanker {
             let groups = &mut ranker.groups;
             for row in 0..batch.num_rows() {
                 groups
-                    .entry(parts.row(row).owned())
+                    .entry(ByteKey::from(parts.row(row).data()))
                     .or_default()
                     .push((keys.row(row).owned(), Arc::new(payloads.row(row).owned())));
             }

@@ -564,8 +564,11 @@ pub(crate) struct GroupAggregator {
     // The group map is keyed by the arrow-row memcomparable encoding of the key columns, not a
     // `Vec<ScalarValue>`: a native-vs-Flink differential on q17 showed the scalar key's hash/alloc/drop
     // (ScalarValue::hash, per-row Vec churn) was the dominant cost native paid and Flink (byte keys)
-    // did not. `key_converter` encodes the key columns per batch and decodes them back for the output.
-    keys: ahash::HashMap<OwnedRow, GroupKeyState>,
+    // did not. `ByteKey` lets the per-row probe hash the BORROWED encoded bytes (`Borrow<[u8]>`), so
+    // the steady state — the key already in the map — allocates nothing; the bytes are copied only
+    // when a group is first inserted. `key_converter` encodes the key columns per batch and decodes
+    // them back for the output.
+    keys: ahash::HashMap<ByteKey, GroupKeyState>,
     key_converter: Option<RowConverter>,
     key_types: Vec<DataType>,
     pub(crate) memory: OperatorMemory,
@@ -650,7 +653,7 @@ impl GroupAggregator {
         let state: usize = self
             .keys
             .iter()
-            .map(|(key, state)| owned_row_bytes(key) + group_key_state_bytes(state))
+            .map(|(key, state)| byte_key_bytes(&key.0) + group_key_state_bytes(state))
             .sum();
         self.memory.attach("group-aggregate", budget_bytes, state)?;
         Ok(self)
@@ -684,7 +687,7 @@ impl GroupAggregator {
     }
 
     /// The per-key state, created (empty) on first touch.
-    fn state(&mut self, key: OwnedRow) -> &mut GroupKeyState {
+    fn state(&mut self, key: ByteKey) -> &mut GroupKeyState {
         let (kinds, value_types) = (&self.kinds, &self.value_types);
         self.keys.entry(key).or_insert_with(|| GroupKeyState {
             aggs: kinds.iter().zip(value_types).map(|(&kind, vt)| GroupAggState::new(kind, vt)).collect(),
@@ -831,11 +834,14 @@ impl GroupAggregator {
             })
             .collect();
 
-        let mut out_keys: Vec<OwnedRow> = Vec::new();
+        let mut out_keys: Vec<&[u8]> = Vec::new();
         let mut out_results: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
         let mut out_kinds: Vec<i8> = Vec::new();
-        let mut push = |kind: i8, key: &OwnedRow, values: Vec<ScalarValue>| {
-            out_keys.push(key.clone());
+        // Emitted keys are borrowed from the batch's encoded rows (decoded once at the end), so an
+        // emit allocates nothing per row either. (No lifetime annotation on `key`: inference must
+        // unify it with `out_keys`' element lifetime, not a fresh higher-ranked one.)
+        let mut push = |kind: i8, key, values: Vec<ScalarValue>| {
+            out_keys.push(key);
             for (i, v) in values.into_iter().enumerate() {
                 out_results[i].push(v);
             }
@@ -844,13 +850,16 @@ impl GroupAggregator {
 
         let track = self.memory.tracking();
         for row in 0..n {
-            let key = keys_encoded.row(row).owned();
+            // The borrowed encoded bytes probe the map directly (ByteKey's Borrow<[u8]>); the key is
+            // copied into the map only when a new group is inserted. (`data()` keeps the batch's
+            // lifetime, so emitted keys can be stored until the decode below.)
+            let key = keys_encoded.row(row).data();
             // RowKind: 0 +I, 1 -U, 2 +U, 3 -D (absent column ⇒ INSERT). UB/delete retract; I/UA add.
             let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
             let retract = kind == 1 || kind == 3;
-            let exists = self.keys.contains_key(&key);
+            let exists = self.keys.contains_key(key);
             let before = if track && exists {
-                group_key_state_bytes(self.keys.get(&key).expect("key present")) as isize
+                group_key_state_bytes(self.keys.get(key).expect("key present")) as isize
             } else {
                 0
             };
@@ -860,19 +869,17 @@ impl GroupAggregator {
             // The pre-update output comes from the group's cache (recomputed only after a restore,
             // which does not carry it) — the second full materialization per row goes away.
             let prev = if exists {
-                let state = self.keys.get_mut(&key).expect("key present");
+                let state = self.keys.get_mut(key).expect("key present");
                 let cached = state.last_output.take();
                 Some(cached.unwrap_or_else(|| output_of(state, &self.result_types)))
             } else {
                 None
             };
             {
-                // Clone the key into the map only when inserting a new group; an existing group
-                // (the steady state) is reached by reference, avoiding a per-row key allocation.
                 let state = if exists {
-                    self.keys.get_mut(&key).expect("key present")
+                    self.keys.get_mut(key).expect("key present")
                 } else {
-                    self.state(key.clone())
+                    self.state(ByteKey::from(key))
                 };
                 for i in 0..num_agg {
                     // FILTER: fold into this aggregate only where its filter is TRUE (NULL/FALSE skip).
@@ -986,21 +993,21 @@ impl GroupAggregator {
                 state.records += if retract { -1 } else { 1 };
             }
 
-            if self.keys.get(&key).unwrap().records > 0 {
-                let state = self.keys.get_mut(&key).expect("key present");
+            if self.keys.get(key).unwrap().records > 0 {
+                let state = self.keys.get_mut(key).expect("key present");
                 let new = output_of(state, &self.result_types);
                 match prev {
                     None => {
                         // +I — first row for the key; the emitted tuple seeds the cache.
                         state.last_output = Some(new.clone());
-                        push(0, &key, new);
+                        push(0, key, new);
                     }
                     Some(prev) if new != prev => {
                         state.last_output = Some(new.clone());
                         if self.generate_update_before {
-                            push(1, &key, prev); // -U — moved out of the cache, not recomputed
+                            push(1, key, prev); // -U — moved out of the cache, not recomputed
                         }
-                        push(2, &key, new); // +U
+                        push(2, key, new); // +U
                     }
                     Some(prev) => {
                         state.last_output = Some(prev); // unchanged result — suppressed
@@ -1008,19 +1015,19 @@ impl GroupAggregator {
                 }
             } else {
                 // The last record for the key was retracted: delete the group.
-                push(3, &key, prev.expect("a retraction implies the key existed")); // -D
-                self.keys.remove(&key);
+                push(3, key, prev.expect("a retraction implies the key existed")); // -D
+                self.keys.remove(key);
             }
             if track {
                 // The touched group's footprint change, plus its key when created or deleted.
                 let mut delta = -before;
-                if let Some(state) = self.keys.get(&key) {
+                if let Some(state) = self.keys.get(key) {
                     delta += group_key_state_bytes(state) as isize;
                     if !exists {
-                        delta += owned_row_bytes(&key) as isize;
+                        delta += byte_key_bytes(key) as isize;
                     }
                 } else if exists {
-                    delta -= owned_row_bytes(&key) as isize;
+                    delta -= byte_key_bytes(key) as isize;
                 }
                 self.memory.record(delta);
             }
@@ -1029,7 +1036,7 @@ impl GroupAggregator {
         self.memory.account()?;
 
         let mut fields = key_fields(&self.key_types);
-        let mut columns = decode_keys(self.key_converter.as_ref(), &out_keys, &self.key_types);
+        let mut columns = decode_byte_keys(self.key_converter.as_ref(), &out_keys, &self.key_types);
         for (i, rt) in self.result_types.iter().enumerate() {
             fields.push(Field::new(format!("result{i}"), rt.clone(), true));
             columns.push(scalars_to_array(std::mem::take(&mut out_results[i]), rt));
@@ -1045,15 +1052,15 @@ impl GroupAggregator {
     /// batch per MIN/MAX aggregate carries its `[key0.., value, count]` multiset rows.
     pub(crate) fn snapshot(&mut self) -> Vec<u8> {
         let num_agg = self.kinds.len();
-        let mut keys: Vec<OwnedRow> = Vec::new();
+        let mut keys: Vec<&[u8]> = Vec::new();
         let mut records: Vec<i64> = Vec::new();
         let mut state_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
         let mut non_null_columns: Vec<Vec<i64>> = vec![Vec::new(); num_agg];
-        let mut multiset_keys: Vec<Vec<OwnedRow>> = vec![Vec::new(); num_agg];
+        let mut multiset_keys: Vec<Vec<&[u8]>> = vec![Vec::new(); num_agg];
         let mut multiset_values: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
         let mut multiset_counts: Vec<Vec<i64>> = vec![Vec::new(); num_agg];
         for (key, state) in self.keys.iter() {
-            keys.push(key.clone());
+            keys.push(&key.0);
             records.push(state.records);
             for i in 0..num_agg {
                 match &state.aggs[i] {
@@ -1065,7 +1072,7 @@ impl GroupAggregator {
                         state_columns[i].push(null_scalar(&self.result_types[i]));
                         non_null_columns[i].push(0);
                         for (value, count) in counts.iter() {
-                            multiset_keys[i].push(key.clone());
+                            multiset_keys[i].push(&key.0);
                             multiset_values[i].push(value.scalar(&self.result_types[i]));
                             multiset_counts[i].push(*count);
                         }
@@ -1075,7 +1082,7 @@ impl GroupAggregator {
                         state_columns[i].push(null_scalar(&self.result_types[i]));
                         non_null_columns[i].push(0);
                         for (value, count) in counts.scalar_entries() {
-                            multiset_keys[i].push(key.clone());
+                            multiset_keys[i].push(&key.0);
                             multiset_values[i].push(value); // the distinct value itself
                             multiset_counts[i].push(count);
                         }
@@ -1085,7 +1092,7 @@ impl GroupAggregator {
                         state_columns[i].push(null_scalar(&self.result_types[i]));
                         non_null_columns[i].push(0);
                         for (value, count) in counts.scalar_entries() {
-                            multiset_keys[i].push(key.clone());
+                            multiset_keys[i].push(&key.0);
                             multiset_values[i].push(value);
                             multiset_counts[i].push(count);
                         }
@@ -1095,7 +1102,7 @@ impl GroupAggregator {
         }
 
         let mut fields = key_fields(&self.key_types);
-        let mut columns = decode_keys(self.key_converter.as_ref(), &keys, &self.key_types);
+        let mut columns = decode_byte_keys(self.key_converter.as_ref(), &keys, &self.key_types);
         fields.push(Field::new("records", DataType::Int64, false));
         columns.push(Arc::new(Int64Array::from(records)));
         for i in 0..num_agg {
@@ -1109,7 +1116,7 @@ impl GroupAggregator {
         for i in 0..num_agg {
             if matches!(self.kinds[i], 1 | 2 | 7 | 9) {
                 let mut f = key_fields(&self.key_types);
-                let mut c = decode_keys(self.key_converter.as_ref(), &multiset_keys[i], &self.key_types);
+                let mut c = decode_byte_keys(self.key_converter.as_ref(), &multiset_keys[i], &self.key_types);
                 // MIN/MAX values take the aggregate's result type; a distinct value keeps its own type
                 // (a COUNT's bigint result type does not describe it), inferred from the scalars.
                 let values = std::mem::take(&mut multiset_values[i]);
@@ -1158,7 +1165,7 @@ impl GroupAggregator {
             encode_group_keys(aggregator.key_converter.as_ref().unwrap(), &key_owned, main.num_rows());
         let records = column_i64(main, "records");
         for row in 0..main.num_rows() {
-            let key = keys_encoded.row(row).owned();
+            let key = ByteKey::from(keys_encoded.row(row).as_ref());
             let state = aggregator.state(key);
             state.records = records.value(row);
             for i in 0..num_agg {
@@ -1194,9 +1201,9 @@ impl GroupAggregator {
             let values = side.column(side_arity);
             let counts = column_i64(side, "count");
             for row in 0..side.num_rows() {
-                let key = side_keys_enc.row(row).owned();
+                let key = side_keys_enc.row(row);
                 let value = ScalarValue::try_from_array(values, row).expect("multiset value");
-                match aggregator.keys.get_mut(&key).map(|s| &mut s.aggs[i]) {
+                match aggregator.keys.get_mut(key.as_ref()).map(|s| &mut s.aggs[i]) {
                     Some(GroupAggState::Extremes { counts: map, .. }) => {
                         map.insert(MinMaxKey::from_scalar(&value), counts.value(row));
                     }

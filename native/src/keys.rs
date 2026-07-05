@@ -59,6 +59,30 @@ pub(crate) fn decode_keys(conv: Option<&RowConverter>, keys: &[OwnedRow], key_ty
     }
 }
 
+/// The borrowed-slice form of {@link decode_keys}: decodes raw arrow-row key bytes (map keys held as
+/// `ByteKey`, or borrowed straight from an encoded batch) back to their key columns.
+pub(crate) fn decode_byte_keys(
+    conv: Option<&RowConverter>,
+    keys: &[&[u8]],
+    key_types: &[DataType],
+) -> Vec<ArrayRef> {
+    if key_types.is_empty() {
+        return Vec::new();
+    }
+    match conv {
+        Some(c) if !keys.is_empty() => {
+            let parser = c.parser();
+            c.convert_rows(keys.iter().map(|k| parser.parse(k))).expect("decode group keys")
+        }
+        _ => key_types.iter().map(new_empty_array).collect(),
+    }
+}
+
+/// Estimated footprint of a byte-encoded key plus its map entry.
+pub(crate) fn byte_key_bytes(key: &[u8]) -> usize {
+    key.len() + GROUP_ENTRY_OVERHEAD
+}
+
 /// A composite grouping key: the typed values of the zero or more grouping columns for a row.
 /// Scalars (rather than int64s) so the key can hold any column type — int/bigint/string/….
 pub(crate) type GroupKey = Vec<ScalarValue>;

@@ -365,6 +365,16 @@ The lifecycle that makes this cheap:
 - **The uncommon path pays the decode.** A residual non-equi predicate needs real arrays; the
   associated rows are bulk-decoded in one `convert_rows` call per batch (`ed74dac`, `4429e2f`),
   never row-at-a-time.
+- **Steady-state probes borrow, only first inserts copy.** State maps key by `ByteKey`
+  (`Box<[u8]>` with `Borrow<[u8]>`), so the per-row probe hashes the *borrowed* encoded bytes
+  straight out of the batch's `Rows` block and a key already in the map allocates nothing — the
+  bytes are copied exactly once, when a key/group/partition first appears. Shipped for the
+  updating join's two state levels first (q20 +4%, q23 +21% cumulative in the 2026-07-04 round),
+  then extended to the changelog GROUP BY's group map, the keep-last deduplicator (whose stored
+  payload became `Arc<[u8]>`: the replacing row is copied once into state, and the `-U` *moves*
+  the replaced payload out — an ignored stale row now allocates nothing at all), and the
+  append-only Top-N's partition map (a row dropped at rank > N allocates nothing). The GROUP BY's
+  emitted changelog keys are borrowed slices too, decoded once per batch.
 
 Why this matters: a differential profile (native vs Flink, same query) showed native spending
 10–22% of samples in the system allocator where Flink spends ~0.7% — Flink keys by bytes too

@@ -1,21 +1,18 @@
 # Finish the allocation-free state probes and retire the ScalarValue-vintage loops
 
-**Status:** TODO. The 2026-07-04 round shipped this technique for the updating join (`ByteKey`
-state keys, borrowed-byte probes — q20 +4%, q23 +21% cumulative) and for the aggregators years of
-churn earlier (arrow-row keys). What's left is the same two migrations applied to the operators
-that missed them; all mechanical, all following in-repo precedent.
+**Status:** part 1 SHIPPED 2026-07-05. The 2026-07-04 round shipped this technique for the
+updating join (`ByteKey` state keys, borrowed-byte probes — q20 +4%, q23 +21% cumulative); the
+remaining `OwnedRow`-keyed maps followed.
 
-## 1. Borrowed-byte probes for the remaining `OwnedRow`-keyed state maps
+## 1. Borrowed-byte probes: DONE (2026-07-05)
 
-These operators already key state by arrow-row bytes but still allocate an owned key **per input
-row** just to probe a map that, in steady state, already contains it (`.row(i).owned()` before
-`get`/`entry`). Switch the maps to `ByteKey` (`keys.rs` — `Borrow<[u8]>`, copy only on first
-insert), exactly as `updating_join.rs` now does:
-
-- `group_agg.rs` — `keys: HashMap<OwnedRow, GroupKeyState>` (q4/q15/q16/q17, every rung; the
-  per-row `.owned()` at the top of the update loop plus the `push` closure's `key.clone()`).
-- `dedup.rs` keep-last — `rows: HashMap<OwnedRow, (i64, OwnedRow)>` (q18).
-- `topn.rs` append-only ranker — `groups: HashMap<OwnedRow, Vec<TopNRow>>` (q19).
+`group_agg.rs` (group map + emitted changelog keys as borrowed slices), `dedup.rs` keep-last
+(key `ByteKey`, payload `Arc<[u8]>` — the `-U` moves the replaced payload out, an ignored stale
+row allocates nothing), and `topn.rs` append-only ranker (partition map; a rank>N drop allocates
+nothing) all probe by borrowed bytes now, copying only on first insert. Numbers to be quoted from
+the post-round matrix rerun (q4/q15/q16/q17/q18/q19 are the touched paths). Remaining in this
+family: `LocalGroupAggregator`'s scalar `GroupKey` maps (hot only under mini-batch/tuned mode —
+swap to arrow-row + ByteKey when the tuned benchmark column lands).
 
 ## 2. Retire the `Vec<ScalarValue>` loops (the pre-arrow-row vintage)
 

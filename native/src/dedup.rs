@@ -223,15 +223,18 @@ pub(crate) struct KeepLastDeduplicator {
     /// arrow-row encoders (partition key, value-encoded full row), built once from the first batch.
     partition_converter: Option<RowConverter>,
     payload_converter: Option<RowConverter>,
-    /// Per key: the stored row's rowtime (millis, 0 in proctime) and its full row as arrow-row bytes —
-    /// no per-cell `ScalarValue`, so storing/replacing a row moves one byte buffer (cf. the Top-N).
-    rows: HashMap<OwnedRow, (i64, OwnedRow)>,
+    /// Per key: the stored row's rowtime (millis, 0 in proctime) and its full row as arrow-row bytes.
+    /// The key is a `ByteKey`, so the per-row probe hashes the BORROWED encoded bytes and the steady
+    /// state (key already stored) allocates nothing for the key. The payload is an `Arc<[u8]>`: a new
+    /// row is copied once into state, emitting it (and retracting the previous row) just bumps the
+    /// refcount — the `-U` moves the replaced payload out of the map, never re-copying it.
+    rows: HashMap<ByteKey, (i64, Arc<[u8]>)>,
     memory: OperatorMemory,
 }
 
 /// Estimated footprint of one stored last-row entry (arrow-row key + payload + map entry).
-pub(crate) fn dedup_entry_bytes(key: &OwnedRow, payload: &OwnedRow) -> usize {
-    key.row().as_ref().len() + payload.row().as_ref().len() + GROUP_ENTRY_OVERHEAD
+pub(crate) fn dedup_entry_bytes(key: &[u8], payload: &[u8]) -> usize {
+    key.len() + payload.len() + GROUP_ENTRY_OVERHEAD
 }
 
 impl KeepLastDeduplicator {
@@ -260,7 +263,7 @@ impl KeepLastDeduplicator {
     /// unaccounted), accounting any restored rows immediately.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state: usize =
-            self.rows.iter().map(|(key, (_, payload))| dedup_entry_bytes(key, payload)).sum();
+            self.rows.iter().map(|(key, (_, payload))| dedup_entry_bytes(&key.0, payload)).sum();
         self.memory.attach("deduplicate", budget_bytes, state)?;
         Ok(self)
     }
@@ -307,68 +310,73 @@ impl KeepLastDeduplicator {
         let track = self.memory.tracking();
         let mut delta = 0isize;
         let rows = &mut self.rows;
-        let mut out_rows: Vec<OwnedRow> = Vec::new();
+        let mut out_rows: Vec<Arc<[u8]>> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
         for row in 0..batch.num_rows() {
-            let key = parts.row(row).owned();
+            // Borrowed probe: the key bytes are copied into the map only when a key first appears,
+            // and a dropped/ignored row allocates nothing at all.
+            let key = parts.row(row).data();
             // keep-first: the first row per key wins, later rows are dropped (insert-only).
             if keep_first {
-                if rows.contains_key(&key) {
+                if rows.contains_key(key) {
                     continue;
                 }
-                let payload = payloads.row(row).owned();
+                let payload: Arc<[u8]> = Arc::from(payloads.row(row).data());
                 if track {
-                    delta += dedup_entry_bytes(&key, &payload) as isize;
+                    delta += dedup_entry_bytes(key, &payload) as isize;
                 }
                 out_rows.push(payload.clone());
                 out_kinds.push(0); // +I — first row for the key
-                rows.insert(key, (0, payload));
+                rows.insert(ByteKey::from(key), (0, payload));
                 continue;
             }
             let rowtime = rt.as_ref().map_or(0, |rt| rt.value(row));
-            let payload = payloads.row(row).owned();
-            match rows.get(&key) {
+            match rows.get_mut(key) {
                 None => {
+                    let payload: Arc<[u8]> = Arc::from(payloads.row(row).data());
                     if track {
-                        delta += dedup_entry_bytes(&key, &payload) as isize;
+                        delta += dedup_entry_bytes(key, &payload) as isize;
                     }
                     out_rows.push(payload.clone());
                     out_kinds.push(0); // +I — first row for the key
+                    rows.insert(ByteKey::from(key), (rowtime, payload));
                 }
                 // A rowtime order ignores an older (smaller-rowtime) row; proctime always replaces.
                 Some((stored_rt, _)) if rowtime_ordered && rowtime < *stored_rt => {
                     continue;
                 }
-                Some((_, prev)) => {
+                Some(stored) => {
+                    let payload: Arc<[u8]> = Arc::from(payloads.row(row).data());
                     if track {
                         // Same key: only the payload is replaced.
-                        delta += payload.row().as_ref().len() as isize
-                            - prev.row().as_ref().len() as isize;
+                        delta += payload.len() as isize - stored.1.len() as isize;
                     }
+                    // The -U moves the replaced payload out of state — no copy.
+                    let prev = std::mem::replace(stored, (rowtime, payload.clone()));
                     if generate_update_before {
-                        out_rows.push(prev.clone());
+                        out_rows.push(prev.1);
                         out_kinds.push(1); // -U the previous row
                     }
-                    out_rows.push(payload.clone());
+                    out_rows.push(payload);
                     out_kinds.push(2); // +U the new (later) row
                 }
             }
-            rows.insert(key, (rowtime, payload));
         }
         self.memory.record(delta);
         self.memory.account()?;
         Ok(self.emit(out_rows, out_kinds))
     }
 
-    fn emit(&self, out_rows: Vec<OwnedRow>, out_kinds: Vec<i8>) -> RecordBatch {
+    fn emit(&self, out_rows: Vec<Arc<[u8]>>, out_kinds: Vec<i8>) -> RecordBatch {
         if out_rows.is_empty() {
             return RecordBatch::new_empty(Arc::new(Schema::empty()));
         }
         let schema = self.schema.as_ref().expect("schema set once a row was processed");
         let conv = self.payload_converter.as_ref().expect("converter set");
         // One vectorized row->columnar pass rebuilds every data column (cf. the per-cell scalar build).
+        let parser = conv.parser();
         let mut columns: Vec<ArrayRef> =
-            conv.convert_rows(out_rows.iter().map(|r| r.row())).expect("decode dedup payloads");
+            conv.convert_rows(out_rows.iter().map(|r| parser.parse(r))).expect("decode dedup payloads");
         let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
         // Keep-first is insert-only (every emitted row is a +I), so it carries no $row_kind$ column;
         // keep-last emits a changelog and tags each row's kind.
@@ -384,11 +392,13 @@ impl KeepLastDeduplicator {
     fn snapshot(&self) -> Vec<u8> {
         let Some(schema) = &self.schema else { return Vec::new() };
         let Some(conv) = &self.payload_converter else { return Vec::new() };
-        let rows: Vec<Row> = self.rows.values().map(|(_, row)| row.row()).collect();
-        if rows.is_empty() {
+        if self.rows.is_empty() {
             return Vec::new();
         }
-        let columns = conv.convert_rows(rows).expect("decode dedup snapshot payloads");
+        let parser = conv.parser();
+        let columns = conv
+            .convert_rows(self.rows.values().map(|(_, row)| parser.parse(row)))
+            .expect("decode dedup snapshot payloads");
         write_ipc(&RecordBatch::try_new(schema.clone(), columns).expect("keep-last snapshot"))
     }
 
@@ -423,8 +433,8 @@ impl KeepLastDeduplicator {
             let rows = &mut dedup.rows;
             for row in 0..batch.num_rows() {
                 rows.insert(
-                    parts.row(row).owned(),
-                    (rt.as_ref().map_or(0, |rt| rt.value(row)), payloads.row(row).owned()),
+                    ByteKey::from(parts.row(row).data()),
+                    (rt.as_ref().map_or(0, |rt| rt.value(row)), Arc::from(payloads.row(row).data())),
                 );
             }
         }
