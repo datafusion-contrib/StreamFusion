@@ -38,14 +38,15 @@ public final class SharedFlinkCluster
     // native stateful operators reserve their slot's managed share and enforce it as a hard state
     // budget, so under the default the Nexmark changelog queries (updating joins, Top-N) fail on
     // state a real TaskManager (40% of process memory) holds easily. Sized for the benchmark
-    // suite's multi-million-event runs (the tuned mini-batch column runs 5M events; an updating
-    // join's share of one slot must hold its whole build state). Reserving managed memory is
+    // suite's multi-million-event runs (the tuned mini-batch column runs 5M events; q4's regular
+    // join keeps BOTH sides' full 5M-event state, and its share of one slot must hold all of it).
+    // Reserving managed memory is
     // bookkeeping, not allocation — the larger size costs nothing when unused. Note the extension
     // redirects getExecutionEnvironment() here, so per-test cluster Configurations are ignored; a
     // test that needs a different memory setup must build its own local environment
     // (FlinkMemoryAccountingTest does).
     Configuration config = new Configuration();
-    config.set(TaskManagerOptions.MANAGED_MEMORY_SIZE, MemorySize.parse("16g"));
+    config.set(TaskManagerOptions.MANAGED_MEMORY_SIZE, MemorySize.parse("48g"));
     cluster =
         new MiniClusterExtension(
             new MiniClusterResourceConfiguration.Builder()
