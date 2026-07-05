@@ -52,15 +52,13 @@ vs. Flink fallback, tracked over time so a regression is visible.
     maps hold `OwnedRow`, and flush decodes keys straight back into output columns via the
     shared converter. Keyed tumbling 245 → 110 µs (2.2×, ~37 Melem/s), dense session
     217 → 101 µs, unkeyed tumbling −12%, accounted variant identical.
-  - Remaining: the scalar `GroupKey` survives in the smaller keyed loops — dedup, `OVER`
-    partitions, Top-N bookkeeping, the exchange by-key split (`partition_batch`). Swap each to
-    row keys only with a bench showing it pays; the exchange's consistent hash would change
-    key→partition mapping, which is internal but worth a note when touched.
-    **The bench now exists for dedup** (2026-07-04 profiling round,
-    `.claude/research/nexmark-operator-profiles-2026-07.md`): q18's keep-last dedup spends ~35% of
-    its native island in stdlib SipHash (`sip::Hasher::write` + `hash_one`, plus `reserve_rehash`
-    from unsized maps) — the ahash + arrow-row-key swap pays there; do the sibling loops while in
-    the code.
+  - Remaining: the scalar `GroupKey` survives in the smaller keyed loops — dedup keep-first,
+    `OVER` partitions, the retractable Top-N, the exchange by-key split. The hash half shipped
+    2026-07-04 (crate-wide ahash default, after the q18 profile showed ~35% of the dedup island in
+    SipHash); the work list for the key/row migrations — plus the borrowed-byte (`ByteKey`) probe
+    extension to the remaining `OwnedRow` maps — now lives in **ticket 49**, keeping this ticket's
+    rule (swap only with a bench showing it pays; the exchange swap changes the internal
+    key→partition mapping, note it when touched).
 - **[fixed]** `windows_for` allocated a `Vec` per row in the update loop. Reusing one
   buffer across rows cut the tumbling bench ~26% (244 → 181 µs / 17 → 22.6 Melem/s).
 - **[fixed]** Session `update` sliced one row at a time. Now grouped per key and segmented into

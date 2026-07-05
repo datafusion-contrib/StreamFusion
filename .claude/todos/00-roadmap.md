@@ -124,9 +124,12 @@ here when the ticket is deleted.
    decode half — Top-N emit dedup, q19 +13%, its net-diff remainder parity-gated in the trimmed
    ticket; ticket 47 — typed DISTINCT sets + cached changelog emit, q16 +17%/q17 +4%/q15 +3%; the
    dedup SipHash item on ticket 20 via the crate-wide ahash default; the q21 upcall regex cache,
-   +12.5%): what remains is ticket 48 (updating-join state-store probes/blocks — q3/q20/q9/q23),
-   ticket 46's parity decision, and the ticket 20 (entry-transpose string fast path) / ticket 40
-   (q13 per-row copy) items.
+   +12.5%): what remains, in recommended order — ticket 49 (finish the allocation-free state
+   probes: `ByteKey` for the group-agg/dedup/Top-N maps, retire the remaining `ScalarValue`-vintage
+   loops), ticket 46's parity decision + ticket 41 mini-batch as one package (the road to the
+   changelog family's 5-10x-class numbers), ticket 51 (paned HOP aggregation — q5, where Alibaba's
+   own engine shows ~1x), ticket 50 (upcall builtins hand off bytes, not `String` — q21's residual),
+   ticket 48's block-store question (re-profile q20/q23 first), and ticket 40's bounded-dim preload.
 1. **Native Kafka source: gate FLIPPED (2026-07-03)** (ticket 33). Per-partition watermarks/idleness
    and specific-offsets/topic-pattern startup shipped; `kafkaSource` defaults on and the `kafka`
    cargo feature is a default build feature (probe-guarded for opt-out builds). Remaining tails in
