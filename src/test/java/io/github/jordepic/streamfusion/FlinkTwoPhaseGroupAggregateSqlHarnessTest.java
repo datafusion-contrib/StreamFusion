@@ -213,6 +213,22 @@ class FlinkTwoPhaseGroupAggregateSqlHarnessTest {
   }
 
   @Test
+  void filteredDistinctTwoPhaseMatchesHost() throws Exception {
+    // Nexmark q15/q16's shape: the same distinct arg under several filters. Flink shares one
+    // MapView across the instances with a per-filter bitmask value; the native local instead keeps
+    // one set per (arg, filter) pair — a filtered distinct is an unfiltered distinct over the
+    // filtered row subset, so the final counts are identical. mini-batch.size 2 forces the global
+    // to merge each instance's view across several bundles.
+    Path input = Files.createTempDirectory("twophase-distinct-filter-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        readEnvironment(input, 2),
+        "SELECT k, COUNT(DISTINCT u) AS du, COUNT(DISTINCT u) FILTER (WHERE v < 15) AS duf,"
+            + " COUNT(DISTINCT us) FILTER (WHERE vi > 2) AS dsf,"
+            + " SUM(DISTINCT u) FILTER (WHERE vd > 0) AS suf, COUNT(*) AS c FROM t GROUP BY k");
+  }
+
+  @Test
   void distinctSplitChainFallsBackToHost() throws Exception {
     // With table.optimizer.distinct-agg.split.enabled the plan becomes the five-node incremental
     // chain (PartialLocal → Exchange → IncrementalGroupAggregate → Exchange → FinalGlobal) over a

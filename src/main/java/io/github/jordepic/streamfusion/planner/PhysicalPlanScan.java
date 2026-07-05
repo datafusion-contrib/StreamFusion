@@ -1318,8 +1318,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     }
     if (node instanceof StreamPhysicalLocalGroupAggregate) {
       return "local group aggregate: needs SUM/MIN/MAX/COUNT over bigint/int/double values with no"
-          + " widening of the partial, or AVG over any AvgAggFunction numeric (FILTER is fine except"
-          + " on a DISTINCT), and bigint/int/string/boolean/date/timestamp/decimal grouping keys";
+          + " widening of the partial, or AVG over any AvgAggFunction numeric, and"
+          + " bigint/int/string/boolean/date/timestamp/decimal grouping keys";
     }
     // The row/local window-aggregate path matches several variants (tumbling/hopping/cumulative
     // local) with extra gates, so a precise per-condition reason would be unreliable; keep a coarse

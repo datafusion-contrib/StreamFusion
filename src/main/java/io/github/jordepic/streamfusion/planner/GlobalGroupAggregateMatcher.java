@@ -268,7 +268,10 @@ final class GlobalGroupAggregateMatcher {
     return kinds;
   }
 
-  /** The number of trailing distinct-view columns on the input (one per unique distinct arg list). */
+  /**
+   * The number of trailing distinct-view columns on the DECLARED input row type: one per unique
+   * distinct arg list (Flink shares a view across filtered instances via a bitmask map value).
+   */
   private static int distinctViewCount(StreamPhysicalGlobalGroupAggregate agg) {
     List<List<Integer>> seen = new ArrayList<>();
     for (int i = 0; i < agg.aggCalls().size(); i++) {
@@ -281,15 +284,18 @@ final class GlobalGroupAggregateMatcher {
   }
 
   /**
-   * Per-aggregate distinct-view column (-1 for a non-distinct merge): the views trail the partials
-   * in the local's declared output, one per unique distinct arg list, in first-appearance order.
+   * Per-aggregate distinct-view column (-1 for a non-distinct merge) in the NATIVE local's emitted
+   * batch: the views trail the partials, one per unique (arg list, filter) pair in
+   * first-appearance order — the native local's sharing rule (each filtered instance merges a set
+   * that saw only its filter's rows), not Flink's declared per-arg-list sharing. These indices
+   * address the native Arrow batch, never the declared rel row type.
    */
   static int[] distinctViewColumns(StreamPhysicalGlobalGroupAggregate agg) {
     int firstView = agg.grouping().length;
     for (int i = 0; i < agg.aggCalls().size(); i++) {
       firstView += spanOf(agg, i);
     }
-    List<List<Integer>> seen = new ArrayList<>();
+    List<String> seen = new ArrayList<>();
     int[] columns = new int[agg.aggCalls().size()];
     for (int i = 0; i < columns.length; i++) {
       AggregateCall call = agg.aggCalls().apply(i);
@@ -297,10 +303,11 @@ final class GlobalGroupAggregateMatcher {
         columns[i] = -1;
         continue;
       }
-      if (!seen.contains(call.getArgList())) {
-        seen.add(call.getArgList());
+      String key = LocalGroupAggregateMatcher.distinctViewKey(call);
+      if (!seen.contains(key)) {
+        seen.add(key);
       }
-      columns[i] = firstView + seen.indexOf(call.getArgList());
+      columns[i] = firstView + seen.indexOf(key);
     }
     return columns;
   }

@@ -85,6 +85,11 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   so values repeating across bundles count once. Scope: `COUNT(DISTINCT)` over
   bigint/int/smallint/tinyint/float/double/string/decimal values, `SUM(DISTINCT)` over bigint/int
   (the merge folds in set-iteration order, so order-sensitive float/double sums stay on the host).
+  **Per-aggregate `FILTER (WHERE …)` rides the split too**, on plain and distinct aggregates alike:
+  the predicate is a boolean column the local gates every fold on, so the merge stays filter-blind.
+  Filtered distinct instances each get their own native view/set per (args, filter) pair — same
+  final output as Flink's shared bitmask view, since a filtered distinct is an unfiltered distinct
+  over the filtered row subset.
   Still falling back: the opt-in `distinct-agg.split.enabled` incremental chain (see
   `IncrementalGroupAggregate` above), MIN/MAX/AVG over DISTINCT under two-phase, and
   smallint/tinyint/float SUM/MIN/MAX partials.
@@ -228,9 +233,7 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   a SUM/MIN/MAX value type outside bigint/int/double/decimal, or an AVG value type outside
   bigint/int/smallint/tinyint/float/double/decimal; a `COUNT(DISTINCT)` value type outside
   bigint/int/smallint/tinyint/float/double/string/decimal or a `SUM(DISTINCT)` value outside
-  bigint/int; `MIN`/`MAX`/`AVG` over DISTINCT; a FILTER clause **on a DISTINCT aggregate** (a
-  plain per-aggregate `FILTER (WHERE …)` is native — the boolean column gates each local fold and
-  the partials arrive at the merge already filtered, so the global stays filter-blind); a partial
+  bigint/int; `MIN`/`MAX`/`AVG` over DISTINCT; a partial
   whose declared type differs from what the native side emits (the value's own type for SUM/MIN/MAX
   — decimal SUM widens to `DECIMAL(38, s)` — bigint for COUNT, the widened `(sum, count)` pair for
   AVG — defensive, not seen from Flink's planner); an unsupported grouping-key/input column type.

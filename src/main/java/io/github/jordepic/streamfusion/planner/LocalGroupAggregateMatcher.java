@@ -57,13 +57,12 @@ final class LocalGroupAggregateMatcher {
         return false;
       }
       // A FILTER is a boolean input column (the planner materializes `IS TRUE(p)` in the Calc
-      // below); the native local gates each fold on it, so the emitted partials are already
-      // filtered and the global merge stays filter-blind — exactly Flink's split. A filtered
-      // DISTINCT still falls back: its shared view needs per-filter semantics.
+      // below); the native local gates every fold — plain and distinct — on it, so the emitted
+      // partials are already filtered and the global merge stays filter-blind — exactly Flink's
+      // split.
       if (call.filterArg >= 0
-          && (call.isDistinct()
-              || inputType.getFieldList().get(call.filterArg).getType().getSqlTypeName()
-                  != SqlTypeName.BOOLEAN)) {
+          && inputType.getFieldList().get(call.filterArg).getType().getSqlTypeName()
+              != SqlTypeName.BOOLEAN) {
         return false;
       }
       int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
@@ -150,9 +149,27 @@ final class LocalGroupAggregateMatcher {
         return false;
       }
     }
-    // The distinct views are exactly the trailing output fields, one per unique distinct arg — the
-    // positional contract the native flush and the global's view columns both assume.
-    return offset + distinctViewSources(agg).length == outputType.getFieldCount();
+    // Flink's declared trailing view columns: one per unique distinct arg list (instances with
+    // different filters SHARE a declared view whose map value is a per-filter bitmask). The native
+    // side instead emits one view per unique (arg list, filter) pair — each backed by a set that
+    // saw only its filter's rows — which yields the same final output because a filtered distinct
+    // is exactly an unfiltered distinct over the filtered row subset. The declared layout is only
+    // validated here; the emitted layout is a native-internal contract with the global (the
+    // partial row never crosses to the host — the island is all-or-nothing).
+    return offset + declaredViewCount(agg) == outputType.getFieldCount();
+  }
+
+  /** Flink's declared trailing view-column count: one per unique distinct arg list. */
+  private static int declaredViewCount(StreamPhysicalLocalGroupAggregate agg) {
+    List<List<Integer>> seen = new ArrayList<>();
+    Seq<AggregateCall> aggCalls = agg.aggCalls();
+    for (int i = 0; i < aggCalls.size(); i++) {
+      AggregateCall call = aggCalls.apply(i);
+      if (call.isDistinct() && !seen.contains(call.getArgList())) {
+        seen.add(call.getArgList());
+      }
+    }
+    return seen.size();
   }
 
   /**
@@ -178,21 +195,28 @@ final class LocalGroupAggregateMatcher {
   }
 
   /**
-   * Per distinct view column (the trailing output fields, in Flink's declared order — one per unique
-   * distinct arg list), the index of the aggregate whose bundle set backs it.
+   * Per emitted distinct view column, the index of the aggregate whose bundle set backs it: one
+   * view per unique (arg list, filter) pair, in first-appearance order. Instances with the same
+   * args but different filters get separate views (their sets saw different row subsets), unlike
+   * Flink's shared bitmask view — see the layout note in {@link #matches}.
    */
   static int[] distinctViewSources(StreamPhysicalLocalGroupAggregate agg) {
-    List<List<Integer>> seen = new ArrayList<>();
+    List<String> seen = new ArrayList<>();
     List<Integer> sources = new ArrayList<>();
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
-      if (call.isDistinct() && !seen.contains(call.getArgList())) {
-        seen.add(call.getArgList());
+      if (call.isDistinct() && !seen.contains(distinctViewKey(call))) {
+        seen.add(distinctViewKey(call));
         sources.add(i);
       }
     }
     return toArray(sources);
+  }
+
+  /** The native view-sharing key: instances share a set only with identical args AND filter. */
+  static String distinctViewKey(AggregateCall call) {
+    return call.getArgList() + "#" + call.filterArg;
   }
 
   /** True if {@code partial} is the widened decimal accumulator DECIMAL(38, s) of {@code value}. */
