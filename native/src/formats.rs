@@ -141,52 +141,6 @@ impl ProtobufDecoder {
     }
 }
 
-/// Decodes a binary "body" batch (one CSV record per row, no header) into a batch of the target schema
-/// via `arrow-csv`, matching Flink's `csv` format. Records are fed newline-terminated so the streaming
-/// decoder sees each message as a complete row; a null body contributes no row (like JSON).
-pub(crate) struct CsvDecoder {
-    schema: SchemaRef,
-}
-
-impl CsvDecoder {
-    fn new(schema: SchemaRef) -> CsvDecoder {
-        CsvDecoder { schema }
-    }
-
-    fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
-        let column = bodies.column(0);
-        let row_count = bodies.num_rows();
-        let body = |row: usize| -> Option<&[u8]> { binary_body(column, row) };
-        // Join the rows into one newline-delimited buffer (each Kafka message is one record with no
-        // trailing newline), then stream it through the CSV decoder in one flush.
-        let mut buf = Vec::new();
-        for row in 0..row_count {
-            if let Some(bytes) = body(row) {
-                buf.extend_from_slice(bytes);
-                if !bytes.ends_with(b"\n") {
-                    buf.push(b'\n');
-                }
-            }
-        }
-        let mut decoder = arrow::csv::ReaderBuilder::new(self.schema.clone())
-            .with_header(false)
-            .with_batch_size(row_count.max(1))
-            .build_decoder();
-        let mut offset = 0;
-        while offset < buf.len() {
-            let consumed = decoder.decode(&buf[offset..]).expect("failed to decode CSV record");
-            if consumed == 0 {
-                break;
-            }
-            offset += consumed;
-        }
-        decoder
-            .flush()
-            .expect("failed to flush CSV batch")
-            .unwrap_or_else(|| RecordBatch::new_empty(self.schema.clone()))
-    }
-}
-
 /// Decodes Flink's `raw` format: the message bytes pass through as a single column. The body is already
 /// a binary column, so this just casts it to the target column's type (Binary passthrough, or Binary →
 /// Utf8 for a STRING column) and renames it. 1:1 with the input rows (a null stays null).
@@ -579,9 +533,32 @@ pub(crate) struct MessageDecoder {
     pub(crate) skip_errors: bool,
 }
 
+/// Format options the JVM plumbs through as `key=value` lines (one per line, split on the first
+/// `=`): the table's `csv.*` Jackson knobs today. Only options the planner has vetted reach here —
+/// anything unsupported already fell back — so an unknown key is a wiring bug, not user input.
+pub(crate) fn parse_format_options(encoded: &str) -> crate::csv::CsvOptions {
+    let mut csv = crate::csv::CsvOptions::default();
+    for line in encoded.lines().filter(|l| !l.is_empty()) {
+        let (key, value) = line.split_once('=').expect("format option is not key=value");
+        let single_byte = || -> u8 {
+            assert_eq!(value.len(), 1, "format option {key} must be one ASCII char");
+            value.as_bytes()[0]
+        };
+        match key {
+            "csv.field-delimiter" => csv.delimiter = single_byte(),
+            "csv.quote-character" => csv.quote = Some(single_byte()),
+            "csv.disable-quote-character" => csv.quote = None,
+            "csv.allow-comments" => csv.comments = true,
+            "csv.null-literal" => csv.null_literal = Some(value.to_string()),
+            other => panic!("unknown format option {other}"),
+        }
+    }
+    csv
+}
+
 pub(crate) enum FormatDecoder {
     Json(JsonDecoder),
-    Csv(CsvDecoder),
+    Csv(crate::csv::CsvDecoder),
     Raw(RawDecoder),
     /// Confluent-framed Avro: each message is `0x00` + 4-byte BE schema id + datum, resolved by id. The
     /// optional reader schema projects the writer's record to a subset of fields (Avro resolution).
@@ -649,6 +626,8 @@ impl MessageDecoder {
     /// 1 = Confluent-Avro
     /// (`avro_schema` registered at `schema_id`); 4 = bare Avro (`avro_schema` as the reader schema,
     /// registered at synthetic id 0). (Protobuf is built via `createProtobufDecoder`, not here.)
+    /// `format_options` carries the table's decode-relevant format options (see
+    /// [`parse_format_options`]).
     pub(crate) fn new(
         format: i32,
         output_schema: SchemaRef,
@@ -656,6 +635,7 @@ impl MessageDecoder {
         reader_avro_schema: &str,
         schema_id: i32,
         skip_errors: bool,
+        format_options: &str,
     ) -> MessageDecoder {
         // A non-empty reader schema projects the writer record to a subset of fields (Avro resolution),
         // set when the planner pushes the query's projection into the decode.
@@ -664,10 +644,23 @@ impl MessageDecoder {
         } else {
             Some(arrow_avro::schema::AvroSchema::new(reader_avro_schema.to_string()))
         };
+        let options = parse_format_options(format_options);
         let decoder = match format {
             1 => FormatDecoder::Avro(avro_store(avro_schema, schema_id as u32), reader),
             4 => FormatDecoder::BareAvro(avro_store(avro_schema, 0), reader),
-            2 => FormatDecoder::Csv(CsvDecoder::new(output_schema)),
+            // CSV owns its skip mode: Flink's ignore-parse-errors granularity for CSV is per FIELD
+            // (a bad value nulls the field, a short row pads, only a record-level failure drops the
+            // row), which the generic per-message retry below cannot reproduce.
+            2 => {
+                return MessageDecoder {
+                    decoder: FormatDecoder::Csv(crate::csv::CsvDecoder::new(
+                        output_schema,
+                        options,
+                        skip_errors,
+                    )),
+                    skip_errors: false,
+                }
+            }
             3 => FormatDecoder::Raw(RawDecoder::new(output_schema)),
             6 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Debezium)),
             7 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Ogg)),
@@ -760,6 +753,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createDecoder
     reader_avro_schema: JString<'local>,
     schema_id: jint,
     skip_parse_errors: jboolean,
+    format_options: JString<'local>,
 ) -> jlong {
     // Avro (1, 4) derives its own schema from the writer schema, so those callers pass 0/0 for the
     // schema C structs; JSON/CSV/raw (0, 2, 3) decode against the exported target schema.
@@ -772,6 +766,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createDecoder
     // Empty unless the planner pushed a projection into an Avro decode: the narrowed reader schema.
     let reader_avro_schema: String =
         env.get_string(&reader_avro_schema).map(Into::into).unwrap_or_default();
+    let format_options: String =
+        env.get_string(&format_options).map(Into::into).unwrap_or_default();
     into_handle(MessageDecoder::new(
         format,
         schema,
@@ -779,6 +775,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createDecoder
         &reader_avro_schema,
         schema_id,
         skip_parse_errors != 0,
+        &format_options,
     ))
 }
 
@@ -832,9 +829,12 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_registerAvroS
 }
 
 /// Decodes one body batch into a typed batch, exporting it into the consumer-allocated C structs.
+/// A decode failure (bad data outside skip mode) surfaces as a Java `RuntimeException` — the task
+/// fails the way Flink's own deserializer failure does — rather than unwinding across the JNI
+/// boundary, which would abort the whole process.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_decodeInto<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
@@ -842,9 +842,29 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_decodeInto<'l
     out_array_address: jlong,
     out_schema_address: jlong,
 ) {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
     let decoder = unsafe { &*(handle as *mut MessageDecoder) };
-    let bodies = import_record_batch(in_array_address, in_schema_address);
-    export_record_batch(decoder.decode(&bodies), out_array_address, out_schema_address);
+    let decoded = catch_unwind(AssertUnwindSafe(|| {
+        let bodies = import_record_batch(in_array_address, in_schema_address);
+        decoder.decode(&bodies)
+    }));
+    match decoded {
+        Ok(batch) => export_record_batch(batch, out_array_address, out_schema_address),
+        Err(panic) => {
+            let _ = env.throw_new(
+                "java/lang/RuntimeException",
+                format!("native decode failed: {}", panic_message(&panic)),
+            );
+        }
+    }
+}
+
+pub(crate) fn panic_message(panic: &Box<dyn std::any::Any + Send>) -> &str {
+    panic
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| panic.downcast_ref::<&str>().copied())
+        .unwrap_or("panic")
 }
 
 /// Benchmark-only: decode a body batch and return the decoded row count without exporting the result —

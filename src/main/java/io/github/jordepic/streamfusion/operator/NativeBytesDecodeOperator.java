@@ -63,6 +63,9 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
   private final boolean skipParseErrors;
   // Longest a buffered record waits before a partial batch flushes (0 = no time-based flush).
   private final long flushIntervalMillis;
+  // Decode-relevant format options as key=value lines (CSV delimiter/quote/escape/comments/
+  // null-literal), planner-vetted; "" for defaults.
+  private final String formatOptions;
 
   private transient BufferAllocator allocator;
   private transient long handle;
@@ -92,7 +95,8 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
         protoMessageName,
         null,
         false,
-        0);
+        0,
+        "");
   }
 
   public NativeBytesDecodeOperator(
@@ -106,7 +110,8 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
       String protoMessageName,
       ConfluentSchemaRegistry registry,
       boolean skipParseErrors,
-      long flushIntervalMillis) {
+      long flushIntervalMillis,
+      String formatOptions) {
     this.outputType = outputType;
     this.batchSize = batchSize;
     this.format = format;
@@ -118,6 +123,7 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
     this.registry = registry;
     this.skipParseErrors = skipParseErrors;
     this.flushIntervalMillis = flushIntervalMillis;
+    this.formatOptions = formatOptions;
   }
 
   @Override
@@ -147,14 +153,21 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
       }
     }
     if (format == 1 || format == 4) {
-      return Native.createDecoder(format, 0L, 0L, avroSchema, readerAvroSchema, schemaId, false);
+      return Native.createDecoder(format, 0L, 0L, avroSchema, readerAvroSchema, schemaId, false, "");
     }
     try (VectorSchemaRoot template = RowDataArrowConverter.write(List.of(), outputType, allocator);
         ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(allocator, template, NativeAllocator.DICTIONARIES, array, schema);
       return Native.createDecoder(
-          format, array.memoryAddress(), schema.memoryAddress(), "", "", 0, skipParseErrors);
+          format,
+          array.memoryAddress(),
+          schema.memoryAddress(),
+          "",
+          "",
+          0,
+          skipParseErrors,
+          formatOptions);
     }
   }
 

@@ -91,10 +91,142 @@ final class KafkaTables {
   }
 
   /** Whether the table's value format sets Flink's {@code ignore-parse-errors} (skip malformed
-   * messages instead of failing). The option key is prefixed by the format identifier. */
-  private static boolean ignoreParseErrors(Map<String, String> options) {
-    String format = options.getOrDefault("value.format", options.get("format"));
-    return "true".equalsIgnoreCase(options.get(format + ".ignore-parse-errors"));
+   * messages instead of failing). */
+  static boolean ignoreParseErrors(Map<String, String> options) {
+    return "true".equalsIgnoreCase(formatOption(options, "ignore-parse-errors"));
+  }
+
+  /** A value-format option, resolved with Flink's own prefixing ({@code FactoryUtil.getFormatPrefix}):
+   * {@code csv.field-delimiter} when the table uses {@code format = 'csv'}, but
+   * {@code value.csv.field-delimiter} when it uses {@code value.format = 'csv'}. */
+  private static String formatOption(Map<String, String> options, String suffix) {
+    String valueFormat = options.get("value.format");
+    return valueFormat != null
+        ? options.get("value." + valueFormat + "." + suffix)
+        : options.get(options.get("format") + "." + suffix);
+  }
+
+  /**
+   * The decode-relevant format options rendered for the native decoder as {@code key=value} lines,
+   * or null when an option value the native decode can't reproduce is present (the fallback gate).
+   * Only CSV carries such options today: the Jackson {@code CsvSchema} knobs. The delimiter is
+   * Java-unescaped and truncated to its first character exactly as {@code CsvFormatFactory} does;
+   * quote/escape are literal single characters (the factory validates the length). Each must be
+   * ASCII — csv-core splits on bytes — and a null literal must fit the line encoding.
+   */
+  static String encodeFormatOptions(Map<String, String> options) {
+    StringBuilder encoded = new StringBuilder();
+    if (decodeFormatCode(options) != 2) {
+      return encoded.toString();
+    }
+    String delimiter = formatOption(options, "field-delimiter");
+    if (delimiter != null) {
+      Character c = unescapedDelimiter(delimiter);
+      if (c == null || !appendChar(encoded, "csv.field-delimiter", c)) {
+        return null;
+      }
+    }
+    String quote = formatOption(options, "quote-character");
+    if (quote != null && !appendChar(encoded, "csv.quote-character", quote.charAt(0))) {
+      return null;
+    }
+    if ("true".equalsIgnoreCase(formatOption(options, "disable-quote-character"))) {
+      encoded.append("csv.disable-quote-character=true\n");
+    }
+    if (formatOption(options, "escape-character") != null) {
+      // Jackson's escape applies in unquoted fields too (parity-pinned: "esc\;aped" unescapes);
+      // csv-core's escape is quoted-context only, so the option can't be reproduced — fall back.
+      return null;
+    }
+    if ("true".equalsIgnoreCase(formatOption(options, "allow-comments"))) {
+      encoded.append("csv.allow-comments=true\n");
+    }
+    String nullLiteral = formatOption(options, "null-literal");
+    if (nullLiteral != null) {
+      if (nullLiteral.contains("\n") || nullLiteral.contains("\r")) {
+        return null;
+      }
+      encoded.append("csv.null-literal=").append(nullLiteral).append('\n');
+    }
+    return encoded.toString();
+  }
+
+  private static boolean appendChar(StringBuilder encoded, String key, char c) {
+    if (c > 127 || c == '\n' || c == '\r') {
+      return false;
+    }
+    encoded.append(key).append('=').append(c).append('\n');
+    return true;
+  }
+
+  /**
+   * {@code field-delimiter} the way {@code CsvFormatFactory} reads it — Java-unescaped, first char
+   * ({@code '\t'} arrives as the two characters backslash-t). Handles the escape forms that render
+   * a single character; null (fall back) for anything else rather than risking a mis-read
+   * delimiter.
+   */
+  private static Character unescapedDelimiter(String raw) {
+    if (raw.length() == 1) {
+      return raw.charAt(0);
+    }
+    if (raw.length() == 2 && raw.charAt(0) == '\\') {
+      switch (raw.charAt(1)) {
+        case 't':
+          return '\t';
+        case 'b':
+          return '\b';
+        case 'f':
+          return '\f';
+        case '\\':
+          return '\\';
+        case '\'':
+          return '\'';
+        case '"':
+          return '"';
+        default:
+          return null;
+      }
+    }
+    if (raw.length() == 6 && raw.startsWith("\\u")) {
+      try {
+        return (char) Integer.parseInt(raw.substring(2), 16);
+      } catch (NumberFormatException e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /** Whether every physical column is a type the native CSV decode converts with Flink's exact
+   * semantics — the scalar family. ARRAY/ROW columns (Jackson's array-element-delimiter layer) and
+   * the types outside the boundary set fall back. */
+  private static boolean csvColumnsSupported(StreamPhysicalTableSourceScan scan) {
+    org.apache.flink.table.types.logical.RowType rowType = FilesystemTables.physicalRowType(scan);
+    if (rowType == null) {
+      return false;
+    }
+    return rowType.getChildren().stream()
+        .allMatch(
+            type -> {
+              switch (type.getTypeRoot()) {
+                case BOOLEAN:
+                case TINYINT:
+                case SMALLINT:
+                case INTEGER:
+                case BIGINT:
+                case FLOAT:
+                case DOUBLE:
+                case CHAR:
+                case VARCHAR:
+                case DATE:
+                case TIMESTAMP_WITHOUT_TIME_ZONE:
+                case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+                case DECIMAL:
+                  return true;
+                default:
+                  return false;
+              }
+            });
   }
 
   /** Builds the native source for a table {@link #isNativeKafka} accepted. The decode runs in Rust, so
@@ -256,10 +388,16 @@ final class KafkaTables {
       return false;
     }
     int code = decodeFormatCode(options);
-    // Flink's ignore-parse-errors drops malformed messages; only the JSON decode honors that skip
-    // natively so far. A CSV/protobuf table with it set would fail where Flink skips — fall back.
-    if (ignoreParseErrors(options) && code != 0) {
+    // Flink's ignore-parse-errors drops malformed data; the JSON decode honors the per-message skip
+    // and the CSV decode reproduces Flink's per-field granularity natively. A protobuf table with
+    // it set would fail where Flink skips — fall back.
+    if (ignoreParseErrors(options) && code != 0 && code != 2) {
       return false;
+    }
+    if (code == 2) {
+      // CSV routes only when every column is in the natively-converted scalar family and every
+      // Jackson option the table sets is reproduced exactly (see encodeFormatOptions).
+      return csvColumnsSupported(scan) && encodeFormatOptions(options) != null;
     }
     if (code == 5) {
       // Protobuf routes for any message whose fields (recursively — nested messages, repeated, maps) are
@@ -301,8 +439,7 @@ final class KafkaTables {
     if (code != 6 && code != 7) {
       return false; // Debezium/OGG only; Maxwell/Canal partial-old merge isn't bit-identical (ticket 32)
     }
-    String format = options.getOrDefault("value.format", options.get("format"));
-    if ("true".equalsIgnoreCase(options.get(format + ".schema-include"))) {
+    if ("true".equalsIgnoreCase(formatOption(options, "schema-include"))) {
       return false; // the {schema, payload} envelope wrapper isn't handled
     }
     return FilesystemTables.allPhysicalColumns(scan); // metadata/computed columns aren't decoded natively

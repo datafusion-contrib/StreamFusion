@@ -379,9 +379,17 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 - **Kafka** — value format outside JSON/CSV/raw/bare-Avro/`avro-confluent`/protobuf; a `key.format`;
   a `scan.bounded.mode` other than unbounded/latest-offset; protobuf fields needing representation
   reconciliation (enum/unsigned/bytes/proto3-defaults/well-known types); **`ignore-parse-errors` on a
-  CSV or protobuf table** (Flink skips malformed messages; those native decoders fail on them — the
-  JSON-decoded formats, plain `json` and the CDC envelopes, honor the skip natively via the decode
-  path; a JSON table with it set therefore takes the decode path, not the native source).
+  protobuf table** (Flink skips malformed messages; that native decoder fails on them — the
+  JSON-decoded formats honor the per-message skip, and CSV reproduces Flink's finer per-field
+  granularity natively: a bad value nulls the field, a short row pads, a record-level error drops
+  the row; a JSON table with the flag set takes the decode path, not the native source).
+- **Kafka CSV** — the decode splits records with csv-core and converts fields with Flink-exact text
+  parsers (parity-pinned against Flink's own deserializer — `CsvDecodeParityTest`, divergences/21),
+  honoring `field-delimiter` (incl. `\t`/`\uXXXX` forms), `quote-character`,
+  `disable-quote-character`, `allow-comments`, and `null-literal` natively. Still falling back:
+  **`escape-character`** (Jackson unescapes in unquoted fields, csv-core can't); a **non-ASCII**
+  delimiter or quote char; a `null-literal` containing a newline; a column outside the scalar
+  family — **ARRAY/ROW** (Jackson's `array-element-delimiter` layer) or any non-boundary type.
   `avro-confluent` (decode
   path only, not the native source) fetches each frame's writer schema from the registry by id at
   runtime — the same lazy per-id lookup Flink's deserializer makes, following mid-stream schema

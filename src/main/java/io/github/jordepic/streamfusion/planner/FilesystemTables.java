@@ -55,6 +55,29 @@ final class FilesystemTables {
   }
 
   /**
+   * The matched scan's physical row type (the columns a value decode produces), or null if the
+   * schema can't be resolved (fail safe — callers treat null as unsupported).
+   */
+  static org.apache.flink.table.types.logical.RowType physicalRowType(
+      StreamPhysicalTableSourceScan scan) {
+    try {
+      TableSourceTable table = scan.getTable().unwrap(TableSourceTable.class);
+      if (table == null) {
+        return null;
+      }
+      ResolvedCatalogBaseTable<?> resolved = table.contextResolvedTable().getResolvedTable();
+      if (!(resolved instanceof ResolvedCatalogTable)) {
+        return null;
+      }
+      return (org.apache.flink.table.types.logical.RowType)
+          ((ResolvedCatalogTable) resolved)
+              .getResolvedSchema().toPhysicalRowDataType().getLogicalType();
+    } catch (RuntimeException e) {
+      return null;
+    }
+  }
+
+  /**
    * A raw {@code path} option as a local filesystem path, or null if it is not local. The native file
    * readers/writer work on local files, so a {@code file:} URI is reduced to its path and remote
    * schemes (e.g. {@code hdfs:}/{@code s3:}) are rejected.

@@ -60,7 +60,7 @@ class NativeBytesDecodeOperatorTest {
     OneInputStreamOperatorTestHarness<byte[], ArrowBatch> harness =
         new OneInputStreamOperatorTestHarness<>(
             new NativeBytesDecodeOperator(
-                OUTPUT, BATCH_SIZE, 0, "", "", 0, null, null, null, false, FLUSH_INTERVAL),
+                OUTPUT, BATCH_SIZE, 0, "", "", 0, null, null, null, false, FLUSH_INTERVAL, ""),
             BytePrimitiveArraySerializer.INSTANCE);
     harness.setup(new ArrowBatchSerializer());
     harness.open();

@@ -44,7 +44,7 @@ public class NativeColumnarJsonDecodeOperator extends AbstractStreamOperator<Arr
         ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(allocator, template, dictionaries, array, schema);
-      handle = Native.createDecoder(0, array.memoryAddress(), schema.memoryAddress(), "", "", 0, false);
+      handle = Native.createDecoder(0, array.memoryAddress(), schema.memoryAddress(), "", "", 0, false, "");
     }
   }
 

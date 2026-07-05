@@ -3159,6 +3159,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "criterion",
+ "csv-core",
  "datafusion",
  "datafusion-orc",
  "futures",

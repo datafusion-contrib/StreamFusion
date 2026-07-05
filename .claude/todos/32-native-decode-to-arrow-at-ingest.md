@@ -11,12 +11,19 @@ native store — following mid-stream schema evolution like Flink's own deserial
 schema registry options fall back (coverage doc §5). **Remaining tail only:** (a) **Maxwell/Canal**
 exact-parity auto-routing (decoded, but parity-gated to fallback today); (b) **CSV/JSON *file*** sources
 (the lower-priority file formats — Avro OCF was dropped, arrow-avro can't read Flink's top-level-union);
-(c) a **format-option parity audit** (found 2026-07-03 while wiring `ignore-parse-errors`): the JSON
-decode ignores `json.fail-on-missing-field=true` and `json.timestamp-format.standard` (the native
-timestamp parser is lenient — it accepts ISO-8601 `T`-separated strings where Flink's default `SQL`
-standard throws), and the CSV decode ignores its delimiter/quote/null-literal options — each is a
-potential accept-where-Flink-rejects divergence on malformed-for-Flink data; audit the accept/reject
-envelope per option and either match it natively or gate the option to fall back.
+(c) the **JSON half of the format-option parity audit** (found 2026-07-03 while wiring
+`ignore-parse-errors`): the JSON decode ignores `json.fail-on-missing-field=true` and
+`json.timestamp-format.standard` (the native timestamp parser is lenient — it accepts ISO-8601
+`T`-separated strings where Flink's default `SQL` standard throws), and its scalar coercions don't
+match Flink's converters (string-encoded numbers with trim, `Infinity`/`NaN`/`1.5d`, number→STRING
+echo, strict `ISO_LOCAL_DATE`) — match natively per `flink_text.rs` (the shared Flink-exact parsers
+the CSV rewrite introduced) or gate the option. **The CSV half SHIPPED (2026-07-05):** the decode
+was found silently divergent on valid data even with default options (empty string → NULL,
+truncating decimals, no trimming, unread delimiter/quote/null-literal options, ARRAY columns routed
+then crashed) — arrow-csv's envelope isn't configurable into Flink's, so the decode now splits
+records with csv-core and converts with Flink-exact parsers, options honored natively
+(escape-character and non-scalar columns gated), `ignore-parse-errors` per-field granularity
+included, all parity-pinned by `CsvDecodeParityTest` (divergences/21).
 **Source:** every record we ingest from Kafka (or any non-Parquet source) is decoded on the
 JVM `bytes → GenericRecord/JsonNode/… → RowData` and only *then* transposed to Arrow by our
 source-edge `StreamPhysicalRowDataToArrow`. That row materialization is the single highest-traffic

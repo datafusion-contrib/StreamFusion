@@ -81,7 +81,7 @@ impl KafkaSplitReader {
                 skip_errors: false,
             }
         } else {
-            MessageDecoder::new(format, output_schema, avro_schema, reader_avro_schema, schema_id, false)
+            MessageDecoder::new(format, output_schema, avro_schema, reader_avro_schema, schema_id, false, "")
         };
 
         KafkaSplitReader {
@@ -646,7 +646,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_benchmarkNati
     let queue = unsafe { rdsys::rd_kafka_queue_get_consumer(consumer.client().native_ptr()) };
 
     // The same decoder the pipelined path builds, just driven inline.
-    let decoder = MessageDecoder::new(format, schema, &avro_schema, "", schema_id, false);
+    let decoder = MessageDecoder::new(format, schema, &avro_schema, "", schema_id, false, "");
     let body_schema = Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)]));
 
     // Callback drain (one queue lock per poll, not per message — see benchmarkConsumeOnly); each

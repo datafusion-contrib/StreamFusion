@@ -809,7 +809,11 @@ public final class Native {
    * @param schemaId Confluent schema id the Avro writer schema is registered under (ignored for JSON)
    * @param skipParseErrors Flink's {@code ignore-parse-errors}: an undecodable message contributes no
    *     rows instead of failing the decode (honored by the JSON-decoded formats — plain JSON and the
-   *     CDC envelopes; other formats are only routed with it off)
+   *     CDC envelopes — and by CSV, which reproduces Flink's per-field skip granularity natively;
+   *     other formats are only routed with it off)
+   * @param formatOptions decode-relevant format options as {@code key=value} lines (the CSV
+   *     delimiter/quote/escape/comments/null-literal knobs — see {@code KafkaTables}); "" for
+   *     defaults. Only planner-vetted options reach here: anything unsupported already fell back.
    */
   public static native long createDecoder(
       int format,
@@ -818,7 +822,8 @@ public final class Native {
       String avroSchema,
       String readerAvroSchema,
       int schemaId,
-      boolean skipParseErrors);
+      boolean skipParseErrors,
+      String formatOptions);
 
   /**
    * Creates a protobuf message decoder (Flink's {@code protobuf} format: bare message bytes, no
