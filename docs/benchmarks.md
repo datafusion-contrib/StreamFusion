@@ -329,65 +329,64 @@ join, and the group/`DISTINCT` and windowed (tumbling/hopping/cumulative/session
 buffer their state as memcomparable arrow-row bytes (à la RisingWave's value-encoded state + Arroyo's
 `RowConverter`), not boxed `Vec<ScalarValue>`.
 
-_Numbers are one **combined run** — every query in a single JVM, best of 2 after a warmup, 500K events.
+_Numbers are one **combined run** (2026-07-05) — every query in a single JVM, best of 2 after a
+warmup, 500K events.
 A combined run accumulates heap/GC pressure that disproportionately slows the alloc-heavier native side,
-so these **understate** native for the aggregate/dedup queries; it is the conservative read. (q21's row
-was re-measured in isolation with the same protocol after the round's final upcall fix landed.)_
+so these **understate** native for the aggregate/dedup queries; it is the conservative read._
 
 **Generator** (the transpose floor — no I/O, no decode), native vs Flink, sorted by speedup (q21 appears
 twice — the byte-parity default and the opt-in native regex/case path, see † below):
 
 | Query | Shape | Native vs. Flink |
 |---|---|---|
-| q11 | session-window `COUNT` per bidder | **2.77×** |
-| q7 | tumble `MAX` ⋈ bid | **1.58×** |
-| q5 | Hot Items (window re-agg + window join) | **1.52×** |
-| q12 | proctime tumble `COUNT` per bidder | **1.50×** |
-| q19 | `ROW_NUMBER` topN (≤ 10) | **1.48×** |
-| q15 | multi-`DISTINCT` `COUNT`s per day | **1.41×** |
-| q16 | multi-`DISTINCT` per channel/day | **1.34×** |
-| q2 | filter `WHERE MOD(auction, 123) = 0` | **1.32×** |
-| q0 | pass-through projection of `bid` | **1.31×** |
-| q4 | regular join → `MAX` → `AVG` per category | **1.25×** |
-| q17 | group agg + `AVG`/`MIN`/`MAX`/`SUM` per day | **1.25×** |
-| q23 | three-way join `bid ⋈ person ⋈ auction` | **1.21×** |
+| q11 | session-window `COUNT` per bidder | **2.79×** |
+| q7 | tumble `MAX` ⋈ bid | **1.61×** |
+| q12 | proctime tumble `COUNT` per bidder | **1.52×** |
+| q19 | `ROW_NUMBER` topN (≤ 10) | **1.50×** |
+| q5 | Hot Items (window re-agg + window join) | **1.47×** |
+| q15 | multi-`DISTINCT` `COUNT`s per day | **1.42×** |
+| q23 | three-way join `bid ⋈ person ⋈ auction` | **1.38×** |
+| q16 | multi-`DISTINCT` per channel/day | **1.36×** |
+| q0 | pass-through projection of `bid` | **1.33×** |
+| q17 | group agg + `AVG`/`MIN`/`MAX`/`SUM` per day | **1.32×** |
+| q4 | regular join → `MAX` → `AVG` per category | **1.31×** |
+| q2 | filter `WHERE MOD(auction, 123) = 0` | **1.30×** |
 | q9 | regular join → `ROW_NUMBER` (≤ 1) | **1.18×** |
-| q21 | `CASE` + `REGEXP_EXTRACT`/`LOWER` — JVM upcall (byte-parity) | **1.18×** |
-| q1 | `0.908 * price` — exact `Decimal128` (byte-parity) | **1.17×** |
-| q10 | `DATE_FORMAT` projection | **1.16×** |
-| q22 | `SPLIT_INDEX(url, '/', n)` projection | **1.16×** |
-| q13 | lookup join (bounded dimension) | **1.06×** |
-| q18 | `ROW_NUMBER` dedup (≤ 1) | **1.02×** |
-| q14 | `HOUR`/`CASE` + `count_char` UDF + decimal | 0.99× |
-| q3 | updating join `auction ⋈ person` | 0.94× |
-| q8 | tumble windowed-distinct ⋈ join | 0.92× |
-| q20 | updating join (`category = 10`) | 0.83× |
-| q21 † | …same, pure-native Rust regex/case (opt-in, non-parity) | **2.00×**
+| q22 | `SPLIT_INDEX(url, '/', n)` projection | **1.18×** |
+| q1 | `0.908 * price` — exact `Decimal128` (byte-parity) | **1.13×** |
+| q18 | `ROW_NUMBER` dedup (≤ 1) | **1.13×** |
+| q10 | `DATE_FORMAT` projection | **1.11×** |
+| q13 | lookup join (bounded dimension) | **1.07×** |
+| q14 | `HOUR`/`CASE` + `count_char` UDF + decimal | **1.02×** |
+| q21 | `CASE` + `REGEXP_EXTRACT`/`LOWER` — JVM upcall (byte-parity) | 0.96× |
+| q3 | updating join `auction ⋈ person` | 0.95× |
+| q8 | tumble windowed-distinct ⋈ join | 0.87× |
+| q20 | updating join (`category = 10`) | 0.84× |
+| q21 † | …same, pure-native Rust regex/case (opt-in, non-parity) | **1.54×**
 
 **Parquet file** — the columnar-source case: the native island reads Arrow straight from the
 `filesystem`/`parquet` scan, so there is no `RowData → Arrow` transpose at ingest (only the sink
-transpose remains). Same queries, same order as the generator table above:
+transpose remains). Same queries, sorted by speedup:
 
 | Query | Native vs. Flink | | Query | Native vs. Flink |
 |---|---|---|---|---|
-| q11 | **5.41×** | | q4 | **3.61×** |
-| q23 | **4.99×** | | q10 | **2.67×** |
-| q8 | **4.44×** | | q15 | **2.42×** |
-| q7 | **4.35×** | | q13 | **2.42×** |
-| q3 | **4.22×** | | q18 | **2.11×** |
-| q0 | **4.11×** | | q17 | **2.02×** |
-| q12 | **4.09×** | | q9 | **1.82×** |
-| q14 | **4.05×** | | q19 | **1.81×** |
-| q2 | **3.91×** | | q16 | **1.34×** |
-| q1 | **3.80×** | | | |
-| q20 | **3.78×** | | q21 | **2.64×** (6.72× native regex/case) |
-| q22 | **3.73×** | | | |
-| q5 | **3.63×** | | | |
+| q11 | **5.39×** | | q12 | **3.23×** |
+| q8 | **4.37×** | | q0 | **3.21×** |
+| q7 | **4.22×** | | q1 | **3.07×** |
+| q23 | **3.91×** | | q10 | **2.54×** |
+| q4 | **3.61×** | | q18 | **2.27×** |
+| q22 | **3.58×** | | q13 | **2.26×** |
+| q3 | **3.57×** | | q17 | **2.23×** |
+| q2 | **3.56×** | | q15 | **2.07×** |
+| q5 | **3.45×** | | q9 | **1.94×** |
+| q20 | **3.40×** | | q19 | **1.75×** |
+| q14 | **3.30×** | | q16 | **1.37×** |
+| q21 | **2.77×** (6.14× native regex/case) | | | |
 
-Every query clears 1× — most **2–5.4×**, the floor now q16 at 1.34× — because the ingest transpose is
+Every query clears 1× — most **2–5.4×**, the floor q16 at 1.37× — because the ingest transpose is
 gone: the scan feeds Arrow batches directly into the operator, and only the `blackhole` sink pays a
-transpose. The queries that are transpose-bound on the generator (q8 at 0.92×, q3 at 0.94×, q20 at
-0.83×) are exactly the ones that jump the most here (q8 4.44×, q3 4.22×, q20 3.78×) — confirming their
+transpose. The queries that are transpose-bound on the generator (q8 at 0.87×, q3 at 0.95×, q20 at
+0.84×) are exactly the ones that jump the most here (q8 4.37×, q3 3.57×, q20 3.40×) — confirming their
 generator cost was the `RowData` perimeter, not the operator. Parquet's rowtime is a plain
 `TIMESTAMP(3)`, so the `DATE_FORMAT`/`HOUR` queries (q10/q14/q15/q16/q17) run natively (over the Kafka
 `TIMESTAMP_LTZ` they run natively too now — see the Kafka table's `§` note). q16 — long the one Parquet
@@ -402,10 +401,10 @@ round, eighteen after its first pass — the differential flame-graph work recor
 probes across the join/aggregate/dedup/Top-N maps, typed DISTINCT sets + cached changelog emit,
 decode-deduplicated Top-N emit, the transpose string single-copy, the lookup join's collect-time
 Arrow writes, and the byte-path parity upcalls). The round's second pass measured its movers on the
-75-second profile loop: **q21's parity path +12%** (the byte marshalling + primitive ASCII fold —
-which is what pushed its generator row over 1×), **q23 +8.5%**, **q18 +5.4%**, **q16 +3.4%**. The
+75-second profile loop: **q21's parity path +12%** (the byte marshalling + primitive ASCII fold),
+**q23 +8.5%**, **q18 +5.4%**, **q16 +3.4%**. The
 window-aggregate queries moved earlier when the aggregators went to arrow-row keys and the session
-update went run-batched (**q5 1.00→1.52, q8 0.70→0.92, q11 2.41→2.77** cumulatively). The
+update went run-batched (**q5 1.00→1.47, q8 0.70→0.87, q11 2.41→2.79** cumulatively). The
 **updating-join family was the earlier big mover**: a CPU profile put ~40% of the worst query (q9)
 in the joiner. Making the INNER join batch its whole input — gather all candidate pairs against the
 fixed probe side, evaluate the residual predicate once columnar, emit by `filter_record_batch`, and
@@ -419,16 +418,19 @@ swapping the allocator, closed the gap
 What still trails 1× on this rung: q8 is transpose-bound (a window join with only a ~9% native
 island); q20 is the widest updating join (its state probes are allocation-free and its stored-row
 decode no longer registers on the profile — the remainder is intrinsic hash-join work over the
-rowwise perimeter, see wontdos/48); and q3/q14 sit at the line (0.94×/0.99×). q13's lookup join,
+rowwise perimeter, see wontdos/48); and q3 (0.95×) and q21's byte-parity upcall (0.96×) sit at the
+line. q14 crossed it this run (1.02×); q13's lookup join,
 long below 1×, cleared it when its collector started writing straight into the Arrow builders.
 
 **† q21 is reported on both paths.** By default its `REGEXP_EXTRACT` and `LOWER` run through a
-byte-identical **JVM upcall** (one JNI crossing per batch) — now the **1.18×** row: the compile cost
+byte-identical **JVM upcall** (one JNI crossing per batch): the compile cost
 is cached, the string boundary stays in UTF-8 bytes with a primitive ASCII fold, and the argument
-columns marshal once per batch (0.75× → 0.86× → 1.18× across the round). The price of staying
+columns marshal once per batch (0.75× → 0.86× → ~parity across the round; this combined run reads
+0.96×, and the isolated 75s profile loop puts it above 1× — the upcall path is the most sensitive
+to the combined run's accumulated GC pressure). The price of staying
 exactly Flink-equal on functions whose Rust regex / case-folding can diverge at a locale/regex edge
-is now ~1.7× against the opt-in: `-Dstreamfusion.expression.allowIncompatible=true` runs the
-**pure-native Rust** path at **2.00×**. Both are documented in
+is ~1.6× against the opt-in: `-Dstreamfusion.expression.allowIncompatible=true` runs the
+**pure-native Rust** path at **1.54×**. Both are documented in
 [divergences/07](../divergences/07-expression-encoding-and-compile-once.md).
 
 **‡ q1's approximate-decimal toggle buys nothing.** The exact `Decimal128` multiply (byte-parity) is not
@@ -448,32 +450,32 @@ Flink baseline), sorted by the JSON speedup:
 
 | Query | JSON | Avro | Protobuf |
 |---|---|---|---|
-| q11 | **3.75×** | **4.87×** | **5.19×** |
-| q7 | **2.92×** | **3.59×** | **3.38×** |
-| q21 | **2.81×** | **3.33×** | **2.61×** |
-| q21 † | **2.82×** | **3.28×** | **2.74×** |
-| q15 § | **2.79×** | **2.78×** | **2.31×** |
-| q10 § | **2.75×** | **2.58×** | **2.19×** |
-| q0 | **2.67×** | **3.28×** | **2.72×** |
-| q18 | **2.67×** | **3.13×** | **2.69×** |
-| q17 § | **2.50×** | **2.64×** | **2.21×** |
-| q20 | **2.47×** | **3.55×** | **2.51×** |
-| q1 | **2.46×** | **3.25×** | **2.63×** |
-| q14 § | **2.45×** | **3.49×** | **2.57×** |
-| q22 | **2.40×** | **2.85×** | **2.54×** |
-| q4 | **2.38×** | **2.92×** | **2.52×** |
-| q5 | **2.36×** | **3.28×** | **2.82×** |
-| q23 | **2.21×** | **2.79×** | **2.26×** |
-| q12 | **2.13×** | **2.46×** | **2.13×** |
-| q13 | **2.11×** | **2.56×** | **2.10×** |
-| q8 | **2.09×** | **2.82×** | **2.34×** |
-| q2 | **2.08×** | **2.36×** | **2.00×** |
-| q9 | **2.04×** | **2.25×** | **2.04×** |
-| q3 | **1.92×** | **2.17×** | **1.81×** |
-| q19 | **1.88×** | **1.87×** | **1.88×** |
-| q16 § | **1.79×** | **1.76×** | **1.46×** |
+| q11 | **3.93×** | **5.18×** | **5.55×** |
+| q7 | **2.89×** | **4.11×** | **3.21×** |
+| q15 § | **2.76×** | **3.06×** | **2.52×** |
+| q0 | **2.71×** | **3.42×** | **2.58×** |
+| q10 § | **2.69×** | **2.64×** | **2.26×** |
+| q18 | **2.52×** | **3.02×** | **2.58×** |
+| q22 | **2.49×** | **2.83×** | **2.28×** |
+| q17 § | **2.49×** | **2.59×** | **2.23×** |
+| q14 § | **2.47×** | **3.50×** | **2.66×** |
+| q21 † | **2.46×** | **3.01×** | **2.62×** |
+| q21 | **2.44×** | **2.98×** | **2.64×** |
+| q4 | **2.43×** | **3.27×** | **2.66×** |
+| q1 | **2.39×** | **3.35×** | **2.62×** |
+| q20 | **2.38×** | **3.40×** | **2.92×** |
+| q5 | **2.32×** | **3.35×** | **3.04×** |
+| q12 | **2.31×** | **2.55×** | **2.14×** |
+| q9 | **2.24×** | **2.13×** | **2.35×** |
+| q8 | **2.22×** | **2.94×** | **2.58×** |
+| q13 | **2.20×** | **2.75×** | **2.14×** |
+| q23 | **2.09×** | **2.85×** | **2.38×** |
+| q2 | **2.04×** | **2.48×** | **2.09×** |
+| q19 | **1.98×** | **1.89×** | **1.85×** |
+| q3 | **1.97×** | **2.38×** | **1.80×** |
+| q16 § | **1.86×** | **1.87×** | **1.65×** |
 
-**Every Kafka row clears 1.46×, all but a handful clear 2×, and the peak is q11 at 3.8–5.2×.**
+**Every Kafka row clears 1.65×, all but a handful clear 2×, and the peak is q11 at 3.9–5.6×.**
 These numbers include the source's per-partition watermark regeneration (the matrix tables declare a
 `WATERMARK`, pushed into the scan): windows fire incrementally mid-stream exactly as on stock Flink,
 and the per-batch max-rowtime scan that feeds it costs nothing measurable. The same watermark work
@@ -488,44 +490,66 @@ q3/q14/q18/q21, whose JSON rows were below 1× on their old best rung and now si
 of the table is q16 and the changelog-bound q3/q19 — operator-bound queries where the consume saving
 is diluted, not reversed.
 
-### The tuned (mini-batch) column
+### The tuned (mini-batch) matrix — the full suite
 
 Production Flink deployments routinely enable mini-batch for stateful queries, so the matrix has a
 **tuned mode**: `table.exec.mini-batch.*` (2s allow-latency, size 50000) on **both** engines — the
 steelman rule, and the config behind the only public per-query Alibaba comparison. Generator source
-(the tuned question is engine-vs-engine, not the perimeter), the changelog-family queries, and
-**5M events** so the flush cadence amortizes (at 500K the run is shorter than one flush interval
-and measures latency artifacts). `table.optimizer.distinct-agg.split.enabled` stays default-off: it
+(the tuned question is engine-vs-engine, not the perimeter) and **5M events** so the flush cadence
+amortizes (at 500K the run is shorter than one flush interval and measures latency artifacts).
+`table.optimizer.distinct-agg.split.enabled` stays default-off: it
 is a skew mitigation for parallel deployments (these runs are parallelism 1) and its incremental
-plan chain deliberately has no native path (`wontdos/52-distinct-split-chain.md`). `SF_BENCHMARK=true SF_MATRIX_TUNED=true SF_ROWS=5000000 mvn
-test -Pbench -Dnative.cargo.args="build --release --features mimalloc"
--Dtest=NexmarkMatrixBenchmark#tunedMiniBatchMatrix`.
+plan chain deliberately has no native path (`wontdos/52-distinct-split-chain.md`).
+`SF_BENCHMARK=true SF_MATRIX_TUNED=true SF_ROWS=5000000
+SF_MATRIX_QUERIES=q0,…,q23 mvn test -Pbench -Dnative.cargo.args="build --release --features
+mimalloc" -Dtest=NexmarkMatrixBenchmark#tunedMiniBatchMatrix` (the query list defaults to the
+changelog family — mini-batch changes only those plans — but the full-suite run below doubles as
+the coverage check that **every** query still routes native under production tuning; run
+2026-07-05, no fallbacks).
 
 | Query | Shape | Native vs. tuned Flink |
 |---|---|---|
-| q23 | three-way join `bid ⋈ person ⋈ auction` | **2.71×** |
-| q19 | `ROW_NUMBER` topN (≤ 10) | **2.65×** |
-| q4 | join → MAX group-by → AVG over its changelog | **2.46×** |
-| q9 | regular join → `ROW_NUMBER` (≤ 1) | **1.95×** |
-| q18 | `ROW_NUMBER` dedup (≤ 1) | **1.90×** |
-| q20 | updating join (`category = 10`) | **1.35×** |
-| q15 | filtered `COUNT(DISTINCT)` day dashboard | **1.28×** |
-| q16 | q15 + string `MAX` per channel | **1.23×** |
-| q17 | filtered counts + MIN/MAX/AVG/SUM per auction-day | **1.02×** |
+| q0 | pass-through projection of `bid` | **1.23×** |
+| q1 | `0.908 * price` — exact `Decimal128` (byte-parity) | **1.16×** |
+| q2 | filter `WHERE MOD(auction, 123) = 0` | **1.45×** |
 | q3 | updating join `auction ⋈ person` | 0.69× |
+| q4 | regular join → `MAX` → `AVG` per category | **2.85×** |
+| q5 | Hot Items (window re-agg + window join) | **1.18×** |
+| q7 | tumble `MAX` ⋈ bid | **1.43×** |
+| q8 | tumble windowed-distinct ⋈ join | 0.76× |
+| q9 | regular join → `ROW_NUMBER` (≤ 1) | **2.15×** |
+| q10 | `DATE_FORMAT` projection | **1.18×** |
+| q11 | session-window `COUNT` per bidder | **3.01×** |
+| q12 | proctime tumble `COUNT` per bidder | **1.70×** |
+| q13 | lookup join (bounded dimension) | **1.09×** |
+| q14 | `HOUR`/`CASE` + `count_char` UDF + decimal | **1.05×** |
+| q15 | multi-`DISTINCT` `COUNT`s per day (`DATE_FORMAT` group) | **1.26×** |
+| q16 | multi-`DISTINCT` per channel/day | **1.18×** |
+| q17 | group agg + `AVG`/`MIN`/`MAX`/`SUM` per day | 1.00× |
+| q18 | `ROW_NUMBER` dedup (≤ 1) | **2.02×** |
+| q19 | `ROW_NUMBER` topN (≤ 10) | **2.36×** |
+| q20 | updating join (`category = 10`) | **1.34×** |
+| q21 | `CASE` + `REGEXP_EXTRACT`/`LOWER` — JVM upcall (byte-parity) | 0.97× |
+| q22 | `SPLIT_INDEX(url, '/', n)` projection | **1.25×** |
+| q23 | three-way join `bid ⋈ person ⋈ auction` | **3.01×** |
 
-The tuned margins are **wider** than the default-config generator column, not narrower: at 5M
-events the state-heavy queries dominate their runtime with operator work (the per-event JIT/setup
-share shrinks), and under mini-batch the native side emits the net per-batch Top-N diff
+The changelog-family margins are **wider** than the default-config generator column, not narrower:
+at 5M events the state-heavy queries dominate their runtime with operator work (the per-event
+JIT/setup share shrinks), and under mini-batch the native side emits the net per-batch Top-N diff
 (divergences/20) where Flink's rank — which has no mini-batch variant — still pays the per-record
-cascade (q19 2.65× tuned vs 1.48× default). q3 trails for the same reason it does untuned at this
-scale (a thin island over a wide transposed perimeter); the mini-batch config itself costs the
-native side nothing since calc pruning pushes through the assigner.
+cascade (q19 2.36× tuned vs 1.48× default). The non-changelog queries plan identically tuned or
+not (mini-batch inserts nothing into them), so their column is effectively the generator rung at
+5M events — the same transpose-bound stragglers trail here for the same reason (q3 a thin island
+over a wide transposed perimeter, q8's window join, q21's per-batch JVM upcall at 5M-event scale);
+the mini-batch config itself costs the native side nothing since calc pruning pushes through the
+assigner.
 
 The first tuned run reported q4/q15/q16/q17 as fallbacks — the tuned column doubling as the
 mini-batch coverage check, exactly as designed. That coverage has since landed (two-phase FILTER
 clauses, filtered distinct views, string MIN/MAX partials, retraction-bearing partials with the
-count1 record counter), and all four now run fully native. q15/q16 are worth noting: `GROUP BY
+count1 record counter), and all four now run fully native — as does the whole suite, including
+the windowed two-phase splits over every value type (the 2026-07-05 nullable-sum-buffer work).
+q15/q16 are worth noting: `GROUP BY
 day` is a single live grouping key carrying every record's bidder/auction distinct sets — the
 hot-key shape `distinct-agg.split` exists to mitigate — and the native no-split plan beats tuned
 Flink on it (see `wontdos/52-distinct-split-chain.md`).

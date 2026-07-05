@@ -132,8 +132,11 @@ here when the ticket is deleted.
    upcall builtins handing off bytes not `String` — q21's residual — and the full
    `ScalarValue`-vintage retirement (the keyed OVER loops +121–162%, retracting Top-N +228%,
    exchange split +208%, keep-first probe +6% on Criterion; ticket 49 retired, residual
-   scalar-keyed maps listed on ticket 20) — all pending the round's
-   matrix re-quote): what remains — ticket 40's bounded-dim preload (deprioritized on the
+   scalar-keyed maps listed on ticket 20). The round's **matrix re-quote landed 2026-07-05**:
+   the full standard matrix (readme table — 19 of 23 clear 1× from RowData, q14 newly over the
+   line; Kafka floor 1.65×) plus the first **full-suite tuned run** (benchmarks.md — all 23
+   native under mini-batch tuning, no fallbacks, 20 of 23 beat tuned Flink): what remains —
+   ticket 40's bounded-dim preload (deprioritized on the
    2026-07-05 q13 profile — the Nexmark dim is an in-memory test connector, so the win only shows
    on real external dims). Closed on the 2026-07-05 profiles: the join block store (wontdos/48 —
    the joiner's stored-row decode no longer registers) and paned HOP (wontdos/51 — the two-phase
@@ -143,8 +146,8 @@ here when the ticket is deleted.
    cargo feature is a default build feature (probe-guarded for opt-out builds). Remaining tails in
    the ticket: `key.format`, SASL/SSL build features, Linux mimalloc link-alias verification,
    multi-broker measurement. The Kafka matrix was re-run with watermarks flowing mid-stream and the
-   readme/benchmarks Kafka numbers re-quoted (after the 2026-07-04 optimization round: floor 1.34x,
-   peak q11 3.8–5.1x — watermark
+   readme/benchmarks Kafka numbers re-quoted (2026-07-05 full-matrix run: floor 1.65x,
+   peak q11 3.9–5.6x — watermark
    regeneration costs nothing measurable).
 2. **Legacy group windows** (ticket 43): map `GROUP BY TUMBLE/HOP(...)` onto the existing native
    window operators — the event-time `SESSION` exception is the template.
