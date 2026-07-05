@@ -26,6 +26,7 @@ public class StreamPhysicalNativeColumnarLocalGroupAggregate extends SingleRel
   private final int[] aggregateKinds;
   private final int[] valueTypes;
   private final int[] valueColumns;
+  private final int[] filterColumns;
   private final int[] keyColumns;
   private final int[] distinctViewSources;
 
@@ -37,6 +38,7 @@ public class StreamPhysicalNativeColumnarLocalGroupAggregate extends SingleRel
       int[] aggregateKinds,
       int[] valueTypes,
       int[] valueColumns,
+      int[] filterColumns,
       int[] keyColumns,
       int[] distinctViewSources) {
     super(cluster, traitSet, input);
@@ -44,6 +46,7 @@ public class StreamPhysicalNativeColumnarLocalGroupAggregate extends SingleRel
     this.aggregateKinds = aggregateKinds;
     this.valueTypes = valueTypes;
     this.valueColumns = valueColumns;
+    this.filterColumns = filterColumns;
     this.keyColumns = keyColumns;
     this.distinctViewSources = distinctViewSources;
   }
@@ -68,6 +71,7 @@ public class StreamPhysicalNativeColumnarLocalGroupAggregate extends SingleRel
         aggregateKinds,
         valueTypes,
         valueColumns,
+        filterColumns,
         keyColumns,
         distinctViewSources);
   }
@@ -82,6 +86,7 @@ public class StreamPhysicalNativeColumnarLocalGroupAggregate extends SingleRel
         aggregateKinds,
         valueTypes,
         valueColumns,
+        filterColumns,
         keyColumns,
         distinctViewSources);
   }

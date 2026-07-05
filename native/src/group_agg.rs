@@ -1236,6 +1236,10 @@ pub(crate) struct LocalGroupAggregator {
     kinds: Vec<i64>,
     value_types: Vec<DataType>,
     value_columns: Vec<i64>,
+    // Per-aggregate FILTER column index (the boolean the host computes for `AGG(x) FILTER (WHERE p)`),
+    // or -1 for an unfiltered aggregate. A row folds into aggregate i only when its filter is TRUE;
+    // the global merge is filter-blind because the partials are already filtered here.
+    filter_columns: Vec<i64>,
     key_columns: Vec<usize>,
     result_types: Vec<DataType>,
     // Per distinct view column (trailing the partials, in Flink's declared order), the index of the
@@ -1268,6 +1272,7 @@ impl LocalGroupAggregator {
         kinds: Vec<i64>,
         value_types: Vec<i64>,
         value_columns: Vec<i64>,
+        filter_columns: Vec<i64>,
         key_columns: Vec<usize>,
         distinct_view_sources: Vec<i64>,
     ) -> Self {
@@ -1277,10 +1282,13 @@ impl LocalGroupAggregator {
             .zip(&value_types)
             .map(|(&kind, vt)| RunningAgg::new(kind, vt).result_type())
             .collect();
+        let filter_columns =
+            if filter_columns.is_empty() { vec![-1; kinds.len()] } else { filter_columns };
         LocalGroupAggregator {
             kinds,
             value_types,
             value_columns,
+            filter_columns,
             key_columns,
             result_types,
             distinct_view_sources,
@@ -1338,6 +1346,19 @@ impl LocalGroupAggregator {
                 distinct_cols[i].and_then(|c| batch.column(c).as_any().downcast_ref::<Int64Array>())
             })
             .collect();
+        // Per aggregate, the FILTER boolean column (None = unfiltered). A row folds into aggregate i
+        // only where this is TRUE — NULL or FALSE skips it, matching SQL FILTER / Flink's filterArg.
+        let filter_cols: Vec<Option<&BooleanArray>> = (0..num_agg)
+            .map(|i| {
+                (self.filter_columns[i] >= 0).then(|| {
+                    batch
+                        .column(self.filter_columns[i] as usize)
+                        .as_any()
+                        .downcast_ref::<BooleanArray>()
+                        .expect("filter column must be boolean")
+                })
+            })
+            .collect();
         let track = self.memory.tracking();
         for row in 0..n {
             let key = read_key(&key_arrays, row);
@@ -1360,6 +1381,11 @@ impl LocalGroupAggregator {
                 delta -= entry.iter().map(group_agg_state_bytes).sum::<usize>() as isize;
             }
             for i in 0..num_agg {
+                if let Some(filter) = filter_cols[i] {
+                    if filter.is_null(row) || !filter.value(row) {
+                        continue;
+                    }
+                }
                 if let Some(col_idx) = distinct_cols[i] {
                     if let Some(ints) = distinct_i64_cols[i] {
                         if !ints.is_null(row) {
@@ -1456,6 +1482,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createLocalGr
     aggregate_kinds: JIntArray<'local>,
     value_types: JIntArray<'local>,
     value_columns: JIntArray<'local>,
+    filter_columns: JIntArray<'local>,
     key_columns: JIntArray<'local>,
     distinct_view_sources: JIntArray<'local>,
     memory_budget_bytes: jlong,
@@ -1463,11 +1490,18 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createLocalGr
     let kinds = read_int_array(&env, &aggregate_kinds);
     let value_types = read_int_array(&env, &value_types);
     let value_columns = read_int_array(&env, &value_columns);
+    let filter_columns = read_int_array(&env, &filter_columns);
     let key_cols = read_columns(&env, &key_columns);
     let view_sources = read_int_array(&env, &distinct_view_sources);
-    let aggregator =
-        LocalGroupAggregator::new(kinds, value_types, value_columns, key_cols, view_sources)
-            .with_memory_budget(memory_budget_bytes);
+    let aggregator = LocalGroupAggregator::new(
+        kinds,
+        value_types,
+        value_columns,
+        filter_columns,
+        key_cols,
+        view_sources,
+    )
+    .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, aggregator)
 }
 

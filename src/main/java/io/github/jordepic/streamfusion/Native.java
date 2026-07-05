@@ -237,6 +237,7 @@ public final class Native {
       int[] aggregateKinds,
       int[] valueTypes,
       int[] valueColumns,
+      int[] filterColumns,
       int[] keyColumns,
       int[] distinctViewSources,
       long memoryBudgetBytes);

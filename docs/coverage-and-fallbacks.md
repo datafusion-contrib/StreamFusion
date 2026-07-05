@@ -228,7 +228,9 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   a SUM/MIN/MAX value type outside bigint/int/double/decimal, or an AVG value type outside
   bigint/int/smallint/tinyint/float/double/decimal; a `COUNT(DISTINCT)` value type outside
   bigint/int/smallint/tinyint/float/double/string/decimal or a `SUM(DISTINCT)` value outside
-  bigint/int; `MIN`/`MAX`/`AVG` over DISTINCT; a FILTER clause on the two-phase path; a partial
+  bigint/int; `MIN`/`MAX`/`AVG` over DISTINCT; a FILTER clause **on a DISTINCT aggregate** (a
+  plain per-aggregate `FILTER (WHERE …)` is native — the boolean column gates each local fold and
+  the partials arrive at the merge already filtered, so the global stays filter-blind); a partial
   whose declared type differs from what the native side emits (the value's own type for SUM/MIN/MAX
   — decimal SUM widens to `DECIMAL(38, s)` — bigint for COUNT, the widened `(sum, count)` pair for
   AVG — defensive, not seen from Flink's planner); an unsupported grouping-key/input column type.

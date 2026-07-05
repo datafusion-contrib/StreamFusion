@@ -1110,7 +1110,7 @@ fn join_working_memory_draws_on_the_operator_budget() {
 
 #[test]
 fn local_group_state_over_budget_fails_and_flush_releases() {
-    let mut agg = LocalGroupAggregator::new(vec![0], vec![0], vec![1], vec![0], vec![])
+    let mut agg = LocalGroupAggregator::new(vec![0], vec![0], vec![1], vec![], vec![0], vec![])
         .with_memory_budget(1 << 20)
         .unwrap();
     agg.update(&join_batch(vec![1, 2], vec![10, 20], vec![0, 0])).unwrap();
@@ -1118,7 +1118,7 @@ fn local_group_state_over_budget_fails_and_flush_releases() {
     agg.flush();
     assert_eq!(agg.memory.state_bytes, 0); // the mini-batch drained -> fully released
 
-    let mut tight = LocalGroupAggregator::new(vec![0], vec![0], vec![1], vec![0], vec![])
+    let mut tight = LocalGroupAggregator::new(vec![0], vec![0], vec![1], vec![], vec![0], vec![])
         .with_memory_budget(64)
         .unwrap();
     let keys: Vec<i64> = (0..100).collect();

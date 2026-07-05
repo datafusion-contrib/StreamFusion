@@ -150,6 +150,33 @@ class FlinkTwoPhaseGroupAggregateSqlHarnessTest {
   }
 
   @Test
+  void filteredAggregatesTwoPhaseMatchesHost() throws Exception {
+    // FILTER clauses (Nexmark q15-q17's shape): the planner materializes each predicate as an
+    // IS TRUE boolean column in the Calc below the local, which gates every fold on it; the global
+    // merge is filter-blind because the partials arrive already filtered. The filtered AVG spans
+    // two partials, so its filter must gate both the sum and the count state.
+    Path input = Files.createTempDirectory("twophase-filter-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        readEnvironment(input),
+        "SELECT k, COUNT(*) AS c, COUNT(*) FILTER (WHERE v < 15) AS cf,"
+            + " SUM(v) FILTER (WHERE vi > 2) AS sf, MIN(v) FILTER (WHERE vd > 1.0) AS mnf,"
+            + " AVG(v) FILTER (WHERE v > 5) AS avf FROM t GROUP BY k");
+  }
+
+  @Test
+  void filteredAggregatesAcrossSmallBundlesMatchesHost() throws Exception {
+    // mini-batch.size 2 forces several local flushes, so a key whose bundle matched NO filter rows
+    // still emits a partial (NULL sum / zero count) that the global must fold as empty.
+    Path input = Files.createTempDirectory("twophase-filter-bundles-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        readEnvironment(input, 2),
+        "SELECT k, SUM(v) FILTER (WHERE vd > 3.0) AS sf, COUNT(vi) FILTER (WHERE v < 0) AS cf"
+            + " FROM t GROUP BY k");
+  }
+
+  @Test
   void countDistinctTwoPhaseMatchesHost() throws Exception {
     // Without the distinct split, a distinct aggregate under mini-batch plans as Local → Global
     // with a distinct MapView partial: the native local emits its bundle's (value, count) set as a

@@ -17,7 +17,8 @@ import scala.collection.Seq;
  * {@link GroupAggregateMatcher}: SUM/MIN/MAX/COUNT over bigint/int/double values, AVG over any of
  * Flink's AvgAggFunction numerics (the narrow integers and float included — the sum partial widens
  * to bigint/double), and COUNT/SUM(DISTINCT) whose per-bundle value set rides a trailing view
- * column, with grouping keys the boundary carries.
+ * column, with grouping keys the boundary carries. A FILTER clause is native: the boolean column
+ * gates each local fold and the merged partials are already filtered.
  *
  * <p>The native local emits each aggregate's partial in its running type: {@code SUM/MIN/MAX} keep
  * the value's own type (Flink's SUM partial does not widen — verified against the planner), COUNT is
@@ -52,7 +53,17 @@ final class LocalGroupAggregateMatcher {
     int offset = grouping.length;
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
-      if (call.isApproximate() || call.filterArg >= 0) {
+      if (call.isApproximate()) {
+        return false;
+      }
+      // A FILTER is a boolean input column (the planner materializes `IS TRUE(p)` in the Calc
+      // below); the native local gates each fold on it, so the emitted partials are already
+      // filtered and the global merge stays filter-blind — exactly Flink's split. A filtered
+      // DISTINCT still falls back: its shared view needs per-filter semantics.
+      if (call.filterArg >= 0
+          && (call.isDistinct()
+              || inputType.getFieldList().get(call.filterArg).getType().getSqlTypeName()
+                  != SqlTypeName.BOOLEAN)) {
         return false;
       }
       int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
@@ -238,6 +249,21 @@ final class LocalGroupAggregateMatcher {
       }
     }
     return toArray(kinds);
+  }
+
+  /** Expanded FILTER columns (an AVG's sum and count states share its filter), -1 = unfiltered. */
+  static int[] filterColumns(StreamPhysicalLocalGroupAggregate agg) {
+    List<Integer> columns = new ArrayList<>();
+    Seq<AggregateCall> aggCalls = agg.aggCalls();
+    for (int i = 0; i < aggCalls.size(); i++) {
+      AggregateCall call = aggCalls.apply(i);
+      columns.add(call.filterArg);
+      if (WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind())
+          == WindowAggregateMatcher.KIND_AVG) {
+        columns.add(call.filterArg);
+      }
+    }
+    return toArray(columns);
   }
 
   /** Expanded value columns (an AVG's sum and count states both read its value column). */
