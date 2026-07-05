@@ -59,6 +59,11 @@ class NexmarkMatrixBenchmark {
   private static final int WARMUP = 1;
   private static final int RUNS = 2;
 
+  // Extra TableConfig entries applied to EVERY measured environment (both engines) — the tuned
+  // matrix sets the mini-batch keys here so Flink and the native island run the same tuning,
+  // per the steelman rule. Empty for the default matrix.
+  private static Map<String, String> tableConfigExtras = Map.of();
+
   // The opt-in native path for DATE_FORMAT/EXTRACT over TIMESTAMP_LTZ (chrono-tz in Rust instead of the
   // byte-parity JVM upcall) — reported as a second "incompatible" row for the datetime queries, exactly
   // as q21 reports its native-regex path. Divergence surface: tzdb-version skew, DST beyond ~2100, deep
@@ -504,6 +509,61 @@ class NexmarkMatrixBenchmark {
   }
 
   /**
+   * The "tuned Flink" column: the same queries with {@code table.exec.mini-batch.*} enabled on BOTH
+   * engines — the standard production tuning for the stateful changelog queries, and the config the
+   * only public per-query Alibaba comparison used. Generator source only (the tuned question is
+   * engine-vs-engine, not the source perimeter), changelog-family queries by default.
+   * {@code table.optimizer.distinct-agg.split.enabled} stays at its default (off): it is a skew
+   * mitigation for parallel deployments — these runs are parallelism 1 — and its incremental plan
+   * chain has no native path yet (ticket 41). A query whose mini-batch plan shape does not route
+   * reports the fallback instead of failing the run, so the column doubles as the mini-batch
+   * coverage check. Gated by {@code SF_MATRIX_TUNED=true} on top of {@code SF_BENCHMARK}.
+   */
+  @Test
+  @EnabledIfEnvironmentVariable(named = "SF_MATRIX_TUNED", matches = "true")
+  void tunedMiniBatchMatrix() throws Exception {
+    Map<String, String> miniBatch =
+        Map.of(
+            "table.exec.mini-batch.enabled", "true",
+            "table.exec.mini-batch.allow-latency", "2 s",
+            "table.exec.mini-batch.size", "50000");
+    Query[] queries = selectTunedQueries();
+    StringBuilder out =
+        new StringBuilder(
+            "\n##### NEXMARK TUNED (mini-batch on both engines; "
+                + ROWS
+                + " events, best of "
+                + RUNS
+                + ") #####\n");
+    for (Query q : queries) {
+      tableConfigExtras = miniBatch;
+      try {
+        double flink = generatorBest(q, false, null);
+        String result;
+        try {
+          double nativeRun = generatorBest(q, true, null);
+          result = cell("tuned", flink, nativeRun);
+        } catch (IllegalStateException fallback) {
+          result = String.format("tuned      Flink %6.3fs  |  %s", flink, fallback.getMessage());
+        }
+        out.append(String.format("%-4s  %s%n", q.label, result));
+      } finally {
+        tableConfigExtras = Map.of();
+      }
+    }
+    System.out.println(out);
+  }
+
+  /** The changelog-family queries (mini-batch has no effect on the windowed ones), unless overridden. */
+  private static Query[] selectTunedQueries() {
+    if (System.getenv("SF_MATRIX_QUERIES") != null) {
+      return selectQueries();
+    }
+    Set<String> family = Set.of("q3", "q4", "q9", "q15", "q16", "q17", "q18", "q19", "q20", "q23");
+    return Arrays.stream(ALL_QUERIES).filter(q -> family.contains(q.label)).toArray(Query[]::new);
+  }
+
+  /**
    * Runs one query (default q19, override with {@code -Dprofile.query}) natively on the generator in a
    * loop for {@code -Dprofile.seconds} (default 60), so an attached sampler sees steady-state of the
    * changelog operator that query is bound by — no Kafka, no decode, just transpose → native island.
@@ -525,9 +585,21 @@ class NexmarkMatrixBenchmark {
     long iterations = 0;
     Map<String, String> variant =
         "true".equals(System.getProperty("profile.variant")) ? q.nativeVariantProps : null;
-    while (System.currentTimeMillis() < deadline) {
-      withProps(q, nativeRun, variant, () -> runGeneratorOnce(q, nativeRun));
-      iterations++;
+    // -Dprofile.minibatch=true profiles the tuned (mini-batch) plan shape instead of the default.
+    if ("true".equals(System.getProperty("profile.minibatch"))) {
+      tableConfigExtras =
+          Map.of(
+              "table.exec.mini-batch.enabled", "true",
+              "table.exec.mini-batch.allow-latency", "2 s",
+              "table.exec.mini-batch.size", "50000");
+    }
+    try {
+      while (System.currentTimeMillis() < deadline) {
+        withProps(q, nativeRun, variant, () -> runGeneratorOnce(q, nativeRun));
+        iterations++;
+      }
+    } finally {
+      tableConfigExtras = Map.of();
     }
     System.out.println("[profile] " + (nativeRun ? "native " : "flink ") + label + " iterations: " + iterations);
   }
@@ -583,6 +655,7 @@ class NexmarkMatrixBenchmark {
 
   private static double runGeneratorOnce(Query q, boolean nativeRun) throws Exception {
     TableEnvironment tEnv = NexmarkBenchmark.environment(ROWS);
+    tableConfigExtras.forEach((k, v) -> tEnv.getConfig().getConfiguration().setString(k, v));
     tEnv.createTemporarySystemFunction("count_char", CountChar.class);
     runSetup(tEnv, q);
     PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
