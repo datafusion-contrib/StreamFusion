@@ -11,13 +11,13 @@ native store — following mid-stream schema evolution like Flink's own deserial
 schema registry options fall back (coverage doc §5). **Remaining tail only:** (a) **Maxwell/Canal**
 exact-parity auto-routing (decoded, but parity-gated to fallback today); (b) **CSV/JSON *file*** sources
 (the lower-priority file formats — Avro OCF was dropped, arrow-avro can't read Flink's top-level-union);
-(c) the **JSON half of the format-option parity audit** (found 2026-07-03 while wiring
-`ignore-parse-errors`): the JSON decode ignores `json.fail-on-missing-field=true` and
-`json.timestamp-format.standard` (the native timestamp parser is lenient — it accepts ISO-8601
-`T`-separated strings where Flink's default `SQL` standard throws), and its scalar coercions don't
-match Flink's converters (string-encoded numbers with trim, `Infinity`/`NaN`/`1.5d`, number→STRING
-echo, strict `ISO_LOCAL_DATE`) — match natively per `flink_text.rs` (the shared Flink-exact parsers
-the CSV rewrite introduced) or gate the option. **The CSV half SHIPPED (2026-07-05):** the decode
+(c) ~~the JSON half of the format-option parity audit~~ — **SHIPPED (2026-07-05)**: both
+`timestamp-format.standard` modes native on every JSON path (decode operator, native source, CDC
+envelopes), the scalar coercion envelope matched to Flink's converters via `flink_text.rs`,
+`ignore-parse-errors` re-done at Flink's per-field granularity, DECIMAL columns fixed from
+arrow-json's silent truncate-and-error to Flink's exact HALF_UP-or-NULL (raw literals via
+`coerce_primitive`), and `fail-on-missing-field=true` gated to fallback — all parity-pinned by
+`JsonDecodeParityTest` (divergences/21). **The CSV half SHIPPED (2026-07-05):** the decode
 was found silently divergent on valid data even with default options (empty string → NULL,
 truncating decimals, no trimming, unread delimiter/quote/null-literal options, ARRAY columns routed
 then crashed) — arrow-csv's envelope isn't configurable into Flink's, so the decode now splits

@@ -390,6 +390,15 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   **`escape-character`** (Jackson unescapes in unquoted fields, csv-core can't); a **non-ASCII**
   delimiter or quote char; a `null-literal` containing a newline; a column outside the scalar
   family — **ARRAY/ROW** (Jackson's `array-element-delimiter` layer) or any non-boundary type.
+- **Kafka JSON (and the CDC envelopes)** — the decode follows Flink's converters exactly
+  (parity-pinned — `JsonDecodeParityTest`, divergences/21): both `timestamp-format.standard`
+  modes (`SQL`/`ISO-8601`) are native on every JSON-decoded path incl. the native source; the
+  scalar coercion envelope (string-encoded numbers with trimming, `Infinity`/`NaN`/suffix floats,
+  never-failing booleans, strict `ISO_LOCAL_DATE`, integer/boolean/container echo under STRING) is
+  Flink's; DECIMAL columns parse the exact raw literal with `BigDecimal`'s HALF_UP-or-NULL (the
+  old arrow-json truncation was a silent value divergence); and `ignore-parse-errors` skips with
+  Flink's per-field granularity. Still falling back: **`fail-on-missing-field = true`** (a missing
+  field is null natively — Flink's default mode; the fail mode isn't modeled).
   `avro-confluent` (decode
   path only, not the native source) fetches each frame's writer schema from the registry by id at
   runtime — the same lazy per-id lookup Flink's deserializer makes, following mid-stream schema

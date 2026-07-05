@@ -58,7 +58,8 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
       String protoMessageName,
       int maxRecords,
       long pollTimeoutMillis,
-      int rowtimeIndex) {
+      int rowtimeIndex,
+      String formatOptions) {
     this.maxRecords = maxRecords;
     this.pollTimeoutMillis = pollTimeoutMillis;
     // Export an empty batch of the decoder's output schema so the native side can build the JSON
@@ -79,7 +80,8 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
               schemaId,
               protoDescriptor,
               protoMessageName == null ? "" : protoMessageName,
-              rowtimeIndex);
+              rowtimeIndex,
+              formatOptions == null ? "" : formatOptions);
     }
   }
 

@@ -451,9 +451,14 @@ fn json_skip_mode_drops_undecodable_messages() {
 
     let out = MessageDecoder::new(0, json_schema(), "", "", 0, true, "").decode(&body);
 
-    assert_eq!(out.num_rows(), 2);
+    // Flink's JSON ignore-parse-errors granularity (parity-pinned): a structurally bad document
+    // drops the whole message, but a bad VALUE nulls just that field and keeps the row.
+    assert_eq!(out.num_rows(), 3);
     let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
-    assert_eq!(id.values(), &[1, 4]);
+    assert_eq!((id.value(0), id.value(2)), (1, 4));
+    assert!(id.is_null(1));
+    let name = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+    assert_eq!(name.value(1), "c");
 }
 
 // Skip mode with nothing to skip takes the batched fast path and decodes everything.
@@ -549,7 +554,7 @@ fn json_decode_emits_one_row_per_document() {
         Some(br#"{"id": 1, "name": "a", "score": 1.5}"#),
         Some(br#"{"id": 2, "name": "b", "score": 2.5}"#),
     ]);
-    let out = JsonDecoder::new(json_schema()).decode(&batch);
+    let out = JsonDecoder::new(json_schema(), crate::json::JsonEnv::default()).decode(&batch);
     assert_eq!(out.num_rows(), 2);
     assert_eq!(values(&out, 0), vec![1, 2]);
     let names = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
@@ -564,7 +569,7 @@ fn json_decode_tolerates_missing_fields_and_null_bodies() {
         None,
         Some(br#"{"id": 3, "name": "c", "score": 9.0}"#),
     ]);
-    let out = JsonDecoder::new(json_schema()).decode(&batch);
+    let out = JsonDecoder::new(json_schema(), crate::json::JsonEnv::default()).decode(&batch);
     // A null body contributes no row; the present documents decode in order.
     assert_eq!(out.num_rows(), 2);
     assert_eq!(values(&out, 0), vec![1, 3]);
@@ -574,7 +579,7 @@ fn json_decode_tolerates_missing_fields_and_null_bodies() {
 // An empty input batch flushes to an empty batch of the target schema, not a panic.
 #[test]
 fn json_decode_empty_batch_yields_empty() {
-    let out = JsonDecoder::new(json_schema()).decode(&bodies(vec![]));
+    let out = JsonDecoder::new(json_schema(), crate::json::JsonEnv::default()).decode(&bodies(vec![]));
     assert_eq!(out.num_rows(), 0);
     assert_eq!(out.schema(), json_schema());
 }
@@ -606,12 +611,12 @@ fn json_decode_covers_boundary_scalar_types() {
                     "f64": 2.5, "flag": true, "day": "2026-07-01", "ts": "2026-07-01 12:00:00.123"}"#,
         ),
         Some(
-            br#"{"i8": 1.9, "i16": -2, "i32": 3, "i64": "42", "f32": 2, "f64": -0.25,
-                    "flag": false, "day": "1970-01-02", "ts": "2026-07-01T12:00:00.123"}"#,
+            br#"{"i8": 1.9, "i16": -2, "i32": 3, "i64": "42", "f32": 2, "f64": "Infinity",
+                    "flag": "TRUE", "day": "1970-01-02", "ts": "2026-07-01 12:00:00.123Z"}"#,
         ),
-        Some(br#"{"ts": 123456789}"#),
+        Some(br#"{"flag": 1}"#),
     ]);
-    let out = JsonDecoder::new(schema).decode(&batch);
+    let out = JsonDecoder::new(schema, crate::json::JsonEnv::default()).decode(&batch);
     assert_eq!(out.num_rows(), 3);
     let i8s = out.column(0).as_any().downcast_ref::<Int8Array>().unwrap();
     assert_eq!((i8s.value(0), i8s.value(1)), (-3, 1)); // 1.9 truncates toward zero
@@ -624,14 +629,69 @@ fn json_decode_covers_boundary_scalar_types() {
     let f32s = out.column(4).as_any().downcast_ref::<Float32Array>().unwrap();
     assert_eq!((f32s.value(0), f32s.value(1)), (1.5, 2.0));
     let f64s = out.column(5).as_any().downcast_ref::<Float64Array>().unwrap();
-    assert_eq!((f64s.value(0), f64s.value(1)), (2.5, -0.25));
+    assert_eq!(f64s.value(0), 2.5);
+    assert_eq!(f64s.value(1), f64::INFINITY); // Java's Double.parseDouble spelling
     let flags = out.column(6).as_any().downcast_ref::<BooleanArray>().unwrap();
-    assert!(flags.value(0) && !flags.value(1));
+    assert!(flags.value(0) && flags.value(1)); // parseBoolean is case-insensitive
+    assert!(!flags.value(2)); // ... and a number is simply false, never an error
     let days = out.column(7).as_any().downcast_ref::<Date32Array>().unwrap();
     assert_eq!(days.value(1), 1);
     let ts = out.column(8).as_any().downcast_ref::<TimestampNanosecondArray>().unwrap();
     let expected = 1_782_907_200_123_000_000i64; // 2026-07-01T12:00:00.123Z
-    assert_eq!((ts.value(0), ts.value(1), ts.value(2)), (expected, expected, 123456789));
+    // The trailing 'Z' is the tolerated LTZ shape (divergences/21) — same instant.
+    assert_eq!((ts.value(0), ts.value(1)), (expected, expected));
+    assert!(ts.is_null(2));
+}
+
+/// The SQL/ISO-8601 timestamp modes reject each other's separator, numbers fail a timestamp/date
+/// column, and a float literal under a STRING column fails loudly (raw literal unrecoverable) —
+/// the Flink envelope, per the JSON decode parity test.
+#[test]
+fn json_decode_rejects_off_mode_and_numeric_temporals() {
+    use arrow::datatypes::TimeUnit;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    let ts_schema: SchemaRef = Arc::new(Schema::new(vec![Field::new(
+        "ts",
+        DataType::Timestamp(TimeUnit::Nanosecond, None),
+        true,
+    )]));
+    let sql = crate::json::JsonEnv::default();
+    let iso = crate::json::JsonEnv { mode: flink_text::TimestampMode::Iso8601, lenient: false };
+    let decode = |schema: &SchemaRef, env, body: &'static [u8]| {
+        let schema = schema.clone();
+        let batch = bodies(vec![Some(body)]);
+        catch_unwind(AssertUnwindSafe(move || JsonDecoder::new(schema, env).decode(&batch)))
+    };
+    // SQL mode: space separator only; ISO mode: 'T' only (seconds optional there).
+    assert!(decode(&ts_schema, sql, br#"{"ts": "2026-07-01T12:00:00"}"#)
+        .is_err());
+    assert!(decode(&ts_schema, iso, br#"{"ts": "2026-07-01 12:00:00"}"#)
+        .is_err());
+    assert!(decode(&ts_schema, iso, br#"{"ts": "2026-07-01T12:00"}"#)
+        .is_ok());
+    // A bare number is not a Flink timestamp or date.
+    assert!(decode(&ts_schema, sql, br#"{"ts": 123456789}"#).is_err());
+    let day_schema: SchemaRef =
+        Arc::new(Schema::new(vec![Field::new("day", DataType::Date32, true)]));
+    assert!(decode(&day_schema, sql, br#"{"day": 42}"#).is_err());
+    assert!(decode(&day_schema, sql, br#"{"day": "2026-7-1"}"#).is_err());
+    // STRING coercions: ints/bools/containers echo exactly, a float literal fails loudly.
+    let str_schema: SchemaRef =
+        Arc::new(Schema::new(vec![Field::new("s", DataType::Utf8, true)]));
+    let echoed = decode(
+        &str_schema,
+        sql,
+        b"{\"s\": {\"a\": 1, \"b\": [true, null, \"x\\n\"], \"a\": 2}}",
+    )
+    .unwrap();
+    let strings = echoed.column(0).as_any().downcast_ref::<StringArray>().unwrap();
+    // Duplicate keys collapse last-value-first-position, like Jackson's tree; the escaped
+    // newline round-trips through Jackson-style escaping.
+    assert_eq!(strings.value(0), "{\"a\":2,\"b\":[true,null,\"x\\n\"]}");
+    let echoed = decode(&str_schema, sql, br#"{"s": 42}"#).unwrap();
+    let strings = echoed.column(0).as_any().downcast_ref::<StringArray>().unwrap();
+    assert_eq!(strings.value(0), "42");
+    assert!(decode(&str_schema, sql, br#"{"s": 1.5}"#).is_err());
 }
 
 // Nested ROW/ARRAY/MAP decode recursively: a null or missing struct nulls its children, list
@@ -671,7 +731,7 @@ fn json_decode_covers_nested_types() {
         Some(br#"{"row": {"a": 2}, "nums": [], "tags": {}}"#),
         Some(br#"{"row": null}"#),
     ]);
-    let out = JsonDecoder::new(schema).decode(&batch);
+    let out = JsonDecoder::new(schema, crate::json::JsonEnv::default()).decode(&batch);
     assert_eq!(out.num_rows(), 3);
 
     let row = out.column(0).as_any().downcast_ref::<StructArray>().unwrap();
@@ -697,13 +757,42 @@ fn json_decode_covers_nested_types() {
     assert!(tags.is_null(2));
 }
 
+// The decimal-bearing (raw-literals) path parses DECIMAL columns with Flink's exact semantics:
+// the raw digit string (no f64 rounding), HALF_UP past the declared scale, and NULL — not an
+// error — on precision overflow. arrow-json's own decimal parse truncates and errors, which
+// silently diverged from Flink; the column decodes as raw text and converts here instead.
+#[test]
+fn json_decimal_rounds_half_up_and_nulls_on_overflow() {
+    use arrow::array::Decimal128Array;
+    let nested = Fields::from(vec![Field::new("p", DataType::Decimal128(5, 2), true)]);
+    let schema: SchemaRef = Arc::new(Schema::new(vec![
+        Field::new("d", DataType::Decimal128(5, 2), true),
+        Field::new("wide", DataType::Decimal128(38, 20), true),
+        Field::new("row", DataType::Struct(nested.clone()), true),
+    ]));
+    let batch = bodies(vec![
+        Some(br#"{"d": 1.235, "wide": 0.12345678901234567890123456789, "row": {"p": "-1.235"}}"#),
+        Some(br#"{"d": 12345.6, "wide": null, "row": null}"#),
+    ]);
+    let out = JsonDecoder::new(schema, crate::json::JsonEnv::default()).decode(&batch);
+    let d = out.column(0).as_any().downcast_ref::<Decimal128Array>().unwrap();
+    assert_eq!(d.value(0), 124); // HALF_UP, not truncation
+    assert!(d.is_null(1)); // precision overflow → NULL (DecimalData.fromBigDecimal), not an error
+    let wide = out.column(1).as_any().downcast_ref::<Decimal128Array>().unwrap();
+    assert_eq!(wide.value(0), 12345678901234567890i128); // exact raw literal, HALF_UP at scale 20
+    let row = out.column(2).as_any().downcast_ref::<StructArray>().unwrap();
+    let p = row.column(0).as_any().downcast_ref::<Decimal128Array>().unwrap();
+    assert_eq!(p.value(0), -124); // nested decimals get the same conversion; strings trim+parse
+    assert!(row.is_null(1));
+}
+
 // Unknown keys are skipped and a duplicated field keeps its last value — Jackson (hence Flink)
 // and arrow-json agree on both.
 #[test]
 fn json_decode_skips_unknown_keys_and_keeps_last_duplicate() {
     let batch =
         bodies(vec![Some(br#"{"extra": [1, {"x": 2}], "id": 1, "name": "a", "id": 5}"#)]);
-    let out = JsonDecoder::new(json_schema()).decode(&batch);
+    let out = JsonDecoder::new(json_schema(), crate::json::JsonEnv::default()).decode(&batch);
     assert_eq!(values(&out, 0), vec![5]);
 }
 
@@ -717,7 +806,7 @@ fn json_decode_decimal_stays_exact_beyond_f64_precision() {
         Some(br#"{"d": 12345678901234567.8901234567}"#),
         Some(br#"{"d": "12345678901234567.8901234567"}"#),
     ]);
-    let out = JsonDecoder::new(schema).decode(&batch);
+    let out = JsonDecoder::new(schema, crate::json::JsonEnv::default()).decode(&batch);
     let d = out.column(0).as_any().downcast_ref::<Decimal128Array>().unwrap();
     let exact = 123456789012345678901234567i128;
     assert_eq!((d.value(0), d.value(1)), (exact, exact));
@@ -727,14 +816,14 @@ fn json_decode_decimal_stays_exact_beyond_f64_precision() {
 #[should_panic(expected = "as Int64")]
 fn json_decode_rejects_type_mismatch() {
     let batch = bodies(vec![Some(br#"{"id": true}"#)]);
-    JsonDecoder::new(json_schema()).decode(&batch);
+    JsonDecoder::new(json_schema(), crate::json::JsonEnv::default()).decode(&batch);
 }
 
 #[test]
 #[should_panic(expected = "single object")]
 fn json_decode_rejects_non_object_document() {
     let batch = bodies(vec![Some(br#"[{"id": 1}]"#)]);
-    JsonDecoder::new(json_schema()).decode(&batch);
+    JsonDecoder::new(json_schema(), crate::json::JsonEnv::default()).decode(&batch);
 }
 
 // OVER (ORDER BY rt RANGE UNBOUNDED PRECEDING) running SUM: ties in rt share the post-fold value,

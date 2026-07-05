@@ -395,7 +395,7 @@ pub(crate) struct CdcJsonDecoder {
 }
 
 impl CdcJsonDecoder {
-    fn new(physical: SchemaRef, dialect: CdcDialect) -> CdcJsonDecoder {
+    fn new(physical: SchemaRef, dialect: CdcDialect, env: crate::json::JsonEnv) -> CdcJsonDecoder {
         let spec = dialect.spec();
         // The images are null on the absent side / for unchanged fields, so the nested physical fields
         // must be nullable regardless of the table's declared nullability.
@@ -420,7 +420,12 @@ impl CdcJsonDecoder {
         let mut output_fields: Vec<FieldRef> = nullable.iter().cloned().collect();
         output_fields.push(Arc::new(Field::new(ROW_KIND_COLUMN, DataType::Int8, false)));
         let output = Arc::new(Schema::new(output_fields));
-        CdcJsonDecoder { envelope: JsonDecoder::new(envelope), output, arity: nullable.len(), dialect }
+        CdcJsonDecoder {
+            envelope: JsonDecoder::new(envelope, env),
+            output,
+            arity: nullable.len(),
+            dialect,
+        }
     }
 
     fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
@@ -533,11 +538,18 @@ pub(crate) struct MessageDecoder {
     pub(crate) skip_errors: bool,
 }
 
-/// Format options the JVM plumbs through as `key=value` lines (one per line, split on the first
-/// `=`): the table's `csv.*` Jackson knobs today. Only options the planner has vetted reach here —
-/// anything unsupported already fell back — so an unknown key is a wiring bug, not user input.
-pub(crate) fn parse_format_options(encoded: &str) -> crate::csv::CsvOptions {
+/// The decode-relevant format options the JVM plumbs through as `key=value` lines (one per line,
+/// split on the first `=`): the table's `csv.*` Jackson knobs and the JSON family's
+/// `timestamp-format.standard`. Only options the planner has vetted reach here — anything
+/// unsupported already fell back — so an unknown key is a wiring bug, not user input.
+pub(crate) struct FormatOptions {
+    pub(crate) csv: crate::csv::CsvOptions,
+    pub(crate) timestamp_mode: crate::flink_text::TimestampMode,
+}
+
+pub(crate) fn parse_format_options(encoded: &str) -> FormatOptions {
     let mut csv = crate::csv::CsvOptions::default();
+    let mut timestamp_mode = crate::flink_text::TimestampMode::default();
     for line in encoded.lines().filter(|l| !l.is_empty()) {
         let (key, value) = line.split_once('=').expect("format option is not key=value");
         let single_byte = || -> u8 {
@@ -550,10 +562,17 @@ pub(crate) fn parse_format_options(encoded: &str) -> crate::csv::CsvOptions {
             "csv.disable-quote-character" => csv.quote = None,
             "csv.allow-comments" => csv.comments = true,
             "csv.null-literal" => csv.null_literal = Some(value.to_string()),
+            "timestamp-format" => {
+                timestamp_mode = match value {
+                    "ISO-8601" => crate::flink_text::TimestampMode::Iso8601,
+                    "SQL" => crate::flink_text::TimestampMode::Sql,
+                    other => panic!("unknown timestamp-format {other}"),
+                }
+            }
             other => panic!("unknown format option {other}"),
         }
     }
-    csv
+    FormatOptions { csv, timestamp_mode }
 }
 
 pub(crate) enum FormatDecoder {
@@ -645,6 +664,10 @@ impl MessageDecoder {
             Some(arrow_avro::schema::AvroSchema::new(reader_avro_schema.to_string()))
         };
         let options = parse_format_options(format_options);
+        // CDC skip mode stays per-MESSAGE (Flink's CDC deserializers wrap the whole message in one
+        // catch), handled by the retry in decode(); plain JSON's skip is per-FIELD, handled by the
+        // lenient appenders, so its MessageDecoder-level retry is off.
+        let cdc_env = crate::json::JsonEnv { mode: options.timestamp_mode, lenient: false };
         let decoder = match format {
             1 => FormatDecoder::Avro(avro_store(avro_schema, schema_id as u32), reader),
             4 => FormatDecoder::BareAvro(avro_store(avro_schema, 0), reader),
@@ -655,18 +678,26 @@ impl MessageDecoder {
                 return MessageDecoder {
                     decoder: FormatDecoder::Csv(crate::csv::CsvDecoder::new(
                         output_schema,
-                        options,
+                        options.csv,
                         skip_errors,
                     )),
                     skip_errors: false,
                 }
             }
             3 => FormatDecoder::Raw(RawDecoder::new(output_schema)),
-            6 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Debezium)),
-            7 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Ogg)),
-            8 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Maxwell)),
-            9 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Canal)),
-            _ => FormatDecoder::Json(JsonDecoder::new(output_schema)),
+            6 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Debezium, cdc_env)),
+            7 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Ogg, cdc_env)),
+            8 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Maxwell, cdc_env)),
+            9 => FormatDecoder::Cdc(CdcJsonDecoder::new(output_schema, CdcDialect::Canal, cdc_env)),
+            _ => {
+                return MessageDecoder {
+                    decoder: FormatDecoder::Json(JsonDecoder::new(
+                        output_schema,
+                        crate::json::JsonEnv { mode: options.timestamp_mode, lenient: skip_errors },
+                    )),
+                    skip_errors: false,
+                }
+            }
         };
         MessageDecoder { decoder, skip_errors }
     }

@@ -945,6 +945,8 @@ public final class Native {
    * @param messageName fully-qualified protobuf message type for format 5 (else "")
    * @param rowtimeIndex decoded-batch column whose per-batch max (epoch millis) feeds per-split source
    *     watermarks, or -1 when the table declares no watermark
+   * @param formatOptions decode-relevant format options as {@code key=value} lines (the JSON
+   *     family's timestamp-format; see {@code KafkaTables}); "" for defaults
    */
   public static native long openKafkaConsumer(
       String[] configKeys,
@@ -957,7 +959,8 @@ public final class Native {
       int schemaId,
       byte[] descriptor,
       String messageName,
-      int rowtimeIndex);
+      int rowtimeIndex,
+      String formatOptions);
 
   /**
    * Adds splits to the reader and re-assigns the consumer: each new partition seeks to its start

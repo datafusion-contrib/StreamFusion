@@ -78,6 +78,9 @@ final class KafkaTables {
     if (ignoreParseErrors(options)) {
       return false;
     }
+    if (encodeFormatOptions(options) == null) {
+      return false; // an unreproducible format option (e.g. fail-on-missing-field)
+    }
     int code = decodeFormatCode(options);
     if (code == PROTOBUF) {
       String messageClass = options.get("protobuf.message-class-name");
@@ -109,14 +112,31 @@ final class KafkaTables {
   /**
    * The decode-relevant format options rendered for the native decoder as {@code key=value} lines,
    * or null when an option value the native decode can't reproduce is present (the fallback gate).
-   * Only CSV carries such options today: the Jackson {@code CsvSchema} knobs. The delimiter is
-   * Java-unescaped and truncated to its first character exactly as {@code CsvFormatFactory} does;
-   * quote/escape are literal single characters (the factory validates the length). Each must be
-   * ASCII — csv-core splits on bytes — and a null literal must fit the line encoding.
+   * CSV carries the Jackson {@code CsvSchema} knobs; the JSON family (plain {@code json} and the
+   * CDC envelopes) carries {@code timestamp-format.standard} and gates
+   * {@code fail-on-missing-field}. The CSV delimiter is Java-unescaped and truncated to its first
+   * character exactly as {@code CsvFormatFactory} does; quote is a literal single character (the
+   * factory validates the length). Each must be ASCII — csv-core splits on bytes — and a null
+   * literal must fit the line encoding.
    */
   static String encodeFormatOptions(Map<String, String> options) {
     StringBuilder encoded = new StringBuilder();
-    if (decodeFormatCode(options) != 2) {
+    int code = decodeFormatCode(options);
+    if (code == 0 || (code >= 6 && code <= 9)) {
+      // A missing field is null natively (Flink's default); the fail mode isn't modeled.
+      if ("true".equalsIgnoreCase(formatOption(options, "fail-on-missing-field"))) {
+        return null;
+      }
+      String timestampFormat = formatOption(options, "timestamp-format.standard");
+      if (timestampFormat == null || "SQL".equals(timestampFormat)) {
+        return encoded.toString();
+      }
+      if ("ISO-8601".equals(timestampFormat)) {
+        return "timestamp-format=ISO-8601\n";
+      }
+      return null; // the factory validates the value, so anything else is defensive
+    }
+    if (code != 2) {
       return encoded.toString();
     }
     String delimiter = formatOption(options, "field-delimiter");
@@ -296,7 +316,8 @@ final class KafkaTables {
         protoMessageName,
         MAX_RECORDS,
         POLL_TIMEOUT_MILLIS,
-        rowtimeIndex);
+        rowtimeIndex,
+        encodeFormatOptions(options));
   }
 
   // --- Shallow decode path (Phase 2/3): Flink's own KafkaSource consumes raw value bytes, a native
@@ -399,6 +420,9 @@ final class KafkaTables {
       // Jackson option the table sets is reproduced exactly (see encodeFormatOptions).
       return csvColumnsSupported(scan) && encodeFormatOptions(options) != null;
     }
+    if (code == 0 && encodeFormatOptions(options) == null) {
+      return false; // an unreproducible JSON option (e.g. fail-on-missing-field)
+    }
     if (code == 5) {
       // Protobuf routes for any message whose fields (recursively — nested messages, repeated, maps) are
       // types the decode reproduces identically to Flink; enums, unsigned/fixed ints, bytes, and
@@ -441,6 +465,9 @@ final class KafkaTables {
     }
     if ("true".equalsIgnoreCase(formatOption(options, "schema-include"))) {
       return false; // the {schema, payload} envelope wrapper isn't handled
+    }
+    if (encodeFormatOptions(options) == null) {
+      return false; // an unreproducible format option
     }
     return FilesystemTables.allPhysicalColumns(scan); // metadata/computed columns aren't decoded natively
   }

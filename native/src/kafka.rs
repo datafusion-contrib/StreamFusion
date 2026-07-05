@@ -55,6 +55,7 @@ impl KafkaSplitReader {
         proto_descriptor: Vec<u8>,
         proto_message_name: String,
         rowtime_index: i32,
+        format_options: &str,
     ) -> KafkaSplitReader {
         use rdkafka::config::ClientConfig;
 
@@ -81,7 +82,15 @@ impl KafkaSplitReader {
                 skip_errors: false,
             }
         } else {
-            MessageDecoder::new(format, output_schema, avro_schema, reader_avro_schema, schema_id, false, "")
+            MessageDecoder::new(
+                format,
+                output_schema,
+                avro_schema,
+                reader_avro_schema,
+                schema_id,
+                false,
+                format_options,
+            )
         };
 
         KafkaSplitReader {
@@ -333,6 +342,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_openKafkaCons
     descriptor: JByteArray<'local>,
     message_name: JString<'local>,
     rowtime_index: jint,
+    format_options: JString<'local>,
 ) -> jlong {
     let keys = read_string_array(&mut env, &config_keys);
     let values = read_string_array(&mut env, &config_values);
@@ -348,6 +358,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_openKafkaCons
         if descriptor.is_null() { Vec::new() } else { env.convert_byte_array(&descriptor).unwrap_or_default() };
     let proto_message_name: String =
         env.get_string(&message_name).map(Into::into).unwrap_or_default();
+    let format_options: String =
+        env.get_string(&format_options).map(Into::into).unwrap_or_default();
     let reader = KafkaSplitReader::open(
         &config,
         format,
@@ -358,6 +370,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_openKafkaCons
         proto_descriptor,
         proto_message_name,
         rowtime_index,
+        &format_options,
     );
     into_handle(reader)
 }
@@ -486,7 +499,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_benchmarkNati
     let avro_schema: String = env.get_string(&avro_schema).map(Into::into).unwrap_or_default();
 
     let mut reader =
-        KafkaSplitReader::open(&config, format, schema, &avro_schema, "", schema_id, Vec::new(), String::new(), -1);
+        KafkaSplitReader::open(&config, format, schema, &avro_schema, "", schema_id, Vec::new(), String::new(), -1, "");
     reader.assign_splits(&[topic], &[0], &[-2]); // partition 0, earliest
 
     let timeout = std::time::Duration::from_millis(250);

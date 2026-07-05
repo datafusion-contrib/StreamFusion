@@ -11,7 +11,6 @@ pub(crate) use arrow::array::{
 };
 pub(crate) use arrow::array::NullBufferBuilder;
 pub(crate) use arrow::buffer::{OffsetBuffer, ScalarBuffer};
-pub(crate) use arrow::compute::kernels::cast_utils::{string_to_datetime, Parser};
 pub(crate) use arrow::compute::{concat_batches, filter_record_batch, take, SortOptions};
 pub(crate) use arrow::datatypes::ArrowPrimitiveType;
 pub(crate) use arrow::row::{OwnedRow, Row, RowConverter, Rows, SortField};

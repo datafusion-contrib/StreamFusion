@@ -57,6 +57,8 @@ public final class NativeKafkaSource
   private final int maxRecords;
   private final long pollTimeoutMillis;
   private final int rowtimeIndex;
+  // Decode-relevant format options as key=value lines (see KafkaTables.encodeFormatOptions).
+  private final String formatOptions;
 
   public NativeKafkaSource(
       KafkaSubscriber subscriber,
@@ -75,7 +77,8 @@ public final class NativeKafkaSource
       String protoMessageName,
       int maxRecords,
       long pollTimeoutMillis,
-      int rowtimeIndex) {
+      int rowtimeIndex,
+      String formatOptions) {
     this.subscriber = subscriber;
     this.startingOffsets = startingOffsets;
     this.stoppingOffsets = stoppingOffsets;
@@ -98,6 +101,7 @@ public final class NativeKafkaSource
     this.maxRecords = maxRecords;
     this.pollTimeoutMillis = pollTimeoutMillis;
     this.rowtimeIndex = rowtimeIndex;
+    this.formatOptions = formatOptions;
   }
 
   @Override
@@ -121,7 +125,8 @@ public final class NativeKafkaSource
                 protoMessageName,
                 maxRecords,
                 pollTimeoutMillis,
-                rowtimeIndex);
+                rowtimeIndex,
+                formatOptions);
     return new NativeKafkaSourceReader(
         splitReaderSupplier, new NativeKafkaRecordEmitter(), toConfiguration(props), context);
   }
