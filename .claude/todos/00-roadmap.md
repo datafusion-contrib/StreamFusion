@@ -128,9 +128,10 @@ here when the ticket is deleted.
    upcall builtins handing off bytes not `String` — q21's residual — both pending the round's
    matrix re-quote): what remains, in recommended order — ticket 46's parity decision + ticket 41's
    split-chain remainder as one package (the road to the changelog family's 5-10x-class numbers),
-   ticket 51 (paned HOP aggregation — q5, where Alibaba's own engine shows ~1x), ticket 49's
-   bench-gated `ScalarValue`-vintage retirements, ticket 48's block-store question (re-profile
-   q20/q23 first), and ticket 40's bounded-dim preload.
+   ticket 51 (re-scoped 2026-07-05: q5's hop already runs paned via the two-phase split — what
+   remains is the global's slice-merge loop, gated on re-profile), ticket 49's bench-gated
+   `ScalarValue`-vintage retirements, ticket 48's block-store question (re-profile q20/q23 first),
+   and ticket 40's bounded-dim preload.
 1. **Native Kafka source: gate FLIPPED (2026-07-03)** (ticket 33). Per-partition watermarks/idleness
    and specific-offsets/topic-pattern startup shipped; `kafkaSource` defaults on and the `kafka`
    cargo feature is a default build feature (probe-guarded for opt-out builds). Remaining tails in

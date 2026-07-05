@@ -1,26 +1,32 @@
-# Paned (tiered) HOP aggregation: aggregate each slide once, reuse across windows
+# HOP aggregation: tiered slice merge in the two-phase global (re-scoped)
 
-**Status:** TODO (from the 2026-07-04 reference survey,
-`.claude/research/reference-engine-techniques-2026-07.md` — Arroyo's `TieredRecordBatchHolder`,
-`sliding_aggregating_window.rs`).
+**Status:** re-scoped 2026-07-05 after checking the premise against the q5 profile; gated on the
+next re-profile.
 
-**Why:** a `HOP(size s, slide d)` assigns every row to `s/d` overlapping windows, and our hopping
-aggregator folds each row into each window's accumulator independently — q5's 10s/2s hop does 5x
-the accumulation work per row. Paned aggregation folds each row **once** into its slide-sized pane
-and, when a window closes, merges the `s/d` pane partials — turning per-row work from O(s/d) to
-O(1) with an O(s/d) merge per window firing. Arroyo tiers the panes (each width dividing the
-next) so even the merge amortizes; for Nexmark-scale s/d a single pane level is enough.
+**The original premise was stale.** The ticket proposed paned aggregation (fold each row once into
+a slide-width pane, merge s/d panes per window fire — Arroyo's `TieredRecordBatchHolder`) to cut
+the hopping aggregator's per-row O(s/d) fold. But q5's actual plan already computes exactly that:
+under the default two-phase strategy the **local** window aggregate pre-aggregates per slice (one
+fold per row, `sliceSize = slide`) and the **global** merges each slice partial into the
+`size/slide` windows sharing it. The q5-native flame graph confirms both halves
+(`update` = the local's per-row slice fold, `updatePartialTumblingAggregator` = the global's
+slice merge). Per-row work is already O(1); the O(s/d) survives only per-slice-per-key in the
+global's merge. The single-phase hop `update` does fold each row into each window, but the
+planner takes that path only when two-phase is unavailable — no Nexmark query is bound by it.
 
-q5 (Hot Items) is the direct beneficiary: 1.32x generator / 2.3–3.5x Kafka today — and notably the
-query where Alibaba's own per-query table shows ~1.02x, so this is a place to lead, not chase.
-The cumulative (`CUMULATE`) assigner shares the fan-out shape and can reuse the pane machinery.
+**What might still pay (measure first):** the global's slice merge was ~39% of q5's window-agg
+samples (71/181). Two candidate cuts, in order of likely value:
+1. **Cheap loop hygiene** — `update_partial` clones the group key once per (window, slice) and
+   probes `BTreeMap` + key map per window; the borrowed-byte-probe pattern (ticket 49) and a
+   move-into-last-window key handoff (as the single-phase update already does) may take most of
+   the bucket without architecture.
+2. **Tiered panes** (Arroyo) — retain slice accumulators and merge tiers whose widths divide the
+   next, amortizing the per-window merge from s/d to ~log. Only worth it if (1) leaves the merge
+   dominating; adds pane-retention state and a snapshot-format change.
 
-**Parity note:** pane-merge must reproduce the host's accumulator semantics exactly — SUM/COUNT
-merge trivially; AVG merges as (sum, count) partials (already our two-phase shape); MIN/MAX merge
-extremes; DISTINCT panes would need set-union (gate them off panes initially, as the two-phase
-path already gates). Emission timing/content is unchanged — this is pure state-side amortization,
-no changelog encoding question.
+Parity note (unchanged from the original ticket): any merge reordering must reproduce the host's
+accumulator semantics — and note Flink itself slices hopping windows (`SliceSharedAssigner`), so
+slice-merge trees are the host-faithful shape.
 
-Acceptance: hopping-window Criterion bench (add one: multi-window overlap shape) shows the O(1)
-fold; q5 re-measured on generator + Kafka; window-aggregate parity suite green incl. session/
-cumulate regressions.
+Acceptance: post-round q5 profile isolating `update_partial`'s leaves; implement (1) if it shows
+key-clone/probe churn; (2) only with a bench showing the merge still dominates after (1).
