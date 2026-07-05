@@ -29,6 +29,7 @@
         <arrow.version>18.3.0</arrow.version>
         <flink.version>2.2.1</flink.version>
         <scala.binary.version>2.12</scala.binary.version>
+        <fluss.version>0.9.1-incubating</fluss.version>
         <!-- Matches the protobuf runtime Flink's protobuf format generates code against. -->
         <protobuf.version>4.32.1</protobuf.version>
         <!-- Native build: debug by default for a fast correctness loop. The `bench` profile flips
@@ -221,6 +222,14 @@
             <artifactId>kafka</artifactId>
             <version>1.21.4</version>
             <scope>test</scope>
+        </dependency>
+        <!-- Public Fluss source split/config classes used to hand JVM-coordinated assignments to native code.
+             The connector stays provided, like Flink, so StreamFusion does not bundle a Fluss runtime. -->
+        <dependency>
+            <groupId>org.apache.fluss</groupId>
+            <artifactId>fluss-flink-2.2</artifactId>
+            <version>${fluss.version}</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 
