@@ -922,6 +922,70 @@ public final class Native {
   public static native boolean kafkaFeatureBuilt();
 
   /**
+   * Whether the loaded native library was built with the {@code fluss} cargo feature. Until the
+   * fluss-rs reader is linked in, the native probe returns false so planner wiring can fall back.
+   */
+  public static native boolean flussFeatureBuilt();
+
+  /**
+   * Opens a native Fluss log-table reader for one source subtask. Fluss' JVM enumerator assigns
+   * splits; this reader subscribes those concrete table buckets through fluss-rs and exports Arrow
+   * batches.
+   *
+   * @param configKeys translated fluss-rs config field names
+   * @param configValues values index-aligned with {@code configKeys}
+   * @param databaseName Fluss database name
+   * @param tableName Fluss table name
+   * @param projectedFields projected column indices, or empty for all columns
+   */
+  public static native long openFlussReader(
+      String[] configKeys,
+      String[] configValues,
+      String databaseName,
+      String tableName,
+      int[] projectedFields);
+
+  /**
+   * Adds assigned log splits to the native Fluss reader. Index-aligned arrays; {@code Long.MIN_VALUE}
+   * marks a non-partitioned split or no stopping offset.
+   */
+  public static native void assignFlussSplits(
+      long handle,
+      String[] splitIds,
+      long[] tableIds,
+      long[] partitionIds,
+      long[] buckets,
+      long[] startOffsets,
+      long[] stoppingOffsets);
+
+  /**
+   * Removes finished Fluss splits from the native scanner's subscriptions so bounded tails don't keep
+   * polling completed buckets.
+   */
+  public static native void unassignFlussSplits(
+      long handle, long[] tableIds, long[] partitionIds, long[] buckets);
+
+  /**
+   * Polls one Fluss scanner cycle and returns the number of per-split Arrow batches ready to drain.
+   */
+  public static native int pollFlussBatch(long handle, long timeoutMillis);
+
+  /**
+   * Drains one pending Fluss batch, writes {@code [nextOffset]} into {@code splitMeta}, writes the
+   * split id into {@code outSplitId[0]}, exports Arrow into the consumer C structs, and returns the
+   * row count. Call it {@link #pollFlussBatch}'s return-value times.
+   */
+  public static native int drainFlussSplit(
+      long handle,
+      long[] splitMeta,
+      String[] outSplitId,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  /** Releases a native Fluss reader and closes its fluss-rs connection. */
+  public static native void closeFlussReader(long handle);
+
+  /**
    * Opens a native Kafka split reader for one subtask and returns an opaque handle, released with
    * {@link #closeKafkaConsumer}. One rdkafka consumer multiplexes the subtask's partitions; splits are
    * added later with {@link #assignKafkaSplits} as the enumerator assigns them. The reader manually

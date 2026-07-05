@@ -83,6 +83,9 @@ libmimalloc-sys = { version = "0.1", optional = true }
 default = ["kafka"]
 kafka = ["dep:rdkafka"]
 kafka-bench = ["kafka"]
+# Placeholder gate for the stacked Fluss source work. The fluss-rs dependency is added only after
+# its Arrow version is aligned with StreamFusion's native Arrow stack.
+fluss = []
 # Rebind the C allocator to mimalloc for everything linked into THIS library (librdkafka included),
 # via link-time symbol aliases emitted by build.rs. Library-scoped: the hosting JVM process keeps
 # its own allocator, so this carries none of the risk of a process-wide malloc override (a zone-swap

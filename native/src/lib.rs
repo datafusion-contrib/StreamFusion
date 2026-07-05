@@ -62,6 +62,7 @@ mod exchange;
 mod expr;
 mod files;
 mod flatten;
+mod fluss;
 mod formats;
 mod group_agg;
 mod interval_join;
