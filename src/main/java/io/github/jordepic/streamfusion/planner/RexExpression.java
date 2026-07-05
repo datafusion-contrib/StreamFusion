@@ -1522,7 +1522,7 @@ final class RexExpression {
     try {
       impl =
           io.github.jordepic.streamfusion.operator.NativeBuiltinFunctions.class.getMethod(
-              method, String.class);
+              method, org.apache.flink.table.data.binary.BinaryStringData.class);
     } catch (ReflectiveOperationException e) {
       return reject(method + " host implementation unavailable: " + e.getMessage());
     }

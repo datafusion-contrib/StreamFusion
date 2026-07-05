@@ -124,12 +124,13 @@ here when the ticket is deleted.
    decode half — Top-N emit dedup, q19 +13%, its net-diff remainder parity-gated in the trimmed
    ticket; ticket 47 — typed DISTINCT sets + cached changelog emit, q16 +17%/q17 +4%/q15 +3%; the
    dedup SipHash item on ticket 20 via the crate-wide ahash default; the q21 upcall regex cache,
-   +12.5%): what remains, in recommended order — ticket 49 (finish the allocation-free state
-   probes: `ByteKey` for the group-agg/dedup/Top-N maps, retire the remaining `ScalarValue`-vintage
-   loops), ticket 46's parity decision + ticket 41 mini-batch as one package (the road to the
-   changelog family's 5-10x-class numbers), ticket 51 (paned HOP aggregation — q5, where Alibaba's
-   own engine shows ~1x), ticket 50 (upcall builtins hand off bytes, not `String` — q21's residual),
-   ticket 48's block-store question (re-profile q20/q23 first), and ticket 40's bounded-dim preload.
+   +12.5%; 2026-07-05: ticket 49's borrowed-byte probes for the group-agg/dedup/Top-N maps, and the
+   upcall builtins handing off bytes not `String` — q21's residual — both pending the round's
+   matrix re-quote): what remains, in recommended order — ticket 46's parity decision + ticket 41's
+   split-chain remainder as one package (the road to the changelog family's 5-10x-class numbers),
+   ticket 51 (paned HOP aggregation — q5, where Alibaba's own engine shows ~1x), ticket 49's
+   bench-gated `ScalarValue`-vintage retirements, ticket 48's block-store question (re-profile
+   q20/q23 first), and ticket 40's bounded-dim preload.
 1. **Native Kafka source: gate FLIPPED (2026-07-03)** (ticket 33). Per-partition watermarks/idleness
    and specific-offsets/topic-pattern startup shipped; `kafkaSource` defaults on and the `kafka`
    cargo feature is a default build feature (probe-guarded for opt-out builds). Remaining tails in
@@ -138,10 +139,11 @@ here when the ticket is deleted.
    readme/benchmarks Kafka numbers re-quoted (after the 2026-07-04 optimization round: floor 1.34x,
    peak q11 3.8–5.1x — watermark
    regeneration costs nothing measurable).
-2. **Mini-batch coverage** (ticket 41): `IncrementalGroupAggregate` (what any distinct aggregate
-   plans to under mini-batch), two-phase decimal `SUM`, wider two-phase value types, row-time
-   mini-batch. (Two-phase `AVG` shipped 2026-07-03; the "widening partials" item was a misdiagnosis
-   — Flink's SUM partial keeps the value type and already routes.)
+2. **Mini-batch coverage** (ticket 41): the core landed 2026-07-05 — distinct aggregates in the
+   default (no-split) mini-batch plan, two-phase decimal SUM/MIN/MAX/AVG, narrow AVG types, and
+   row-time mini-batch are all native. Remaining on the ticket: the opt-in
+   `distinct-agg.split.enabled` incremental chain (design decision recorded) and the windowed
+   two-phase decimal split; then the tuned-Flink benchmark column.
 3. **Legacy group windows** (ticket 43): map `GROUP BY TUMBLE/HOP(...)` onto the existing native
    window operators — the event-time `SESSION` exception is the template.
 4. **Cheap wins, interleaved:** the format-option parity audit (ticket 32). (Shipped 2026-07-03:

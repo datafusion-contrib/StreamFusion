@@ -24,6 +24,7 @@ import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.types.pojo.Schema;
+import org.apache.flink.table.data.binary.BinaryStringData;
 import org.apache.flink.table.functions.ScalarFunction;
 
 /**
@@ -76,12 +77,22 @@ public final class NativeUdf {
     final Method eval;
     final int[] argTypes;
     final int returnType;
+    // Per argument, whether the eval method declares Flink's byte-backed string (BinaryStringData):
+    // those args are wrapped from the Arrow column's UTF-8 bytes with fromBytes — no UTF-16 decode,
+    // no java.lang.String — so byte-level builtins (case folding's ASCII fast path) stay in bytes
+    // across the whole upcall. A String parameter keeps the materializing path.
+    final boolean[] argAsStringData;
 
     Registered(ScalarFunction function, Method eval, int[] argTypes, int returnType) {
       this.function = function;
       this.eval = eval;
       this.argTypes = argTypes;
       this.returnType = returnType;
+      Class<?>[] params = eval.getParameterTypes();
+      this.argAsStringData = new boolean[argTypes.length];
+      for (int a = 0; a < argTypes.length && a < params.length; a++) {
+        argAsStringData[a] = BinaryStringData.class.isAssignableFrom(params[a]);
+      }
     }
   }
 
@@ -266,7 +277,7 @@ public final class NativeUdf {
         Object[] args = new Object[arity];
         for (int row = 0; row < rows; row++) {
           for (int a = 0; a < arity; a++) {
-            args[a] = readValue(argVectors[a], udf.argTypes[a], row);
+            args[a] = readValue(argVectors[a], udf.argTypes[a], udf.argAsStringData[a], row);
           }
           Object value = udf.eval.invoke(udf.function, args);
           writeValue(result, udf.returnType, row, value);
@@ -318,13 +329,17 @@ public final class NativeUdf {
     }
   }
 
-  private static Object readValue(FieldVector vector, int code, int row) {
+  private static Object readValue(FieldVector vector, int code, boolean asStringData, int row) {
     if (vector.isNull(row)) {
       return null;
     }
     switch (code) {
       case TYPE_STRING:
-        return new String(((VarCharVector) vector).get(row), StandardCharsets.UTF_8);
+        // A byte-capable eval gets the column's UTF-8 bytes wrapped as BinaryStringData — no
+        // UTF-16 decode; only a String-typed eval pays the materialization.
+        return asStringData
+            ? BinaryStringData.fromBytes(((VarCharVector) vector).get(row))
+            : new String(((VarCharVector) vector).get(row), StandardCharsets.UTF_8);
       case TYPE_LONG:
         return ((BigIntVector) vector).get(row);
       case TYPE_INT:
@@ -364,7 +379,14 @@ public final class NativeUdf {
     }
     switch (code) {
       case TYPE_STRING:
-        ((VarCharVector) vector).setSafe(row, value.toString().getBytes(StandardCharsets.UTF_8));
+        // A BinaryStringData result hands its UTF-8 bytes straight to the vector (toBytes returns
+        // the backing array for an aligned heap string — the common fromBytes/ASCII-fold shape).
+        ((VarCharVector) vector)
+            .setSafe(
+                row,
+                value instanceof BinaryStringData
+                    ? ((BinaryStringData) value).toBytes()
+                    : value.toString().getBytes(StandardCharsets.UTF_8));
         break;
       case TYPE_LONG:
         ((BigIntVector) vector).setSafe(row, ((Number) value).longValue());

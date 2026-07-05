@@ -365,6 +365,14 @@ The lifecycle that makes this cheap:
 - **The uncommon path pays the decode.** A residual non-equi predicate needs real arrays; the
   associated rows are bulk-decoded in one `convert_rows` call per batch (`ed74dac`, `4429e2f`),
   never row-at-a-time.
+- **Upcall builtins stay in bytes.** The byte-parity JVM upcalls (host-exact `LOWER`/`UPPER`)
+  used to materialize a `java.lang.String` per row from the Arrow column and round-trip it through
+  `BinaryStringData` — the q21 profile's `String.<init>`/`StringLatin1.toLowerCase` leaves. The
+  upcall marshaller now inspects each builtin's declared signature: a method taking
+  `BinaryStringData` gets the column's UTF-8 bytes wrapped with `fromBytes` (no UTF-16 decode) and
+  its result bytes are written straight back, so Flink's ASCII fast path — which operates on the
+  byte array and never decodes — runs end to end without a `String`. Methods that genuinely need
+  `java.util.regex` keep the materializing path.
 - **Steady-state probes borrow, only first inserts copy.** State maps key by `ByteKey`
   (`Box<[u8]>` with `Borrow<[u8]>`), so the per-row probe hashes the *borrowed* encoded bytes
   straight out of the batch's `Rows` block and a key already in the map allocates nothing — the
