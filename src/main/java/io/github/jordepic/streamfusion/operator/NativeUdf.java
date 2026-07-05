@@ -274,10 +274,17 @@ public final class NativeUdf {
       }
       try (VectorSchemaRoot out = resultRoot(udf.returnType, rows)) {
         FieldVector result = out.getFieldVectors().get(0);
+        // Each argument column is materialized once with a monomorphic typed loop; reading value
+        // by value inside the row loop instead put a megamorphic isNull/type dispatch per (row,
+        // arg) on the hot path — 14% of q21's parity run in the vector interface calls alone.
+        Object[][] columns = new Object[arity][];
+        for (int a = 0; a < arity; a++) {
+          columns[a] = readColumn(argVectors[a], udf.argTypes[a], udf.argAsStringData[a], rows);
+        }
         Object[] args = new Object[arity];
         for (int row = 0; row < rows; row++) {
           for (int a = 0; a < arity; a++) {
-            args[a] = readValue(argVectors[a], udf.argTypes[a], udf.argAsStringData[a], row);
+            args[a] = columns[a][row];
           }
           Object value = udf.eval.invoke(udf.function, args);
           writeValue(result, udf.returnType, row, value);
@@ -329,44 +336,129 @@ public final class NativeUdf {
     }
   }
 
-  private static Object readValue(FieldVector vector, int code, boolean asStringData, int row) {
-    if (vector.isNull(row)) {
-      return null;
-    }
+  /**
+   * Materializes one argument column as boxed values (null for null rows) with a single downcast
+   * and a monomorphic per-type loop, so the row loop above does no per-value vector dispatch.
+   */
+  private static Object[] readColumn(FieldVector vector, int code, boolean asStringData, int rows) {
+    Object[] out = new Object[rows];
     switch (code) {
       case TYPE_STRING:
-        // A byte-capable eval gets the column's UTF-8 bytes wrapped as BinaryStringData — no
-        // UTF-16 decode; only a String-typed eval pays the materialization.
-        return asStringData
-            ? BinaryStringData.fromBytes(((VarCharVector) vector).get(row))
-            : new String(((VarCharVector) vector).get(row), StandardCharsets.UTF_8);
+        {
+          // A byte-capable eval gets the column's UTF-8 bytes wrapped as BinaryStringData — no
+          // UTF-16 decode; only a String-typed eval pays the materialization.
+          VarCharVector v = (VarCharVector) vector;
+          for (int r = 0; r < rows; r++) {
+            if (!v.isNull(r)) {
+              out[r] =
+                  asStringData
+                      ? BinaryStringData.fromBytes(v.get(r))
+                      : new String(v.get(r), StandardCharsets.UTF_8);
+            }
+          }
+          return out;
+        }
       case TYPE_LONG:
-        return ((BigIntVector) vector).get(row);
+        {
+          BigIntVector v = (BigIntVector) vector;
+          for (int r = 0; r < rows; r++) {
+            if (!v.isNull(r)) {
+              out[r] = v.get(r);
+            }
+          }
+          return out;
+        }
       case TYPE_INT:
-        return ((IntVector) vector).get(row);
+        {
+          IntVector v = (IntVector) vector;
+          for (int r = 0; r < rows; r++) {
+            if (!v.isNull(r)) {
+              out[r] = v.get(r);
+            }
+          }
+          return out;
+        }
       case TYPE_SHORT:
-        return ((SmallIntVector) vector).get(row);
+        {
+          SmallIntVector v = (SmallIntVector) vector;
+          for (int r = 0; r < rows; r++) {
+            if (!v.isNull(r)) {
+              out[r] = v.get(r);
+            }
+          }
+          return out;
+        }
       case TYPE_BYTE:
-        return ((TinyIntVector) vector).get(row);
+        {
+          TinyIntVector v = (TinyIntVector) vector;
+          for (int r = 0; r < rows; r++) {
+            if (!v.isNull(r)) {
+              out[r] = v.get(r);
+            }
+          }
+          return out;
+        }
       case TYPE_DOUBLE:
-        return ((Float8Vector) vector).get(row);
+        {
+          Float8Vector v = (Float8Vector) vector;
+          for (int r = 0; r < rows; r++) {
+            if (!v.isNull(r)) {
+              out[r] = v.get(r);
+            }
+          }
+          return out;
+        }
       case TYPE_FLOAT:
-        return ((Float4Vector) vector).get(row);
+        {
+          Float4Vector v = (Float4Vector) vector;
+          for (int r = 0; r < rows; r++) {
+            if (!v.isNull(r)) {
+              out[r] = v.get(r);
+            }
+          }
+          return out;
+        }
       case TYPE_BOOLEAN:
-        return ((BitVector) vector).get(row) != 0;
+        {
+          BitVector v = (BitVector) vector;
+          for (int r = 0; r < rows; r++) {
+            if (!v.isNull(r)) {
+              out[r] = v.get(r) != 0;
+            }
+          }
+          return out;
+        }
       case TYPE_TIMESTAMP:
         // Native pins timestamps to Timestamp(nanos, no-tz); hand the eval epoch millis (its instant).
         if (vector instanceof TimeStampNanoVector) {
-          return ((TimeStampNanoVector) vector).get(row) / 1_000_000L;
+          TimeStampNanoVector v = (TimeStampNanoVector) vector;
+          for (int r = 0; r < rows; r++) {
+            if (!v.isNull(r)) {
+              out[r] = v.get(r) / 1_000_000L;
+            }
+          }
+          return out;
         }
         if (vector instanceof TimeStampMilliVector) {
-          return ((TimeStampMilliVector) vector).get(row);
+          TimeStampMilliVector v = (TimeStampMilliVector) vector;
+          for (int r = 0; r < rows; r++) {
+            if (!v.isNull(r)) {
+              out[r] = v.get(r);
+            }
+          }
+          return out;
         }
         throw new IllegalArgumentException(
             "unexpected timestamp vector for a TIMESTAMP UDF arg: " + vector.getClass());
       default:
         if (code >= DECIMAL_BASE) {
-          return ((org.apache.arrow.vector.DecimalVector) vector).getObject(row);
+          org.apache.arrow.vector.DecimalVector v = (org.apache.arrow.vector.DecimalVector) vector;
+          for (int r = 0; r < rows; r++) {
+            if (!v.isNull(r)) {
+              out[r] = v.getObject(r);
+            }
+          }
+          return out;
         }
         throw new IllegalArgumentException("unsupported UDF type code " + code);
     }

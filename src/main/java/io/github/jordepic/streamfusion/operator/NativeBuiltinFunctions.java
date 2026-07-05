@@ -25,12 +25,54 @@ public final class NativeBuiltinFunctions {
 
   private NativeBuiltinFunctions() {}
 
+  // The ASCII fold is done here with a tight primitive loop rather than by calling
+  // BinaryStringData.toLowerCase/toUpperCase: Flink's own "fast path" invokes
+  // Character.toLowerCase per byte — a virtual call per character that profiled SLOWER than the
+  // JDK's intrinsified String fold it was meant to avoid. For ASCII the mapping below is exactly
+  // Character.toLowerCase/UpperCase (A-Z ± 32, everything else unchanged), and the first
+  // non-ASCII byte delegates to Flink's own method — where its fast path also bails — so the
+  // result is byte-identical to the host on every input. An unchanged string returns as-is.
+
   public static BinaryStringData lower(BinaryStringData s) {
-    return s == null ? null : s.toLowerCase();
+    if (s == null) {
+      return null;
+    }
+    byte[] bytes = s.toBytes();
+    byte[] folded = null;
+    for (int i = 0; i < bytes.length; i++) {
+      byte b = bytes[i];
+      if (b < 0) {
+        return (BinaryStringData) s.toLowerCase();
+      }
+      if (b >= 'A' && b <= 'Z') {
+        if (folded == null) {
+          folded = java.util.Arrays.copyOf(bytes, bytes.length);
+        }
+        folded[i] = (byte) (b + 32);
+      }
+    }
+    return folded == null ? s : BinaryStringData.fromBytes(folded);
   }
 
   public static BinaryStringData upper(BinaryStringData s) {
-    return s == null ? null : s.toUpperCase();
+    if (s == null) {
+      return null;
+    }
+    byte[] bytes = s.toBytes();
+    byte[] folded = null;
+    for (int i = 0; i < bytes.length; i++) {
+      byte b = bytes[i];
+      if (b < 0) {
+        return (BinaryStringData) s.toUpperCase();
+      }
+      if (b >= 'a' && b <= 'z') {
+        if (folded == null) {
+          folded = java.util.Arrays.copyOf(bytes, bytes.length);
+        }
+        folded[i] = (byte) (b - 32);
+      }
+    }
+    return folded == null ? s : BinaryStringData.fromBytes(folded);
   }
 
   /**
