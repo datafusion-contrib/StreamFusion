@@ -203,6 +203,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             keyColumns,
             GroupAggregateMatcher.filterColumns(agg),
             new int[0], // single-phase: no AVG-merge count partials
+            new int[0], // single-phase: distinct values fold per row, no view columns
             GroupAggregateMatcher.generateUpdateBefore(agg));
       }
     }
@@ -230,6 +231,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             keyColumns,
             new int[0], // the global merge applies no FILTER — the local half already filtered
             GlobalGroupAggregateMatcher.countColumns(agg),
+            GlobalGroupAggregateMatcher.distinctViewColumns(agg),
             GlobalGroupAggregateMatcher.generateUpdateBefore(agg));
       }
     }
@@ -916,7 +918,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             LocalGroupAggregateMatcher.kinds(agg),
             LocalGroupAggregateMatcher.valueTypeCodes(agg),
             LocalGroupAggregateMatcher.valueColumns(agg),
-            LocalGroupAggregateMatcher.keyColumns(agg));
+            LocalGroupAggregateMatcher.keyColumns(agg),
+            LocalGroupAggregateMatcher.distinctViewSources(agg));
       }
     }
 

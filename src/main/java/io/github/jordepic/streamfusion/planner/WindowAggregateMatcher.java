@@ -343,7 +343,7 @@ final class WindowAggregateMatcher {
     return codes;
   }
 
-  private static int typeCode(RelDataType type) {
+  static int typeCode(RelDataType type) {
     switch (type.getSqlTypeName()) {
       case DOUBLE:
         return 1;

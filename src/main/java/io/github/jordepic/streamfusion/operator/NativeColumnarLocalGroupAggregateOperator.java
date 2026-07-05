@@ -32,6 +32,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
   private final int[] valueTypes;
   private final int[] valueColumns;
   private final int[] keyColumns;
+  private final int[] distinctViewSources;
   private final long miniBatchSize;
 
   private transient BufferAllocator allocator;
@@ -45,11 +46,13 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
       int[] valueTypes,
       int[] valueColumns,
       int[] keyColumns,
+      int[] distinctViewSources,
       long miniBatchSize) {
     this.aggregateKinds = aggregateKinds;
     this.valueTypes = valueTypes;
     this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
+    this.distinctViewSources = distinctViewSources;
     this.miniBatchSize = miniBatchSize;
   }
 
@@ -61,7 +64,12 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
     memoryBudget = ManagedMemoryBudget.reserveFor(this);
     handle =
         Native.createLocalGroupAggregator(
-            aggregateKinds, valueTypes, valueColumns, keyColumns, memoryBudget.bytes());
+            aggregateKinds,
+            valueTypes,
+            valueColumns,
+            keyColumns,
+            distinctViewSources,
+            memoryBudget.bytes());
     bufferedRows = 0;
   }
 

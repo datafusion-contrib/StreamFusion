@@ -54,6 +54,37 @@ final class GlobalGroupAggregateMatcher {
       if (kind < 0 || call.getArgList().size() > 1) {
         return "global group aggregate: only single-field SUM/MIN/MAX/COUNT/AVG merges";
       }
+      // COUNT/SUM(DISTINCT x): the merge folds the local bundles' (value, count) view entries into
+      // the per-key distinct set — the positional partial (the bundle's count/sum) is carried but
+      // not consumed, exactly as the host's distinct merge re-accumulates from the view. The value
+      // type comes from the ORIGINAL local input (the call's args point into it). Same scope as the
+      // local half: COUNT over the set-carriable types, SUM over exact integer arithmetic only.
+      if (call.isDistinct()) {
+        if (call.getArgList().size() != 1) {
+          return "global group aggregate: a distinct merge must have exactly one argument";
+        }
+        SqlTypeName valueType =
+            agg.localAggInputRowType()
+                .getFieldList()
+                .get(call.getArgList().get(0))
+                .getType()
+                .getSqlTypeName();
+        SqlTypeName partialType = inputType.getFieldList().get(offset).getType().getSqlTypeName();
+        offset++;
+        boolean countDistinct =
+            kind == WindowAggregateMatcher.KIND_COUNT
+                && partialType == SqlTypeName.BIGINT
+                && LocalGroupAggregateMatcher.supportedDistinctValueType(valueType);
+        boolean sumDistinct =
+            kind == WindowAggregateMatcher.KIND_SUM
+                && (valueType == SqlTypeName.BIGINT || valueType == SqlTypeName.INTEGER)
+                && partialType == valueType;
+        if (!countDistinct && !sumDistinct) {
+          return "global group aggregate: distinct merges are COUNT (over set-carriable value"
+              + " types) and SUM (over bigint/int)";
+        }
+        continue;
+      }
       if (kind == WindowAggregateMatcher.KIND_AVG) {
         // AVG merges a (widened sum, count) partial pair into the final result column, whose type
         // must be one the AVG state's cast-back supports and must agree with the sum's width.
@@ -88,6 +119,11 @@ final class GlobalGroupAggregateMatcher {
       if (partialCode(partialRel) < 0) {
         return "global group aggregate: partial columns must be bigint/int/double/decimal";
       }
+    }
+    // The distinct views must be exactly the trailing input fields, one per unique distinct arg —
+    // the positional contract behind distinctViewColumns().
+    if (offset + distinctViewCount(agg) != inputType.getFieldCount()) {
+      return "global group aggregate: unexpected partial layout (retracting local input?)";
     }
     return null;
   }
@@ -182,7 +218,14 @@ final class GlobalGroupAggregateMatcher {
     int grouping = agg.grouping().length;
     int offset = grouping;
     for (int i = 0; i < agg.aggCalls().size(); i++) {
-      if (spanOf(agg, i) == 2) {
+      AggregateCall call = agg.aggCalls().apply(i);
+      if (call.isDistinct()) {
+        // The distinct set is keyed by the original value (the call's args point into the local's
+        // input row), so its code carries that value's own type.
+        codes.add(
+            WindowAggregateMatcher.typeCode(
+                agg.localAggInputRowType().getFieldList().get(call.getArgList().get(0)).getType()));
+      } else if (spanOf(agg, i) == 2) {
         // An AVG state is typed by its final result — except decimal, whose state is the sum
         // partial's DECIMAL(38, s) (the emit derives the result scale max(6, s) itself).
         RelDataType sumRel = inputType.getFieldList().get(offset).getType();
@@ -203,15 +246,63 @@ final class GlobalGroupAggregateMatcher {
     return array;
   }
 
-  /** Merge kinds: COUNT merges by summing its partial counts; AVG keeps the ordinary AVG state. */
+  /**
+   * Merge kinds: COUNT merges by summing its partial counts; AVG keeps the ordinary AVG state; a
+   * distinct COUNT/SUM keeps the distinct-set state (kind 7/9) fed from its view column.
+   */
   static int[] kinds(StreamPhysicalGlobalGroupAggregate agg) {
     int[] kinds = new int[agg.aggCalls().size()];
     for (int i = 0; i < kinds.length; i++) {
-      int kind =
-          WindowAggregateMatcher.aggregateKind(agg.aggCalls().apply(i).getAggregation().getKind());
-      kinds[i] = kind == WindowAggregateMatcher.KIND_COUNT ? WindowAggregateMatcher.KIND_SUM : kind;
+      AggregateCall call = agg.aggCalls().apply(i);
+      int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+      if (call.isDistinct()) {
+        kinds[i] =
+            kind == WindowAggregateMatcher.KIND_COUNT
+                ? LocalGroupAggregateMatcher.KIND_COUNT_DISTINCT
+                : LocalGroupAggregateMatcher.KIND_SUM_DISTINCT;
+      } else {
+        kinds[i] =
+            kind == WindowAggregateMatcher.KIND_COUNT ? WindowAggregateMatcher.KIND_SUM : kind;
+      }
     }
     return kinds;
+  }
+
+  /** The number of trailing distinct-view columns on the input (one per unique distinct arg list). */
+  private static int distinctViewCount(StreamPhysicalGlobalGroupAggregate agg) {
+    List<List<Integer>> seen = new ArrayList<>();
+    for (int i = 0; i < agg.aggCalls().size(); i++) {
+      AggregateCall call = agg.aggCalls().apply(i);
+      if (call.isDistinct() && !seen.contains(call.getArgList())) {
+        seen.add(call.getArgList());
+      }
+    }
+    return seen.size();
+  }
+
+  /**
+   * Per-aggregate distinct-view column (-1 for a non-distinct merge): the views trail the partials
+   * in the local's declared output, one per unique distinct arg list, in first-appearance order.
+   */
+  static int[] distinctViewColumns(StreamPhysicalGlobalGroupAggregate agg) {
+    int firstView = agg.grouping().length;
+    for (int i = 0; i < agg.aggCalls().size(); i++) {
+      firstView += spanOf(agg, i);
+    }
+    List<List<Integer>> seen = new ArrayList<>();
+    int[] columns = new int[agg.aggCalls().size()];
+    for (int i = 0; i < columns.length; i++) {
+      AggregateCall call = agg.aggCalls().apply(i);
+      if (!call.isDistinct()) {
+        columns[i] = -1;
+        continue;
+      }
+      if (!seen.contains(call.getArgList())) {
+        seen.add(call.getArgList());
+      }
+      columns[i] = firstView + seen.indexOf(call.getArgList());
+    }
+    return columns;
   }
 
   /** How many positional partial columns aggregate {@code i} spans (2 for AVG, 1 otherwise). */

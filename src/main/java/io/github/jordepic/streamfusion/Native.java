@@ -225,16 +225,20 @@ public final class Native {
    * Creates a buffering local half of a two-phase non-windowed {@code GROUP BY} and returns an opaque
    * handle. It accumulates rows by key across batches in memory (each aggregate folds its {@code
    * valueColumns} entry, or {@code -1} for COUNT(*), read as {@code valueTypes}; SUM kind 0, MIN 1,
-   * MAX 2, COUNT 3) and emits one partial row per key ({@code [key0.., partial0..]}, no {@code
-   * $row_kind$} — insert-only) when flushed. The buffer is transient (drained before each checkpoint
-   * by the operator), so there is no snapshot/restore — the global half keeps the durable state.
-   * Released with {@link #closeLocalGroupAggregator(long)}.
+   * MAX 2, COUNT 3, COUNT(DISTINCT) 7, SUM(DISTINCT) 9) and emits one partial row per key ({@code
+   * [key0.., partial0.., distinct-view0..]}, no {@code $row_kind$} — insert-only) when flushed. Each
+   * {@code distinctViewSources} entry names the aggregate whose per-bundle distinct set backs the
+   * corresponding trailing view column (the bundle's (value, count) entries as a list of structs, the
+   * wire form of Flink's serialized MapView partial). The buffer is transient (drained before each
+   * checkpoint by the operator), so there is no snapshot/restore — the global half keeps the durable
+   * state. Released with {@link #closeLocalGroupAggregator(long)}.
    */
   public static native long createLocalGroupAggregator(
       int[] aggregateKinds,
       int[] valueTypes,
       int[] valueColumns,
       int[] keyColumns,
+      int[] distinctViewSources,
       long memoryBudgetBytes);
 
   /** Folds a batch into the buffered per-key accumulators; emits nothing. */
@@ -707,6 +711,9 @@ public final class Native {
    * @param countColumns per-aggregate two-phase AVG count-partial column ({@code -1} otherwise): the
    *     value column is then the local's pre-summed sum partial, and each row bumps the count by this
    *     column instead of by one
+   * @param distinctViewColumns per-aggregate two-phase distinct-view column ({@code -1} otherwise):
+   *     the column carries a local bundle's distinct (value, count) entries as a list of structs,
+   *     folded into the per-key distinct set with multiplicities instead of one value per row
    * @param generateUpdateBefore whether to emit an UPDATE_BEFORE row before each UPDATE_AFTER
    * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
    */
@@ -717,6 +724,7 @@ public final class Native {
       int[] keyColumns,
       int[] filterColumns,
       int[] countColumns,
+      int[] distinctViewColumns,
       boolean generateUpdateBefore,
       long memoryBudgetBytes);
 
@@ -741,6 +749,7 @@ public final class Native {
       int[] keyColumns,
       int[] filterColumns,
       int[] countColumns,
+      int[] distinctViewColumns,
       boolean generateUpdateBefore,
       byte[] snapshot,
       long memoryBudgetBytes);

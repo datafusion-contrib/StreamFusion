@@ -27,6 +27,7 @@ public class StreamPhysicalNativeColumnarLocalGroupAggregate extends SingleRel
   private final int[] valueTypes;
   private final int[] valueColumns;
   private final int[] keyColumns;
+  private final int[] distinctViewSources;
 
   public StreamPhysicalNativeColumnarLocalGroupAggregate(
       RelOptCluster cluster,
@@ -36,13 +37,15 @@ public class StreamPhysicalNativeColumnarLocalGroupAggregate extends SingleRel
       int[] aggregateKinds,
       int[] valueTypes,
       int[] valueColumns,
-      int[] keyColumns) {
+      int[] keyColumns,
+      int[] distinctViewSources) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
     this.aggregateKinds = aggregateKinds;
     this.valueTypes = valueTypes;
     this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
+    this.distinctViewSources = distinctViewSources;
   }
 
   @Override
@@ -65,7 +68,8 @@ public class StreamPhysicalNativeColumnarLocalGroupAggregate extends SingleRel
         aggregateKinds,
         valueTypes,
         valueColumns,
-        keyColumns);
+        keyColumns,
+        distinctViewSources);
   }
 
   @Override
@@ -78,7 +82,8 @@ public class StreamPhysicalNativeColumnarLocalGroupAggregate extends SingleRel
         aggregateKinds,
         valueTypes,
         valueColumns,
-        keyColumns);
+        keyColumns,
+        distinctViewSources);
   }
 
   /** Digest-only reuse barrier — see {@link NativeRelDigests}. */

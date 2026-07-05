@@ -171,6 +171,34 @@ impl DistinctSet {
         }
     }
 
+    /// Adds `n` occurrences at once (a two-phase merge folding a local bundle's per-value count);
+    /// returns true when the value enters the set.
+    fn add_i64_n(&mut self, value: i64, n: i64) -> bool {
+        match self {
+            DistinctSet::I64(m) => {
+                let count = m.entry(value).or_insert(0);
+                *count += n;
+                *count == n
+            }
+            DistinctSet::Scalar(_) => self.add_scalar_n(ScalarValue::Int64(Some(value)), n),
+        }
+    }
+
+    /// The scalar form of {@link add_i64_n}.
+    fn add_scalar_n(&mut self, value: ScalarValue, n: i64) -> bool {
+        match self {
+            DistinctSet::I64(_) => match value {
+                ScalarValue::Int64(Some(v)) => self.add_i64_n(v, n),
+                other => unreachable!("i64 distinct set fed a non-int64 scalar: {other:?}"),
+            },
+            DistinctSet::Scalar(m) => {
+                let count = m.entry(value).or_insert(0);
+                *count += n;
+                *count == n
+            }
+        }
+    }
+
     /// The live (value, multiplicity) pairs as scalars — the snapshot wire format, unchanged by the
     /// typed specialization.
     fn scalar_entries(&self) -> Vec<(ScalarValue, i64)> {
@@ -383,6 +411,51 @@ impl GroupAggState {
         }
     }
 
+    /// Folds one (value, count) entry of a local bundle's distinct view into the merged set — the
+    /// two-phase merge of {@link accumulate_distinct}. A value newly entering the merged set also
+    /// folds once into a distinct SUM's running aggregate, exactly as the per-row path does. The
+    /// two-phase distinct input is insert-only (the local's bundle is append-only), so there is no
+    /// retracting counterpart.
+    fn merge_distinct(&mut self, value: ScalarValue, count: i64) {
+        match self {
+            GroupAggState::Distinct(counts) => {
+                counts.add_scalar_n(value, count);
+            }
+            GroupAggState::DistinctRunning { counts, agg } => {
+                let num = distinct_num(&value);
+                if counts.add_scalar_n(value, count) {
+                    agg.fold(num);
+                }
+            }
+            _ => unreachable!("distinct merge on a non-distinct aggregate"),
+        }
+    }
+
+    /// The BIGINT fast path of {@link merge_distinct}.
+    fn merge_distinct_i64(&mut self, value: i64, count: i64) {
+        match self {
+            GroupAggState::Distinct(counts) => {
+                counts.add_i64_n(value, count);
+            }
+            GroupAggState::DistinctRunning { counts, agg } => {
+                if counts.add_i64_n(value, count) {
+                    agg.fold(Num::I64(value));
+                }
+            }
+            _ => unreachable!("distinct merge on a non-distinct aggregate"),
+        }
+    }
+
+    /// The live (value, multiplicity) pairs of a distinct aggregate's set — the local half reads
+    /// these to emit its bundle's distinct view column.
+    fn distinct_entries(&self) -> Vec<(ScalarValue, i64)> {
+        match self {
+            GroupAggState::Distinct(counts) => counts.scalar_entries(),
+            GroupAggState::DistinctRunning { counts, .. } => counts.scalar_entries(),
+            _ => unreachable!("distinct entries on a non-distinct aggregate"),
+        }
+    }
+
     /// The BIGINT fast path of {@link retract_distinct}.
     fn retract_distinct_i64(&mut self, value: i64) {
         match self {
@@ -482,6 +555,10 @@ pub(crate) struct GroupAggregator {
     // Per-aggregate count-partial column for a two-phase AVG merge (-1 otherwise): the value column
     // is then the local's pre-summed sum partial and each row bumps the count by this column.
     count_columns: Vec<i64>,
+    // Per-aggregate distinct-view column for a two-phase distinct merge (-1 otherwise): the column
+    // carries the local bundle's (value, count) entries as a list of structs, folded into the
+    // per-key distinct set with multiplicities instead of one value per row.
+    distinct_view_columns: Vec<i64>,
     key_columns: Vec<usize>,
     generate_update_before: bool,
     // The group map is keyed by the arrow-row memcomparable encoding of the key columns, not a
@@ -548,6 +625,7 @@ impl GroupAggregator {
             .collect();
         let filter_columns = vec![-1; kinds.len()];
         let count_columns = vec![-1; kinds.len()];
+        let distinct_view_columns = vec![-1; kinds.len()];
         GroupAggregator {
             kinds,
             value_types,
@@ -561,6 +639,7 @@ impl GroupAggregator {
             key_types: Vec::new(),
             filter_columns,
             count_columns,
+            distinct_view_columns,
             memory: OperatorMemory::unaccounted(),
         }
     }
@@ -591,6 +670,15 @@ impl GroupAggregator {
     fn with_count_columns(mut self, count_columns: Vec<i64>) -> Self {
         if !count_columns.is_empty() {
             self.count_columns = count_columns;
+        }
+        self
+    }
+
+    /// Sets the per-aggregate two-phase distinct-view columns (-1 = not a distinct merge). A builder
+    /// for the same reason as {@link with_filter_columns}.
+    fn with_distinct_view_columns(mut self, distinct_view_columns: Vec<i64>) -> Self {
+        if !distinct_view_columns.is_empty() {
+            self.distinct_view_columns = distinct_view_columns;
         }
         self
     }
@@ -659,11 +747,39 @@ impl GroupAggregator {
         let keys_encoded =
             encode_group_keys(self.key_converter.as_ref().unwrap(), &key_owned, n);
         let row_kinds = row_kind_column(batch);
+        // Per aggregate, a two-phase distinct-view column: the local bundle's (value, count)
+        // entries as a list of structs, merged with multiplicities instead of per-row values.
+        let view_cols: Vec<Option<(&arrow::array::ListArray, &ArrayRef, &Int64Array)>> = (0..num_agg)
+            .map(|i| {
+                (self.distinct_view_columns[i] >= 0).then(|| {
+                    let list = batch
+                        .column(self.distinct_view_columns[i] as usize)
+                        .as_any()
+                        .downcast_ref::<arrow::array::ListArray>()
+                        .expect("distinct view column must be a list");
+                    let entries = list
+                        .values()
+                        .as_any()
+                        .downcast_ref::<arrow::array::StructArray>()
+                        .expect("distinct view entries must be structs");
+                    let counts = entries
+                        .column(1)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .expect("distinct view counts must be bigint");
+                    (list, entries.column(0), counts)
+                })
+            })
+            .collect();
         // Per aggregate, the value column index for a COUNT(DISTINCT) (kind 7) or SUM(DISTINCT)
-        // (kind 9), else None. Captured before the per-row loop so the loop body reads no `self`
-        // field while `state` is borrowed.
+        // (kind 9), else None — the single-phase per-row fold; view-merged aggregates take the
+        // list path above instead. Captured before the per-row loop so the loop body reads no
+        // `self` field while `state` is borrowed.
         let distinct_cols: Vec<Option<usize>> = (0..num_agg)
-            .map(|i| matches!(self.kinds[i], 7 | 9).then_some(self.value_columns[i] as usize))
+            .map(|i| {
+                (matches!(self.kinds[i], 7 | 9) && self.distinct_view_columns[i] < 0)
+                    .then_some(self.value_columns[i] as usize)
+            })
             .collect();
         // The BIGINT fast path per distinct aggregate: fold the primitive straight off the array
         // (no per-row ScalarValue). Present exactly when the value column is Int64.
@@ -798,6 +914,26 @@ impl GroupAggregator {
                                 state.aggs[i].retract_extreme(scalar);
                             } else {
                                 state.aggs[i].accumulate_extreme(scalar);
+                            }
+                        }
+                        continue;
+                    }
+                    // Two-phase distinct merge: fold the local bundle's (value, count) entries into
+                    // the per-key set with multiplicities. The partials are insert-only, so a
+                    // retracting row kind cannot reach this path.
+                    if let Some((list, values, counts)) = view_cols[i] {
+                        assert!(!retract, "distinct view partials are insert-only");
+                        let start = list.value_offsets()[row] as usize;
+                        let end = list.value_offsets()[row + 1] as usize;
+                        if let Some(ints) = values.as_any().downcast_ref::<Int64Array>() {
+                            for e in start..end {
+                                state.aggs[i].merge_distinct_i64(ints.value(e), counts.value(e));
+                            }
+                        } else {
+                            for e in start..end {
+                                let scalar = ScalarValue::try_from_array(values, e)
+                                    .expect("distinct view value scalar");
+                                state.aggs[i].merge_distinct(scalar, counts.value(e));
                             }
                         }
                         continue;
@@ -1095,6 +1231,10 @@ pub(crate) struct LocalGroupAggregator {
     value_columns: Vec<i64>,
     key_columns: Vec<usize>,
     result_types: Vec<DataType>,
+    // Per distinct view column (trailing the partials, in Flink's declared order), the index of the
+    // aggregate whose distinct set backs it — the flush emits that set's (value, count) entries as a
+    // list column for the global to merge. Empty when no aggregate is distinct.
+    distinct_view_sources: Vec<i64>,
     order: Vec<GroupKey>,
     states: HashMap<GroupKey, Vec<GroupAggState>>,
     key_types: Vec<DataType>,
@@ -1107,12 +1247,22 @@ pub(crate) fn local_entry_bytes(key: &GroupKey, states: &[GroupAggState]) -> usi
     group_key_bytes(key) * 2 + states.iter().map(group_agg_state_bytes).sum::<usize>()
 }
 
+/// The struct fields of one distinct-view entry: the distinct value and its in-bundle multiplicity.
+fn distinct_entry_fields(value_type: &DataType) -> arrow::datatypes::Fields {
+    vec![
+        Arc::new(Field::new("value", value_type.clone(), true)),
+        Arc::new(Field::new("count", DataType::Int64, false)),
+    ]
+    .into()
+}
+
 impl LocalGroupAggregator {
     pub(crate) fn new(
         kinds: Vec<i64>,
         value_types: Vec<i64>,
         value_columns: Vec<i64>,
         key_columns: Vec<usize>,
+        distinct_view_sources: Vec<i64>,
     ) -> Self {
         let value_types: Vec<DataType> = value_types.iter().map(|&c| value_data_type(c)).collect();
         let result_types = kinds
@@ -1126,6 +1276,7 @@ impl LocalGroupAggregator {
             value_columns,
             key_columns,
             result_types,
+            distinct_view_sources,
             order: Vec::new(),
             states: HashMap::default(),
             key_types: Vec::new(),
@@ -1170,6 +1321,16 @@ impl LocalGroupAggregator {
             .collect();
         let key_arrays: Vec<&ArrayRef> = self.key_columns.iter().map(|&i| batch.column(i)).collect();
         self.key_types = key_types(&key_arrays);
+        // Distinct aggregates (kind 7/9) fold the value itself into their per-bundle set, not a Num;
+        // a BIGINT value column takes the primitive fast path.
+        let distinct_cols: Vec<Option<usize>> = (0..num_agg)
+            .map(|i| matches!(self.kinds[i], 7 | 9).then_some(self.value_columns[i] as usize))
+            .collect();
+        let distinct_i64_cols: Vec<Option<&Int64Array>> = (0..num_agg)
+            .map(|i| {
+                distinct_cols[i].and_then(|c| batch.column(c).as_any().downcast_ref::<Int64Array>())
+            })
+            .collect();
         let track = self.memory.tracking();
         for row in 0..n {
             let key = read_key(&key_arrays, row);
@@ -1192,6 +1353,21 @@ impl LocalGroupAggregator {
                 delta -= entry.iter().map(group_agg_state_bytes).sum::<usize>() as isize;
             }
             for i in 0..num_agg {
+                if let Some(col_idx) = distinct_cols[i] {
+                    if let Some(ints) = distinct_i64_cols[i] {
+                        if !ints.is_null(row) {
+                            entry[i].accumulate_distinct_i64(ints.value(row));
+                        }
+                        continue;
+                    }
+                    let column = batch.column(col_idx);
+                    if !column.is_null(row) {
+                        let scalar =
+                            ScalarValue::try_from_array(column, row).expect("distinct value scalar");
+                        entry[i].accumulate_distinct(scalar);
+                    }
+                    continue;
+                }
                 match &cols[i] {
                     None => entry[i].accumulate(Num::I64(0)),
                     Some(column) => {
@@ -1209,8 +1385,11 @@ impl LocalGroupAggregator {
         self.memory.account()
     }
 
-    /// Emits the buffered partials (`[key0.., partial0..]`, in first-appearance order) and clears the
-    /// buffer; the key types are retained so an empty flush still carries the right schema.
+    /// Emits the buffered partials (`[key0.., partial0.., distinct-view0..]`, in first-appearance
+    /// order) and clears the buffer; the key types are retained so an empty flush still carries the
+    /// right schema. Each distinct view column carries its bundle set's (value, count) entries as a
+    /// list of structs — the wire form of Flink's serialized MapView partial — for the global to
+    /// merge with multiplicities.
     pub(crate) fn flush(&mut self) -> RecordBatch {
         let order = std::mem::take(&mut self.order);
         let states = std::mem::take(&mut self.states);
@@ -1222,6 +1401,34 @@ impl LocalGroupAggregator {
             let scalars: Vec<ScalarValue> = order.iter().map(|key| states[key][i].emit(rt)).collect();
             fields.push(Field::new(format!("partial{i}"), rt.clone(), true));
             columns.push(scalars_to_array(scalars, rt));
+        }
+        for (v, &source) in self.distinct_view_sources.iter().enumerate() {
+            let source = source as usize;
+            let value_type = &self.value_types[source];
+            let mut offsets: Vec<i32> = Vec::with_capacity(order.len() + 1);
+            offsets.push(0);
+            let mut values: Vec<ScalarValue> = Vec::new();
+            let mut counts: Vec<i64> = Vec::new();
+            for key in &order {
+                for (value, count) in states[key][source].distinct_entries() {
+                    values.push(value);
+                    counts.push(count);
+                }
+                offsets.push(values.len() as i32);
+            }
+            let entries = arrow::array::StructArray::new(
+                distinct_entry_fields(value_type),
+                vec![scalars_to_array(values, value_type), Arc::new(Int64Array::from(counts))],
+                None,
+            );
+            let list = arrow::array::ListArray::new(
+                Arc::new(Field::new("item", entries.data_type().clone(), false)),
+                arrow::buffer::OffsetBuffer::new(offsets.into()),
+                Arc::new(entries),
+                None,
+            );
+            fields.push(Field::new(format!("distinct{v}"), list.data_type().clone(), false));
+            columns.push(Arc::new(list));
         }
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build local group-by partial batch")
@@ -1243,14 +1450,17 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createLocalGr
     value_types: JIntArray<'local>,
     value_columns: JIntArray<'local>,
     key_columns: JIntArray<'local>,
+    distinct_view_sources: JIntArray<'local>,
     memory_budget_bytes: jlong,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
     let value_types = read_int_array(&env, &value_types);
     let value_columns = read_int_array(&env, &value_columns);
     let key_cols = read_columns(&env, &key_columns);
-    let aggregator = LocalGroupAggregator::new(kinds, value_types, value_columns, key_cols)
-        .with_memory_budget(memory_budget_bytes);
+    let view_sources = read_int_array(&env, &distinct_view_sources);
+    let aggregator =
+        LocalGroupAggregator::new(kinds, value_types, value_columns, key_cols, view_sources)
+            .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, aggregator)
 }
 
@@ -1313,6 +1523,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createGroupAg
     key_columns: JIntArray<'local>,
     filter_columns: JIntArray<'local>,
     count_columns: JIntArray<'local>,
+    distinct_view_columns: JIntArray<'local>,
     generate_update_before: jboolean,
     memory_budget_bytes: jlong,
 ) -> jlong {
@@ -1321,11 +1532,13 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createGroupAg
     let value_columns = read_int_array(&env, &value_columns);
     let filter_columns = read_int_array(&env, &filter_columns);
     let count_columns = read_int_array(&env, &count_columns);
+    let distinct_view_columns = read_int_array(&env, &distinct_view_columns);
     let key_columns = read_columns(&env, &key_columns);
     let aggregator =
         GroupAggregator::new(kinds, value_types, value_columns, key_columns, generate_update_before != 0)
             .with_filter_columns(filter_columns)
             .with_count_columns(count_columns)
+            .with_distinct_view_columns(distinct_view_columns)
             .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, aggregator)
 }
@@ -1378,6 +1591,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
     key_columns: JIntArray<'local>,
     filter_columns: JIntArray<'local>,
     count_columns: JIntArray<'local>,
+    distinct_view_columns: JIntArray<'local>,
     generate_update_before: jboolean,
     snapshot: JByteArray<'local>,
     memory_budget_bytes: jlong,
@@ -1387,6 +1601,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
     let value_columns = read_int_array(&env, &value_columns);
     let filter_columns = read_int_array(&env, &filter_columns);
     let count_columns = read_int_array(&env, &count_columns);
+    let distinct_view_columns = read_int_array(&env, &distinct_view_columns);
     let key_columns = read_columns(&env, &key_columns);
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read group-by snapshot");
     let aggregator = GroupAggregator::restore(
@@ -1399,6 +1614,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
     )
     .with_filter_columns(filter_columns)
     .with_count_columns(count_columns)
+    .with_distinct_view_columns(distinct_view_columns)
     .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, aggregator)
 }

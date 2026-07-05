@@ -26,6 +26,7 @@ public class NativeColumnarLocalGroupAggExecNode extends ExecNodeBase<ArrowBatch
   private final int[] valueTypes;
   private final int[] valueColumns;
   private final int[] keyColumns;
+  private final int[] distinctViewSources;
 
   public NativeColumnarLocalGroupAggExecNode(
       ReadableConfig tableConfig,
@@ -35,7 +36,8 @@ public class NativeColumnarLocalGroupAggExecNode extends ExecNodeBase<ArrowBatch
       int[] aggregateKinds,
       int[] valueTypes,
       int[] valueColumns,
-      int[] keyColumns) {
+      int[] keyColumns,
+      int[] distinctViewSources) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-columnar-local-group-aggregate_1"),
@@ -47,6 +49,7 @@ public class NativeColumnarLocalGroupAggExecNode extends ExecNodeBase<ArrowBatch
     this.valueTypes = valueTypes;
     this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
+    this.distinctViewSources = distinctViewSources;
   }
 
   @Override
@@ -62,7 +65,8 @@ public class NativeColumnarLocalGroupAggExecNode extends ExecNodeBase<ArrowBatch
             input,
             createTransformationMeta(TRANSFORMATION, config),
             new NativeColumnarLocalGroupAggregateOperator(
-                aggregateKinds, valueTypes, valueColumns, keyColumns, miniBatchSize),
+                aggregateKinds, valueTypes, valueColumns, keyColumns, distinctViewSources,
+                miniBatchSize),
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);

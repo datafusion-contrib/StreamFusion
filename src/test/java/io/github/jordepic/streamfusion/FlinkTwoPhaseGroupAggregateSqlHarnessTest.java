@@ -150,6 +150,60 @@ class FlinkTwoPhaseGroupAggregateSqlHarnessTest {
   }
 
   @Test
+  void countDistinctTwoPhaseMatchesHost() throws Exception {
+    // Without the distinct split, a distinct aggregate under mini-batch plans as Local → Global
+    // with a distinct MapView partial: the native local emits its bundle's (value, count) set as a
+    // trailing view column, and the global merges it into per-key distinct state.
+    Path input = Files.createTempDirectory("twophase-distinct-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        readEnvironment(input),
+        "SELECT k, COUNT(DISTINCT u) AS du, SUM(v) AS s, COUNT(*) AS c FROM t GROUP BY k");
+  }
+
+  @Test
+  void distinctAcrossSmallBundlesTwoPhaseMatchesHost() throws Exception {
+    // mini-batch.size 2 forces several local flushes per key, so the global merges MULTIPLE view
+    // batches into the same distinct state — values repeating across bundles must count once.
+    Path input = Files.createTempDirectory("twophase-distinct-bundles-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        readEnvironment(input, 2),
+        "SELECT k, COUNT(DISTINCT u) AS du, COUNT(DISTINCT us) AS ds, SUM(v) AS s"
+            + " FROM t GROUP BY k");
+  }
+
+  @Test
+  void sharedDistinctViewTwoPhaseMatchesHost() throws Exception {
+    // COUNT(DISTINCT u) and SUM(DISTINCT u) share one view column (Flink dedups distinct infos by
+    // arg set); COUNT(DISTINCT us) gets its own. Exercises the view-position bookkeeping.
+    Path input = Files.createTempDirectory("twophase-distinct-shared-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        readEnvironment(input, 2),
+        "SELECT k, COUNT(DISTINCT u) AS du, SUM(DISTINCT u) AS su, COUNT(DISTINCT us) AS ds"
+            + " FROM t GROUP BY k");
+  }
+
+  @Test
+  void distinctSplitChainFallsBackToHost() throws Exception {
+    // With table.optimizer.distinct-agg.split.enabled the plan becomes the five-node incremental
+    // chain (PartialLocal → Exchange → IncrementalGroupAggregate → Exchange → FinalGlobal) over a
+    // Calc computing the bucket key; the incremental node has no native path, so the whole query
+    // stays on the host. (The default no-split plan for the same query runs natively above.)
+    Path input = Files.createTempDirectory("twophase-distinct-split-in");
+    writeInput(input);
+    Supplier<TableEnvironment> environment =
+        () -> {
+          TableEnvironment tEnv = readEnvironment(input).get();
+          tEnv.getConfig().set("table.optimizer.distinct-agg.split.enabled", "true");
+          return tEnv;
+        };
+    NativeParity.assertFallback(
+        environment, "SELECT k, COUNT(DISTINCT u) AS du, SUM(v) AS s FROM t GROUP BY k");
+  }
+
+  @Test
   void perOperatorFlagKeepsTwoPhaseOnHost() throws Exception {
     Path input = Files.createTempDirectory("twophase-flag-in");
     writeInput(input);
@@ -171,29 +225,35 @@ class FlinkTwoPhaseGroupAggregateSqlHarnessTest {
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
     tEnv.executeSql(
         "CREATE TABLE in_write (k BIGINT, v BIGINT, vd DOUBLE, vi INT, vs SMALLINT, vt TINYINT,"
-            + " vf FLOAT, vdec DECIMAL(10, 2)) WITH ('connector' = 'filesystem', 'path' = '"
+            + " vf FLOAT, vdec DECIMAL(10, 2), u BIGINT, us VARCHAR) WITH ('connector' ="
+            + " 'filesystem', 'path' = '"
             + directory.toUri()
             + "', 'format' = 'parquet')");
     // The negative rows make integer AVG's truncate-toward-zero division observable (-7 + 4 + 9
-    // over key 2 divides negatively at some prefixes of the changelog).
+    // over key 2 divides negatively at some prefixes of the changelog). The u/us columns repeat
+    // values within and across keys so distinct aggregates see real multiplicities.
     tEnv.executeSql(
             "INSERT INTO in_write VALUES"
                 + " (1, 10, 1.5, 7, CAST(100 AS SMALLINT), CAST(3 AS TINYINT), CAST(1.25 AS FLOAT),"
-                + " 12.34),"
+                + " 12.34, 10, 'a'),"
                 + " (1, 20, 2.5, 3, CAST(-7 AS SMALLINT), CAST(-2 AS TINYINT), CAST(2.5 AS FLOAT),"
-                + " -0.07),"
+                + " -0.07, 10, 'b'),"
                 + " (2, 5, 0.5, 9, CAST(250 AS SMALLINT), CAST(9 AS TINYINT), CAST(-0.75 AS FLOAT),"
-                + " 99999999.99),"
+                + " 99999999.99, 30, 'x'),"
                 + " (1, 30, 3.5, 1, CAST(42 AS SMALLINT), CAST(5 AS TINYINT), CAST(4.5 AS FLOAT),"
-                + " 3.00),"
+                + " 3.00, 20, 'a'),"
                 + " (2, 15, 1.0, 4, CAST(-11 AS SMALLINT), CAST(-4 AS TINYINT), CAST(5.125 AS FLOAT),"
-                + " -42.42),"
+                + " -42.42, 30, 'x'),"
                 + " (2, -7, -1.25, -8, CAST(-3 AS SMALLINT), CAST(-7 AS TINYINT), CAST(0.5 AS FLOAT),"
-                + " 0.01)")
+                + " 0.01, 30, 'y')")
         .await();
   }
 
   private static Supplier<TableEnvironment> readEnvironment(Path directory) {
+    return readEnvironment(directory, 100);
+  }
+
+  private static Supplier<TableEnvironment> readEnvironment(Path directory, int miniBatchSize) {
     return () -> {
       StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
       env.setParallelism(1);
@@ -201,10 +261,11 @@ class FlinkTwoPhaseGroupAggregateSqlHarnessTest {
       tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
       tEnv.getConfig().set("table.exec.mini-batch.enabled", "true");
       tEnv.getConfig().set("table.exec.mini-batch.allow-latency", "1 s");
-      tEnv.getConfig().set("table.exec.mini-batch.size", "100");
+      tEnv.getConfig().set("table.exec.mini-batch.size", String.valueOf(miniBatchSize));
       tEnv.executeSql(
           "CREATE TABLE t (k BIGINT, v BIGINT, vd DOUBLE, vi INT, vs SMALLINT, vt TINYINT,"
-              + " vf FLOAT, vdec DECIMAL(10, 2)) WITH ('connector' = 'filesystem', 'path' = '"
+              + " vf FLOAT, vdec DECIMAL(10, 2), u BIGINT, us VARCHAR) WITH ('connector' ="
+              + " 'filesystem', 'path' = '"
               + directory.toUri()
               + "', 'format' = 'parquet')");
       return tEnv;

@@ -34,7 +34,7 @@ These have no matcher; any query containing one falls back entirely.
 | `Correlate` | lateral table functions, and `UNNEST` with a pushed condition the expression engine can't encode (or any condition over a LEFT unnest). INNER **or LEFT** `UNNEST` of a single `ARRAY` (scalar or `ROW` element, flattened), `MAP` (key+value), or `MULTISET` (element by count) column — optionally `WITH ORDINALITY`, INNER including a pushed element filter — **is** supported (see the chart). |
 | `Match` | `MATCH_RECOGNIZE` (CEP / row-pattern) |
 | `GroupWindowAggregate` (most), `GroupWindowTableAggregate` | the legacy group-window syntax — `GROUP BY TUMBLE(...)`/`HOP(...)`, and proctime group windows. **Exception:** a legacy event-time `SESSION(...)` group-window routes natively (reusing the session operator), when its only window properties are `(window_start, window_end[, rowtime][, proctime])` in that order |
-| `IncrementalGroupAggregate` | the three-phase (distinct) non-windowed `GROUP BY`. The ordinary two-phase / mini-batch `LocalGroupAggregate` + `GlobalGroupAggregate` (+ `MiniBatchAssigner`) **is** native — see the feature gaps and §2 below |
+| `IncrementalGroupAggregate` | the five-node chain a distinct aggregate plans to **only when `table.optimizer.distinct-agg.split.enabled` is on** (partial local → incremental → final global over a bucket key). The default mini-batch plan for distinct aggregates — `LocalGroupAggregate` + `GlobalGroupAggregate` with a distinct MapView partial — **is** native, as is the whole ordinary two-phase family (+ `MiniBatchAssigner`); see the feature gaps and §2 below |
 | `GroupTableAggregate` | `TableAggregateFunction` |
 | `DropUpdateBefore`, `Values` | misc (a non-temporal `Sort` is parity — Flink rejects it in streaming) |
 | `LegacyTableSourceScan`, `LegacySink` | legacy connectors |
@@ -78,8 +78,16 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   Decimal SUM/MIN/MAX/AVG carry through the split too (see the decimal bullet above). Both assigner
   modes are native: proc-time (markers generated from the clock) and row-time (upstream event-time
   watermarks filtered to the mini-batch interval — a pure function of the input watermarks, so
-  results stay deterministic). Still falling back: distinct aggregates (they plan as
-  `IncrementalGroupAggregate`) and smallint/tinyint/float SUM/MIN/MAX partials.
+  results stay deterministic). **Distinct aggregates ride the split natively** in the default
+  (no-split) plan: the local's bundle set travels as a trailing view column — the local's distinct
+  (value, count) entries as a list of structs, the Arrow form of Flink's serialized MapView
+  partial — and the global folds the entries into its per-key distinct state with multiplicities,
+  so values repeating across bundles count once. Scope: `COUNT(DISTINCT)` over
+  bigint/int/smallint/tinyint/float/double/string/decimal values, `SUM(DISTINCT)` over bigint/int
+  (the merge folds in set-iteration order, so order-sensitive float/double sums stay on the host).
+  Still falling back: the opt-in `distinct-agg.split.enabled` incremental chain (see
+  `IncrementalGroupAggregate` above), MIN/MAX/AVG over DISTINCT under two-phase, and
+  smallint/tinyint/float SUM/MIN/MAX partials.
 - **`OVER`** — the unbounded `RANGE … CURRENT ROW` frame (running fold), the bounded
   `ROWS BETWEEN n PRECEDING AND CURRENT ROW` frame (recomputed over the row slice), **and** the
   bounded `RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW` frame (recomputed over the rowtime
@@ -218,16 +226,19 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   an aggregate only where that aggregate's filter (a boolean input column) is true.
 - **Local group aggregate** (two-phase local half) — any aggregate other than SUM/MIN/MAX/COUNT/AVG;
   a SUM/MIN/MAX value type outside bigint/int/double/decimal, or an AVG value type outside
-  bigint/int/smallint/tinyint/float/double/decimal; a partial whose declared type differs from what
-  the native side emits (the value's own type for SUM/MIN/MAX — decimal SUM widens to
-  `DECIMAL(38, s)` — bigint for COUNT, the widened `(sum, count)` pair for AVG — defensive, not
-  seen from Flink's planner); an unsupported grouping-key/input column type.
+  bigint/int/smallint/tinyint/float/double/decimal; a `COUNT(DISTINCT)` value type outside
+  bigint/int/smallint/tinyint/float/double/string/decimal or a `SUM(DISTINCT)` value outside
+  bigint/int; `MIN`/`MAX`/`AVG` over DISTINCT; a FILTER clause on the two-phase path; a partial
+  whose declared type differs from what the native side emits (the value's own type for SUM/MIN/MAX
+  — decimal SUM widens to `DECIMAL(38, s)` — bigint for COUNT, the widened `(sum, count)` pair for
+  AVG — defensive, not seen from Flink's planner); an unsupported grouping-key/input column type.
 - **Global group aggregate** (two-phase merge) — any merge other than SUM/MIN/MAX/COUNT/AVG; a
   partial column outside bigint/int/double/decimal; an AVG whose partial pair isn't
   `(bigint, bigint)` for an integer (bigint/int/smallint/tinyint) average, `(double, bigint)` for a
-  float/double one, or `(decimal(38, s), bigint)` for a decimal one; an unsupported
-  grouping-key/output column type. (Both halves must match for the query to accelerate — one staying
-  on the host drags the whole query back via the gate.)
+  float/double one, or `(decimal(38, s), bigint)` for a decimal one; a distinct merge outside the
+  local half's COUNT/SUM(DISTINCT) scope; a partial layout with retraction columns (a retracting
+  local input); an unsupported grouping-key/output column type. (Both halves must match for the
+  query to accelerate — one staying on the host drags the whole query back via the gate.)
 - **Top-N** — a non-constant (variable) rank range; a row type the converter can't carry. (Insert-only
   and changelog input, an `OFFSET`, and a projected rank number are all handled. `RANK`/`DENSE_RANK`
   never reach us — Flink rejects them in streaming.)

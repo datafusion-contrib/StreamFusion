@@ -29,6 +29,7 @@ public class StreamPhysicalNativeColumnarGroupAggregate extends SingleRel
   private final int[] keyColumns;
   private final int[] filterColumns;
   private final int[] countColumns;
+  private final int[] distinctViewColumns;
   private final boolean generateUpdateBefore;
 
   public StreamPhysicalNativeColumnarGroupAggregate(
@@ -42,6 +43,7 @@ public class StreamPhysicalNativeColumnarGroupAggregate extends SingleRel
       int[] keyColumns,
       int[] filterColumns,
       int[] countColumns,
+      int[] distinctViewColumns,
       boolean generateUpdateBefore) {
     super(cluster, traitSet, input);
     this.outputRowType = outputRowType;
@@ -51,6 +53,7 @@ public class StreamPhysicalNativeColumnarGroupAggregate extends SingleRel
     this.keyColumns = keyColumns;
     this.filterColumns = filterColumns;
     this.countColumns = countColumns;
+    this.distinctViewColumns = distinctViewColumns;
     this.generateUpdateBefore = generateUpdateBefore;
   }
 
@@ -77,6 +80,7 @@ public class StreamPhysicalNativeColumnarGroupAggregate extends SingleRel
         keyColumns,
         filterColumns,
         countColumns,
+        distinctViewColumns,
         generateUpdateBefore);
   }
 
@@ -93,6 +97,7 @@ public class StreamPhysicalNativeColumnarGroupAggregate extends SingleRel
         keyColumns,
         filterColumns,
         countColumns,
+        distinctViewColumns,
         generateUpdateBefore);
   }
 

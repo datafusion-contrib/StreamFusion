@@ -28,7 +28,14 @@ class NativeColumnarGroupAggregateOperatorTest {
 
   private static NativeColumnarGroupAggregateOperator operator() {
     return new NativeColumnarGroupAggregateOperator(
-        new int[] {0}, new int[] {0}, new int[] {1}, new int[] {0}, new int[] {-1}, new int[] {-1}, true);
+        new int[] {0},
+        new int[] {0},
+        new int[] {1},
+        new int[] {0},
+        new int[] {-1},
+        new int[] {-1},
+        new int[] {-1},
+        true);
   }
 
   @Test

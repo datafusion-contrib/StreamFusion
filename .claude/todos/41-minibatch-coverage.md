@@ -7,14 +7,21 @@ fallback trigger after the Kafka gate).
 (`table.exec.mini-batch.enabled` + size/latency); it changes the plan shapes we see, and several of
 those shapes fall back today, dragging whole queries to the host via the all-or-nothing gate:
 
-- **`IncrementalGroupAggregate`** — a whole operator with no native path. This is what **any
-  distinct aggregate** (`COUNT(DISTINCT user)`, …) plans to under two-phase mini-batch, so the
-  single most common "why didn't my query accelerate under mini-batch" answer. Flink's shape:
-  local `MiniBatchLocalGroupAggFunction` → **incremental** `MiniBatchIncrementalGroupAggFunction`
-  (merges the distinct value sets keyed by (group key, distinct key)) → global. Consult Flink's
-  `~/data/flink` `table/runtime .../aggregate/MiniBatchIncrementalGroupAggFunction` before design;
-  we already have the per-key distinct value set (native `COUNT(DISTINCT)`) and the two-phase
-  local/global operators to compose from.
+- **Distinct aggregates under mini-batch: the DEFAULT shape is DONE (2026-07-05).** Plan-probing
+  corrected the premise: without `table.optimizer.distinct-agg.split.enabled` (default off), a
+  distinct aggregate plans as ordinary `LocalGroupAggregate → Exchange → GlobalGroupAggregate`
+  with a distinct MapView partial — NOT as `IncrementalGroupAggregate`. That default shape now
+  runs native: the local's bundle set rides a trailing (value, count) list column and the global
+  merges it with multiplicities (COUNT over the set-carriable types, SUM over bigint/int).
+  **Remaining: the opt-in split chain** — `PartialLocal → Exchange(keys+bucket) →
+  IncrementalGroupAggregate → Exchange(keys) → FinalGlobal` over a `Calc` computing
+  `MOD(HASH_CODE(x), 1024)`. Two viable designs, decision pending: (a) faithful replication (a new
+  stateful incremental operator + native `HASH_CODE` parity for the bucket Calc — without it the
+  Calc itself falls back); (b) chain-lowering — match the five-node pattern and lower it onto the
+  no-split native pair (byte-identical final values; the bucket key never changes results; record
+  in `divergences/` since it drops the skew-spreading topology the user opted into). The split is
+  skew mitigation for Flink's per-key MapState; measure whether our DistinctSet even needs it
+  before building (a).
 - **Two-phase `AVG`: DONE (2026-07-03).** The local expands an AVG into a widened-sum state plus a
   COUNT over the same column (its two positional partials), the matchers walk partials with
   per-aggregate offsets, and the global folds the pre-summed `(sum, count)` pair into the ordinary
