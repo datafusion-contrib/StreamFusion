@@ -125,13 +125,51 @@ impl FlussSplitReader {
     }
 
     fn poll(&mut self, timeout: std::time::Duration) -> Result<usize, String> {
-        let batches = runtime()
-            .block_on(self.scanner.poll(timeout))
-            .map_err(|e| format!("failed to poll Fluss batches: {e}"))?;
+        let batches = match runtime().block_on(self.scanner.poll(timeout)) {
+            Ok(batches) => batches,
+            Err(fluss_rs::error::Error::FlussAPIError { api_error })
+                if fluss_rs::error::FlussError::for_code(api_error.code)
+                    == fluss_rs::error::FlussError::PartitionNotExists =>
+            {
+                self.remove_missing_partition(api_error.message.as_str())?;
+                return Ok(self.pending.len());
+            }
+            Err(e) => return Err(format!("failed to poll Fluss batches: {e}")),
+        };
         for batch in batches {
             self.enqueue(batch);
         }
         Ok(self.pending.len())
+    }
+
+    fn remove_missing_partition(&mut self, message: &str) -> Result<(), String> {
+        let partition_id = parse_missing_partition_id(message).ok_or_else(|| {
+            format!("failed to poll Fluss batches: partition disappeared but Fluss did not return a partition id: {message}")
+        })?;
+        let removed_buckets: Vec<_> = self
+            .split_ids
+            .keys()
+            .filter(|table_bucket| table_bucket.partition_id() == Some(partition_id))
+            .cloned()
+            .collect();
+        if removed_buckets.is_empty() {
+            return Err(format!(
+                "failed to poll Fluss batches: partition {partition_id} disappeared but no assigned split matched it: {message}"
+            ));
+        }
+
+        let removed_split_ids: HashSet<_> = removed_buckets
+            .iter()
+            .filter_map(|table_bucket| self.split_ids.get(table_bucket).cloned())
+            .collect();
+        for table_bucket in removed_buckets {
+            self.unsubscribe_bucket(&table_bucket);
+            self.split_ids.remove(&table_bucket);
+            self.stopping_offsets.remove(&table_bucket);
+        }
+        self.pending
+            .retain(|(split_id, _, _)| !removed_split_ids.contains(split_id));
+        Ok(())
     }
 
     fn enqueue(&mut self, scan_batch: fluss_rs::record::ScanBatch) {
@@ -192,6 +230,14 @@ fn table_bucket(table_id: i64, partition_id: i64, bucket: i64) -> fluss_rs::meta
             bucket as i32,
         )
     }
+}
+
+#[cfg(feature = "fluss")]
+fn parse_missing_partition_id(message: &str) -> Option<i64> {
+    let marker = "partition id '";
+    let start = message.find(marker)? + marker.len();
+    let end = message[start..].find('\'')?;
+    message[start..start + end].parse().ok()
 }
 
 #[cfg(feature = "fluss")]

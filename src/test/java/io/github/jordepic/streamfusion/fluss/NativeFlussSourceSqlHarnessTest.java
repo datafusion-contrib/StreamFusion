@@ -35,6 +35,7 @@ class NativeFlussSourceSqlHarnessTest {
 
   private static final String CATALOG = "fluss_it_catalog";
   private static final String DATABASE = "fluss";
+  private static volatile CountDownLatch firstRowCollected;
   private static volatile CountDownLatch rowsCollected;
   private static volatile List<List<Object>> collectedRows;
 
@@ -141,6 +142,40 @@ class NativeFlussSourceSqlHarnessTest {
     }
   }
 
+  @Test
+  void nativeFlussSourceAcknowledgesDroppedDynamicPartitionThroughSql() throws Exception {
+    FlussClusterExtension cluster = FlussClusterExtension.builder().setNumOfTabletServers(1).build();
+    String bootstrapServers = null;
+    String tablePath = null;
+    try {
+      cluster.start();
+      bootstrapServers = cluster.getBootstrapServers();
+      tablePath =
+          CATALOG + "." + DATABASE + ".native_fluss_dropped_partition_it_" + System.nanoTime();
+      createPartitionedTable(bootstrapServers, tablePath, "100 ms");
+      addPartitionedRow(bootstrapServers, tablePath, "US", 1, 10);
+
+      String finalBootstrapServers = bootstrapServers;
+      String finalTablePath = tablePath;
+      List<List<Object>> rows =
+          readRowsAfterFirstRow(
+              bootstrapServers,
+              "SELECT id, region, score FROM " + tablePath,
+              2,
+              () -> {
+                dropPartition(finalBootstrapServers, finalTablePath, "US");
+                addPartitionedRow(finalBootstrapServers, finalTablePath, "EU", 2, 20);
+              });
+
+      assertEquals(List.of(List.of(1L, "US", 10), List.of(2L, "EU", 20)), rows);
+    } finally {
+      if (bootstrapServers != null && tablePath != null) {
+        dropTable(bootstrapServers, tablePath);
+      }
+      cluster.close();
+    }
+  }
+
   static boolean nativeFlussFeatureBuilt() {
     return Native.flussFeatureBuilt();
   }
@@ -203,6 +238,11 @@ class NativeFlussSourceSqlHarnessTest {
         .await();
   }
 
+  private static void dropPartition(String bootstrapServers, String tablePath, String region) {
+    environment(bootstrapServers)
+        .executeSql("ALTER TABLE " + tablePath + " DROP PARTITION (region = '" + region + "')");
+  }
+
   private static List<List<Object>> readRows(String bootstrapServers, String sql, int targetRows)
       throws Exception {
     return readRows(bootstrapServers, sql, targetRows, () -> {});
@@ -238,6 +278,27 @@ class NativeFlussSourceSqlHarnessTest {
       job.cancel().get();
       rowsCollected = null;
       collectedRows = null;
+    }
+  }
+
+  private static List<List<Object>> readRowsAfterFirstRow(
+      String bootstrapServers, String sql, int targetRows, ThrowingRunnable afterFirstRow)
+      throws Exception {
+    firstRowCollected = new CountDownLatch(1);
+    try {
+      return readRows(
+          bootstrapServers,
+          sql,
+          targetRows,
+          () -> {
+            if (!firstRowCollected.await(30, TimeUnit.SECONDS)) {
+              throw new TimeoutException(
+                  "timed out waiting for first native Fluss row: " + collectedRows);
+            }
+            afterFirstRow.run();
+          });
+    } finally {
+      firstRowCollected = null;
     }
   }
 
@@ -284,6 +345,7 @@ class NativeFlussSourceSqlHarnessTest {
     public void invoke(Row value, Context context) {
       List<List<Object>> rows = collectedRows;
       CountDownLatch latch = rowsCollected;
+      CountDownLatch firstLatch = firstRowCollected;
       if (rows == null || latch == null) {
         return;
       }
@@ -294,6 +356,9 @@ class NativeFlussSourceSqlHarnessTest {
             fields.add(value.getField(i));
           }
           rows.add(fields);
+          if (rows.size() == 1 && firstLatch != null) {
+            firstLatch.countDown();
+          }
         }
         if (rows.size() >= targetRows) {
           latch.countDown();

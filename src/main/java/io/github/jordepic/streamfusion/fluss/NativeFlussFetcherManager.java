@@ -1,13 +1,10 @@
 package io.github.jordepic.streamfusion.fluss;
 
-import java.io.IOException;
-import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.connector.base.source.reader.RecordsBySplits;
 import org.apache.flink.connector.base.source.reader.fetcher.SingleThreadFetcherManager;
 import org.apache.flink.connector.base.source.reader.fetcher.SplitFetcher;
 import org.apache.flink.connector.base.source.reader.fetcher.SplitFetcherTask;
@@ -35,48 +32,29 @@ final class NativeFlussFetcherManager
       return;
     }
 
-    List<String> splitIds = splits.stream().map(SourceSplitBase::splitId).toList();
     Set<TableBucket> bucketsToAck = Set.copyOf(removedBuckets);
     fetcher.removeSplits(splits);
-    fetcher.enqueueTask(
-        new PartitionRemovalAckTask(
-            fetcher.fetcherId(), splitIds, bucketsToAck, unsubscribeCallback));
+    fetcher.enqueueTask(new PartitionRemovalAckTask(bucketsToAck, unsubscribeCallback));
   }
 
   private final class PartitionRemovalAckTask implements SplitFetcherTask {
-    private final int fetcherId;
-    private final Collection<String> finishedSplitIds;
     private final Set<TableBucket> removedBuckets;
     private final Consumer<Set<TableBucket>> unsubscribeCallback;
 
     private PartitionRemovalAckTask(
-        int fetcherId,
-        Collection<String> finishedSplitIds,
         Set<TableBucket> removedBuckets,
         Consumer<Set<TableBucket>> unsubscribeCallback) {
-      this.fetcherId = fetcherId;
-      this.finishedSplitIds = finishedSplitIds;
       this.removedBuckets = removedBuckets;
       this.unsubscribeCallback = unsubscribeCallback;
     }
 
     @Override
-    public boolean run() throws IOException {
-      RecordsBySplits.Builder<NativeFlussRecord> builder = new RecordsBySplits.Builder<>();
-      builder.addFinishedSplits(finishedSplitIds);
-      try {
-        getQueue().put(fetcherId, builder.build());
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new IOException("interrupted while finishing removed Fluss partition splits", e);
-      }
+    public boolean run() {
       unsubscribeCallback.accept(removedBuckets);
       return true;
     }
 
     @Override
-    public void wakeUp() {
-      getQueue().wakeUpPuttingThread(fetcherId);
-    }
+    public void wakeUp() {}
   }
 }
