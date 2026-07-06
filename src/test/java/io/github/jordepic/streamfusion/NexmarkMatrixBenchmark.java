@@ -34,12 +34,11 @@ import org.testcontainers.utility.DockerImageName;
  * Its rowtime is a plain {@code TIMESTAMP(3)} (unlike the Kafka {@code TIMESTAMP_LTZ}), so the {@code
  * DATE_FORMAT}/{@code HOUR} queries that are generator-only on Kafka run here too.
  *
- * <p>The optional Fluss rung ({@code SF_MATRIX_FLUSS=true}) is a stock Flink-on-Fluss baseline and
- * feasibility scaffold: it preloads the same wide event row into a local Fluss test cluster, then
- * reads it through Fluss's own Flink connector. Fluss 0.9 streaming reads are unbounded, so this
- * first finite baseline uses the connector's batch limit-read path ({@code LIMIT SF_ROWS}) and reports
- * only the stock connector timing; the stock limit-read path supports at most 2,048 rows, and a native
- * columnar Fluss source is follow-up work.
+ * <p>The optional Fluss rung ({@code SF_MATRIX_FLUSS=true}) preloads the same wide event row into a
+ * local Fluss test cluster, then reads it back through both Fluss's stock Flink connector and the
+ * native fluss-rs log-table source. Fluss 0.9 streaming reads are unbounded, so this finite benchmark
+ * uses the connector's batch limit-read path ({@code LIMIT SF_ROWS}); the stock limit-read path
+ * supports at most 2,048 rows.
  *
  * <p>The query set is every query StreamFusion accelerates: q0–q5, q7–q23 (q1's and q14's decimal are
  * exact and native by default; q21's REGEXP_EXTRACT/LOWER and q14's HOUR route through the host
@@ -463,6 +462,11 @@ class NexmarkMatrixBenchmark {
               + FLUSS_LIMIT_READ_MAX_ROWS
               + " or disable SF_MATRIX_FLUSS.");
     }
+    if (runFluss && !Native.flussFeatureBuilt()) {
+      throw new IllegalArgumentException(
+          "SF_MATRIX_FLUSS=true now reports native Fluss vs stock Flink-on-Fluss, so the native "
+              + "library must be built with the fluss cargo feature.");
+    }
 
     // result[label] -> ordered cells (rendered at the end as one table).
     Map<String, List<String>> report = new LinkedHashMap<>();
@@ -514,8 +518,13 @@ class NexmarkMatrixBenchmark {
                         "plain-timestamp baseline does not cover time-attribute/proctime/lookup"));
             continue;
           }
-          double flink = flussBest(bootstrapServers, q);
-          report.get(q.label).add(baselineCell("fluss", flink));
+          double flink = flussBest(bootstrapServers, q, false, null);
+          double nativeRun = flussBest(bootstrapServers, q, true, null);
+          report.get(q.label).add(cell("fluss", flink, nativeRun));
+          if (q.nativeVariantProps != null) {
+            double variant = flussBest(bootstrapServers, q, true, q.nativeVariantProps);
+            report.get(q.label).add(variantCell("fluss", q.nativeVariantLabel, flink, variant));
+          }
         }
       } finally {
         cluster.close();
@@ -679,12 +688,6 @@ class NexmarkMatrixBenchmark {
         source, flink, ROWS / flink, nativeRun, ROWS / nativeRun, flink / nativeRun);
   }
 
-  private static String baselineCell(String source, double flink) {
-    return String.format(
-        "%-10s Flink %6.3fs (%,.0f ev/s)  |  Native pending (baseline only)",
-        source, flink, ROWS / flink);
-  }
-
   private static String skipCell(String source, String reason) {
     return String.format("%-10s skipped (%s)", source, reason);
   }
@@ -738,10 +741,13 @@ class NexmarkMatrixBenchmark {
         .await();
   }
 
-  private static double flussBest(String bootstrapServers, Query q) throws Exception {
+  private static double flussBest(
+      String bootstrapServers, Query q, boolean nativeRun, Map<String, String> extra)
+      throws Exception {
     double best = Double.MAX_VALUE;
     for (int run = 0; run < WARMUP + RUNS; run++) {
-      double seconds = runFlussOnce(bootstrapServers, q);
+      double seconds =
+          withProps(q, nativeRun, extra, () -> runFlussOnce(bootstrapServers, nativeRun, q));
       if (run >= WARMUP) {
         best = Math.min(best, seconds);
       }
@@ -749,7 +755,8 @@ class NexmarkMatrixBenchmark {
     return best;
   }
 
-  private static double runFlussOnce(String bootstrapServers, Query q) throws Exception {
+  private static double runFlussOnce(String bootstrapServers, boolean nativeRun, Query q)
+      throws Exception {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     env.setRuntimeMode(RuntimeExecutionMode.BATCH);
@@ -774,7 +781,8 @@ class NexmarkMatrixBenchmark {
             + " src WHERE event_type = 2");
     tEnv.createTemporarySystemFunction("count_char", CountChar.class);
     runSetup(tEnv, q);
-    return execute(tEnv, null, q, false, "TIMESTAMP(3)");
+    PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
+    return execute(tEnv, scan, q, nativeRun, "TIMESTAMP(3)");
   }
 
   private static void createFlussCatalog(TableEnvironment tEnv, String bootstrapServers) {

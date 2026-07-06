@@ -1,6 +1,8 @@
 # Run the Nexmark matrix with Apache Fluss as the source
 
-**Status:** TODO (not started). Requested 2026-06-30.
+**Status:** IN PROGRESS (draft PR #3 open). Requested 2026-06-30. The Fluss matrix
+baseline and native log-table source path are wired; the native Fluss matrix run is blocked on
+aligning StreamFusion's native Arrow stack with the Arrow 59 `fluss-rs` dependency.
 
 Add **Apache Fluss** as a fourth source in `NexmarkMatrixBenchmark`, alongside the generator and the
 three Kafka formats (json/avro/protobuf). Fluss is a streaming-native storage layer (Apache incubating,
