@@ -208,6 +208,11 @@ here when the ticket is deleted.
   fourth source in the Nexmark matrix; its columnar format may let the native island ingest Arrow with
   little/no row transpose — the perimeter transpose is a visible share of the remaining stateful-query
   cost, so Fluss is the source most likely to show the engine's largest end-to-end margin.
+- **Native Fluss log source** (ticket 44): the Kafka pattern mirrored onto Fluss — reuse its Flink
+  enumerator (dynamic partition discovery included) verbatim, swap the split reader for a JNI reader
+  over fluss-rust's Arrow batch scanner. Fluss's log is Arrow on the wire, so ingest can be
+  zero-decode/zero-transpose; feasibility confirmed 2026-07-05
+  (`.claude/research/fluss-native-source-findings.md`). Enables ticket 36's measurement.
 - **Native lookup join** (ticket 40): **coverage DONE** (2026-07-03). The native operators drive
   Flink's own generated lookup runners over each Arrow probe batch, so a processing-time lookup join
   (Nexmark q13) — INNER + LEFT, sync + async, field-ref *and constant* keys, pre-filter, dim-side

@@ -22,6 +22,9 @@ decode/scan, like the Parquet/ORC file sources) rather than through `RowData`.
   object reuse on both engines) so the comparison is honest.
 - Investigate a native columnar read path for Fluss (skip the `RowData` transpose at ingest) — that is
   the point of the exercise; if it still has to go through `RowData`, note that and measure anyway.
+  **Update 2026-07-05: confirmed feasible and designed — ticket 44 builds that native source** (Fluss's
+  log is Arrow on the wire; fluss-rust exposes it as arrow-rs batches). Benchmark this ticket once 44
+  lands, comparing the native source rung against stock Flink-on-Fluss.
 - Report alongside the generator + Kafka rungs in the same table.
 
 Relates to: the Nexmark matrix (a fourth source rung; see roadmap "Where we are"), ticket 32 (native
