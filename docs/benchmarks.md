@@ -316,7 +316,8 @@ across the ladder — all vs stock Flink, same steelmanned perimeter. 500K event
 `SF_BENCHMARK=true mvn test -Pbench -Dnative.cargo.args="build --release --features mimalloc"
 -Dtest=NexmarkMatrixBenchmark` (Testcontainers Kafka; the `kafka` feature is a build default, and
 `mimalloc` — the recommended build — rebinds the library's allocator, divergences/19). Column
-toggles: `SF_MATRIX_GENERATOR` / `SF_MATRIX_PARQUET` / `SF_MATRIX_KAFKA` (`false` skips one).
+toggles: `SF_MATRIX_GENERATOR` / `SF_MATRIX_PARQUET` / `SF_MATRIX_KAFKA` (`false` skips one), plus
+`SF_MATRIX_FLUSS` (`true` *adds* the opt-in Fluss rung — off by default; see below).
 
 The matrix runs with the native managed-memory cap **in force**: the shared test cluster declares a
 deployment-like managed-memory size (flink-test-utils' default gave each slot ~10 MB, which the
@@ -489,6 +490,18 @@ changelog-heavy queries (q9/q19) that previously gained nothing from faster deco
 q3/q14/q18/q21, whose JSON rows were below 1× on their old best rung and now sit at ~2×+. The floor
 of the table is q16 and the changelog-bound q3/q19 — operator-bound queries where the consume saving
 is diluted, not reversed.
+
+**Fluss** — the opt-in fourth source rung (`SF_MATRIX_FLUSS=true`), the columnar-on-the-wire
+source: the same wide event row is preloaded into a local Fluss test cluster and read back by
+both engines in the identical default streaming runtime — stock Flink-on-Fluss vs the native
+fluss-rs log-table reader. Boundedness comes from a count-N-then-cancel collecting sink, so each
+cell measures time-to-Nth-row at `SF_ROWS` scale. The native reader requires the `fluss` cargo
+feature in the build, added alongside the recommended `mimalloc`: `SF_BENCHMARK=true
+SF_MATRIX_FLUSS=true mvn test -Pbench -Dnative.cargo.args="build --release --features
+mimalloc,fluss" -Dtest=NexmarkMatrixBenchmark`.
+
+_Fluss numbers are pending a full run; the rung's column will be reported here alongside the
+tables above once it lands._
 
 ### The tuned (mini-batch) matrix — the full suite
 

@@ -10,10 +10,18 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.apache.flink.api.common.RuntimeExecutionMode;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
+import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.sink.legacy.RichSinkFunction;
+import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
+import org.apache.flink.types.Row;
+import org.apache.flink.util.CloseableIterator;
 import org.apache.fluss.server.testutils.FlussClusterExtension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -36,9 +44,12 @@ import org.testcontainers.utility.DockerImageName;
  *
  * <p>The optional Fluss rung ({@code SF_MATRIX_FLUSS=true}) preloads the same wide event row into a
  * local Fluss test cluster, then reads it back through both Fluss's stock Flink connector and the
- * native fluss-rs log-table source. The stock baseline uses Fluss's batch limit-read path ({@code
- * LIMIT SF_ROWS}), which supports at most 2,048 rows; the native run uses streaming mode with the same
- * SQL limit so the streaming native optimizer can replace the scan and the job still terminates.
+ * native fluss-rs log-table source. Both engines run the identical SQL (no limit) in the same
+ * default streaming environment the other rungs use; because the Fluss log table is unbounded, each
+ * run counts changelog rows in the sink and cancels the job once the Nth row arrives, reporting
+ * time-to-Nth-row. N is the query's full output cardinality over the preloaded events, measured once
+ * per query with stock Flink on the bounded generator (the same rows the preload wrote) through the
+ * same plain-TIMESTAMP views, so both engines are cancelled at the same row.
  *
  * <p>The query set is every query StreamFusion accelerates: q0–q5, q7–q23 (q1's and q14's decimal are
  * exact and native by default; q21's REGEXP_EXTRACT/LOWER and q14's HOUR route through the host
@@ -442,7 +453,14 @@ class NexmarkMatrixBenchmark {
           + " `dateTime` TIMESTAMP(3)";
   private static final String FLUSS_CATALOG = "fluss_catalog";
   private static final String FLUSS_TABLE = FLUSS_CATALOG + ".fluss.nexmark_events";
-  private static final long FLUSS_LIMIT_READ_MAX_ROWS = 2_048L;
+  // How long a Fluss run may take to reach its Nth sink row before the benchmark fails loudly (the
+  // unbounded source never finishes on its own, so a wrong target must not hang the matrix forever).
+  private static final long FLUSS_NTH_ROW_TIMEOUT_SECONDS = 600L;
+  // Latch/counter for the Fluss rung's count-N-then-cancel sink. Static volatile because Flink
+  // serializes the sink function into the task, so instance fields cannot signal the driver — the
+  // same pattern as NativeFlussSourceSqlHarnessTest's CollectingSink.
+  private static volatile CountDownLatch flussTargetReached;
+  private static volatile AtomicLong flussRowsSeen;
 
   @Test
   void matrix() throws Exception {
@@ -454,14 +472,6 @@ class NexmarkMatrixBenchmark {
     String formatsEnv = System.getenv("SF_LADDER_FORMATS");
     String[] formats =
         formatsEnv != null ? formatsEnv.split(",") : new String[] {"json", "avro", "protobuf"};
-    if (runFluss && ROWS > FLUSS_LIMIT_READ_MAX_ROWS) {
-      throw new IllegalArgumentException(
-          "SF_MATRIX_FLUSS=true uses Fluss's stock batch limit-read path, which supports at most "
-              + FLUSS_LIMIT_READ_MAX_ROWS
-              + " rows; set SF_ROWS <= "
-              + FLUSS_LIMIT_READ_MAX_ROWS
-              + " or disable SF_MATRIX_FLUSS.");
-    }
     if (runFluss && !Native.flussFeatureBuilt()) {
       throw new IllegalArgumentException(
           "SF_MATRIX_FLUSS=true now reports native Fluss vs stock Flink-on-Fluss, so the native "
@@ -509,7 +519,7 @@ class NexmarkMatrixBenchmark {
         String bootstrapServers = cluster.getBootstrapServers();
         writeFlussSource(bootstrapServers);
         for (Query q : queries) {
-          if (!flussBatchBaselineSupported(q)) {
+          if (!flussBaselineSupported(q)) {
             report
                 .get(q.label)
                 .add(
@@ -518,11 +528,18 @@ class NexmarkMatrixBenchmark {
                         "plain-timestamp baseline does not cover time-attribute/proctime/lookup"));
             continue;
           }
-          double flink = flussBest(bootstrapServers, q, false, null);
-          double nativeRun = flussBest(bootstrapServers, q, true, null);
+          long targetRows = flussTargetRows(q);
+          if (targetRows == 0) {
+            report
+                .get(q.label)
+                .add(skipCell("fluss", "query emits no rows over the preloaded events"));
+            continue;
+          }
+          double flink = flussBest(bootstrapServers, q, false, null, targetRows);
+          double nativeRun = flussBest(bootstrapServers, q, true, null, targetRows);
           report.get(q.label).add(cell("fluss", flink, nativeRun));
           if (q.nativeVariantProps != null) {
-            double variant = flussBest(bootstrapServers, q, true, q.nativeVariantProps);
+            double variant = flussBest(bootstrapServers, q, true, q.nativeVariantProps, targetRows);
             report.get(q.label).add(variantCell("fluss", q.nativeVariantLabel, flink, variant));
           }
         }
@@ -742,12 +759,13 @@ class NexmarkMatrixBenchmark {
   }
 
   private static double flussBest(
-      String bootstrapServers, Query q, boolean nativeRun, Map<String, String> extra)
+      String bootstrapServers, Query q, boolean nativeRun, Map<String, String> extra, long targetRows)
       throws Exception {
     double best = Double.MAX_VALUE;
     for (int run = 0; run < WARMUP + RUNS; run++) {
       double seconds =
-          withProps(q, nativeRun, extra, () -> runFlussOnce(bootstrapServers, nativeRun, q));
+          withProps(
+              q, nativeRun, extra, () -> runFlussOnce(bootstrapServers, nativeRun, q, targetRows));
       if (run >= WARMUP) {
         best = Math.min(best, seconds);
       }
@@ -755,19 +773,94 @@ class NexmarkMatrixBenchmark {
     return best;
   }
 
-  private static double runFlussOnce(String bootstrapServers, boolean nativeRun, Query q)
-      throws Exception {
+  /**
+   * One Fluss run: both engines get the identical SQL over the unbounded log table in the same
+   * default streaming environment the other rungs use. The log table never reaches end-of-input, so
+   * instead of awaiting the insert the query streams into a {@link CountingSink} and the job is
+   * cancelled once the {@code targetRows}th changelog row arrives — the elapsed time-to-Nth-row is
+   * the measurement (submission and startup included, like the other rungs' await).
+   */
+  private static double runFlussOnce(
+      String bootstrapServers, boolean nativeRun, Query q, long targetRows) throws Exception {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
-    env.setRuntimeMode(nativeRun ? RuntimeExecutionMode.STREAMING : RuntimeExecutionMode.BATCH);
     env.getConfig().enableObjectReuse();
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
-    tEnv
-        .getConfig()
-        .getConfiguration()
-        .setString("execution.runtime-mode", nativeRun ? "streaming" : "batch");
     createFlussCatalog(tEnv, bootstrapServers);
-    tEnv.executeSql("CREATE TEMPORARY VIEW src AS SELECT * FROM " + FLUSS_TABLE + " LIMIT " + ROWS);
+    tEnv.executeSql("CREATE TEMPORARY VIEW src AS SELECT * FROM " + FLUSS_TABLE);
+    createEventViews(tEnv);
+    tEnv.createTemporarySystemFunction("count_char", CountChar.class);
+    runSetup(tEnv, q);
+    PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
+    // The query's SELECT without the blackhole INSERT wrapper, routed to the counting sink instead
+    // (toChangelogStream, so the updating queries' retractions count like any other sink row).
+    Table table = tEnv.sqlQuery(q.insertSql.substring("INSERT INTO sink ".length()));
+    flussRowsSeen = new AtomicLong();
+    flussTargetReached = new CountDownLatch(1);
+    tEnv.toChangelogStream(table).addSink(new CountingSink(targetRows)).name("count-fluss-bench");
+    long start = System.nanoTime();
+    JobClient job = env.executeAsync("fluss-nexmark-" + q.label);
+    try {
+      if (nativeRun && scan.substitutions() == 0) {
+        throw new IllegalStateException(
+            q.label + ": native island did not engage; comparison is moot. " + scan.fallbackReasons());
+      }
+      if (!flussTargetReached.await(FLUSS_NTH_ROW_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        throw new TimeoutException(
+            q.label
+                + ": Fluss run saw "
+                + flussRowsSeen.get()
+                + " of "
+                + targetRows
+                + " sink rows within "
+                + FLUSS_NTH_ROW_TIMEOUT_SECONDS
+                + "s");
+      }
+      return (System.nanoTime() - start) / 1e9;
+    } finally {
+      try {
+        job.cancel().get();
+      } catch (Exception ignored) {
+        // The job may already be terminating (e.g. it failed before the Nth row); the exception
+        // propagating out of the try block is the interesting one, so cancellation noise stays here.
+      }
+      flussRowsSeen = null;
+      flussTargetReached = null;
+    }
+  }
+
+  /**
+   * The number of changelog rows {@code q} emits over the preloaded events — measured once per query
+   * with stock Flink on the bounded generator (the same rows the Fluss preload wrote) through the
+   * same plain-TIMESTAMP views the Fluss runs use, so both engines are cancelled at the same Nth
+   * sink row.
+   */
+  private static long flussTargetRows(Query q) throws Exception {
+    TableEnvironment tEnv = NexmarkBenchmark.environment(ROWS);
+    // Rebuild the person/auction/bid views over a materialized (non-time-attribute) dateTime so the
+    // calibration plan has the same shape as the Fluss runs', whose log table has no watermark.
+    tEnv.dropTemporaryView("person");
+    tEnv.dropTemporaryView("auction");
+    tEnv.dropTemporaryView("bid");
+    tEnv.executeSql(
+        "CREATE TEMPORARY VIEW src AS SELECT event_type, person, auction, bid,"
+            + " CAST(`dateTime` AS TIMESTAMP(3)) AS `dateTime` FROM events");
+    createEventViews(tEnv);
+    tEnv.createTemporarySystemFunction("count_char", CountChar.class);
+    runSetup(tEnv, q);
+    long rows = 0;
+    try (CloseableIterator<Row> it =
+        tEnv.executeSql(q.insertSql.substring("INSERT INTO sink ".length())).collect()) {
+      while (it.hasNext()) {
+        it.next();
+        rows++;
+      }
+    }
+    return rows;
+  }
+
+  /** The person/auction/bid logical streams over a wide-event {@code src} with a plain TIMESTAMP. */
+  private static void createEventViews(TableEnvironment tEnv) {
     tEnv.executeSql(
         "CREATE TEMPORARY VIEW person AS SELECT person.id AS id, person.name AS name,"
             + " person.emailAddress AS emailAddress, person.creditCard AS creditCard, person.city AS"
@@ -782,10 +875,6 @@ class NexmarkMatrixBenchmark {
         "CREATE TEMPORARY VIEW bid AS SELECT bid.auction AS auction, bid.bidder AS bidder, bid.price"
             + " AS price, bid.channel AS channel, bid.url AS url, `dateTime`, bid.extra AS extra FROM"
             + " src WHERE event_type = 2");
-    tEnv.createTemporarySystemFunction("count_char", CountChar.class);
-    runSetup(tEnv, q);
-    PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
-    return execute(tEnv, scan, q, nativeRun, "TIMESTAMP(3)");
   }
 
   private static void createFlussCatalog(TableEnvironment tEnv, String bootstrapServers) {
@@ -797,8 +886,33 @@ class NexmarkMatrixBenchmark {
             + "')");
   }
 
-  private static boolean flussBatchBaselineSupported(Query q) {
+  private static boolean flussBaselineSupported(Query q) {
     return !Set.of("q5", "q7", "q8", "q11", "q12", "q13").contains(q.label);
+  }
+
+  /**
+   * Counts changelog rows and releases the latch at the Nth — the count-N-then-cancel sink the Fluss
+   * rung times against (the latch pattern of NativeFlussSourceSqlHarnessTest's CollectingSink,
+   * replicated locally so the benchmark stays self-contained).
+   */
+  private static final class CountingSink extends RichSinkFunction<Row> {
+    private final long targetRows;
+
+    private CountingSink(long targetRows) {
+      this.targetRows = targetRows;
+    }
+
+    @Override
+    public void invoke(Row value, Context context) {
+      AtomicLong seen = flussRowsSeen;
+      CountDownLatch latch = flussTargetReached;
+      if (seen == null || latch == null) {
+        return;
+      }
+      if (seen.incrementAndGet() >= targetRows) {
+        latch.countDown();
+      }
+    }
   }
 
   // ----- parquet file source -----
