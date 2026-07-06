@@ -36,9 +36,9 @@ import org.testcontainers.utility.DockerImageName;
  *
  * <p>The optional Fluss rung ({@code SF_MATRIX_FLUSS=true}) preloads the same wide event row into a
  * local Fluss test cluster, then reads it back through both Fluss's stock Flink connector and the
- * native fluss-rs log-table source. Fluss 0.9 streaming reads are unbounded, so this finite benchmark
- * uses the connector's batch limit-read path ({@code LIMIT SF_ROWS}); the stock limit-read path
- * supports at most 2,048 rows.
+ * native fluss-rs log-table source. The stock baseline uses Fluss's batch limit-read path ({@code
+ * LIMIT SF_ROWS}), which supports at most 2,048 rows; the native run uses streaming mode with the same
+ * SQL limit so the streaming native optimizer can replace the scan and the job still terminates.
  *
  * <p>The query set is every query StreamFusion accelerates: q0–q5, q7–q23 (q1's and q14's decimal are
  * exact and native by default; q21's REGEXP_EXTRACT/LOWER and q14's HOUR route through the host
@@ -759,10 +759,13 @@ class NexmarkMatrixBenchmark {
       throws Exception {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
-    env.setRuntimeMode(RuntimeExecutionMode.BATCH);
+    env.setRuntimeMode(nativeRun ? RuntimeExecutionMode.STREAMING : RuntimeExecutionMode.BATCH);
     env.getConfig().enableObjectReuse();
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
-    tEnv.getConfig().getConfiguration().setString("execution.runtime-mode", "batch");
+    tEnv
+        .getConfig()
+        .getConfiguration()
+        .setString("execution.runtime-mode", nativeRun ? "streaming" : "batch");
     createFlussCatalog(tEnv, bootstrapServers);
     tEnv.executeSql("CREATE TEMPORARY VIEW src AS SELECT * FROM " + FLUSS_TABLE + " LIMIT " + ROWS);
     tEnv.executeSql(

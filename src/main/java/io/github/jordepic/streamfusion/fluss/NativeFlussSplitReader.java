@@ -18,6 +18,7 @@ import org.apache.flink.connector.base.source.reader.RecordsBySplits;
 import org.apache.flink.connector.base.source.reader.RecordsWithSplitIds;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitReader;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitsChange;
+import org.apache.flink.connector.base.source.reader.splitreader.SplitsRemoval;
 import org.apache.fluss.flink.source.split.SourceSplitBase;
 
 /**
@@ -89,6 +90,10 @@ final class NativeFlussSplitReader implements SplitReader<NativeFlussRecord, Sou
 
   @Override
   public void handleSplitsChanges(SplitsChange<SourceSplitBase> splitsChanges) {
+    if (splitsChanges instanceof SplitsRemoval) {
+      removeSplits(splitsChanges.splits());
+      return;
+    }
     List<SourceSplitBase> splits = splitsChanges.splits();
     List<NativeFlussLogSplit> nativeSplits = new ArrayList<>(splits.size());
     for (SourceSplitBase split : splits) {
@@ -108,6 +113,27 @@ final class NativeFlussSplitReader implements SplitReader<NativeFlussRecord, Sou
         buckets(nativeSplits),
         startingOffsets(nativeSplits),
         stoppingOffsets(nativeSplits));
+  }
+
+  private void removeSplits(List<SourceSplitBase> splits) {
+    List<NativeFlussLogSplit> nativeSplits = new ArrayList<>(splits.size());
+    for (SourceSplitBase split : splits) {
+      NativeFlussLogSplit nativeSplit = splitsById.remove(split.splitId());
+      if (nativeSplit == null) {
+        nativeSplit = FlussSplitTranslator.translateLogSplit(split);
+      }
+      nativeSplits.add(nativeSplit);
+      stoppingOffsets.remove(nativeSplit.splitId());
+      positions.remove(nativeSplit.splitId());
+      finished.remove(nativeSplit.splitId());
+    }
+    if (!nativeSplits.isEmpty()) {
+      Native.unassignFlussSplits(
+          handle,
+          tableIds(nativeSplits),
+          partitionIds(nativeSplits),
+          buckets(nativeSplits));
+    }
   }
 
   @Override

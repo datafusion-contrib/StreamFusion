@@ -56,7 +56,7 @@ datafusion = "53.1.0"
 # without a system dependency. (SSL/SASL-GSSAPI for the Kerberos cluster would add the `ssl` +
 # `gssapi-vendored` features — a heavier build, deferred until needed.)
 rdkafka = { version = "0.36", default-features = false, features = ["libz-static"], optional = true }
-fluss_rs = { package = "fluss-rs", git = "https://github.com/michaelmitchell-bit/fluss-rust.git", rev = "510ad623695641eebee2a0a23618eb2a2b8a8830", default-features = true, optional = true }
+fluss_rs = { package = "fluss-rs", git = "https://github.com/michaelmitchell-bit/fluss-rust.git", rev = "7182719652d5f6227f15611f888430d74f2eb26b", default-features = true, optional = true }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 futures = "0.3"
 # Fast hashing for the per-row grouping map (the same hasher arrow/datafusion use internally).
