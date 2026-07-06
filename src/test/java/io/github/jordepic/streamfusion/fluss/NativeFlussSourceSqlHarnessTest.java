@@ -1,6 +1,7 @@
 package io.github.jordepic.streamfusion.fluss;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.jordepic.streamfusion.Native;
@@ -9,16 +10,32 @@ import io.github.jordepic.streamfusion.planner.PhysicalPlanScan;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.connector.base.source.reader.RecordsWithSplitIds;
+import org.apache.flink.connector.base.source.reader.splitreader.SplitsAddition;
+import org.apache.flink.connector.base.source.reader.splitreader.SplitsRemoval;
 import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.legacy.RichSinkFunction;
 import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
+import org.apache.fluss.client.Connection;
+import org.apache.fluss.client.ConnectionFactory;
+import org.apache.fluss.client.admin.Admin;
+import org.apache.fluss.flink.source.split.LogSplit;
+import org.apache.fluss.flink.source.split.SourceSplitBase;
+import org.apache.fluss.metadata.PartitionInfo;
+import org.apache.fluss.metadata.TableBucket;
+import org.apache.fluss.metadata.TablePath;
 import org.apache.fluss.server.testutils.FlussClusterExtension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
@@ -176,8 +193,136 @@ class NativeFlussSourceSqlHarnessTest {
     }
   }
 
+  @Test
+  void nativeFlussSourceReadsMultiBucketLogTableThroughSql() throws Exception {
+    FlussClusterExtension cluster = FlussClusterExtension.builder().setNumOfTabletServers(1).build();
+    String bootstrapServers = null;
+    String tablePath = null;
+    try {
+      cluster.start();
+      bootstrapServers = cluster.getBootstrapServers();
+      tablePath = CATALOG + "." + DATABASE + ".native_fluss_multi_bucket_it_" + System.nanoTime();
+      writeMultiBucketRows(bootstrapServers, tablePath);
+
+      List<List<Object>> rows =
+          readRows(bootstrapServers, "SELECT id, name, score FROM " + tablePath, 9);
+
+      assertEquals(
+          List.of(
+              List.of(1L, "alice", 10),
+              List.of(2L, "bob", 20),
+              List.of(3L, "carol", 30),
+              List.of(4L, "dave", 40),
+              List.of(5L, "erin", 50),
+              List.of(6L, "frank", 60),
+              List.of(7L, "grace", 70),
+              List.of(8L, "heidi", 80),
+              List.of(9L, "ivan", 90)),
+          rows);
+    } finally {
+      if (bootstrapServers != null && tablePath != null) {
+        dropTable(bootstrapServers, tablePath);
+      }
+      cluster.close();
+    }
+  }
+
+  @Test
+  void nativeFlussSplitReaderReportsRemovedSplitsAsFinished() throws Exception {
+    FlussClusterExtension cluster = FlussClusterExtension.builder().setNumOfTabletServers(1).build();
+    String bootstrapServers = null;
+    String tablePath = null;
+    try {
+      cluster.start();
+      bootstrapServers = cluster.getBootstrapServers();
+      String tableName = "native_fluss_split_removal_it_" + System.nanoTime();
+      tablePath = CATALOG + "." + DATABASE + "." + tableName;
+      createPartitionedTable(bootstrapServers, tablePath, "100 ms");
+      addPartitionedRow(bootstrapServers, tablePath, "US", 1, 10);
+      addPartitionedRow(bootstrapServers, tablePath, "EU", 2, 20);
+
+      Map<String, SourceSplitBase> splitsByPartition =
+          logSplitsByPartition(cluster.getClientConfig(), tableName);
+      SourceSplitBase usSplit = splitsByPartition.get("US");
+      SourceSplitBase euSplit = splitsByPartition.get("EU");
+
+      NativeFlussSplitReader reader =
+          new NativeFlussSplitReader(
+              new String[] {"bootstrap_servers"},
+              new String[] {bootstrapServers},
+              DATABASE,
+              tableName,
+              new int[0],
+              100L);
+      try {
+        reader.handleSplitsChanges(new SplitsAddition<>(List.of(usSplit, euSplit)));
+        Set<String> finishedSplitIds = new HashSet<>();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        int rows = 0;
+        while (rows < 2) {
+          if (System.nanoTime() > deadline) {
+            throw new TimeoutException("timed out waiting for rows from both partition splits");
+          }
+          rows += drainBatches(reader.fetch(), finishedSplitIds);
+        }
+
+        dropPartition(bootstrapServers, tablePath, "US");
+        reader.handleSplitsChanges(new SplitsRemoval<>(List.of(usSplit)));
+        while (!finishedSplitIds.contains(usSplit.splitId()) && System.nanoTime() < deadline) {
+          drainBatches(reader.fetch(), finishedSplitIds);
+        }
+
+        assertTrue(
+            finishedSplitIds.contains(usSplit.splitId()),
+            "removed split was never reported finished; finished=" + finishedSplitIds);
+        assertFalse(finishedSplitIds.contains(euSplit.splitId()));
+      } finally {
+        reader.close();
+      }
+    } finally {
+      if (bootstrapServers != null && tablePath != null) {
+        dropTable(bootstrapServers, tablePath);
+      }
+      cluster.close();
+    }
+  }
+
   static boolean nativeFlussFeatureBuilt() {
     return Native.flussFeatureBuilt();
+  }
+
+  private static Map<String, SourceSplitBase> logSplitsByPartition(
+      org.apache.fluss.config.Configuration clientConfig, String tableName) throws Exception {
+    TablePath flussTablePath = TablePath.of(DATABASE, tableName);
+    try (Connection connection = ConnectionFactory.createConnection(clientConfig)) {
+      Admin admin = connection.getAdmin();
+      long tableId = admin.getTableInfo(flussTablePath).get().getTableId();
+      Map<String, SourceSplitBase> splits = new HashMap<>();
+      for (PartitionInfo partition : admin.listPartitionInfos(flussTablePath).get()) {
+        TableBucket bucket = new TableBucket(tableId, partition.getPartitionId(), 0);
+        splits.put(
+            partition.getPartitionName(), new LogSplit(bucket, partition.getPartitionName(), 0L));
+      }
+      return splits;
+    }
+  }
+
+  private static int drainBatches(
+      RecordsWithSplitIds<NativeFlussRecord> records, Set<String> finishedSplitIds) {
+    int rows = 0;
+    String splitId = records.nextSplit();
+    while (splitId != null) {
+      NativeFlussRecord record = records.nextRecordFromSplit();
+      while (record != null) {
+        try (VectorSchemaRoot root = record.batch().root()) {
+          rows += root.getRowCount();
+        }
+        record = records.nextRecordFromSplit();
+      }
+      splitId = records.nextSplit();
+    }
+    finishedSplitIds.addAll(records.finishedSplits());
+    return rows;
   }
 
   private static void writeRows(String bootstrapServers, String tablePath) throws Exception {
@@ -191,6 +336,24 @@ class NativeFlussSourceSqlHarnessTest {
             "INSERT INTO "
                 + tablePath
                 + " VALUES (1, 'alice', 10), (2, 'bob', 20), (3, 'carol', 30)")
+        .await();
+  }
+
+  private static void writeMultiBucketRows(String bootstrapServers, String tablePath)
+      throws Exception {
+    StreamTableEnvironment tEnv = environment(bootstrapServers);
+    tEnv.executeSql("DROP TABLE IF EXISTS " + tablePath);
+    tEnv.executeSql(
+        "CREATE TABLE "
+            + tablePath
+            + " (id BIGINT, name STRING, score INT)"
+            + " WITH ('bucket.num' = '3', 'bucket.key' = 'name')");
+    tEnv.executeSql(
+            "INSERT INTO "
+                + tablePath
+                + " VALUES (1, 'alice', 10), (2, 'bob', 20), (3, 'carol', 30),"
+                + " (4, 'dave', 40), (5, 'erin', 50), (6, 'frank', 60),"
+                + " (7, 'grace', 70), (8, 'heidi', 80), (9, 'ivan', 90)")
         .await();
   }
 

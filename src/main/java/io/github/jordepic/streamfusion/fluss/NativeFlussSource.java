@@ -12,7 +12,6 @@ import org.apache.flink.api.connector.source.SourceReader;
 import org.apache.flink.api.connector.source.SourceReaderContext;
 import org.apache.flink.api.connector.source.SplitEnumerator;
 import org.apache.flink.api.connector.source.SplitEnumeratorContext;
-import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitReader;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 import org.apache.fluss.client.initializer.OffsetsInitializer;
@@ -99,7 +98,7 @@ public final class NativeFlussSource
                 projectedFields,
                 POLL_TIMEOUT_MILLIS);
     return new NativeFlussSourceReader(
-        splitReaderSupplier, new NativeFlussRecordEmitter(), new Configuration(), context);
+        splitReaderSupplier, new NativeFlussRecordEmitter(), context.getConfiguration(), context);
   }
 
   @Override

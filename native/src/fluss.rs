@@ -81,6 +81,11 @@ impl FlussSplitReader {
         {
             return Err("mismatched Fluss split assignment array lengths".to_string());
         }
+        // fluss-rs subscribe_buckets/subscribe_partition_buckets take std HashMaps.
+        let mut bucket_offsets: std::collections::HashMap<i32, i64> =
+            std::collections::HashMap::new();
+        let mut partition_bucket_offsets: std::collections::HashMap<(i64, i32), i64> =
+            std::collections::HashMap::new();
         for i in 0..split_ids.len() {
             let table_bucket = table_bucket(table_ids[i], partition_ids[i], buckets[i]);
             self.split_ids
@@ -90,18 +95,24 @@ impl FlussSplitReader {
                     .insert(table_bucket.clone(), stopping_offsets[i]);
             }
             if partition_ids[i] == NO_PARTITION {
-                runtime()
-                    .block_on(self.scanner.subscribe(buckets[i] as i32, start_offsets[i]))
-                    .map_err(|e| format!("failed to subscribe Fluss bucket: {e}"))?;
+                bucket_offsets.insert(buckets[i] as i32, start_offsets[i]);
             } else {
-                runtime()
-                    .block_on(self.scanner.subscribe_partition(
-                        partition_ids[i],
-                        buckets[i] as i32,
-                        start_offsets[i],
-                    ))
-                    .map_err(|e| format!("failed to subscribe Fluss partition bucket: {e}"))?;
+                partition_bucket_offsets
+                    .insert((partition_ids[i], buckets[i] as i32), start_offsets[i]);
             }
+        }
+        if !bucket_offsets.is_empty() {
+            runtime()
+                .block_on(self.scanner.subscribe_buckets(&bucket_offsets))
+                .map_err(|e| format!("failed to subscribe Fluss buckets: {e}"))?;
+        }
+        if !partition_bucket_offsets.is_empty() {
+            runtime()
+                .block_on(
+                    self.scanner
+                        .subscribe_partition_buckets(&partition_bucket_offsets),
+                )
+                .map_err(|e| format!("failed to subscribe Fluss partition buckets: {e}"))?;
         }
         Ok(())
     }
@@ -115,12 +126,17 @@ impl FlussSplitReader {
         if table_ids.len() != partition_ids.len() || table_ids.len() != buckets.len() {
             return Err("mismatched Fluss split unassignment array lengths".to_string());
         }
+        let mut removed_split_ids = HashSet::default();
         for i in 0..table_ids.len() {
             let table_bucket = table_bucket(table_ids[i], partition_ids[i], buckets[i]);
             self.unsubscribe_bucket(&table_bucket);
-            self.split_ids.remove(&table_bucket);
+            if let Some(split_id) = self.split_ids.remove(&table_bucket) {
+                removed_split_ids.insert(split_id);
+            }
             self.stopping_offsets.remove(&table_bucket);
         }
+        self.pending
+            .retain(|(split_id, _, _)| !removed_split_ids.contains(split_id));
         Ok(())
     }
 
@@ -143,9 +159,11 @@ impl FlussSplitReader {
     }
 
     fn remove_missing_partition(&mut self, message: &str) -> Result<(), String> {
-        let partition_id = parse_missing_partition_id(message).ok_or_else(|| {
-            format!("failed to poll Fluss batches: partition disappeared but Fluss did not return a partition id: {message}")
-        })?;
+        // If the server's error wording changed and no partition id can be parsed,
+        // keep polling: the enumerator's PartitionsRemovedEvent path cleans up.
+        let Some(partition_id) = parse_missing_partition_id(message) else {
+            return Ok(());
+        };
         let removed_buckets: Vec<_> = self
             .split_ids
             .keys()
@@ -184,27 +202,34 @@ impl FlussSplitReader {
 
         if let Some(stopping_offset) = self.stopping_offsets.get(&table_bucket).copied() {
             if base_offset >= stopping_offset {
-                self.unsubscribe_bucket(&table_bucket);
+                self.finish_stopped_bucket(&table_bucket);
                 return;
             }
             if next_offset > stopping_offset {
                 let keep_rows = (stopping_offset - base_offset).max(0) as usize;
                 if keep_rows == 0 {
-                    self.unsubscribe_bucket(&table_bucket);
+                    self.finish_stopped_bucket(&table_bucket);
                     return;
                 }
                 batch = batch.slice(0, keep_rows);
                 next_offset = stopping_offset;
             }
             if next_offset >= stopping_offset {
-                self.stopping_offsets.remove(&table_bucket);
-                self.unsubscribe_bucket(&table_bucket);
+                self.finish_stopped_bucket(&table_bucket);
             }
         }
 
         if batch.num_rows() > 0 {
             self.pending.push_back((split_id, next_offset, batch));
         }
+    }
+
+    /// Removes a bucket that reached its stopping offset so later in-flight
+    /// batches for it drop at the split_ids gate without another unsubscribe RPC.
+    fn finish_stopped_bucket(&mut self, table_bucket: &fluss_rs::metadata::TableBucket) {
+        self.split_ids.remove(table_bucket);
+        self.stopping_offsets.remove(table_bucket);
+        self.unsubscribe_bucket(table_bucket);
     }
 
     fn unsubscribe_bucket(&self, table_bucket: &fluss_rs::metadata::TableBucket) {
@@ -246,21 +271,6 @@ fn fluss_config(values: &[(String, String)]) -> Result<fluss_rs::config::Config,
     for (key, value) in values {
         match key.as_str() {
             "bootstrap_servers" => config.bootstrap_servers = value.clone(),
-            "writer_request_max_size" => config.writer_request_max_size = parse(key, value)?,
-            "writer_acks" => config.writer_acks = value.clone(),
-            "writer_retries" => config.writer_retries = parse(key, value)?,
-            "writer_batch_size" => config.writer_batch_size = parse(key, value)?,
-            "writer_dynamic_batch_size_enabled" => {
-                config.writer_dynamic_batch_size_enabled = parse(key, value)?
-            }
-            "writer_dynamic_batch_size_min" => {
-                config.writer_dynamic_batch_size_min = parse(key, value)?
-            }
-            "writer_bucket_no_key_assigner" => {
-                config.writer_bucket_no_key_assigner = value.parse().map_err(|e| {
-                    format!("failed to parse writer_bucket_no_key_assigner={value}: {e}")
-                })?
-            }
             "scanner_remote_log_prefetch_num" => {
                 config.scanner_remote_log_prefetch_num = parse(key, value)?
             }
@@ -282,27 +292,11 @@ fn fluss_config(values: &[(String, String)]) -> Result<fluss_rs::config::Config,
             "scanner_log_fetch_max_bytes_for_bucket" => {
                 config.scanner_log_fetch_max_bytes_for_bucket = parse(key, value)?
             }
-            "writer_batch_timeout_ms" => config.writer_batch_timeout_ms = parse(key, value)?,
-            "writer_enable_idempotence" => config.writer_enable_idempotence = parse(key, value)?,
-            "writer_max_inflight_requests_per_bucket" => {
-                config.writer_max_inflight_requests_per_bucket = parse(key, value)?
-            }
-            "writer_buffer_memory_size" => config.writer_buffer_memory_size = parse(key, value)?,
-            "writer_buffer_wait_timeout_ms" => {
-                config.writer_buffer_wait_timeout_ms = parse(key, value)?
-            }
             "connect_timeout_ms" => config.connect_timeout_ms = parse(key, value)?,
             "security_protocol" => config.security_protocol = value.clone(),
             "security_sasl_mechanism" => config.security_sasl_mechanism = value.clone(),
             "security_sasl_username" => config.security_sasl_username = value.clone(),
             "security_sasl_password" => config.security_sasl_password = value.clone(),
-            "lookup_queue_size" => config.lookup_queue_size = parse(key, value)?,
-            "lookup_max_batch_size" => config.lookup_max_batch_size = parse(key, value)?,
-            "lookup_batch_timeout_ms" => config.lookup_batch_timeout_ms = parse(key, value)?,
-            "lookup_max_inflight_requests" => {
-                config.lookup_max_inflight_requests = parse(key, value)?
-            }
-            "lookup_max_retries" => config.lookup_max_retries = parse(key, value)?,
             other => return Err(format!("unsupported fluss-rs config key {other}")),
         }
     }
@@ -518,27 +512,11 @@ mod tests {
             ),
             ("scanner_log_fetch_min_bytes".into(), "1".into()),
             ("scanner_log_fetch_wait_max_time_ms".into(), "500".into()),
-            ("writer_request_max_size".into(), "8388608".into()),
-            ("writer_acks".into(), "1".into()),
-            ("writer_retries".into(), "9".into()),
-            ("writer_batch_size".into(), "2097152".into()),
-            ("writer_dynamic_batch_size_enabled".into(), "false".into()),
-            ("writer_bucket_no_key_assigner".into(), "round_robin".into()),
-            ("writer_batch_timeout_ms".into(), "250".into()),
-            ("writer_enable_idempotence".into(), "false".into()),
-            ("writer_max_inflight_requests_per_bucket".into(), "3".into()),
-            ("writer_buffer_memory_size".into(), "67108864".into()),
-            ("writer_buffer_wait_timeout_ms".into(), "1000".into()),
             ("connect_timeout_ms".into(), "30000".into()),
             ("security_protocol".into(), "sasl".into()),
             ("security_sasl_mechanism".into(), "PLAIN".into()),
             ("security_sasl_username".into(), "alice".into()),
             ("security_sasl_password".into(), "secret".into()),
-            ("lookup_queue_size".into(), "64".into()),
-            ("lookup_max_batch_size".into(), "32".into()),
-            ("lookup_batch_timeout_ms".into(), "25".into()),
-            ("lookup_max_inflight_requests".into(), "16".into()),
-            ("lookup_max_retries".into(), "7".into()),
         ])
         .expect("translated config");
 
@@ -550,29 +528,10 @@ mod tests {
         assert_eq!(config.scanner_log_fetch_max_bytes_for_bucket, 1_048_576);
         assert_eq!(config.scanner_log_fetch_min_bytes, 1);
         assert_eq!(config.scanner_log_fetch_wait_max_time_ms, 500);
-        assert_eq!(config.writer_request_max_size, 8_388_608);
-        assert_eq!(config.writer_acks, "1");
-        assert_eq!(config.writer_retries, 9);
-        assert_eq!(config.writer_batch_size, 2_097_152);
-        assert!(!config.writer_dynamic_batch_size_enabled);
-        assert_eq!(
-            config.writer_bucket_no_key_assigner,
-            fluss_rs::config::NoKeyAssigner::RoundRobin
-        );
-        assert_eq!(config.writer_batch_timeout_ms, 250);
-        assert!(!config.writer_enable_idempotence);
-        assert_eq!(config.writer_max_inflight_requests_per_bucket, 3);
-        assert_eq!(config.writer_buffer_memory_size, 67_108_864);
-        assert_eq!(config.writer_buffer_wait_timeout_ms, 1000);
         assert_eq!(config.connect_timeout_ms, 30_000);
         assert_eq!(config.security_protocol, "sasl");
         assert_eq!(config.security_sasl_mechanism, "PLAIN");
         assert_eq!(config.security_sasl_username, "alice");
         assert_eq!(config.security_sasl_password, "secret");
-        assert_eq!(config.lookup_queue_size, 64);
-        assert_eq!(config.lookup_max_batch_size, 32);
-        assert_eq!(config.lookup_batch_timeout_ms, 25);
-        assert_eq!(config.lookup_max_inflight_requests, 16);
-        assert_eq!(config.lookup_max_retries, 7);
     }
 }

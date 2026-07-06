@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Set;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
@@ -37,6 +38,7 @@ final class NativeFlussSplitReader implements SplitReader<NativeFlussRecord, Sou
   private final Map<String, Long> positions = new HashMap<>();
   private final Map<String, NativeFlussLogSplit> splitsById = new HashMap<>();
   private final Set<String> finished = new HashSet<>();
+  private final Set<String> pendingFinishedSplits = new HashSet<>();
 
   NativeFlussSplitReader(
       String[] configKeys,
@@ -52,6 +54,12 @@ final class NativeFlussSplitReader implements SplitReader<NativeFlussRecord, Sou
 
   @Override
   public RecordsWithSplitIds<NativeFlussRecord> fetch() {
+    if (!pendingFinishedSplits.isEmpty()) {
+      RecordsBySplits.Builder<NativeFlussRecord> finishedBuilder = new RecordsBySplits.Builder<>();
+      finishedBuilder.addFinishedSplits(pendingFinishedSplits);
+      pendingFinishedSplits.clear();
+      return finishedBuilder.build();
+    }
     int pending = Native.pollFlussBatch(handle, pollTimeoutMillis);
     RecordsBySplits.Builder<NativeFlussRecord> builder = new RecordsBySplits.Builder<>();
     for (int i = 0; i < pending; i++) {
@@ -98,34 +106,42 @@ final class NativeFlussSplitReader implements SplitReader<NativeFlussRecord, Sou
     List<NativeFlussLogSplit> nativeSplits = new ArrayList<>(splits.size());
     for (SourceSplitBase split : splits) {
       NativeFlussLogSplit nativeSplit = FlussSplitTranslator.translateLogSplit(split);
+      OptionalLong stoppingOffset = nativeSplit.stoppingOffset();
+      if (stoppingOffset.isPresent() && nativeSplit.startingOffset() >= stoppingOffset.getAsLong()) {
+        pendingFinishedSplits.add(nativeSplit.splitId());
+        continue;
+      }
       nativeSplits.add(nativeSplit);
       splitsById.put(nativeSplit.splitId(), nativeSplit);
       positions.put(nativeSplit.splitId(), nativeSplit.startingOffset());
-      nativeSplit
-          .stoppingOffset()
-          .ifPresent(stop -> stoppingOffsets.put(nativeSplit.splitId(), stop));
+      stoppingOffset.ifPresent(stop -> stoppingOffsets.put(nativeSplit.splitId(), stop));
     }
-    Native.assignFlussSplits(
-        handle,
-        splitIds(nativeSplits),
-        tableIds(nativeSplits),
-        partitionIds(nativeSplits),
-        buckets(nativeSplits),
-        startingOffsets(nativeSplits),
-        stoppingOffsets(nativeSplits));
+    if (!nativeSplits.isEmpty()) {
+      Native.assignFlussSplits(
+          handle,
+          splitIds(nativeSplits),
+          tableIds(nativeSplits),
+          partitionIds(nativeSplits),
+          buckets(nativeSplits),
+          startingOffsets(nativeSplits),
+          stoppingOffsets(nativeSplits));
+    }
   }
 
   private void removeSplits(List<SourceSplitBase> splits) {
     List<NativeFlussLogSplit> nativeSplits = new ArrayList<>(splits.size());
     for (SourceSplitBase split : splits) {
       NativeFlussLogSplit nativeSplit = splitsById.remove(split.splitId());
+      boolean assigned = nativeSplit != null;
       if (nativeSplit == null) {
         nativeSplit = FlussSplitTranslator.translateLogSplit(split);
       }
       nativeSplits.add(nativeSplit);
       stoppingOffsets.remove(nativeSplit.splitId());
       positions.remove(nativeSplit.splitId());
-      finished.remove(nativeSplit.splitId());
+      if (assigned && !finished.remove(nativeSplit.splitId())) {
+        pendingFinishedSplits.add(nativeSplit.splitId());
+      }
     }
     if (!nativeSplits.isEmpty()) {
       Native.unassignFlussSplits(
