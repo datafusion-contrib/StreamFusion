@@ -110,6 +110,37 @@ class NativeFlussSourceSqlHarnessTest {
     }
   }
 
+  @Test
+  void nativeFlussSourceDiscoversDynamicPartitionedLogTableThroughSql() throws Exception {
+    FlussClusterExtension cluster = FlussClusterExtension.builder().setNumOfTabletServers(1).build();
+    String bootstrapServers = null;
+    String tablePath = null;
+    try {
+      cluster.start();
+      bootstrapServers = cluster.getBootstrapServers();
+      tablePath =
+          CATALOG + "." + DATABASE + ".native_fluss_dynamic_partitioned_it_" + System.nanoTime();
+      createPartitionedTable(bootstrapServers, tablePath, "100 ms");
+      addPartitionedRow(bootstrapServers, tablePath, "US", 1, 10);
+
+      String finalBootstrapServers = bootstrapServers;
+      String finalTablePath = tablePath;
+      List<List<Object>> rows =
+          readRows(
+              bootstrapServers,
+              "SELECT id, region, score FROM " + tablePath,
+              2,
+              () -> addPartitionedRow(finalBootstrapServers, finalTablePath, "EU", 2, 20));
+
+      assertEquals(List.of(List.of(1L, "US", 10), List.of(2L, "EU", 20)), rows);
+    } finally {
+      if (bootstrapServers != null && tablePath != null) {
+        dropTable(bootstrapServers, tablePath);
+      }
+      cluster.close();
+    }
+  }
+
   static boolean nativeFlussFeatureBuilt() {
     return Native.flussFeatureBuilt();
   }
@@ -130,14 +161,8 @@ class NativeFlussSourceSqlHarnessTest {
 
   private static void writePartitionedRows(String bootstrapServers, String tablePath)
       throws Exception {
+    createPartitionedTable(bootstrapServers, tablePath, "0 ms");
     StreamTableEnvironment tEnv = environment(bootstrapServers);
-    tEnv.executeSql("DROP TABLE IF EXISTS " + tablePath);
-    tEnv.executeSql(
-        "CREATE TABLE "
-            + tablePath
-            + " (id BIGINT, region STRING, score INT)"
-            + " PARTITIONED BY (region)"
-            + " WITH ('bucket.num' = '1', 'scan.partition.discovery.interval' = '0 ms')");
     tEnv.executeSql("ALTER TABLE " + tablePath + " ADD PARTITION (region = 'US')");
     tEnv.executeSql("ALTER TABLE " + tablePath + " ADD PARTITION (region = 'EU')");
     tEnv.executeSql(
@@ -147,7 +172,44 @@ class NativeFlussSourceSqlHarnessTest {
         .await();
   }
 
+  private static void createPartitionedTable(
+      String bootstrapServers, String tablePath, String discoveryInterval) {
+    StreamTableEnvironment tEnv = environment(bootstrapServers);
+    tEnv.executeSql("DROP TABLE IF EXISTS " + tablePath);
+    tEnv.executeSql(
+        "CREATE TABLE "
+            + tablePath
+            + " (id BIGINT, region STRING, score INT)"
+            + " PARTITIONED BY (region)"
+            + " WITH ('bucket.num' = '1', 'scan.partition.discovery.interval' = '"
+            + discoveryInterval
+            + "')");
+  }
+
+  private static void addPartitionedRow(
+      String bootstrapServers, String tablePath, String region, int id, int score) throws Exception {
+    StreamTableEnvironment tEnv = environment(bootstrapServers);
+    tEnv.executeSql("ALTER TABLE " + tablePath + " ADD PARTITION (region = '" + region + "')");
+    tEnv.executeSql(
+            "INSERT INTO "
+                + tablePath
+                + " VALUES ("
+                + id
+                + ", '"
+                + region
+                + "', "
+                + score
+                + ")")
+        .await();
+  }
+
   private static List<List<Object>> readRows(String bootstrapServers, String sql, int targetRows)
+      throws Exception {
+    return readRows(bootstrapServers, sql, targetRows, () -> {});
+  }
+
+  private static List<List<Object>> readRows(
+      String bootstrapServers, String sql, int targetRows, ThrowingRunnable afterStart)
       throws Exception {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     StreamTableEnvironment tEnv = environment(env, bootstrapServers);
@@ -162,6 +224,7 @@ class NativeFlussSourceSqlHarnessTest {
       assertTrue(
           scan.substitutions() > 0,
           "Fluss source did not route to native; reasons=" + scan.fallbackReasons());
+      afterStart.run();
       if (!rowsCollected.await(30, TimeUnit.SECONDS)) {
         throw new TimeoutException("timed out waiting for native Fluss rows: " + collectedRows);
       }
@@ -176,6 +239,10 @@ class NativeFlussSourceSqlHarnessTest {
       rowsCollected = null;
       collectedRows = null;
     }
+  }
+
+  private interface ThrowingRunnable {
+    void run() throws Exception;
   }
 
   private static StreamTableEnvironment environment(String bootstrapServers) {
