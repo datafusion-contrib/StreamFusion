@@ -768,6 +768,47 @@ impl datafusion::logical_expr::ScalarUDFImpl for SplitIndex {
     }
 }
 
+/// One strftime parse per distinct pattern instead of one per row: chrono's `format(...)` re-parses
+/// the pattern inside every `Display`, and profiling showed that parse plus the per-row `String` it
+/// was rendered into dominating `DATE_FORMAT`'s cost. The encoder passes a validated literal
+/// pattern, so in practice this parses once per batch; formatting then writes into the caller's
+/// reused buffer. A pattern chrono cannot parse fails the query loudly (the old path panicked
+/// inside `Display` instead) — unreachable, since the JVM encoder admits only translated literals.
+struct CompiledFormat {
+    pattern: String,
+    items: Vec<chrono::format::Item<'static>>,
+}
+
+impl CompiledFormat {
+    fn new() -> Self {
+        Self { pattern: String::new(), items: Vec::new() }
+    }
+
+    fn format_into(
+        &mut self,
+        buf: &mut String,
+        wall: chrono::NaiveDateTime,
+        pattern: &str,
+    ) -> datafusion::common::Result<()> {
+        use std::fmt::Write as _;
+        if self.pattern != pattern || self.items.is_empty() {
+            self.items =
+                chrono::format::StrftimeItems::new(pattern).parse_to_owned().map_err(|e| {
+                    datafusion::common::DataFusionError::Execution(format!(
+                        "invalid DATE_FORMAT pattern {pattern}: {e}"
+                    ))
+                })?;
+            self.pattern = pattern.to_string();
+        }
+        buf.clear();
+        write!(buf, "{}", wall.format_with_items(self.items.iter())).map_err(|_| {
+            datafusion::common::DataFusionError::Execution(format!(
+                "DATE_FORMAT failed to render pattern {pattern}"
+            ))
+        })
+    }
+}
+
 /// Flink's `DATE_FORMAT(timestamp, format)`: format the timestamp's UTC wall-clock with the given
 /// pattern — `LocalDateTime.ofInstant(ts, UTC).format(DateTimeFormatter.ofPattern(format))`. The JVM
 /// encoder validates the (literal) Java pattern and passes the equivalent chrono strftime pattern as
@@ -818,6 +859,8 @@ impl datafusion::logical_expr::ScalarUDFImpl for DateFormat {
         let formats = arrow::compute::cast(&arrays[1], &DataType::Utf8)?;
         let formats = formats.as_any().downcast_ref::<StringArray>().expect("utf8 format");
         let mut builder = arrow::array::StringBuilder::new();
+        let mut compiled = CompiledFormat::new();
+        let mut buf = String::new();
         for row in 0..rows {
             if times.is_null(row) || formats.is_null(row) {
                 builder.append_null();
@@ -825,7 +868,8 @@ impl datafusion::logical_expr::ScalarUDFImpl for DateFormat {
             }
             match chrono::DateTime::from_timestamp_millis(times.value(row)) {
                 Some(instant) => {
-                    builder.append_value(instant.naive_utc().format(formats.value(row)).to_string())
+                    compiled.format_into(&mut buf, instant.naive_utc(), formats.value(row))?;
+                    builder.append_value(&buf);
                 }
                 None => builder.append_null(),
             }
@@ -983,13 +1027,18 @@ impl datafusion::logical_expr::ScalarUDFImpl for DateFormatLtz {
         let zones = arrow::compute::cast(&arrays[2], &DataType::Utf8)?;
         let zones = zones.as_any().downcast_ref::<StringArray>().expect("utf8 zone");
         let mut builder = arrow::array::StringBuilder::new();
+        let mut compiled = CompiledFormat::new();
+        let mut buf = String::new();
         for row in 0..rows {
             if times.is_null(row) || formats.is_null(row) || zones.is_null(row) {
                 builder.append_null();
                 continue;
             }
             match instant_local(times.value(row), zones.value(row)) {
-                Some(local) => builder.append_value(local.format(formats.value(row)).to_string()),
+                Some(local) => {
+                    compiled.format_into(&mut buf, local, formats.value(row))?;
+                    builder.append_value(&buf);
+                }
                 None => builder.append_null(),
             }
         }

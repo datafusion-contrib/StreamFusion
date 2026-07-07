@@ -48,6 +48,9 @@ Current benches:
   8 partitions and gather the sub-batches.
 - `interval_join/equi_key_push`, `window_join/equi_key_flush` — the two joins with a unique key
   (1:1 match, no cross product), so they measure the DataFusion hash-join construction per batch.
+- `date_format/compiled` vs `date_format/per_row_parse` — the DATE_FORMAT hot loop after and
+  before the compile-once change (pattern parsed once vs re-parsed inside every row's Display),
+  kept as an A/B pair so the win stays visible.
 
 ### Results
 
@@ -74,6 +77,7 @@ measured before the pin (or without it) are not comparable to these.
 | `exchange/split_by_key_8` | 4096 | 57 µs | ~72 Melem/s | by-key split into 8 partitions |
 | `session/sum_keyed_update_flush` | 4096 | ~2.2 ms | ~1.9 Melem/s | one-row sessions, 64 keys (high-variance) |
 | `session/sum_keyed_dense_update_flush` | 4096 | 101 µs | ~40.4 Melem/s | gap-chained sessions, 64 keys |
+| `date_format/compiled` | 4096 | 378 µs | ~10.8 Melem/s | pattern compiled once (`per_row_parse` pins the old loop at 670 µs) |
 | `json_decode/three_field_object` | 4096 | 610 µs | ~6.7 Melem/s | ~46 B docs, simd-json tape walk |
 | `json_decode/nexmark_bid_shape` | 4096 | 985 µs | ~4.2 Melem/s | ~210 B docs, 4 of 7 fields skipped |
 

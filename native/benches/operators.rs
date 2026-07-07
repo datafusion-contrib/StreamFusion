@@ -488,6 +488,43 @@ fn bench_window_join(c: &mut Criterion) {
     group.finish();
 }
 
+/// The DATE_FORMAT hot loop, before and after the compile-once change: `per_row_parse` is the old
+/// formulation (chrono re-parses the pattern inside every Display and renders into a fresh String
+/// per row); `compiled` parses the pattern once and renders into a reused buffer. 4096 timestamps,
+/// the Nexmark 'yyyy-MM-dd' pattern (%Y-%m-%d).
+fn bench_date_format(c: &mut Criterion) {
+    let mut group = c.benchmark_group("date_format");
+    group.throughput(Throughput::Elements(4096));
+    let times: Vec<i64> = (0..4096i64).map(|i| 1_700_000_000_000 + i * 977).collect();
+    group.bench_function("per_row_parse", |b| {
+        b.iter(|| {
+            let mut out = Vec::with_capacity(times.len());
+            for &t in &times {
+                let wall = chrono::DateTime::from_timestamp_millis(t).unwrap().naive_utc();
+                out.push(wall.format("%Y-%m-%d").to_string());
+            }
+            out
+        })
+    });
+    group.bench_function("compiled", |b| {
+        use std::fmt::Write as _;
+        let items =
+            chrono::format::StrftimeItems::new("%Y-%m-%d").parse_to_owned().expect("pattern");
+        b.iter(|| {
+            let mut builder = arrow::array::StringBuilder::new();
+            let mut buf = String::new();
+            for &t in &times {
+                let wall = chrono::DateTime::from_timestamp_millis(t).unwrap().naive_utc();
+                buf.clear();
+                write!(buf, "{}", wall.format_with_items(items.iter())).unwrap();
+                builder.append_value(&buf);
+            }
+            builder.finish()
+        })
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_filter,
@@ -501,6 +538,7 @@ criterion_group!(
     bench_dedup_keep_first,
     bench_exchange_split,
     bench_interval_join,
-    bench_window_join
+    bench_window_join,
+    bench_date_format
 );
 criterion_main!(benches);

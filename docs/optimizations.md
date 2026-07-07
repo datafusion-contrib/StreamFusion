@@ -467,3 +467,20 @@ Measured: a realistic ~210 B Nexmark-bid document into a 3-column projected sche
 1.36 ms → 985 µs per 4096-row batch (+37%); the CDC decoders share the walk and their Debezium
 envelopes are several times the payload size. This is what flipped JSON from tokenize-bound
 parity to the Rust decode being JSON's best rung (`fc78b3d`).
+
+
+## DATE_FORMAT: compile the pattern once, render into a reused buffer
+
+chrono's `format(pattern)` re-parses the strftime pattern inside every `Display` and the old
+loop rendered each row into a fresh `String` — a per-row parse plus a per-row allocation for a
+pattern that is a validated literal (the JVM encoder admits only translated literal patterns).
+The Fluss-rung profile surfaced it (`StrftimeItems::next` under `spec_to_string`, per row).
+`CompiledFormat` parses the pattern to owned `Item`s once per distinct pattern per batch (in
+practice once), formats with `format_with_items`, and writes into one reused buffer that the
+Arrow builder copies from — the same compile-once principle divergences/07 applies to regex.
+
+Measured (Criterion `date_format/*`, 4096 rows, the Nexmark `yyyy-MM-dd` pattern): the old
+formulation (`per_row_parse`) runs 670 µs/batch (~6.1 Melem/s); the compiled path 378 µs
+(~10.8 Melem/s) — **1.77× on the hot loop**, kept as an A/B pair in the bench suite. On the
+matrix, `DATE_FORMAT` is a ~10% slice of its queries (q10/q14/q15/q16/q17), so the end-to-end
+effect sits inside combined-run noise at 500K events; the loop win is the stable number.
