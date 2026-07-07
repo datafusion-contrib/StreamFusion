@@ -43,8 +43,8 @@ stream. This mirrors Comet, whose `PhysicalExpr` is built at plan time and reuse
 
 The earlier stateless filters (`filterBatch`, `filterGreaterThan`) re-planned a full
 DataFusion query *per batch*; that path is superseded by the compiled handle. The
-cost it removed is recorded in the profiling ticket as the first confirmed
-hot-path finding.
+cost it removed was the first confirmed hot-path finding of the benchmark sweep
+(see `docs/optimizations.md`).
 
 ## Scope / consequences
 - The matcher gates to the admitted op codes and operand types; any un-admitted node

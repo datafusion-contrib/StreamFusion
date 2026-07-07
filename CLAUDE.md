@@ -87,30 +87,29 @@ operator as its input/output type. An operator that takes `RowData` in and emits
 a transpose on every batch even inside an all-native chain — pure overhead that keeps it below Flink's
 throughput (see the row-fed benchmark numbers). So: build new operators columnar; if a stateful
 operator is keyed, feed it through the native columnar exchange. The changelog operators (GROUP BY
-aggregate, updating join, Top-N) were built row-fed first for correctness and are the standing
-exception to migrate — see the todos.
+aggregate, updating join, Top-N) were built row-fed first for correctness and have since been
+migrated to columnar boundaries.
 
 The `.claude/research/` directory holds the learnings of previous sessions when looking into other
 repos/techniques. See `.claude/research/flink-arroyo-accelerator-findings.md` for the full architecture
 investigation (planner hook, JNI/Arrow bridge, memory accounting, threading/mailbox model, changelog and
 watermark semantics, type mapping, parity testing, and a risk-first build order).
 
-The `.claude/todos/` directory is effectively a JIRA board of tickets to complete with context on them.
-**Delete a ticket the moment its work ships — in the same commit, not later.** A todo describes work *to do*;
-once done its state belongs in `docs/coverage-and-fallbacks.md` (the coverage source of truth), `00-roadmap.md`
-("Where we are"), and a `divergences/` note if a decision was made — not in a stale "build X" ticket. When you
-delete a ticket you must also remove every pointer to it (the `00-roadmap.md` index line and any `(ticket N)` /
-`todos/N-…` cross-references in other tickets, divergences, and the docs) so no dangling links remain — grep for
-the number to be sure. One exception stays on the board: a partially-done ticket (trim it to what remains). As we
-knock things out, update `docs/coverage-and-fallbacks.md` so it reflects exactly what is accelerated and what
-falls back.
+The backlog lives as **GitHub issues** on the canonical repo
+(https://github.com/datafusion-contrib/StreamFusion/issues); the old `.claude/todos/` board was retired in
+their favor (2026-07-06). **Close an issue the moment its work ships**, referencing it from the shipping
+commit. An issue describes work *to do*; once done its state belongs in `docs/coverage-and-fallbacks.md`
+(the coverage source of truth) and a `divergences/` note if a decision was made — not in a stale open
+issue. A partially-done issue stays open, trimmed to what remains. When a doc or divergence needs to point
+at pending work, link the issue URL so nothing dangles when it closes. As we knock things out, update
+`docs/coverage-and-fallbacks.md` so it reflects exactly what is accelerated and what falls back.
 
 The `.claude/wontdos/` directory holds the work we have **deliberately decided not to do**: rejected
 investigations (kept with the benchmark or reasoning that killed them) and documented exclusions (things outside
-our problem, like a query Flink itself cannot run). The moment a ticket's outcome is "don't", move it there — in
-the same commit as the decision, keeping its number — and update every pointer to its new path. A wontdo is not
+our problem, like a query Flink itself cannot run). The moment an issue's outcome is "don't", record it here and
+close the issue — in the same commit as the decision — and update every pointer. A wontdo is not
 deleted history; it exists so the dead end isn't re-explored and the reasoning survives. If circumstances change
-(a benchmark result invalidated, an upstream limit lifted), a wontdo can move back to the todo board — note why.
+(a benchmark result invalidated, an upstream limit lifted), a wontdo can be reopened as an issue — note why.
 
 `docs/coverage-and-fallbacks.md` is the **source of truth for coverage** — everything not excluded there runs
 natively — listing what we do **not** support and **every** specific cause of a fallback to Flink (gate,

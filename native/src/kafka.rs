@@ -714,8 +714,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_benchmarkNati
 /// Arrow, all in Rust — message payloads go straight from librdkafka into an Arrow binary builder (one
 /// copy, no JVM heap byte[] and no per-record JNI crossing), then through the same `JsonDecoder` the
 /// shallow path uses. Returns the decoded row count; the JVM times this single call to compare native
-/// consume+decode against the shallow path. This is the fast path's measurement, not yet the
-/// production FLIP-27 source (no enumerator/offset/config-fidelity work — see ticket 33).
+/// consume+decode against the shallow path. This is the fast path's measurement, not the production
+/// FLIP-27 source (remaining source tails: https://github.com/datafusion-contrib/StreamFusion/issues/16).
 #[cfg(feature = "kafka-bench")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_benchmarkKafkaConsume<'local>(

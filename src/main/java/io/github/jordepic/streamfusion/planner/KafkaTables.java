@@ -447,7 +447,7 @@ final class KafkaTables {
    * native decoder skips an undecodable message per Flink's catch-everything-per-message semantics.
    * Still falling back: a {@code schema-include} wrapper, metadata/computed columns the value decode
    * doesn't produce, Canal's database/table include regexes, and nested Maxwell/Canal schemas. See
-   * ticket 32 for the follow-ups. */
+   * https://github.com/datafusion-contrib/StreamFusion/issues/15 for the follow-ups. */
   static boolean isCdcDecode(RelNode node) {
     if (!(node instanceof StreamPhysicalTableSourceScan)) {
       return false;

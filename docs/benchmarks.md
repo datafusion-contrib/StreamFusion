@@ -122,8 +122,8 @@ arrow-row byte state: the three keyed `OVER` loops (running sum 422 → 183 µs,
 replace the scalar comparator, `Arc`-shared payloads make the per-row before/after snapshots
 refcount bumps), keep-first dedup's emitted set (+6%), and the exchange split (174 → 57 µs,
 hashing the encoded key bytes). The last scalar-keyed maps (window Top-N, changelog normalizer,
-temporal join, mini-batch local aggregate) are bench-gated candidates on the [profiling
-ticket](../.claude/todos/20-profiling-and-benchmarks.md).
+temporal join, mini-batch local aggregate) are bench-gated candidates on the [perf backlog
+issue](https://github.com/datafusion-contrib/StreamFusion/issues/14).
 
 The running `OVER` aggregate was the per-row outlier (~2.6 Melem/s, a DataFusion accumulator
 `update_batch` + `evaluate` per row); replacing it with a specialized typed running fold —
@@ -536,8 +536,8 @@ One query skips: **q12** — a proctime window's output count is wall-clock-depe
 marker's own window would close ~10s (the window size) after the drain, so a finish line would
 time the window, not the engines. It stays measured on the bounded rungs, whose end-of-input
 flush fires proctime windows immediately. Upstreaming `scan.bounded.mode` to Fluss
-(`.claude/todos/54-fluss-bounded-scan-upstream.md`) would retire the count, sentinel, and
-marker machinery at once and admit q12.
+([issue #10](https://github.com/datafusion-contrib/StreamFusion/issues/10)) would retire the
+count, sentinel, and marker machinery at once and admit q12.
 
 Run of 2026-07-06 (500K events, best of 2 after a warmup, time-to-Nth-row / time-to-marker,
 native vs the stock Fluss connector in the identical default streaming environment, both over

@@ -121,7 +121,8 @@ public final class RowDataArrowConverter {
    * deep-copied off the buffers so it stays valid after the batch is released — the caller (a transpose
    * at a columnar→rowwise edge) owns and closes the batch as soon as it has read it. A trailing {@link
    * #ROW_KIND_COLUMN}, if present, is read back onto each row's {@link RowKind}. (A true zero-copy view
-   * would require the batch to outlive the rows, which a native columnar sink would allow — ticket 34.)
+   * would require the batch to outlive the rows, which a native columnar sink would allow —
+   * https://github.com/datafusion-contrib/StreamFusion/issues/17.)
    */
   public static List<RowData> read(VectorSchemaRoot root, RowType rowType) {
     ArrowReader reader = ArrowConversion.createArrowReader(root, rowType);

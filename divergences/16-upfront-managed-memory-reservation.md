@@ -62,7 +62,7 @@ RocksDB block cache via `getSharedMemoryResourceForManagedMemory`):
   ever becomes long-lived.
 - **No runtime spill**: a denied reservation is a hard failure because these streaming
   operators have nothing to spill to; the structural answer is disaggregated/cached state
-  (ticket 37).
+  (https://github.com/datafusion-contrib/StreamFusion/issues/12).
 
 ## What this costs, and the escape hatch
 

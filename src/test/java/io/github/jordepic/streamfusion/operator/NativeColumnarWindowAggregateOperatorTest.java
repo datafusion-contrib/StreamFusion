@@ -156,7 +156,7 @@ class NativeColumnarWindowAggregateOperatorTest {
    * before the watermark closes it — must lose nothing. {@code snapshotState} flushes the buffered
    * input into native state before serializing, so restoring into a fresh operator resumes the
    * still-open window and combines the pre- and post-restore rows. Pins the synchronous-mailbox
-   * guarantee (ticket 01): buffered work survives a checkpoint even though native compute runs
+   * guarantee (divergences/04): buffered work survives a checkpoint even though native compute runs
    * synchronously on the task thread. (Re-added after the row-fed operator carrying the original test
    * was deleted in the fully-columnar migration.)
    */

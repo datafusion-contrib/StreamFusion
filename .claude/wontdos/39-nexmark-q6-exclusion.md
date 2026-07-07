@@ -4,7 +4,7 @@
 2.2.1 (StreamFusion's target — newer than the Flink 2.0-preview1 the nexmark repo targets).
 
 Every Nexmark query that Flink 2.2.1 can run, StreamFusion now accelerates fully and by default
-(q0–q5, q7–q23, including q13's lookup join — see ticket 40). q6 is the one query that stays out, and
+(q0–q5, q7–q23, including q13's lookup join). q6 is the one query that stays out, and
 it stays out because Flink itself cannot execute it — not because of a missing native operator.
 
 ## q6 — `AVG(price) OVER (ROWS BETWEEN 10 PRECEDING AND CURRENT ROW)` over winning bids

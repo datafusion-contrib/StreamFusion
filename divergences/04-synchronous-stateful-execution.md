@@ -31,5 +31,8 @@ scheduler.
 - Async is still the right tool for the *stateless* cases Flink itself makes
   async: native sources awaiting availability futures, and async I/O / lookup
   joins. Those will use Flink's async patterns, not a bespoke one.
-- Full rationale and the affected-operator list are in
-  `.claude/todos/01-mailbox-threading.md`.
+- The guarantee is pinned by the checkpoint-interleaving window-aggregate test
+  (buffered input survives a mid-stream snapshot/restore). The one remaining
+  async candidate, the async scalar UDF, is tracked — with the within-batch
+  rationale for not porting Flink's `AsyncWaitOperator` bridge — in
+  https://github.com/datafusion-contrib/StreamFusion/issues/7.

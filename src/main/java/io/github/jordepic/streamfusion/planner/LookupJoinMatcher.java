@@ -18,7 +18,8 @@ import org.apache.flink.table.planner.plan.utils.FunctionCallUtil;
  *
  * <p>Admitted for a lookup against a non-legacy {@link TableSourceTable}, INNER or LEFT join, with no
  * upsert materialization (a keyed-state lookup over a changelog probe — the island is insert-only
- * anyway). See ticket 40 for the remaining follow-ups (columnar assembly, bounded-dim preload).
+ * anyway). See https://github.com/datafusion-contrib/StreamFusion/issues/18 for the remaining
+ * follow-up (bounded-dim preload).
  */
 final class LookupJoinMatcher {
 

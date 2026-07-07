@@ -191,10 +191,11 @@ allocates only when a key or distinct row first enters state — previously ever
 `OwnedRow` heap copies whether or not it was already stored, the system-allocator signal the
 differential profile flagged vs Flink's pooled `BinaryRowData`. Emit/snapshot reconstruct rows from
 stored bytes via the converter's parser (wire format unchanged). q20 +4% on the generator loop; the
-Proton-style block store (state as columnar blocks + row refs, emit by `take`) stays ticketed
-behind a post-round profile (ticket 48).
+Proton-style block store (state as columnar blocks + row refs, emit by `take`) was rejected on
+that post-round profile — the stored-row decode no longer registers
+(`.claude/wontdos/48-updating-join-block-state.md`).
 
-**The ScalarValue-vintage keyed loops retired** (2026-07-05, closing ticket 49). The last operators
+**The ScalarValue-vintage keyed loops retired** (2026-07-05). The last operators
 still building a `Vec<ScalarValue>` key (or whole row) per input row moved to the same arrow-row
 byte state as the rest: all three keyed `OVER` loops (running fold, bounded-frame buffers,
 ROW_NUMBER/RANK counters) probe by borrowed key bytes; the **retracting Top-N** adopted the
@@ -208,7 +209,7 @@ throughput), ROW_NUMBER 342→131 µs (+162%), bounded frame 688→452 µs (+52%
 concrete key→channel assignment changed with the hashed representation — permitted by
 divergences/10 (co-location is the only contract). Still scalar-keyed, pending a bench that says
 they matter: the window Top-N ranker, the changelog normalizer, the temporal join, and the
-mini-batch local aggregate (ticket 20's backlog).
+mini-batch local aggregate (the [perf backlog](https://github.com/datafusion-contrib/StreamFusion/issues/14)).
 
 **Top-N emit decodes distinct rows, not emitted rows.** The with-rank cascade emits the same
 `Arc`-shared buffered rows at many rank positions — in a hot partition, the same top-N rows over
