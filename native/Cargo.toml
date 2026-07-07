@@ -108,6 +108,9 @@ codegen-units = 1
 
 [dev-dependencies]
 criterion = "0.5"
+# Reading encoder output back in tests: parquet's ChunkReader is implemented for bytes::Bytes.
+# Already in the tree transitively via arrow/parquet.
+bytes = "1"
 
 [[bench]]
 name = "operators"
