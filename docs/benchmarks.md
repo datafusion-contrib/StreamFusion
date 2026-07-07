@@ -562,6 +562,13 @@ table), sorted by speedup:
 | q17 § | 0.84× | 0.86 M | 0.73 M |
 | q15 § | 0.78× | 0.70 M | 0.54 M |
 
+The table's log rides Fluss's defaults, including ZSTD-compressed Arrow batches (as the Parquet
+rung's file rides Flink's Snappy default) — both engines decode the same bytes. Turning
+compression off is not a lever: with `'table.log.arrow.compression.type' = 'NONE'` q0 native
+*drops* 2.83× → 2.18× (stock unchanged, q15 within noise), because fetches are byte-capped and
+an uncompressed log needs ~4× the fetch round-trips for the same rows — the zstd decode the
+profile shows is the price of fewer RPCs, not waste.
+
 **The zero-transpose hypothesis holds where the pipeline is source-bound.** The wire format is
 Arrow, so the native reader feeds the island directly — no ingest transpose, no decode — and
 the stateless queries hit the highest absolute native rates of any streaming rung (q2 at 4.7 M

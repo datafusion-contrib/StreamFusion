@@ -71,3 +71,7 @@ conversion advantage is gone (finding 1) and the whole cell is decided inside th
    structural changes — cheap experiment, measure on q15.
 4. **Not the source**: fluss-rs consume is zstd-bound; both engines pay it. No coalescing
    (finding 0). Leave the reader alone until an operator-side lever moves the trailing cells.
+   Measured follow-up: compression off (`table.log.arrow.compression.type = NONE`) makes q0
+   native *slower* (2.83× → 2.18×; stock unchanged; q15 within noise) — fetches are byte-capped,
+   so the uncompressed log costs ~4× the fetch round-trips. The zstd decode is the price of
+   fewer RPCs, not removable overhead.

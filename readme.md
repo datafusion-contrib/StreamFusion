@@ -84,8 +84,9 @@ engines (standard tuned-prod setting).
 StreamFusion runs **every runnable Nexmark query** (q0–q5, q7–q23) natively end-to-end with no
 fallback and no flags; only q6 stays out, because Flink SQL itself can't run it
 ([analysis](.claude/wontdos/39-nexmark-q6-exclusion.md)). Native vs. stock Flink, 500K events, on the
-recommended `mimalloc` native build (the Kafka feature is a default), from a rowwise `RowData` source, a local Parquet file, a
-Fluss log table (the opt-in `fluss` cargo feature), and each Kafka value format, ordered by query number. Both engines run Flink's **default configuration**
+recommended `mimalloc` native build (the Kafka feature is a default), from a rowwise `RowData` source, a local Parquet file
+(Snappy-compressed — Flink's writer default), a Fluss log table (ZSTD-compressed — Fluss's default; the opt-in `fluss` cargo
+feature), and each Kafka value format, ordered by query number. Both engines decode the same compressed bytes on those rungs. Both engines run Flink's **default configuration**
 (mini-batch off) apart from the object reuse noted above; the mini-batch-tuned comparison is a
 separate table in [docs/benchmarks.md](docs/benchmarks.md):
 
