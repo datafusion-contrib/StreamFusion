@@ -59,13 +59,13 @@ host — verified by the parity harness.
 - [21 — The ingest text envelope: Flink-exact parsers, and the residual leniencies](21-ingest-text-envelope.md) — the Kafka JSON/CSV decodes convert string-positioned values with Flink's exact converter semantics (trimmed Java number parsing, HALF_UP decimal rescale with null-on-overflow, Flink's timestamp/time text forms), with the residual lenient edges parity-pinned by test.
 - [22 — The Parquet sink is encoding-only native; Flink owns the IO and the commit](22-parquet-sink-encoding-only-native.md) — Arroyo's filesystem sink owns partitioning, multipart upload, and its own two-phase commit natively; ours keeps only the Parquet encoding (and batch partition-splitting) native and drains the bytes into Flink's own RecoverableWriter streams, inheriting every Flink filesystem, its exactly-once commit, and the whole partition-commit subsystem verbatim — output is row- and schema-identical to the host, not byte-identical (writer name, dictionary-encoding label, page CRCs, split heuristics differ).
 
-## Known transitional gap (not yet a deliberate divergence)
+## Resolved: early per-operator transposition (historical)
 
-We currently substitute native operators individually and transpose Arrow↔RowData
-at each operator boundary — which the end-to-end benchmark showed makes a single
-substituted operator *slower* than Flink. Comet keeps *full columnar chains* native and
-only transposes at the native↔host edges; we adopt the same model — operators tagged
-columnar/rowwise, flowing Arrow between columnar ones, transposing only at the boundary —
-supplying the columnar record type and transition insertion ourselves since Flink has no
-columnar framework. See [08](08-columnar-flow-transitions.md) for the mechanism. It is a tracked
-optimization rather than a divergence in *intent*; only the *mechanism* is recorded.
+Early on, native operators were substituted individually with Arrow↔RowData transposed at each
+operator boundary — the end-to-end benchmark showed this made a single substituted operator
+*slower* than Flink. Comet's answer is to keep *full columnar chains* native and only transpose at
+the native↔host edges; `PhysicalPlanScan`'s all-or-nothing columnar-island gate now implements the
+same model for us — operators tagged columnar/rowwise, flowing Arrow between columnar ones,
+transposing only at the true perimeter — supplying the columnar record type and transition
+insertion ourselves since Flink has no columnar framework of its own. See
+[08](08-columnar-flow-transitions.md) for the mechanism.

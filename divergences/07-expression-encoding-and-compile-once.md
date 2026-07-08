@@ -134,10 +134,14 @@ would just be wrong.
   `VARCHAR`** cast with target length ≥ source is admitted as an unpadded passthrough (Flink stores both
   unpadded and neither pads nor truncates a widening string cast), which is what lets `COALESCE(s,'x')`
   (its `CHAR` literal branch unified up to `VARCHAR`) route.
-- **Decimal `+`/`-`/`*` are exact and admitted by default;** `/`/`%` are not. Operands reach the native
-  side as `Decimal128` (columns already are; a literal emits as an exact `Decimal128`, not via double),
+- **Decimal `+`/`-`/`*`/`/`/`%` are all exact and admitted by default.** Operands reach the native
+  side as `Decimal128` (columns already are; a literal emits as an exact `Decimal128`, not via double).
   Arrow's `Decimal128` add/sub/mul carry Flink's derived scales, and the wrapping cast to the declared
   `DECIMAL(p, s)` rounds HALF_UP — the same mode Flink uses. Division/modulo derive a rounded quotient
-  scale Arrow and Flink disagree on, so they stay behind `decimalArithmetic.approximate` (double-computed,
-  not byte-exact). A `CAST` to `DECIMAL` from an exact source (another decimal or an integer) is likewise
+  scale that Arrow's own kernel derives differently from Flink, so they instead run through a dedicated
+  fused kernel (`DecimalDivide`) that reproduces Flink's own two-step `BigDecimal` algorithm on
+  arbitrary-precision integers (`num-bigint`) — an exact quotient rounded to 38 significant digits with
+  HALF_UP, then a HALF_UP rescale to the declared `DECIMAL(p, s)` (NULL on overflow) — since that
+  intermediate quotient can need more digits than fit in a fixed-width `i128` before it is rescaled back
+  down. A `CAST` to `DECIMAL` from an exact source (another decimal or an integer) is likewise
   byte-exact; from a float/double source it is approximate (flag-gated).
