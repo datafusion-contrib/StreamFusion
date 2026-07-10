@@ -378,9 +378,11 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   keyed/stateful operators) check this recursively. Individual stateful operators can impose a
   narrower key-type restriction while their native key encoder is being brought to parity.
 - **`RAW<T>` falls back as a column type.** A raw value's bytes, equality, and hash are defined by its
-  arbitrary Flink `TypeSerializer`; there is no generic Rust representation that can preserve those
-  semantics. Materializing it on the JVM for each native row would violate the native data-plane
-  contract, so `RAW<T>` stays on the host until a serializer-specific implementation is added.
+  arbitrary Flink `TypeSerializer`, while its snapshot controls state evolution. Native sources do
+  not carry that serializer contract: Fluss/Paimon expose their own binary types rather than Flink
+  RAW, and the native Kafka decoders only understand their wire schemas. A generic RAW field therefore
+  keeps the affected island on Flink's host path; this is a deliberate exclusion, documented in
+  [the WONTDO](../.claude/wontdos/22-generic-raw-type-acceleration.md).
 - **Nested `ARRAY`/`MAP`/`ROW`/`MULTISET` are supported** (recursively, down to supported leaves; a
   `MULTISET<E>` rides the Arrow boundary as a `MAP<E, INT>`): carried through filters/projections,
   usable as a `GROUP BY` **key** (the native state uses the Flink BinaryRow bytes and gathers the

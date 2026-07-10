@@ -27,5 +27,6 @@ agree exactly for rescaling to be correct.
   subtask and merges them back into one Rust hot-state map. Its 1→2 harness test exercises this
   redistribution.
 - The recursive BinaryRow writer covers ARRAY, MAP, MULTISET, and ROW keys (including nested nulls,
-  variable-width values, decimals, and timestamps). `RAW<T>` remains a host fallback because its
-  serializer defines its bytes and hash.
+  variable-width values, decimals, and timestamps). `RAW<T>` remains a deliberate host fallback:
+  its serializer defines its bytes and hash, but native sources do not carry its serializer contract
+  ([decision](../.claude/wontdos/22-generic-raw-type-acceleration.md)).
