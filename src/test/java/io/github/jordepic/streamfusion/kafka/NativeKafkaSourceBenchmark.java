@@ -293,7 +293,9 @@ class NativeKafkaSourceBenchmark {
             keys,
             values,
             BATCH,
-            pollTimeout);
+            pollTimeout,
+            null,
+            null);
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     COUNTER.set(0);

@@ -1,5 +1,6 @@
 package io.github.jordepic.streamfusion.kafka;
 
+import io.github.jordepic.streamfusion.format.NativeMessageDecoderFactory;
 import io.github.jordepic.streamfusion.operator.ArrowBatch;
 import java.io.IOException;
 import java.util.Properties;
@@ -20,11 +21,14 @@ import org.apache.flink.connector.kafka.source.enumerator.subscriber.KafkaSubscr
 import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
 import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplitSerializer;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
+import org.apache.flink.table.types.logical.RowType;
 
 /**
- * FLIP-27 Kafka source that emits Arrow batches with one binary {@code body} column. The native reader
- * owns rdkafka consumption while a subsequent format-provider transformation performs decode; connector
- * and format DSOs therefore share Arrow C Data rather than private Rust handles.
+ * FLIP-27 Kafka source that consumes with a native rdkafka reader and emits Arrow batches. The planner
+ * supplies the table's format decoder through the format-provider SPI and the split reader runs it on
+ * the fetch thread, so the emitted batches are already typed and the decode overlaps the task thread's
+ * operators; connector and format DSOs share Arrow C Data rather than private Rust handles. Without a
+ * decoder the source emits the raw binary {@code body} batches.
  */
 public final class NativeKafkaSource
     implements Source<ArrowBatch, KafkaPartitionSplit, KafkaSourceEnumState> {
@@ -40,6 +44,8 @@ public final class NativeKafkaSource
   private final String[] configValues;
   private final int maxRecords;
   private final long pollTimeoutMillis;
+  private final NativeMessageDecoderFactory decoderFactory;
+  private final RowType decodedType;
 
   public NativeKafkaSource(
       KafkaSubscriber subscriber,
@@ -50,7 +56,9 @@ public final class NativeKafkaSource
       String[] configKeys,
       String[] configValues,
       int maxRecords,
-      long pollTimeoutMillis) {
+      long pollTimeoutMillis,
+      NativeMessageDecoderFactory decoderFactory,
+      RowType decodedType) {
     this.subscriber = subscriber;
     this.startingOffsets = startingOffsets;
     this.stoppingOffsets = stoppingOffsets;
@@ -63,6 +71,8 @@ public final class NativeKafkaSource
     this.configValues = configValues;
     this.maxRecords = maxRecords;
     this.pollTimeoutMillis = pollTimeoutMillis;
+    this.decoderFactory = decoderFactory;
+    this.decodedType = decodedType;
   }
 
   @Override
@@ -73,7 +83,9 @@ public final class NativeKafkaSource
   @Override
   public SourceReader<ArrowBatch, KafkaPartitionSplit> createReader(SourceReaderContext context) {
     Supplier<SplitReader<NativeKafkaRecord, KafkaPartitionSplit>> splitReaderSupplier =
-        () -> new NativeKafkaSplitReader(configKeys, configValues, maxRecords, pollTimeoutMillis);
+        () ->
+            new NativeKafkaSplitReader(
+                configKeys, configValues, maxRecords, pollTimeoutMillis, decoderFactory, decodedType);
     return new NativeKafkaSourceReader(
         splitReaderSupplier, new NativeKafkaRecordEmitter(), toConfiguration(props), context);
   }

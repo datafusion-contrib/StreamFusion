@@ -1124,10 +1124,56 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeDecoder<
     }
 }
 
+/// This format library's decode behind the cross-DSO driver ABI (`format_abi`): an opaque decoder
+/// handle and Arrow C Data addresses, nothing language-specific. A panic is contained and reported
+/// as nonzero, and the caller raises the failure on its own JNI surface.
+extern "C" fn decode_body_batch(
+    handle: i64,
+    in_array_address: i64,
+    in_schema_address: i64,
+    out_array_address: i64,
+    out_schema_address: i64,
+) -> i32 {
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let decoder = unsafe { &*(handle as *mut MessageDecoder) };
+        let bodies = import_record_batch(in_array_address, in_schema_address);
+        let decoded = decoder.decode(&bodies);
+        export_record_batch(decoded, out_array_address, out_schema_address);
+    }));
+    match outcome {
+        Ok(()) => 0,
+        Err(_) => 1,
+    }
+}
+
+/// The exported driver init (ADBC's `AdbcDriverInit` pattern): a connector states the ABI version it
+/// speaks and passes the matching vtable to fill; this library fills it or refuses with nonzero, and
+/// a refusal leaves the caller on the JVM-mediated decode path. The connector obtains this function's
+/// address through the format's Java facade — by handoff, never by symbol linkage (divergences/25).
+#[no_mangle]
+pub extern "C" fn streamfusion_format_driver_init(version: i32, driver: *mut FormatDriver) -> i32 {
+    if version != FORMAT_DRIVER_VERSION_1 || driver.is_null() {
+        return 1;
+    }
+    unsafe {
+        (*driver).decode_body_batch = decode_body_batch;
+    }
+    0
+}
+
 // Format artifacts expose separate Java facades so the core DSO never owns message-decoder JNI. The
 // decoder implementation remains shared in this crate, but the symbols below are compiled only into the
 // corresponding extension build; loading a format JAR therefore cannot accidentally make a connector
 // or the core artifact provide that format.
+
+#[cfg(feature = "json")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_format_json_NativeJsonFormat_driverInitAddress<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jlong {
+    streamfusion_format_driver_init as usize as jlong
+}
 
 #[cfg(feature = "json")]
 #[no_mangle]
@@ -1186,6 +1232,15 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_format_json_NativeJs
 
 #[cfg(feature = "csv")]
 #[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_format_csv_NativeCsvFormat_driverInitAddress<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jlong {
+    streamfusion_format_driver_init as usize as jlong
+}
+
+#[cfg(feature = "csv")]
+#[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_format_csv_NativeCsvFormat_isLoaded<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -1228,6 +1283,15 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_format_csv_NativeCsv
 
 #[cfg(feature = "raw")]
 #[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_format_raw_NativeRawFormat_driverInitAddress<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jlong {
+    streamfusion_format_driver_init as usize as jlong
+}
+
+#[cfg(feature = "raw")]
+#[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_format_raw_NativeRawFormat_isLoaded<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -1266,6 +1330,15 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_format_raw_NativeRaw
     env: JNIEnv<'local>, class: JClass<'local>, handle: jlong,
 ) {
     Java_io_github_jordepic_streamfusion_Native_closeDecoder(env, class, handle)
+}
+
+#[cfg(feature = "avro")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_driverInitAddress<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jlong {
+    streamfusion_format_driver_init as usize as jlong
 }
 
 #[cfg(feature = "avro")]
@@ -1323,6 +1396,15 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_format_avro_NativeAv
     env: JNIEnv<'local>, class: JClass<'local>, handle: jlong,
 ) {
     Java_io_github_jordepic_streamfusion_Native_closeDecoder(env, class, handle)
+}
+
+#[cfg(feature = "protobuf")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_format_protobuf_NativeProtobufFormat_driverInitAddress<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jlong {
+    streamfusion_format_driver_init as usize as jlong
 }
 
 #[cfg(feature = "protobuf")]

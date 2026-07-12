@@ -2,8 +2,11 @@ use crate::*;
 
 /// The production native Kafka consumer for one Flink subtask: a single rdkafka `BaseConsumer` that
 /// multiplexes all of the subtask's assigned partitions (Flink-parity — one consumer, not one per
-/// split). Each `poll` buckets the drained payloads by partition directly into Arrow binary body batches.
-/// A separately loaded format DSO decodes those bodies after the JVM Arrow C Data handoff; manual
+/// split). Each `poll` buckets the drained payloads by partition directly into Arrow binary body
+/// batches and, when a format decoder is attached, decodes each bucket to its typed batch in the same
+/// call while the bytes are cache-hot — the decode dispatches through a C-ABI entry the format DSO
+/// handed over (never symbol linkage), so the connector stays format-neutral. Without an attached
+/// decoder the bodies cross to the JVM and the split reader decodes them there. Manual
 /// `assign()`+seek, never `subscribe()`/rebalance.
 #[cfg(feature = "kafka")]
 pub(crate) struct KafkaSplitReader {
@@ -11,13 +14,16 @@ pub(crate) struct KafkaSplitReader {
     /// The consumer's message queue, drained via the callback API (see `poll`).
     consumer_queue: *mut rdkafka::bindings::rd_kafka_queue_t,
     body_schema: SchemaRef,
+    /// The attached format decode: the format DSO's version-1 driver vtable and its opaque decoder
+    /// handle, obtained through the driver-init handshake (see `format_abi`).
+    decode: Option<(DecodeBodyBatch, i64)>,
     /// Next offset to consume per assigned partition — the split's checkpoint position.
     next_offsets: HashMap<(String, i32), i64>,
     /// Topics whose broker metadata has been primed (see `reassign`).
     warmed_topics: std::collections::HashSet<String>,
-    /// Binary body batches ready for the JVM to drain one split at a time, in arrival (offset) order so a
-    /// split's offset never goes backwards when several of its batches are drained in one cycle. Fields:
-    /// (topic, partition, next offset, batch).
+    /// Body (or decoded, when a decoder is attached) batches ready for the JVM to drain one split at a
+    /// time, in arrival (offset) order so a split's offset never goes backwards when several of its
+    /// batches are drained in one cycle. Fields: (topic, partition, next offset, batch).
     pending: std::collections::VecDeque<(String, i32, i64, RecordBatch)>,
 }
 
@@ -51,6 +57,7 @@ impl KafkaSplitReader {
             consumer,
             consumer_queue,
             body_schema: Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)])),
+            decode: None,
             next_offsets: HashMap::default(),
             warmed_topics: std::collections::HashSet::default(),
             pending: std::collections::VecDeque::new(),
@@ -215,16 +222,50 @@ impl KafkaSplitReader {
                 &mut context as *mut PollContext as *mut std::os::raw::c_void,
             )
         };
-        // One binary body batch per partition, straight into `pending` (the JVM drains all of them right
-        // after this returns, so nothing is ever left behind on a bounded finish).
+        // One batch per partition, straight into `pending` (the JVM drains all of them right after this
+        // returns, so nothing is ever left behind on a bounded finish). With a decoder attached, each
+        // body batch is decoded to its typed batch here, while its bytes are still cache-hot from the
+        // callback's copies — deferring the decode to a later pass re-streamed the payload bytes cold
+        // and, with the JVM round trip, measured at roughly half the fused throughput.
         self.pending.clear();
         for (partition, topic, mut builder, next_offset) in context.buckets {
             let body = RecordBatch::try_new(self.body_schema.clone(), vec![Arc::new(builder.finish())])
                 .expect("failed to build kafka body batch");
+            let batch = match self.decode {
+                None => body,
+                Some((entry, decoder)) => Self::decode_bucket(entry, decoder, body),
+            };
             self.next_offsets.insert((topic.clone(), partition), next_offset);
-            self.pending.push_back((topic, partition, next_offset, body));
+            self.pending.push_back((topic, partition, next_offset, batch));
         }
         self.pending.len()
+    }
+
+    /// Runs the attached format's C-ABI decode on one body batch. In and out cross as Arrow C Data on
+    /// this stack frame; ownership follows each structure's release callback into its producing DSO.
+    fn decode_bucket(entry: DecodeBodyBatch, decoder: i64, body: RecordBatch) -> RecordBatch {
+        use arrow::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
+        let mut in_array = FFI_ArrowArray::empty();
+        let mut in_schema = FFI_ArrowSchema::empty();
+        export_record_batch(
+            body,
+            &mut in_array as *mut FFI_ArrowArray as jlong,
+            &mut in_schema as *mut FFI_ArrowSchema as jlong,
+        );
+        let mut out_array = FFI_ArrowArray::empty();
+        let mut out_schema = FFI_ArrowSchema::empty();
+        let rc = entry(
+            decoder,
+            &mut in_array as *mut FFI_ArrowArray as i64,
+            &mut in_schema as *mut FFI_ArrowSchema as i64,
+            &mut out_array as *mut FFI_ArrowArray as i64,
+            &mut out_schema as *mut FFI_ArrowSchema as i64,
+        );
+        assert_eq!(rc, 0, "attached format decode failed (rc {rc})");
+        import_record_batch(
+            &mut out_array as *mut FFI_ArrowArray as jlong,
+            &mut out_schema as *mut FFI_ArrowSchema as jlong,
+        )
     }
 }
 
@@ -255,6 +296,39 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_op
     let config: Vec<(String, String)> = keys.into_iter().zip(values).collect();
     let reader = KafkaSplitReader::open(&config);
     into_handle(reader)
+}
+
+/// Attaches a format library's decode to this consumer through the driver-init handshake:
+/// `initAddress` is the format's exported `streamfusion_format_driver_init`, called with the ABI
+/// version this connector speaks; the format fills the vtable or refuses. Returns whether the attach
+/// happened — a refusal (a format artifact from another release) leaves the caller on the
+/// JVM-mediated decode. Subsequent polls of an attached consumer emit typed batches instead of
+/// binary bodies. The decoder's lifecycle stays with its Java owner, which must outlive this
+/// consumer.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_attachKafkaDecoder<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    init_address: jlong,
+    decoder_handle: jlong,
+) -> jboolean {
+    let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
+    let init: FormatDriverInit = unsafe { std::mem::transmute(init_address as usize) };
+    let mut driver = FormatDriver { decode_body_batch: unsupported_decode };
+    if init(FORMAT_DRIVER_VERSION_1, &mut driver) != 0 {
+        return 0;
+    }
+    reader.decode = Some((driver.decode_body_batch, decoder_handle));
+    1
+}
+
+/// Placeholder the driver struct is initialized with before the handshake fills it; never invoked
+/// (a failed init leaves the consumer unattached).
+#[cfg(feature = "kafka")]
+extern "C" fn unsupported_decode(_: i64, _: i64, _: i64, _: i64, _: i64) -> i32 {
+    1
 }
 
 /// Adds splits to the reader and re-assigns: `topics`/`partitions`/`startOffsets` are index-aligned;

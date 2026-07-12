@@ -31,4 +31,9 @@ public abstract class NativeSchemaMessageDecoder implements NativeMessageDecoder
   }
 
   protected abstract long createHandle(long schemaArrayAddress, long schemaAddress);
+
+  @Override
+  public final long decoderHandle() {
+    return handle;
+  }
 }

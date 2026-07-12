@@ -55,6 +55,11 @@ public final class CsvFormatProvider implements NativeFormatProvider {
     }
 
     @Override
+    public long driverInitAddress() {
+      return NativeCsvFormat.driverInitAddress();
+    }
+
+    @Override
     public void close() {
       if (handle != 0) {
         NativeCsvFormat.closeDecoder(handle);

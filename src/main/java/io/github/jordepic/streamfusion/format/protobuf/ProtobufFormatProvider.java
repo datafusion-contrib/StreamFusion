@@ -61,6 +61,11 @@ public final class ProtobufFormatProvider implements NativeFormatProvider {
     }
 
     @Override
+    public long driverInitAddress() {
+      return NativeProtobufFormat.driverInitAddress();
+    }
+
+    @Override
     public void close() {
       if (handle != 0) {
         NativeProtobufFormat.closeDecoder(handle);

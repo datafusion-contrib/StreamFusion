@@ -28,6 +28,30 @@ handle remains private to its creator. This adds a DSO boundary at source ingest
 installable, testable, and fallback-safe. A future fused ABI is acceptable only after benchmarks show
 the boundary is material and it can preserve these ownership rules.
 
+## 2026-07-12: the decode moved back into the poll, through an ADBC-style driver ABI
+
+A benchmarking round answered the "future fused ABI" clause. Profiles first showed the
+decode-as-operator arrangement putting the format work (65% of a JSON job's CPU) on the task thread
+behind the whole island while the fetch thread idled, so the decode moved to the fetch thread via
+the provider SPI; an A/B against the pre-split source then showed the remaining gap was not
+threading, the extra copy, or the C Data crossings (~3%), and a decoder-only Criterion A/B showed
+the decode itself unchanged. What the arrangement had actually lost was decoding **inside the poll
+call** — and separately, the published pre-split Kafka numbers came from the ladder harness's
+BIGINT-timestamp corpus, which no arrangement of the modular path could ever have matched on the
+matrix's TIMESTAMP-string corpus (five parsed timestamp strings per wide event).
+
+The decode now runs inside `pollKafkaBatch` again, dispatched through the pattern ADBC's driver
+manager uses (`AdbcDriverInit`): each format DSO exports one init function; the connector obtains
+its address through the format's Java facade (never symbol linkage), calls it with the ABI version
+it was compiled to speak, and the format fills a `#[repr(C)]` vtable or refuses. Everything
+crossing the boundary is C — the vtable, function pointers, opaque handles, and Arrow C Data whose
+release callbacks carry buffer ownership back into the producing library — so the original
+ownership rules stand. A refusal (a format artifact from another release, or a format needing
+per-batch JVM work like the registry variant) falls back to the split reader's JVM-mediated decode:
+mixed-version deployments degrade in speed, never in correctness. On the like-for-like ladder
+corpus this measured **faster than the pre-split fused source** (JSON q0 2.35× vs 1.94× stock
+Flink, same machine and day), so the boundary now costs less than the coupling it replaced.
+
 Kafka source watermark regeneration is intentionally not carried over: format decoding now happens
 after the source, so computing a rowtime maximum inside the connector would re-couple it to formats.
 Watermarked Kafka tables therefore fall back to Flink until an Arrow-level, per-split watermark

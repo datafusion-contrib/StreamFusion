@@ -46,6 +46,11 @@ public final class RawFormatProvider implements NativeFormatProvider {
     }
 
     @Override
+    public long driverInitAddress() {
+      return NativeRawFormat.driverInitAddress();
+    }
+
+    @Override
     public void close() {
       if (handle != 0) {
         NativeRawFormat.closeDecoder(handle);

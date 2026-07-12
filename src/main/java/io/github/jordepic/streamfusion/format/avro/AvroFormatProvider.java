@@ -62,6 +62,16 @@ public final class AvroFormatProvider implements NativeFormatProvider {
     }
 
     @Override
+    public long driverInitAddress() {
+      return NativeAvroFormat.driverInitAddress();
+    }
+
+    @Override
+    public long decoderHandle() {
+      return handle;
+    }
+
+    @Override
     public void close() {
       if (handle != 0) {
         NativeAvroFormat.closeDecoder(handle);

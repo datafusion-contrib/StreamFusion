@@ -94,6 +94,11 @@ public final class JsonFormatProvider implements NativeFormatProvider {
     }
 
     @Override
+    public long driverInitAddress() {
+      return NativeJsonFormat.driverInitAddress();
+    }
+
+    @Override
     public void close() {
       if (handle != 0) {
         NativeJsonFormat.closeDecoder(handle);

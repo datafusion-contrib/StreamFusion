@@ -6,6 +6,7 @@ import io.github.jordepic.streamfusion.kafka.NativeKafkaSource;
 import io.github.jordepic.streamfusion.format.NativeFormatContext;
 import io.github.jordepic.streamfusion.format.NativeFormatProvider;
 import io.github.jordepic.streamfusion.format.NativeFormatProviders;
+import io.github.jordepic.streamfusion.format.NativeMessageDecoderFactory;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -235,8 +236,13 @@ final class KafkaTables {
             });
   }
 
-  /** Builds the native rdkafka source for a table {@link #isNativeKafka} accepted. */
-  static NativeKafkaSource build(Map<String, String> options) {
+  /**
+   * Builds the native rdkafka source for a table {@link #isNativeKafka} accepted. The format decoder
+   * rides into the source so the split reader decodes on the fetch thread; {@code decodedType} is the
+   * (possibly projection-narrowed) type the decoder emits.
+   */
+  static NativeKafkaSource build(
+      Map<String, String> options, NativeMessageDecoderFactory decoderFactory, RowType decodedType) {
     Properties props = consumerProperties(options);
     Map<String, String> librdkafka =
         new java.util.HashMap<>(KafkaConfigTranslator.translate(props).config());
@@ -261,7 +267,9 @@ final class KafkaTables {
         keys,
         values,
         MAX_RECORDS,
-        POLL_TIMEOUT_MILLIS);
+        POLL_TIMEOUT_MILLIS,
+        decoderFactory,
+        decodedType);
   }
 
   // --- Shallow decode path (Phase 2/3): Flink's own KafkaSource consumes raw value bytes, a native

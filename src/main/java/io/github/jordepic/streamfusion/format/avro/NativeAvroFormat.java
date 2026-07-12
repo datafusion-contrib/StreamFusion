@@ -14,6 +14,13 @@ public final class NativeAvroFormat {
   /** Probes that this optional library has loaded. */
   public static native boolean isLoaded();
 
+  /**
+   * Address of this library's exported driver init ({@code streamfusion_format_driver_init}): a
+   * connector calls it with the ABI version it speaks and the format fills the decode vtable or
+   * refuses (the ADBC driver-init pattern).
+   */
+  public static native long driverInitAddress();
+
   public static native long createDecoder(boolean confluent, String writerSchema, String readerSchema);
 
   public static native void registerWriterSchema(long handle, int schemaId, String schema);

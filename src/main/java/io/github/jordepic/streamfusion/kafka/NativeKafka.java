@@ -15,6 +15,15 @@ public final class NativeKafka {
 
   public static native long openKafkaConsumer(String[] configKeys, String[] configValues);
 
+  /**
+   * Attaches a format library's decode to a consumer through the driver-init handshake: the init at
+   * {@code initAddress} is called with the ABI version this connector speaks and fills the decode
+   * vtable, or refuses — in which case this returns false and the caller keeps the JVM-mediated
+   * decode. Polls of an attached consumer emit typed batches, decoded on the fetch thread with no
+   * JVM round trip. The decoder handle's Java owner must outlive the consumer.
+   */
+  public static native boolean attachKafkaDecoder(long handle, long initAddress, long decoderHandle);
+
   public static native void assignKafkaSplits(
       long handle, String[] topics, long[] partitions, long[] startOffsets);
 

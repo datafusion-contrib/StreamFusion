@@ -3086,3 +3086,18 @@ fn date_format_fast_plan_matches_chrono() {
         }
     }
 }
+
+// The driver-init handshake fills the vtable only for an ABI version this library speaks; anything
+// else is refused, which the connector treats as "stay on the JVM-mediated decode".
+#[test]
+fn format_driver_init_gates_on_version() {
+    extern "C" fn sentinel(_: i64, _: i64, _: i64, _: i64, _: i64) -> i32 {
+        99
+    }
+    let mut driver = FormatDriver { decode_body_batch: sentinel };
+    assert_ne!(streamfusion_format_driver_init(FORMAT_DRIVER_VERSION_1 + 1, &mut driver), 0);
+    assert_eq!(driver.decode_body_batch as usize, sentinel as usize);
+    assert_eq!(streamfusion_format_driver_init(FORMAT_DRIVER_VERSION_1, &mut driver), 0);
+    assert_ne!(driver.decode_body_batch as usize, sentinel as usize);
+    assert_ne!(streamfusion_format_driver_init(FORMAT_DRIVER_VERSION_1, std::ptr::null_mut()), 0);
+}
