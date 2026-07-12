@@ -136,7 +136,7 @@ sessions — not by the update loop.
 
 ## End to end vs. Flink
 
-`ThroughputBenchmark` (opt-in: `SF_BENCHMARK=true mvn test -Pbench -Dtest=ThroughputBenchmark`)
+`ThroughputBenchmark` (opt-in: `SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench -Dtest=ThroughputBenchmark`)
 runs the same query over a large generated source (5M rows; override with `SF_ROWS`) into a
 sink, once with native substitution installed and once on stock Flink, single slot. It reports
 best-of-3 rows/s for each and the native/Flink ratio. A warmup run absorbs JIT and minicluster
@@ -205,7 +205,7 @@ Object reuse is on for both engines (a standard tuned-prod setting).
 
 ### q0–q4 (rowwise source + blackhole sink)
 
-The first five queries, 2 M events, single slot — `SF_BENCHMARK=true mvn test -Pbench
+The first five queries, 2 M events, single slot — `SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench
 -Dtest=NexmarkBenchmark`. q1's decimal arithmetic is exact and native by default (Decimal128 multiply
 + a HALF_UP cast to DECIMAL(23,3), matching Flink).
 
@@ -237,7 +237,7 @@ lever ([divergences/08](../divergences/08-columnar-flow-transitions.md)).
 
 The native decoder is itself a (Rust) bytes→Arrow transpose. Flink does **not** push projection into
 the Kafka scan, so its format decodes the whole record; we push the query's projection into the decode
-so it builds only the read columns/fields. `SF_BENCHMARK=true mvn test -Pbench
+so it builds only the read columns/fields. `SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench
 -Dtest=NexmarkKafkaBenchmark` (Testcontainers Kafka). 2 M events, native decode vs Flink's own format:
 
 | Query | JSON (Flink → Native) | Avro (Flink → Native) | Protobuf (Flink → Native) |
@@ -275,7 +275,7 @@ stock Flink. Three rungs, each one layer more native (projection pushed in at ev
 3. **Rust poll + Rust transpose** — the former fused native rdkafka source: Rust owned the consume and
    decode. It is retained here only as the comparison baseline for the new modular path.
 
-`SF_BENCHMARK=true mvn test -Pbench -Dnative.cargo.args="build --release --features mimalloc"
+`SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench -Dnative.cargo.args="build --release --features mimalloc"
 -Dtest=NexmarkKafkaLadderBenchmark`. 2 M events, ×vs stock Flink (best rung **bold**; the
 `mimalloc` feature — the recommended Kafka build — link-aliases the library's allocator, worth
 +12–22% on the source rung, divergences/19):
@@ -322,7 +322,7 @@ see [.claude/wontdos/39-nexmark-q6-exclusion.md](../.claude/wontdos/39-nexmark-q
 source it can be fed by** — the rowwise generator, a local Parquet file, and Kafka json/avro/protobuf
 across the ladder — all vs stock Flink, same steelmanned perimeter. 500K events.
 
-`SF_BENCHMARK=true mvn test -Pbench -Dnative.cargo.args="build --release --features mimalloc,kafka"
+`SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench -Dnative.cargo.args="build --release --features mimalloc,kafka"
 -Dtest=NexmarkMatrixBenchmark` (Testcontainers Kafka; the Kafka test build enables its feature, and
 `mimalloc` — the recommended build — rebinds the library's allocator, divergences/19). Column
 toggles: `SF_MATRIX_GENERATOR` / `SF_MATRIX_PARQUET` / `SF_MATRIX_KAFKA` (`false` skips one), plus
@@ -339,10 +339,49 @@ join, and the group/`DISTINCT` and windowed (tumbling/hopping/cumulative/session
 buffer their state as memcomparable arrow-row bytes (à la RisingWave's value-encoded state + Arroyo's
 `RowConverter`), not boxed `Vec<ScalarValue>`.
 
-_Numbers are one **combined run** (2026-07-05) — every query in a single JVM, best of 2 after a
-warmup, 500K events.
-A combined run accumulates heap/GC pressure that disproportionately slows the alloc-heavier native side,
-so these **understate** native for the aggregate/dedup queries; it is the conservative read._
+### Current release matrix (2026-07-11)
+
+Run with `SF_BENCHMARK=true SF_MATRIX_FLUSS=true mvn -pl :streamfusion-runtime test -Pbench
+-Dnative.cargo.args="build --release --features mimalloc,kafka,parquet,json,csv,raw,avro,protobuf,fluss"
+-Dtest=NexmarkMatrixBenchmark`. This is one combined 500K-event JVM run, best of two after a warmup;
+both engines use object reuse, the default Flink configuration, and the same source bytes. Kafka reports
+the complete native poll-and-decode rung rather than an intermediate best-of ladder rung.
+
+| Query | Generator | Parquet | Fluss | Kafka JSON | Kafka Avro | Kafka Protobuf |
+|---|---|---|---|---|---|---|
+| q0 | **1.31×** | **3.36×** | **3.08×** | **1.07×** | **1.14×** | **1.01×** |
+| q1 | **1.14×** | **3.80×** | **2.84×** | **1.04×** | **1.06×** | **1.03×** |
+| q2 | **1.33×** | **3.84×** | **2.47×** | 1.00× | **1.11×** | **1.01×** |
+| q3 | 0.95× | **4.20×** | **2.09×** | 0.94× | 0.96× | 0.92× |
+| q4 | **1.37×** | **3.31×** | **1.33×** | **1.09×** | **1.06×** | 0.98× |
+| q5 | **1.29×** | **4.15×** | **1.94×** | **1.12×** | **1.10×** | **1.04×** |
+| q7 | **1.46×** | **3.73×** | **2.01×** | **1.27×** | **1.20×** | **1.23×** |
+| q8 | 0.80× | **4.54×** | **1.90×** | 0.97× | 0.95× | 0.96× |
+| q9 | **1.11×** | **1.66×** | **1.23×** | **1.04×** | 1.00× | **1.07×** |
+| q10 | **1.14×** | **2.85×** | **2.28×** | 0.94× | 0.99× | 0.94× |
+| q11 | **2.48×** | **5.30×** | **4.34×** | **1.50×** | **1.62×** | **2.00×** |
+| q12 | **1.39×** | **3.80×** | — | **1.10×** | **1.13×** | **1.05×** |
+| q13 | **1.03×** | **2.75×** | **1.97×** | **1.03×** | **1.06×** | 0.99× |
+| q14 | 0.99× | **4.37×** | **2.53×** | **1.04×** | **1.01×** | 0.96× |
+| q15 | **1.29×** | **2.06×** | 0.88× | **1.02×** | **1.03×** | **1.06×** |
+| q16 | **1.13×** | **1.06×** | 0.75× | **1.12×** | **1.07×** | **1.04×** |
+| q17 | **1.19×** | **1.72×** | 0.90× | **1.03×** | 0.98× | 0.94× |
+| q18 | 0.98× | **1.67×** | **1.66×** | **1.01×** | **1.07×** | 0.94× |
+| q19 | **1.49×** | **1.70×** | **2.50×** | **1.25×** | **1.25×** | **1.26×** |
+| q20 | 0.77× | **3.74×** | **2.17×** | 0.96× | 0.90× | 0.95× |
+| q21 | 0.91× | **2.46×** | **2.01×** | 0.95× | 0.99× | 1.00× |
+| q21 † | **1.45×** | **5.96×** | **5.15×** | **1.14×** | **1.16×** | **1.20×** |
+| q22 | **1.18×** | **4.83×** | **3.07×** | **1.13×** | **1.11×** | **1.07×** |
+| q23 | **1.18×** | **4.71×** | **2.19×** | **1.12×** | **1.05×** | 1.00× |
+
+The proper keyed-state path gives 17 generator wins rather than the previous 19. All Parquet queries
+still win; q15–q17 are the only Fluss losses, and Kafka is currently near parity to 2.00×. `†` is the
+non-parity native regex/case path; the default q21 remains the byte-parity JVM-upcall path.
+
+### Historical matrix (2026-07-05)
+
+The following tables are retained to show the previous fused-source measurements. They are not current
+release claims; use the matrix above for current comparisons.
 
 **Generator** (the transpose floor — no I/O, no decode), native vs Flink, sorted by speedup (q21 appears
 twice — the byte-parity default and the opt-in native regex/case path, see † below):
@@ -508,7 +547,7 @@ raw `RowData`, the same perimeter as the other rungs' `blackhole`, releasing the
 at the finish line — so each cell measures time-to-Nth-row (or time-to-marker) at `SF_ROWS`
 scale. The native reader requires the `fluss` cargo
 feature in the build, added alongside the recommended `mimalloc`: `SF_BENCHMARK=true
-SF_MATRIX_FLUSS=true mvn test -Pbench -Dnative.cargo.args="build --release --features
+SF_MATRIX_FLUSS=true mvn -pl :streamfusion-runtime test -Pbench -Dnative.cargo.args="build --release --features
 mimalloc,fluss" -Dtest=NexmarkMatrixBenchmark`. Building the `fluss` feature currently needs
 `protoc` (`protobuf-compiler`) because fluss-rs generates its RPC protos at build time.
 
@@ -636,7 +675,7 @@ amortizes (at 500K the run is shorter than one flush interval and measures laten
 is a skew mitigation for parallel deployments (these runs are parallelism 1) and its incremental
 plan chain deliberately has no native path (`wontdos/52-distinct-split-chain.md`).
 `SF_BENCHMARK=true SF_MATRIX_TUNED=true SF_ROWS=5000000
-SF_MATRIX_QUERIES=q0,…,q23 mvn test -Pbench -Dnative.cargo.args="build --release --features
+SF_MATRIX_QUERIES=q0,…,q23 mvn -pl :streamfusion-runtime test -Pbench -Dnative.cargo.args="build --release --features
 mimalloc" -Dtest=NexmarkMatrixBenchmark#tunedMiniBatchMatrix` (the query list defaults to the
 changelog family — mini-batch changes only those plans — but the full-suite run below doubles as
 the coverage check that **every** query still routes native under production tuning; run
