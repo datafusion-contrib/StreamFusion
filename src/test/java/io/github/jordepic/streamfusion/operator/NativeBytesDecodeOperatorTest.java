@@ -18,6 +18,7 @@ import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.Test;
  * running below the batch size waits at most the interval) and the pre-barrier flush (buffered bytes
  * are records the source's checkpoint already covers — unflushed they would be lost on restore).
  */
+@Tag("streamfusion-json")
 class NativeBytesDecodeOperatorTest {
 
   private static final RowType OUTPUT =

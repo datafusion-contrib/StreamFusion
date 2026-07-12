@@ -18,9 +18,11 @@ import org.apache.flink.table.types.logical.DoubleType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.VarCharType;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** Verifies the generic body-batch operator delegates protobuf decoding to its format provider. */
+@Tag("streamfusion-protobuf")
 class NativeBodyBatchProtobufDecodeOperatorTest {
 
   private static final RowType OUTPUT =

@@ -34,6 +34,7 @@ import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.util.SimpleUserCodeClassLoader;
 import org.apache.flink.util.UserCodeClassLoader;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -44,6 +45,7 @@ import org.junit.jupiter.api.Test;
  * literals, arity, quoting, comments, Flink's lenient DATE, the SQL timestamp shape, HALF_UP decimal
  * rescale with overflow-to-NULL, and ignore-parse-errors' per-field granularity.
  */
+@Tag("streamfusion-csv")
 class CsvDecodeParityTest {
 
   private static final RowType ROW_TYPE =

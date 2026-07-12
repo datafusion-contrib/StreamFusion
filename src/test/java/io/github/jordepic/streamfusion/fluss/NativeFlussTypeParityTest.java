@@ -20,6 +20,7 @@ import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.apache.fluss.server.testutils.FlussClusterExtension;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 
@@ -32,6 +33,7 @@ import org.junit.jupiter.api.condition.EnabledIf;
  *
  * <p>Run with a native library built using {@code -Dnative.cargo.args="build --features fluss"}.
  */
+@Tag("streamfusion-fluss")
 @EnabledIf("nativeFlussFeatureBuilt")
 class NativeFlussTypeParityTest {
 

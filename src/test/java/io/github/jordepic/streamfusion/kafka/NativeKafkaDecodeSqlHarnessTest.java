@@ -17,6 +17,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.testcontainers.containers.KafkaContainer;
@@ -33,6 +34,7 @@ import org.testcontainers.utility.DockerImageName;
  * <p>Opt-in via {@code SF_BENCHMARK=true} (Docker for Testcontainers Kafka). Uses the default native
  * build's decoders — no {@code kafka} cargo feature needed (Flink owns the consume).
  */
+@Tag("streamfusion-kafka")
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class NativeKafkaDecodeSqlHarnessTest {
 

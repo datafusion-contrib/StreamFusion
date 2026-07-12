@@ -14,8 +14,10 @@ import org.apache.flink.api.connector.source.SourceOutput;
 import org.apache.fluss.flink.source.split.LogSplit;
 import org.apache.fluss.flink.source.split.LogSplitState;
 import org.apache.fluss.metadata.TableBucket;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("streamfusion-fluss")
 class NativeFlussRecordEmitterTest {
 
   @Test

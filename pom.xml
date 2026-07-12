@@ -409,6 +409,38 @@
                 </executions>
             </plugin>
 
+            <!-- test-compile builds the debug DSO after Maven's normal resource phase. Copy it only
+                 then, so `mvn compile` stays Java-only while tests exercise the same bundled fallback
+                 that a packaged debug artifact will contain. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-test-native-resource</id>
+                        <phase>test-compile</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${native.resource.directory}</directory>
+                                    <targetPath>io/github/jordepic/streamfusion/native</targetPath>
+                                    <includes>
+                                        <include>libstreamfusion.so</include>
+                                        <include>libstreamfusion.dylib</include>
+                                        <include>streamfusion.dll</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!-- Tests load the library by name, so point the loader at cargo's output dir
                  rather than packaging it into a jar at this stage. -->
             <plugin>

@@ -32,6 +32,7 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.table.types.utils.TypeConversions;
 import org.apache.flink.util.Collector;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -45,6 +46,7 @@ import org.junit.jupiter.api.Test;
  * scan of the raw {@code old} JSON; every scenario here must produce the same changelog (RowKinds
  * included) from both engines, or fail on both.
  */
+@Tag("streamfusion-json")
 class CdcDecodeParityTest {
 
   private static final RowType ROW_TYPE =

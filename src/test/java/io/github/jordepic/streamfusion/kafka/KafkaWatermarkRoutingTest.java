@@ -9,6 +9,7 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Test;
  * watermarks — the bug this pins down was masked by bounded runs, where the final MAX_WATERMARK closes
  * all windows regardless.
  */
+@Tag("streamfusion-kafka")
 class KafkaWatermarkRoutingTest {
 
   private static final String QUERY =

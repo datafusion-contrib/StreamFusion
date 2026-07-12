@@ -28,6 +28,7 @@ import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.table.types.logical.VarCharType;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -44,6 +45,7 @@ import org.junit.jupiter.api.Test;
  * timestamp column, a float token under a STRING column failing loudly, Unicode-whitespace
  * trimming) are excluded from the corpus by design.
  */
+@Tag("streamfusion-json")
 class JsonDecodeParityTest {
 
   private static final RowType SCALAR_TYPE =

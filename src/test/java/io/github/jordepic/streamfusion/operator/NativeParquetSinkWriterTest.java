@@ -30,6 +30,7 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.util.HadoopInputFile;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -37,6 +38,7 @@ import org.junit.jupiter.api.Test;
  * the recording checkpoint completes, restore commits exactly once, and each visible file is a
  * readable Parquet file with the group's rows.
  */
+@Tag("streamfusion-parquet")
 class NativeParquetSinkWriterTest {
 
   private static final RowType SCHEMA =

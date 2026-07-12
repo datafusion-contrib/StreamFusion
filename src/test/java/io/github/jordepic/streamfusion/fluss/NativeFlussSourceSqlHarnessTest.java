@@ -37,6 +37,7 @@ import org.apache.fluss.metadata.PartitionInfo;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.metadata.TablePath;
 import org.apache.fluss.server.testutils.FlussClusterExtension;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 
@@ -47,6 +48,7 @@ import org.junit.jupiter.api.condition.EnabledIf;
  *
  * <p>Run with a native library built using {@code -Dnative.cargo.args="build --features fluss"}.
  */
+@Tag("streamfusion-fluss")
 @EnabledIf("nativeFlussFeatureBuilt")
 class NativeFlussSourceSqlHarnessTest {
 

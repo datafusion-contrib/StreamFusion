@@ -17,6 +17,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.testcontainers.containers.KafkaContainer;
@@ -33,6 +34,7 @@ import org.testcontainers.utility.DockerImageName;
  * {@code kafka} cargo feature, which statically links a bundled librdkafka). The default build
  * excludes rdkafka and skips this test.
  */
+@Tag("streamfusion-kafka")
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class NativeKafkaSourceSqlHarnessTest {
 

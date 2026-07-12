@@ -19,9 +19,11 @@ import org.apache.flink.table.types.logical.DoubleType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.VarCharType;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** The generic body-batch decoder delegates its JSON decode to the installed format provider. */
+@Tag("streamfusion-json")
 class NativeBodyBatchJsonDecodeOperatorTest {
 
   private static final RowType OUTPUT =
