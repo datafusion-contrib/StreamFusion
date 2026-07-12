@@ -27,6 +27,8 @@ import org.apache.flink.table.data.binary.BinaryStringData;
 
 import org.apache.arrow.vector.VarCharVector;
 
+import java.nio.charset.StandardCharsets;
+
 /** {@link ArrowFieldWriter} for VarChar. */
 @Internal
 public abstract class VarCharWriter<T> extends ArrowFieldWriter<T> {
@@ -64,7 +66,16 @@ public abstract class VarCharWriter<T> extends ArrowFieldWriter<T> {
         // copy (and its per-string garbage) was a measurable share of every rowwise-fed query.
         if (value instanceof BinaryStringData) {
             BinaryStringData binary = (BinaryStringData) value;
-            binary.ensureMaterialized();
+            // A still-lazy value wraps a java.lang.String (rowwise sources arrive through
+            // RowRowConverter). Encoding it with the JDK's intrinsified UTF-8 encoder instead of
+            // materializing through Flink's char-at-a-time StringUtf8Utils is byte-identical
+            // (Flink's encoder documents JDK-equivalent output and delegates its edge cases to
+            // it) and was ~9% of a string-heavy rowwise-fed job in the q20 profile.
+            if (binary.getBinarySection() == null) {
+                vector.setSafe(
+                        getCount(), binary.getJavaObject().getBytes(StandardCharsets.UTF_8));
+                return;
+            }
             MemorySegment[] segments = binary.getSegments();
             if (segments.length == 1 && !segments[0].isOffHeap()) {
                 vector.setSafe(
