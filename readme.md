@@ -34,9 +34,10 @@ Native coverage is broad — most of the streaming SQL surface:
 - **Connectors:** a Parquet file source (native Arrow scan, local paths) and a Parquet sink that
   writes to any filesystem Flink supports (`s3:`/`gs:`/`abfs:`/`hdfs:`/…, `PARTITIONED BY` and
   partition commit included — native encoding drained into Flink's own recoverable streams); Kafka
-  source ingest for JSON/CSV/raw/Avro/protobuf and Debezium/OGG CDC — native rdkafka produces Arrow
-  value-body batches and the independently installed format artifact decodes them. Watermarked Kafka
-  tables remain on Flink for now.
+  source ingest for JSON/CSV/raw/Avro/protobuf and Debezium/OGG CDC — native rdkafka consumes and
+  the independently installed format artifact decodes inside the same poll, invoked through a
+  versioned C ABI it hands the connector at runtime (never linked). Watermarked Kafka tables remain
+  on Flink for now.
 - **UDFs:** a Flink `ScalarFunction` the expression engine can't implement itself is invoked over
   Arrow columns by a native→JVM upcall (Comet's `JvmScalarUdfExpr` pattern), one JNI crossing per
   batch, so the pipeline stays native *through* the UDF and the result is byte-identical.
@@ -92,30 +93,30 @@ complete native poll-and-decode path, not a selectively faster intermediate rung
 
 | Query | Shape | From RowData | From Parquet file | From Fluss | From JSON on Kafka | From Avro on Kafka | From Protobuf on Kafka |
 |---|---|---|---|---|---|---|---|
-| q0 | pass-through projection of `bid` | **1.45×** | **3.40×** | **2.97×** | **1.11×** | **1.09×** | **1.12×** |
-| q1 | `0.908 * price` — exact `Decimal128` | **1.26×** | **3.41×** | **3.07×** | **1.04×** | **1.06×** | **1.09×** |
-| q2 | filter `WHERE MOD(auction, 123) = 0` | **1.29×** | **3.22×** | **3.00×** | **1.05×** | **1.15×** | **1.14×** |
-| q3 | updating join `auction ⋈ person` | 0.94× | **4.03×** | **2.12×** | 0.93× | 0.95× | 0.92× |
-| q4 | regular join → `MAX` → `AVG` per category | **1.43×** | **3.90×** | **1.45×** | **1.03×** | **1.09×** | **1.10×** |
-| q5 | Hot Items (window re-agg + window join) | **1.30×** | **3.82×** | **1.44×** | **1.06×** | **1.07×** | **1.15×** |
-| q7 | tumble `MAX` ⋈ bid | **1.39×** | **4.24×** | **2.50×** | **1.31×** | **1.25×** | **1.36×** |
-| q8 | tumble windowed-distinct ⋈ join | 0.85× | **4.76×** | **1.92×** | 0.93× | 0.93× | 0.96× |
-| q9 | regular join → `ROW_NUMBER` (≤ 1) | **1.26×** | **1.90×** | **1.47×** | **1.04×** | **1.05×** | **1.17×** |
-| q10 | `DATE_FORMAT` projection | **1.40×** | **4.73×** | **3.48×** | **1.02×** | **1.03×** | 0.97× |
-| q11 | session-window `COUNT` per bidder | **2.60×** | **5.29×** | **3.87×** | **1.54×** | **1.68×** | **2.11×** |
-| q12 | proctime tumble `COUNT` per bidder | **1.45×** | **3.59×** | — | **1.21×** | **1.17×** | **1.15×** |
-| q13 | lookup join (bounded dimension) | **1.24×** | **3.01×** | **2.36×** | **1.07×** | **1.10×** | **1.04×** |
-| q14 | `HOUR`/`CASE` + `count_char` UDF + decimal | **1.07×** | **3.41×** | **2.74×** | **1.07×** | 1.00× | **1.01×** |
-| q15 | multi-`DISTINCT` `COUNT`s per day | **1.50×** | **2.36×** | 0.88× | **1.18×** | **1.06×** | **1.17×** |
-| q16 | multi-`DISTINCT` per channel/day | **1.24×** | **1.43×** | 1.00× | **1.13×** | **1.10×** | **1.09×** |
-| q17 | group agg + `AVG`/`MIN`/`MAX`/`SUM` per day | **1.38×** | **1.98×** | **1.02×** | **1.07×** | **1.07×** | **1.04×** |
-| q18 | `ROW_NUMBER` dedup (≤ 1) | **1.23×** | **2.46×** | **1.54×** | **1.10×** | **1.11×** | **1.12×** |
-| q19 | `ROW_NUMBER` topN (≤ 10) | **1.40×** | **1.78×** | **2.77×** | **1.35×** | **1.38×** | **1.37×** |
-| q20 | updating join (`category = 10`) | 0.94× | **4.19×** | **1.91×** | 0.98× | **1.03×** | **1.01×** |
-| q21 | `CASE` + `REGEXP_EXTRACT`/`LOWER` — byte-parity | **1.02×** | **2.55×** | **2.19×** | 0.99× | **1.01×** | **1.08×** |
-| q21 † | …opt-in native regex/case | **1.77×** | **5.97×** | **5.20×** | **1.16×** | **1.18×** | **1.30×** |
-| q22 | `SPLIT_INDEX(url, '/', n)` projection | **1.41×** | **4.10×** | **3.45×** | **1.16×** | **1.19×** | **1.18×** |
-| q23 | three-way join `bid ⋈ person ⋈ auction` | **1.31×** | **4.21×** | **1.76×** | **1.09×** | **1.11×** | **1.21×** |
+| q0 | pass-through projection of `bid` | **1.45×** | **3.40×** | **2.97×** | **1.16×** | **1.16×** | **1.05×** |
+| q1 | `0.908 * price` — exact `Decimal128` | **1.26×** | **3.41×** | **3.07×** | **1.03×** | **1.07×** | **1.04×** |
+| q2 | filter `WHERE MOD(auction, 123) = 0` | **1.29×** | **3.22×** | **3.00×** | **1.09×** | **1.05×** | **1.10×** |
+| q3 | updating join `auction ⋈ person` | 0.94× | **4.03×** | **2.12×** | **1.03×** | 0.94× | 0.92× |
+| q4 | regular join → `MAX` → `AVG` per category | **1.43×** | **3.90×** | **1.45×** | **1.12×** | **1.07×** | **1.04×** |
+| q5 | Hot Items (window re-agg + window join) | **1.30×** | **3.82×** | **1.44×** | **1.13×** | **1.10×** | **1.05×** |
+| q7 | tumble `MAX` ⋈ bid | **1.39×** | **4.24×** | **2.50×** | **1.33×** | **1.22×** | **1.25×** |
+| q8 | tumble windowed-distinct ⋈ join | 0.85× | **4.76×** | **1.92×** | **1.01×** | 0.93× | 0.95× |
+| q9 | regular join → `ROW_NUMBER` (≤ 1) | **1.26×** | **1.90×** | **1.47×** | **1.09×** | **1.08×** | **1.20×** |
+| q10 | `DATE_FORMAT` projection | **1.40×** | **4.73×** | **3.48×** | **1.05×** | **1.04×** | 0.96× |
+| q11 | session-window `COUNT` per bidder | **2.60×** | **5.29×** | **3.87×** | **1.77×** | **1.69×** | **1.99×** |
+| q12 | proctime tumble `COUNT` per bidder | **1.45×** | **3.59×** | — | **1.11×** | **1.12×** | **1.17×** |
+| q13 | lookup join (bounded dimension) | **1.24×** | **3.01×** | **2.36×** | **1.06×** | **1.05×** | **1.04×** |
+| q14 | `HOUR`/`CASE` + `count_char` UDF + decimal | **1.07×** | **3.41×** | **2.74×** | 1.00× | **1.02×** | 0.95× |
+| q15 | multi-`DISTINCT` `COUNT`s per day | **1.50×** | **2.36×** | 0.88× | **1.13×** | **1.08×** | **1.06×** |
+| q16 | multi-`DISTINCT` per channel/day | **1.24×** | **1.43×** | 1.00× | **1.18×** | **1.17×** | **1.12×** |
+| q17 | group agg + `AVG`/`MIN`/`MAX`/`SUM` per day | **1.38×** | **1.98×** | **1.02×** | **1.09×** | **1.03×** | **1.05×** |
+| q18 | `ROW_NUMBER` dedup (≤ 1) | **1.23×** | **2.46×** | **1.54×** | **1.16×** | **1.09×** | **1.14×** |
+| q19 | `ROW_NUMBER` topN (≤ 10) | **1.40×** | **1.78×** | **2.77×** | **1.23×** | **1.24×** | **1.25×** |
+| q20 | updating join (`category = 10`) | 0.94× | **4.19×** | **1.91×** | **1.04×** | 1.00× | 0.99× |
+| q21 | `CASE` + `REGEXP_EXTRACT`/`LOWER` — byte-parity | **1.02×** | **2.55×** | **2.19×** | **1.01×** | **1.03×** | 1.00× |
+| q21 † | …opt-in native regex/case | **1.77×** | **5.97×** | **5.20×** | **1.19×** | **1.23×** | **1.18×** |
+| q22 | `SPLIT_INDEX(url, '/', n)` projection | **1.41×** | **4.10×** | **3.45×** | **1.16×** | **1.17×** | **1.16×** |
+| q23 | three-way join `bid ⋈ person ⋈ auction` | **1.31×** | **4.21×** | **1.76×** | **1.09×** | **1.09×** | **1.13×** |
 
 From `RowData`, 20 of 23 default queries win — up from 17 after the 2026-07-12 hot-path round
 (batched BinaryRow key encoding, the transpose's intrinsified string encode, and the `DATE_FORMAT`
@@ -127,9 +128,12 @@ The columnar sources remain the clear strength: all 23 Parquet queries win (1.43
 measurable Fluss query except q15 (0.88×) is at or above parity (q12 has no deterministic unbounded
 finish line).
 
-The refreshed Kafka measurements are near parity to 2.11× rather than the older fused-source figures;
-that is the current release claim. The full method, intermediate Kafka rungs, and benchmark caveats
-are in **[docs/benchmarks.md](docs/benchmarks.md)**.
+The Kafka columns run modest wins to ~2× at this 500K-event scale, where per-run fixed costs
+compress every ratio; at 2M events the same pipelines reach 2.1–3.1× on the stateful queries and
+2.3–2.5× on the decode-light ladder corpus (the format decode now runs inside the native poll,
+dispatched through a versioned cross-library ABI — see [docs/benchmarks.md](docs/benchmarks.md)
+for the ladder, the corpus caveats, and every intermediate rung). The remaining sub-parity Kafka
+cells (q3/q8 on two formats) are the perimeter-bound cluster, not decode.
 
 _Apple M1 Max; numbers are comparable only within a machine._
 

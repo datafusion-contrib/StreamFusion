@@ -259,11 +259,7 @@ decode removed that build/copy of unread fields). **Protobuf** is also build/cop
 `memmove` + ~16% ptars decode); pruning via a **pruned descriptor** (ptars builds a column per
 descriptor field and skips wire tags it has no field for) flipped it from 0.88–0.94× to 1.26–1.36×.
 
-### The row→columnar ladder (Kafka, historical fused-source baseline)
-
-> The measurements in this section predate the format-artifact split. The current Kafka DSO emits Arrow
-> value bodies and a separately installed format DSO decodes them, so rerun this ladder before using any
-> source-rung value as a current release claim.
+### The row→columnar ladder (Kafka)
 
 How far into Rust the source-side work moves, on the same q0/q1/q2 over the same produced bytes, all vs
 stock Flink. Three rungs, each one layer more native (projection pushed in at every rung that can):
@@ -272,32 +268,36 @@ stock Flink. Three rungs, each one layer more native (projection pushed in at ev
    `RowData → Arrow` transpose feeds the native calc.
 2. **Rust transpose, JVM poll** — Flink's `KafkaSource` polls raw bytes, a native operator decodes them
    straight to Arrow (the shallow decode path).
-3. **Rust poll + Rust transpose** — the former fused native rdkafka source: Rust owned the consume and
-   decode. It is retained here only as the comparison baseline for the new modular path.
+3. **Rust poll + Rust transpose** — the production native source: rdkafka consumes and the separately
+   installed format artifact decodes inside the same poll call, dispatched through the versioned
+   cross-DSO driver ABI (divergences/25).
 
-`SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench -Dnative.cargo.args="build --release --features mimalloc"
--Dtest=NexmarkKafkaLadderBenchmark`. 2 M events, ×vs stock Flink (best rung **bold**; the
+`SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench -Dnative.cargo.args="build --release --features mimalloc,kafka,json,avro,protobuf"
+-Dtest=NexmarkKafkaLadderBenchmark`. 2 M events (2026-07-12), ×vs stock Flink (best rung **bold**; the
 `mimalloc` feature — the recommended Kafka build — link-aliases the library's allocator, worth
 +12–22% on the source rung, divergences/19):
 
 | Format | Flink (ev/s) | JVM transpose | Rust transpose, JVM poll | Rust poll + Rust transpose |
 |---|---|---|---|---|
-| JSON q0 | 0.77 M | 1.05× | 1.20× | **2.25×** |
-| JSON q1 | 0.79 M | 1.05× | 1.18× | **2.26×** |
-| JSON q2 | 0.83 M | 1.07× | 1.20× | **2.20×** |
-| Avro q0 | 0.88 M | 0.99× | 1.64× | **3.03×** |
-| Avro q1 | 0.87 M | 0.97× | 1.61× | **2.99×** |
-| Avro q2 | 0.83 M | 1.10× | 1.82× | **3.38×** |
-| Protobuf q0 | 1.23 M | 1.06× | 1.27× | **2.29×** |
-| Protobuf q1 | 1.19 M | 1.03× | 1.29× | **2.36×** |
-| Protobuf q2 | 1.21 M | 1.18× | 1.38× | **2.34×** |
+| JSON q0 | 0.79 M | 1.04× | 1.20× | **2.30×** |
+| JSON q1 | 0.78 M | 1.09× | 1.16× | **2.33×** |
+| JSON q2 | 0.79 M | 1.07× | 1.21× | **2.41×** |
+| Avro q0 | 0.89 M | 1.02× | 1.59× | **3.00×** |
+| Avro q1 | 0.88 M | 0.99× | 1.62× | **3.02×** |
+| Avro q2 | 0.87 M | 1.06× | 1.73× | **3.22×** |
+| Protobuf q0 | 1.26 M | 1.03× | 1.22× | **2.09×** |
+| Protobuf q1 | 1.23 M | 1.06× | 1.26× | **2.31×** |
+| Protobuf q2 | 1.21 M | 1.15× | 1.35× | **2.38×** |
 
-**Historically, the full fused source was the best rung on every format — 2.2–3.4× stock Flink** and
-1.7–1.9× the shallow decode rung. An earlier version of this table had the source rung *trailing* the
-shallow rung on Avro/Protobuf, capped at a ~1.35 M ev/s ceiling; the consume fast path
-(divergences/19 — one-lock callback drain, inline decode instead of a decode thread, metadata
-warm-up before assign, the `check.crcs` default, and the `mimalloc` allocator rebind) removed
-that ceiling, and the source rung now runs 1.7–2.8 M ev/s end to end.
+The full native source is the best rung on every format — **2.1–3.2× stock Flink**, 1.8–2.9 M ev/s
+end to end — measurably *faster* than the pre-split fused source on the same machine (JSON q0 2.30×
+vs 1.94× re-measured side by side), so the format-artifact modularity now costs nothing. Two caveats
+this table's history earned: an early source rung trailed the shallow rung until the consume fast
+path landed (divergences/19), and the 2026-07-11 modular split briefly decoded in a downstream
+operator, which halved this rung until the in-poll driver-ABI decode restored it (divergences/25).
+This corpus's timestamps are BIGINT epoch-millis; the matrix corpus declares them `TIMESTAMP(3)`,
+whose per-row string parsing is the dominant decode cost there — compare rungs within one corpus
+only.
 
 **Reference — the transpose floor (no Kafka).** The same q0/q1/q2 with the source replaced by the
 in-process `nexmark` datagen emitting `RowData` directly — no Kafka client, no format decode, just the
@@ -349,36 +349,40 @@ the complete native poll-and-decode rung rather than an intermediate best-of lad
 
 | Query | Generator | Parquet | Fluss | Kafka JSON | Kafka Avro | Kafka Protobuf |
 |---|---|---|---|---|---|---|
-| q0 | **1.45×** | **3.40×** | **2.97×** | **1.11×** | **1.09×** | **1.12×** |
-| q1 | **1.26×** | **3.41×** | **3.07×** | **1.04×** | **1.06×** | **1.09×** |
-| q2 | **1.29×** | **3.22×** | **3.00×** | **1.05×** | **1.15×** | **1.14×** |
-| q3 | 0.94× | **4.03×** | **2.12×** | 0.93× | 0.95× | 0.92× |
-| q4 | **1.43×** | **3.90×** | **1.45×** | **1.03×** | **1.09×** | **1.10×** |
-| q5 | **1.30×** | **3.82×** | **1.44×** | **1.06×** | **1.07×** | **1.15×** |
-| q7 | **1.39×** | **4.24×** | **2.50×** | **1.31×** | **1.25×** | **1.36×** |
-| q8 | 0.85× | **4.76×** | **1.92×** | 0.93× | 0.93× | 0.96× |
-| q9 | **1.26×** | **1.90×** | **1.47×** | **1.04×** | **1.05×** | **1.17×** |
-| q10 | **1.40×** | **4.73×** | **3.48×** | **1.02×** | **1.03×** | 0.97× |
-| q11 | **2.60×** | **5.29×** | **3.87×** | **1.54×** | **1.68×** | **2.11×** |
-| q12 | **1.45×** | **3.59×** | — | **1.21×** | **1.17×** | **1.15×** |
-| q13 | **1.24×** | **3.01×** | **2.36×** | **1.07×** | **1.10×** | **1.04×** |
-| q14 | **1.07×** | **3.41×** | **2.74×** | **1.07×** | 1.00× | **1.01×** |
-| q15 | **1.50×** | **2.36×** | 0.88× | **1.18×** | **1.06×** | **1.17×** |
-| q16 | **1.24×** | **1.43×** | 1.00× | **1.13×** | **1.10×** | **1.09×** |
-| q17 | **1.38×** | **1.98×** | **1.02×** | **1.07×** | **1.07×** | **1.04×** |
-| q18 | **1.23×** | **2.46×** | **1.54×** | **1.10×** | **1.11×** | **1.12×** |
-| q19 | **1.40×** | **1.78×** | **2.77×** | **1.35×** | **1.38×** | **1.37×** |
-| q20 | 0.94× | **4.19×** | **1.91×** | 0.98× | **1.03×** | **1.01×** |
-| q21 | **1.02×** | **2.55×** | **2.19×** | 0.99× | **1.01×** | **1.08×** |
-| q21 † | **1.77×** | **5.97×** | **5.20×** | **1.16×** | **1.18×** | **1.30×** |
-| q22 | **1.41×** | **4.10×** | **3.45×** | **1.16×** | **1.19×** | **1.18×** |
-| q23 | **1.31×** | **4.21×** | **1.76×** | **1.09×** | **1.11×** | **1.21×** |
+| q0 | **1.45×** | **3.40×** | **2.97×** | **1.16×** | **1.16×** | **1.05×** |
+| q1 | **1.26×** | **3.41×** | **3.07×** | **1.03×** | **1.07×** | **1.04×** |
+| q2 | **1.29×** | **3.22×** | **3.00×** | **1.09×** | **1.05×** | **1.10×** |
+| q3 | 0.94× | **4.03×** | **2.12×** | **1.03×** | 0.94× | 0.92× |
+| q4 | **1.43×** | **3.90×** | **1.45×** | **1.12×** | **1.07×** | **1.04×** |
+| q5 | **1.30×** | **3.82×** | **1.44×** | **1.13×** | **1.10×** | **1.05×** |
+| q7 | **1.39×** | **4.24×** | **2.50×** | **1.33×** | **1.22×** | **1.25×** |
+| q8 | 0.85× | **4.76×** | **1.92×** | **1.01×** | 0.93× | 0.95× |
+| q9 | **1.26×** | **1.90×** | **1.47×** | **1.09×** | **1.08×** | **1.20×** |
+| q10 | **1.40×** | **4.73×** | **3.48×** | **1.05×** | **1.04×** | 0.96× |
+| q11 | **2.60×** | **5.29×** | **3.87×** | **1.77×** | **1.69×** | **1.99×** |
+| q12 | **1.45×** | **3.59×** | — | **1.11×** | **1.12×** | **1.17×** |
+| q13 | **1.24×** | **3.01×** | **2.36×** | **1.06×** | **1.05×** | **1.04×** |
+| q14 | **1.07×** | **3.41×** | **2.74×** | 1.00× | **1.02×** | 0.95× |
+| q15 | **1.50×** | **2.36×** | 0.88× | **1.13×** | **1.08×** | **1.06×** |
+| q16 | **1.24×** | **1.43×** | 1.00× | **1.18×** | **1.17×** | **1.12×** |
+| q17 | **1.38×** | **1.98×** | **1.02×** | **1.09×** | **1.03×** | **1.05×** |
+| q18 | **1.23×** | **2.46×** | **1.54×** | **1.16×** | **1.09×** | **1.14×** |
+| q19 | **1.40×** | **1.78×** | **2.77×** | **1.23×** | **1.24×** | **1.25×** |
+| q20 | 0.94× | **4.19×** | **1.91×** | **1.04×** | 1.00× | 0.99× |
+| q21 | **1.02×** | **2.55×** | **2.19×** | **1.01×** | **1.03×** | 1.00× |
+| q21 † | **1.77×** | **5.97×** | **5.20×** | **1.19×** | **1.23×** | **1.18×** |
+| q22 | **1.41×** | **4.10×** | **3.45×** | **1.16×** | **1.17×** | **1.16×** |
+| q23 | **1.31×** | **4.21×** | **1.76×** | **1.09×** | **1.09×** | **1.13×** |
 
 The 2026-07-12 hot-path round (batched BinaryRow key encoding, the transpose's intrinsified string
 encode, the `DATE_FORMAT` digit renderer, and O(1) accounted-state sizing — `docs/optimizations.md`)
 lifted the generator column to 20 of 23 wins; the remaining trailers (q3/q8/q20) are the
 perimeter-transpose/join-state cluster. All Parquet queries win with the floor up from 1.06× to
-1.43× (q16); q15 is the only Fluss cell below parity; and Kafka is near parity to 2.11×. `†` is the
+1.43× (q16); q15 is the only Fluss cell below parity. The Kafka columns (re-measured after the
+in-poll driver-ABI decode, same day) run modest wins to ~2× at this 500K scale, where per-run fixed
+costs compress the ratios and the corpus's five `TIMESTAMP(3)` string fields per event dominate the
+decode; at 2M events the same pipelines reach 2.1–3.1× on stateful queries (q11) and 2.1–3.2× on
+the BIGINT-timestamp ladder corpus above. `†` is the
 non-parity native regex/case path; the default q21 remains the byte-parity JVM-upcall path.
 
 ### Historical matrix (2026-07-05)
