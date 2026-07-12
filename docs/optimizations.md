@@ -283,7 +283,11 @@ not cost throughput: state footprint is tracked incrementally — only the group
 re-measured, O(batch) not O(open state) — and there is no per-allocation JNI upcall into Flink's
 memory arbiter (Comet's model for Spark); the budget crosses JNI once at handle creation and is
 enforced by a local check (divergences/16). Measured cost: ~2% on the accounted keyed-tumbling
-bench, statistically unchanged on the unaccounted hot paths.
+bench, statistically unchanged on the unaccounted hot paths. The group aggregate's touched-group
+measurement runs twice per row (before/after), and sizing its cached last-emitted tuple re-walked
+the tuple's `ScalarValue`s each time — a 2026-07-12 q17 profile flagged it, so the size is now
+cached next to the tuple and maintained where the cache changes, making the per-row measurement
+pure arithmetic.
 
 ## 5. Keeping the island whole
 

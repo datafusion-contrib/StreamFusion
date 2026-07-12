@@ -557,6 +557,10 @@ pub(crate) struct GroupKeyState {
     /// ~half the operator in exactly that scalar build/clone churn). `None` after restore (the
     /// snapshot doesn't carry it); the first touch then recomputes it from the aggregate state.
     last_output: Option<Vec<ScalarValue>>,
+    /// `scalar_row_bytes` of the cached tuple, maintained alongside it: the state measurement
+    /// runs twice per touched row, and re-walking the tuple's scalars each time was a measurable
+    /// slice of the accounted aggregates.
+    last_output_bytes: usize,
 }
 
 /// Non-windowed `GROUP BY` aggregation over a changelog. Holds per-key state — no windows, no
@@ -627,10 +631,7 @@ pub(crate) fn group_agg_state_bytes(state: &GroupAggState) -> usize {
 /// Estimated footprint of one group's full state (all aggregates plus the record counter).
 pub(crate) fn group_key_state_bytes(state: &GroupKeyState) -> usize {
     state.aggs.iter().map(group_agg_state_bytes).sum::<usize>()
-        + state
-            .last_output
-            .as_ref()
-            .map_or(0, |v| scalar_row_bytes(v))
+        + state.last_output_bytes
         + std::mem::size_of::<GroupKeyState>()
 }
 
@@ -755,6 +756,7 @@ impl GroupAggregator {
                 .collect(),
             records: 0,
             last_output: None,
+            last_output_bytes: 0,
         })
     }
 
@@ -929,12 +931,22 @@ impl GroupAggregator {
             }
             // The pre-update output comes from the group's cache (recomputed only after a restore,
             // which does not carry it) — the second full materialization per row goes away.
-            let prev = if exists {
+            let (prev, prev_bytes) = if exists {
                 let state = self.keys.get_mut(key).expect("key present");
-                let cached = state.last_output.take();
-                Some(cached.unwrap_or_else(|| output_of(state, &self.result_types)))
+                match state.last_output.take() {
+                    Some(cached) => {
+                        let bytes = std::mem::take(&mut state.last_output_bytes);
+                        (Some(cached), bytes)
+                    }
+                    // Only after a restore (the snapshot doesn't carry the cache).
+                    None => {
+                        let tuple = output_of(state, &self.result_types);
+                        let bytes = scalar_row_bytes(&tuple);
+                        (Some(tuple), bytes)
+                    }
+                }
             } else {
-                None
+                (None, 0)
             };
             {
                 let state = if exists {
@@ -1079,10 +1091,12 @@ impl GroupAggregator {
                 match prev {
                     None => {
                         // +I — first row for the key; the emitted tuple seeds the cache.
+                        state.last_output_bytes = scalar_row_bytes(&new);
                         state.last_output = Some(new.clone());
                         push(0, row, new);
                     }
                     Some(prev) if new != prev => {
+                        state.last_output_bytes = scalar_row_bytes(&new);
                         state.last_output = Some(new.clone());
                         if self.generate_update_before {
                             push(1, row, prev); // -U — moved out of the cache, not recomputed
@@ -1090,6 +1104,7 @@ impl GroupAggregator {
                         push(2, row, new); // +U
                     }
                     Some(prev) => {
+                        state.last_output_bytes = prev_bytes;
                         state.last_output = Some(prev); // unchanged result — suppressed
                     }
                 }
