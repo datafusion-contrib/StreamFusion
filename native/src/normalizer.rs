@@ -74,30 +74,27 @@ impl ChangelogNormalizer {
         let mut out_rows: Vec<JoinRow> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
 
+        // Keys are encoded into the encoder's reused buffer: probes and removes borrow the bytes,
+        // and a key is copied into an owned `ByteKey` only when it first enters the map.
+        let mut key_encoder =
+            BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_timestamp_precisions);
         for row in 0..batch.num_rows() {
             let kind = row_kinds.map(|k| k.value(row)).unwrap_or(0);
-            let key = ByteKey::from(
-                binary_row_bytes(
-                    batch,
-                    &self.key_columns,
-                    row,
-                    &self.key_timestamp_precisions,
-                )
-                .as_slice(),
-            );
+            let key = key_encoder.encode(row);
             let current: JoinRow = data_arrays
                 .iter()
                 .map(|a| ScalarValue::try_from_array(a, row).expect("changelog-normalize row scalar"))
                 .collect();
             // INSERT(0)/UPDATE_AFTER(2) put; UPDATE_BEFORE(1)/DELETE(3) remove.
             if kind == 0 || kind == 2 {
-                match self.rows.get(&key) {
+                match self.rows.get_mut(key) {
                     None => {
                         if track {
-                            delta += (byte_key_bytes(&key.0) + scalar_row_bytes(&current)) as isize;
+                            delta += (byte_key_bytes(key) + scalar_row_bytes(&current)) as isize;
                         }
                         out_rows.push(current.clone());
                         out_kinds.push(0); // +I
+                        self.rows.insert(ByteKey::from(key), current);
                     }
                     Some(prev) if *prev == current => {
                         continue; // unchanged — emit nothing (no state TTL)
@@ -114,12 +111,12 @@ impl ChangelogNormalizer {
                         }
                         out_rows.push(current.clone());
                         out_kinds.push(2); // +U the new row
+                        *prev = current;
                     }
                 }
-                self.rows.insert(key, current);
-            } else if let Some(prev) = self.rows.remove(&key) {
+            } else if let Some(prev) = self.rows.remove(key) {
                 if track {
-                    delta -= (byte_key_bytes(&key.0) + scalar_row_bytes(&prev)) as isize;
+                    delta -= (byte_key_bytes(key) + scalar_row_bytes(&prev)) as isize;
                 }
                 out_rows.push(prev); // emit the stored full row, not the (maybe key-only) tombstone
                 out_kinds.push(3); // -D

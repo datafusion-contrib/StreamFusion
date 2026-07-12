@@ -52,6 +52,7 @@ fn key_type_schema(data_type: &DataType, precisions: &[i32], cursor: &mut usize)
 struct BinaryRowWriter {
     bytes: Vec<u8>,
     null_bits_size: usize,
+    fixed_size: usize,
     cursor: usize,
 }
 
@@ -62,8 +63,24 @@ impl BinaryRowWriter {
         Self {
             bytes: vec![0; fixed_size],
             null_bits_size,
+            fixed_size,
             cursor: fixed_size,
         }
+    }
+
+    /// Rewinds for the next row, keeping the allocation. The fixed section must be re-zeroed:
+    /// null bits are OR-ed in and short values assume zeroed slot padding.
+    fn reset(&mut self) {
+        self.bytes.truncate(self.fixed_size);
+        self.bytes.fill(0);
+        self.cursor = self.fixed_size;
+    }
+
+    /// The finished row without consuming the writer; every write keeps `bytes` exactly
+    /// `cursor` long, so the whole buffer is the row.
+    fn row_bytes(&self) -> &[u8] {
+        debug_assert_eq!(self.bytes.len(), self.cursor);
+        &self.bytes
     }
 
     fn field_offset(&self, pos: usize) -> usize {
@@ -709,51 +726,74 @@ fn write_value(
     }
 }
 
-/// Computes `BinaryRowData.hashCode()` for one Arrow row projected to the given key columns.
+/// Encodes one batch's rows, projected to the given key columns, as Flink `BinaryRowData` bytes.
 /// `timestamp_precisions` is a pre-order logical-type stream (one entry per type node); `-1` means
 /// the node is not a timestamp. Arrow does not retain Flink timestamp precision, including inside a
 /// nested key, so the JVM supplies this compact schema sidecar.
-pub(crate) fn binary_row_bytes(
-    batch: &RecordBatch,
-    key_columns: &[usize],
-    row: usize,
-    timestamp_precisions: &[i32],
-) -> Vec<u8> {
-    let mut cursor = 0;
-    let schemas: Vec<KeyTypeSchema> = key_columns
-        .iter()
-        .map(|&column| {
-            key_type_schema(
-                batch.schema().field(column).data_type(),
-                timestamp_precisions,
-                &mut cursor,
-            )
-        })
-        .collect();
-    assert_eq!(
-        cursor,
-        timestamp_precisions.len(),
-        "extra Flink key type descriptors"
-    );
-    let mut writer = BinaryRowWriter::new(key_columns.len());
-    for (pos, (&column, schema)) in key_columns.iter().zip(&schemas).enumerate() {
-        write_value(&mut writer, pos, batch.column(column), row, schema);
-    }
-    writer.finish()
+///
+/// The schema walk, column handles, and row buffer are set up once per batch and every row is
+/// written into the same reused buffer: the per-row variant of this path was almost entirely
+/// allocator traffic (a q17 profile put it at ~12% of the whole job before batching).
+pub(crate) struct BinaryRowBatchEncoder<'a> {
+    columns: Vec<&'a ArrayRef>,
+    schemas: Vec<KeyTypeSchema>,
+    writer: BinaryRowWriter,
 }
 
+impl<'a> BinaryRowBatchEncoder<'a> {
+    pub(crate) fn new(
+        batch: &'a RecordBatch,
+        key_columns: &[usize],
+        timestamp_precisions: &[i32],
+    ) -> Self {
+        let mut cursor = 0;
+        let schema = batch.schema_ref();
+        let schemas: Vec<KeyTypeSchema> = key_columns
+            .iter()
+            .map(|&column| {
+                key_type_schema(
+                    schema.field(column).data_type(),
+                    timestamp_precisions,
+                    &mut cursor,
+                )
+            })
+            .collect();
+        assert_eq!(
+            cursor,
+            timestamp_precisions.len(),
+            "extra Flink key type descriptors"
+        );
+        Self {
+            columns: key_columns.iter().map(|&column| batch.column(column)).collect(),
+            schemas,
+            writer: BinaryRowWriter::new(key_columns.len()),
+        }
+    }
+
+    /// The encoded key of one row, valid until the next call.
+    pub(crate) fn encode(&mut self, row: usize) -> &[u8] {
+        self.writer.reset();
+        for (pos, (column, schema)) in self.columns.iter().zip(&self.schemas).enumerate() {
+            write_value(&mut self.writer, pos, column, row, schema);
+        }
+        self.writer.row_bytes()
+    }
+
+    /// `BinaryRowData.hashCode()` of one row's key.
+    pub(crate) fn hash(&mut self, row: usize) -> i32 {
+        hash_bytes_by_words(self.encode(row))
+    }
+}
+
+/// One-row convenience over the batch encoder, for the checkpoint-time key-group routing paths
+/// where per-row setup is not hot. Per-row processing paths should hold an encoder instead.
 pub(crate) fn binary_row_hash(
     batch: &RecordBatch,
     key_columns: &[usize],
     row: usize,
     timestamp_precisions: &[i32],
 ) -> i32 {
-    hash_bytes_by_words(&binary_row_bytes(
-        batch,
-        key_columns,
-        row,
-        timestamp_precisions,
-    ))
+    BinaryRowBatchEncoder::new(batch, key_columns, timestamp_precisions).hash(row)
 }
 
 /// Flink's `MurmurHashUtils.hashBytesByWords`: BinaryRow byte lengths are always word-aligned.
@@ -832,9 +872,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flinkBinaryRo
         .into_iter()
         .map(|precision| precision as i32)
         .collect();
-    let hashes: Vec<jint> = (0..batch.num_rows())
-        .map(|row| binary_row_hash(&batch, &columns, row, &precisions))
-        .collect();
+    let mut encoder = BinaryRowBatchEncoder::new(&batch, &columns, &precisions);
+    let hashes: Vec<jint> = (0..batch.num_rows()).map(|row| encoder.hash(row)).collect();
     let output = env
         .new_int_array(hashes.len() as i32)
         .expect("allocate BinaryRow hash result");

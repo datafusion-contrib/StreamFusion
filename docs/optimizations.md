@@ -196,6 +196,19 @@ Proton-style block store (state as columnar blocks + row refs, emit by `take`) w
 that post-round profile — the stored-row decode no longer registers
 (`.claude/wontdos/48-updating-join-block-state.md`).
 
+**Flink BinaryRow keys encode per batch, probe borrowed.** The operators that must key by Flink's
+`BinaryRowData` bytes rather than arrow-row (the keyed exchange's key-group assignment, the GROUP BY
+aggregate's state map, changelog normalize) encoded per row: each row re-walked the key type schema,
+allocated a fresh writer buffer, re-downcast every key column, and copied the result into an owned
+map key even when the key was already in state — a 2026-07-12 profile put the path at ~12% of q17's
+whole job, almost all of it allocator traffic rather than encoding. A per-batch encoder now sets up
+the schema walk, column handles, and row buffer once, writes each row into the reused buffer, and the
+group-aggregate/normalizer probes borrow the bytes, owning a key only on first insert (the same
+discipline the updating join already had). Measured with the transpose string fix below on the
+2M-event generator rung: every keyed query gained — q20 +28%, q16 +25%, q9 +22%, q17 +21%, q18 +16%,
+q23 +14%, q4 +13%, q11 +12% native throughput (q16 1.03x → 1.27x, q9 1.07x → 1.32x, q20 0.82x →
+0.99x vs Flink); the Kafka full-native rung's keyed cells moved +4 to +24 points.
+
 **The ScalarValue-vintage keyed loops retired** (2026-07-05). The last operators
 still building a `Vec<ScalarValue>` key (or whole row) per input row moved to the same arrow-row
 byte state as the rest: all three keyed `OVER` loops (running fold, bounded-frame buffers,

@@ -800,19 +800,10 @@ impl GroupAggregator {
                 })
             })
             .collect();
-        let binary_keys: Vec<ByteKey> = (0..n)
-            .map(|row| {
-                ByteKey::from(
-                    binary_row_bytes(
-                        batch,
-                        &self.key_columns,
-                        row,
-                        &self.key_timestamp_precisions,
-                    )
-                    .as_slice(),
-                )
-            })
-            .collect();
+        // Keys are encoded on the fly into the encoder's reused buffer: state probes borrow the
+        // bytes, and a key is copied into an owned `ByteKey` only when it first enters the map.
+        let mut key_encoder =
+            BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_timestamp_precisions);
         let row_kinds = row_kind_column(batch);
         // Per aggregate, a two-phase distinct-view column: the local bundle's (value, count)
         // entries as a list of structs, merged with multiplicities instead of per-row values.
@@ -923,7 +914,7 @@ impl GroupAggregator {
 
         let track = self.memory.tracking();
         for row in 0..n {
-            let key = binary_keys[row].0.as_ref();
+            let key = key_encoder.encode(row);
             // RowKind: 0 +I, 1 -U, 2 +U, 3 -D (absent column ⇒ INSERT). UB/delete retract; I/UA add.
             let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
             let retract = kind == 1 || kind == 3;

@@ -12,14 +12,12 @@ pub(crate) fn partition_batch(
     num_partitions: usize,
 ) -> Vec<(usize, RecordBatch)> {
     // The precision sidecar is a pre-order type tree, so a nested key contributes more than one
-    // descriptor; `binary_row_hash` validates that it is consumed exactly.
+    // descriptor; the encoder validates that it is consumed exactly.
     assert!(max_parallelism >= num_partitions);
     let mut rows_by_partition: Vec<Vec<u32>> = vec![Vec::new(); num_partitions];
+    let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, timestamp_precisions);
     for row in 0..batch.num_rows() {
-        let key_group = flink_key_group(
-            binary_row_hash(batch, key_columns, row, timestamp_precisions),
-            max_parallelism,
-        );
+        let key_group = flink_key_group(encoder.hash(row), max_parallelism);
         let partition = key_group * num_partitions / max_parallelism;
         rows_by_partition[partition].push(row as u32);
     }
