@@ -1,6 +1,7 @@
 package io.github.jordepic.streamfusion.format;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.jordepic.streamfusion.format.avro.AvroFormatProvider;
@@ -24,6 +25,7 @@ class OptionalFormatFacadeTest {
   @Tag("streamfusion-json")
   void jsonFacadeLoads() {
     assertTrue(NativeJsonFormat.isLoaded());
+    assertNotEquals(0, NativeJsonFormat.driverInitAddress());
     assertEquals("json", new JsonFormatProvider().formatIdentifier());
   }
 
@@ -31,6 +33,7 @@ class OptionalFormatFacadeTest {
   @Tag("streamfusion-csv")
   void csvFacadeLoads() {
     assertTrue(NativeCsvFormat.isLoaded());
+    assertNotEquals(0, NativeCsvFormat.driverInitAddress());
     assertEquals("csv", new CsvFormatProvider().formatIdentifier());
   }
 
@@ -38,6 +41,7 @@ class OptionalFormatFacadeTest {
   @Tag("streamfusion-raw")
   void rawFacadeLoads() {
     assertTrue(NativeRawFormat.isLoaded());
+    assertNotEquals(0, NativeRawFormat.driverInitAddress());
     assertEquals("raw", new RawFormatProvider().formatIdentifier());
   }
 
@@ -45,6 +49,7 @@ class OptionalFormatFacadeTest {
   @Tag("streamfusion-avro")
   void avroFacadeLoads() {
     assertTrue(NativeAvroFormat.isLoaded());
+    assertNotEquals(0, NativeAvroFormat.driverInitAddress());
     assertEquals("avro", new AvroFormatProvider().formatIdentifier());
   }
 
@@ -59,6 +64,7 @@ class OptionalFormatFacadeTest {
   @Tag("streamfusion-protobuf")
   void protobufFacadeLoads() {
     assertTrue(NativeProtobufFormat.isLoaded());
+    assertNotEquals(0, NativeProtobufFormat.driverInitAddress());
     assertEquals("protobuf", new ProtobufFormatProvider().formatIdentifier());
   }
 }
