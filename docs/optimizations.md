@@ -505,3 +505,12 @@ formulation (`per_row_parse`) runs 670 µs/batch (~6.1 Melem/s); the compiled pa
 (~10.8 Melem/s) — **1.77× on the hot loop**, kept as an A/B pair in the bench suite. On the
 matrix, `DATE_FORMAT` is a ~10% slice of its queries (q10/q14/q15/q16/q17), so the end-to-end
 effect sits inside combined-run noise at 500K events; the loop win is the stable number.
+
+A second round removed chrono's rendering machinery too: a 2026-07-12 q17 profile still had
+`DelayedFormat::fmt` (per-item `core::fmt` dispatch and padding) as the bulk of the remaining
+cost. Patterns made only of literals and zero-padded date/time fields — every Nexmark pattern —
+now lower once to a digit-writing plan that pushes ASCII digits straight into the reused buffer;
+anything else (and a year outside 4 digits, which chrono prints unpadded) falls back to
+`format_with_items` per row, so output stays byte-identical (a Rust parity sweep pins the two
+renderings against each other). Criterion (`date_format/digit_plan` vs `compiled`, same 4096-row
+batch): 362 µs → 78.7 µs — **4.6× on the hot loop**, 11.3 → 52 Melem/s.

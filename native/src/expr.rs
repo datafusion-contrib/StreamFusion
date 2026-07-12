@@ -765,17 +765,64 @@ impl datafusion::logical_expr::ScalarUDFImpl for SplitIndex {
 /// pattern, so in practice this parses once per batch; formatting then writes into the caller's
 /// reused buffer. A pattern chrono cannot parse fails the query loudly (the old path panicked
 /// inside `Display` instead) — unreachable, since the JVM encoder admits only translated literals.
-struct CompiledFormat {
+///
+/// Patterns made only of literals and zero-padded date/time fields — every Nexmark pattern, and
+/// nearly every real one — are additionally lowered to a digit-writing plan: chrono's rendering
+/// goes through its `Display` machinery (per-item `core::fmt` dispatch and padding), which a q17
+/// profile still showed as the bulk of `DATE_FORMAT` after the parse was hoisted. The lowered
+/// plan writes ASCII digits straight into the reused buffer; output is byte-identical (same
+/// zero-padded decimals), and a year outside 4 digits falls back to chrono for that row.
+pub(crate) struct CompiledFormat {
     pattern: String,
     items: Vec<chrono::format::Item<'static>>,
+    fast: Option<Vec<FastSeg>>,
+}
+
+enum FastSeg {
+    Literal(String),
+    Year4,
+    Month2,
+    Day2,
+    Hour2,
+    Minute2,
+    Second2,
+}
+
+fn lower_fast(items: &[chrono::format::Item<'static>]) -> Option<Vec<FastSeg>> {
+    use chrono::format::{Item, Numeric, Pad};
+    items
+        .iter()
+        .map(|item| match item {
+            Item::Literal(s) => Some(FastSeg::Literal((*s).to_string())),
+            Item::OwnedLiteral(s) => Some(FastSeg::Literal(s.to_string())),
+            Item::Space(s) => Some(FastSeg::Literal((*s).to_string())),
+            Item::OwnedSpace(s) => Some(FastSeg::Literal(s.to_string())),
+            Item::Numeric(numeric, Pad::Zero) => match numeric {
+                Numeric::Year => Some(FastSeg::Year4),
+                Numeric::Month => Some(FastSeg::Month2),
+                Numeric::Day => Some(FastSeg::Day2),
+                Numeric::Hour => Some(FastSeg::Hour2),
+                Numeric::Minute => Some(FastSeg::Minute2),
+                Numeric::Second => Some(FastSeg::Second2),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+fn push2(buf: &mut String, value: u32) {
+    debug_assert!(value < 100);
+    buf.push((b'0' + (value / 10) as u8) as char);
+    buf.push((b'0' + (value % 10) as u8) as char);
 }
 
 impl CompiledFormat {
-    fn new() -> Self {
-        Self { pattern: String::new(), items: Vec::new() }
+    pub(crate) fn new() -> Self {
+        Self { pattern: String::new(), items: Vec::new(), fast: None }
     }
 
-    fn format_into(
+    pub(crate) fn format_into(
         &mut self,
         buf: &mut String,
         wall: chrono::NaiveDateTime,
@@ -790,13 +837,46 @@ impl CompiledFormat {
                     ))
                 })?;
             self.pattern = pattern.to_string();
+            self.fast = lower_fast(&self.items);
         }
         buf.clear();
+        if let Some(segs) = &self.fast {
+            if Self::render_fast(buf, segs, wall) {
+                return Ok(());
+            }
+            buf.clear();
+        }
         write!(buf, "{}", wall.format_with_items(self.items.iter())).map_err(|_| {
             datafusion::common::DataFusionError::Execution(format!(
                 "DATE_FORMAT failed to render pattern {pattern}"
             ))
         })
+    }
+
+    fn render_fast(buf: &mut String, segs: &[FastSeg], wall: chrono::NaiveDateTime) -> bool {
+        use chrono::{Datelike, Timelike};
+        if wall.nanosecond() >= 1_000_000_000 {
+            return false; // chrono renders a leap second as :60 — let it
+        }
+        for seg in segs {
+            match seg {
+                FastSeg::Literal(s) => buf.push_str(s),
+                FastSeg::Year4 => {
+                    let year = wall.year();
+                    if !(0..=9999).contains(&year) {
+                        return false; // chrono prints these unpadded/signed — let it
+                    }
+                    push2(buf, year as u32 / 100);
+                    push2(buf, year as u32 % 100);
+                }
+                FastSeg::Month2 => push2(buf, wall.month()),
+                FastSeg::Day2 => push2(buf, wall.day()),
+                FastSeg::Hour2 => push2(buf, wall.hour()),
+                FastSeg::Minute2 => push2(buf, wall.minute()),
+                FastSeg::Second2 => push2(buf, wall.second()),
+            }
+        }
+        true
     }
 }
 

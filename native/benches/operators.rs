@@ -522,6 +522,32 @@ fn bench_date_format(c: &mut Criterion) {
             builder.finish()
         })
     });
+    // The shipped path: the compiled items lowered once to a digit-writing plan (see
+    // CompiledFormat::render_fast), skipping chrono's Display machinery per row.
+    group.bench_function("digit_plan", |b| {
+        use chrono::Datelike;
+        let push2 = |buf: &mut String, v: u32| {
+            buf.push((b'0' + (v / 10) as u8) as char);
+            buf.push((b'0' + (v % 10) as u8) as char);
+        };
+        b.iter(|| {
+            let mut builder = arrow::array::StringBuilder::new();
+            let mut buf = String::new();
+            for &t in &times {
+                let wall = chrono::DateTime::from_timestamp_millis(t).unwrap().naive_utc();
+                buf.clear();
+                let year = wall.year() as u32;
+                push2(&mut buf, year / 100);
+                push2(&mut buf, year % 100);
+                buf.push('-');
+                push2(&mut buf, wall.month());
+                buf.push('-');
+                push2(&mut buf, wall.day());
+                builder.append_value(&buf);
+            }
+            builder.finish()
+        })
+    });
     group.finish();
 }
 

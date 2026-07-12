@@ -3056,3 +3056,33 @@ fn compiles_once_and_reuses() {
     assert_eq!(values(&first, 0), values(&second, 0));
     assert_eq!(values(&first, 0), vec![1, 3]);
 }
+
+// The digit-writing fast plan renders byte-identically to chrono's own formatter across the
+// admitted patterns, including 4-digit-year edges the plan pads (year 500) and the out-of-range
+// years it must hand back to chrono.
+#[test]
+fn date_format_fast_plan_matches_chrono() {
+    use std::fmt::Write as _;
+    let patterns = ["%Y-%m-%d", "%H:%M", "%Y-%m-%d %H:%M:%S", "%d/%m/%Y"];
+    let millis: Vec<i64> = vec![
+        0,
+        -1,
+        -62_135_596_800_000,     // year 0001
+        -46_388_649_600_000,     // year 0500 — zero-padded 4-digit year
+        1_700_000_000_123,
+        253_402_300_799_999,     // year 9999 upper edge
+        253_402_300_800_000,     // year 10000 — must fall back to chrono
+    ];
+    let mut compiled = CompiledFormat::new();
+    let mut buf = String::new();
+    for pattern in patterns {
+        let items = chrono::format::StrftimeItems::new(pattern).parse_to_owned().expect("pattern");
+        for &t in &millis {
+            let wall = chrono::DateTime::from_timestamp_millis(t).expect("timestamp").naive_utc();
+            compiled.format_into(&mut buf, wall, pattern).expect("format");
+            let mut expected = String::new();
+            write!(expected, "{}", wall.format_with_items(items.iter())).expect("chrono render");
+            assert_eq!(buf, expected, "pattern {pattern} at {t}ms");
+        }
+    }
+}
