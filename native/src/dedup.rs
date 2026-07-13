@@ -403,7 +403,7 @@ pub(crate) struct KeepLastDeduplicator {
     /// refcount — the `-U` moves the replaced payload out of the map, never re-copying it.
     rows: HashMap<ByteKey, DedupRow>,
     mini_batch: bool,
-    staged: MiniBatchChanges<ByteKey, Arc<[u8]>>,
+    staged: Vec<DedupStagedChange>,
     staged_bytes: usize,
     snapshot_cache: Option<DedupSnapshotCache>,
     memory: OperatorMemory,
@@ -413,6 +413,11 @@ struct DedupRow {
     rowtime: i64,
     payload: Arc<[u8]>,
     staged: bool,
+}
+
+struct DedupStagedChange {
+    key: ByteKey,
+    before: Option<Arc<[u8]>>,
 }
 
 struct DedupSnapshotCache {
@@ -447,7 +452,7 @@ impl KeepLastDeduplicator {
             payload_converter: None,
             rows: HashMap::default(),
             mini_batch: false,
-            staged: MiniBatchChanges::default(),
+            staged: Vec::new(),
             staged_bytes: 0,
             snapshot_cache: None,
             memory: OperatorMemory::unaccounted(),
@@ -544,13 +549,17 @@ impl KeepLastDeduplicator {
                         delta += dedup_entry_bytes(key, &payload) as isize;
                     }
                     let staged = self.mini_batch;
+                    let owned = ByteKey::from(key);
                     if staged {
-                        self.staged.touch(ByteKey::from(key), None);
+                        let retained = byte_key_bytes(key);
+                        self.staged.push(DedupStagedChange { key: owned.clone(), before: None });
+                        self.staged_bytes += retained;
+                        delta += retained as isize;
                     } else {
                         out_rows.push(payload.clone());
                         out_kinds.push(0); // +I — first row for the key
                     }
-                    rows.insert(ByteKey::from(key), DedupRow { rowtime, payload, staged });
+                    rows.insert(owned, DedupRow { rowtime, payload, staged });
                 }
                 // A rowtime order ignores an older (smaller-rowtime) row; proctime always replaces.
                 Some(stored) if rowtime_ordered && rowtime < stored.rowtime => {
@@ -564,7 +573,14 @@ impl KeepLastDeduplicator {
                     }
                     if self.mini_batch {
                         if !stored.staged {
-                            self.staged.touch(ByteKey::from(key), Some(stored.payload.clone()));
+                            let before = stored.payload.clone();
+                            let retained = byte_key_bytes(key) + before.len();
+                            self.staged.push(DedupStagedChange {
+                                key: ByteKey::from(key),
+                                before: Some(before),
+                            });
+                            self.staged_bytes += retained;
+                            delta += retained as isize;
                             stored.staged = true;
                         }
                     } else {
@@ -580,14 +596,6 @@ impl KeepLastDeduplicator {
                 }
             }
         }
-        if self.mini_batch {
-            let retained = self.staged.retained_bytes(
-                |key| byte_key_bytes(&key.0),
-                |row| row.len(),
-            );
-            delta += retained as isize - self.staged_bytes as isize;
-            self.staged_bytes = retained;
-        }
         self.memory.record(delta);
         self.memory.account()?;
         Ok(self.emit(out_rows, out_kinds))
@@ -597,32 +605,26 @@ impl KeepLastDeduplicator {
         if !self.mini_batch {
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
-        let changes = self.staged.drain_final(|key| {
-            self.rows.get_mut(key).map(|row| {
-                row.staged = false;
-                row.payload.clone()
-            })
-        });
+        let changes = std::mem::take(&mut self.staged);
         let mut out_rows = Vec::with_capacity(changes.len() * 2);
         let mut out_kinds = Vec::with_capacity(changes.len() * 2);
-        for (_, change) in changes {
-            match change {
-                MiniBatchChange::Insert(after) => {
-                    out_rows.push(after);
-                    out_kinds.push(0);
-                }
-                MiniBatchChange::Delete(before) => {
+        for DedupStagedChange { key, before } in changes {
+            let row = self.rows.get_mut(&key).expect("staged dedup key remains in state");
+            row.staged = false;
+            let after = row.payload.clone();
+            if before.as_ref() == Some(&after) {
+                continue;
+            }
+            if let Some(before) = before {
+                if self.generate_update_before {
                     out_rows.push(before);
-                    out_kinds.push(3);
+                    out_kinds.push(1);
                 }
-                MiniBatchChange::Update { before, after } => {
-                    if self.generate_update_before {
-                        out_rows.push(before);
-                        out_kinds.push(1);
-                    }
-                    out_rows.push(after);
-                    out_kinds.push(2);
-                }
+                out_rows.push(after);
+                out_kinds.push(2);
+            } else {
+                out_rows.push(after);
+                out_kinds.push(0);
             }
         }
         self.memory.record(-(self.staged_bytes as isize));
@@ -838,7 +840,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_keepLastDedup
     _env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
 ) -> jlong {
     let dedup = unsafe { &*(handle as *const KeepLastDeduplicator) };
-    dedup.staged.touched_keys() as jlong
+    dedup.staged.len() as jlong
 }
 
 /// Creates a keep-first deduplicator over the given partition-key columns and rowtime column.
