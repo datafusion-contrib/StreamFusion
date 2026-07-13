@@ -50,6 +50,9 @@ Current benches:
 - `append_topn_logical_bundle/*` — append-only ascending Top-10 over 64 partitions with sustained
   boundary churn. It compares the per-record cascade, a net diff after each 256-row physical
   batch, and one net diff over the 4,096-row logical bundle, with and without projected rank.
+- `unique_updating_join_logical_bundle/{immediate,physical_256,logical_4096}` — an INNER join whose
+  two join keys are unique, under a left-side replacement storm over 64 keys; compares per-record
+  output, physical-batch transition folding, and one logical-bundle transition per key.
 - `dedup/keep_first_emitted_probe` — keep-first dedup in its steady state: all 256 keys already
   emitted, so each row is one emitted-set probe and a drop.
 - `exchange/split_by_key_8` — the columnar shuffle's by-key split: hash each row's key to one of
@@ -146,6 +149,19 @@ steady-state inserts across 64 pre-populated partitions, Top-10, 256-row physica
 
 All modes mutate the same full retracting buffers. The logical mode retains one visible-window
 preimage per touched partition and emits only its final membership/rank transition.
+
+Unique-key updating-join logical-bundle baseline on the same Apple M1 Max (20 Criterion samples,
+4,096 left-side delete/insert rows over 64 keys matched by a stable unique right side):
+
+| Mode | Time/iteration | Elements/s | Logical vs mode |
+|---|---:|---:|---:|
+| immediate per-record join changelog | 455.9 µs | 8.985 M | 3.08× |
+| net transitions per 256-row physical batch | 541.1 µs | 7.570 M | 3.66× |
+| net transitions per 4,096-row logical bundle | 147.9 µs | 27.692 M | 1.00× |
+
+The first profiled logical implementation measured 15.03 M rows/s. Its sample was dominated by
+allocating and freeing an owned key for every repeated staging-map update; borrowed-key probing
+raised the final result to 27.69 M rows/s while leaving durable payload ownership unchanged.
 
 The gap between filter and aggregation is the signal: the filter is a compiled
 expression plus one Arrow kernel, while an aggregator groups every row by its key and

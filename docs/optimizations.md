@@ -324,6 +324,17 @@ A post-integration release profile attributes roughly 91% of samples to state up
 finalization; key gathering itself is negligible. The push path therefore skips constructing empty
 key/result arrays and leaves the remaining frontier in BinaryRow encode/probe and accumulator fold.
 
+**Unique-key updating joins fold both inputs to net transitions.** When Flink metadata proves that
+each side's join key contains an upsert key, the two-input operator shares one exact row-count
+boundary and retains the durable preimage/final postimage per side and key. At flush it replays only
+those compact transitions through the existing INNER/outer/semi/anti state machine, preserving
+predicate and degree semantics; non-unique joins remain immediate. A 4,096-row replacement storm
+over 64 joined keys measures 27.69 M input rows/s for one logical bundle versus 8.98 M immediate
+and 7.57 M with 256-row physical flushes: 3.08x and 3.66x faster. Release profiling initially found
+owned-key allocation/free on every staged replacement; probing the transition frontier by borrowed
+encoded key improved the logical path from 15.03 to 27.69 M rows/s. Staged keys and rows are charged
+to managed memory, and count, aligned-watermark, checkpoint, and finish boundaries drain both sides.
+
 **Group-aggregate DISTINCT folds primitives; the changelog emit reads its cache.** The
 multi-`DISTINCT` day/channel aggregates (q15/q16/q17) owned the largest native islands, and their
 hot leaves were `ScalarValue` construct/hash/clone/drop: every row built a scalar per distinct agg

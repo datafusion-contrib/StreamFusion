@@ -135,6 +135,9 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   watermark). The proctime order key is materialized by the native `PROCTIME()` expression.
 - **Joins** — regular/interval/window joins: a residual non-equi predicate must be expressible by the
   native expression engine (event-time and proctime interval and window joins are all native).
+  Under mini-batch, a regular join coalesces replacements only when Flink metadata proves that both
+  join keys contain an input upsert key; every non-unique/multiplicity-bearing join retains the
+  immediate changelog path.
   **Temporal table join** (`FOR SYSTEM_TIME AS OF probe.rowtime`) is native for INNER and LEFT over
   event time: the build side is held as per-key versioned state (changelog `+I`/`+U`/`-D`, indexed by
   rowtime), and on a watermark each buffered probe row joins the version valid at its time — a faithful

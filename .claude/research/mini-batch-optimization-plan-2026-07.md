@@ -1,13 +1,13 @@
 # Native mini-batch optimization plan
 
-Status: phases 0-2 implemented and benchmarked; phase 3 next, 2026-07-13.
+Status: phases 0-3 implemented and benchmarked; phase 4 remains separately gated, 2026-07-13.
 
 Implemented checkpoints: Flink assigner semantics, exact cross-batch row boundaries, common bundle
 metrics, deterministic transition folding, local/single-phase aggregate finalization, append-only
 and retracting Top-N, changelog normalization, and keep-last dedup. Keep-first remains deliberately
-profile-gated because it has no replacement churn to coalesce. The next semantic expansion is the
-metadata-proven unique-key updating join; general joins and time-sensitive operators retain the
-separate correctness gates below.
+profile-gated because it has no replacement churn to coalesce. Metadata-proven unique-key updating
+joins now fold both sides through one shared logical boundary. General joins and time-sensitive
+operators retain the separate correctness gates below.
 
 The objective is to make a Flink logical mini-batch, rather than an individual Arrow
 `RecordBatch`, the unit over which native stateful operators amortize key lookup, accumulator work,
