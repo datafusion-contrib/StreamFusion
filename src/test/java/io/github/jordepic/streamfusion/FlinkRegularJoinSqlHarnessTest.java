@@ -43,16 +43,45 @@ class FlinkRegularJoinSqlHarnessTest {
   @Test
   void uniqueKeyUpdatingJoinUnderMiniBatchMatchesHost() throws Exception {
     NativeParity.assertChangelogParity(
-        () -> {
-          TableEnvironment tEnv = environment();
-          tEnv.getConfig().set("table.exec.mini-batch.enabled", "true");
-          tEnv.getConfig().set("table.exec.mini-batch.allow-latency", "1 s");
-          tEnv.getConfig().set("table.exec.mini-batch.size", "4");
-          return tEnv;
-        },
+        FlinkRegularJoinSqlHarnessTest::miniBatchEnvironment,
         "SELECT la.k, la.sv, rb.sw FROM "
             + "(SELECT k, SUM(v) AS sv FROM A GROUP BY k) la JOIN "
             + "(SELECT k, SUM(w) AS sw FROM B GROUP BY k) rb ON la.k = rb.k");
+  }
+
+  @Test
+  void uniqueKeyOuterJoinsUnderMiniBatchMatchHost() throws Exception {
+    NativeParity.assertChangelogParity(
+        FlinkRegularJoinSqlHarnessTest::miniBatchEnvironment,
+        "SELECT la.k, la.sv, rb.sw FROM "
+            + "(SELECT k, SUM(v) AS sv FROM A GROUP BY k) la LEFT JOIN "
+            + "(SELECT k, SUM(w) AS sw FROM B GROUP BY k) rb ON la.k = rb.k");
+    NativeParity.assertChangelogParity(
+        FlinkRegularJoinSqlHarnessTest::miniBatchEnvironment,
+        "SELECT la.k, la.sv, rb.sw FROM "
+            + "(SELECT k, SUM(v) AS sv FROM A GROUP BY k) la FULL JOIN "
+            + "(SELECT k, SUM(w) AS sw FROM B GROUP BY k) rb ON la.k = rb.k");
+  }
+
+  @Test
+  void uniqueKeySemiAndAntiJoinsUnderMiniBatchMatchHost() throws Exception {
+    NativeParity.assertChangelogParity(
+        FlinkRegularJoinSqlHarnessTest::miniBatchEnvironment,
+        "SELECT la.k, la.sv FROM (SELECT k, SUM(v) AS sv FROM A GROUP BY k) la "
+            + "WHERE EXISTS (SELECT 1 FROM (SELECT k, SUM(w) AS sw FROM B GROUP BY k) rb "
+            + "WHERE rb.k = la.k)");
+    NativeParity.assertChangelogParity(
+        FlinkRegularJoinSqlHarnessTest::miniBatchEnvironment,
+        "SELECT la.k, la.sv FROM (SELECT k, SUM(v) AS sv FROM A GROUP BY k) la "
+            + "WHERE NOT EXISTS (SELECT 1 FROM (SELECT k, SUM(w) AS sw FROM B GROUP BY k) rb "
+            + "WHERE rb.k = la.k)");
+  }
+
+  @Test
+  void nonUniqueJoinRemainsImmediateUnderMiniBatch() throws Exception {
+    NativeParity.assertParity(
+        FlinkRegularJoinSqlHarnessTest::miniBatchEnvironment,
+        "SELECT a.k, a.v, b.w FROM A AS a JOIN B AS b ON a.k = b.k");
   }
 
   @Test
@@ -166,6 +195,14 @@ class FlinkRegularJoinSqlHarnessTest {
         "B",
         b,
         Schema.newBuilder().column("k", DataTypes.BIGINT()).column("w", DataTypes.BIGINT()).build());
+    return tEnv;
+  }
+
+  private static TableEnvironment miniBatchEnvironment() {
+    TableEnvironment tEnv = environment();
+    tEnv.getConfig().set("table.exec.mini-batch.enabled", "true");
+    tEnv.getConfig().set("table.exec.mini-batch.allow-latency", "1 s");
+    tEnv.getConfig().set("table.exec.mini-batch.size", "4");
     return tEnv;
   }
 }
