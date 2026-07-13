@@ -277,6 +277,9 @@ Criterion finds no measurable overhead when the logical and physical sizes are b
 18.42× faster than the size-1 immediate-flush baseline for a 64-key local `SUM`.
 Flink metrics expose bundle/input/output counts, flush reasons, physical-batch splits, touched keys,
 cancelled changes, and the last/peak bundle shape so profiles can explain a gain or regression.
+The native transition substrate folds insert/delete/update chains to their first preimage and final
+postimage in deterministic first-touch order; inverse changes and equal updates disappear at flush,
+giving normalize, dedup, retracting Top-N, and unique-key joins one tested changelog algebra.
 
 **Group-aggregate DISTINCT folds primitives; the changelog emit reads its cache.** The
 multi-`DISTINCT` day/channel aggregates (q15/q16/q17) owned the largest native islands, and their

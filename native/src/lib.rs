@@ -82,6 +82,7 @@ mod json;
 mod kafka;
 mod keys;
 mod memory;
+mod mini_batch;
 mod normalizer;
 mod over_agg;
 mod rowtime;
@@ -100,7 +101,7 @@ mod window_join;
 pub(crate) use {
     aggregates::*, bridge::*, calc::*, changelog::*, dedup::*, exchange::*, expr::*,
     flink_key::*, flatten::*, format_abi::*, group_agg::*, interval_join::*, ipc::*, join_common::*,
-    keys::*, memory::*, normalizer::*, over_agg::*, rowtime::*, session_agg::*, sorter::*,
+    keys::*, memory::*, mini_batch::*, normalizer::*, over_agg::*, rowtime::*, session_agg::*, sorter::*,
     temporal_join::*, topn::*, updating_join::*, window_agg::*, window_join::*,
 };
 
