@@ -1646,16 +1646,36 @@ pub(crate) struct LocalGroupAggregator {
     // aggregate whose distinct set backs it — the flush emits that set's (value, count) entries as a
     // list column for the global to merge. Empty when no aggregate is distinct.
     distinct_view_sources: Vec<i64>,
-    order: Vec<GroupKey>,
-    states: HashMap<GroupKey, Vec<GroupAggState>>,
+    order: Vec<LocalGroupKey>,
+    states: HashMap<ByteKey, LocalGroupEntry>,
+    scalar_states: HashMap<GroupKey, LocalGroupEntry>,
+    key_converter: Option<RowConverter>,
+    key_batches: Vec<RecordBatch>,
+    scalar_key_mode: Option<bool>,
     key_types: Vec<DataType>,
     pub(crate) memory: OperatorMemory,
 }
 
+struct LocalGroupEntry {
+    states: Vec<GroupAggState>,
+    key_batch: usize,
+    key_row: usize,
+}
+
+enum LocalGroupKey {
+    Byte(ByteKey),
+    Scalar(GroupKey),
+}
+
 /// Estimated footprint of one buffered local-aggregate entry: the key is held twice (the states map
 /// and the first-appearance order), plus the per-aggregate partial states.
-pub(crate) fn local_entry_bytes(key: &GroupKey, states: &[GroupAggState]) -> usize {
-    group_key_bytes(key) * 2 + states.iter().map(group_agg_state_bytes).sum::<usize>()
+fn local_entry_state_bytes(entry: &LocalGroupEntry) -> usize {
+    std::mem::size_of::<LocalGroupEntry>()
+        + entry
+            .states
+            .iter()
+            .map(group_agg_state_bytes)
+            .sum::<usize>()
 }
 
 /// The struct fields of one distinct-view entry: the distinct value and its in-bundle multiplicity.
@@ -1697,6 +1717,10 @@ impl LocalGroupAggregator {
             distinct_view_sources,
             order: Vec::new(),
             states: HashMap::default(),
+            scalar_states: HashMap::default(),
+            key_converter: None,
+            key_batches: Vec::new(),
+            scalar_key_mode: None,
             key_types: Vec::new(),
             memory: OperatorMemory::unaccounted(),
         }
@@ -1708,8 +1732,13 @@ impl LocalGroupAggregator {
         let current = self
             .states
             .iter()
-            .map(|(key, states)| local_entry_bytes(key, states))
-            .sum();
+            .map(|(key, entry)| byte_key_bytes(&key.0) * 2 + local_entry_state_bytes(entry))
+            .sum::<usize>()
+            + self
+                .scalar_states
+                .iter()
+                .map(|(key, entry)| group_key_bytes(key) * 2 + local_entry_state_bytes(entry))
+                .sum::<usize>();
         self.memory
             .attach("local-group-aggregate", budget_bytes, current)?;
         Ok(self)
@@ -1759,6 +1788,14 @@ impl LocalGroupAggregator {
         let key_arrays: Vec<&ArrayRef> =
             self.key_columns.iter().map(|&i| batch.column(i)).collect();
         self.key_types = key_types(&key_arrays);
+        // Arrow-row amortizes key encoding across a real bundle. For a stream of single-row physical
+        // batches, preserve the cheaper direct ScalarValue path. Pin the representation until flush
+        // so later physical batches in the same logical bundle probe the same state map.
+        let scalar_key_mode = *self.scalar_key_mode.get_or_insert(n == 1);
+        let arrow_keys =
+            (!scalar_key_mode).then(|| encode_keys(&mut self.key_converter, &key_arrays, n));
+        let key_batch = self.key_batches.len();
+        let mut retained_key_batch = false;
         // Distinct aggregates (kind 7/9) fold the value itself into their per-bundle set, not a Num;
         // a BIGINT value column takes the primitive fast path.
         let distinct_cols: Vec<Option<usize>> = (0..num_agg)
@@ -1801,26 +1838,73 @@ impl LocalGroupAggregator {
         let row_kinds = row_kind_column(batch);
         let track = self.memory.tracking();
         for row in 0..n {
-            let key = read_key(&key_arrays, row);
+            let entry = if scalar_key_mode {
+                let key = read_key(&key_arrays, row);
+                if !self.scalar_states.contains_key(&key) {
+                    let init: Vec<GroupAggState> = self
+                        .kinds
+                        .iter()
+                        .zip(&self.value_types)
+                        .map(|(&kind, vt)| GroupAggState::new(kind, vt))
+                        .collect();
+                    if track {
+                        self.memory.record(
+                            (group_key_bytes(&key) * 2 + std::mem::size_of::<LocalGroupEntry>())
+                                as isize,
+                        );
+                    }
+                    self.order.push(LocalGroupKey::Scalar(key.clone()));
+                    self.scalar_states.insert(
+                        key.clone(),
+                        LocalGroupEntry {
+                            states: init,
+                            key_batch,
+                            key_row: row,
+                        },
+                    );
+                }
+                self.scalar_states
+                    .get_mut(&key)
+                    .expect("scalar key present")
+            } else {
+                let row_key = arrow_keys.as_ref().expect("arrow keys configured").row(row);
+                let key = row_key.as_ref();
+                if !self.states.contains_key(key) {
+                    let init: Vec<GroupAggState> = self
+                        .kinds
+                        .iter()
+                        .zip(&self.value_types)
+                        .map(|(&kind, vt)| GroupAggState::new(kind, vt))
+                        .collect();
+                    let owned = ByteKey::from(key);
+                    if track {
+                        self.memory.record(
+                            (byte_key_bytes(key) * 2 + std::mem::size_of::<LocalGroupEntry>())
+                                as isize,
+                        );
+                    }
+                    self.order.push(LocalGroupKey::Byte(owned.clone()));
+                    self.states.insert(
+                        owned,
+                        LocalGroupEntry {
+                            states: init,
+                            key_batch,
+                            key_row: row,
+                        },
+                    );
+                    retained_key_batch = true;
+                }
+                self.states.get_mut(key).expect("byte key present")
+            };
             // RowKind: 0 +I, 1 -U, 2 +U, 3 -D (absent column ⇒ INSERT). UB/delete retract; I/UA add.
             let retract = row_kinds.map_or(false, |kinds| matches!(kinds.value(row), 1 | 3));
             let mut delta = 0isize;
-            if !self.states.contains_key(&key) {
-                let init: Vec<GroupAggState> = self
-                    .kinds
-                    .iter()
-                    .zip(&self.value_types)
-                    .map(|(&kind, vt)| GroupAggState::new(kind, vt))
-                    .collect();
-                if track {
-                    delta += (group_key_bytes(&key) * 2) as isize;
-                }
-                self.order.push(key.clone());
-                self.states.insert(key.clone(), init);
-            }
-            let entry = self.states.get_mut(&key).expect("key present");
             if track {
-                delta -= entry.iter().map(group_agg_state_bytes).sum::<usize>() as isize;
+                delta -= entry
+                    .states
+                    .iter()
+                    .map(group_agg_state_bytes)
+                    .sum::<usize>() as isize;
             }
             for i in 0..num_agg {
                 if let Some(filter) = filter_cols[i] {
@@ -1834,9 +1918,9 @@ impl LocalGroupAggregator {
                         let scalar = ScalarValue::try_from_array(column, row)
                             .expect("extreme string scalar");
                         if retract {
-                            entry[i].retract_extreme(scalar);
+                            entry.states[i].retract_extreme(scalar);
                         } else {
-                            entry[i].accumulate_extreme(scalar);
+                            entry.states[i].accumulate_extreme(scalar);
                         }
                     }
                     continue;
@@ -1845,9 +1929,9 @@ impl LocalGroupAggregator {
                     if let Some(ints) = distinct_i64_cols[i] {
                         if !ints.is_null(row) {
                             if retract {
-                                entry[i].retract_distinct_i64(ints.value(row));
+                                entry.states[i].retract_distinct_i64(ints.value(row));
                             } else {
-                                entry[i].accumulate_distinct_i64(ints.value(row));
+                                entry.states[i].accumulate_distinct_i64(ints.value(row));
                             }
                         }
                         continue;
@@ -1857,9 +1941,9 @@ impl LocalGroupAggregator {
                         let scalar = ScalarValue::try_from_array(column, row)
                             .expect("distinct value scalar");
                         if retract {
-                            entry[i].retract_distinct(scalar);
+                            entry.states[i].retract_distinct(scalar);
                         } else {
-                            entry[i].accumulate_distinct(scalar);
+                            entry.states[i].accumulate_distinct(scalar);
                         }
                     }
                     continue;
@@ -1867,26 +1951,33 @@ impl LocalGroupAggregator {
                 match &cols[i] {
                     None => {
                         if retract {
-                            entry[i].retract(Num::I64(0));
+                            entry.states[i].retract(Num::I64(0));
                         } else {
-                            entry[i].accumulate(Num::I64(0));
+                            entry.states[i].accumulate(Num::I64(0));
                         }
                     }
                     Some(column) => {
                         if let Some(num) = column.at(row) {
                             if retract {
-                                entry[i].retract(num);
+                                entry.states[i].retract(num);
                             } else {
-                                entry[i].accumulate(num);
+                                entry.states[i].accumulate(num);
                             }
                         }
                     }
                 }
             }
             if track {
-                delta += entry.iter().map(group_agg_state_bytes).sum::<usize>() as isize;
+                delta += entry
+                    .states
+                    .iter()
+                    .map(group_agg_state_bytes)
+                    .sum::<usize>() as isize;
                 self.memory.record(delta);
             }
+        }
+        if retained_key_batch && !scalar_key_mode {
+            self.key_batches.push(batch.clone());
         }
         self.memory.account()
     }
@@ -1899,13 +1990,53 @@ impl LocalGroupAggregator {
     pub(crate) fn flush(&mut self) -> RecordBatch {
         let order = std::mem::take(&mut self.order);
         let states = std::mem::take(&mut self.states);
+        let scalar_states = std::mem::take(&mut self.scalar_states);
+        let key_batches = std::mem::take(&mut self.key_batches);
+        let scalar_key_mode = self.scalar_key_mode.take().unwrap_or(false);
         self.memory.set(0);
         self.memory.account_shrink();
         let mut fields = key_fields(&self.key_types);
-        let mut columns = key_columns(&order, &self.key_types);
+        let mut columns: Vec<ArrayRef> = if scalar_key_mode {
+            let keys: Vec<GroupKey> = order
+                .iter()
+                .map(|key| match key {
+                    LocalGroupKey::Scalar(key) => key.clone(),
+                    LocalGroupKey::Byte(_) => unreachable!("scalar bundle contains byte key"),
+                })
+                .collect();
+            key_columns(&keys, &self.key_types)
+        } else if order.is_empty() {
+            self.key_types.iter().map(new_empty_array).collect()
+        } else {
+            let mut columns = Vec::with_capacity(
+                self.key_columns.len() + self.result_types.len() + self.distinct_view_sources.len(),
+            );
+            for &column in &self.key_columns {
+                let data: Vec<_> = key_batches
+                    .iter()
+                    .map(|batch| batch.column(column).to_data())
+                    .collect();
+                let refs: Vec<_> = data.iter().collect();
+                let mut gathered = MutableArrayData::new(refs, false, order.len());
+                for key in &order {
+                    let entry = match key {
+                        LocalGroupKey::Byte(key) => &states[key],
+                        LocalGroupKey::Scalar(_) => unreachable!("byte bundle contains scalar key"),
+                    };
+                    gathered.extend(entry.key_batch, entry.key_row, entry.key_row + 1);
+                }
+                columns.push(make_array(gathered.freeze()));
+            }
+            columns
+        };
         for (i, rt) in self.result_types.iter().enumerate() {
-            let scalars: Vec<ScalarValue> =
-                order.iter().map(|key| states[key][i].emit(rt)).collect();
+            let scalars: Vec<ScalarValue> = order
+                .iter()
+                .map(|key| match key {
+                    LocalGroupKey::Byte(key) => states[key].states[i].emit(rt),
+                    LocalGroupKey::Scalar(key) => scalar_states[key].states[i].emit(rt),
+                })
+                .collect();
             fields.push(Field::new(format!("partial{i}"), rt.clone(), true));
             columns.push(scalars_to_array(scalars, rt));
         }
@@ -1917,7 +2048,11 @@ impl LocalGroupAggregator {
             let mut values: Vec<ScalarValue> = Vec::new();
             let mut counts: Vec<i64> = Vec::new();
             for key in &order {
-                for (value, count) in states[key][source].distinct_entries() {
+                let entry = match key {
+                    LocalGroupKey::Byte(key) => &states[key],
+                    LocalGroupKey::Scalar(key) => &scalar_states[key],
+                };
+                for (value, count) in entry.states[source].distinct_entries() {
                     values.push(value);
                     counts.push(count);
                 }
