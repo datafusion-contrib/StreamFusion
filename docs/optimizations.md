@@ -242,6 +242,16 @@ On the balanced 5M-event q17 comparison, mini-batch throughput rose from 1.149 t
 `ScalarValue::hash` entirely (223 samples to zero), and cut local update/flush samples from 526/235
 to 362/176.
 
+**Keep-last dedup stages first touches in a vector** (`dc35fb8`). Its mini-batch path formerly kept
+both an ordered key vector and a hash map of endpoints, rescanned the whole map for memory accounting
+after every physical batch, then rehashed every key through that map and durable state at flush.
+The durable row's existing dirty bit now guards one compact `(key, preimage)` vector; accounting is
+incremental and flush performs one durable lookup. Criterion's 256-row physical-chunk case rose from
+13.25 to 18.81 M rows/s (+42%), and the 4096-row logical bundle from 25.80 to 27.85 M rows/s (+8%).
+The balanced 5M-event q18 enabled path rose from 1.055 to 1.289 M rows/s (+22%), improving its direct
+mini-batch ratio from 0.75x to 0.86x. A matching profile completed 145 loops versus 122 before, cut
+dedup push/flush samples from 583/370 to 356/229, and removed the 93-sample generic staging-map touch.
+
 **The ScalarValue-vintage keyed loops retired** (2026-07-05). The last operators
 still building a `Vec<ScalarValue>` key (or whole row) per input row moved to the same arrow-row
 byte state as the rest: all three keyed `OVER` loops (running fold, bounded-frame buffers,

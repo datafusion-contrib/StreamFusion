@@ -813,6 +813,12 @@ A focused q17 rerun after vectorizing the two-phase local aggregate's key path (
 disabled path; q17's direct mini-batch ratio narrowed from 0.69x to 0.85x. This focused follow-up does
 not rewrite the full matrix above, whose cells remain one contemporaneous run.
 
+The analogous focused q18 rerun after replacing its dedup endpoint map with incremental vector
+staging (`dc35fb8`) measured 1.495 M/s off and 1.289 M/s on, versus the preceding balanced focused
+run's 1.403/1.055 M/s. The enabled path improved about 22%, its direct mini-batch ratio moved from
+0.75x to 0.86x, and its enabled StreamFusion/Flink lead measured 2.09x. As with q17, this is a focused
+follow-up rather than a rewrite of the contemporaneous full matrix.
+
 Reproduce both halves in one JVM with:
 
 `SF_BENCHMARK=true SF_MATRIX_TUNED=true SF_ROWS=5000000 SF_MATRIX_GENERATOR=true
