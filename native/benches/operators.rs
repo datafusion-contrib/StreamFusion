@@ -6,10 +6,12 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
+use criterion::{
+    black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,
+};
 use streamfusion::bench::{
-    split_by_key, Filter, IntervalJoin, KeepFirstDedup, Over, RetractTopN, Session, Tumbling,
-    WindowJoin,
+    split_by_key, Filter, IntervalJoin, KeepFirstDedup, LocalGroupBy, Over, RetractTopN, Session,
+    Tumbling, WindowJoin,
 };
 
 const ROWS: usize = 4096;
@@ -149,8 +151,62 @@ fn bench_group_by_string_key(c: &mut Criterion) {
     group.finish();
 }
 
+// Local two-phase GROUP BY with 64 hot keys. Each case processes the same ordered rows; only the
+// logical flush frequency changes. `physical_batch` is the old Arrow-batch-sized behavior,
+// `logical_*` is the exact Flink count boundary, and size 1 is the non-coalescing baseline.
+fn bench_local_group_by_logical_bundle(c: &mut Criterion) {
+    let mut group = c.benchmark_group("local_group_by_logical_bundle");
+    for logical_size in [1usize, 32, 256, 4096, 50_000] {
+        let rows = logical_size.max(ROWS);
+        let keys: ArrayRef = Arc::new(Int64Array::from_iter_values(
+            (0..rows as i64).map(|i| i % 64),
+        ));
+        let values: ArrayRef = Arc::new(Int64Array::from_iter_values(0..rows as i64));
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("key0", DataType::Int64, false),
+                Field::new("value0", DataType::Int64, false),
+            ])),
+            vec![keys, values],
+        )
+        .unwrap();
+        group.throughput(Throughput::Elements(rows as u64));
+        group.bench_with_input(
+            BenchmarkId::new("logical", logical_size),
+            &logical_size,
+            |b, &logical_size| {
+                b.iter_batched(
+                    || LocalGroupBy::sum(1, vec![0]),
+                    |mut aggregator| {
+                        for offset in (0..rows).step_by(logical_size) {
+                            let length = logical_size.min(rows - offset);
+                            aggregator.update(black_box(&batch.slice(offset, length)));
+                            black_box(aggregator.flush());
+                        }
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+        if logical_size == 4096 {
+            group.bench_function("physical_batch", |b| {
+                b.iter_batched(
+                    || LocalGroupBy::sum(1, vec![0]),
+                    |mut aggregator| {
+                        aggregator.update(black_box(&batch));
+                        black_box(aggregator.flush());
+                    },
+                    BatchSize::SmallInput,
+                )
+            });
+        }
+    }
+    group.finish();
+}
+
 // Decode a batch of raw JSON message bodies (one document per row) into a typed columnar batch —
 // the source-edge work that replaces Flink's per-record document-tree -> RowData materialization.
+#[cfg(feature = "json")]
 fn bench_json_decode(c: &mut Criterion) {
     use streamfusion::bench::JsonDecode;
     let schema = Arc::new(Schema::new(vec![
@@ -210,6 +266,9 @@ fn bench_json_decode(c: &mut Criterion) {
     });
     group.finish();
 }
+
+#[cfg(not(feature = "json"))]
+fn bench_json_decode(_c: &mut Criterion) {}
 
 // Session SUM grouped by a key: each row opens a gap-wide window and merges any it bridges.
 fn bench_session_keyed(c: &mut Criterion) {
@@ -557,6 +616,7 @@ criterion_group!(
     bench_tumbling,
     bench_tumbling_keyed,
     bench_group_by_string_key,
+    bench_local_group_by_logical_bundle,
     bench_json_decode,
     bench_session_keyed,
     bench_over,

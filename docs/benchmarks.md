@@ -32,6 +32,9 @@ Current benches:
   The `_accounted` variant attaches a managed-memory budget, measuring the per-touched-group
   footprint tracking an operator pays when the host hands it one (default off in the plain bench,
   so the unaccounted number is the like-for-like baseline).
+- `local_group_by_logical_bundle/logical/*` — local two-phase `SUM` over 64 hot keys with
+  logical bundle sizes 1, 32, 256, 4,096, and 50,000. Size 1 is the immediate/non-coalescing
+  baseline; `physical_batch` pins the former one-flush-per-Arrow-batch behavior.
 - `session/sum_keyed_update_flush` — a session `SUM` grouped by key (gap merge). Its rows are
   spaced beyond the gap, so every row opens its own one-row session — the worst case for session
   state (4096 open sessions). `session/sum_keyed_dense_update_flush` is the complementary shape:
@@ -80,6 +83,23 @@ measured before the pin (or without it) are not comparable to these.
 | `date_format/compiled` | 4096 | 378 µs | ~10.8 Melem/s | pattern compiled once (`per_row_parse` pins the old loop at 670 µs) |
 | `json_decode/three_field_object` | 4096 | 610 µs | ~6.7 Melem/s | ~46 B docs, simd-json tape walk |
 | `json_decode/nexmark_bid_shape` | 4096 | 985 µs | ~4.2 Melem/s | ~210 B docs, 4 of 7 fields skipped |
+
+Local GROUP BY count-boundary baseline on the same Apple M1 Max (median of 100 Criterion samples,
+64 bigint keys):
+
+| Logical rows/bundle | Rows/iteration | Time/iteration | Elements/s | vs size 1 |
+|---:|---:|---:|---:|---:|
+| 1 | 4,096 | 4.250 ms | 0.964 M | 1.00× |
+| 32 | 4,096 | 960.2 µs | 4.266 M | 4.43× |
+| 256 | 4,096 | 413.0 µs | 9.918 M | 10.29× |
+| 4,096 | 4,096 | 230.7 µs | 17.751 M | 18.42× |
+| physical Arrow batch (4,096) | 4,096 | 229.7 µs | 17.829 M | 18.50× |
+| 50,000 | 50,000 | 2.721 ms | 18.373 M | 19.06× |
+
+The exact logical 4,096-row path and the old physical-batch path are statistically equivalent,
+showing that the boundary controller adds no measurable kernel overhead when boundaries coincide.
+The curve also quantifies the opportunity: output materialization and per-bundle setup dominate
+small bundles, while throughput plateaus around 4K rows for this 64-key shape.
 
 The gap between filter and aggregation is the signal: the filter is a compiled
 expression plus one Arrow kernel, while an aggregator groups every row by its key and

@@ -263,6 +263,9 @@ counts rows across input batches and splits a batch exactly at the configured Fl
 The split is an Arrow reference-counted view, so enforcing the latency/state-size boundary copies
 no row buffers; a physical batch can no longer silently enlarge the logical bundle. Marker,
 watermark, checkpoint, and end-of-input flushes reset the same shared boundary controller.
+Criterion finds no measurable overhead when the logical and physical sizes are both 4,096 rows
+(17.75 vs 17.83 M rows/s); coalescing 32, 256, and 4,096 rows is respectively 4.43×, 10.29×, and
+18.42× faster than the size-1 immediate-flush baseline for a 64-key local `SUM`.
 
 **Group-aggregate DISTINCT folds primitives; the changelog emit reads its cache.** The
 multi-`DISTINCT` day/channel aggregates (q15/q16/q17) owned the largest native islands, and their

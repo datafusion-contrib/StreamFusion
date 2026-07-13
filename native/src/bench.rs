@@ -254,6 +254,30 @@ impl GroupBy {
     }
 }
 
+/// The transient local half of a two-phase GROUP BY, driven by logical bundle boundaries.
+pub struct LocalGroupBy(LocalGroupAggregator);
+
+impl LocalGroupBy {
+    pub fn sum(value_column: i64, key_columns: Vec<usize>) -> Self {
+        LocalGroupBy(LocalGroupAggregator::new(
+            vec![0],
+            vec![0],
+            vec![value_column],
+            vec![-1],
+            key_columns,
+            Vec::new(),
+        ))
+    }
+
+    pub fn update(&mut self, batch: &RecordBatch) {
+        self.0.update(batch).expect("budget exceeded");
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush()
+    }
+}
+
 /// An event-time interval joiner (push emits matches immediately), as the operator drives it.
 pub struct IntervalJoin(IntervalJoiner);
 
