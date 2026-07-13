@@ -51,6 +51,17 @@ where
     K: Clone + Eq + Hash,
     R: Eq,
 {
+    /// Records a key's preimage once. Operators whose durable state already contains the evolving
+    /// postimage can avoid a second staging-map mutation on every row and supply the final value at
+    /// flush through [`Self::drain_final`].
+    pub(crate) fn touch(&mut self, key: K, before: Option<R>) {
+        use std::collections::hash_map::Entry;
+        if let Entry::Vacant(slot) = self.changes.entry(key) {
+            self.order.push(slot.key().clone());
+            slot.insert((before, None));
+        }
+    }
+
     pub(crate) fn push(&mut self, key: K, input: MiniBatchChange<R>) {
         use std::collections::hash_map::Entry;
         match self.changes.entry(key) {
@@ -93,6 +104,28 @@ where
             .into_iter()
             .filter_map(|key| {
                 let (before, after) = changes.remove(&key)?;
+                if before == after {
+                    return None;
+                }
+                MiniBatchChange::from_endpoints(before, after).map(|change| (key, change))
+            })
+            .collect()
+    }
+
+    /// Finalizes every touched key against its current durable value. `final_value` is called for
+    /// cancelled keys too, allowing an operator to clear an embedded dirty marker without scanning
+    /// all durable state.
+    pub(crate) fn drain_final(
+        &mut self,
+        mut final_value: impl FnMut(&K) -> Option<R>,
+    ) -> Vec<(K, MiniBatchChange<R>)> {
+        let order = std::mem::take(&mut self.order);
+        let mut changes = std::mem::take(&mut self.changes);
+        order
+            .into_iter()
+            .filter_map(|key| {
+                let (before, _) = changes.remove(&key)?;
+                let after = final_value(&key);
                 if before == after {
                     return None;
                 }
@@ -185,5 +218,21 @@ mod tests {
         assert_eq!(changes.drain(), vec![(1, insert(1))]);
         assert_eq!(changes.touched_keys(), 0);
         assert!(changes.drain().is_empty());
+    }
+
+    #[test]
+    fn first_touch_can_finalize_from_durable_state() {
+        let mut changes = MiniBatchChanges::default();
+        changes.touch("a", Some(1));
+        changes.touch("a", Some(2));
+        changes.touch("b", None);
+        assert_eq!(
+            changes.drain_final(|key| match *key {
+                "a" => Some(3),
+                "b" => None,
+                _ => unreachable!(),
+            }),
+            vec![("a", update(1, 3))]
+        );
     }
 }

@@ -14,12 +14,18 @@ pub(crate) struct ChangelogNormalizer {
     key_timestamp_precisions: Vec<i32>,
     generate_update_before: bool,
     schema: Option<SchemaRef>,
-    rows: HashMap<ByteKey, JoinRow>,
+    payload_converter: Option<RowConverter>,
+    rows: HashMap<ByteKey, NormalizedRow>,
     mini_batch: bool,
-    staged: MiniBatchChanges<ByteKey, JoinRow>,
+    staged: MiniBatchChanges<ByteKey, Arc<[u8]>>,
     staged_bytes: usize,
     snapshot_cache: Option<NormalizerSnapshotCache>,
     memory: OperatorMemory,
+}
+
+struct NormalizedRow {
+    payload: Arc<[u8]>,
+    staged: bool,
 }
 
 struct NormalizerSnapshotCache {
@@ -42,6 +48,7 @@ impl ChangelogNormalizer {
             key_timestamp_precisions: vec![-1; key_arity],
             generate_update_before,
             schema: None,
+            payload_converter: None,
             rows: HashMap::default(),
             mini_batch: false,
             staged: MiniBatchChanges::default(),
@@ -62,7 +69,7 @@ impl ChangelogNormalizer {
         let state: usize = self
             .rows
             .iter()
-            .map(|(key, row)| byte_key_bytes(&key.0) + scalar_row_bytes(row))
+            .map(|(key, row)| byte_key_bytes(&key.0) + row.payload.len())
             .sum();
         self.memory.attach("changelog-normalize", budget_bytes, state)?;
         Ok(self)
@@ -73,16 +80,36 @@ impl ChangelogNormalizer {
         self
     }
 
+    fn ensure_payload_converter(&mut self, batch: &RecordBatch, arity: usize) {
+        if self.payload_converter.is_none() {
+            self.payload_converter = Some(
+                RowConverter::new(
+                    (0..arity)
+                        .map(|column| SortField::new(batch.column(column).data_type().clone()))
+                        .collect(),
+                )
+                .expect("normalizer payload converter"),
+            );
+        }
+    }
+
     pub(crate) fn push(&mut self, batch: &RecordBatch) -> Result<RecordBatch, DataFusionError> {
         self.snapshot_cache = None;
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
+        self.ensure_payload_converter(batch, arity);
         let track = self.memory.tracking();
         let mut delta = 0isize;
-        let data_arrays: Vec<&ArrayRef> = (0..arity).map(|i| batch.column(i)).collect();
+        let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
+        let payloads = self
+            .payload_converter
+            .as_ref()
+            .unwrap()
+            .convert_columns(&data_arrays)
+            .expect("encode normalizer payload");
         let row_kinds = row_kind_column(batch);
 
-        let mut out_rows: Vec<JoinRow> = Vec::new();
+        let mut out_rows: Vec<Arc<[u8]>> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
 
         // Keys are encoded into the encoder's reused buffer: probes and removes borrow the bytes,
@@ -92,58 +119,59 @@ impl ChangelogNormalizer {
         for row in 0..batch.num_rows() {
             let kind = row_kinds.map(|k| k.value(row)).unwrap_or(0);
             let key = key_encoder.encode(row);
-            let current: JoinRow = data_arrays
-                .iter()
-                .map(|a| ScalarValue::try_from_array(a, row).expect("changelog-normalize row scalar"))
-                .collect();
+            let current = payloads.row(row).data();
             // INSERT(0)/UPDATE_AFTER(2) put; UPDATE_BEFORE(1)/DELETE(3) remove.
             if kind == 0 || kind == 2 {
                 match self.rows.get_mut(key) {
                     None => {
+                        let current: Arc<[u8]> = Arc::from(current);
                         if track {
-                            delta += (byte_key_bytes(key) + scalar_row_bytes(&current)) as isize;
+                            delta += (byte_key_bytes(key) + current.len()) as isize;
                         }
-                        if self.mini_batch {
-                            self.staged.push(ByteKey::from(key), MiniBatchChange::Insert(current.clone()));
+                        let staged = self.mini_batch;
+                        if staged {
+                            self.staged.touch(ByteKey::from(key), None);
                         } else {
                             out_rows.push(current.clone());
                             out_kinds.push(0); // +I
                         }
-                        self.rows.insert(ByteKey::from(key), current);
+                        self.rows.insert(ByteKey::from(key), NormalizedRow { payload: current, staged });
                     }
-                    Some(prev) if *prev == current => {
+                    Some(prev) if prev.payload.as_ref() == current => {
                         continue; // unchanged — emit nothing (no state TTL)
                     }
                     Some(prev) => {
+                        let current: Arc<[u8]> = Arc::from(current);
                         if track {
                             // Same key: only the stored row is replaced.
-                            delta += scalar_row_bytes(&current) as isize
-                                - scalar_row_bytes(prev) as isize;
+                            delta += current.len() as isize - prev.payload.len() as isize;
                         }
                         if self.mini_batch {
-                            self.staged.push(
-                                ByteKey::from(key),
-                                MiniBatchChange::Update { before: prev.clone(), after: current.clone() },
-                            );
+                            if !prev.staged {
+                                self.staged.touch(ByteKey::from(key), Some(prev.payload.clone()));
+                                prev.staged = true;
+                            }
                         } else {
                             if self.generate_update_before {
-                                out_rows.push(prev.clone());
+                                out_rows.push(prev.payload.clone());
                                 out_kinds.push(1); // -U the previous row
                             }
                             out_rows.push(current.clone());
                             out_kinds.push(2); // +U the new row
                         }
-                        *prev = current;
+                        prev.payload = current;
                     }
                 }
             } else if let Some(prev) = self.rows.remove(key) {
                 if track {
-                    delta -= (byte_key_bytes(key) + scalar_row_bytes(&prev)) as isize;
+                    delta -= (byte_key_bytes(key) + prev.payload.len()) as isize;
                 }
                 if self.mini_batch {
-                    self.staged.push(ByteKey::from(key), MiniBatchChange::Delete(prev));
+                    if !prev.staged {
+                        self.staged.touch(ByteKey::from(key), Some(prev.payload));
+                    }
                 } else {
-                    out_rows.push(prev); // emit the stored full row, not the (maybe key-only) tombstone
+                    out_rows.push(prev.payload); // emit the stored full row, not the (maybe key-only) tombstone
                     out_kinds.push(3); // -D
                 }
             }
@@ -151,7 +179,7 @@ impl ChangelogNormalizer {
         if self.mini_batch {
             let retained = self.staged.retained_bytes(
                 |key| byte_key_bytes(&key.0),
-                |row| scalar_row_bytes(row),
+                |row| row.len(),
             );
             delta += retained as isize - self.staged_bytes as isize;
             self.staged_bytes = retained;
@@ -165,7 +193,12 @@ impl ChangelogNormalizer {
         if !self.mini_batch {
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
-        let changes = self.staged.drain();
+        let changes = self.staged.drain_final(|key| {
+            self.rows.get_mut(key).map(|row| {
+                row.staged = false;
+                row.payload.clone()
+            })
+        });
         let mut out_rows = Vec::with_capacity(changes.len() * 2);
         let mut out_kinds = Vec::with_capacity(changes.len() * 2);
         for (_, change) in changes {
@@ -202,17 +235,17 @@ impl ChangelogNormalizer {
         self.staged_bytes
     }
 
-    fn emit(&self, out_rows: Vec<JoinRow>, out_kinds: Vec<i8>) -> RecordBatch {
+    fn emit(&self, out_rows: Vec<Arc<[u8]>>, out_kinds: Vec<i8>) -> RecordBatch {
         if out_rows.is_empty() {
             return RecordBatch::new_empty(Arc::new(Schema::empty()));
         }
         let schema = self.schema.as_ref().expect("schema set once a row was processed");
         let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
-        let mut columns: Vec<ArrayRef> = (0..fields.len())
-            .map(|j| {
-                scalars_to_array(out_rows.iter().map(|r| r[j].clone()).collect(), fields[j].data_type())
-            })
-            .collect();
+        let converter = self.payload_converter.as_ref().expect("payload converter set");
+        let parser = converter.parser();
+        let mut columns = converter
+            .convert_rows(out_rows.iter().map(|row| parser.parse(row)))
+            .expect("decode normalizer payloads");
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
         columns.push(Arc::new(Int8Array::from(out_kinds)));
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
@@ -235,17 +268,13 @@ impl ChangelogNormalizer {
         let mut columns: Vec<ArrayRef> = vec![Arc::new(
             arrow::array::BinaryArray::from_iter_values(selected.iter().map(|key| key.0.as_ref())),
         )];
-        columns.extend((0..schema.fields().len())
-            .map(|j| {
-                scalars_to_array(
-                    selected
-                        .iter()
-                        .map(|key| self.rows[key][j].clone())
-                        .collect(),
-                    schema.field(j).data_type(),
-                )
-            })
-            .collect::<Vec<_>>());
+        let converter = self.payload_converter.as_ref().expect("payload converter set");
+        let parser = converter.parser();
+        columns.extend(
+            converter
+                .convert_rows(selected.iter().map(|key| parser.parse(&self.rows[key].payload)))
+                .expect("decode normalizer snapshot payloads"),
+        );
         write_ipc(
             &RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
                 .expect("changelog-normalize snapshot"),
@@ -255,25 +284,36 @@ impl ChangelogNormalizer {
     fn restore(key_columns: Vec<usize>, generate_update_before: bool, bytes: &[u8]) -> Self {
         let mut normalizer = ChangelogNormalizer::new(key_columns, generate_update_before);
         for batch in read_ipc_if_present(bytes) {
-            normalizer.schema = Some(Arc::new(Schema::new(
+            let schema = Arc::new(Schema::new(
                 batch.schema().fields()[1..].iter().map(|field| field.as_ref().clone()).collect::<Vec<_>>(),
-            )));
+            ));
+            normalizer.schema = Some(schema.clone());
+            let converter = RowConverter::new(
+                schema
+                    .fields()
+                    .iter()
+                    .map(|field| SortField::new(field.data_type().clone()))
+                    .collect(),
+            )
+            .expect("restore normalizer payload converter");
             let keys = batch
                 .column(0)
                 .as_any()
                 .downcast_ref::<arrow::array::BinaryArray>()
                 .expect("normalizer snapshot binary keys");
-            let arity = batch.num_columns() - 1;
+            let data_arrays: Vec<ArrayRef> =
+                (1..batch.num_columns()).map(|column| batch.column(column).clone()).collect();
+            let payloads = converter
+                .convert_columns(&data_arrays)
+                .expect("encode restored normalizer payloads");
             for row in 0..batch.num_rows() {
                 let key = ByteKey::from(keys.value(row));
-                let stored: JoinRow = (0..arity)
-                    .map(|i| {
-                        ScalarValue::try_from_array(batch.column(i + 1), row)
-                            .expect("restore scalar")
-                    })
-                    .collect();
-                normalizer.rows.insert(key, stored);
+                normalizer.rows.insert(
+                    key,
+                    NormalizedRow { payload: Arc::from(payloads.row(row).data()), staged: false },
+                );
             }
+            normalizer.payload_converter = Some(converter);
         }
         normalizer
     }
@@ -351,6 +391,7 @@ impl ChangelogNormalizer {
             );
             if merged.schema.is_none() {
                 merged.schema = restored.schema.clone();
+                merged.payload_converter = restored.payload_converter;
             }
             merged.rows.extend(restored.rows);
         }

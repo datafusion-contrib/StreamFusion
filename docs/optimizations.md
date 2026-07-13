@@ -283,11 +283,16 @@ giving normalize, dedup, retracting Top-N, and unique-key joins one tested chang
 
 **Changelog normalization now has a logical transition frontier.** The normalizer mutates its
 durable keep-last state on every input but, in mini-batch mode, retains only the first preimage and
-final postimage per unique key. A 4,096-row replacement storm over 64 keys emits 128 rows instead
-of 8,128; Criterion measures 6.79 M input rows/s versus 5.90 M for immediate materialization and
-5.47 M when the same transition buffer is flushed every 256 physical rows. The modest 1.15x kernel
-gain despite a 63.5x output reduction identifies scalar row construction in the push path as the
-next profile target; logical bundling itself is already independent of Arrow chunking.
+final postimage per unique key. A 4,096-row replacement storm over 64 keys emits 64 rows instead
+of 8,128. The first release profile found `ScalarValue` extraction/clone/drop and per-replacement
+transition-map probes behind the initially modest gain. Full rows now use one Arrow-row encoding
+pass and compact shared byte payloads; an embedded dirty bit stages only the first touch and reads
+the durable final value at flush. Criterion measures 20.79 M input rows/s versus 15.10 M for
+immediate materialization and 12.06 M when flushed every 256 physical rows: 1.38x and 1.72x faster,
+respectively, while cutting output 127x. A second profile reduces transition-map work to a handful
+of samples; payload allocation, BinaryRow key encoding, and the durable hash probe are the remaining
+push-path costs. Logical bundling is independent of Arrow chunking and transient preimages are
+included in managed-memory accounting.
 
 **Single-phase GROUP BY finalizes only its dirty-key frontier.** Mini-batch state retains the first
 emitted tuple and an Arrow key-row reference on a group's first touch, continues mutating the
