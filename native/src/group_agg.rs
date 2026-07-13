@@ -723,6 +723,14 @@ impl GroupAggregator {
         self
     }
 
+    pub(crate) fn staged_keys(&self) -> usize {
+        self.staged_order.len()
+    }
+
+    pub(crate) fn staging_bytes(&self) -> usize {
+        self.staged_bytes
+    }
+
     /// Bounds this aggregator's state by the operator's managed-memory budget (negative =
     /// unaccounted), accounting any restored groups immediately.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
@@ -1939,6 +1947,26 @@ state_bytes_getter!(
     GroupAggregator
 );
 
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_groupAggregatorStagingBytes<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let aggregator = unsafe { &*(handle as *const GroupAggregator) };
+    aggregator.staging_bytes() as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_groupAggregatorStagedKeys<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let aggregator = unsafe { &*(handle as *const GroupAggregator) };
+    aggregator.staged_keys() as jlong
+}
+
 state_bytes_getter!(
     Java_io_github_jordepic_streamfusion_Native_localGroupAggregatorStateBytes,
     LocalGroupAggregator
@@ -2048,6 +2076,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createGroupAg
     distinct_view_columns: JIntArray<'local>,
     record_count_column: jint,
     generate_update_before: jboolean,
+    mini_batch: jboolean,
     memory_budget_bytes: jlong,
 ) -> jlong {
     let kinds = read_int_array(&env, &aggregate_kinds);
@@ -2061,7 +2090,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createGroupAg
         .into_iter()
         .map(|precision| precision as i32)
         .collect();
-    let aggregator = GroupAggregator::new(
+    let mut aggregator = GroupAggregator::new(
         kinds,
         value_types,
         value_columns,
@@ -2072,8 +2101,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createGroupAg
     .with_filter_columns(filter_columns)
     .with_count_columns(count_columns)
     .with_distinct_view_columns(distinct_view_columns)
-    .with_record_count_column(record_count_column as i64)
-    .with_memory_budget(memory_budget_bytes);
+    .with_record_count_column(record_count_column as i64);
+    if mini_batch != 0 {
+        aggregator = aggregator.with_mini_batch();
+    }
+    let aggregator = aggregator.with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, aggregator)
 }
 
@@ -2096,6 +2128,21 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateGroupAg
         aggregator.update(&batch)
     };
     match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushGroupAggregator<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let aggregator = unsafe { &mut *(handle as *mut GroupAggregator) };
+    match aggregator.flush_mini_batch() {
         Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
         Err(e) => throw_memory_limit(&mut env, &e.to_string()),
     }
@@ -2182,6 +2229,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
     distinct_view_columns: JIntArray<'local>,
     record_count_column: jint,
     generate_update_before: jboolean,
+    mini_batch: jboolean,
     snapshot: JByteArray<'local>,
     memory_budget_bytes: jlong,
 ) -> jlong {
@@ -2199,7 +2247,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
     let bytes = env
         .convert_byte_array(&snapshot)
         .expect("failed to read group-by snapshot");
-    let aggregator = GroupAggregator::restore(
+    let mut aggregator = GroupAggregator::restore(
         kinds,
         value_types,
         value_columns,
@@ -2211,8 +2259,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
     .with_filter_columns(filter_columns)
     .with_count_columns(count_columns)
     .with_distinct_view_columns(distinct_view_columns)
-    .with_record_count_column(record_count_column as i64)
-    .with_memory_budget(memory_budget_bytes);
+    .with_record_count_column(record_count_column as i64);
+    if mini_batch != 0 {
+        aggregator = aggregator.with_mini_batch();
+    }
+    let aggregator = aggregator.with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, aggregator)
 }
 
@@ -2233,6 +2284,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
     distinct_view_columns: JIntArray<'local>,
     record_count_column: jint,
     generate_update_before: jboolean,
+    mini_batch: jboolean,
     snapshots: JObjectArray<'local>,
     memory_budget_bytes: jlong,
 ) -> jlong {
@@ -2261,7 +2313,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
                 .expect("read raw group partition bytes"),
         );
     }
-    let aggregator = GroupAggregator::restore_partitions(
+    let mut aggregator = GroupAggregator::restore_partitions(
         kinds,
         value_types,
         value_columns,
@@ -2273,8 +2325,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
     .with_filter_columns(filter_columns)
     .with_count_columns(count_columns)
     .with_distinct_view_columns(distinct_view_columns)
-    .with_record_count_column(record_count_column as i64)
-    .with_memory_budget(memory_budget_bytes);
+    .with_record_count_column(record_count_column as i64);
+    if mini_batch != 0 {
+        aggregator = aggregator.with_mini_batch();
+    }
+    let aggregator = aggregator.with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, aggregator)
 }
 

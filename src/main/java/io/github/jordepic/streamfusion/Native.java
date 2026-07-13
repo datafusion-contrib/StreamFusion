@@ -130,6 +130,10 @@ public final class Native {
 
   public static native long groupAggregatorStateBytes(long handle);
 
+  public static native long groupAggregatorStagingBytes(long handle);
+
+  public static native long groupAggregatorStagedKeys(long handle);
+
   public static native long localGroupAggregatorStateBytes(long handle);
 
   public static native long overAggregatorStateBytes(long handle);
@@ -877,6 +881,7 @@ public final class Native {
       int[] distinctViewColumns,
       int recordCountColumn,
       boolean generateUpdateBefore,
+      boolean miniBatch,
       long memoryBudgetBytes);
 
   /**
@@ -885,6 +890,10 @@ public final class Native {
    */
   public static native void updateGroupAggregator(
       long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
+
+  /** Flushes the group changes staged across one logical mini-batch. */
+  public static native void flushGroupAggregator(
+      long handle, long outArrayAddress, long outSchemaAddress);
 
   /** Releases a {@code GROUP BY} aggregator handle. */
   public static native void closeGroupAggregator(long handle);
@@ -912,6 +921,7 @@ public final class Native {
       int[] distinctViewColumns,
       int recordCountColumn,
       boolean generateUpdateBefore,
+      boolean miniBatch,
       byte[] snapshot,
       long memoryBudgetBytes);
 
@@ -927,6 +937,7 @@ public final class Native {
       int[] distinctViewColumns,
       int recordCountColumn,
       boolean generateUpdateBefore,
+      boolean miniBatch,
       byte[][] snapshots,
       long memoryBudgetBytes);
 

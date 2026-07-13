@@ -287,7 +287,9 @@ durable accumulator without constructing intermediate outputs, and gathers one c
 at the logical boundary. On 4,096 rows over 64 hot keys this is 3.25× faster than per-row emission
 and 2.37× faster than flushing a diff after every 256-row physical batch (23.41 vs 7.21 and 9.89 M
 rows/s respectively). Equal pre/post tuples and groups created then deleted within the bundle emit
-nothing; immediate mode remains byte-for-byte unchanged.
+nothing; immediate mode remains byte-for-byte unchanged. The Flink operator uses the shared exact
+row-count splitter and drains before watermarks, checkpoints, and finish. Retained Arrow key buffers
+and first preimages are included in managed-memory accounting and the common bundle metrics.
 
 **Group-aggregate DISTINCT folds primitives; the changelog emit reads its cache.** The
 multi-`DISTINCT` day/channel aggregates (q15/q16/q17) owned the largest native islands, and their

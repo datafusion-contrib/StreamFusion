@@ -14,6 +14,7 @@ import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
 import org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.GenericMapData;
@@ -52,6 +53,11 @@ class NativeColumnarGroupAggregateOperatorTest {
           new String[] {"key", "sum"});
 
   private static NativeColumnarGroupAggregateOperator operator() {
+    return operator(false, -1);
+  }
+
+  private static NativeColumnarGroupAggregateOperator operator(
+      boolean miniBatch, long miniBatchSize) {
     return new NativeColumnarGroupAggregateOperator(
         new int[] {0},
         new int[] {0},
@@ -62,6 +68,8 @@ class NativeColumnarGroupAggregateOperatorTest {
         new int[] {-1},
         -1,
         true,
+        miniBatch,
+        miniBatchSize,
         new int[] {-1},
         MAX_PARALLELISM);
   }
@@ -96,6 +104,8 @@ class NativeColumnarGroupAggregateOperatorTest {
             new int[] {-1},
             -1,
             true,
+            false,
+            -1,
             new int[] {-1, -1, -1},
             MAX_PARALLELISM);
     return new KeyedOneInputStreamOperatorTestHarness<>(
@@ -120,6 +130,63 @@ class NativeColumnarGroupAggregateOperatorTest {
   }
 
   @Test
+  void coalescesGroupsAcrossPhysicalBatchesAtTheLogicalBoundary() throws Exception {
+    int[] stateKeys = stateKeysForSubtasks(1);
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            new KeyedOneInputStreamOperatorTestHarness<>(
+                operator(true, 4),
+                batch -> stateKeys[batch.destination() >= 0 ? batch.destination() : 0],
+                Types.INT,
+                MAX_PARALLELISM,
+                1,
+                0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 10), row(2, 7))));
+      assertEquals(List.of(), collect(harness));
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 5), row(1, 2))));
+      assertEquals(
+          List.of(change(RowKind.INSERT, 1, 17), change(RowKind.INSERT, 2, 7)),
+          collect(harness));
+    }
+  }
+
+  @Test
+  void splitsPhysicalBatchesAndFlushesTheRemainderOnWatermark() throws Exception {
+    int[] stateKeys = stateKeysForSubtasks(1);
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            new KeyedOneInputStreamOperatorTestHarness<>(
+                operator(true, 2),
+                batch -> stateKeys[batch.destination() >= 0 ? batch.destination() : 0],
+                Types.INT,
+                MAX_PARALLELISM,
+                1,
+                0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(
+          new StreamRecord<>(
+              batch(allocator, row(1, 10), row(1, 5), row(1, 2), row(2, 7), row(1, 3))));
+      assertEquals(
+          List.of(
+              change(RowKind.INSERT, 1, 15),
+              change(RowKind.UPDATE_BEFORE, 1, 15),
+              change(RowKind.UPDATE_AFTER, 1, 17),
+              change(RowKind.INSERT, 2, 7)),
+          collect(harness));
+
+      harness.processWatermark(new Watermark(100));
+      assertEquals(
+          List.of(
+              change(RowKind.UPDATE_BEFORE, 1, 17),
+              change(RowKind.UPDATE_AFTER, 1, 20)),
+          collect(harness));
+    }
+  }
+
+  @Test
   void runningStateSurvivesCheckpoint() throws Exception {
     OperatorSubtaskState snapshot;
     try (BufferAllocator allocator = new RootAllocator();
@@ -136,6 +203,47 @@ class NativeColumnarGroupAggregateOperatorTest {
       restored.initializeState(snapshot);
       restored.open();
       restored.processElement(new StreamRecord<>(batch(allocator, row(1, 5))));
+      assertEquals(
+          List.of(change(RowKind.UPDATE_BEFORE, 1, 10), change(RowKind.UPDATE_AFTER, 1, 15)),
+          collect(restored));
+    }
+  }
+
+  @Test
+  void miniBatchFlushesBeforeCheckpointAndRestoresOnlyDurableState() throws Exception {
+    OperatorSubtaskState snapshot;
+    int[] stateKeys = stateKeysForSubtasks(1);
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            new KeyedOneInputStreamOperatorTestHarness<>(
+                operator(true, 100),
+                batch -> stateKeys[batch.destination() >= 0 ? batch.destination() : 0],
+                Types.INT,
+                MAX_PARALLELISM,
+                1,
+                0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 10))));
+      harness.getOneInputOperator().prepareSnapshotPreBarrier(1L);
+      snapshot = harness.snapshot(1L, 1L);
+      assertEquals(List.of(change(RowKind.INSERT, 1, 10)), collect(harness));
+    }
+
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> restored =
+            new KeyedOneInputStreamOperatorTestHarness<>(
+                operator(true, 100),
+                batch -> stateKeys[batch.destination() >= 0 ? batch.destination() : 0],
+                Types.INT,
+                MAX_PARALLELISM,
+                1,
+                0)) {
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(snapshot);
+      restored.open();
+      restored.processElement(new StreamRecord<>(batch(allocator, row(1, 5))));
+      restored.getOneInputOperator().finish();
       assertEquals(
           List.of(change(RowKind.UPDATE_BEFORE, 1, 10), change(RowKind.UPDATE_AFTER, 1, 15)),
           collect(restored));

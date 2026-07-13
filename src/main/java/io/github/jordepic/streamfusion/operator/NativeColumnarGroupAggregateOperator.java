@@ -1,6 +1,7 @@
 package io.github.jordepic.streamfusion.operator;
 
 import io.github.jordepic.streamfusion.Native;
+import io.github.jordepic.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
@@ -11,6 +12,7 @@ import org.apache.flink.runtime.state.StateInitializationContext;
 import org.apache.flink.runtime.state.StateSnapshotContext;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
+import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
 /**
@@ -32,12 +34,16 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
   private final int[] distinctViewColumns;
   private final int recordCountColumn;
   private final boolean generateUpdateBefore;
+  private final boolean miniBatch;
+  private final long miniBatchSize;
   private final int[] keyTimestampPrecisions;
   private final int maxParallelism;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
+  private transient MiniBatchBoundary boundary;
+  private transient MiniBatchMetrics miniBatchMetrics;
   private transient ManagedMemoryBudget memoryBudget;
 
   public NativeColumnarGroupAggregateOperator(
@@ -50,6 +56,8 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
       int[] distinctViewColumns,
       int recordCountColumn,
       boolean generateUpdateBefore,
+      boolean miniBatch,
+      long miniBatchSize,
       int[] keyTimestampPrecisions,
       int maxParallelism) {
     this.aggregateKinds = aggregateKinds;
@@ -61,6 +69,8 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
     this.distinctViewColumns = distinctViewColumns;
     this.recordCountColumn = recordCountColumn;
     this.generateUpdateBefore = generateUpdateBefore;
+    this.miniBatch = miniBatch;
+    this.miniBatchSize = miniBatchSize;
     this.keyTimestampPrecisions = keyTimestampPrecisions;
     if (maxParallelism <= 0) {
       throw new IllegalArgumentException("native group aggregate state requires a positive max parallelism");
@@ -83,10 +93,11 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
             ? Native.createGroupAggregator(
                 aggregateKinds, valueTypes, valueColumns, keyColumns, keyTimestampPrecisions,
                 filterColumns, countColumns, distinctViewColumns, recordCountColumn,
-                generateUpdateBefore, memoryBudget.bytes())
+                generateUpdateBefore, miniBatch, memoryBudget.bytes())
             : Native.restoreGroupAggregatorPartitions(
                 aggregateKinds, valueTypes, valueColumns, keyColumns, keyTimestampPrecisions,
                 filterColumns, countColumns, distinctViewColumns, recordCountColumn, generateUpdateBefore,
+                miniBatch,
                 snapshots.toArray(new byte[0][]),
                 memoryBudget.bytes());
   }
@@ -96,11 +107,59 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
     super.open();
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
+    if (miniBatch) {
+      boundary = new MiniBatchBoundary(miniBatchSize);
+      miniBatchMetrics = new MiniBatchMetrics(getMetricGroup());
+    }
   }
 
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
     VectorSchemaRoot in = element.getValue().root();
+    if (!miniBatch) {
+      try {
+        update(in);
+      } finally {
+        in.close();
+      }
+      publishStateBytes();
+      return;
+    }
+
+    int rows = in.getRowCount();
+    miniBatchMetrics.onPhysicalBatch();
+    try {
+      if (rows == 0) {
+        update(in);
+      } else {
+        int offset = 0;
+        while (offset < rows) {
+          boolean firstContribution = offset == 0 || boundary.bufferedRows() == 0;
+          int length = boundary.nextSliceLength(rows - offset);
+          if (length < rows - offset) {
+            miniBatchMetrics.onPhysicalBatchSplit();
+          }
+          if (offset == 0 && length == rows) {
+            update(in);
+          } else {
+            try (VectorSchemaRoot slice = in.slice(offset, length)) {
+              update(slice);
+            }
+          }
+          miniBatchMetrics.onSlice(length, firstContribution);
+          offset += length;
+          if (boundary.onSlice(length)) {
+            flushBundle(FlushReason.COUNT);
+          }
+        }
+      }
+    } finally {
+      in.close();
+    }
+    publishStateBytes();
+  }
+
+  private void update(VectorSchemaRoot in) {
     BufferAllocator inAllocator =
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
     try (ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
@@ -121,10 +180,51 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
       } else {
         out.close();
       }
-    } finally {
-      in.close();
     }
-    publishStateBytes();
+  }
+
+  @Override
+  public void processWatermark(Watermark mark) throws Exception {
+    if (miniBatch) {
+      flushBundle(FlushReason.WATERMARK);
+      publishStateBytes();
+    }
+    super.processWatermark(mark);
+  }
+
+  @Override
+  public void prepareSnapshotPreBarrier(long checkpointId) throws Exception {
+    if (miniBatch) {
+      flushBundle(FlushReason.CHECKPOINT);
+    }
+    super.prepareSnapshotPreBarrier(checkpointId);
+  }
+
+  @Override
+  public void finish() throws Exception {
+    if (miniBatch) {
+      flushBundle(FlushReason.FINISH);
+    }
+    super.finish();
+  }
+
+  private void flushBundle(FlushReason reason) {
+    long transientBytes = Native.groupAggregatorStagingBytes(handle);
+    long touchedKeys = Native.groupAggregatorStagedKeys(handle);
+    try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
+        ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+      Native.flushGroupAggregator(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      VectorSchemaRoot out =
+          Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
+      int outputRows = out.getRowCount();
+      miniBatchMetrics.onFlush(reason, outputRows, touchedKeys, transientBytes);
+      if (outputRows > 0) {
+        output.collect(new StreamRecord<>(new ArrowBatch(out)));
+      } else {
+        out.close();
+      }
+    }
+    boundary.reset();
   }
 
   /** Samples the native state size for the operator's gauges; task-thread only. */

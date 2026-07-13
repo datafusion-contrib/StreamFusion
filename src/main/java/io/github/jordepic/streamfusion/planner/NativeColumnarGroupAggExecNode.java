@@ -81,6 +81,11 @@ public class NativeColumnarGroupAggExecNode extends ExecNodeBase<ArrowBatch>
     // valid Flink keyed context for an entire columnar batch; no managed keyed state reads it.
     KeySelector<ArrowBatch, Integer> stateKeySelector =
         batch -> stateKeys[batch.destination() >= 0 ? batch.destination() : 0];
+    boolean miniBatch =
+        config.get(
+            org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED);
+    long miniBatchSize =
+        config.get(org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE);
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,
@@ -90,6 +95,8 @@ public class NativeColumnarGroupAggExecNode extends ExecNodeBase<ArrowBatch>
                 distinctViewColumns,
                 recordCountColumn,
                 generateUpdateBefore,
+                miniBatch,
+                miniBatchSize,
                 keyTimestampPrecisions,
                 maxParallelism),
             ArrowBatchTypeInformation.INSTANCE,
