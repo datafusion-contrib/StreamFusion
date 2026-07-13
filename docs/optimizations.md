@@ -267,8 +267,8 @@ throughput), ROW_NUMBER 342→131 µs (+162%), bounded frame 688→452 µs (+52%
 10.2→3.1 ms (+228%), exchange split 174→57 µs (+208%), keep-first probe +6%. The exchange's
 concrete key→channel assignment changed with the hashed representation — permitted by
 divergences/10 (co-location is the only contract). Still scalar-keyed, pending a bench that says
-they matter: the window Top-N ranker, the changelog normalizer, the temporal join, and the
-mini-batch local aggregate (the [perf backlog](https://github.com/datafusion-contrib/StreamFusion/issues/14)).
+they matter: the window Top-N ranker and the temporal join (the
+[perf backlog](https://github.com/datafusion-contrib/StreamFusion/issues/14)).
 
 **Top-N emit decodes distinct rows, not emitted rows.** The with-rank cascade emits the same
 `Arc`-shared buffered rows at many rank positions — in a hot partition, the same top-N rows over
