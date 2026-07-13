@@ -80,6 +80,10 @@ where
         self.order.len()
     }
 
+    pub(crate) fn contains_key(&self, key: &K) -> bool {
+        self.changes.contains_key(key)
+    }
+
     /// Estimates the retained key and endpoint payload bytes without exposing the transition map.
     /// Operators add their own hash-entry/container overhead through the supplied callbacks.
     pub(crate) fn retained_bytes(
