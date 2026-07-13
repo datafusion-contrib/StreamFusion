@@ -57,10 +57,11 @@ public class NativeColumnarMiniBatchAssignerOperator extends AbstractStreamOpera
 
   @Override
   public void processWatermark(Watermark mark) throws Exception {
-    // Forward an end-of-stream MAX watermark; the periodic markers are emitted above.
+    // Flink's processing-time assigner owns the mini-batch marker stream, so upstream event-time
+    // watermarks must not introduce extra bundle boundaries. MAX remains the end-of-input signal.
     if (mark.getTimestamp() == Long.MAX_VALUE && currentWatermark != Long.MAX_VALUE) {
       currentWatermark = Long.MAX_VALUE;
+      output.emitWatermark(mark);
     }
-    super.processWatermark(mark);
   }
 }
