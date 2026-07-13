@@ -395,14 +395,13 @@ impl UpdatingJoiner {
                 });
                 staged.touch(ByteKey::from(key.as_ref()), durable);
             }
-            let payload = ByteKey::from(payloads.row(row).as_ref());
             let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
-            let change = if matches!(kind, 1 | 3) {
-                MiniBatchChange::Delete(payload)
+            let after = if matches!(kind, 1 | 3) {
+                None
             } else {
-                MiniBatchChange::Insert(payload)
+                Some(ByteKey::from(payloads.row(row).as_ref()))
             };
-            staged.push(ByteKey::from(key.as_ref()), change);
+            staged.set_after(key.as_ref(), after);
         }
         if self.memory.tracking() {
             self.memory.record(self.staging_bytes() as isize - before_bytes as isize);

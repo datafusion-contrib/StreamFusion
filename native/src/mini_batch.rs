@@ -89,6 +89,14 @@ where
         self.changes.contains_key(key)
     }
 
+    pub(crate) fn set_after<Q>(&mut self, key: &Q, after: Option<R>)
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        self.changes.get_mut(key).expect("mini-batch key touched").1 = after;
+    }
+
     /// Estimates the retained key and endpoint payload bytes without exposing the transition map.
     /// Operators add their own hash-entry/container overhead through the supplied callbacks.
     pub(crate) fn retained_bytes(
