@@ -1396,6 +1396,22 @@ fn topn_buffer_stays_within_budget_under_eviction() {
     assert_eq!(ranker.memory.state_bytes, bounded); // eviction keeps the tracked state flat
 }
 
+#[test]
+fn topn_net_diff_staging_is_accounted_and_released_on_flush() {
+    let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 3, false, true)
+        .with_memory_budget(1 << 20)
+        .unwrap();
+    ranker.push(&topn_batch(vec![1, 1, 2], vec![5, 3, 7])).unwrap();
+    assert_eq!(ranker.staged_partitions(), 2);
+    assert!(ranker.staging_bytes() > 0);
+    let bundled = ranker.memory.state_bytes;
+
+    ranker.flush_net_diff();
+    assert_eq!(ranker.staged_partitions(), 0);
+    assert_eq!(ranker.staging_bytes(), 0);
+    assert!(ranker.memory.state_bytes < bundled);
+}
+
 // A restored snapshot is accounted the moment the budget attaches, so state that no longer fits
 // fails at restore rather than silently exceeding the budget.
 #[test]

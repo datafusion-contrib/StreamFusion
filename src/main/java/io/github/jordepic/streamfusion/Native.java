@@ -150,6 +150,10 @@ public final class Native {
 
   public static native long topNRankerStateBytes(long handle);
 
+  public static native long topNRankerStagingBytes(long handle);
+
+  public static native long topNRankerStagedPartitions(long handle);
+
   public static native long changelogNormalizerStateBytes(long handle);
 
   public static native long windowJoinerStateBytes(long handle);

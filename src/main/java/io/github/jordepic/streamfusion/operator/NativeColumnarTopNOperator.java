@@ -218,13 +218,15 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
   }
 
   private void flushBundle(FlushReason reason) {
+    long transientBytes = Native.topNRankerStagingBytes(handle);
+    long touchedPartitions = Native.topNRankerStagedPartitions(handle);
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
       Native.flushTopNRanker(handle, outArray.memoryAddress(), outSchema.memoryAddress());
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       int outputRows = out.getRowCount();
-      miniBatchMetrics.onFlush(reason, outputRows, outputRows, 0);
+      miniBatchMetrics.onFlush(reason, outputRows, touchedPartitions, transientBytes);
       if (outputRows > 0) {
         output.collect(new StreamRecord<>(new ArrowBatch(out)));
       } else {

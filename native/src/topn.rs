@@ -124,6 +124,15 @@ impl TopNConverters {
 /// reuses `BinaryRowData`). The decode back to Arrow still happens once per emitted row, on flush.
 pub(crate) type TopNRow = (OwnedRow, Arc<OwnedRow>);
 
+fn topn_staged_entry_bytes(key: &ByteKey, old: &Vec<Arc<OwnedRow>>) -> usize {
+    // The key is owned once by the lookup map and once by the deterministic first-touch vector.
+    byte_key_bytes(&key.0)
+        + key.len()
+        + std::mem::size_of::<ByteKey>()
+        + std::mem::size_of::<Vec<Arc<OwnedRow>>>()
+        + old.capacity() * std::mem::size_of::<Arc<OwnedRow>>()
+}
+
 pub(crate) struct TopNRanker {
     partition_columns: Vec<usize>,
     sort_columns: Vec<SortColumn>,
@@ -303,6 +312,17 @@ impl TopNRanker {
         Ok(self.emit(out_rows, out_kinds, out_ranks))
     }
 
+    pub(crate) fn staged_partitions(&self) -> usize {
+        self.staged_order.len()
+    }
+
+    pub(crate) fn staging_bytes(&self) -> usize {
+        self.staged_old_tops
+            .iter()
+            .map(|(key, old)| topn_staged_entry_bytes(key, old))
+            .sum()
+    }
+
     /// Folds one physical batch into a logical mini-batch. The first touch of a partition captures
     /// its preimage; output is deferred until `flush_net_diff`, so Arrow batch boundaries are not
     /// observable in the collapsed changelog.
@@ -341,8 +361,12 @@ impl TopNRanker {
             };
             if !staged_old_tops.contains_key(part) {
                 let key = ByteKey::from(part);
+                let old: Vec<Arc<OwnedRow>> = buffer.iter().map(|(_, p)| p.clone()).collect();
+                if track {
+                    delta += topn_staged_entry_bytes(&key, &old) as isize;
+                }
                 staged_order.push(key.clone());
-                staged_old_tops.insert(key, buffer.iter().map(|(_, p)| p.clone()).collect());
+                staged_old_tops.insert(key, old);
             }
             let pos = buffer.partition_point(|(k, _)| k.row() <= key_row);
             if pos >= limit {
@@ -370,6 +394,7 @@ impl TopNRanker {
         if !self.net_diff {
             return self.emit(Vec::new(), Vec::new(), Vec::new());
         }
+        let staged_bytes = if self.memory.tracking() { self.staging_bytes() } else { 0 };
         let touched = std::mem::take(&mut self.staged_order);
         let old_tops = std::mem::take(&mut self.staged_old_tops);
         let mut out_rows: Vec<Arc<OwnedRow>> = Vec::new();
@@ -418,6 +443,8 @@ impl TopNRanker {
                 }
             }
         }
+        self.memory.forget(staged_bytes);
+        self.memory.account_shrink();
         self.emit(out_rows, out_kinds, out_ranks)
     }
 
@@ -1271,6 +1298,32 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_topNRankerSta
         TopNHandle::Append(r) => r.memory.state_bytes,
         TopNHandle::Retract(r) => r.memory.state_bytes,
     }) as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_topNRankerStagingBytes<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let ranker = unsafe { &*(handle as *const TopNHandle) };
+    match ranker {
+        TopNHandle::Append(r) => r.staging_bytes() as jlong,
+        TopNHandle::Retract(_) => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_topNRankerStagedPartitions<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let ranker = unsafe { &*(handle as *const TopNHandle) };
+    match ranker {
+        TopNHandle::Append(r) => r.staged_partitions() as jlong,
+        TopNHandle::Retract(_) => 0,
+    }
 }
 
 /// Creates a window-rank ranker (window Top-N / window deduplication) over the attached

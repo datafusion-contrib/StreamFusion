@@ -263,6 +263,9 @@ logical diff 2.70× faster than a diff after every 256-row physical batch for me
 beats the immediate cascade by 1.40× and 3.41× respectively. A five-second release profile puts
 most samples in Top-N mutation and `arrow_row::Row::owned` allocation after coalescing; eliminating
 that ownership traffic is the next optimization frontier, not further changelog materialization.
+The first-touch key/preimage staging is charged to the operator's managed-memory reservation and
+released at flush; the shared metrics report its peak bytes and the actual touched-partition count,
+not emitted rows as a proxy.
 
 **Logical mini-batches are independent of physical Arrow batches.** The local two-phase aggregate
 counts rows across input batches and splits a batch exactly at the configured Flink count trigger.
