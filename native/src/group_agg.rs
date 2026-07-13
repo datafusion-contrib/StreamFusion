@@ -563,6 +563,20 @@ pub(crate) struct GroupKeyState {
     last_output_bytes: usize,
 }
 
+struct StagedGroupChange {
+    old: Option<Vec<ScalarValue>>,
+    key_batch: usize,
+    key_row: usize,
+}
+
+fn staged_group_change_bytes(key: &ByteKey, old: &Option<Vec<ScalarValue>>) -> usize {
+    byte_key_bytes(&key.0)
+        + key.len()
+        + std::mem::size_of::<ByteKey>()
+        + std::mem::size_of::<StagedGroupChange>()
+        + old.as_ref().map_or(0, |values| scalar_row_bytes(values))
+}
+
 /// Non-windowed `GROUP BY` aggregation over a changelog. Holds per-key state — no windows, no
 /// watermark — and processes a batch in input order like the host's per-record aggregate, so the
 /// emitted change sequence matches byte for byte. Each row's `RowKind` (carried on `$row_kind$`)
@@ -603,6 +617,11 @@ pub(crate) struct GroupAggregator {
     // Materialized once per checkpoint so the JVM can write one raw keyed-state payload per Flink
     // key group without repeatedly traversing the full native map.
     snapshot_cache: Option<GroupSnapshotCache>,
+    mini_batch: bool,
+    staged_order: Vec<ByteKey>,
+    staged_changes: HashMap<ByteKey, StagedGroupChange>,
+    staged_key_batches: Vec<RecordBatch>,
+    staged_bytes: usize,
     pub(crate) memory: OperatorMemory,
 }
 
@@ -686,12 +705,22 @@ impl GroupAggregator {
             generate_update_before,
             keys: ahash::HashMap::default(),
             snapshot_cache: None,
+            mini_batch: false,
+            staged_order: Vec::new(),
+            staged_changes: HashMap::default(),
+            staged_key_batches: Vec::new(),
+            staged_bytes: 0,
             filter_columns,
             count_columns,
             distinct_view_columns,
             record_count_column: -1,
             memory: OperatorMemory::unaccounted(),
         }
+    }
+
+    pub(crate) fn with_mini_batch(mut self) -> Self {
+        self.mini_batch = true;
+        self
     }
 
     /// Bounds this aggregator's state by the operator's managed-memory budget (negative =
@@ -915,6 +944,9 @@ impl GroupAggregator {
         };
 
         let track = self.memory.tracking();
+        let staged_key_batch = self.staged_key_batches.len();
+        let mut retained_key_batch = false;
+        let mut staged_delta = 0usize;
         for row in 0..n {
             let key = key_encoder.encode(row);
             // RowKind: 0 +I, 1 -U, 2 +U, 3 -D (absent column ⇒ INSERT). UB/delete retract; I/UA add.
@@ -929,9 +961,11 @@ impl GroupAggregator {
             if !exists && retract {
                 continue; // no accumulator for a key's first message being a retraction (host skips it)
             }
-            // The pre-update output comes from the group's cache (recomputed only after a restore,
-            // which does not carry it) — the second full materialization per row goes away.
-            let (prev, prev_bytes) = if exists {
+            // Immediate mode needs the preceding tuple for every input row. Mini-batch mode moves
+            // it out only on the key's first touch and retains an Arrow row reference for the key;
+            // intermediate rows then mutate state without materializing aggregate output.
+            let first_bundle_touch = self.mini_batch && !self.staged_changes.contains_key(key);
+            let (mut prev, prev_bytes) = if exists && (!self.mini_batch || first_bundle_touch) {
                 let state = self.keys.get_mut(key).expect("key present");
                 match state.last_output.take() {
                     Some(cached) => {
@@ -948,6 +982,20 @@ impl GroupAggregator {
             } else {
                 (None, 0)
             };
+            if first_bundle_touch {
+                if !retained_key_batch {
+                    staged_delta += batch.get_array_memory_size();
+                    self.staged_key_batches.push(batch.clone());
+                    retained_key_batch = true;
+                }
+                let owned = ByteKey::from(key);
+                self.staged_order.push(owned.clone());
+                staged_delta += staged_group_change_bytes(&owned, &prev);
+                self.staged_changes.insert(
+                    owned,
+                    StagedGroupChange { old: prev.take(), key_batch: staged_key_batch, key_row: row },
+                );
+            }
             {
                 let state = if exists {
                     self.keys.get_mut(key).expect("key present")
@@ -1085,7 +1133,11 @@ impl GroupAggregator {
                 };
             }
 
-            if self.keys.get(key).unwrap().records > 0 {
+            if self.mini_batch {
+                if self.keys.get(key).unwrap().records <= 0 {
+                    self.keys.remove(key);
+                }
+            } else if self.keys.get(key).unwrap().records > 0 {
                 let state = self.keys.get_mut(key).expect("key present");
                 let new = output_of(state, &self.result_types);
                 match prev {
@@ -1132,6 +1184,10 @@ impl GroupAggregator {
             }
         }
         drop(push);
+        self.staged_bytes += staged_delta;
+        if track {
+            self.memory.record(staged_delta as isize);
+        }
         self.memory.account()?;
 
         let indices = UInt32Array::from(out_rows);
@@ -1162,6 +1218,91 @@ impl GroupAggregator {
         columns.push(Arc::new(Int8Array::from(out_kinds)));
         Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build group-by changelog batch"))
+    }
+
+    /// Finalizes the first-preimage/final-postimage transition for every key touched in the
+    /// current logical mini-batch. Key columns are gathered directly from retained Arrow inputs;
+    /// only one row per emitted transition is copied into the compact output.
+    pub(crate) fn flush_mini_batch(&mut self) -> Result<RecordBatch, DataFusionError> {
+        if !self.mini_batch || self.staged_order.is_empty() {
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
+        }
+        let order = std::mem::take(&mut self.staged_order);
+        let changes = std::mem::take(&mut self.staged_changes);
+        let key_batches = std::mem::take(&mut self.staged_key_batches);
+        let num_agg = self.kinds.len();
+        let mut key_rows: Vec<(usize, usize)> = Vec::new();
+        let mut out_results: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
+        let mut out_kinds: Vec<i8> = Vec::new();
+        let mut new_cache_bytes = 0usize;
+
+        let mut push = |kind: i8, staged: &StagedGroupChange, values: Vec<ScalarValue>| {
+            key_rows.push((staged.key_batch, staged.key_row));
+            for (i, value) in values.into_iter().enumerate() {
+                out_results[i].push(value);
+            }
+            out_kinds.push(kind);
+        };
+
+        for key in order {
+            let staged = &changes[&key];
+            let new = self.keys.get(&key).map(|state| output_of(state, &self.result_types));
+            match (&staged.old, &new) {
+                (None, Some(after)) => push(0, staged, after.clone()),
+                (Some(before), None) => push(3, staged, before.clone()),
+                (Some(before), Some(after)) if before != after => {
+                    if self.generate_update_before {
+                        push(1, staged, before.clone());
+                    }
+                    push(2, staged, after.clone());
+                }
+                _ => {}
+            }
+            if let (Some(state), Some(after)) = (self.keys.get_mut(&key), new) {
+                state.last_output_bytes = scalar_row_bytes(&after);
+                new_cache_bytes += state.last_output_bytes;
+                state.last_output = Some(after);
+            }
+        }
+        drop(push);
+
+        let first = &key_batches[0];
+        let mut fields: Vec<Field> = self
+            .key_columns
+            .iter()
+            .enumerate()
+            .map(|(position, &column)| {
+                Field::new(
+                    format!("key{position}"),
+                    first.column(column).data_type().clone(),
+                    true,
+                )
+            })
+            .collect();
+        let mut columns: Vec<ArrayRef> = Vec::with_capacity(self.key_columns.len() + num_agg + 1);
+        for &column in &self.key_columns {
+            let data: Vec<_> = key_batches.iter().map(|batch| batch.column(column).to_data()).collect();
+            let refs: Vec<_> = data.iter().collect();
+            let mut gathered = MutableArrayData::new(refs, false, key_rows.len());
+            for &(batch, row) in &key_rows {
+                gathered.extend(batch, row, row + 1);
+            }
+            columns.push(make_array(gathered.freeze()));
+        }
+        for (i, result_type) in self.result_types.iter().enumerate() {
+            fields.push(Field::new(format!("result{i}"), result_type.clone(), true));
+            columns.push(scalars_to_array(std::mem::take(&mut out_results[i]), result_type));
+        }
+        fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
+        columns.push(Arc::new(Int8Array::from(out_kinds)));
+        self.memory.forget(self.staged_bytes);
+        self.staged_bytes = 0;
+        if self.memory.tracking() {
+            self.memory.record(new_cache_bytes as isize);
+        }
+        self.memory.account()?;
+        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build mini-batch group-by changelog"))
     }
 
     /// Serializes per-key state. A main batch carries `[key0.., records, state{i}, nonnull{i}…]` (the

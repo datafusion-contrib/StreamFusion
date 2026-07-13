@@ -1567,6 +1567,40 @@ fn group_by_treats_absent_row_kind_as_insert() {
     assert_eq!(values(&out, 1), vec![10, 10, 30]);
 }
 
+#[test]
+fn group_by_mini_batch_emits_one_final_change_across_physical_batches() {
+    let mut agg =
+        GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true).with_mini_batch();
+    let first = agg.update(&group_batch(vec![1, 2], vec![10, 7])).unwrap();
+    let second = agg.update(&group_batch(vec![1, 1], vec![5, 2])).unwrap();
+    assert_eq!(first.num_rows(), 0);
+    assert_eq!(second.num_rows(), 0);
+
+    let out = agg.flush_mini_batch().unwrap();
+    assert_eq!(row_kinds(&out), vec![0, 0]);
+    assert_eq!(values(&out, 0), vec![1, 2]);
+    assert_eq!(values(&out, 1), vec![17, 7]);
+}
+
+#[test]
+fn group_by_mini_batch_preserves_first_preimage_and_suppresses_cancelled_groups() {
+    let mut agg =
+        GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true).with_mini_batch();
+    agg.update(&group_batch(vec![1], vec![10])).unwrap();
+    agg.flush_mini_batch().unwrap();
+
+    agg.update(&group_changelog(
+        vec![1, 1, 2, 2],
+        vec![Some(5), Some(2), Some(9), Some(9)],
+        vec![0, 0, 0, 3],
+    ))
+    .unwrap();
+    let out = agg.flush_mini_batch().unwrap();
+    assert_eq!(row_kinds(&out), vec![1, 2]);
+    assert_eq!(values(&out, 0), vec![1, 1]);
+    assert_eq!(values(&out, 1), vec![10, 17]);
+}
+
 // With the host's update-before flag off, an update emits only the UPDATE_AFTER row.
 #[test]
 fn group_by_omits_update_before_when_disabled() {

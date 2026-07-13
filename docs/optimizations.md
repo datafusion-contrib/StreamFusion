@@ -281,6 +281,14 @@ The native transition substrate folds insert/delete/update chains to their first
 postimage in deterministic first-touch order; inverse changes and equal updates disappear at flush,
 giving normalize, dedup, retracting Top-N, and unique-key joins one tested changelog algebra.
 
+**Single-phase GROUP BY finalizes only its dirty-key frontier.** Mini-batch state retains the first
+emitted tuple and an Arrow key-row reference on a group's first touch, continues mutating the
+durable accumulator without constructing intermediate outputs, and gathers one compact changelog
+at the logical boundary. On 4,096 rows over 64 hot keys this is 3.25× faster than per-row emission
+and 2.37× faster than flushing a diff after every 256-row physical batch (23.41 vs 7.21 and 9.89 M
+rows/s respectively). Equal pre/post tuples and groups created then deleted within the bundle emit
+nothing; immediate mode remains byte-for-byte unchanged.
+
 **Group-aggregate DISTINCT folds primitives; the changelog emit reads its cache.** The
 multi-`DISTINCT` day/channel aggregates (q15/q16/q17) owned the largest native islands, and their
 hot leaves were `ScalarValue` construct/hash/clone/drop: every row built a scalar per distinct agg

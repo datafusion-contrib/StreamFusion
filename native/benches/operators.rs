@@ -151,6 +151,63 @@ fn bench_group_by_string_key(c: &mut Criterion) {
     group.finish();
 }
 
+// Single-phase SUM with 64 hot keys. The logical variant materializes one final group transition;
+// the immediate variant constructs the Flink-compatible changelog after every input row.
+fn bench_group_by_logical_bundle(c: &mut Criterion) {
+    use streamfusion::bench::GroupBy;
+    let keys: ArrayRef = Arc::new(Int64Array::from_iter_values(
+        (0..ROWS as i64).map(|i| i % 64),
+    ));
+    let values: ArrayRef = Arc::new(Int64Array::from_iter_values(0..ROWS as i64));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Int64, false),
+            Field::new("value", DataType::Int64, false),
+        ])),
+        vec![keys, values],
+    )
+    .unwrap();
+    let physical_size = 256;
+    let mut group = c.benchmark_group("group_by_logical_bundle");
+    group.throughput(Throughput::Elements(ROWS as u64));
+    group.bench_function("immediate", |b| {
+        b.iter_batched(
+            || GroupBy::new(vec![0], vec![0], vec![1], vec![0]),
+            |mut aggregator| {
+                for offset in (0..ROWS).step_by(physical_size) {
+                    black_box(aggregator.update(&batch.slice(offset, physical_size)));
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("physical_bundle", |b| {
+        b.iter_batched(
+            || GroupBy::mini_batch(vec![0], vec![0], vec![1], vec![0]),
+            |mut aggregator| {
+                for offset in (0..ROWS).step_by(physical_size) {
+                    black_box(aggregator.update(&batch.slice(offset, physical_size)));
+                    black_box(aggregator.flush());
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("logical_bundle", |b| {
+        b.iter_batched(
+            || GroupBy::mini_batch(vec![0], vec![0], vec![1], vec![0]),
+            |mut aggregator| {
+                for offset in (0..ROWS).step_by(physical_size) {
+                    black_box(aggregator.update(&batch.slice(offset, physical_size)));
+                }
+                black_box(aggregator.flush());
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.finish();
+}
+
 // Local two-phase GROUP BY with 64 hot keys. Each case processes the same ordered rows; only the
 // logical flush frequency changes. `physical_batch` is the old Arrow-batch-sized behavior,
 // `logical_*` is the exact Flink count boundary, and size 1 is the non-coalescing baseline.
@@ -677,6 +734,7 @@ criterion_group!(
     bench_tumbling,
     bench_tumbling_keyed,
     bench_group_by_string_key,
+    bench_group_by_logical_bundle,
     bench_local_group_by_logical_bundle,
     bench_json_decode,
     bench_session_keyed,

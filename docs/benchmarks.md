@@ -35,6 +35,8 @@ Current benches:
 - `local_group_by_logical_bundle/logical/*` — local two-phase `SUM` over 64 hot keys with
   logical bundle sizes 1, 32, 256, 4,096, and 50,000. Size 1 is the immediate/non-coalescing
   baseline; `physical_batch` pins the former one-flush-per-Arrow-batch behavior.
+- `group_by_logical_bundle/*` — single-phase `SUM` over 64 hot keys, comparing per-row changelog
+  construction, one final diff per 256-row physical batch, and one diff per 4,096-row bundle.
 - `session/sum_keyed_update_flush` — a session `SUM` grouped by key (gap merge). Its rows are
   spaced beyond the gap, so every row opens its own one-row session — the worst case for session
   state (4096 open sessions). `session/sum_keyed_dense_update_flush` is the complementary shape:
@@ -103,6 +105,18 @@ The exact logical 4,096-row path and the old physical-batch path are statistical
 showing that the boundary controller adds no measurable kernel overhead when boundaries coincide.
 The curve also quantifies the opportunity: output materialization and per-bundle setup dominate
 small bundles, while throughput plateaus around 4K rows for this 64-key shape.
+
+Single-phase GROUP BY on the same Apple M1 Max (median of 100 Criterion samples, 4,096 rows, 64
+bigint keys, 256-row physical batches):
+
+| Mode | Time/iteration | Elements/s | Logical speedup |
+|---|---:|---:|---:|
+| per-row immediate changelog | 568.1 µs | 7.210 M | 3.25× |
+| net diff per physical batch | 414.3 µs | 9.886 M | 2.37× |
+| net diff per logical bundle | 174.9 µs | 23.414 M | 1.00× |
+
+The logical path retains only Arrow key-buffer references plus one first output tuple per touched
+group, mutates durable accumulators for every row, and materializes final aggregate tuples once.
 
 Append-only Top-N logical-bundle baseline on the same Apple M1 Max (median of 100 Criterion
 samples, 4,096 descending values across 64 partitions, ascending Top-10):

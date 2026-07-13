@@ -289,6 +289,22 @@ impl GroupBy {
     pub fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
         self.0.update(batch).expect("budget exceeded")
     }
+
+    pub fn mini_batch(
+        kinds: Vec<i64>,
+        value_types: Vec<i64>,
+        value_columns: Vec<i64>,
+        key_columns: Vec<usize>,
+    ) -> Self {
+        GroupBy(
+            GroupAggregator::new(kinds, value_types, value_columns, key_columns, true)
+                .with_mini_batch(),
+        )
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush_mini_batch().expect("budget exceeded")
+    }
 }
 
 /// The transient local half of a two-phase GROUP BY, driven by logical bundle boundaries.
