@@ -459,14 +459,53 @@ fn bench_retract_topn(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("retract_topn");
     group.throughput(Throughput::Elements(ROWS as u64));
-    group.bench_function("insert_top10_of_64", |b| {
+    let physical_size = 256;
+    group.bench_function("immediate", |b| {
         b.iter_batched(
             || {
                 let mut ranker = RetractTopN::new(vec![0], vec![(1, false)], 10);
                 ranker.push(&batch); // pre-populate the buffers; the measured push is steady-state
                 ranker
             },
-            |mut ranker| black_box(ranker.push(black_box(&batch))),
+            |mut ranker| {
+                for offset in (0..ROWS).step_by(physical_size) {
+                    black_box(ranker.push(&batch.slice(offset, physical_size)));
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("physical_256", |b| {
+        b.iter_batched(
+            || {
+                let mut ranker = RetractTopN::new_mini_batch(vec![0], vec![(1, false)], 10);
+                ranker.push(&batch);
+                ranker.flush();
+                ranker
+            },
+            |mut ranker| {
+                for offset in (0..ROWS).step_by(physical_size) {
+                    black_box(ranker.push(&batch.slice(offset, physical_size)));
+                    black_box(ranker.flush());
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("logical_4096", |b| {
+        b.iter_batched(
+            || {
+                let mut ranker = RetractTopN::new_mini_batch(vec![0], vec![(1, false)], 10);
+                ranker.push(&batch);
+                ranker.flush();
+                ranker
+            },
+            |mut ranker| {
+                for offset in (0..ROWS).step_by(physical_size) {
+                    black_box(ranker.push(&batch.slice(offset, physical_size)));
+                }
+                black_box(ranker.flush());
+            },
             BatchSize::SmallInput,
         )
     });
