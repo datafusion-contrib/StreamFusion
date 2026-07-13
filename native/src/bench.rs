@@ -197,6 +197,33 @@ impl RetractTopN {
     }
 }
 
+/// INNER updating join with join-key uniqueness on both sides and optional logical bundling.
+pub struct UniqueUpdatingJoin(UpdatingJoiner);
+
+impl UniqueUpdatingJoin {
+    pub fn new(schema: SchemaRef, mini_batch: bool) -> Self {
+        UniqueUpdatingJoin(
+            UpdatingJoiner::new(
+                vec![0],
+                vec![0],
+                JoinKind::Inner,
+                schema.clone(),
+                schema,
+                None,
+            )
+            .with_mini_batch(mini_batch),
+        )
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch, left: bool) -> RecordBatch {
+        self.0.push(batch, left).expect("budget exceeded")
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush_mini_batch().expect("budget exceeded")
+    }
+}
+
 /// Append-only Top-N with explicit logical mini-batch flushes.
 pub struct AppendTopN(TopNRanker);
 

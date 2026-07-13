@@ -11,6 +11,7 @@ use criterion::{
 };
 use streamfusion::bench::{
     split_by_key, AppendTopN, Filter, IntervalJoin, KeepFirstDedup, LocalGroupBy, Over, RetractTopN,
+    UniqueUpdatingJoin,
     KeepLastDedup, Normalize, Session, Tumbling, WindowJoin,
 };
 
@@ -512,6 +513,104 @@ fn bench_retract_topn(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_unique_updating_join_logical_bundle(c: &mut Criterion) {
+    let data_schema = Arc::new(Schema::new(vec![
+        Field::new("k", DataType::Int64, false),
+        Field::new("v", DataType::Int64, false),
+    ]));
+    let changelog_schema = Arc::new(Schema::new(vec![
+        Field::new("k", DataType::Int64, false),
+        Field::new("v", DataType::Int64, false),
+        Field::new("$row_kind$", DataType::Int8, false),
+    ]));
+    let right = RecordBatch::try_new(
+        changelog_schema.clone(),
+        vec![
+            Arc::new(Int64Array::from_iter_values(0..64)),
+            Arc::new(Int64Array::from_iter_values((0..64).map(|key| 10_000 + key))),
+            Arc::new(Int8Array::from(vec![0; 64])),
+        ],
+    )
+    .unwrap();
+    let left = RecordBatch::try_new(
+        changelog_schema.clone(),
+        vec![
+            Arc::new(Int64Array::from_iter_values(0..64)),
+            Arc::new(Int64Array::from_iter_values(0..64)),
+            Arc::new(Int8Array::from(vec![0; 64])),
+        ],
+    )
+    .unwrap();
+    let mut keys = Vec::with_capacity(ROWS);
+    let mut values = Vec::with_capacity(ROWS);
+    let mut kinds = Vec::with_capacity(ROWS);
+    for pair in 0..(ROWS / 2) {
+        let key = (pair % 64) as i64;
+        let round = pair / 64;
+        keys.extend([key, key]);
+        values.push(if round == 0 { key } else { 1_000 + ((round - 1) * 64) as i64 + key });
+        values.push(1_000 + (round * 64) as i64 + key);
+        kinds.extend([3, 0]);
+    }
+    let changes = RecordBatch::try_new(
+        changelog_schema,
+        vec![
+            Arc::new(Int64Array::from(keys)),
+            Arc::new(Int64Array::from(values)),
+            Arc::new(Int8Array::from(kinds)),
+        ],
+    )
+    .unwrap();
+    let physical_size = 256;
+    let setup = |mini_batch| {
+        let mut join = UniqueUpdatingJoin::new(data_schema.clone(), mini_batch);
+        join.push(&right, false);
+        join.push(&left, true);
+        if mini_batch {
+            join.flush();
+        }
+        join
+    };
+    let mut group = c.benchmark_group("unique_updating_join_logical_bundle");
+    group.throughput(Throughput::Elements(ROWS as u64));
+    group.bench_function("immediate", |b| {
+        b.iter_batched(
+            || setup(false),
+            |mut join| {
+                for offset in (0..ROWS).step_by(physical_size) {
+                    black_box(join.push(&changes.slice(offset, physical_size), true));
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("physical_256", |b| {
+        b.iter_batched(
+            || setup(true),
+            |mut join| {
+                for offset in (0..ROWS).step_by(physical_size) {
+                    black_box(join.push(&changes.slice(offset, physical_size), true));
+                    black_box(join.flush());
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("logical_4096", |b| {
+        b.iter_batched(
+            || setup(true),
+            |mut join| {
+                for offset in (0..ROWS).step_by(physical_size) {
+                    black_box(join.push(&changes.slice(offset, physical_size), true));
+                }
+                black_box(join.flush());
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.finish();
+}
+
 // Append-only Top-10 with sustained boundary churn: descending values continually enter each
 // partition's ascending top-N. Compare Flink-compatible cascades, the former physical-batch net
 // diff cadence, and one net diff over the full logical bundle.
@@ -878,6 +977,7 @@ criterion_group!(
     bench_session_keyed,
     bench_over,
     bench_retract_topn,
+    bench_unique_updating_join_logical_bundle,
     bench_append_topn_logical_bundle,
     bench_dedup_keep_first,
     bench_normalize_logical_bundle,
