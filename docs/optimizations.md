@@ -294,6 +294,14 @@ of samples; payload allocation, BinaryRow key encoding, and the durable hash pro
 push-path costs. Logical bundling is independent of Arrow chunking and transient preimages are
 included in managed-memory accounting.
 
+**Keep-last dedup finalizes only the winning row per key.** Proctime and rowtime keep-last retain
+the first accepted preimage and continue applying arrival-order/maximum-rowtime selection to durable
+state; stale rowtime candidates remain invisible. Flush reads the final winner once, while keep-first
+stays on its immediate insert-only path because it has no replacement churn to remove. On the same
+4,096-row, 64-key replacement workload, Criterion measures 27.30 M input rows/s for the logical
+bundle versus 17.83 M immediate and 14.17 M with 256-row physical flushes: 1.53x and 1.93x faster.
+The dirty frontier and retained preimages are included in managed-memory accounting.
+
 **Single-phase GROUP BY finalizes only its dirty-key frontier.** Mini-batch state retains the first
 emitted tuple and an Arrow key-row reference on a group's first touch, continues mutating the
 durable accumulator without constructing intermediate outputs, and gathers one compact changelog

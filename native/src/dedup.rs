@@ -401,9 +401,18 @@ pub(crate) struct KeepLastDeduplicator {
     /// state (key already stored) allocates nothing for the key. The payload is an `Arc<[u8]>`: a new
     /// row is copied once into state, emitting it (and retracting the previous row) just bumps the
     /// refcount — the `-U` moves the replaced payload out of the map, never re-copying it.
-    rows: HashMap<ByteKey, (i64, Arc<[u8]>)>,
+    rows: HashMap<ByteKey, DedupRow>,
+    mini_batch: bool,
+    staged: MiniBatchChanges<ByteKey, Arc<[u8]>>,
+    staged_bytes: usize,
     snapshot_cache: Option<DedupSnapshotCache>,
     memory: OperatorMemory,
+}
+
+struct DedupRow {
+    rowtime: i64,
+    payload: Arc<[u8]>,
+    staged: bool,
 }
 
 struct DedupSnapshotCache {
@@ -437,6 +446,9 @@ impl KeepLastDeduplicator {
             partition_converter: None,
             payload_converter: None,
             rows: HashMap::default(),
+            mini_batch: false,
+            staged: MiniBatchChanges::default(),
+            staged_bytes: 0,
             snapshot_cache: None,
             memory: OperatorMemory::unaccounted(),
         }
@@ -446,9 +458,14 @@ impl KeepLastDeduplicator {
     /// unaccounted), accounting any restored rows immediately.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state: usize =
-            self.rows.iter().map(|(key, (_, payload))| dedup_entry_bytes(&key.0, payload)).sum();
+            self.rows.iter().map(|(key, row)| dedup_entry_bytes(&key.0, &row.payload)).sum();
         self.memory.attach("deduplicate", budget_bytes, state)?;
         Ok(self)
+    }
+
+    pub(crate) fn with_mini_batch(mut self, mini_batch: bool) -> Self {
+        self.mini_batch = mini_batch && !self.keep_first;
+        self
     }
 
     fn with_key_timestamp_precisions(mut self, key_timestamp_precisions: Vec<i32>) -> Self {
@@ -516,7 +533,7 @@ impl KeepLastDeduplicator {
                 }
                 out_rows.push(payload.clone());
                 out_kinds.push(0); // +I — first row for the key
-                rows.insert(ByteKey::from(key), (0, payload));
+                rows.insert(ByteKey::from(key), DedupRow { rowtime: 0, payload, staged: false });
                 continue;
             }
             let rowtime = rt.as_ref().map_or(0, |rt| rt.value(row));
@@ -526,32 +543,90 @@ impl KeepLastDeduplicator {
                     if track {
                         delta += dedup_entry_bytes(key, &payload) as isize;
                     }
-                    out_rows.push(payload.clone());
-                    out_kinds.push(0); // +I — first row for the key
-                    rows.insert(ByteKey::from(key), (rowtime, payload));
+                    let staged = self.mini_batch;
+                    if staged {
+                        self.staged.touch(ByteKey::from(key), None);
+                    } else {
+                        out_rows.push(payload.clone());
+                        out_kinds.push(0); // +I — first row for the key
+                    }
+                    rows.insert(ByteKey::from(key), DedupRow { rowtime, payload, staged });
                 }
                 // A rowtime order ignores an older (smaller-rowtime) row; proctime always replaces.
-                Some((stored_rt, _)) if rowtime_ordered && rowtime < *stored_rt => {
+                Some(stored) if rowtime_ordered && rowtime < stored.rowtime => {
                     continue;
                 }
                 Some(stored) => {
                     let payload: Arc<[u8]> = Arc::from(payloads.row(row).data());
                     if track {
                         // Same key: only the payload is replaced.
-                        delta += payload.len() as isize - stored.1.len() as isize;
+                        delta += payload.len() as isize - stored.payload.len() as isize;
                     }
-                    // The -U moves the replaced payload out of state — no copy.
-                    let prev = std::mem::replace(stored, (rowtime, payload.clone()));
-                    if generate_update_before {
-                        out_rows.push(prev.1);
-                        out_kinds.push(1); // -U the previous row
+                    if self.mini_batch {
+                        if !stored.staged {
+                            self.staged.touch(ByteKey::from(key), Some(stored.payload.clone()));
+                            stored.staged = true;
+                        }
+                    } else {
+                        if generate_update_before {
+                            out_rows.push(stored.payload.clone());
+                            out_kinds.push(1); // -U the previous row
+                        }
+                        out_rows.push(payload.clone());
+                        out_kinds.push(2); // +U the new (later) row
                     }
-                    out_rows.push(payload);
-                    out_kinds.push(2); // +U the new (later) row
+                    stored.rowtime = rowtime;
+                    stored.payload = payload;
                 }
             }
         }
+        if self.mini_batch {
+            let retained = self.staged.retained_bytes(
+                |key| byte_key_bytes(&key.0),
+                |row| row.len(),
+            );
+            delta += retained as isize - self.staged_bytes as isize;
+            self.staged_bytes = retained;
+        }
         self.memory.record(delta);
+        self.memory.account()?;
+        Ok(self.emit(out_rows, out_kinds))
+    }
+
+    pub(crate) fn flush_mini_batch(&mut self) -> Result<RecordBatch, DataFusionError> {
+        if !self.mini_batch {
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
+        }
+        let changes = self.staged.drain_final(|key| {
+            self.rows.get_mut(key).map(|row| {
+                row.staged = false;
+                row.payload.clone()
+            })
+        });
+        let mut out_rows = Vec::with_capacity(changes.len() * 2);
+        let mut out_kinds = Vec::with_capacity(changes.len() * 2);
+        for (_, change) in changes {
+            match change {
+                MiniBatchChange::Insert(after) => {
+                    out_rows.push(after);
+                    out_kinds.push(0);
+                }
+                MiniBatchChange::Delete(before) => {
+                    out_rows.push(before);
+                    out_kinds.push(3);
+                }
+                MiniBatchChange::Update { before, after } => {
+                    if self.generate_update_before {
+                        out_rows.push(before);
+                        out_kinds.push(1);
+                    }
+                    out_rows.push(after);
+                    out_kinds.push(2);
+                }
+            }
+        }
+        self.memory.record(-(self.staged_bytes as isize));
+        self.staged_bytes = 0;
         self.memory.account()?;
         Ok(self.emit(out_rows, out_kinds))
     }
@@ -592,7 +667,7 @@ impl KeepLastDeduplicator {
         }
         let parser = conv.parser();
         let columns = conv
-            .convert_rows(self.rows.values().map(|(_, row)| parser.parse(row)))
+            .convert_rows(self.rows.values().map(|row| parser.parse(&row.payload)))
             .expect("decode dedup snapshot payloads");
         Some(RecordBatch::try_new(schema.clone(), columns).expect("keep-last snapshot"))
     }
@@ -706,7 +781,11 @@ impl KeepLastDeduplicator {
             for row in 0..batch.num_rows() {
                 rows.insert(
                     ByteKey::from(parts.row(row).data()),
-                    (rt.as_ref().map_or(0, |rt| rt.value(row)), Arc::from(payloads.row(row).data())),
+                    DedupRow {
+                        rowtime: rt.as_ref().map_or(0, |rt| rt.value(row)),
+                        payload: Arc::from(payloads.row(row).data()),
+                        staged: false,
+                    },
                 );
             }
         }

@@ -1306,6 +1306,27 @@ fn dedup_state_over_budget_fails_clearly() {
 }
 
 #[test]
+fn keep_last_mini_batch_emits_only_the_final_winner_per_key() {
+    let mut dedup = KeepLastDeduplicator::new(vec![0], 2, true, false, false)
+        .with_mini_batch(true);
+    let pending = dedup
+        .push(&join_batch(vec![1, 1, 2], vec![10, 20, 5], vec![0, 1, 0]))
+        .unwrap();
+    assert_eq!(pending.num_rows(), 0);
+    let first = dedup.flush_mini_batch().unwrap();
+    assert_eq!(values(&first, 0), vec![1, 2]);
+    assert_eq!(values(&first, 1), vec![20, 5]);
+    assert_eq!(row_kinds(&first), vec![0, 0]);
+
+    dedup
+        .push(&join_batch(vec![1, 1], vec![30, 40], vec![2, 3]))
+        .unwrap();
+    let second = dedup.flush_mini_batch().unwrap();
+    assert_eq!(values(&second, 1), vec![20, 40]);
+    assert_eq!(row_kinds(&second), vec![1, 2]);
+}
+
+#[test]
 fn sort_buffer_over_budget_fails_and_flush_releases() {
     let mut sorter = TemporalSorter::new(2).with_memory_budget(1 << 20).unwrap();
     sorter.push(join_batch(vec![1, 2], vec![10, 20], vec![0, 1000])).unwrap();

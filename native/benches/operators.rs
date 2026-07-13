@@ -11,7 +11,7 @@ use criterion::{
 };
 use streamfusion::bench::{
     split_by_key, AppendTopN, Filter, IntervalJoin, KeepFirstDedup, LocalGroupBy, Over, RetractTopN,
-    Normalize, Session, Tumbling, WindowJoin,
+    KeepLastDedup, Normalize, Session, Tumbling, WindowJoin,
 };
 
 const ROWS: usize = 4096;
@@ -623,6 +623,51 @@ fn bench_normalize_logical_bundle(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_keep_last_logical_bundle(c: &mut Criterion) {
+    let keys: Vec<i64> = (0..ROWS as i64).map(|row| row % 64).collect();
+    let values: Vec<i64> = (0..ROWS as i64).collect();
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Int64, false),
+            Field::new("value", DataType::Int64, false),
+        ])),
+        vec![Arc::new(Int64Array::from(keys)), Arc::new(Int64Array::from(values))],
+    )
+    .unwrap();
+    let mut group = c.benchmark_group("keep_last_logical_bundle");
+    group.throughput(Throughput::Elements(ROWS as u64));
+    group.bench_function("immediate", |b| {
+        b.iter_batched(
+            || KeepLastDedup::new(vec![0], false),
+            |mut dedup| black_box(dedup.push(black_box(&batch))),
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("physical_256", |b| {
+        b.iter_batched(
+            || KeepLastDedup::new(vec![0], true),
+            |mut dedup| {
+                for offset in (0..ROWS).step_by(256) {
+                    black_box(dedup.push(black_box(&batch.slice(offset, 256))));
+                    black_box(dedup.flush());
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("logical_4096", |b| {
+        b.iter_batched(
+            || KeepLastDedup::new(vec![0], true),
+            |mut dedup| {
+                black_box(dedup.push(black_box(&batch)));
+                black_box(dedup.flush());
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.finish();
+}
+
 // The columnar exchange's by-key split: hash every row's key to a partition and gather the
 // sub-batches — the whole per-batch cost of the native shuffle's split side.
 fn bench_exchange_split(c: &mut Criterion) {
@@ -797,6 +842,7 @@ criterion_group!(
     bench_append_topn_logical_bundle,
     bench_dedup_keep_first,
     bench_normalize_logical_bundle,
+    bench_keep_last_logical_bundle,
     bench_exchange_split,
     bench_interval_join,
     bench_window_join,

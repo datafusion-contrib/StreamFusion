@@ -237,6 +237,26 @@ impl KeepFirstDedup {
     }
 }
 
+/// Eager keep-last deduplication with optional logical-bundle changelog finalization.
+pub struct KeepLastDedup(KeepLastDeduplicator);
+
+impl KeepLastDedup {
+    pub fn new(partition_columns: Vec<usize>, mini_batch: bool) -> Self {
+        KeepLastDedup(
+            KeepLastDeduplicator::new(partition_columns, 0, true, false, false)
+                .with_mini_batch(mini_batch),
+        )
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push(batch).expect("budget exceeded")
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush_mini_batch().expect("budget exceeded")
+    }
+}
+
 /// The columnar exchange's by-key split (one call per batch, as the shuffle drives it).
 pub fn split_by_key(
     batch: &RecordBatch,
