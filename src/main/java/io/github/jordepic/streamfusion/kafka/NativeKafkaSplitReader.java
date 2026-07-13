@@ -5,6 +5,7 @@ import io.github.jordepic.streamfusion.format.NativeMessageDecoder;
 import io.github.jordepic.streamfusion.format.NativeMessageDecoderFactory;
 import io.github.jordepic.streamfusion.operator.ArrowBatch;
 import io.github.jordepic.streamfusion.operator.NativeAllocator;
+import io.github.jordepic.streamfusion.operator.NativeSourceWatermarks;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -43,6 +44,9 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
   private final long handle;
   private final int maxRecords;
   private final long pollTimeoutMillis;
+  // Rowtime column in the decoded batch for a watermarked table, or -1: each emitted batch carries
+  // its max rowtime as the record timestamp, feeding the source operator's per-split watermarks.
+  private final int rowtimeIndex;
   private final NativeBodyBatchDecoder decoder;
   /** Whether the format's decode is attached natively — polls then emit typed batches directly. */
   private final boolean nativeDecode;
@@ -60,9 +64,11 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
       int maxRecords,
       long pollTimeoutMillis,
       NativeMessageDecoderFactory decoderFactory,
-      RowType decodedType) {
+      RowType decodedType,
+      int rowtimeIndex) {
     this.maxRecords = maxRecords;
     this.pollTimeoutMillis = pollTimeoutMillis;
+    this.rowtimeIndex = rowtimeIndex;
     this.handle = NativeKafka.openKafkaConsumer(configKeys, configValues);
     try {
       this.decoder =
@@ -103,10 +109,17 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
         String splitId =
             KafkaPartitionSplit.toSplitId(new TopicPartition(topic[0], (int) meta[0]));
         positions.put(splitId, meta[1]);
-        ArrowBatch batch = decoded(root);
+        VectorSchemaRoot typed = decoded(root);
+        long maxRowtime =
+            typed == null || rowtimeIndex < 0
+                ? Long.MIN_VALUE
+                : NativeSourceWatermarks.maxRowtimeMillis(typed, rowtimeIndex);
         // A null batch (every document dropped, e.g. ignore-parse-errors) still carries its offset
         // advance so the split's checkpoint state moves past the consumed records.
-        builder.add(splitId, new NativeKafkaRecord(batch, meta[1]));
+        builder.add(
+            splitId,
+            new NativeKafkaRecord(
+                typed == null ? null : new ArrowBatch(typed), meta[1], maxRowtime));
       }
     }
     // Bounded mode: a split is done once its next offset reaches its stopping offset. (No data exists
@@ -154,18 +167,18 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
     NativeKafka.assignKafkaSplits(handle, topics, partitions, offsets);
   }
 
-  /** Body batch → typed batch when this reader carries the format decode; null for an empty result. */
-  private ArrowBatch decoded(VectorSchemaRoot root) {
+  /** Body batch → typed root when this reader carries the format decode; null for an empty result. */
+  private VectorSchemaRoot decoded(VectorSchemaRoot root) {
     if (nativeDecode) {
       // Already decoded inside the poll; empty (every document dropped) still advances the offset.
       if (root.getRowCount() == 0) {
         root.close();
         return null;
       }
-      return new ArrowBatch(root);
+      return root;
     }
     if (decoder == null) {
-      return new ArrowBatch(root);
+      return root;
     }
     try {
       VectorSchemaRoot out = decoder.decode(root);
@@ -173,7 +186,7 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
         out.close();
         return null;
       }
-      return new ArrowBatch(out);
+      return out;
     } catch (Exception e) {
       throw new RuntimeException("native format decode failed", e);
     }

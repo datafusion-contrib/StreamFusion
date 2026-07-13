@@ -6,6 +6,7 @@ import io.github.jordepic.streamfusion.format.NativeFormatProvider;
 import io.github.jordepic.streamfusion.format.NativeFormatProviders;
 import io.github.jordepic.streamfusion.operator.ArrowBatch;
 import io.github.jordepic.streamfusion.operator.ArrowBatchTypeInformation;
+import io.github.jordepic.streamfusion.operator.NativeSourceWatermarks;
 import java.util.Collections;
 import java.util.Map;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -72,13 +73,20 @@ public class NativeKafkaSourceExecNode extends ExecNodeBase<ArrowBatch>
                         "No installed StreamFusion provider for format "
                             + NativeFormatProviders.formatIdentifier(options)));
     NativeKafkaSource source =
-        KafkaTables.build(options, formatProvider.createDecoder(formatContext), outputType);
+        KafkaTables.build(
+            options,
+            formatProvider.createDecoder(formatContext),
+            outputType,
+            watermark == null ? -1 : watermark.rowtimeIndex);
+    // A watermarked table's WATERMARK clause was pushed into the scan this node replaced, so the
+    // source regenerates it: Flink's own per-split machinery (one generator per split, min
+    // combination, idleness, periodic emit) drives the batch-max timestamps the reader supplies.
+    WatermarkStrategy<ArrowBatch> strategy =
+        watermark == null
+            ? WatermarkStrategy.noWatermarks()
+            : NativeSourceWatermarks.strategy(watermark.delayMillis, watermark.idleTimeoutMillis);
     DataStreamSource<ArrowBatch> decoded =
-        env.fromSource(
-            source,
-            WatermarkStrategy.noWatermarks(),
-            TRANSFORMATION,
-            ArrowBatchTypeInformation.INSTANCE);
+        env.fromSource(source, strategy, TRANSFORMATION, ArrowBatchTypeInformation.INSTANCE);
     return decoded.getTransformation();
   }
 }

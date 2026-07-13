@@ -16,10 +16,11 @@ import org.junit.jupiter.api.Test;
  * Plan-time routing for watermarked Kafka tables (no broker needed — the source is built at execution,
  * not planning). Flink pushes a table's {@code WATERMARK} clause into the Kafka scan (the connector
  * supports watermark push-down), so no assigner node survives in the plan: whatever replaces the scan
- * must regenerate the watermarks. The modular Kafka body source and format decoder deliberately do not
- * share rowtime state, so a watermarked table must stay on Flink rather than silently losing its
- * watermarks — the bug this pins down was masked by bounded runs, where the final MAX_WATERMARK closes
- * all windows regardless.
+ * must regenerate the watermarks. The native source decodes inside the poll, so it holds rowtimes and
+ * regenerates the supported shapes per split; everything else — an unreproducible shape, the CDC
+ * formats, or the decode-operator path (downstream of Flink's source) — must stay on Flink rather than
+ * silently losing its watermarks, a bug bounded runs mask because the final MAX_WATERMARK closes all
+ * windows regardless.
  */
 @Tag("streamfusion-kafka")
 class KafkaWatermarkRoutingTest {
@@ -34,16 +35,16 @@ class KafkaWatermarkRoutingTest {
   }
 
   @Test
-  void watermarkedTableFallsBackAtTheConnectorFormatBoundary() {
+  void watermarkedTableRoutesToTheNativeSource() {
     StreamTableEnvironment tEnv = env();
     tEnv.executeSql(watermarkedTable(""));
     String plan = NativePlanner.explain(tEnv, QUERY);
     assertTrue(
-        !plan.contains("NativeKafkaSource(topic=") && !plan.contains("NativeKafkaDecode"),
-        "watermarked JSON table must stay on Flink:\n" + plan);
+        plan.contains("NativeKafkaSource(topic="),
+        "watermarked JSON table should take the native source:\n" + plan);
     assertTrue(
-        plan.contains("connector/format boundary does not regenerate source watermarks"),
-        "expected the precise watermark fallback reason:\n" + plan);
+        plan.contains("watermark=[ts - 4000ms]"),
+        "the source node should carry the pushed watermark it regenerates:\n" + plan);
   }
 
   @Test
@@ -59,12 +60,12 @@ class KafkaWatermarkRoutingTest {
         !plan.contains("NativeKafkaDecode") && !plan.contains("NativeKafkaSource"),
         "a watermarked table must not route without watermark regeneration:\n" + plan);
     assertTrue(
-        plan.contains("connector/format boundary does not regenerate source watermarks"),
+        plan.contains("only the native source regenerates the pushed WATERMARK"),
         "expected the precise watermark fallback reason:\n" + plan);
   }
 
   @Test
-  void computedEpochMillisRowtimeAlsoFallsBack() {
+  void computedEpochMillisRowtimeRoutesToTheNativeSource() {
     // The common Kafka-table idiom (and the Nexmark harness's): a physical BIGINT of epoch millis
     // with `rowtime AS TO_TIMESTAMP_LTZ(dateTime, 3)`. The push-down leaves the scan emitting only
     // physical columns; the watermark reads the bigint verbatim (it already is the rowtime millis).
@@ -82,19 +83,41 @@ class KafkaWatermarkRoutingTest {
             "SELECT window_start, SUM(price) FROM TABLE(TUMBLE(TABLE events, DESCRIPTOR(rowtime),"
                 + " INTERVAL '1' MINUTE)) GROUP BY window_start");
     assertTrue(
-        !plan.contains("NativeKafkaSource(topic=") && !plan.contains("NativeKafkaDecode"),
-        "computed-rowtime table must stay on Flink:\n" + plan);
+        plan.contains("NativeKafkaSource(topic="),
+        "computed-rowtime table should take the native source:\n" + plan);
+    assertTrue(
+        plan.contains("watermark=[dateTime - 4000ms]"),
+        "the source node should read the epoch-millis column as the rowtime:\n" + plan);
   }
 
   @Test
   void onEventEmitStrategyIsDeclinedEvenWithNativeSourceOn() {
-    // Every pushed watermark strategy stays on Flink until the Arrow-level source watermark contract exists.
+    // On-event emit would need a watermark between rows of one Arrow batch — outside the
+    // reproducible shapes, so the whole scan stays on Flink.
     StreamTableEnvironment tEnv = env();
     tEnv.executeSql(watermarkedTable(", 'scan.watermark.emit.strategy' = 'on-event'"));
     String plan = NativePlanner.explain(tEnv, QUERY);
     assertTrue(
         !plan.contains("NativeKafkaDecode") && !plan.contains("NativeKafkaSource"),
         "an on-event watermark must not route:\n" + plan);
+    assertTrue(
+        plan.contains("isn't a shape the native source reproduces"),
+        "expected the unsupported-shape fallback reason:\n" + plan);
+  }
+
+  @Test
+  void watermarkedCdcTableFallsBack() {
+    // CDC formats decode in an operator downstream of Flink's source, which cannot regenerate the
+    // pushed watermark — a watermarked CDC table stays on Flink entirely.
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(watermarkedTable("").replace("'format' = 'json'", "'format' = 'debezium-json'"));
+    String plan = NativePlanner.explain(tEnv, QUERY);
+    assertTrue(
+        !plan.contains("NativeKafkaDecode") && !plan.contains("NativeKafkaSource"),
+        "a watermarked CDC table must not route:\n" + plan);
+    assertTrue(
+        plan.contains("the CDC decode runs downstream of the source"),
+        "expected the CDC watermark fallback reason:\n" + plan);
   }
 
   @Test

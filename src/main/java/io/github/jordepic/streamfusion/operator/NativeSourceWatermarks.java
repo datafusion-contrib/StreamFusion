@@ -1,6 +1,11 @@
 package io.github.jordepic.streamfusion.operator;
 
 import java.time.Duration;
+import org.apache.arrow.vector.BigIntVector;
+import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.TimeStampVector;
+import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.flink.api.common.eventtime.Watermark;
 import org.apache.flink.api.common.eventtime.WatermarkGenerator;
 import org.apache.flink.api.common.eventtime.WatermarkOutput;
@@ -26,6 +31,50 @@ public final class NativeSourceWatermarks {
     return idleTimeoutMillis > 0
         ? strategy.withIdleness(Duration.ofMillis(idleTimeoutMillis))
         : strategy;
+  }
+
+  /**
+   * Max of a batch's rowtime column in epoch millis, or {@code Long.MIN_VALUE} when every value is
+   * null — the Java analog of the native {@code max_rowtime_millis}, for readers whose batches are
+   * already imported (the Kafka split reader reads the decoded root directly; Fluss computes it
+   * natively before export). The rowtime is either a timestamp column or a BIGINT already holding
+   * epoch millis (the {@code TO_TIMESTAMP_LTZ(col, 3)} computed-rowtime idiom).
+   */
+  public static long maxRowtimeMillis(VectorSchemaRoot root, int index) {
+    FieldVector vector = root.getVector(index);
+    int rows = root.getRowCount();
+    long max = Long.MIN_VALUE;
+    if (vector instanceof BigIntVector) {
+      BigIntVector epochMillis = (BigIntVector) vector;
+      for (int i = 0; i < rows; i++) {
+        if (!epochMillis.isNull(i)) {
+          max = Math.max(max, epochMillis.get(i));
+        }
+      }
+      return max;
+    }
+    TimeStampVector timestamps = (TimeStampVector) vector;
+    for (int i = 0; i < rows; i++) {
+      if (!timestamps.isNull(i)) {
+        max = Math.max(max, timestamps.get(i));
+      }
+    }
+    if (max == Long.MIN_VALUE) {
+      return max;
+    }
+    // Floor division is monotonic, so converting the max equals the max of conversions (and floors
+    // pre-epoch values toward the earlier millisecond, matching the native implementation).
+    switch (((ArrowType.Timestamp) timestamps.getField().getType()).getUnit()) {
+      case SECOND:
+        return max * 1_000L;
+      case MILLISECOND:
+        return max;
+      case MICROSECOND:
+        return Math.floorDiv(max, 1_000L);
+      case NANOSECOND:
+      default:
+        return Math.floorDiv(max, 1_000_000L);
+    }
   }
 
   private static final class MaxRowtimeGenerator implements WatermarkGenerator<ArrowBatch> {

@@ -36,9 +36,10 @@ behind the whole island while the fetch thread idled, so the decode moved to the
 the provider SPI; an A/B against the pre-split source then showed the remaining gap was not
 threading, the extra copy, or the C Data crossings (~3%), and a decoder-only Criterion A/B showed
 the decode itself unchanged. What the arrangement had actually lost was decoding **inside the poll
-call** — and separately, the published pre-split Kafka numbers came from the ladder harness's
-BIGINT-timestamp corpus, which no arrangement of the modular path could ever have matched on the
-matrix's TIMESTAMP-string corpus (five parsed timestamp strings per wide event).
+call** — and separately, the published pre-split Kafka numbers came from the ladder harness, whose
+tables declare no watermark; the matrix's Kafka table does, and its pushed `WATERMARK` kept the
+whole scan on Flink (the gate below), so the matrix "native source" cells of that period never
+measured the native source at all — only the downstream island over Flink's own consume+decode.
 
 The decode now runs inside `pollKafkaBatch` again, dispatched through the pattern ADBC's driver
 manager uses (`AdbcDriverInit`): each format DSO exports one init function; the connector obtains
@@ -52,7 +53,10 @@ mixed-version deployments degrade in speed, never in correctness. On the like-fo
 corpus this measured **faster than the pre-split fused source** (JSON q0 2.35× vs 1.94× stock
 Flink, same machine and day), so the boundary now costs less than the coupling it replaced.
 
-Kafka source watermark regeneration is intentionally not carried over: format decoding now happens
-after the source, so computing a rowtime maximum inside the connector would re-couple it to formats.
-Watermarked Kafka tables therefore fall back to Flink until an Arrow-level, per-split watermark
-contract is designed and parity-tested.
+Watermark regeneration, gated off while decoding happened after the source (computing a rowtime
+maximum inside the connector would have re-coupled it to formats), came back once the in-poll decode
+gave the split reader typed batches: it reads the max rowtime off the decoded Arrow batch on the JVM
+side — no format coupling, no ABI addition — and stamps it as the batch's record timestamp, driving
+the same per-split strategy the Fluss source uses (Flink's own one-generator-per-split machinery,
+min combination, idleness). Supported shapes and the remaining fallbacks are listed in
+`docs/coverage-and-fallbacks.md`.

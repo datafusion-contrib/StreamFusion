@@ -438,10 +438,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       if (KafkaTables.isCdcDecode(current) && NativeConfig.operatorEnabled("kafkaDecode")) {
         return kafkaDecode(current);
       }
-      if (KafkaTables.watermarkBlocksCdcDecode(current)) {
-        fallbackReasons.add(
-            "kafka CDC decode: the table's WATERMARK is pushed into the scan, and the connector/format"
-                + " boundary does not regenerate source watermarks — the table stays on Flink");
+      String cdcWatermarkFallback = KafkaTables.cdcWatermarkFallback(current);
+      if (cdcWatermarkFallback != null) {
+        fallbackReasons.add(cdcWatermarkFallback);
       }
     }
 
@@ -713,9 +712,10 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       }
     }
 
-    // The native rdkafka source owns consumption only: it emits binary Arrow body batches, then the
-    // installed format provider decodes them in the next columnar transformation. A pushed Kafka
-    // watermark stays on Flink because neither DSO owns decoded rowtime state.
+    // The native rdkafka source consumes and decodes in one place: the installed format provider's
+    // decoder runs inside the poll, so the source emits typed batches — and, because it therefore
+    // holds decoded rowtimes, it regenerates a pushed WATERMARK per split (Flink's own min
+    // combination and idleness over batch-max timestamps).
     if (kafkaExtensionAvailable) {
       if (KafkaTables.isNativeKafka(current) && NativeConfig.operatorEnabled("kafkaSource")) {
         StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) current;
@@ -734,12 +734,12 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       if (KafkaTables.isNativeKafkaDecode(current) && NativeConfig.operatorEnabled("kafkaDecode")) {
         return kafkaDecode(current);
       }
-      // A pushed Kafka WATERMARK cannot cross the connector/format boundary yet. Record the precise
-      // reason rather than silently replacing the scan and stalling event-time timers.
-      if (KafkaTables.watermarkBlocksAppendDecode(current)) {
-        fallbackReasons.add(
-            "kafka decode: the table's WATERMARK is pushed into the scan, and the connector/format"
-                + " boundary does not regenerate source watermarks — the table stays on Flink");
+      // A watermarked table that didn't route above stays on Flink (an unreproducible watermark
+      // shape, or a table only the decode-operator path — which regenerates no watermarks — could
+      // take). Record the precise reason rather than silently stalling event-time timers.
+      String watermarkFallback = KafkaTables.appendWatermarkFallback(current);
+      if (watermarkFallback != null) {
+        fallbackReasons.add(watermarkFallback);
       }
     }
 

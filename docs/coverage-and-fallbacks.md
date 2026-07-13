@@ -473,11 +473,18 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   reused enumerator (`scan.topic-partition-discovery.interval` honored, including `0` to disable),
   so the native paths inherit its semantics; mid-job partition additions reach the native consumer
   as incremental split assignments.
-- **Kafka watermarks / event time** — a Kafka table with a pushed `WATERMARK` clause stays on Flink.
-  The connector DSO deliberately emits only raw value bodies and the format DSO decodes them in a
-  subsequent transformation; neither DSO receives a cross-library rowtime handle. Reintroducing this
-  path requires a measured, explicit Arrow-level per-split watermark contract. This conservative gate
-  avoids silently dropping a pushed watermark strategy.
+- **Kafka watermarks / event time** — a pushed `WATERMARK` clause is regenerated inside the native
+  source for the reproducible shapes: bounded out-of-orderness (`rt` or `rt - INTERVAL const`) over a
+  physical rowtime column or `TO_TIMESTAMP_LTZ(bigintCol, 3)` (the epoch-millis computed-rowtime
+  idiom), periodic emit, with `scan.watermark.idle-timeout` / `table.exec.source.idle-timeout`
+  honored. The in-poll format decode hands the connector typed batches, so the split reader stamps
+  each per-partition batch's max rowtime as its record timestamp and Flink's own per-split machinery
+  (one generator per split, min combination, idleness) reproduces the pushed strategy — the same
+  shared path the Fluss source uses. Still falling back, each with a precise recorded reason: an
+  `on-event` emit strategy, watermark alignment, `SOURCE_WATERMARK()`, any other rowtime expression;
+  a watermarked CDC table (CDC decodes in an operator downstream of Flink's source, which cannot
+  regenerate watermarks); and a watermarked table the native source can't consume at all (the
+  decode-operator path regenerates no watermarks either).
 - **CDC** — all four JSON dialects route natively: Debezium/OGG (full pre/post images, nested
   columns included) and Maxwell/Canal (post-image + partial `old`, whose UPDATE_BEFORE follows
   Flink's findValue key-presence rule via a native per-message key scan of the raw `old` — an

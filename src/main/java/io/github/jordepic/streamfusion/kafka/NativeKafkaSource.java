@@ -46,6 +46,9 @@ public final class NativeKafkaSource
   private final long pollTimeoutMillis;
   private final NativeMessageDecoderFactory decoderFactory;
   private final RowType decodedType;
+  // Rowtime column in the decoded batch for a watermarked table, or -1: the split reader stamps each
+  // batch's max rowtime as its record timestamp for the per-split source watermarks.
+  private final int rowtimeIndex;
 
   public NativeKafkaSource(
       KafkaSubscriber subscriber,
@@ -58,7 +61,8 @@ public final class NativeKafkaSource
       int maxRecords,
       long pollTimeoutMillis,
       NativeMessageDecoderFactory decoderFactory,
-      RowType decodedType) {
+      RowType decodedType,
+      int rowtimeIndex) {
     this.subscriber = subscriber;
     this.startingOffsets = startingOffsets;
     this.stoppingOffsets = stoppingOffsets;
@@ -73,6 +77,7 @@ public final class NativeKafkaSource
     this.pollTimeoutMillis = pollTimeoutMillis;
     this.decoderFactory = decoderFactory;
     this.decodedType = decodedType;
+    this.rowtimeIndex = rowtimeIndex;
   }
 
   @Override
@@ -85,7 +90,13 @@ public final class NativeKafkaSource
     Supplier<SplitReader<NativeKafkaRecord, KafkaPartitionSplit>> splitReaderSupplier =
         () ->
             new NativeKafkaSplitReader(
-                configKeys, configValues, maxRecords, pollTimeoutMillis, decoderFactory, decodedType);
+                configKeys,
+                configValues,
+                maxRecords,
+                pollTimeoutMillis,
+                decoderFactory,
+                decodedType,
+                rowtimeIndex);
     return new NativeKafkaSourceReader(
         splitReaderSupplier, new NativeKafkaRecordEmitter(), toConfiguration(props), context);
   }

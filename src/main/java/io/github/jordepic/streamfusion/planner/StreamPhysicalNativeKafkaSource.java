@@ -14,10 +14,11 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalR
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 
 /**
- * Leaf physical node standing in for a native rdkafka reader. It emits Arrow batches of raw Kafka value
- * bodies; the next transformation invokes the selected format provider, so data enters the rest of the
- * plan columnar without becoming rows. Carries the raw table options and two row types: the full writer
- * schema and the projected output schema the format decoder parses into.
+ * Leaf physical node standing in for a native rdkafka reader. The selected format provider's decoder
+ * rides into the source, so it emits typed Arrow batches and data enters the rest of the plan columnar
+ * without becoming rows; a pushed WATERMARK is regenerated per split from the decoded rowtimes. Carries
+ * the raw table options and two row types: the full writer schema and the projected output schema the
+ * format decoder parses into.
  */
 public class StreamPhysicalNativeKafkaSource extends AbstractRelNode
     implements StreamPhysicalRel, ColumnarOutput {
@@ -56,8 +57,8 @@ public class StreamPhysicalNativeKafkaSource extends AbstractRelNode
   }
 
   /**
-   * Whether a projection can be pushed into the downstream format decoder. Watermarked Kafka sources
-   * are not admitted, so every accepted source can project normally.
+   * Whether this projection keeps the watermark's rowtime column decoded — the per-split watermark
+   * reads it, so a projection that would drop it must not be pushed into the decoder.
    */
   boolean projectionKeepsRowtime(RelDataType projected) {
     return watermark == null || projected.getFieldNames().contains(watermark.rowtimeFieldName);
