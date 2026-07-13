@@ -253,10 +253,16 @@ and over across the batch's cascades — while emit decoded arrow-row state byte
 rebuilds the emitted positions with a vectorized `take`: output byte-identical, decode O(distinct).
 q19 +13% end to end (generator profile loop), decode share 72% → 6%; the operator is then bound by
 materializing the cascade's output volume itself, which is Flink's own changelog contract. Under
-**mini-batch** the volume itself is cut: the ranker emits the net per-batch rank diff — old top-N
-vs new per touched partition — instead of the per-record cascade, preserving the collapsed
-changelog (the mini-batch parity contract) exactly; mini-batch off keeps the byte-identical
-cascade (divergences/20).
+**mini-batch** the volume itself is cut: the ranker carries each touched partition's preimage
+across physical Arrow batches and emits the net logical-bundle rank diff at count, watermark,
+checkpoint, or end-of-input boundaries. This preserves the collapsed changelog (the mini-batch
+parity contract) exactly; mini-batch off keeps the byte-identical cascade (divergences/20).
+Criterion on 4,096 rows, 64 partitions, ascending Top-10 with sustained boundary churn finds the
+logical diff 2.70× faster than a diff after every 256-row physical batch for membership output
+(6.34 vs 2.35 M rows/s), and 2.28× faster with projected rank (7.25 vs 3.18 M rows/s). It also
+beats the immediate cascade by 1.40× and 3.41× respectively. A five-second release profile puts
+most samples in Top-N mutation and `arrow_row::Row::owned` allocation after coalescing; eliminating
+that ownership traffic is the next optimization frontier, not further changelog materialization.
 
 **Logical mini-batches are independent of physical Arrow batches.** The local two-phase aggregate
 counts rows across input batches and splits a batch exactly at the configured Flink count trigger.

@@ -183,6 +183,43 @@ impl RetractTopN {
     }
 }
 
+/// Append-only Top-N with explicit logical mini-batch flushes.
+pub struct AppendTopN(TopNRanker);
+
+impl AppendTopN {
+    pub fn new(
+        partition_columns: Vec<usize>,
+        sort_columns: Vec<(usize, bool)>,
+        limit: i64,
+        output_rank_number: bool,
+        net_diff: bool,
+    ) -> Self {
+        let sort = sort_columns
+            .into_iter()
+            .map(|(index, ascending)| SortColumn {
+                index,
+                ascending,
+                nulls_first: false,
+            })
+            .collect();
+        AppendTopN(TopNRanker::new(
+            partition_columns,
+            sort,
+            limit,
+            output_rank_number,
+            net_diff,
+        ))
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push(batch).expect("budget exceeded")
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush_net_diff()
+    }
+}
+
 /// The watermark-buffered event-time keep-first deduplicator, as the operator drives it.
 pub struct KeepFirstDedup(KeepFirstDeduplicator);
 

@@ -1712,14 +1712,19 @@ fn topn_is_per_partition() {
 #[test]
 fn topn_net_diff_emits_batch_delta_with_rank() {
     let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 2, true, true);
-    let out = ranker.push(&topn_batch(vec![1, 1, 1, 1], vec![5, 3, 8, 1])).unwrap();
+    let pending = ranker.push(&topn_batch(vec![1, 1], vec![5, 3])).unwrap();
+    assert_eq!(pending.num_rows(), 0);
+    let pending = ranker.push(&topn_batch(vec![1, 1], vec![8, 1])).unwrap();
+    assert_eq!(pending.num_rows(), 0);
+    let out = ranker.flush_net_diff();
     // Fresh partition: old top empty, new top = {1@rank1, 3@rank2} — two inserts, no cascade.
     assert_eq!(row_kinds(&out), vec![0, 0]);
     assert_eq!(values(&out, 1), vec![1, 3]);
     assert_eq!(values(&out, 2), vec![1, 2]);
 
     // Second batch: 2 enters at rank 2 (1 stays at rank 1) — one -U/+U pair, rank 1 untouched.
-    let out = ranker.push(&topn_batch(vec![1], vec![2])).unwrap();
+    ranker.push(&topn_batch(vec![1], vec![2])).unwrap();
+    let out = ranker.flush_net_diff();
     assert_eq!(row_kinds(&out), vec![1, 2]);
     assert_eq!(values(&out, 1), vec![3, 2]);
     assert_eq!(values(&out, 2), vec![2, 2]);
@@ -1729,16 +1734,20 @@ fn topn_net_diff_emits_batch_delta_with_rank() {
 #[test]
 fn topn_net_diff_emits_membership_delta() {
     let mut ranker = TopNRanker::new(vec![0], vec![asc(1)], 2, false, true);
-    let out = ranker.push(&topn_batch(vec![1, 1, 1, 1], vec![5, 3, 8, 1])).unwrap();
+    ranker.push(&topn_batch(vec![1, 1], vec![5, 3])).unwrap();
+    ranker.push(&topn_batch(vec![1, 1], vec![8, 1])).unwrap();
+    let out = ranker.flush_net_diff();
     // New partition: final top-2 = {1, 3}; the transient 5 never surfaces.
     assert_eq!(row_kinds(&out), vec![0, 0]);
     assert_eq!(values(&out, 1), vec![1, 3]);
 
     // 2 displaces 3: one -D and one +I; a batch that changes nothing emits nothing.
-    let out = ranker.push(&topn_batch(vec![1], vec![2])).unwrap();
+    ranker.push(&topn_batch(vec![1], vec![2])).unwrap();
+    let out = ranker.flush_net_diff();
     assert_eq!(row_kinds(&out), vec![3, 0]);
     assert_eq!(values(&out, 1), vec![3, 2]);
-    let out = ranker.push(&topn_batch(vec![1], vec![9])).unwrap();
+    ranker.push(&topn_batch(vec![1], vec![9])).unwrap();
+    let out = ranker.flush_net_diff();
     assert_eq!(out.num_rows(), 0);
 }
 

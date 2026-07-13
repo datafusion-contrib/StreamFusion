@@ -1,11 +1,13 @@
-# Mini-batch Top-N emits the net per-batch rank diff, not the per-record cascade
+# Mini-batch Top-N emits the net logical-bundle rank diff, not the per-record cascade
 
 When the host plan runs mini-batch (`table.exec.mini-batch.enabled`), the native append-only Top-N
-folds each input batch into its buffers first and then emits one net diff per touched partition —
-the old top-N versus the new (rank-by-rank `-U`/`+U` with the rank projected; membership `-D`/`+I`
-without) — instead of Flink's `AppendOnlyTopNFunction` contract of an UPDATE_BEFORE/UPDATE_AFTER
-pair for every shifted rank of every input record. With mini-batch off, nothing changes: the
-cascade is emitted per record, byte-identical to the host (the default byte-parity mode).
+folds physical Arrow batches into the configured logical row-count bundle and then emits one net
+diff per touched partition — the old top-N versus the new (rank-by-rank `-U`/`+U` with the rank
+projected; membership `-D`/`+I` without) — instead of Flink's `AppendOnlyTopNFunction` contract of
+an UPDATE_BEFORE/UPDATE_AFTER pair for every shifted rank of every input record. Count, watermark,
+checkpoint, and end-of-input boundaries flush the pending diff. With mini-batch off, nothing
+changes: the cascade is emitted per record, byte-identical to the host (the default byte-parity
+mode).
 
 ## Why this is the right gate
 
@@ -20,9 +22,10 @@ downstream can observe is identical; only intermediate retractions within one Ar
 elided, precisely the class of difference mini-batch itself introduces.
 
 The practical stake is q19's shape: the cascade's emitted volume is roughly the per-partition
-input multiplicity per batch, and after the decode-dedup optimization the operator is bound by
+input multiplicity per bundle, and after the decode-dedup optimization the operator is bound by
 materializing that amplified output. The net diff cuts the emitted volume to the actual rank
-changes.
+changes. The pending preimages are transient and are always flushed before checkpoint state is
+serialized, so restore contains only durable Top-N buffers and never a half-open bundle.
 
 ## What a raw-changelog consumer sees
 

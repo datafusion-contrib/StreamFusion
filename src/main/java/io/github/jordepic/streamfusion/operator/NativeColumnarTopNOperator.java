@@ -1,6 +1,7 @@
 package io.github.jordepic.streamfusion.operator;
 
 import io.github.jordepic.streamfusion.Native;
+import io.github.jordepic.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
@@ -11,6 +12,7 @@ import org.apache.flink.runtime.state.StateInitializationContext;
 import org.apache.flink.runtime.state.StateSnapshotContext;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
+import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
 /**
@@ -32,11 +34,14 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
   private final boolean outputRankNumber;
   private final boolean retracting;
   private final boolean netDiff;
+  private final long miniBatchSize;
   private final int maxParallelism;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
+  private transient MiniBatchBoundary boundary;
+  private transient MiniBatchMetrics miniBatchMetrics;
   private transient ManagedMemoryBudget memoryBudget;
 
   public NativeColumnarTopNOperator(
@@ -50,6 +55,7 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
       boolean outputRankNumber,
       boolean retracting,
       boolean netDiff,
+      long miniBatchSize,
       int maxParallelism) {
     this.partitionColumns = partitionColumns;
     this.keyTimestampPrecisions = keyTimestampPrecisions;
@@ -61,6 +67,7 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
     this.outputRankNumber = outputRankNumber;
     this.retracting = retracting;
     this.netDiff = netDiff;
+    this.miniBatchSize = miniBatchSize;
     if (maxParallelism <= 0) {
       throw new IllegalArgumentException("native Top-N state requires a positive max parallelism");
     }
@@ -109,11 +116,59 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
     super.open();
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
+    if (netDiff) {
+      boundary = new MiniBatchBoundary(miniBatchSize);
+      miniBatchMetrics = new MiniBatchMetrics(getMetricGroup());
+    }
   }
 
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
     VectorSchemaRoot in = element.getValue().root();
+    if (!netDiff) {
+      try {
+        push(in);
+      } finally {
+        in.close();
+      }
+      publishStateBytes();
+      return;
+    }
+
+    int rows = in.getRowCount();
+    miniBatchMetrics.onPhysicalBatch();
+    try {
+      if (rows == 0) {
+        push(in);
+      } else {
+        int offset = 0;
+        while (offset < rows) {
+          boolean firstContribution = offset == 0 || boundary.bufferedRows() == 0;
+          int length = boundary.nextSliceLength(rows - offset);
+          if (length < rows - offset) {
+            miniBatchMetrics.onPhysicalBatchSplit();
+          }
+          if (offset == 0 && length == rows) {
+            push(in);
+          } else {
+            try (VectorSchemaRoot slice = in.slice(offset, length)) {
+              push(slice);
+            }
+          }
+          miniBatchMetrics.onSlice(length, firstContribution);
+          offset += length;
+          if (boundary.onSlice(length)) {
+            flushBundle(FlushReason.COUNT);
+          }
+        }
+      }
+    } finally {
+      in.close();
+    }
+    publishStateBytes();
+  }
+
+  private void push(VectorSchemaRoot in) {
     BufferAllocator inAllocator =
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
     try (ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
@@ -134,10 +189,49 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
       } else {
         out.close();
       }
-    } finally {
-      in.close();
     }
-    publishStateBytes();
+  }
+
+  @Override
+  public void processWatermark(Watermark mark) throws Exception {
+    if (netDiff) {
+      flushBundle(FlushReason.WATERMARK);
+      publishStateBytes();
+    }
+    super.processWatermark(mark);
+  }
+
+  @Override
+  public void prepareSnapshotPreBarrier(long checkpointId) throws Exception {
+    if (netDiff) {
+      flushBundle(FlushReason.CHECKPOINT);
+    }
+    super.prepareSnapshotPreBarrier(checkpointId);
+  }
+
+  @Override
+  public void finish() throws Exception {
+    if (netDiff) {
+      flushBundle(FlushReason.FINISH);
+    }
+    super.finish();
+  }
+
+  private void flushBundle(FlushReason reason) {
+    try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
+        ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+      Native.flushTopNRanker(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      VectorSchemaRoot out =
+          Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
+      int outputRows = out.getRowCount();
+      miniBatchMetrics.onFlush(reason, outputRows, outputRows, 0);
+      if (outputRows > 0) {
+        output.collect(new StreamRecord<>(new ArrowBatch(out)));
+      } else {
+        out.close();
+      }
+    }
+    boundary.reset();
   }
 
   /** Samples the native state size for the operator's gauges; task-thread only. */

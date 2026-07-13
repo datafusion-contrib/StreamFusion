@@ -45,6 +45,9 @@ Current benches:
 - `retract_topn/insert_top10_of_64` — the retracting Top-N (changelog input, full buffers):
   steady-state inserts into 64 pre-populated partitions, each paying the partition probe, ordered
   insert, and before/after top-10 diff.
+- `append_topn_logical_bundle/*` — append-only ascending Top-10 over 64 partitions with sustained
+  boundary churn. It compares the per-record cascade, a net diff after each 256-row physical
+  batch, and one net diff over the 4,096-row logical bundle, with and without projected rank.
 - `dedup/keep_first_emitted_probe` — keep-first dedup in its steady state: all 256 keys already
   emitted, so each row is one emitted-set probe and a drop.
 - `exchange/split_by_key_8` — the columnar shuffle's by-key split: hash each row's key to one of
@@ -100,6 +103,23 @@ The exact logical 4,096-row path and the old physical-batch path are statistical
 showing that the boundary controller adds no measurable kernel overhead when boundaries coincide.
 The curve also quantifies the opportunity: output materialization and per-bundle setup dominate
 small bundles, while throughput plateaus around 4K rows for this 64-key shape.
+
+Append-only Top-N logical-bundle baseline on the same Apple M1 Max (median of 100 Criterion
+samples, 4,096 descending values across 64 partitions, ascending Top-10):
+
+| Mode | Rank projected | Time/iteration | Elements/s | Logical vs mode |
+|---|---:|---:|---:|---:|
+| per-record cascade | no | 903.0 µs | 4.536 M | 1.40× |
+| net diff per 256-row physical batch | no | 1.740 ms | 2.354 M | 2.70× |
+| net diff per 4,096-row logical bundle | no | 645.6 µs | 6.345 M | 1.00× |
+| per-record cascade | yes | 1.925 ms | 2.128 M | 3.41× |
+| net diff per 256-row physical batch | yes | 1.290 ms | 3.176 M | 2.28× |
+| net diff per 4,096-row logical bundle | yes | 565.1 µs | 7.248 M | 1.00× |
+
+The physical-diff baseline deliberately reproduces the former Arrow-batch-sensitive cadence. A
+five-second release sample of `logical_diff_rank` attributes most samples to `TopNRanker::push`,
+with `arrow_row::Row::owned` and allocator traffic prominent; after output coalescing, row
+ownership in state mutation is the next measured target.
 
 The gap between filter and aggregation is the signal: the filter is a compiled
 expression plus one Arrow kernel, while an aggregator groups every row by its key and
@@ -740,7 +760,7 @@ the coverage check that **every** query still routes native under production tun
 
 The changelog-family margins are **wider** than the default-config generator column, not narrower:
 at 5M events the state-heavy queries dominate their runtime with operator work (the per-event
-JIT/setup share shrinks), and under mini-batch the native side emits the net per-batch Top-N diff
+JIT/setup share shrinks), and under mini-batch the native side emits the net logical-bundle Top-N diff
 (divergences/20) where Flink's rank — which has no mini-batch variant — still pays the per-record
 cascade (q19 2.36× tuned vs 1.48× default). The non-changelog queries plan identically tuned or
 not (mini-batch inserts nothing into them), so their column is effectively the generator rung at

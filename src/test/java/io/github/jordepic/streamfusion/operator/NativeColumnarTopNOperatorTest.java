@@ -43,6 +43,23 @@ class NativeColumnarTopNOperatorTest {
         false,
         false,
         false,
+        -1,
+        MAX_PARALLELISM);
+  }
+
+  private static NativeColumnarTopNOperator netDiffOperator(long miniBatchSize) {
+    return new NativeColumnarTopNOperator(
+        new int[] {0},
+        new int[] {-1},
+        new int[] {1},
+        new int[] {1},
+        new int[] {0},
+        0L,
+        2L,
+        false,
+        false,
+        true,
+        miniBatchSize,
         MAX_PARALLELISM);
   }
 
@@ -61,6 +78,51 @@ class NativeColumnarTopNOperatorTest {
               change(RowKind.INSERT, 1, 3),
               change(RowKind.DELETE, 1, 5),
               change(RowKind.INSERT, 1, 1)),
+          collect(harness));
+    }
+  }
+
+  @Test
+  void coalescesAcrossPhysicalBatchesUntilTheLogicalCountBoundary() throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            harness(netDiffOperator(4), 1, 0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 5), row(1, 3))));
+      assertEquals(List.of(), collect(harness));
+
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 8), row(1, 1))));
+      assertEquals(
+          List.of(change(RowKind.INSERT, 1, 1), change(RowKind.INSERT, 1, 3)),
+          collect(harness));
+    }
+  }
+
+  @Test
+  void splitsOnePhysicalBatchAcrossLogicalTopNBoundaries() throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            harness(netDiffOperator(2), 1, 0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+
+      harness.processElement(
+          new StreamRecord<>(
+              batch(allocator, row(1, 5), row(1, 3), row(1, 8), row(1, 1), row(1, 2))));
+
+      assertEquals(
+          List.of(
+              change(RowKind.INSERT, 1, 3),
+              change(RowKind.INSERT, 1, 5),
+              change(RowKind.DELETE, 1, 5),
+              change(RowKind.INSERT, 1, 1)),
+          collect(harness));
+
+      ((NativeColumnarTopNOperator) harness.getOneInputOperator()).finish();
+      assertEquals(
+          List.of(change(RowKind.DELETE, 1, 3), change(RowKind.INSERT, 1, 2)),
           collect(harness));
     }
   }
@@ -205,9 +267,14 @@ class NativeColumnarTopNOperatorTest {
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness(
       int parallelism, int subtask) throws Exception {
+    return harness(operator(), parallelism, subtask);
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness(
+      NativeColumnarTopNOperator operator, int parallelism, int subtask) throws Exception {
     int[] stateKeys = stateKeysForSubtasks(parallelism);
     return new KeyedOneInputStreamOperatorTestHarness<>(
-        operator(),
+        operator,
         batch -> stateKeys[batch.destination() >= 0 ? batch.destination() : 0],
         Types.INT,
         MAX_PARALLELISM,

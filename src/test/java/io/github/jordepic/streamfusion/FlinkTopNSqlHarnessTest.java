@@ -54,7 +54,7 @@ class FlinkTopNSqlHarnessTest {
 
   @Test
   void topNUnderMiniBatchCollapsesToHost() throws Exception {
-    // With mini-batch on, the native ranker emits the NET per-batch rank diff instead of the
+    // With mini-batch on, the native ranker emits the NET logical-bundle rank diff instead of the
     // per-record shift cascade (divergences/20) — the collapsed changelog, the parity contract of
     // every mini-batch plan, must still match the host exactly.
     NativeParity.assertChangelogParity(

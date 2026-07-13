@@ -10,8 +10,8 @@ use criterion::{
     black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,
 };
 use streamfusion::bench::{
-    split_by_key, Filter, IntervalJoin, KeepFirstDedup, LocalGroupBy, Over, RetractTopN, Session,
-    Tumbling, WindowJoin,
+    split_by_key, AppendTopN, Filter, IntervalJoin, KeepFirstDedup, LocalGroupBy, Over, RetractTopN,
+    Session, Tumbling, WindowJoin,
 };
 
 const ROWS: usize = 4096;
@@ -416,6 +416,67 @@ fn bench_retract_topn(c: &mut Criterion) {
     group.finish();
 }
 
+// Append-only Top-10 with sustained boundary churn: descending values continually enter each
+// partition's ascending top-N. Compare Flink-compatible cascades, the former physical-batch net
+// diff cadence, and one net diff over the full logical bundle.
+fn bench_append_topn_logical_bundle(c: &mut Criterion) {
+    let keys: ArrayRef = Arc::new(Int64Array::from_iter_values(
+        (0..ROWS as i64).map(|i| i % 64),
+    ));
+    let values: ArrayRef = Arc::new(Int64Array::from_iter_values((0..ROWS as i64).rev()));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("partition", DataType::Int64, false),
+            Field::new("sort", DataType::Int64, false),
+        ])),
+        vec![keys, values],
+    )
+    .unwrap();
+    let physical_size = 256;
+    let mut group = c.benchmark_group("append_topn_logical_bundle");
+    group.throughput(Throughput::Elements(ROWS as u64));
+
+    for output_rank in [false, true] {
+        let suffix = if output_rank { "rank" } else { "membership" };
+        group.bench_function(format!("cascade_{suffix}"), |b| {
+            b.iter_batched(
+                || AppendTopN::new(vec![0], vec![(1, true)], 10, output_rank, false),
+                |mut ranker| {
+                    for offset in (0..ROWS).step_by(physical_size) {
+                        black_box(ranker.push(&batch.slice(offset, physical_size)));
+                    }
+                },
+                BatchSize::SmallInput,
+            )
+        });
+        group.bench_function(format!("physical_diff_{suffix}"), |b| {
+            b.iter_batched(
+                || AppendTopN::new(vec![0], vec![(1, true)], 10, output_rank, true),
+                |mut ranker| {
+                    for offset in (0..ROWS).step_by(physical_size) {
+                        black_box(ranker.push(&batch.slice(offset, physical_size)));
+                        black_box(ranker.flush());
+                    }
+                },
+                BatchSize::SmallInput,
+            )
+        });
+        group.bench_function(format!("logical_diff_{suffix}"), |b| {
+            b.iter_batched(
+                || AppendTopN::new(vec![0], vec![(1, true)], 10, output_rank, true),
+                |mut ranker| {
+                    for offset in (0..ROWS).step_by(physical_size) {
+                        black_box(ranker.push(&batch.slice(offset, physical_size)));
+                    }
+                    black_box(ranker.flush());
+                },
+                BatchSize::SmallInput,
+            )
+        });
+    }
+    group.finish();
+}
+
 // Keep-first dedup: 256 keys over 4096 rows. Steady state is the post-emit phase — every key has
 // already fired, so each row is one emitted-set probe and a drop; the push+flush pair measures
 // both the per-batch reduction and the emitted-set growth path.
@@ -621,6 +682,7 @@ criterion_group!(
     bench_session_keyed,
     bench_over,
     bench_retract_topn,
+    bench_append_topn_logical_bundle,
     bench_dedup_keep_first,
     bench_exchange_split,
     bench_interval_join,

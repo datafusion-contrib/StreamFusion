@@ -129,7 +129,7 @@ pub(crate) struct TopNRanker {
     sort_columns: Vec<SortColumn>,
     limit: i64,
     output_rank_number: bool,
-    // Mini-batch mode: emit the NET rank diff per input batch (old top-N vs new top-N for each
+    // Mini-batch mode: emit the NET rank diff per logical bundle (old top-N vs new top-N for each
     // touched partition) instead of the host's per-record -U/+U cascade. Gated on the host plan
     // running mini-batch, whose parity contract is the collapsed changelog — which the diff
     // preserves exactly — rather than the per-record byte sequence (see divergences/20).
@@ -139,6 +139,10 @@ pub(crate) struct TopNRanker {
     // Keyed by the partition key's encoded bytes (`ByteKey`): the per-row probe hashes the BORROWED
     // bytes, so a row for an existing partition — or one dropped at rank > N — allocates nothing.
     groups: HashMap<ByteKey, Vec<TopNRow>>,
+    // Transient mini-batch preimages, captured once per partition in deterministic first-touch
+    // order and drained at the next logical boundary.
+    staged_order: Vec<ByteKey>,
+    staged_old_tops: HashMap<ByteKey, Vec<Arc<OwnedRow>>>,
     pub(crate) memory: OperatorMemory,
 }
 
@@ -164,6 +168,8 @@ impl TopNRanker {
             schema: None,
             converters: None,
             groups: HashMap::default(),
+            staged_order: Vec::new(),
+            staged_old_tops: HashMap::default(),
             memory: OperatorMemory::unaccounted(),
         }
     }
@@ -297,10 +303,9 @@ impl TopNRanker {
         Ok(self.emit(out_rows, out_kinds, out_ranks))
     }
 
-    /// The mini-batch push: folds the whole batch into the per-partition buffers first, then emits
-    /// one net diff per touched partition — old top-N vs new top-N — instead of the per-record rank
-    /// cascade. The collapsed changelog is identical to the cascade's; only the intermediate
-    /// retractions differ, exactly as Flink's own mini-batch operators collapse intermediates.
+    /// Folds one physical batch into a logical mini-batch. The first touch of a partition captures
+    /// its preimage; output is deferred until `flush_net_diff`, so Arrow batch boundaries are not
+    /// observable in the collapsed changelog.
     fn push_net_diff(&mut self, batch: &RecordBatch) -> Result<RecordBatch, DataFusionError> {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
@@ -320,10 +325,8 @@ impl TopNRanker {
         let mut delta = 0isize;
         let groups = &mut self.groups;
 
-        // Pass 1: fold every row, capturing each touched partition's PRE-batch top-N once (Arc
-        // bumps, no payload copies). Rows landing beyond rank N never allocate, as in the cascade.
-        let mut touched: Vec<&[u8]> = Vec::new();
-        let mut old_tops: HashMap<&[u8], Vec<Arc<OwnedRow>>> = HashMap::default();
+        let staged_order = &mut self.staged_order;
+        let staged_old_tops = &mut self.staged_old_tops;
         for row in 0..batch.num_rows() {
             let key_row = keys.row(row);
             let part = parts.row(row).data();
@@ -336,9 +339,10 @@ impl TopNRanker {
                     groups.entry(ByteKey::from(part)).or_default()
                 }
             };
-            if !old_tops.contains_key(part) {
-                old_tops.insert(part, buffer.iter().map(|(_, p)| p.clone()).collect());
-                touched.push(part);
+            if !staged_old_tops.contains_key(part) {
+                let key = ByteKey::from(part);
+                staged_order.push(key.clone());
+                staged_old_tops.insert(key, buffer.iter().map(|(_, p)| p.clone()).collect());
             }
             let pos = buffer.partition_point(|(k, _)| k.row() <= key_row);
             if pos >= limit {
@@ -358,64 +362,63 @@ impl TopNRanker {
         self.memory.record(delta);
         self.memory.account()?;
 
-        // Pass 2: per touched partition, in first-touch order, diff the old and new top-N.
+        Ok(self.emit(Vec::new(), Vec::new(), Vec::new()))
+    }
+
+    /// Emits one final diff per partition touched since the preceding logical boundary.
+    pub(crate) fn flush_net_diff(&mut self) -> RecordBatch {
+        if !self.net_diff {
+            return self.emit(Vec::new(), Vec::new(), Vec::new());
+        }
+        let touched = std::mem::take(&mut self.staged_order);
+        let old_tops = std::mem::take(&mut self.staged_old_tops);
         let mut out_rows: Vec<Arc<OwnedRow>> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
         let mut out_ranks: Vec<i64> = Vec::new();
         for part in touched {
-            let old = &old_tops[part];
-            let new = &groups[part];
+            let old = &old_tops[&part];
+            let new: Vec<Arc<OwnedRow>> = self.groups[&part]
+                .iter()
+                .map(|(_, payload)| Arc::clone(payload))
+                .collect();
             if self.output_rank_number {
-                // Rank-by-rank: an unchanged occupant emits nothing; a changed one retracts the old
-                // occupant at that rank and asserts the new; a brand-new rank inserts. Append-only
-                // input means ranks only fill in — the new top is never shorter.
-                for rank in 0..new.len() {
-                    match old.get(rank) {
-                        Some(o) if **o == *new[rank].1 => {}
-                        Some(o) => {
-                            out_rows.push(o.clone());
-                            out_kinds.push(1); // -U
-                            out_ranks.push((rank + 1) as i64);
-                            out_rows.push(new[rank].1.clone());
-                            out_kinds.push(2); // +U
-                            out_ranks.push((rank + 1) as i64);
-                        }
-                        None => {
-                            out_rows.push(new[rank].1.clone());
-                            out_kinds.push(0); // +I a brand-new rank
-                            out_ranks.push((rank + 1) as i64);
-                        }
-                    }
-                }
+                diff_top(
+                    true,
+                    0,
+                    old,
+                    &new,
+                    &mut out_rows,
+                    &mut out_kinds,
+                    &mut out_ranks,
+                );
             } else {
-                // Rank-free: the emitted set is the top-N membership, so the diff is a multiset
-                // difference — rows that left the top-N delete, rows that entered insert.
+                // Preserve append-only Top-N's delete-before-insert ordering at a bundle boundary.
                 let mut counts: HashMap<&[u8], i64> = HashMap::default();
-                for o in old {
-                    *counts.entry(o.row().data()).or_insert(0) += 1;
+                for row in old {
+                    *counts.entry(row.row().data()).or_insert(0) += 1;
                 }
-                for (_, n) in new {
-                    *counts.entry(n.row().data()).or_insert(0) -= 1;
+                for row in &new {
+                    *counts.entry(row.row().data()).or_insert(0) -= 1;
                 }
-                for o in old {
-                    let count = counts.get_mut(o.row().data()).expect("counted");
+                for row in old {
+                    let count = counts.get_mut(row.row().data()).expect("counted");
                     if *count > 0 {
                         *count -= 1;
-                        out_rows.push(o.clone());
-                        out_kinds.push(3); // -D — left the top-N
+                        out_rows.push(Arc::clone(row));
+                        out_kinds.push(3);
                     }
                 }
-                for (_, n) in new {
-                    let count = counts.get_mut(n.row().data()).expect("counted");
+                for row in &new {
+                    let count = counts.get_mut(row.row().data()).expect("counted");
                     if *count < 0 {
                         *count += 1;
-                        out_rows.push(n.clone());
-                        out_kinds.push(0); // +I — entered the top-N
+                        out_rows.push(Arc::clone(row));
+                        out_kinds.push(0);
                     }
                 }
             }
         }
-        Ok(self.emit(out_rows, out_kinds, out_ranks))
+        self.emit(out_rows, out_kinds, out_ranks)
     }
 
     fn emit(&self, out_rows: Vec<Arc<OwnedRow>>, out_kinds: Vec<i8>, out_ranks: Vec<i64>) -> RecordBatch {
@@ -809,6 +812,13 @@ impl TopNHandle {
         match self {
             TopNHandle::Append(r) => r.push(batch),
             TopNHandle::Retract(r) => r.push(batch),
+        }
+    }
+
+    fn flush(&mut self) -> RecordBatch {
+        match self {
+            TopNHandle::Append(r) => r.flush_net_diff(),
+            TopNHandle::Retract(_) => RecordBatch::new_empty(Arc::new(Schema::empty())),
         }
     }
 
@@ -1563,6 +1573,19 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushTopNRanke
         Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
         Err(e) => throw_memory_limit(&mut env, &e.to_string()),
     }
+}
+
+/// Emits the append-only ranker's net changes at a Flink logical mini-batch boundary.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushTopNRanker<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let ranker = unsafe { &mut *(handle as *mut TopNHandle) };
+    export_record_batch(ranker.flush(), out_array_address, out_schema_address);
 }
 
 /// Serializes the ranker's per-partition buffers for a checkpoint.
