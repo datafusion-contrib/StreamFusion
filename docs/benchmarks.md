@@ -759,6 +759,64 @@ mid-stream watermark mistakes:
 
 ### The tuned (mini-batch) matrix — the full suite
 
+#### Current four-way comparison (2026-07-13)
+
+The current comparison runs **the same 5M generator events** four ways: stock Flink and
+StreamFusion, first with mini-batching disabled and then with
+`table.exec.mini-batch.enabled=true`, `allow-latency=2s`, and `size=50000`. Each cell is the best
+of two runs after one warmup, both engines use object reuse, and StreamFusion uses the release
+`mimalloc` build. This is deliberately separate from the 500K multi-source matrix: using the same
+5M input on both sides prevents fixed startup/JIT cost or the two-second latency boundary from
+distorting the enabled-versus-disabled comparison.
+
+`Flink on/off` and `SF on/off` measure what enabling mini-batching did to each engine itself; they
+are distinct from the `SF/Flink` cross-engine ratios. A value below 1.00x means mini-batching made
+that engine slower for that query.
+
+| Query | Flink off | StreamFusion off | SF/Flink off | Flink on | StreamFusion on | SF/Flink on | Flink on/off | SF on/off |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| q0 | 1.952 M/s | 2.428 M/s | **1.24x** | 1.887 M/s | 2.170 M/s | **1.15x** | 0.97x | 0.89x |
+| q1 | 1.930 M/s | 2.367 M/s | **1.23x** | 1.895 M/s | 2.255 M/s | **1.19x** | 0.98x | 0.95x |
+| q2 | 2.071 M/s | 2.838 M/s | **1.37x** | 2.042 M/s | 2.781 M/s | **1.36x** | 0.99x | 0.98x |
+| q3 | 2.800 M/s | 1.736 M/s | 0.62x | 2.817 M/s | 1.837 M/s | 0.65x | 1.01x | **1.06x** |
+| q4 | 1.164 M/s | 1.448 M/s | **1.24x** | 0.600 M/s | 1.543 M/s | **2.57x** | 0.52x | **1.07x** |
+| q5 | 1.378 M/s | 1.510 M/s | **1.10x** | 1.334 M/s | 1.541 M/s | **1.15x** | 0.97x | **1.02x** |
+| q7 | 0.760 M/s | 0.767 M/s | **1.01x** | 0.519 M/s | 0.780 M/s | **1.50x** | 0.68x | **1.02x** |
+| q8 | 2.852 M/s | 1.929 M/s | 0.68x | 2.838 M/s | 1.938 M/s | 0.68x | 0.99x | 1.00x |
+| q9 | 0.753 M/s | 1.046 M/s | **1.39x** | 0.419 M/s | 1.015 M/s | **2.42x** | 0.56x | 0.97x |
+| q10 | 1.369 M/s | 1.997 M/s | **1.46x** | 1.331 M/s | 1.924 M/s | **1.45x** | 0.97x | 0.96x |
+| q11 | 0.880 M/s | 2.587 M/s | **2.94x** | 0.878 M/s | 2.520 M/s | **2.87x** | 1.00x | 0.97x |
+| q12 | 1.723 M/s | 2.608 M/s | **1.51x** | 1.671 M/s | 2.604 M/s | **1.56x** | 0.97x | 1.00x |
+| q13 | 1.670 M/s | 1.759 M/s | **1.05x** | 1.620 M/s | 1.751 M/s | **1.08x** | 0.97x | 1.00x |
+| q14 | 1.890 M/s | 1.867 M/s | 0.99x | 1.793 M/s | 1.834 M/s | **1.02x** | 0.95x | 0.98x |
+| q15 | 1.184 M/s | 1.901 M/s | **1.61x** | 1.153 M/s | 1.589 M/s | **1.38x** | 0.97x | 0.84x |
+| q16 | 0.918 M/s | 1.082 M/s | **1.18x** | 0.752 M/s | 1.045 M/s | **1.39x** | 0.82x | 0.97x |
+| q17 | 1.183 M/s | 1.678 M/s | **1.42x** | 1.089 M/s | 1.164 M/s | **1.07x** | 0.92x | 0.69x |
+| q18 | 0.940 M/s | 1.560 M/s | **1.66x** | 0.580 M/s | 1.053 M/s | **1.81x** | 0.62x | 0.67x |
+| q19 | 0.484 M/s | 0.723 M/s | **1.49x** | 0.477 M/s | 1.353 M/s | **2.84x** | 0.99x | **1.87x** |
+| q20 | 1.062 M/s | 1.140 M/s | **1.07x** | 0.697 M/s | 1.128 M/s | **1.62x** | 0.66x | 0.99x |
+| q21 | 0.958 M/s | 0.982 M/s | **1.02x** | 0.932 M/s | 0.983 M/s | **1.05x** | 0.97x | 1.00x |
+| q22 | 1.223 M/s | 1.671 M/s | **1.37x** | 1.192 M/s | 1.698 M/s | **1.42x** | 0.97x | **1.02x** |
+| q23 | 0.792 M/s | 1.277 M/s | **1.61x** | 0.434 M/s | 1.366 M/s | **3.14x** | 0.55x | **1.07x** |
+
+The largest direct StreamFusion mini-batch gain is q19's retracting Top-N: **1.87x** over its own
+disabled path. q4 and q23 improve by 7%, and q3 by 6%. The cross-engine lead widens much more on
+q4/q7/q9/q20/q23 because stock Flink's enabled plans slow down substantially while StreamFusion is
+roughly flat or slightly faster; that is a real steelman result, but it must not be described as a
+2-3x direct StreamFusion mini-batch speedup. Conversely, q15/q17/q18 regress on StreamFusion when
+enabled (0.84x/0.69x/0.67x). Those plan families need profiling before claiming that mini-batching
+helps them end to end, despite their enabled StreamFusion/Flink ratios remaining above 1x.
+
+Reproduce both halves in one JVM with:
+
+`SF_BENCHMARK=true SF_MATRIX_TUNED=true SF_ROWS=5000000 SF_MATRIX_GENERATOR=true
+SF_MATRIX_PARQUET=false SF_MATRIX_KAFKA=false SF_MATRIX_FLUSS=false
+SF_MATRIX_QUERIES=q0,q1,q2,q3,q4,q5,q7,q8,q9,q10,q11,q12,q13,q14,q15,q16,q17,q18,q19,q20,q21,q22,q23
+mvn -pl :streamfusion-runtime test -Pbench
+-Dnative.cargo.args="build --release --features mimalloc" -Dtest=NexmarkMatrixBenchmark`.
+
+#### Historical tuned-only matrix (2026-07-05)
+
 Production Flink deployments routinely enable mini-batch for stateful queries, so the matrix has a
 **tuned mode**: `table.exec.mini-batch.*` (2s allow-latency, size 50000) on **both** engines — the
 steelman rule, and the config behind the only public per-query Alibaba comparison. Generator source
