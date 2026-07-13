@@ -1,4 +1,5 @@
 use crate::*;
+use std::borrow::Borrow;
 use std::hash::Hash;
 
 /// One key's externally visible transition across a logical mini-batch.
@@ -80,7 +81,11 @@ where
         self.order.len()
     }
 
-    pub(crate) fn contains_key(&self, key: &K) -> bool {
+    pub(crate) fn contains_key<Q>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         self.changes.contains_key(key)
     }
 

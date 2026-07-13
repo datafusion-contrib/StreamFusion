@@ -1888,6 +1888,32 @@ fn updating_join_emits_matches_with_arriving_kind() {
     assert_eq!(values(&retract, 3), vec![100]);
 }
 
+#[test]
+fn unique_updating_join_replays_only_each_sides_final_bundle_change() {
+    let mut joiner = inner_joiner().with_mini_batch(true);
+    assert_eq!(
+        joiner.push(&changelog_join_batch(vec![1], vec![100], vec![0]), false).unwrap().num_rows(),
+        0
+    );
+    assert_eq!(joiner.flush_mini_batch().unwrap().num_rows(), 0);
+
+    assert_eq!(
+        joiner
+            .push(
+                &changelog_join_batch(vec![1, 1, 1], vec![10, 10, 20], vec![0, 3, 0]),
+                true,
+            )
+            .unwrap()
+            .num_rows(),
+        0
+    );
+    assert_eq!(joiner.staged_keys(), 1);
+    let out = joiner.flush_mini_batch().unwrap();
+    assert_eq!(row_kinds(&out), vec![0]);
+    assert_eq!(values(&out, 1), vec![20]);
+    assert_eq!(values(&out, 3), vec![100]);
+}
+
 // A left row matches every buffered right row of its key (cartesian per key); different keys
 // never match.
 #[test]

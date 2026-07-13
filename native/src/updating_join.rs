@@ -18,6 +18,9 @@ pub(crate) struct UpdatingJoiner {
     right_null: ByteKey,
     left_state: SideState,
     right_state: SideState,
+    mini_batch: bool,
+    left_staged: MiniBatchChanges<ByteKey, ByteKey>,
+    right_staged: MiniBatchChanges<ByteKey, ByteKey>,
     pub(crate) memory: OperatorMemory,
 }
 
@@ -81,8 +84,16 @@ impl UpdatingJoiner {
             right_null,
             left_state: ahash::HashMap::default(),
             right_state: ahash::HashMap::default(),
+            mini_batch: false,
+            left_staged: MiniBatchChanges::default(),
+            right_staged: MiniBatchChanges::default(),
             memory: OperatorMemory::unaccounted(),
         }
+    }
+
+    pub(crate) fn with_mini_batch(mut self, mini_batch: bool) -> Self {
+        self.mini_batch = mini_batch;
+        self
     }
 
     /// Bounds both sides' row state by the operator's managed-memory budget (negative =
@@ -271,6 +282,17 @@ impl UpdatingJoiner {
 
     /// Folds an input batch into its side and emits the join changelog it produces.
     pub(crate) fn push(&mut self, batch: &RecordBatch, is_left: bool) -> Result<RecordBatch, DataFusionError> {
+        if self.mini_batch {
+            return self.push_mini_batch(batch, is_left);
+        }
+        self.push_immediate(batch, is_left)
+    }
+
+    fn push_immediate(
+        &mut self,
+        batch: &RecordBatch,
+        is_left: bool,
+    ) -> Result<RecordBatch, DataFusionError> {
         let arity = data_arity(batch);
         let key_indices = if is_left { &self.left_keys } else { &self.right_keys };
         let key_arrays: Vec<ArrayRef> = key_indices.iter().map(|&i| batch.column(i).clone()).collect();
@@ -323,6 +345,141 @@ impl UpdatingJoiner {
         self.memory.record(delta);
         self.memory.account()?;
         Ok(self.emit(out_left, out_right, out_kinds))
+    }
+
+    fn staged_bytes_for(changes: &MiniBatchChanges<ByteKey, ByteKey>) -> usize {
+        changes.retained_bytes(
+            |key| key.0.len() + GROUP_ENTRY_OVERHEAD,
+            |row| row.0.len() + GROUP_ENTRY_OVERHEAD,
+        )
+    }
+
+    pub(crate) fn staging_bytes(&self) -> usize {
+        Self::staged_bytes_for(&self.left_staged) + Self::staged_bytes_for(&self.right_staged)
+    }
+
+    pub(crate) fn staged_keys(&self) -> usize {
+        self.left_staged.touched_keys() + self.right_staged.touched_keys()
+    }
+
+    /// Folds a unique-key side to its first durable row and final bundle row. Durable join state is
+    /// unchanged until flush, so repeated replacements avoid all intermediate probes and output.
+    fn push_mini_batch(
+        &mut self,
+        batch: &RecordBatch,
+        is_left: bool,
+    ) -> Result<RecordBatch, DataFusionError> {
+        let arity = data_arity(batch);
+        let key_indices = if is_left { &self.left_keys } else { &self.right_keys };
+        let key_arrays: Vec<ArrayRef> = key_indices.iter().map(|&i| batch.column(i).clone()).collect();
+        let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
+        let keys = self.key_converter.convert_columns(&key_arrays).expect("encode join key");
+        let payloads = if is_left { &self.left_payload } else { &self.right_payload }
+            .convert_columns(&data_arrays)
+            .expect("encode join payload");
+        let row_kinds = row_kind_column(batch);
+        let before_bytes = if self.memory.tracking() { self.staging_bytes() } else { 0 };
+        let (staged, state) = if is_left {
+            (&mut self.left_staged, &self.left_state)
+        } else {
+            (&mut self.right_staged, &self.right_state)
+        };
+        for row in 0..batch.num_rows() {
+            let key = keys.row(row);
+            if !staged.contains_key(key.as_ref()) {
+                let durable = state.get(key.as_ref()).and_then(|bucket| {
+                    bucket
+                        .iter()
+                        .find(|(_, meta)| meta.count > 0)
+                        .map(|(payload, _)| payload.clone())
+                });
+                staged.touch(ByteKey::from(key.as_ref()), durable);
+            }
+            let payload = ByteKey::from(payloads.row(row).as_ref());
+            let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
+            let change = if matches!(kind, 1 | 3) {
+                MiniBatchChange::Delete(payload)
+            } else {
+                MiniBatchChange::Insert(payload)
+            };
+            staged.push(ByteKey::from(key.as_ref()), change);
+        }
+        if self.memory.tracking() {
+            self.memory.record(self.staging_bytes() as isize - before_bytes as isize);
+        }
+        self.memory.account()?;
+        Ok(RecordBatch::new_empty(Arc::new(Schema::empty())))
+    }
+
+    fn staged_batch(
+        &self,
+        changes: Vec<(ByteKey, MiniBatchChange<ByteKey>)>,
+        is_left: bool,
+    ) -> Option<RecordBatch> {
+        if changes.is_empty() {
+            return None;
+        }
+        let mut rows = Vec::with_capacity(changes.len() * 2);
+        let mut kinds = Vec::with_capacity(changes.len() * 2);
+        for (_, change) in changes {
+            match change {
+                MiniBatchChange::Insert(after) => {
+                    rows.push(after);
+                    kinds.push(0);
+                }
+                MiniBatchChange::Delete(before) => {
+                    rows.push(before);
+                    kinds.push(3);
+                }
+                MiniBatchChange::Update { before, after } => {
+                    rows.push(before);
+                    kinds.push(3);
+                    rows.push(after);
+                    kinds.push(0);
+                }
+            }
+        }
+        let (schema, converter) = if is_left {
+            (&self.left_schema, &self.left_payload)
+        } else {
+            (&self.right_schema, &self.right_payload)
+        };
+        let parser = converter.parser();
+        let mut columns = converter
+            .convert_rows(rows.iter().map(|row| parser.parse(&row.0)))
+            .expect("decode staged join rows");
+        let mut fields: Vec<Field> = schema.fields().iter().map(|field| field.as_ref().clone()).collect();
+        fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
+        columns.push(Arc::new(Int8Array::from(kinds)));
+        Some(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("staged join batch"))
+    }
+
+    pub(crate) fn flush_mini_batch(&mut self) -> Result<RecordBatch, DataFusionError> {
+        let staged_bytes = if self.memory.tracking() { self.staging_bytes() } else { 0 };
+        let left = self.left_staged.drain();
+        let right = self.right_staged.drain();
+        self.memory.forget(staged_bytes);
+        self.memory.account_shrink();
+
+        let left_batch = self.staged_batch(left, true);
+        let right_batch = self.staged_batch(right, false);
+        let mut outputs = Vec::new();
+        if let Some(batch) = left_batch {
+            let out = self.push_immediate(&batch, true)?;
+            if out.num_rows() > 0 {
+                outputs.push(out);
+            }
+        }
+        if let Some(batch) = right_batch {
+            let out = self.push_immediate(&batch, false)?;
+            if out.num_rows() > 0 {
+                outputs.push(out);
+            }
+        }
+        if outputs.is_empty() {
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
+        }
+        concat_batches(&outputs[0].schema(), outputs.iter()).map_err(DataFusionError::from)
     }
 
     /// Rebuilds the joined changelog batch from the emitted byte rows: one vectorized `convert_rows`
@@ -891,6 +1048,22 @@ impl UpdatingJoiner {
 
 state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_updatingJoinerStateBytes, UpdatingJoiner);
 
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updatingJoinerStagingBytes<'local>(
+    _env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
+) -> jlong {
+    let joiner = unsafe { &*(handle as *const UpdatingJoiner) };
+    joiner.staging_bytes() as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updatingJoinerStagedKeys<'local>(
+    _env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
+) -> jlong {
+    let joiner = unsafe { &*(handle as *const UpdatingJoiner) };
+    joiner.staged_keys() as jlong
+}
+
 /// Creates a regular (non-windowed) updating joiner and returns an opaque handle. The key column
 /// indices locate the equi-join key within each side's input batch (whose trailing column is the
 /// `$row_kind$` byte); the join type selects INNER/outer/semi-anti; the two schema addresses seed the
@@ -912,6 +1085,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createUpdatin
     pred_longs: JLongArray<'local>,
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
+    mini_batch: jboolean,
     memory_budget_bytes: jlong,
 ) -> jlong {
     let left = read_columns(&env, &left_keys);
@@ -935,8 +1109,21 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createUpdatin
         right_schema,
         predicate,
     )
+    .with_mini_batch(mini_batch != 0)
     .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, joiner)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushUpdatingJoiner<'local>(
+    mut env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
+    out_array_address: jlong, out_schema_address: jlong,
+) {
+    let joiner = unsafe { &mut *(handle as *mut UpdatingJoiner) };
+    match joiner.flush_mini_batch() {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Folds a left batch into state and exports the join changelog it produces (left cols, right cols,
@@ -1062,6 +1249,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreUpdati
     pred_longs: JLongArray<'local>,
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
+    mini_batch: jboolean,
     snapshot: JByteArray<'local>,
     memory_budget_bytes: jlong,
 ) -> jlong {
@@ -1088,6 +1276,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreUpdati
         predicate,
         &bytes,
     )
+    .with_mini_batch(mini_batch != 0)
     .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, joiner)
 }
@@ -1110,6 +1299,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreUpdati
     pred_longs: JLongArray<'local>,
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
+    mini_batch: jboolean,
     snapshots: JObjectArray<'local>,
     memory_budget_bytes: jlong,
 ) -> jlong {
@@ -1149,6 +1339,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreUpdati
         predicate,
         &restored,
     )
+    .with_mini_batch(mini_batch != 0)
     .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, joiner)
 }
