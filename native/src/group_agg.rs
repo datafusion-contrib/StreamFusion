@@ -1198,6 +1198,13 @@ impl GroupAggregator {
         }
         self.memory.account()?;
 
+        // Mini-batch output is produced only by `flush_mini_batch`. Avoid constructing empty key
+        // takes and result arrays on every physical push; the bridge only needs an importable empty
+        // batch to preserve the existing update ABI.
+        if self.mini_batch {
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
+        }
+
         let indices = UInt32Array::from(out_rows);
         let mut fields: Vec<Field> = self
             .key_columns
