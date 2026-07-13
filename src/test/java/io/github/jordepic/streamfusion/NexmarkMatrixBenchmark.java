@@ -647,6 +647,75 @@ class NexmarkMatrixBenchmark {
     System.out.println(out);
   }
 
+  /**
+   * Direct enabled-versus-disabled comparison for both engines on the same 5M-style generator
+   * workload. Unlike running {@link #matrix()} and {@link #tunedMiniBatchMatrix()} back to back,
+   * this keeps the two modes adjacent for each query and alternates which mode runs first. That
+   * balances long-lived JVM/GC order effects while retaining the normal warmup and best-of-two rule
+   * inside every cell. Gated by {@code SF_MATRIX_COMPARE_MODES=true}.
+   */
+  @Test
+  @EnabledIfEnvironmentVariable(named = "SF_MATRIX_COMPARE_MODES", matches = "true")
+  void miniBatchModeComparison() throws Exception {
+    Map<String, String> miniBatch =
+        Map.of(
+            "table.exec.mini-batch.enabled", "true",
+            "table.exec.mini-batch.allow-latency", "2 s",
+            "table.exec.mini-batch.size", "50000");
+    Query[] queries = selectQueries();
+    StringBuilder out =
+        new StringBuilder(
+            "\n##### NEXMARK MINI-BATCH MODE COMPARISON ("
+                + ROWS
+                + " events, best of "
+                + RUNS
+                + ") #####\n");
+    out.append(
+        "query  Flink off  Native off  SF/Flink off  Flink on  Native on  SF/Flink on  Flink on/off  SF on/off\n");
+
+    for (int i = 0; i < queries.length; i++) {
+      Query q = queries[i];
+      double flinkOff;
+      double nativeOff;
+      double flinkOn;
+      double nativeOn;
+      if ((i & 1) == 0) {
+        flinkOff = generatorBestWithConfig(q, false, Map.of());
+        nativeOff = generatorBestWithConfig(q, true, Map.of());
+        flinkOn = generatorBestWithConfig(q, false, miniBatch);
+        nativeOn = generatorBestWithConfig(q, true, miniBatch);
+      } else {
+        flinkOn = generatorBestWithConfig(q, false, miniBatch);
+        nativeOn = generatorBestWithConfig(q, true, miniBatch);
+        flinkOff = generatorBestWithConfig(q, false, Map.of());
+        nativeOff = generatorBestWithConfig(q, true, Map.of());
+      }
+      out.append(
+          String.format(
+              "%4s  %9.3f  %10.3f  %12.2fx  %8.3f  %9.3f  %11.2fx  %12.2fx  %9.2fx%n",
+              q.label,
+              ROWS / flinkOff / 1_000_000.0,
+              ROWS / nativeOff / 1_000_000.0,
+              flinkOff / nativeOff,
+              ROWS / flinkOn / 1_000_000.0,
+              ROWS / nativeOn / 1_000_000.0,
+              flinkOn / nativeOn,
+              flinkOff / flinkOn,
+              nativeOff / nativeOn));
+    }
+    System.out.println(out);
+  }
+
+  private static double generatorBestWithConfig(
+      Query q, boolean nativeRun, Map<String, String> config) throws Exception {
+    tableConfigExtras = config;
+    try {
+      return generatorBest(q, nativeRun, null);
+    } finally {
+      tableConfigExtras = Map.of();
+    }
+  }
+
   /** The changelog-family queries (mini-batch has no effect on the windowed ones), unless overridden. */
   private static Query[] selectTunedQueries() {
     if (System.getenv("SF_MATRIX_QUERIES") != null) {
