@@ -24,8 +24,15 @@ class NexmarkExplainTest {
 
   @Test
   void explainAll() throws Exception {
-    StringBuilder report = new StringBuilder("\n##### NEXMARK EXPLAIN REPORT #####\n");
+    String selected = System.getProperty("profile.query");
+    boolean miniBatch = Boolean.getBoolean("profile.minibatch");
+    StringBuilder report =
+        new StringBuilder(
+            "\n##### NEXMARK EXPLAIN REPORT (mini-batch=" + miniBatch + ") #####\n");
     for (int q = 0; q <= 23; q++) {
+      if (selected != null && !selected.equals("q" + q)) {
+        continue;
+      }
       Path file = Path.of(QUERY_DIR, "q" + q + ".sql");
       if (!Files.exists(file)) {
         continue;
@@ -64,14 +71,18 @@ class NexmarkExplainTest {
     if (select == null) {
       return "no INSERT statement found\n";
     }
-    tEnv.explainSql(select);
-    return scan.explainSummary();
+    return tEnv.explainSql(select) + "\n" + scan.explainSummary();
   }
 
   private TableEnvironment buildEnv() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    if (Boolean.getBoolean("profile.minibatch")) {
+      tEnv.getConfig().getConfiguration().setString("table.exec.mini-batch.enabled", "true");
+      tEnv.getConfig().getConfiguration().setString("table.exec.mini-batch.allow-latency", "2 s");
+      tEnv.getConfig().getConfiguration().setString("table.exec.mini-batch.size", "50000");
+    }
     tEnv.createTemporarySystemFunction("count_char", CountChar.class);
     tEnv.executeSql(
         "CREATE TABLE datagen (\n"
