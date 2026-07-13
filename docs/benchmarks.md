@@ -44,9 +44,9 @@ Current benches:
 - `over/running_sum_keyed`, `over/row_number_keyed`, `over/bounded_rows_sum_keyed` — the columnar
   `OVER` push+flush, for a running `SUM` (specialized fold), `ROW_NUMBER` (per-key counter), and a
   bounded `ROWS 10 PRECEDING` frame (per-key buffer + frame recompute).
-- `retract_topn/insert_top10_of_64` — the retracting Top-N (changelog input, full buffers):
-  steady-state inserts into 64 pre-populated partitions, each paying the partition probe, ordered
-  insert, and before/after top-10 diff.
+- `retract_topn/{immediate,physical_256,logical_4096}` — the retracting Top-N (changelog input,
+  full buffers): steady-state inserts into 64 pre-populated partitions, comparing per-row output,
+  a diff after every 256-row Arrow batch, and one diff over the logical 4,096-row bundle.
 - `append_topn_logical_bundle/*` — append-only ascending Top-10 over 64 partitions with sustained
   boundary churn. It compares the per-record cascade, a net diff after each 256-row physical
   batch, and one net diff over the 4,096-row logical bundle, with and without projected rank.
@@ -80,7 +80,7 @@ measured before the pin (or without it) are not comparable to these.
 | `over/running_sum_keyed` | 4096 | 183 µs | ~22.3 Melem/s | running aggregate, specialized fold, 64 keys |
 | `over/row_number_keyed` | 4096 | 131 µs | ~31.4 Melem/s | per-key counter, 64 keys |
 | `over/bounded_rows_sum_keyed` | 4096 | 452 µs | ~9.1 Melem/s | ROWS 10 PRECEDING frame recompute, 64 keys |
-| `retract_topn/insert_top10_of_64` | 4096 | 3.1 ms | ~1.3 Melem/s | changelog Top-N, per-row before/after diff |
+| `retract_topn/immediate` | 4096 | 3.29 ms | ~1.24 Melem/s | changelog Top-N, per-row before/after diff |
 | `dedup/keep_first_emitted_probe` | 4096 | 16 µs | ~255 Melem/s | steady state: every key already emitted |
 | `exchange/split_by_key_8` | 4096 | 57 µs | ~72 Melem/s | by-key split into 8 partitions |
 | `session/sum_keyed_update_flush` | 4096 | ~2.2 ms | ~1.9 Melem/s | one-row sessions, 64 keys (high-variance) |
@@ -134,6 +134,18 @@ The physical-diff baseline deliberately reproduces the former Arrow-batch-sensit
 five-second release sample of `logical_diff_rank` attributes most samples to `TopNRanker::push`,
 with `arrow_row::Row::owned` and allocator traffic prominent; after output coalescing, row
 ownership in state mutation is the next measured target.
+
+Retracting Top-N logical-bundle baseline on the same Apple M1 Max (20 Criterion samples, 4,096
+steady-state inserts across 64 pre-populated partitions, Top-10, 256-row physical batches):
+
+| Mode | Time/iteration | Elements/s | Logical vs mode |
+|---|---:|---:|---:|
+| immediate per-row diff | 3.292 ms | 1.244 M | 2.54× |
+| net diff per 256-row physical batch | 1.926 ms | 2.127 M | 1.48× |
+| net diff per 4,096-row logical bundle | 1.297 ms | 3.158 M | 1.00× |
+
+All modes mutate the same full retracting buffers. The logical mode retains one visible-window
+preimage per touched partition and emits only its final membership/rank transition.
 
 The gap between filter and aggregation is the signal: the filter is a compiled
 expression plus one Arrow kernel, while an aggregator groups every row by its key and

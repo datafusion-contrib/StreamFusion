@@ -267,6 +267,15 @@ The first-touch key/preimage staging is charged to the operator's managed-memory
 released at flush; the shared metrics report its peak bytes and the actual touched-partition count,
 not emitted rows as a proxy.
 
+The same logical-window diff now covers **retracting Top-N**. Its full per-partition buffer still
+applies every input insert/retract so rank `N+1` promotion remains correct, but only the first
+visible window and the final visible window are materialized as changelog. Criterion over 4,096
+rows, 64 partitions, and 256-row physical batches measures 3.16 M input rows/s for one logical
+flush versus 1.24 M for immediate per-row diffs and 2.13 M for per-physical-batch diffs: 2.54x and
+1.48x faster. Rank-projected output uses the same position-aware final diff. A deterministic SQL
+parity test covers the real retracting plan produced by `GROUP BY` into Top-N; mini-batch-off keeps
+the original per-input behavior.
+
 **Logical mini-batches are independent of physical Arrow batches.** The local two-phase aggregate
 counts rows across input batches and splits a batch exactly at the configured Flink count trigger.
 The split is an Arrow reference-counted view, so enforcing the latency/state-size boundary copies
