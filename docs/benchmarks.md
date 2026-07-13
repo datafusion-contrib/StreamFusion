@@ -813,6 +813,10 @@ A focused q17 rerun after vectorizing the two-phase local aggregate's key path (
 disabled path; q17's direct mini-batch ratio narrowed from 0.69x to 0.85x. This focused follow-up does
 not rewrite the full matrix above, whose cells remain one contemporaneous run.
 
+q15, which shares the vectorized two-phase local aggregate, measured 1.824 M/s off and 1.857 M/s on
+in its focused follow-up. Its enabled path improved about 21% from the preceding balanced 1.535 M/s,
+turning the direct mini-batch ratio from 0.81x into 1.02x; enabled StreamFusion was 1.64x Flink.
+
 The analogous focused q18 rerun after replacing its dedup endpoint map with incremental vector
 staging (`dc35fb8`) measured 1.495 M/s off and 1.289 M/s on, versus the preceding balanced focused
 run's 1.403/1.055 M/s. The enabled path improved about 22%, its direct mini-batch ratio moved from

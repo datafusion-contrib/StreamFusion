@@ -240,7 +240,9 @@ single-row physical batches. Criterion kept the one-row case at 0.95 M rows/s wh
 On the balanced 5M-event q17 comparison, mini-batch throughput rose from 1.149 to 1.436 M rows/s
 (+25%); a matching 25-second CPU profile completed 152 loops versus 127 before, removed
 `ScalarValue::hash` entirely (223 samples to zero), and cut local update/flush samples from 526/235
-to 362/176.
+to 362/176. The same change moved q15's enabled path from 1.535 to 1.857 M rows/s (+21%); its
+mini-batched path is now slightly faster than immediate (1.02x) and 1.64x stock Flink with
+mini-batching enabled.
 
 **Keep-last dedup stages first touches in a vector** (`dc35fb8`). Its mini-batch path formerly kept
 both an ordered key vector and a hash map of endpoints, rescanned the whole map for memory accounting
