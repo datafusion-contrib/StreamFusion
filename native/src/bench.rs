@@ -307,6 +307,26 @@ impl GroupBy {
     }
 }
 
+/// Changelog normalization with either immediate or explicit logical-bundle output.
+pub struct Normalize(ChangelogNormalizer);
+
+impl Normalize {
+    pub fn new(key_columns: Vec<usize>, generate_update_before: bool, mini_batch: bool) -> Self {
+        Normalize(
+            ChangelogNormalizer::new(key_columns, generate_update_before)
+                .with_mini_batch(mini_batch),
+        )
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push(batch).expect("budget exceeded")
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush_mini_batch().expect("budget exceeded")
+    }
+}
+
 /// The transient local half of a two-phase GROUP BY, driven by logical bundle boundaries.
 pub struct LocalGroupBy(LocalGroupAggregator);
 

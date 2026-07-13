@@ -69,6 +69,23 @@ where
         self.order.len()
     }
 
+    /// Estimates the retained key and endpoint payload bytes without exposing the transition map.
+    /// Operators add their own hash-entry/container overhead through the supplied callbacks.
+    pub(crate) fn retained_bytes(
+        &self,
+        key_bytes: impl Fn(&K) -> usize,
+        row_bytes: impl Fn(&R) -> usize,
+    ) -> usize {
+        self.changes
+            .iter()
+            .map(|(key, (before, after))| {
+                key_bytes(key)
+                    + before.as_ref().map_or(0, &row_bytes)
+                    + after.as_ref().map_or(0, &row_bytes)
+            })
+            .sum()
+    }
+
     pub(crate) fn drain(&mut self) -> Vec<(K, MiniBatchChange<R>)> {
         let order = std::mem::take(&mut self.order);
         let mut changes = std::mem::take(&mut self.changes);

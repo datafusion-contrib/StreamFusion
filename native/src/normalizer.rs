@@ -15,6 +15,9 @@ pub(crate) struct ChangelogNormalizer {
     generate_update_before: bool,
     schema: Option<SchemaRef>,
     rows: HashMap<ByteKey, JoinRow>,
+    mini_batch: bool,
+    staged: MiniBatchChanges<ByteKey, JoinRow>,
+    staged_bytes: usize,
     snapshot_cache: Option<NormalizerSnapshotCache>,
     memory: OperatorMemory,
 }
@@ -32,7 +35,7 @@ pub(crate) fn scalar_row_bytes(row: &[ScalarValue]) -> usize {
 }
 
 impl ChangelogNormalizer {
-    fn new(key_columns: Vec<usize>, generate_update_before: bool) -> Self {
+    pub(crate) fn new(key_columns: Vec<usize>, generate_update_before: bool) -> Self {
         let key_arity = key_columns.len();
         ChangelogNormalizer {
             key_columns,
@@ -40,9 +43,17 @@ impl ChangelogNormalizer {
             generate_update_before,
             schema: None,
             rows: HashMap::default(),
+            mini_batch: false,
+            staged: MiniBatchChanges::default(),
+            staged_bytes: 0,
             snapshot_cache: None,
             memory: OperatorMemory::unaccounted(),
         }
+    }
+
+    pub(crate) fn with_mini_batch(mut self, mini_batch: bool) -> Self {
+        self.mini_batch = mini_batch;
+        self
     }
 
     /// Bounds the stored last-row-per-key state by the operator's managed-memory budget (negative =
@@ -62,7 +73,7 @@ impl ChangelogNormalizer {
         self
     }
 
-    fn push(&mut self, batch: &RecordBatch) -> Result<RecordBatch, DataFusionError> {
+    pub(crate) fn push(&mut self, batch: &RecordBatch) -> Result<RecordBatch, DataFusionError> {
         self.snapshot_cache = None;
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
@@ -92,8 +103,12 @@ impl ChangelogNormalizer {
                         if track {
                             delta += (byte_key_bytes(key) + scalar_row_bytes(&current)) as isize;
                         }
-                        out_rows.push(current.clone());
-                        out_kinds.push(0); // +I
+                        if self.mini_batch {
+                            self.staged.push(ByteKey::from(key), MiniBatchChange::Insert(current.clone()));
+                        } else {
+                            out_rows.push(current.clone());
+                            out_kinds.push(0); // +I
+                        }
                         self.rows.insert(ByteKey::from(key), current);
                     }
                     Some(prev) if *prev == current => {
@@ -105,12 +120,19 @@ impl ChangelogNormalizer {
                             delta += scalar_row_bytes(&current) as isize
                                 - scalar_row_bytes(prev) as isize;
                         }
-                        if self.generate_update_before {
-                            out_rows.push(prev.clone());
-                            out_kinds.push(1); // -U the previous row
+                        if self.mini_batch {
+                            self.staged.push(
+                                ByteKey::from(key),
+                                MiniBatchChange::Update { before: prev.clone(), after: current.clone() },
+                            );
+                        } else {
+                            if self.generate_update_before {
+                                out_rows.push(prev.clone());
+                                out_kinds.push(1); // -U the previous row
+                            }
+                            out_rows.push(current.clone());
+                            out_kinds.push(2); // +U the new row
                         }
-                        out_rows.push(current.clone());
-                        out_kinds.push(2); // +U the new row
                         *prev = current;
                     }
                 }
@@ -118,13 +140,66 @@ impl ChangelogNormalizer {
                 if track {
                     delta -= (byte_key_bytes(key) + scalar_row_bytes(&prev)) as isize;
                 }
-                out_rows.push(prev); // emit the stored full row, not the (maybe key-only) tombstone
-                out_kinds.push(3); // -D
+                if self.mini_batch {
+                    self.staged.push(ByteKey::from(key), MiniBatchChange::Delete(prev));
+                } else {
+                    out_rows.push(prev); // emit the stored full row, not the (maybe key-only) tombstone
+                    out_kinds.push(3); // -D
+                }
             }
+        }
+        if self.mini_batch {
+            let retained = self.staged.retained_bytes(
+                |key| byte_key_bytes(&key.0),
+                |row| scalar_row_bytes(row),
+            );
+            delta += retained as isize - self.staged_bytes as isize;
+            self.staged_bytes = retained;
         }
         self.memory.record(delta);
         self.memory.account()?;
         Ok(self.emit(out_rows, out_kinds))
+    }
+
+    pub(crate) fn flush_mini_batch(&mut self) -> Result<RecordBatch, DataFusionError> {
+        if !self.mini_batch {
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
+        }
+        let changes = self.staged.drain();
+        let mut out_rows = Vec::with_capacity(changes.len() * 2);
+        let mut out_kinds = Vec::with_capacity(changes.len() * 2);
+        for (_, change) in changes {
+            match change {
+                MiniBatchChange::Insert(after) => {
+                    out_rows.push(after);
+                    out_kinds.push(0);
+                }
+                MiniBatchChange::Delete(before) => {
+                    out_rows.push(before);
+                    out_kinds.push(3);
+                }
+                MiniBatchChange::Update { before, after } => {
+                    if self.generate_update_before {
+                        out_rows.push(before);
+                        out_kinds.push(1);
+                    }
+                    out_rows.push(after);
+                    out_kinds.push(2);
+                }
+            }
+        }
+        self.memory.record(-(self.staged_bytes as isize));
+        self.staged_bytes = 0;
+        self.memory.account()?;
+        Ok(self.emit(out_rows, out_kinds))
+    }
+
+    fn staged_keys(&self) -> usize {
+        self.staged.touched_keys()
+    }
+
+    fn staging_bytes(&self) -> usize {
+        self.staged_bytes
     }
 
     fn emit(&self, out_rows: Vec<JoinRow>, out_kinds: Vec<i8>) -> RecordBatch {
@@ -457,5 +532,78 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeChangelo
 ) {
     unsafe {
         drop(from_handle::<ChangelogNormalizer>(handle));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn batch(keys: Vec<i64>, values: Vec<i64>, kinds: Vec<i8>) -> RecordBatch {
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("key", DataType::Int64, false),
+                Field::new("value", DataType::Int64, false),
+                Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(keys)),
+                Arc::new(Int64Array::from(values)),
+                Arc::new(Int8Array::from(kinds)),
+            ],
+        )
+        .unwrap()
+    }
+
+    fn rows(batch: &RecordBatch) -> Vec<(i64, i64, i8)> {
+        if batch.num_rows() == 0 {
+            return Vec::new();
+        }
+        let keys = batch.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+        let values = batch.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
+        let kinds = batch.column(2).as_any().downcast_ref::<Int8Array>().unwrap();
+        (0..batch.num_rows())
+            .map(|row| (keys.value(row), values.value(row), kinds.value(row)))
+            .collect()
+    }
+
+    #[test]
+    fn mini_batch_emits_first_preimage_and_final_postimage() {
+        let mut normalizer = ChangelogNormalizer::new(vec![0], true).with_mini_batch(true);
+        assert_eq!(
+            normalizer
+                .push(&batch(vec![1, 2], vec![10, 5], vec![0, 0]))
+                .unwrap()
+                .num_rows(),
+            0
+        );
+        assert_eq!(
+            rows(&normalizer.flush_mini_batch().unwrap()),
+            vec![(1, 10, 0), (2, 5, 0)]
+        );
+
+        normalizer
+            .push(&batch(vec![1, 1], vec![20, 30], vec![2, 2]))
+            .unwrap();
+        normalizer
+            .push(&batch(vec![2, 3, 3], vec![5, 7, 7], vec![3, 0, 3]))
+            .unwrap();
+        assert_eq!(
+            rows(&normalizer.flush_mini_batch().unwrap()),
+            vec![(1, 10, 1), (1, 30, 2), (2, 5, 3)]
+        );
+        assert_eq!(normalizer.staged_keys(), 0);
+        assert_eq!(normalizer.staging_bytes(), 0);
+    }
+
+    #[test]
+    fn mini_batch_without_update_before_only_emits_final_update() {
+        let mut normalizer = ChangelogNormalizer::new(vec![0], false).with_mini_batch(true);
+        normalizer.push(&batch(vec![1], vec![10], vec![0])).unwrap();
+        normalizer.flush_mini_batch().unwrap();
+        normalizer
+            .push(&batch(vec![1, 1], vec![20, 30], vec![2, 2]))
+            .unwrap();
+        assert_eq!(rows(&normalizer.flush_mini_batch().unwrap()), vec![(1, 30, 2)]);
     }
 }

@@ -281,6 +281,14 @@ The native transition substrate folds insert/delete/update chains to their first
 postimage in deterministic first-touch order; inverse changes and equal updates disappear at flush,
 giving normalize, dedup, retracting Top-N, and unique-key joins one tested changelog algebra.
 
+**Changelog normalization now has a logical transition frontier.** The normalizer mutates its
+durable keep-last state on every input but, in mini-batch mode, retains only the first preimage and
+final postimage per unique key. A 4,096-row replacement storm over 64 keys emits 128 rows instead
+of 8,128; Criterion measures 6.79 M input rows/s versus 5.90 M for immediate materialization and
+5.47 M when the same transition buffer is flushed every 256 physical rows. The modest 1.15x kernel
+gain despite a 63.5x output reduction identifies scalar row construction in the push path as the
+next profile target; logical bundling itself is already independent of Arrow chunking.
+
 **Single-phase GROUP BY finalizes only its dirty-key frontier.** Mini-batch state retains the first
 emitted tuple and an Arrow key-row reference on a group's first touch, continues mutating the
 durable accumulator without constructing intermediate outputs, and gathers one compact changelog

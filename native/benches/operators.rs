@@ -4,14 +4,14 @@
 
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, Int64Array, RecordBatch, StringArray};
+use arrow::array::{ArrayRef, Int8Array, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use criterion::{
     black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,
 };
 use streamfusion::bench::{
     split_by_key, AppendTopN, Filter, IntervalJoin, KeepFirstDedup, LocalGroupBy, Over, RetractTopN,
-    Session, Tumbling, WindowJoin,
+    Normalize, Session, Tumbling, WindowJoin,
 };
 
 const ROWS: usize = 4096;
@@ -569,6 +569,60 @@ fn bench_dedup_keep_first(c: &mut Criterion) {
     group.finish();
 }
 
+// Changelog normalization under a replacement storm: 64 keys are inserted once and then updated
+// round-robin. The strategies differ only in how often they materialize externally visible output.
+fn bench_normalize_logical_bundle(c: &mut Criterion) {
+    let keys: Vec<i64> = (0..ROWS as i64).map(|row| row % 64).collect();
+    let values: Vec<i64> = (0..ROWS as i64).collect();
+    let kinds: Vec<i8> = (0..ROWS).map(|row| if row < 64 { 0 } else { 2 }).collect();
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Int64, false),
+            Field::new("value", DataType::Int64, false),
+            Field::new("$row_kind$", DataType::Int8, false),
+        ])),
+        vec![
+            Arc::new(Int64Array::from(keys)),
+            Arc::new(Int64Array::from(values)),
+            Arc::new(Int8Array::from(kinds)),
+        ],
+    )
+    .unwrap();
+
+    let mut group = c.benchmark_group("normalize_logical_bundle");
+    group.throughput(Throughput::Elements(ROWS as u64));
+    group.bench_function("immediate", |b| {
+        b.iter_batched(
+            || Normalize::new(vec![0], true, false),
+            |mut normalize| black_box(normalize.push(black_box(&batch))),
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("physical_256", |b| {
+        b.iter_batched(
+            || Normalize::new(vec![0], true, true),
+            |mut normalize| {
+                for offset in (0..ROWS).step_by(256) {
+                    black_box(normalize.push(black_box(&batch.slice(offset, 256))));
+                    black_box(normalize.flush());
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("logical_4096", |b| {
+        b.iter_batched(
+            || Normalize::new(vec![0], true, true),
+            |mut normalize| {
+                black_box(normalize.push(black_box(&batch)));
+                black_box(normalize.flush());
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.finish();
+}
+
 // The columnar exchange's by-key split: hash every row's key to a partition and gather the
 // sub-batches — the whole per-batch cost of the native shuffle's split side.
 fn bench_exchange_split(c: &mut Criterion) {
@@ -742,6 +796,7 @@ criterion_group!(
     bench_retract_topn,
     bench_append_topn_logical_bundle,
     bench_dedup_keep_first,
+    bench_normalize_logical_bundle,
     bench_exchange_split,
     bench_interval_join,
     bench_window_join,
