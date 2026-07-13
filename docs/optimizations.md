@@ -266,6 +266,8 @@ watermark, checkpoint, and end-of-input flushes reset the same shared boundary c
 Criterion finds no measurable overhead when the logical and physical sizes are both 4,096 rows
 (17.75 vs 17.83 M rows/s); coalescing 32, 256, and 4,096 rows is respectively 4.43×, 10.29×, and
 18.42× faster than the size-1 immediate-flush baseline for a 64-key local `SUM`.
+Flink metrics expose bundle/input/output counts, flush reasons, physical-batch splits, touched keys,
+cancelled changes, and the last/peak bundle shape so profiles can explain a gain or regression.
 
 **Group-aggregate DISTINCT folds primitives; the changelog emit reads its cache.** The
 multi-`DISTINCT` day/channel aggregates (q15/q16/q17) owned the largest native islands, and their
