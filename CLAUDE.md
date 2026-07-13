@@ -85,6 +85,11 @@ Parquet sink to dodge the perimeter cost. A real deployment feeds us rowwise Fli
 to a rowwise sink, so the honest benchmark is native-island-plus-both-transposes vs. stock Flink end to
 end. Confirm the plan actually has both transpose operators before trusting a Nexmark result.
 
+We should not be changing the Nexmark harness. It is a benchmark with an objective input — its
+schemas, wire encodings, watermarks, and queries are fixed. If the engine can't run some part of it
+natively, that shows up as an honest fallback or a slower number, which is the signal to fix the
+engine — never rewrite the harness to route around an engine limitation.
+
 At a high level:
 We are ripping code out of Arroyo, which itself already uses DataFusion
 We are overriding the planning layer of Flink to use our Arroyo operators

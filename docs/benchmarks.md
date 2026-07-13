@@ -295,9 +295,11 @@ vs 1.94× re-measured side by side), so the format-artifact modularity now costs
 this table's history earned: an early source rung trailed the shallow rung until the consume fast
 path landed (divergences/19), and the 2026-07-11 modular split briefly decoded in a downstream
 operator, which halved this rung until the in-poll driver-ABI decode restored it (divergences/25).
-This corpus's timestamps are BIGINT epoch-millis; the matrix corpus declares them `TIMESTAMP(3)`,
-whose per-row string parsing is the dominant decode cost there — compare rungs within one corpus
-only.
+The matrix harness reads the same BIGINT epoch-millis corpus but declares the Nexmark `WATERMARK`
+on its table (this ladder doesn't) — until native per-split source watermarks landed (2026-07-12,
+divergences/25), that watermark silently kept the matrix's Kafka scans on Flink entirely, so matrix
+Kafka cells of that period measured only the downstream island. Compare rungs within one harness
+only, and verify the plan contains the native source before trusting a source rung.
 
 **Reference — the transpose floor (no Kafka).** The same q0/q1/q2 with the source replaced by the
 in-process `nexmark` datagen emitting `RowData` directly — no Kafka client, no format decode, just the
