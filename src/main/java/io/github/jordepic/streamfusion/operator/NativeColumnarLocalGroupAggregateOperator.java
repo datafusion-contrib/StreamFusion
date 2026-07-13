@@ -39,7 +39,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
-  private transient long bufferedRows;
+  private transient MiniBatchBoundary boundary;
   private transient ManagedMemoryBudget memoryBudget;
 
   public NativeColumnarLocalGroupAggregateOperator(
@@ -74,29 +74,47 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
             keyColumns,
             distinctViewSources,
             memoryBudget.bytes());
-    bufferedRows = 0;
+    boundary = new MiniBatchBoundary(miniBatchSize);
   }
 
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
     VectorSchemaRoot in = element.getValue().root();
-    long rows = in.getRowCount();
+    int rows = in.getRowCount();
+    try {
+      if (rows == 0) {
+        update(in);
+      } else {
+        int offset = 0;
+        while (offset < rows) {
+          int length = boundary.nextSliceLength(rows - offset);
+          if (offset == 0 && length == rows) {
+            update(in);
+          } else {
+            try (VectorSchemaRoot slice = in.slice(offset, length)) {
+              update(slice);
+            }
+          }
+          offset += length;
+          if (boundary.onSlice(length)) {
+            flushBundle();
+          }
+        }
+      }
+    } finally {
+      in.close();
+    }
+    publishStateBytes();
+  }
+
+  private void update(VectorSchemaRoot in) {
     BufferAllocator inAllocator =
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
     try (ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
         ArrowSchema inSchema = ArrowSchema.allocateNew(inAllocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
       Native.updateLocalGroupAggregator(handle, inArray.memoryAddress(), inSchema.memoryAddress());
-    } finally {
-      in.close();
     }
-    bufferedRows += rows;
-    // Size trigger: cap the buffer like Flink's CountBundleTrigger (mini-batch.size); a non-positive
-    // size disables it, leaving the marker / checkpoint / end-of-input flushes.
-    if (miniBatchSize > 0 && bufferedRows >= miniBatchSize) {
-      flushBundle();
-    }
-    publishStateBytes();
   }
 
   @Override
@@ -137,7 +155,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
         partial.close();
       }
     }
-    bufferedRows = 0;
+    boundary.reset();
   }
 
   @Override

@@ -258,6 +258,12 @@ vs new per touched partition — instead of the per-record cascade, preserving t
 changelog (the mini-batch parity contract) exactly; mini-batch off keeps the byte-identical
 cascade (divergences/20).
 
+**Logical mini-batches are independent of physical Arrow batches.** The local two-phase aggregate
+counts rows across input batches and splits a batch exactly at the configured Flink count trigger.
+The split is an Arrow reference-counted view, so enforcing the latency/state-size boundary copies
+no row buffers; a physical batch can no longer silently enlarge the logical bundle. Marker,
+watermark, checkpoint, and end-of-input flushes reset the same shared boundary controller.
+
 **Group-aggregate DISTINCT folds primitives; the changelog emit reads its cache.** The
 multi-`DISTINCT` day/channel aggregates (q15/q16/q17) owned the largest native islands, and their
 hot leaves were `ScalarValue` construct/hash/clone/drop: every row built a scalar per distinct agg
