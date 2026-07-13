@@ -62,12 +62,22 @@ public class NativeChangelogNormalizeExecNode extends ExecNodeBase<ArrowBatch>
     int[] stateKeys = FlinkKeyGroupUtils.stateKeysForSubtasks(maxParallelism, input.getParallelism());
     KeySelector<ArrowBatch, Integer> stateKeySelector =
         batch -> stateKeys[batch.destination() >= 0 ? batch.destination() : 0];
+    boolean miniBatch =
+        config.get(
+            org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED);
+    long miniBatchSize =
+        config.get(org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE);
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
             new NativeColumnarChangelogNormalizeOperator(
-                keyColumns, keyTimestampPrecisions, generateUpdateBefore, maxParallelism),
+                keyColumns,
+                keyTimestampPrecisions,
+                generateUpdateBefore,
+                miniBatch,
+                miniBatchSize,
+                maxParallelism),
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);

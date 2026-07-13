@@ -35,6 +35,13 @@ class FlinkChangelogNormalizeSqlHarnessTest {
   }
 
   @Test
+  void logicalMiniBatchNormalizationMatchesHost() throws Exception {
+    NativeParity.assertChangelogParity(
+        FlinkChangelogNormalizeSqlHarnessTest::miniBatchEnvironment,
+        "SELECT f0, f1 FROM up");
+  }
+
+  @Test
   void perOperatorFlagKeepsNormalizeOnHost() throws Exception {
     System.setProperty("streamfusion.operator.changelogNormalize.enabled", "false");
     try {
@@ -71,6 +78,14 @@ class FlinkChangelogNormalizeSqlHarnessTest {
                 .build(),
             ChangelogMode.upsert());
     tEnv.createTemporaryView("up", table);
+    return tEnv;
+  }
+
+  private static TableEnvironment miniBatchEnvironment() {
+    TableEnvironment tEnv = environment();
+    tEnv.getConfig().set("table.exec.mini-batch.enabled", "true");
+    tEnv.getConfig().set("table.exec.mini-batch.allow-latency", "1 s");
+    tEnv.getConfig().set("table.exec.mini-batch.size", "4");
     return tEnv;
   }
 }

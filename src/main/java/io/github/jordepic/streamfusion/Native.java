@@ -160,6 +160,10 @@ public final class Native {
 
   public static native long changelogNormalizerStateBytes(long handle);
 
+  public static native long changelogNormalizerStagingBytes(long handle);
+
+  public static native long changelogNormalizerStagedKeys(long handle);
+
   public static native long windowJoinerStateBytes(long handle);
 
   /**
@@ -955,6 +959,7 @@ public final class Native {
       int[] keyColumns,
       int[] keyTimestampPrecisions,
       boolean generateUpdateBefore,
+      boolean miniBatch,
       long memoryBudgetBytes);
 
   /**
@@ -964,6 +969,10 @@ public final class Native {
   public static native void pushChangelogNormalizer(
       long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
 
+  /** Finalizes the current logical mini-batch into one normalized changelog per touched key. */
+  public static native void flushChangelogNormalizer(
+      long handle, long outArrayAddress, long outSchemaAddress);
+
   /** Serializes a changelog normalizer's per-key state for a checkpoint. */
   public static native byte[] snapshotChangelogNormalizer(long handle);
 
@@ -972,6 +981,7 @@ public final class Native {
       int[] keyColumns,
       int[] keyTimestampPrecisions,
       boolean generateUpdateBefore,
+      boolean miniBatch,
       byte[] snapshot,
       long memoryBudgetBytes);
 
@@ -988,6 +998,7 @@ public final class Native {
       int[] keyColumns,
       int[] keyTimestampPrecisions,
       boolean generateUpdateBefore,
+      boolean miniBatch,
       byte[][] snapshots,
       long memoryBudgetBytes);
 

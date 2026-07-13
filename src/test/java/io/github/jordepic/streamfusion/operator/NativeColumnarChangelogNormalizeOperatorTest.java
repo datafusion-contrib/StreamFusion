@@ -69,6 +69,85 @@ class NativeColumnarChangelogNormalizeOperatorTest {
   }
 
   @Test
+  void coalescesAcrossPhysicalBatchesAtTheExactLogicalCount() throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            harness(operator(true, true, 4), 1, 0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(
+          new StreamRecord<>(
+              batch(
+                  allocator,
+                  row(RowKind.INSERT, 1L, 10L),
+                  row(RowKind.UPDATE_AFTER, 1L, 20L))));
+      assertEquals(List.of(), collect(harness));
+      harness.processElement(
+          new StreamRecord<>(
+              batch(
+                  allocator,
+                  row(RowKind.INSERT, 2L, 5L),
+                  row(RowKind.UPDATE_AFTER, 1L, 30L))));
+      assertEquals(
+          List.of(List.of("+I", 1L, 30L), List.of("+I", 2L, 5L)), collect(harness));
+    }
+  }
+
+  @Test
+  void watermarkFlushesPendingChangesBeforeItIsForwarded() throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            harness(operator(true, true, 100), 1, 0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(
+          new StreamRecord<>(
+              batch(
+                  allocator,
+                  row(RowKind.INSERT, 1L, 10L),
+                  row(RowKind.UPDATE_AFTER, 1L, 20L))));
+      assertEquals(List.of(), collect(harness));
+      harness.processWatermark(new org.apache.flink.streaming.api.watermark.Watermark(42L));
+      assertEquals(List.of(List.of("+I", 1L, 20L)), collect(harness));
+    }
+  }
+
+  @Test
+  void checkpointFlushesBeforeSnapshotAndRestoreContinuesFromDurableState() throws Exception {
+    OperatorSubtaskState snapshot;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> before =
+            harness(operator(true, true, 100), 1, 0)) {
+      before.setup(new ArrowBatchSerializer());
+      before.open();
+      before.processElement(
+          new StreamRecord<>(
+              batch(
+                  allocator,
+                  row(RowKind.INSERT, 1L, 10L),
+                  row(RowKind.UPDATE_AFTER, 1L, 20L))));
+      assertEquals(List.of(), collect(before));
+      before.prepareSnapshotPreBarrier(1L);
+      assertEquals(List.of(List.of("+I", 1L, 20L)), collect(before));
+      snapshot = before.snapshot(1L, 1L);
+    }
+
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> restored =
+            harness(operator(true, true, 100), 1, 0)) {
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(snapshot);
+      restored.open();
+      restored.processElement(
+          new StreamRecord<>(batch(allocator, row(RowKind.UPDATE_AFTER, 1L, 30L))));
+      assertEquals(List.of(), collect(restored));
+      restored.processWatermark(new org.apache.flink.streaming.api.watermark.Watermark(42L));
+      assertEquals(
+          List.of(List.of("-U", 1L, 20L), List.of("+U", 1L, 30L)), collect(restored));
+    }
+  }
+
+  @Test
   void rawKeyedStateRescalesByFlinkKeyGroup() throws Exception {
     long[] keys = keysForBothSubtasks();
     OperatorSubtaskState snapshot;
@@ -153,8 +232,18 @@ class NativeColumnarChangelogNormalizeOperatorTest {
   }
 
   private static NativeColumnarChangelogNormalizeOperator operator(boolean generateUpdateBefore) {
+    return operator(generateUpdateBefore, false, 0);
+  }
+
+  private static NativeColumnarChangelogNormalizeOperator operator(
+      boolean generateUpdateBefore, boolean miniBatch, long miniBatchSize) {
     return new NativeColumnarChangelogNormalizeOperator(
-        new int[] {0}, new int[] {-1}, generateUpdateBefore, MAX_PARALLELISM);
+        new int[] {0},
+        new int[] {-1},
+        generateUpdateBefore,
+        miniBatch,
+        miniBatchSize,
+        MAX_PARALLELISM);
   }
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness(

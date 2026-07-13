@@ -1,6 +1,7 @@
 package io.github.jordepic.streamfusion.operator;
 
 import io.github.jordepic.streamfusion.Native;
+import io.github.jordepic.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
@@ -11,15 +12,17 @@ import org.apache.flink.runtime.state.StateInitializationContext;
 import org.apache.flink.runtime.state.StateSnapshotContext;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
+import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
 /**
  * Changelog normalization (Flink's {@code ChangelogNormalize}), fed Arrow batches and emitting Arrow
  * batches. Keeps the last full row per unique key and turns an upsert/duplicate-bearing changelog
  * into a regular INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE changelog (the row kind read and written on
- * the batch's {@code $row_kind$} column). Proctime — it emits synchronously per input batch, so it
- * forwards watermarks unchanged. Columnar in and out, so it pays no per-operator transpose; the keyed
- * shuffle stays columnar where the input is a columnar producer.
+ * the batch's {@code $row_kind$} column). With mini-batch disabled it emits synchronously per input
+ * batch. With mini-batch enabled it emits the first-preimage/final-postimage transition at the
+ * logical count/watermark/checkpoint/end boundary. Columnar in and out, so it pays no per-operator
+ * transpose; the keyed shuffle stays columnar where the input is a columnar producer.
  */
 public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
@@ -27,21 +30,29 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
   private final int[] keyColumns;
   private final int[] keyTimestampPrecisions;
   private final boolean generateUpdateBefore;
+  private final boolean miniBatch;
+  private final long miniBatchSize;
   private final int maxParallelism;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
+  private transient MiniBatchBoundary boundary;
+  private transient MiniBatchMetrics miniBatchMetrics;
   private transient ManagedMemoryBudget memoryBudget;
 
   public NativeColumnarChangelogNormalizeOperator(
       int[] keyColumns,
       int[] keyTimestampPrecisions,
       boolean generateUpdateBefore,
+      boolean miniBatch,
+      long miniBatchSize,
       int maxParallelism) {
     this.keyColumns = keyColumns;
     this.keyTimestampPrecisions = keyTimestampPrecisions;
     this.generateUpdateBefore = generateUpdateBefore;
+    this.miniBatch = miniBatch;
+    this.miniBatchSize = miniBatchSize;
     if (maxParallelism <= 0) {
       throw new IllegalArgumentException(
           "native changelog-normalization state requires a positive max parallelism");
@@ -62,11 +73,16 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
     handle =
         snapshots.isEmpty()
             ? Native.createChangelogNormalizer(
-                keyColumns, keyTimestampPrecisions, generateUpdateBefore, memoryBudget.bytes())
+                keyColumns,
+                keyTimestampPrecisions,
+                generateUpdateBefore,
+                miniBatch,
+                memoryBudget.bytes())
             : Native.restoreChangelogNormalizerPartitions(
                 keyColumns,
                 keyTimestampPrecisions,
                 generateUpdateBefore,
+                miniBatch,
                 snapshots.toArray(new byte[0][]),
                 memoryBudget.bytes());
   }
@@ -76,11 +92,59 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
     super.open();
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
+    if (miniBatch) {
+      boundary = new MiniBatchBoundary(miniBatchSize);
+      miniBatchMetrics = new MiniBatchMetrics(getMetricGroup());
+    }
   }
 
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
     VectorSchemaRoot in = element.getValue().root();
+    if (!miniBatch) {
+      try {
+        push(in);
+      } finally {
+        in.close();
+      }
+      publishStateBytes();
+      return;
+    }
+
+    int rows = in.getRowCount();
+    miniBatchMetrics.onPhysicalBatch();
+    try {
+      if (rows == 0) {
+        push(in);
+      } else {
+        int offset = 0;
+        while (offset < rows) {
+          boolean firstContribution = offset == 0 || boundary.bufferedRows() == 0;
+          int length = boundary.nextSliceLength(rows - offset);
+          if (length < rows - offset) {
+            miniBatchMetrics.onPhysicalBatchSplit();
+          }
+          if (offset == 0 && length == rows) {
+            push(in);
+          } else {
+            try (VectorSchemaRoot slice = in.slice(offset, length)) {
+              push(slice);
+            }
+          }
+          miniBatchMetrics.onSlice(length, firstContribution);
+          offset += length;
+          if (boundary.onSlice(length)) {
+            flushBundle(FlushReason.COUNT);
+          }
+        }
+      }
+    } finally {
+      in.close();
+    }
+    publishStateBytes();
+  }
+
+  private void push(VectorSchemaRoot in) {
     BufferAllocator inAllocator =
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
     try (ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
@@ -101,10 +165,51 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
       } else {
         out.close();
       }
-    } finally {
-      in.close();
     }
-    publishStateBytes();
+  }
+
+  @Override
+  public void processWatermark(Watermark mark) throws Exception {
+    if (miniBatch) {
+      flushBundle(FlushReason.WATERMARK);
+      publishStateBytes();
+    }
+    super.processWatermark(mark);
+  }
+
+  @Override
+  public void prepareSnapshotPreBarrier(long checkpointId) throws Exception {
+    if (miniBatch) {
+      flushBundle(FlushReason.CHECKPOINT);
+    }
+    super.prepareSnapshotPreBarrier(checkpointId);
+  }
+
+  @Override
+  public void finish() throws Exception {
+    if (miniBatch) {
+      flushBundle(FlushReason.FINISH);
+    }
+    super.finish();
+  }
+
+  private void flushBundle(FlushReason reason) {
+    long transientBytes = Native.changelogNormalizerStagingBytes(handle);
+    long touchedKeys = Native.changelogNormalizerStagedKeys(handle);
+    try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
+        ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+      Native.flushChangelogNormalizer(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      VectorSchemaRoot out =
+          Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
+      int outputRows = out.getRowCount();
+      miniBatchMetrics.onFlush(reason, outputRows, touchedKeys, transientBytes);
+      if (outputRows > 0) {
+        output.collect(new StreamRecord<>(new ArrowBatch(out)));
+      } else {
+        out.close();
+      }
+    }
+    boundary.reset();
   }
 
   /** Samples the native state size for the operator's gauges; task-thread only. */

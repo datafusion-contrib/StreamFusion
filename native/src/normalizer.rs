@@ -360,6 +360,26 @@ impl ChangelogNormalizer {
 
 state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_changelogNormalizerStateBytes, ChangelogNormalizer);
 
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_changelogNormalizerStagingBytes<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let normalizer = unsafe { &*(handle as *const ChangelogNormalizer) };
+    normalizer.staging_bytes() as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_changelogNormalizerStagedKeys<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let normalizer = unsafe { &*(handle as *const ChangelogNormalizer) };
+    normalizer.staged_keys() as jlong
+}
+
 /// Creates a changelog normalizer (keep-last per unique key) and returns an opaque handle.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createChangelogNormalizer<'local>(
@@ -368,6 +388,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createChangel
     key_columns: JIntArray<'local>,
     key_timestamp_precisions: JIntArray<'local>,
     generate_update_before: jboolean,
+    mini_batch: jboolean,
     memory_budget_bytes: jlong,
 ) -> jlong {
     let keys = read_columns(&env, &key_columns);
@@ -376,9 +397,25 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createChangel
         .map(|precision| precision as i32)
         .collect();
     let normalizer = ChangelogNormalizer::new(keys, generate_update_before != 0)
+        .with_mini_batch(mini_batch != 0)
         .with_key_timestamp_precisions(timestamp_precisions)
         .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, normalizer)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushChangelogNormalizer<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let normalizer = unsafe { &mut *(handle as *mut ChangelogNormalizer) };
+    match normalizer.flush_mini_batch() {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Folds an input changelog batch into the keep-last state and exports the normalized changelog.
@@ -425,6 +462,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreChange
     key_columns: JIntArray<'local>,
     key_timestamp_precisions: JIntArray<'local>,
     generate_update_before: jboolean,
+    mini_batch: jboolean,
     snapshot: JByteArray<'local>,
     memory_budget_bytes: jlong,
 ) -> jlong {
@@ -435,6 +473,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreChange
         .collect();
     let bytes = env.convert_byte_array(&snapshot).expect("failed to read changelog-normalize snapshot");
     let normalizer = ChangelogNormalizer::restore(keys, generate_update_before != 0, &bytes)
+        .with_mini_batch(mini_batch != 0)
         .with_key_timestamp_precisions(timestamp_precisions)
         .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, normalizer)
@@ -495,6 +534,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreChange
     key_columns: JIntArray<'local>,
     key_timestamp_precisions: JIntArray<'local>,
     generate_update_before: jboolean,
+    mini_batch: jboolean,
     snapshots: JObjectArray<'local>,
     memory_budget_bytes: jlong,
 ) -> jlong {
@@ -518,6 +558,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreChange
         );
     }
     let normalizer = ChangelogNormalizer::restore_partitions(keys, generate_update_before != 0, &restored)
+        .with_mini_batch(mini_batch != 0)
         .with_key_timestamp_precisions(timestamp_precisions)
         .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, normalizer)
