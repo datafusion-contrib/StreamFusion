@@ -351,42 +351,43 @@ the complete native poll-and-decode rung rather than an intermediate best-of lad
 
 | Query | Generator | Parquet | Fluss | Kafka JSON | Kafka Avro | Kafka Protobuf |
 |---|---|---|---|---|---|---|
-| q0 | **1.35×** | **3.72×** | **2.65×** | **1.09×** | **1.07×** | **1.07×** |
-| q1 | **1.24×** | **3.68×** | **3.12×** | 1.00× | **1.06×** | **1.11×** |
-| q2 | **1.28×** | **2.93×** | **2.58×** | **1.09×** | **1.12×** | **1.14×** |
-| q3 | 0.97× | **3.66×** | **2.12×** | 0.96× | 0.94× | 0.92× |
-| q4 | **1.30×** | **3.48×** | **1.27×** | 1.00× | **1.06×** | **1.05×** |
-| q5 | **1.33×** | **3.68×** | **2.42×** | **1.14×** | **1.06×** | **1.05×** |
-| q7 | **1.59×** | **3.93×** | **2.16×** | **1.35×** | **1.31×** | **1.25×** |
-| q8 | 0.83× | **4.50×** | **1.90×** | 0.98× | 0.96× | 0.96× |
-| q9 | **1.28×** | **1.84×** | **1.53×** | 0.99× | **1.07×** | **1.09×** |
-| q10 | **1.41×** | **3.75×** | **3.26×** | 0.98× | **1.02×** | 0.97× |
-| q11 | **2.67×** | **5.80×** | **3.78×** | **1.58×** | **1.60×** | **2.02×** |
-| q12 | **1.46×** | **3.45×** | — | **1.08×** | **1.15×** | **1.13×** |
-| q13 | **1.32×** | **2.69×** | **2.17×** | **1.03×** | **1.04×** | 1.00× |
-| q14 | **1.05×** | **3.34×** | **2.44×** | **1.04×** | **1.02×** | **1.02×** |
-| q15 | **1.58×** | **2.27×** | **1.31×** | **1.13×** | **1.10×** | **1.12×** |
-| q16 | **1.32×** | **1.40×** | **1.12×** | **1.11×** | **1.08×** | **1.01×** |
-| q17 | **1.42×** | **2.04×** | **1.28×** | **1.06×** | **1.03×** | **1.04×** |
-| q18 | **1.23×** | **2.12×** | **1.51×** | **1.06×** | **1.03×** | **1.19×** |
-| q19 | **1.22×** | **1.71×** | **2.58×** | **1.21×** | **1.23×** | **1.22×** |
-| q20 | 1.00× | **3.91×** | **2.41×** | 0.98× | 0.99× | **1.01×** |
-| q21 | **1.07×** | **2.44×** | **1.92×** | **1.02×** | **1.04×** | **1.02×** |
-| q21 † | **1.83×** | **5.32×** | **4.91×** | **1.16×** | **1.21×** | **1.25×** |
-| q22 | **1.47×** | **3.96×** | **3.13×** | **1.20×** | **1.16×** | **1.17×** |
-| q23 | **1.23×** | **4.51×** | **1.88×** | **1.03×** | **1.10×** | **1.09×** |
+| q0 | **1.46×** | **3.65×** | **2.71×** | **2.64×** | **3.48×** | **2.71×** |
+| q1 | **1.22×** | **3.74×** | **2.71×** | **2.70×** | **3.43×** | **2.70×** |
+| q2 | **1.35×** | **2.83×** | **2.94×** | **2.16×** | **2.50×** | **2.03×** |
+| q3 | 0.98× | **3.46×** | **2.12×** | **2.04×** | **2.10×** | **1.76×** |
+| q4 | **1.60×** | **3.66×** | **1.67×** | **2.60×** | **3.06×** | **2.74×** |
+| q5 | **1.31×** | **3.92×** | **1.74×** | **2.94×** | **3.74×** | **2.94×** |
+| q7 | **1.60×** | **4.37×** | **2.86×** | **3.37×** | **3.99×** | **3.68×** |
+| q8 | 0.86× | **4.17×** | **2.56×** | **2.54×** | **2.70×** | **2.63×** |
+| q9 | **1.30×** | **1.83×** | **1.60×** | **2.25×** | **2.19×** | **2.20×** |
+| q10 | **1.46×** | **3.92×** | **3.21×** | **2.79×** | **2.80×** | **2.26×** |
+| q11 | **2.78×** | **5.19×** | **4.06×** | **4.50×** | **5.15×** | **4.64×** |
+| q12 | **1.46×** | **3.55×** | — | **2.31×** | **2.60×** | **2.14×** |
+| q13 | **1.11×** | **2.60×** | **2.16×** | **2.37×** | **2.61×** | **2.28×** |
+| q14 | **1.08×** | **3.40×** | **2.51×** | **2.79×** | **3.29×** | **2.98×** |
+| q15 | **1.63×** | **2.26×** | **1.13×** | **2.94×** | **2.87×** | **2.20×** |
+| q16 | **1.32×** | **1.42×** | 0.99× | **1.83×** | **1.84×** | **1.50×** |
+| q17 | **1.43×** | **1.82×** | **1.20×** | **2.73×** | **2.72×** | **2.43×** |
+| q18 | **1.26×** | **2.41×** | **1.68×** | **2.64×** | **3.18×** | **2.99×** |
+| q19 | **1.41×** | **1.59×** | **2.71×** | **1.88×** | **1.73×** | **1.77×** |
+| q20 | 0.95× | **4.01×** | **2.40×** | **2.81×** | **3.55×** | **2.95×** |
+| q21 | **1.08×** | **2.38×** | **1.78×** | **2.52×** | **2.99×** | **2.69×** |
+| q21 † | **1.86×** | **5.41×** | **4.32×** | **2.58×** | **3.02×** | **3.00×** |
+| q22 | **1.46×** | **4.37×** | **3.09×** | **2.38×** | **2.82×** | **2.54×** |
+| q23 | **1.14×** | **4.38×** | **2.30×** | **2.10×** | **2.94×** | **2.26×** |
 
 This table is one combined run taken after the 2026-07-12 hot-path round (batched BinaryRow key
 encoding, the transpose's intrinsified string encode, the `DATE_FORMAT` digit renderer, and O(1)
-accounted-state sizing — `docs/optimizations.md`) and the in-poll driver-ABI Kafka decode
-(divergences/25). The generator column reads 20 of 23 wins with q20 at exact parity; the trailers
-(q3/q8) are the perimeter-transpose/join-state cluster. All Parquet queries win with the floor up
-from 1.06× to 1.40× (q16), and every measurable Fluss cell is a win (floor 1.12×, q16). The Kafka
-columns run modest wins to 2.02× at this 500K scale, where per-run fixed costs compress the ratios
-and the corpus's five `TIMESTAMP(3)` string fields per event dominate the decode; at 2M events the
-same pipelines reach 2.1–3.1× on stateful queries (q11) and 2.1–3.2× on the BIGINT-timestamp
-ladder corpus above. `†` is the non-parity native regex/case path; the default q21 remains the
-byte-parity JVM-upcall path.
+accounted-state sizing — `docs/optimizations.md`), the in-poll driver-ABI Kafka decode
+(divergences/25), and native per-split source watermarks. The last of these is what re-quoted the
+Kafka columns: the matrix's Kafka table declares the canonical Nexmark watermark, which previously
+kept its scans on Flink entirely — the earlier chart's near-parity Kafka cells were measuring
+Flink's consume+decode with only the downstream island native. With the watermark regenerated
+inside the native source, every Kafka cell wins, 1.50× (q16 protobuf) to 5.15× (q11 Avro). The
+generator column reads 20 of 23 wins; the trailers (q3/q8, with q20 just under parity) are the
+perimeter-transpose/join-state cluster. All Parquet queries win (floor 1.42×, q16), and every
+measurable Fluss cell but q16 (0.99×) is a win. `†` is the non-parity native regex/case path; the
+default q21 remains the byte-parity JVM-upcall path.
 
 ### Historical matrix (2026-07-05)
 
