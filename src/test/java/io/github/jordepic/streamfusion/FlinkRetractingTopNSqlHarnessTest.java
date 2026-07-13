@@ -20,13 +20,13 @@ class FlinkRetractingTopNSqlHarnessTest {
 
   private static final String TOP_N =
       "SELECT g, k, total FROM ("
-          + "  SELECT g, k, total, ROW_NUMBER() OVER (PARTITION BY g ORDER BY total DESC) AS rn"
+          + "  SELECT g, k, total, ROW_NUMBER() OVER (PARTITION BY g ORDER BY total DESC, k DESC) AS rn"
           + "  FROM (SELECT g, k, SUM(v) AS total FROM src GROUP BY g, k)"
           + ") WHERE rn <= 2";
 
   private static final String TOP_N_WITH_RANK =
       "SELECT g, k, total, rn FROM ("
-          + "  SELECT g, k, total, ROW_NUMBER() OVER (PARTITION BY g ORDER BY total DESC) AS rn"
+          + "  SELECT g, k, total, ROW_NUMBER() OVER (PARTITION BY g ORDER BY total DESC, k DESC) AS rn"
           + "  FROM (SELECT g, k, SUM(v) AS total FROM src GROUP BY g, k)"
           + ") WHERE rn <= 2";
 
@@ -39,6 +39,19 @@ class FlinkRetractingTopNSqlHarnessTest {
   void retractingTopNWithRankNumberMatchesHost() throws Exception {
     NativeParity.assertChangelogParity(
         FlinkRetractingTopNSqlHarnessTest::environment, TOP_N_WITH_RANK);
+  }
+
+  @Test
+  void retractingTopNUnderMiniBatchCollapsesToHost() throws Exception {
+    NativeParity.assertChangelogParity(
+        () -> {
+          TableEnvironment tEnv = environment();
+          tEnv.getConfig().set("table.exec.mini-batch.enabled", "true");
+          tEnv.getConfig().set("table.exec.mini-batch.allow-latency", "1 s");
+          tEnv.getConfig().set("table.exec.mini-batch.size", "4");
+          return tEnv;
+        },
+        TOP_N_WITH_RANK);
   }
 
   private static TableEnvironment environment() {

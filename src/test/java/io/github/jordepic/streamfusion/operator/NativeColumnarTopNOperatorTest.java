@@ -63,6 +63,22 @@ class NativeColumnarTopNOperatorTest {
         MAX_PARALLELISM);
   }
 
+  private static NativeColumnarTopNOperator retractingNetDiffOperator(long miniBatchSize) {
+    return new NativeColumnarTopNOperator(
+        new int[] {0},
+        new int[] {-1},
+        new int[] {1},
+        new int[] {1},
+        new int[] {0},
+        0L,
+        2L,
+        false,
+        true,
+        true,
+        miniBatchSize,
+        MAX_PARALLELISM);
+  }
+
   @Test
   void emitsTopNChangelogFromArrowBatches() throws Exception {
     try (BufferAllocator allocator = new RootAllocator();
@@ -123,6 +139,33 @@ class NativeColumnarTopNOperatorTest {
       ((NativeColumnarTopNOperator) harness.getOneInputOperator()).finish();
       assertEquals(
           List.of(change(RowKind.DELETE, 1, 3), change(RowKind.INSERT, 1, 2)),
+          collect(harness));
+    }
+  }
+
+  @Test
+  void retractingTopNCoalescesRankChurnAcrossPhysicalBatches() throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            harness(retractingNetDiffOperator(4), 1, 0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(
+          new StreamRecord<>(batch(allocator, row(1, 10), row(1, 20), row(1, 30), row(1, 40))));
+      assertEquals(
+          List.of(change(RowKind.INSERT, 1, 10), change(RowKind.INSERT, 1, 20)),
+          collect(harness));
+
+      harness.processElement(
+          new StreamRecord<>(
+              changelogBatch(allocator, row(RowKind.DELETE, 1, 10), row(RowKind.INSERT, 1, 5))));
+      assertEquals(List.of(), collect(harness));
+      harness.processElement(
+          new StreamRecord<>(
+              changelogBatch(
+                  allocator, row(RowKind.INSERT, 1, 100), row(RowKind.DELETE, 1, 100))));
+      assertEquals(
+          List.of(change(RowKind.INSERT, 1, 5), change(RowKind.DELETE, 1, 10)),
           collect(harness));
     }
   }
@@ -245,7 +288,12 @@ class NativeColumnarTopNOperatorTest {
   }
 
   private static RowData row(long partition, long sort) {
+    return row(RowKind.INSERT, partition, sort);
+  }
+
+  private static RowData row(RowKind kind, long partition, long sort) {
     GenericRowData row = new GenericRowData(2);
+    row.setRowKind(kind);
     row.setField(0, partition);
     row.setField(1, sort);
     return row;
@@ -253,6 +301,10 @@ class NativeColumnarTopNOperatorTest {
 
   private static ArrowBatch batch(BufferAllocator allocator, RowData... rows) {
     return new ArrowBatch(RowDataArrowConverter.write(List.of(rows), SCHEMA, allocator, false));
+  }
+
+  private static ArrowBatch changelogBatch(BufferAllocator allocator, RowData... rows) {
+    return new ArrowBatch(RowDataArrowConverter.write(List.of(rows), SCHEMA, allocator, true));
   }
 
   private static ArrowBatch batch(BufferAllocator allocator, int destination, RowData... rows) {
