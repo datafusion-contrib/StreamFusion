@@ -133,6 +133,46 @@ to Flink's consume+decode on exactly these cells, compressing them to near parit
 decode runs inside the native poll, dispatched through a versioned cross-library ABI; see
 [docs/benchmarks.md](docs/benchmarks.md) for the source ladder and every intermediate rung.
 
+### Mini-batching enabled versus disabled
+
+This is a separate apples-to-apples **5M-event generator** run: stock Flink and StreamFusion each
+run once with mini-batching disabled and once with the same production-style configuration enabled
+(`allow-latency=2s`, `size=50000`). Every cell is best-of-two after a warmup. `SF/Flink` compares
+the engines within one mode; the final two columns show what enabling mini-batching did to each
+engine itself, where a value below 1× is a regression.
+
+| Query | SF/Flink off | SF/Flink on | Flink on/off | StreamFusion on/off |
+|---|---:|---:|---:|---:|
+| q0 | **1.24×** | **1.15×** | 0.97× | 0.89× |
+| q1 | **1.23×** | **1.19×** | 0.98× | 0.95× |
+| q2 | **1.37×** | **1.36×** | 0.99× | 0.98× |
+| q3 | 0.62× | 0.65× | **1.01×** | **1.06×** |
+| q4 | **1.24×** | **2.57×** | 0.52× | **1.07×** |
+| q5 | **1.10×** | **1.15×** | 0.97× | **1.02×** |
+| q7 | **1.01×** | **1.50×** | 0.68× | **1.02×** |
+| q8 | 0.68× | 0.68× | 0.99× | 1.00× |
+| q9 | **1.39×** | **2.42×** | 0.56× | 0.97× |
+| q10 | **1.46×** | **1.45×** | 0.97× | 0.96× |
+| q11 | **2.94×** | **2.87×** | 1.00× | 0.97× |
+| q12 | **1.51×** | **1.56×** | 0.97× | 1.00× |
+| q13 | **1.05×** | **1.08×** | 0.97× | 1.00× |
+| q14 | 0.99× | **1.02×** | 0.95× | 0.98× |
+| q15 | **1.61×** | **1.38×** | 0.97× | 0.84× |
+| q16 | **1.18×** | **1.39×** | 0.82× | 0.97× |
+| q17 | **1.42×** | **1.07×** | 0.92× | 0.69× |
+| q18 | **1.66×** | **1.81×** | 0.62× | 0.67× |
+| q19 | **1.49×** | **2.84×** | 0.99× | **1.87×** |
+| q20 | **1.07×** | **1.62×** | 0.66× | 0.99× |
+| q21 | **1.02×** | **1.05×** | 0.97× | 1.00× |
+| q22 | **1.37×** | **1.42×** | 0.97× | **1.02×** |
+| q23 | **1.61×** | **3.14×** | 0.55× | **1.07×** |
+
+The clearest direct StreamFusion mini-batch win is q19's retracting Top-N at **1.87× over its own
+disabled path**. q4 and q23 improve by 7%, while q15/q17/q18 regress and need further profiling.
+Several cross-engine leads widen primarily because Flink's enabled plan slows down, so those ratios
+are not presented as direct StreamFusion mini-batch gains. Absolute throughput and the reproduction
+command are in [docs/benchmarks.md](docs/benchmarks.md#current-four-way-comparison-2026-07-13).
+
 _Apple M1 Max; numbers are comparable only within a machine._
 
 ## Running and configuration
