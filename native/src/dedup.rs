@@ -825,6 +825,22 @@ state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_keepFirstDedupli
 
 state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_keepLastDeduplicatorStateBytes, KeepLastDeduplicator);
 
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_keepLastDeduplicatorStagingBytes<'local>(
+    _env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
+) -> jlong {
+    let dedup = unsafe { &*(handle as *const KeepLastDeduplicator) };
+    dedup.staged_bytes as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_keepLastDeduplicatorStagedKeys<'local>(
+    _env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
+) -> jlong {
+    let dedup = unsafe { &*(handle as *const KeepLastDeduplicator) };
+    dedup.staged.touched_keys() as jlong
+}
+
 /// Creates a keep-first deduplicator over the given partition-key columns and rowtime column.
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createKeepFirstDeduplicator<'local>(
@@ -1026,6 +1042,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createKeepLas
     generate_update_before: jboolean,
     rowtime_ordered: jboolean,
     keep_first: jboolean,
+    mini_batch: jboolean,
     memory_budget_bytes: jlong,
 ) -> jlong {
     let partitions = read_columns(&env, &partition_columns);
@@ -1040,9 +1057,22 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createKeepLas
         rowtime_ordered != 0,
         keep_first != 0,
     )
+    .with_mini_batch(mini_batch != 0)
     .with_key_timestamp_precisions(timestamp_precisions)
     .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, dedup)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushKeepLastDeduplicator<'local>(
+    mut env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
+    out_array_address: jlong, out_schema_address: jlong,
+) {
+    let dedup = unsafe { &mut *(handle as *mut KeepLastDeduplicator) };
+    match dedup.flush_mini_batch() {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
 }
 
 /// Folds an input batch and returns the retract changelog it produces (emitted eagerly per row).
@@ -1102,6 +1132,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepLa
     generate_update_before: jboolean,
     rowtime_ordered: jboolean,
     keep_first: jboolean,
+    mini_batch: jboolean,
     snapshot: JByteArray<'local>,
     memory_budget_bytes: jlong,
 ) -> jlong {
@@ -1115,6 +1146,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepLa
         keep_first != 0,
         &bytes,
     )
+    .with_mini_batch(mini_batch != 0)
     .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, dedup)
 }
@@ -1177,6 +1209,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepLa
     generate_update_before: jboolean,
     rowtime_ordered: jboolean,
     keep_first: jboolean,
+    mini_batch: jboolean,
     snapshots: JObjectArray<'local>,
     memory_budget_bytes: jlong,
 ) -> jlong {
@@ -1207,6 +1240,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepLa
         keep_first != 0,
         &restored,
     )
+    .with_mini_batch(mini_batch != 0)
     .with_key_timestamp_precisions(timestamp_precisions)
     .with_memory_budget(memory_budget_bytes);
     boxed_or_throw(&mut env, dedup)

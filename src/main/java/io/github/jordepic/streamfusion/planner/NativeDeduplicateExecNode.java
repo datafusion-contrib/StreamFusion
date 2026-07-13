@@ -78,6 +78,12 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
     int[] stateKeys = FlinkKeyGroupUtils.stateKeysForSubtasks(maxParallelism, input.getParallelism());
     KeySelector<ArrowBatch, Integer> stateKeySelector =
         batch -> stateKeys[batch.destination() >= 0 ? batch.destination() : 0];
+    boolean miniBatch =
+        keepLast
+            && config.get(
+                org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED);
+    long miniBatchSize =
+        config.get(org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE);
     OneInputStreamOperator<ArrowBatch, ArrowBatch> operator =
         eager
             ? new NativeColumnarKeepLastDeduplicateOperator(
@@ -87,6 +93,8 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
                 generateUpdateBefore,
                 !proctime,
                 !keepLast,
+                miniBatch,
+                miniBatchSize,
                 maxParallelism)
             : new NativeColumnarDeduplicateOperator(
                 partitionColumns, keyTimestampPrecisions, rowtimeColumn, maxParallelism);

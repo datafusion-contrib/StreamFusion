@@ -128,6 +128,40 @@ class NativeColumnarDeduplicateOperatorTest {
   }
 
   @Test
+  void keepLastCoalescesPhysicalBatchesAtTheLogicalBoundary() throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            eagerHarness(1, 0, true, 4)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(
+          new StreamRecord<>(batch(allocator, row(1, 10, 0), row(1, 20, 1))));
+      assertEquals(List.of(), collectChanges(harness));
+      harness.processElement(
+          new StreamRecord<>(batch(allocator, row(2, 5, 0), row(1, 30, 2))));
+      assertEquals(
+          List.of(List.of("+I", 1L, 30L), List.of("+I", 2L, 5L)),
+          collectChanges(harness));
+    }
+  }
+
+  @Test
+  void keepLastFlushesAnIncompleteLogicalBatchBeforeWatermark() throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            eagerHarness(1, 0, true, 4)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(
+          new StreamRecord<>(batch(allocator, row(1, 10, 0), row(1, 20, 1))));
+      assertEquals(List.of(), collectChanges(harness));
+
+      harness.processWatermark(new Watermark(1));
+      assertEquals(List.of(List.of("+I", 1L, 20L)), collectChanges(harness));
+    }
+  }
+
+  @Test
   void bufferedDeduplicationRawKeyedStateRescalesByFlinkKeyGroup() throws Exception {
     long[] keys = keysForBothSubtasks();
     OperatorSubtaskState snapshot;
@@ -186,10 +220,24 @@ class NativeColumnarDeduplicateOperatorTest {
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
       eagerHarness(int parallelism, int subtask) throws Exception {
+    return eagerHarness(parallelism, subtask, false, 0);
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      eagerHarness(int parallelism, int subtask, boolean miniBatch, long miniBatchSize)
+          throws Exception {
     int[] stateKeys = stateKeysForSubtasks(parallelism);
     return new KeyedOneInputStreamOperatorTestHarness<>(
         new NativeColumnarKeepLastDeduplicateOperator(
-            new int[] {0}, new int[] {-1}, 2, true, true, false, MAX_PARALLELISM),
+            new int[] {0},
+            new int[] {-1},
+            2,
+            true,
+            true,
+            false,
+            miniBatch,
+            miniBatchSize,
+            MAX_PARALLELISM),
         batch -> stateKeys[batch.destination() >= 0 ? batch.destination() : 0],
         Types.INT,
         MAX_PARALLELISM,

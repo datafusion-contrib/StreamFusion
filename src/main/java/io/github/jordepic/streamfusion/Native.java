@@ -144,6 +144,10 @@ public final class Native {
 
   public static native long keepLastDeduplicatorStateBytes(long handle);
 
+  public static native long keepLastDeduplicatorStagingBytes(long handle);
+
+  public static native long keepLastDeduplicatorStagedKeys(long handle);
+
   public static native long windowRankerStateBytes(long handle);
 
   public static native long intervalJoinerStateBytes(long handle);
@@ -744,11 +748,15 @@ public final class Native {
       boolean generateUpdateBefore,
       boolean rowtimeOrdered,
       boolean keepFirst,
+      boolean miniBatch,
       long memoryBudgetBytes);
 
   /** Folds an input batch and returns the changelog (or insert-only rows) it produces. */
   public static native void pushKeepLastDeduplicator(
       long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
+
+  public static native void flushKeepLastDeduplicator(
+      long handle, long outArrayAddress, long outSchemaAddress);
 
   /** Releases the deduplicator and its per-key state. */
   public static native void closeKeepLastDeduplicator(long handle);
@@ -763,6 +771,7 @@ public final class Native {
       boolean generateUpdateBefore,
       boolean rowtimeOrdered,
       boolean keepFirst,
+      boolean miniBatch,
       byte[] snapshot,
       long memoryBudgetBytes);
 
@@ -782,6 +791,7 @@ public final class Native {
       boolean generateUpdateBefore,
       boolean rowtimeOrdered,
       boolean keepFirst,
+      boolean miniBatch,
       byte[][] snapshots,
       long memoryBudgetBytes);
 
