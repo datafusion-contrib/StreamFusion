@@ -230,6 +230,18 @@ discipline the updating join already had). Measured with the transpose string fi
 q23 +14%, q4 +13%, q11 +12% native throughput (q16 1.03x → 1.27x, q9 1.07x → 1.32x, q20 0.82x →
 0.99x vs Flink); the Kafka full-native rung's keyed cells moved +4 to +24 points.
 
+**Mini-batch local aggregate keys encode as one Arrow-row batch** (`857074f`). The two-phase local
+half previously rebuilt a `Vec<ScalarValue>` and hashed its values for every row, even though its
+input is already an Arrow batch. Real batches now encode all group keys in one Arrow-row pass, probe
+the state map by borrowed bytes, allocate only a first-seen key, and retain that key's original Arrow
+row for a gathered flush. A pinned scalar path preserves the cheaper behavior for streams of
+single-row physical batches. Criterion kept the one-row case at 0.95 M rows/s while moving a
+4096-row logical bundle from roughly 17.8 to 46.7 M rows/s and a 50000-row bundle to 52.2 M rows/s.
+On the balanced 5M-event q17 comparison, mini-batch throughput rose from 1.149 to 1.436 M rows/s
+(+25%); a matching 25-second CPU profile completed 152 loops versus 127 before, removed
+`ScalarValue::hash` entirely (223 samples to zero), and cut local update/flush samples from 526/235
+to 362/176.
+
 **The ScalarValue-vintage keyed loops retired** (2026-07-05). The last operators
 still building a `Vec<ScalarValue>` key (or whole row) per input row moved to the same arrow-row
 byte state as the rest: all three keyed `OVER` loops (running fold, bounded-frame buffers,

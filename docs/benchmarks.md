@@ -807,6 +807,12 @@ roughly flat or slightly faster; that is a real steelman result, but it must not
 enabled (0.84x/0.69x/0.67x). Those plan families need profiling before claiming that mini-batching
 helps them end to end, despite their enabled StreamFusion/Flink ratios remaining above 1x.
 
+A focused q17 rerun after vectorizing the two-phase local aggregate's key path (`857074f`) measured
+1.691 M/s with mini-batching off and 1.436 M/s on, versus the preceding balanced focused run's
+1.662/1.149 M/s. Thus the optimization improved the enabled path by about 25% without moving the
+disabled path; q17's direct mini-batch ratio narrowed from 0.69x to 0.85x. This focused follow-up does
+not rewrite the full matrix above, whose cells remain one contemporaneous run.
+
 Reproduce both halves in one JVM with:
 
 `SF_BENCHMARK=true SF_MATRIX_TUNED=true SF_ROWS=5000000 SF_MATRIX_GENERATOR=true
