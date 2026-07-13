@@ -574,12 +574,15 @@ pub(crate) struct RetractableTopNRanker {
     offset: i64,
     limit: i64,
     output_rank_number: bool,
+    net_diff: bool,
     schema: Option<SchemaRef>,
     converters: Option<TopNConverters>,
     // The append-only ranker's byte-row state (see TopNRow): partition probes by borrowed bytes,
     // rows as (memcomparable sort key, Arc-shared payload) — no per-cell `ScalarValue`, and the
     // before/after top-N snapshots the diff reads are refcount bumps, not row deep-clones.
     groups: HashMap<ByteKey, Vec<TopNRow>>,
+    staged_order: Vec<ByteKey>,
+    staged_old_tops: HashMap<ByteKey, Vec<Arc<OwnedRow>>>,
     memory: OperatorMemory,
 }
 
@@ -597,11 +600,19 @@ impl RetractableTopNRanker {
             offset,
             limit,
             output_rank_number,
+            net_diff: false,
             schema: None,
             converters: None,
             groups: HashMap::default(),
+            staged_order: Vec::new(),
+            staged_old_tops: HashMap::default(),
             memory: OperatorMemory::unaccounted(),
         }
+    }
+
+    pub(crate) fn with_net_diff(mut self, net_diff: bool) -> Self {
+        self.net_diff = net_diff;
+        self
     }
 
     /// Bounds the full per-partition buffers by the operator's managed-memory budget (negative =
@@ -619,6 +630,9 @@ impl RetractableTopNRanker {
     }
 
     pub(crate) fn push(&mut self, batch: &RecordBatch) -> Result<RecordBatch, DataFusionError> {
+        if self.net_diff {
+            return self.push_net_diff(batch);
+        }
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         if self.converters.is_none() {
@@ -707,6 +721,141 @@ impl RetractableTopNRanker {
             out_kinds,
             out_ranks,
         ))
+    }
+
+    pub(crate) fn staged_partitions(&self) -> usize {
+        self.staged_order.len()
+    }
+
+    pub(crate) fn staging_bytes(&self) -> usize {
+        self.staged_old_tops
+            .iter()
+            .map(|(key, old)| topn_staged_entry_bytes(key, old))
+            .sum()
+    }
+
+    /// Applies a changelog batch to the full retracting buffers while retaining only the first
+    /// visible Top-N preimage for each partition touched in the current logical mini-batch.
+    fn push_net_diff(&mut self, batch: &RecordBatch) -> Result<RecordBatch, DataFusionError> {
+        let arity = data_arity(batch);
+        self.schema = Some(data_schema(batch));
+        if self.converters.is_none() {
+            self.converters =
+                Some(TopNConverters::build(batch, arity, &self.partition_columns, &self.sort_columns));
+        }
+        let conv = self.converters.as_ref().expect("converters set");
+        let partition_arrays: Vec<ArrayRef> =
+            self.partition_columns.iter().map(|&i| batch.column(i).clone()).collect();
+        let sort_arrays: Vec<ArrayRef> =
+            self.sort_columns.iter().map(|s| batch.column(s.index).clone()).collect();
+        let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
+        let parts = encode_group_keys(&conv.partition, &partition_arrays, batch.num_rows());
+        let keys = encode_group_keys(&conv.sort, &sort_arrays, batch.num_rows());
+        let payloads = conv.payload.convert_columns(&data_arrays).expect("encode payload");
+        let row_kinds = row_kind_column(batch);
+        let (offset, limit) = (self.offset as usize, self.limit as usize);
+        let track = self.memory.tracking();
+        let mut delta = 0isize;
+
+        for row in 0..batch.num_rows() {
+            let part = parts.row(row).data();
+            let buffer = match self.groups.get_mut(part) {
+                Some(buffer) => buffer,
+                None => {
+                    if track {
+                        delta += (part.len() + GROUP_ENTRY_OVERHEAD) as isize;
+                    }
+                    self.groups.entry(ByteKey::from(part)).or_default()
+                }
+            };
+            if !self.staged_old_tops.contains_key(part) {
+                let key = ByteKey::from(part);
+                let old = buffer[offset.min(buffer.len())..limit.min(buffer.len())]
+                    .iter()
+                    .map(|(_, payload)| Arc::clone(payload))
+                    .collect();
+                if track {
+                    delta += topn_staged_entry_bytes(&key, &old) as isize;
+                }
+                self.staged_order.push(key.clone());
+                self.staged_old_tops.insert(key, old);
+            }
+
+            let retract = matches!(row_kinds.map(|k| k.value(row)).unwrap_or(0), 1 | 3);
+            if retract {
+                let full = payloads.row(row);
+                if let Some(pos) = buffer.iter().position(|(_, payload)| payload.row() == full) {
+                    if track {
+                        delta -= topn_entry_bytes(&buffer[pos]) as isize;
+                    }
+                    buffer.remove(pos);
+                }
+            } else {
+                let key_row = keys.row(row);
+                let pos = buffer.partition_point(|(key, _)| key.row() <= key_row);
+                buffer.insert(pos, (key_row.owned(), Arc::new(payloads.row(row).owned())));
+                if track {
+                    delta += topn_entry_bytes(&buffer[pos]) as isize;
+                }
+            }
+        }
+        self.memory.record(delta);
+        self.memory.account()?;
+        Ok(emit_changelog(
+            self.schema.as_ref(),
+            self.converters.as_ref(),
+            self.output_rank_number,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ))
+    }
+
+    pub(crate) fn flush_net_diff(&mut self) -> RecordBatch {
+        if !self.net_diff {
+            return emit_changelog(
+                self.schema.as_ref(),
+                self.converters.as_ref(),
+                self.output_rank_number,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            );
+        }
+        let staged_bytes = if self.memory.tracking() { self.staging_bytes() } else { 0 };
+        let touched = std::mem::take(&mut self.staged_order);
+        let old_tops = std::mem::take(&mut self.staged_old_tops);
+        let (offset, limit) = (self.offset as usize, self.limit as usize);
+        let mut out_rows = Vec::new();
+        let mut out_kinds = Vec::new();
+        let mut out_ranks = Vec::new();
+        for part in touched {
+            let buffer = &self.groups[&part];
+            let new_top: Vec<Arc<OwnedRow>> = buffer
+                [offset.min(buffer.len())..limit.min(buffer.len())]
+                .iter()
+                .map(|(_, payload)| Arc::clone(payload))
+                .collect();
+            diff_top(
+                self.output_rank_number,
+                self.offset,
+                &old_tops[&part],
+                &new_top,
+                &mut out_rows,
+                &mut out_kinds,
+                &mut out_ranks,
+            );
+        }
+        self.memory.forget(staged_bytes);
+        self.memory.account_shrink();
+        emit_changelog(
+            self.schema.as_ref(),
+            self.converters.as_ref(),
+            self.output_rank_number,
+            out_rows,
+            out_kinds,
+            out_ranks,
+        )
     }
 
     /// Serializes the buffered rows in per-partition buffer order (partition derivable from the row).
@@ -845,7 +994,7 @@ impl TopNHandle {
     fn flush(&mut self) -> RecordBatch {
         match self {
             TopNHandle::Append(r) => r.flush_net_diff(),
-            TopNHandle::Retract(_) => RecordBatch::new_empty(Arc::new(Schema::empty())),
+            TopNHandle::Retract(r) => r.flush_net_diff(),
         }
     }
 
@@ -935,7 +1084,7 @@ impl TopNHandle {
                 limit,
                 output_rank_number,
                 snapshot.as_deref().unwrap_or_default(),
-            ))
+            ).with_net_diff(net_diff))
         } else {
             TopNHandle::Append(TopNRanker::restore(
                 partition_columns,
@@ -1309,7 +1458,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_topNRankerSta
     let ranker = unsafe { &*(handle as *const TopNHandle) };
     match ranker {
         TopNHandle::Append(r) => r.staging_bytes() as jlong,
-        TopNHandle::Retract(_) => 0,
+        TopNHandle::Retract(r) => r.staging_bytes() as jlong,
     }
 }
 
@@ -1322,7 +1471,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_topNRankerSta
     let ranker = unsafe { &*(handle as *const TopNHandle) };
     match ranker {
         TopNHandle::Append(r) => r.staged_partitions() as jlong,
-        TopNHandle::Retract(_) => 0,
+        TopNHandle::Retract(r) => r.staged_partitions() as jlong,
     }
 }
 
@@ -1590,7 +1739,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTopNRan
             offset,
             limit,
             output_rank_number != 0,
-        ))
+        ).with_net_diff(net_diff != 0))
     } else {
         // The append-only ranker is the no-OFFSET path (offset always 0).
         TopNHandle::Append(TopNRanker::new(
@@ -1682,7 +1831,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTopNRa
             limit,
             output_rank_number != 0,
             &bytes,
-        ))
+        ).with_net_diff(net_diff != 0))
     } else {
         TopNHandle::Append(TopNRanker::restore(
             partitions,
@@ -1799,5 +1948,51 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeTopNRank
 ) {
     unsafe {
         drop(from_handle::<TopNHandle>(handle));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn changelog(values: &[i64], kinds: &[i8]) -> RecordBatch {
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("k", DataType::Int64, false),
+                Field::new("v", DataType::Int64, false),
+                Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(vec![1; values.len()])),
+                Arc::new(Int64Array::from(values.to_vec())),
+                Arc::new(Int8Array::from(kinds.to_vec())),
+            ],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn retracting_top_n_emits_one_final_diff_per_logical_bundle() {
+        let mut ranker = RetractableTopNRanker::new(
+            vec![0],
+            vec![SortColumn { index: 1, ascending: true, nulls_first: false }],
+            0,
+            2,
+            false,
+        )
+        .with_net_diff(true);
+
+        assert_eq!(ranker.push(&changelog(&[10, 20, 30], &[0, 0, 0])).unwrap().num_rows(), 0);
+        assert_eq!(ranker.flush_net_diff().num_rows(), 2);
+
+        assert_eq!(ranker.push(&changelog(&[10], &[3])).unwrap().num_rows(), 0);
+        assert_eq!(ranker.push(&changelog(&[5], &[0])).unwrap().num_rows(), 0);
+        assert_eq!(ranker.staged_partitions(), 1);
+        let out = ranker.flush_net_diff();
+        let values = out.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
+        let kinds = out.column(2).as_any().downcast_ref::<Int8Array>().unwrap();
+        assert_eq!(values.values(), &[5, 10]);
+        assert_eq!(kinds.values(), &[0, 3]);
+        assert_eq!(ranker.staged_partitions(), 0);
     }
 }

@@ -178,8 +178,22 @@ impl RetractTopN {
         ))
     }
 
+    pub fn new_mini_batch(
+        partition_columns: Vec<usize>,
+        sort_columns: Vec<(usize, bool)>,
+        limit: i64,
+    ) -> Self {
+        let mut ranker = Self::new(partition_columns, sort_columns, limit);
+        ranker.0 = ranker.0.with_net_diff(true);
+        ranker
+    }
+
     pub fn push(&mut self, batch: &RecordBatch) -> RecordBatch {
         self.0.push(batch).expect("budget exceeded")
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush_net_diff()
     }
 }
 
