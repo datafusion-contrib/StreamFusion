@@ -148,6 +148,10 @@ public final class Native {
 
   public static native long keepLastDeduplicatorStagedKeys(long handle);
 
+  public static native long updatingJoinerStagingBytes(long handle);
+
+  public static native long updatingJoinerStagedKeys(long handle);
+
   public static native long windowRankerStateBytes(long handle);
 
   public static native long intervalJoinerStateBytes(long handle);
@@ -1339,6 +1343,7 @@ public final class Native {
       long[] predLongs,
       double[] predDoubles,
       String[] predStrings,
+      boolean miniBatch,
       long memoryBudgetBytes);
 
   /** Pushes a left batch, exporting the join changelog (left columns, right columns, row kind). */
@@ -1348,6 +1353,9 @@ public final class Native {
   /** Pushes a right batch, exporting the join changelog (left columns, right columns, row kind). */
   public static native void pushRightUpdatingJoiner(
       long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
+
+  public static native void flushUpdatingJoiner(
+      long handle, long outArrayAddress, long outSchemaAddress);
 
   /** Releases an updating joiner handle. */
   public static native void closeUpdatingJoiner(long handle);
@@ -1376,6 +1384,7 @@ public final class Native {
       long[] predLongs,
       double[] predDoubles,
       String[] predStrings,
+      boolean miniBatch,
       byte[] snapshot,
       long memoryBudgetBytes);
 
@@ -1392,6 +1401,7 @@ public final class Native {
       long[] predLongs,
       double[] predDoubles,
       String[] predStrings,
+      boolean miniBatch,
       byte[][] snapshots,
       long memoryBudgetBytes);
 

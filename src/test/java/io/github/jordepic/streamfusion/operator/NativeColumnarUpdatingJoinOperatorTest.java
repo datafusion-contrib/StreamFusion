@@ -9,6 +9,7 @@ import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
+import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.KeyedTwoInputStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.TwoInputStreamOperatorTestHarness;
@@ -40,6 +41,11 @@ class NativeColumnarUpdatingJoinOperatorTest {
   }
 
   private static NativeColumnarUpdatingJoinOperator rawKeyedOperator() {
+    return rawKeyedOperator(false, -1);
+  }
+
+  private static NativeColumnarUpdatingJoinOperator rawKeyedOperator(
+      boolean miniBatch, long miniBatchSize) {
     return new NativeColumnarUpdatingJoinOperator(
         new int[] {0},
         new int[] {0},
@@ -54,6 +60,8 @@ class NativeColumnarUpdatingJoinOperatorTest {
         new String[0],
         NativeUdf.Binding.EMPTY,
         new int[] {-1},
+        miniBatch,
+        miniBatchSize,
         MAX_PARALLELISM);
   }
 
@@ -71,6 +79,60 @@ class NativeColumnarUpdatingJoinOperatorTest {
       assertEquals(
           List.of(change(RowKind.INSERT, 1, 10, 1, 100), change(RowKind.DELETE, 1, 10, 1, 100)),
           collect(harness));
+    }
+  }
+
+  @Test
+  void uniqueInputsShareOneLogicalCountBoundaryAcrossBothSides() throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch> harness =
+            new KeyedTwoInputStreamOperatorTestHarness<>(
+                rawKeyedOperator(true, 4),
+                batch -> 0,
+                batch -> 0,
+                Types.INT,
+                MAX_PARALLELISM,
+                1,
+                0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement2(
+          new StreamRecord<>(batch(allocator, RIGHT, row(RowKind.INSERT, 1, 100))));
+      assertEquals(List.of(), collect(harness));
+      harness.processElement1(
+          new StreamRecord<>(
+              batch(
+                  allocator,
+                  LEFT,
+                  row(RowKind.INSERT, 1, 10),
+                  row(RowKind.DELETE, 1, 10),
+                  row(RowKind.INSERT, 1, 20))));
+      assertEquals(List.of(change(RowKind.INSERT, 1, 20, 1, 100)), collect(harness));
+    }
+  }
+
+  @Test
+  void uniqueInputsFlushBeforeTheCombinedWatermark() throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch> harness =
+            new KeyedTwoInputStreamOperatorTestHarness<>(
+                rawKeyedOperator(true, 10),
+                batch -> 0,
+                batch -> 0,
+                Types.INT,
+                MAX_PARALLELISM,
+                1,
+                0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement2(
+          new StreamRecord<>(batch(allocator, RIGHT, row(RowKind.INSERT, 1, 100))));
+      harness.processElement1(
+          new StreamRecord<>(batch(allocator, LEFT, row(RowKind.INSERT, 1, 20))));
+      harness.processWatermark1(new Watermark(5));
+      assertEquals(List.of(), collect(harness));
+      harness.processWatermark2(new Watermark(5));
+      assertEquals(List.of(change(RowKind.INSERT, 1, 20, 1, 100)), collect(harness));
     }
   }
 

@@ -28,6 +28,7 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends BiRel
   private final int[] rightKeys;
   private final int joinType;
   private final RexExpression predicate;
+  private final boolean bothJoinKeysUnique;
 
   public StreamPhysicalNativeColumnarUpdatingJoin(
       RelOptCluster cluster,
@@ -38,13 +39,15 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends BiRel
       int[] leftKeys,
       int[] rightKeys,
       int joinType,
-      RexExpression predicate) {
+      RexExpression predicate,
+      boolean bothJoinKeysUnique) {
     super(cluster, traitSet, left, right);
     this.outputRowType = outputRowType;
     this.leftKeys = leftKeys;
     this.rightKeys = rightKeys;
     this.joinType = joinType;
     this.predicate = predicate;
+    this.bothJoinKeysUnique = bothJoinKeysUnique;
   }
 
   @Override
@@ -68,7 +71,8 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends BiRel
         leftKeys,
         rightKeys,
         joinType,
-        predicate);
+        predicate,
+        bothJoinKeysUnique);
   }
 
   @Override
@@ -85,7 +89,8 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends BiRel
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getLeft().getRowType()),
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getRight().getRowType()),
         predicate,
-        FlinkKeyGroupUtils.timestampPrecisions(getLeft().getRowType(), leftKeys));
+        FlinkKeyGroupUtils.timestampPrecisions(getLeft().getRowType(), leftKeys),
+        bothJoinKeysUnique);
   }
 
   /** Digest-only reuse barrier — see {@link NativeRelDigests}. */

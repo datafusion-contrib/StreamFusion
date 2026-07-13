@@ -99,4 +99,29 @@ final class RegularJoinMatcher {
   static int[] rightKeys(StreamPhysicalJoin join) {
     return ((CommonPhysicalJoin) join).joinSpec().getRightKeys();
   }
+
+  /** Whether the join keys contain a planner-proven upsert key for this input side. */
+  static boolean joinKeyIsUnique(StreamPhysicalJoin join, int inputOrdinal) {
+    int[] joinKeys = inputOrdinal == 0 ? leftKeys(join) : rightKeys(join);
+    org.apache.calcite.rel.RelNode input = join.getInput(inputOrdinal);
+    scala.collection.Iterator<int[]> keys = join.getUpsertKeys(input, joinKeys).iterator();
+    while (keys.hasNext()) {
+      int[] uniqueKey = keys.next();
+      boolean contained = true;
+      for (int column : uniqueKey) {
+        boolean found = false;
+        for (int joinKey : joinKeys) {
+          if (column == joinKey) {
+            found = true;
+            break;
+          }
+        }
+        contained &= found;
+      }
+      if (contained) {
+        return true;
+      }
+    }
+    return false;
+  }
 }

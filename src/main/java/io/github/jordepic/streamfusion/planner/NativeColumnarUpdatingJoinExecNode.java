@@ -39,6 +39,7 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
   private final RowType rightType;
   private final RexExpression predicate;
   private final int[] keyTimestampPrecisions;
+  private final boolean bothJoinKeysUnique;
 
   public NativeColumnarUpdatingJoinExecNode(
       ReadableConfig tableConfig,
@@ -52,7 +53,8 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
       RowType leftType,
       RowType rightType,
       RexExpression predicate,
-      int[] keyTimestampPrecisions) {
+      int[] keyTimestampPrecisions,
+      boolean bothJoinKeysUnique) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-updating-join_1"),
@@ -67,6 +69,7 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
     this.rightType = rightType;
     this.predicate = predicate;
     this.keyTimestampPrecisions = keyTimestampPrecisions;
+    this.bothJoinKeysUnique = bothJoinKeysUnique;
   }
 
   @Override
@@ -81,6 +84,12 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
     int[] stateKeys = FlinkKeyGroupUtils.stateKeysForSubtasks(maxParallelism, left.getParallelism());
     KeySelector<ArrowBatch, Integer> stateKeySelector =
         batch -> stateKeys[batch.destination() >= 0 ? batch.destination() : 0];
+    boolean miniBatch =
+        bothJoinKeysUnique
+            && config.get(
+                org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED);
+    long miniBatchSize =
+        config.get(org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE);
     TwoInputTransformation<ArrowBatch, ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createTwoInputTransformation(
             left,
@@ -100,6 +109,8 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
                 predicate == null ? EMPTY_STRING : predicate.strings(),
                 predicate == null ? NativeUdf.Binding.EMPTY : predicate.udfBinding(),
                 keyTimestampPrecisions,
+                miniBatch,
+                miniBatchSize,
                 maxParallelism),
             ArrowBatchTypeInformation.INSTANCE,
             left.getParallelism(),

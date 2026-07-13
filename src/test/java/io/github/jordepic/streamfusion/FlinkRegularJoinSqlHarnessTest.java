@@ -41,6 +41,21 @@ class FlinkRegularJoinSqlHarnessTest {
   }
 
   @Test
+  void uniqueKeyUpdatingJoinUnderMiniBatchMatchesHost() throws Exception {
+    NativeParity.assertChangelogParity(
+        () -> {
+          TableEnvironment tEnv = environment();
+          tEnv.getConfig().set("table.exec.mini-batch.enabled", "true");
+          tEnv.getConfig().set("table.exec.mini-batch.allow-latency", "1 s");
+          tEnv.getConfig().set("table.exec.mini-batch.size", "4");
+          return tEnv;
+        },
+        "SELECT la.k, la.sv, rb.sw FROM "
+            + "(SELECT k, SUM(v) AS sv FROM A GROUP BY k) la JOIN "
+            + "(SELECT k, SUM(w) AS sw FROM B GROUP BY k) rb ON la.k = rb.k");
+  }
+
+  @Test
   void leftJoinMatchesHost() throws Exception {
     NativeParity.assertChangelogParity(
         FlinkRegularJoinSqlHarnessTest::environment,

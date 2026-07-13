@@ -2,6 +2,7 @@ package io.github.jordepic.streamfusion.operator;
 
 import io.github.jordepic.streamfusion.Native;
 import io.github.jordepic.streamfusion.arrow.ArrowConversion;
+import io.github.jordepic.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
@@ -12,6 +13,7 @@ import org.apache.flink.runtime.state.StateInitializationContext;
 import org.apache.flink.runtime.state.StateSnapshotContext;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.TwoInputStreamOperator;
+import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
 
@@ -47,11 +49,15 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
   private final String[] predStrings;
   private final NativeUdf.Binding predBinding;
   private final int[] keyTimestampPrecisions;
+  private final boolean miniBatch;
+  private final long miniBatchSize;
   private final int maxParallelism;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
+  private transient MiniBatchBoundary boundary;
+  private transient MiniBatchMetrics miniBatchMetrics;
   private transient ManagedMemoryBudget memoryBudget;
 
   public NativeColumnarUpdatingJoinOperator(
@@ -68,6 +74,8 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
       String[] predStrings,
       NativeUdf.Binding predBinding,
       int[] keyTimestampPrecisions,
+      boolean miniBatch,
+      long miniBatchSize,
       int maxParallelism) {
     this.leftKeys = leftKeys;
     this.rightKeys = rightKeys;
@@ -82,6 +90,8 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
     this.predStrings = predStrings;
     this.predBinding = predBinding;
     this.keyTimestampPrecisions = keyTimestampPrecisions;
+    this.miniBatch = miniBatch;
+    this.miniBatchSize = miniBatchSize;
     if (maxParallelism <= 0) {
       throw new IllegalArgumentException("native updating join state requires a positive max parallelism");
     }
@@ -121,6 +131,7 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
                 boundPredLongs,
                 predDoubles,
                 predStrings,
+                miniBatch,
                 rawSnapshots.toArray(new byte[0][]),
                 memoryBudget.bytes());
       } else {
@@ -137,6 +148,7 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
                   boundPredLongs,
                   predDoubles,
                   predStrings,
+                  miniBatch,
                   memoryBudget.bytes());
       }
     }
@@ -147,18 +159,56 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
     super.open();
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
+    if (miniBatch) {
+      boundary = new MiniBatchBoundary(miniBatchSize);
+      miniBatchMetrics = new MiniBatchMetrics(getMetricGroup());
+    }
   }
 
   @Override
   public void processElement1(StreamRecord<ArrowBatch> element) {
-    join(element.getValue(), true);
+    process(element.getValue(), true);
     publishStateBytes();
   }
 
   @Override
   public void processElement2(StreamRecord<ArrowBatch> element) {
-    join(element.getValue(), false);
+    process(element.getValue(), false);
     publishStateBytes();
+  }
+
+  private void process(ArrowBatch batch, boolean left) {
+    VectorSchemaRoot in = batch.root();
+    if (!miniBatch) {
+      join(in, left);
+      return;
+    }
+    int rows = in.getRowCount();
+    miniBatchMetrics.onPhysicalBatch();
+    try {
+      int offset = 0;
+      while (offset < rows) {
+        boolean firstContribution = offset == 0 || boundary.bufferedRows() == 0;
+        int length = boundary.nextSliceLength(rows - offset);
+        if (length < rows - offset) {
+          miniBatchMetrics.onPhysicalBatchSplit();
+        }
+        if (offset == 0 && length == rows) {
+          joinOpen(in, left);
+        } else {
+          try (VectorSchemaRoot slice = in.slice(offset, length)) {
+            joinOpen(slice, left);
+          }
+        }
+        miniBatchMetrics.onSlice(length, firstContribution);
+        offset += length;
+        if (boundary.onSlice(length)) {
+          flushBundle(FlushReason.COUNT);
+        }
+      }
+    } finally {
+      in.close();
+    }
   }
 
   /** Samples the native state size for the operator's gauges; task-thread only. */
@@ -168,8 +218,15 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
     }
   }
 
-  private void join(ArrowBatch batch, boolean left) {
-    VectorSchemaRoot in = batch.root();
+  private void join(VectorSchemaRoot in, boolean left) {
+    try {
+      joinOpen(in, left);
+    } finally {
+      in.close();
+    }
+  }
+
+  private void joinOpen(VectorSchemaRoot in, boolean left) {
     BufferAllocator inAllocator =
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
     try (ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
@@ -193,9 +250,51 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
       } else {
         out.close();
       }
-    } finally {
-      in.close();
     }
+  }
+
+  @Override
+  public void processWatermark(Watermark mark) throws Exception {
+    if (miniBatch) {
+      flushBundle(FlushReason.WATERMARK);
+      publishStateBytes();
+    }
+    super.processWatermark(mark);
+  }
+
+  @Override
+  public void prepareSnapshotPreBarrier(long checkpointId) throws Exception {
+    if (miniBatch) {
+      flushBundle(FlushReason.CHECKPOINT);
+    }
+    super.prepareSnapshotPreBarrier(checkpointId);
+  }
+
+  @Override
+  public void finish() throws Exception {
+    if (miniBatch) {
+      flushBundle(FlushReason.FINISH);
+    }
+    super.finish();
+  }
+
+  private void flushBundle(FlushReason reason) {
+    long transientBytes = Native.updatingJoinerStagingBytes(handle);
+    long touchedKeys = Native.updatingJoinerStagedKeys(handle);
+    try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
+        ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+      Native.flushUpdatingJoiner(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      VectorSchemaRoot out =
+          Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
+      int outputRows = out.getRowCount();
+      miniBatchMetrics.onFlush(reason, outputRows, touchedKeys, transientBytes);
+      if (outputRows > 0) {
+        output.collect(new StreamRecord<>(new ArrowBatch(out)));
+      } else {
+        out.close();
+      }
+    }
+    boundary.reset();
   }
 
   @Override
