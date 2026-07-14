@@ -24,6 +24,8 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.CloseableIterator;
 import org.apache.fluss.server.testutils.FlussClusterExtension;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.testcontainers.containers.KafkaContainer;
@@ -87,6 +89,16 @@ class NexmarkMatrixBenchmark {
   // matrix sets the mini-batch keys here so Flink and the native island run the same tuning,
   // per the steelman rule. Empty for the default matrix.
   private static Map<String, String> tableConfigExtras = Map.of();
+
+  private static final Map<String, String> UPSERT_KEYS =
+      Map.of(
+          "q4", "id",
+          "q9", "id",
+          "q15", "`day`",
+          "q16", "channel, `day`",
+          "q17", "auction, `day`",
+          "q18", "bidder, auction",
+          "q19", "auction, rank_number");
 
   // The opt-in native path for DATE_FORMAT/EXTRACT over TIMESTAMP_LTZ (chrono-tz in Rust instead of the
   // byte-parity JVM upcall) — reported as a second "incompatible" row for the datetime queries, exactly
@@ -706,6 +718,157 @@ class NexmarkMatrixBenchmark {
     System.out.println(out);
   }
 
+  /**
+   * The headline production-shaped comparison: Kafka JSON input and exactly-once Kafka JSON output
+   * on the same broker, with mini-batching disabled and enabled on both engines. Append-only queries
+   * use the regular Kafka connector; updating queries use their Nexmark result key through
+   * upsert-kafka. Gated by {@code SF_MATRIX_KAFKA_SINK=true}.
+   */
+  @Test
+  @EnabledIfEnvironmentVariable(named = "SF_MATRIX_KAFKA_SINK", matches = "true")
+  void exactlyOnceKafkaSinkModeComparison() throws Exception {
+    Map<String, String> miniBatch =
+        Map.of(
+            "table.exec.mini-batch.enabled", "true",
+            "table.exec.mini-batch.allow-latency", "2 s",
+            "table.exec.mini-batch.size", "50000");
+    Query[] queries = selectQueries();
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
+            .withEnv("KAFKA_TRANSACTION_MAX_TIMEOUT_MS", "7200000")) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      NexmarkKafkaBenchmark.produce(brokers, "nexmark", "json", ROWS);
+      StringBuilder out =
+          new StringBuilder(
+              "\n##### NEXMARK EXACTLY-ONCE KAFKA MODE COMPARISON ("
+                  + ROWS
+                  + " events, best of "
+                  + RUNS
+                  + ") #####\n");
+      out.append(
+          "query  Flink off  Native off  SF/Flink off  Flink on  Native on  SF/Flink on  Flink on/off  SF on/off\n");
+
+      for (int i = 0; i < queries.length; i++) {
+        Query q = queries[i];
+        double flinkOff;
+        double nativeOff;
+        double flinkOn;
+        double nativeOn;
+        if ((i & 1) == 0) {
+          flinkOff = kafkaSinkBest(brokers, q, false, Map.of());
+          nativeOff = kafkaSinkBest(brokers, q, true, Map.of());
+          flinkOn = kafkaSinkBest(brokers, q, false, miniBatch);
+          nativeOn = kafkaSinkBest(brokers, q, true, miniBatch);
+        } else {
+          flinkOn = kafkaSinkBest(brokers, q, false, miniBatch);
+          nativeOn = kafkaSinkBest(brokers, q, true, miniBatch);
+          flinkOff = kafkaSinkBest(brokers, q, false, Map.of());
+          nativeOff = kafkaSinkBest(brokers, q, true, Map.of());
+        }
+        out.append(
+            String.format(
+                "%4s  %9.3f  %10.3f  %12.2fx  %8.3f  %9.3f  %11.2fx  %12.2fx  %9.2fx%n",
+                q.label,
+                ROWS / flinkOff / 1_000_000.0,
+                ROWS / nativeOff / 1_000_000.0,
+                flinkOff / nativeOff,
+                ROWS / flinkOn / 1_000_000.0,
+                ROWS / nativeOn / 1_000_000.0,
+                flinkOn / nativeOn,
+                flinkOff / flinkOn,
+                nativeOff / nativeOn));
+      }
+      System.out.println(out);
+    }
+  }
+
+  private static double kafkaSinkBest(
+      String brokers, Query q, boolean nativeRun, Map<String, String> config) throws Exception {
+    Map<String, String> properties =
+        nativeRun
+            ? Map.of(
+                "streamfusion.native.enabled", "true",
+                "streamfusion.operator.kafkaSource.enabled", "true")
+            : Map.of("streamfusion.native.enabled", "false");
+    Map<String, String> previous = new LinkedHashMap<>();
+    properties.forEach((key, value) -> previous.put(key, System.getProperty(key)));
+    properties.forEach(System::setProperty);
+    try {
+      double best = Double.MAX_VALUE;
+      for (int run = 0; run < WARMUP + RUNS; run++) {
+        double seconds = runKafkaSinkOnce(brokers, q, nativeRun, config);
+        if (run >= WARMUP) {
+          best = Math.min(best, seconds);
+        }
+      }
+      return best;
+    } finally {
+      previous.forEach(
+          (key, value) -> {
+            if (value == null) {
+              System.clearProperty(key);
+            } else {
+              System.setProperty(key, value);
+            }
+          });
+    }
+  }
+
+  private static double runKafkaSinkOnce(
+      String brokers, Query q, boolean nativeRun, Map<String, String> config) throws Exception {
+    StreamTableEnvironment tEnv = kafkaEnvironment(brokers, "json");
+    tEnv.getConfig().getConfiguration().setString("execution.checkpointing.interval", "1 s");
+    config.forEach((key, value) -> tEnv.getConfig().getConfiguration().setString(key, value));
+    runSetup(tEnv, q);
+    PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
+    String suffix = q.label + "-" + java.util.UUID.randomUUID();
+    tEnv.executeSql(kafkaSinkDdl(q, brokers, "nexmark-output-" + suffix));
+    String plan = tEnv.explainSql(q.insertSql);
+    long start = System.nanoTime();
+    tEnv.executeSql(q.insertSql).await();
+    double seconds = (System.nanoTime() - start) / 1e9;
+    if (nativeRun && (!plan.contains("NativeKafkaSink") || scan.substitutions() < 2)) {
+      throw new IllegalStateException(
+          q.label + ": native Kafka source/sink did not engage. " + scan.explainSummary());
+    }
+    try (Admin admin =
+        Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokers))) {
+      admin.deleteTopics(List.of("nexmark-output-" + suffix)).all().get();
+    }
+    return seconds;
+  }
+
+  private static String kafkaSinkDdl(Query q, String brokers, String topic) {
+    String ddl =
+        q.sinkDdl.replace("%TS%", "TIMESTAMP_LTZ(3)").replace("%WTS%", "TIMESTAMP(3)");
+    String key = UPSERT_KEYS.get(q.label);
+    if (key != null) {
+      ddl = ddl.replace(") WITH", ", PRIMARY KEY (" + key + ") NOT ENFORCED) WITH");
+    }
+    String transactionalId = "nexmark-" + topic;
+    String options =
+        key == null
+            ? "WITH ('connector' = 'kafka', 'topic' = '"
+                + topic
+                + "', 'properties.bootstrap.servers' = '"
+                + brokers
+                + "', 'format' = 'json', 'sink.delivery-guarantee' = 'exactly-once', "
+                + "'sink.transactional-id-prefix' = '"
+                + transactionalId
+                + "')"
+            : "WITH ('connector' = 'upsert-kafka', 'topic' = '"
+                + topic
+                + "', 'properties.bootstrap.servers' = '"
+                + brokers
+                + "', 'key.format' = 'json', 'value.format' = 'json', "
+                + "'sink.delivery-guarantee' = 'exactly-once', "
+                + "'sink.transactional-id-prefix' = '"
+                + transactionalId
+                + "')";
+    return ddl.replace("WITH ('connector' = 'blackhole')", options);
+  }
+
   private static double generatorBestWithConfig(
       Query q, boolean nativeRun, Map<String, String> config) throws Exception {
     tableConfigExtras = config;
@@ -1242,6 +1405,13 @@ class NexmarkMatrixBenchmark {
 
   private static double runKafkaOnce(String brokers, String format, boolean nativeRun, Query q)
       throws Exception {
+    StreamTableEnvironment tEnv = kafkaEnvironment(brokers, format);
+    runSetup(tEnv, q);
+    PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
+    return execute(tEnv, scan, q, nativeRun, "TIMESTAMP_LTZ(3)");
+  }
+
+  private static StreamTableEnvironment kafkaEnvironment(String brokers, String format) {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     env.getConfig().enableObjectReuse();
@@ -1279,9 +1449,7 @@ class NexmarkMatrixBenchmark {
             + " AS price, bid.channel AS channel, bid.url AS url, rowtime AS `dateTime`, bid.extra AS"
             + " extra FROM src WHERE event_type = 2");
     tEnv.createTemporarySystemFunction("count_char", CountChar.class);
-    runSetup(tEnv, q);
-    PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
-    return execute(tEnv, scan, q, nativeRun, "TIMESTAMP_LTZ(3)");
+    return tEnv;
   }
 
   // ----- shared -----

@@ -842,6 +842,29 @@ SF_MATRIX_QUERIES=q0,q1,q2,q3,q4,q5,q7,q8,q9,q10,q11,q12,q13,q14,q15,q16,q17,q18
 mvn -pl :streamfusion-runtime test -Pbench
 -Dnative.cargo.args="build --release --features mimalloc" -Dtest=NexmarkMatrixBenchmark`.
 
+### Exactly-once Kafka output matrix
+
+`NexmarkMatrixBenchmark#exactlyOnceKafkaSinkModeComparison` replaces the counting blackhole with a
+real exactly-once Kafka sink while retaining the same Kafka JSON input. Stock Flink and
+StreamFusion therefore read from and publish to the same test broker. The harness runs both engines
+with mini-batching disabled and with the same 2s/50,000-row configuration enabled, alternating mode
+order per query. Append-only queries use `kafka`; q4, q9, and q15-q19 use `upsert-kafka` with the
+query result's actual unique key. Every measured run uses a fresh topic and transactional ID, waits
+for the bounded job's final commit, then removes the output topic outside the timed interval.
+
+Run the four-way comparison in the mandatory release build with:
+
+`SF_BENCHMARK=true SF_MATRIX_KAFKA_SINK=true SF_ROWS=500000
+SF_MATRIX_QUERIES=q0,q1,q2,q3,q4,q5,q7,q8,q9,q10,q11,q12,q13,q14,q15,q16,q17,q18,q19,q20,q21,q22,q23
+mvn -pl :streamfusion-runtime test -Pbench
+-Dnative.cargo.args="build --release --features mimalloc,kafka,json"
+-Dtest=NexmarkMatrixBenchmark#exactlyOnceKafkaSinkModeComparison`.
+
+`SF_MATRIX_QUERIES` may select a focused subset. A 10,000-event release smoke run pins both sink
+shapes: q0 completed all four append-mode cells, and q4 completed all four upsert-mode cells. Those
+short runs validate routing and transaction completion only; they are intentionally not reported as
+performance results.
+
 #### Historical tuned-only matrix (2026-07-05)
 
 Production Flink deployments routinely enable mini-batch for stateful queries, so the matrix has a
