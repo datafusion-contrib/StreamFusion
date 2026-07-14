@@ -262,6 +262,38 @@ fn bench_local_group_by_logical_bundle(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_local_group_by_extremes(c: &mut Criterion) {
+    let keys: ArrayRef = Arc::new(Int64Array::from_iter_values(
+        (0..ROWS as i64).map(|i| i % 64),
+    ));
+    let values: ArrayRef = Arc::new(Int64Array::from_iter_values(
+        (0..ROWS as i64).map(|i| (i * 37) % 8192),
+    ));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key0", DataType::Int64, false),
+            Field::new("value0", DataType::Int64, false),
+        ])),
+        vec![keys, values],
+    )
+    .unwrap();
+    let mut group = c.benchmark_group("local_group_by_extremes");
+    group.throughput(Throughput::Elements(ROWS as u64));
+    group.bench_function("min_max_logical_4096_physical_1024", |b| {
+        b.iter_batched(
+            || LocalGroupBy::new(vec![1, 2], vec![0, 0], vec![1, 1], vec![0]),
+            |mut aggregator| {
+                for offset in (0..ROWS).step_by(1024) {
+                    aggregator.update(black_box(&batch.slice(offset, 1024)));
+                }
+                black_box(aggregator.flush());
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.finish();
+}
+
 // Decode a batch of raw JSON message bodies (one document per row) into a typed columnar batch —
 // the source-edge work that replaces Flink's per-record document-tree -> RowData materialization.
 #[cfg(feature = "json")]
@@ -973,6 +1005,7 @@ criterion_group!(
     bench_group_by_string_key,
     bench_group_by_logical_bundle,
     bench_local_group_by_logical_bundle,
+    bench_local_group_by_extremes,
     bench_json_decode,
     bench_session_keyed,
     bench_over,

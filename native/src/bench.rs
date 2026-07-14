@@ -392,15 +392,25 @@ impl Normalize {
 pub struct LocalGroupBy(LocalGroupAggregator);
 
 impl LocalGroupBy {
-    pub fn sum(value_column: i64, key_columns: Vec<usize>) -> Self {
+    pub fn new(
+        kinds: Vec<i64>,
+        value_types: Vec<i64>,
+        value_columns: Vec<i64>,
+        key_columns: Vec<usize>,
+    ) -> Self {
+        let aggregate_count = kinds.len();
         LocalGroupBy(LocalGroupAggregator::new(
-            vec![0],
-            vec![0],
-            vec![value_column],
-            vec![-1],
+            kinds,
+            value_types,
+            value_columns,
+            vec![-1; aggregate_count],
             key_columns,
             Vec::new(),
         ))
+    }
+
+    pub fn sum(value_column: i64, key_columns: Vec<usize>) -> Self {
+        Self::new(vec![0], vec![0], vec![value_column], key_columns)
     }
 
     pub fn update(&mut self, batch: &RecordBatch) {
