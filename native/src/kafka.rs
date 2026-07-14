@@ -1,5 +1,30 @@
 use crate::*;
 
+/// Errors the Java Kafka consumer absorbs while its metadata/network layer reconnects. librdkafka
+/// can surface these as queue events even though the same consumer remains usable; permanent data,
+/// offset, authentication, and authorization errors deliberately are not on this list.
+#[cfg(feature = "kafka")]
+fn transient_consumer_error(error: rdkafka::bindings::rd_kafka_resp_err_t) -> bool {
+    use rdkafka::bindings::rd_kafka_resp_err_t::*;
+
+    matches!(
+        error,
+        RD_KAFKA_RESP_ERR__TRANSPORT
+            | RD_KAFKA_RESP_ERR__RESOLVE
+            | RD_KAFKA_RESP_ERR__ALL_BROKERS_DOWN
+            | RD_KAFKA_RESP_ERR__TIMED_OUT
+            | RD_KAFKA_RESP_ERR__TIMED_OUT_QUEUE
+            | RD_KAFKA_RESP_ERR__WAIT_COORD
+            | RD_KAFKA_RESP_ERR__IN_PROGRESS
+            | RD_KAFKA_RESP_ERR__PREV_IN_PROGRESS
+            | RD_KAFKA_RESP_ERR__WAIT_CACHE
+            | RD_KAFKA_RESP_ERR__INTR
+            | RD_KAFKA_RESP_ERR__RETRY
+            | RD_KAFKA_RESP_ERR__NODE_UPDATE
+            | RD_KAFKA_RESP_ERR__DESTROY_BROKER
+    )
+}
+
 /// The production native Kafka consumer for one Flink subtask: a single rdkafka `BaseConsumer` that
 /// multiplexes all of the subtask's assigned partitions (Flink-parity — one consumer, not one per
 /// split). Each `poll` buckets the drained payloads by partition directly into Arrow binary body
@@ -297,6 +322,7 @@ impl KafkaSplitReader {
                 }
             } else if message.err
                 != rdsys::rd_kafka_resp_err_t::RD_KAFKA_RESP_ERR__PARTITION_EOF
+                && !transient_consumer_error(message.err)
                 && context.error.is_none()
             {
                 let name = std::ffi::CStr::from_ptr(rdsys::rd_kafka_err2name(message.err))
@@ -460,6 +486,23 @@ impl KafkaSplitReader {
             &mut out_array as *mut FFI_ArrowArray as jlong,
             &mut out_schema as *mut FFI_ArrowSchema as jlong,
         )
+    }
+}
+
+#[cfg(all(test, feature = "kafka"))]
+mod kafka_error_tests {
+    use super::transient_consumer_error;
+    use rdkafka::bindings::rd_kafka_resp_err_t::*;
+
+    #[test]
+    fn retries_transport_but_surfaces_semantic_and_security_failures() {
+        assert!(transient_consumer_error(RD_KAFKA_RESP_ERR__TRANSPORT));
+        assert!(transient_consumer_error(RD_KAFKA_RESP_ERR__ALL_BROKERS_DOWN));
+        assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR_OFFSET_OUT_OF_RANGE));
+        assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR__AUTO_OFFSET_RESET));
+        assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR__AUTHENTICATION));
+        assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR_TOPIC_AUTHORIZATION_FAILED));
+        assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR__UNKNOWN_TOPIC));
     }
 }
 
