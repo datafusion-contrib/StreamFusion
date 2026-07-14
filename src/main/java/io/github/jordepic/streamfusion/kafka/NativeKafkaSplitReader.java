@@ -6,6 +6,7 @@ import io.github.jordepic.streamfusion.format.NativeMessageDecoderFactory;
 import io.github.jordepic.streamfusion.operator.ArrowBatch;
 import io.github.jordepic.streamfusion.operator.NativeAllocator;
 import io.github.jordepic.streamfusion.operator.NativeSourceWatermarks;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -22,6 +23,7 @@ import org.apache.flink.connector.base.source.reader.splitreader.SplitReader;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitsChange;
 import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 
 /**
@@ -223,6 +225,21 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
   public void wakeUp() {
     // fetch() polls with a bounded timeout and returns promptly, so the fetcher loop is never blocked
     // for long; no interrupt of an in-flight native poll is needed.
+  }
+
+  /** Commits completed-checkpoint positions from the fetcher thread that owns this consumer. */
+  void commitOffsets(Map<TopicPartition, OffsetAndMetadata> offsets) throws IOException {
+    String[] topics = new String[offsets.size()];
+    long[] partitions = new long[offsets.size()];
+    long[] positions = new long[offsets.size()];
+    int index = 0;
+    for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet()) {
+      topics[index] = entry.getKey().topic();
+      partitions[index] = entry.getKey().partition();
+      positions[index] = entry.getValue().offset();
+      index++;
+    }
+    NativeKafka.commitKafkaOffsets(handle, topics, partitions, positions);
   }
 
   @Override

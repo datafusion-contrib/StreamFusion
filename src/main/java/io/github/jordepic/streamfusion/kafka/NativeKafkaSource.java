@@ -97,8 +97,12 @@ public final class NativeKafkaSource
                 decoderFactory,
                 decodedType,
                 rowtimeIndex);
+    Configuration configuration = toConfiguration(props);
     return new NativeKafkaSourceReader(
-        splitReaderSupplier, new NativeKafkaRecordEmitter(), toConfiguration(props), context);
+        new NativeKafkaSourceFetcherManager(splitReaderSupplier, configuration),
+        new NativeKafkaRecordEmitter(),
+        configuration,
+        context);
   }
 
   @Override

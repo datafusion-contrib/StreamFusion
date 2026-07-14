@@ -108,6 +108,32 @@ impl KafkaSplitReader {
         self.reassign();
     }
 
+    /// Commits a completed Flink checkpoint for Kafka-side monitoring. Flink state remains the
+    /// recovery authority; the synchronous mode lets the Java reader distinguish a real broker ack
+    /// from a failed commit without sharing the native handle across threads.
+    fn commit_offsets(
+        &self,
+        topics: &[String],
+        partitions: &[i64],
+        offsets: &[i64],
+    ) -> Result<(), String> {
+        use rdkafka::consumer::{CommitMode, Consumer};
+        use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
+
+        let mut tpl = TopicPartitionList::with_capacity(topics.len());
+        for i in 0..topics.len() {
+            tpl.add_partition_offset(
+                &topics[i],
+                partitions[i] as i32,
+                Offset::Offset(offsets[i]),
+            )
+            .map_err(|error| format!("failed to build Kafka offset commit: {error}"))?;
+        }
+        self.consumer
+            .commit(&tpl, CommitMode::Sync)
+            .map_err(|error| format!("failed to commit Kafka offsets: {error}"))
+    }
+
     /// (Re)assigns the consumer to exactly the currently-tracked partitions, each seeked to its tracked
     /// offset (or start marker). assign() with explicit offsets replaces the whole assignment.
     fn reassign(&mut self) {
@@ -494,6 +520,30 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_un
     let topics = read_string_array(&mut env, &topics);
     let partitions = read_longs(&env, &partitions);
     reader.unassign_splits(&topics, &partitions);
+}
+
+/// Commits checkpoint positions from a split-fetcher task, serializing the operation with native
+/// poll/assign/close access to this handle.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_commitKafkaOffsets<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    topics: JObjectArray<'local>,
+    partitions: JLongArray<'local>,
+    offsets: JLongArray<'local>,
+) {
+    kafka_jni(&mut env, (), |env| {
+        let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
+        let topics = read_string_array(env, &topics);
+        let partitions = read_longs(env, &partitions);
+        let offsets = read_longs(env, &offsets);
+        if topics.len() != partitions.len() || topics.len() != offsets.len() {
+            return Err("Kafka offset commit arrays have different lengths".to_string());
+        }
+        reader.commit_offsets(&topics, &partitions, &offsets)
+    });
 }
 
 /// Polls one cycle, producing one Arrow binary-body batch per partition that had messages. Returns the number of

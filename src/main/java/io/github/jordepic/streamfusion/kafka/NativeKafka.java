@@ -1,6 +1,7 @@
 package io.github.jordepic.streamfusion.kafka;
 
 import io.github.jordepic.streamfusion.NativeExtensionLoader;
+import java.io.IOException;
 
 /** JNI entry point for the optional native Kafka source. */
 public final class NativeKafka {
@@ -32,6 +33,9 @@ public final class NativeKafka {
       long[] stoppingOffsets);
 
   public static native void unassignKafkaSplits(long handle, String[] topics, long[] partitions);
+
+  public static native void commitKafkaOffsets(
+      long handle, String[] topics, long[] partitions, long[] offsets) throws IOException;
 
   public static native int pollKafkaBatch(long handle, int maxRecords, long timeoutMillis);
 

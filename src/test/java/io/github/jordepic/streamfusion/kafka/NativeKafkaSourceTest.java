@@ -21,9 +21,12 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -216,6 +219,39 @@ class NativeKafkaSourceTest {
         assertTrue(error.getMessage().contains("_AUTO_OFFSET_RESET"), error::getMessage);
       } finally {
         NativeKafka.closeKafkaConsumer(handle);
+      }
+    }
+  }
+
+  @Test
+  void commitsCompletedCheckpointOffsetsToKafka() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      String group = "native-source-checkpoint-it";
+      Properties props = consumerProperties(brokers);
+      props.setProperty("group.id", group);
+      long handle =
+          open(props, new String[] {TOPIC}, new long[] {0}, new long[] {Long.MIN_VALUE});
+      try {
+        NativeKafka.commitKafkaOffsets(
+            handle, new String[] {TOPIC}, new long[] {0}, new long[] {37});
+      } finally {
+        NativeKafka.closeKafkaConsumer(handle);
+      }
+
+      Properties adminProps = new Properties();
+      adminProps.setProperty(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
+      try (AdminClient admin = AdminClient.create(adminProps)) {
+        assertEquals(
+            37,
+            admin
+                .listConsumerGroupOffsets(group)
+                .partitionsToOffsetAndMetadata()
+                .get()
+                .get(new TopicPartition(TOPIC, 0))
+                .offset());
       }
     }
   }
