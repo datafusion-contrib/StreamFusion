@@ -52,6 +52,17 @@ public final class NativeKafka {
       String timestampFormat,
       String[] logicalTypes);
 
+  /** Serializes projected key/value bytes together; null values are upsert tombstones. */
+  public static native byte[][][] encodeKafkaJsonRecords(
+      long arrayAddress,
+      long schemaAddress,
+      boolean ignoreNullFields,
+      String timestampFormat,
+      String[] logicalTypes,
+      int[] keyFields,
+      int[] valueFields,
+      boolean upsert);
+
   public static native int drainKafkaSplit(
       long handle, long[] splitMeta, String[] outTopic, long outArrayAddress, long outSchemaAddress);
 

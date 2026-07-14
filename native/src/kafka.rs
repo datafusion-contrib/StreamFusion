@@ -70,6 +70,63 @@ pub(crate) fn encode_json_batch(
 }
 
 #[cfg(feature = "kafka")]
+fn encode_json_records(
+    batch: &RecordBatch,
+    ignore_null_fields: bool,
+    timestamp_format: &str,
+    logical_types: &[String],
+    key_fields: &[usize],
+    value_fields: &[usize],
+    upsert: bool,
+) -> Result<(Vec<Option<Vec<u8>>>, Vec<Option<Vec<u8>>>), String> {
+    let key_batch = batch
+        .project(key_fields)
+        .map_err(|error| format!("failed to project Kafka key fields: {error}"))?;
+    let value_batch = batch
+        .project(value_fields)
+        .map_err(|error| format!("failed to project Kafka value fields: {error}"))?;
+    let project_types = |fields: &[usize]| {
+        fields
+            .iter()
+            .map(|index| logical_types[*index].clone())
+            .collect::<Vec<_>>()
+    };
+    let keys = if key_fields.is_empty() {
+        vec![None; batch.num_rows()]
+    } else {
+        encode_json_batch(
+            &key_batch,
+            ignore_null_fields,
+            timestamp_format,
+            &project_types(key_fields),
+        )?
+        .into_iter()
+        .map(Some)
+        .collect()
+    };
+    let mut values = encode_json_batch(
+        &value_batch,
+        ignore_null_fields,
+        timestamp_format,
+        &project_types(value_fields),
+    )?
+    .into_iter()
+    .map(Some)
+    .collect::<Vec<_>>();
+    if upsert {
+        let kinds = row_kind_column(batch).ok_or_else(|| {
+            "upsert Kafka serialization requires the hidden row-kind column".to_string()
+        })?;
+        for (index, value) in values.iter_mut().enumerate() {
+            if matches!(kinds.value(index), 1 | 3) {
+                *value = None;
+            }
+        }
+    }
+    Ok((keys, values))
+}
+
+#[cfg(feature = "kafka")]
 const FLINK_LOGICAL_TYPE: &str = "streamfusion.flink.logical-type";
 
 #[cfg(feature = "kafka")]
@@ -1038,6 +1095,79 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_en
                 .map_err(|error| format!("failed to store Kafka JSON value: {error}"))?;
         }
         Ok(values.into_raw())
+    })
+}
+
+#[cfg(feature = "kafka")]
+fn byte_array_array<'local>(
+    env: &mut JNIEnv<'local>,
+    values: &[Option<Vec<u8>>],
+) -> Result<jni::objects::JObjectArray<'local>, String> {
+    let result = env
+        .new_object_array(values.len() as i32, "[B", jni::objects::JObject::null())
+        .map_err(|error| format!("failed to allocate Kafka JSON result: {error}"))?;
+    for (index, value) in values.iter().enumerate() {
+        if let Some(value) = value {
+            let value = env
+                .byte_array_from_slice(value)
+                .map_err(|error| format!("failed to materialize Kafka JSON value: {error}"))?;
+            env.set_object_array_element(&result, index as i32, value)
+                .map_err(|error| format!("failed to store Kafka JSON value: {error}"))?;
+        }
+    }
+    Ok(result)
+}
+
+/// Serializes projected key/value rows together so an upsert batch crosses JNI once. Null values
+/// are Kafka tombstones for DELETE and UPDATE_BEFORE, matching Flink's upsert-kafka schema.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_encodeKafkaJsonRecords<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    array_address: jlong,
+    schema_address: jlong,
+    ignore_null_fields: jboolean,
+    timestamp_format: JString<'local>,
+    logical_types: JObjectArray<'local>,
+    key_fields: JIntArray<'local>,
+    value_fields: JIntArray<'local>,
+    upsert: jboolean,
+) -> jni::sys::jobjectArray {
+    kafka_jni(&mut env, std::ptr::null_mut(), |env| {
+        let batch = import_record_batch(array_address, schema_address);
+        let timestamp_format: String = env
+            .get_string(&timestamp_format)
+            .map_err(|error| format!("failed to read JSON timestamp format: {error}"))?
+            .into();
+        let logical_types = read_string_array(env, &logical_types);
+        let key_fields = read_int_array(env, &key_fields)
+            .into_iter()
+            .map(|index| index as usize)
+            .collect::<Vec<_>>();
+        let value_fields = read_int_array(env, &value_fields)
+            .into_iter()
+            .map(|index| index as usize)
+            .collect::<Vec<_>>();
+        let (keys, values) = encode_json_records(
+            &batch,
+            ignore_null_fields != 0,
+            &timestamp_format,
+            &logical_types,
+            &key_fields,
+            &value_fields,
+            upsert != 0,
+        )?;
+        let keys = byte_array_array(env, &keys)?;
+        let values = byte_array_array(env, &values)?;
+        let result = env
+            .new_object_array(2, "[[B", jni::objects::JObject::null())
+            .map_err(|error| format!("failed to allocate Kafka record result: {error}"))?;
+        env.set_object_array_element(&result, 0, keys)
+            .map_err(|error| format!("failed to store Kafka keys: {error}"))?;
+        env.set_object_array_element(&result, 1, values)
+            .map_err(|error| format!("failed to store Kafka values: {error}"))?;
+        Ok(result.into_raw())
     })
 }
 

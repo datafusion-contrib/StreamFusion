@@ -20,16 +20,27 @@ public final class NativeKafkaJsonSerializationOperator
   private final boolean ignoreNullFields;
   private final String timestampFormat;
   private final String[] logicalTypes;
+  private final int[] keyFields;
+  private final int[] valueFields;
+  private final boolean upsert;
   private transient Counter serializationBatches;
   private transient Counter serializationRows;
   private transient Counter serializedBytes;
   private transient Counter serializationNanos;
 
   public NativeKafkaJsonSerializationOperator(
-      boolean ignoreNullFields, String timestampFormat, String[] logicalTypes) {
+      boolean ignoreNullFields,
+      String timestampFormat,
+      String[] logicalTypes,
+      int[] keyFields,
+      int[] valueFields,
+      boolean upsert) {
     this.ignoreNullFields = ignoreNullFields;
     this.timestampFormat = timestampFormat;
     this.logicalTypes = logicalTypes;
+    this.keyFields = keyFields;
+    this.valueFields = valueFields;
+    this.upsert = upsert;
   }
 
   @Override
@@ -53,17 +64,29 @@ public final class NativeKafkaJsonSerializationOperator
           ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
         Data.exportVectorSchemaRoot(
             allocator, root, NativeAllocator.DICTIONARIES, array, schema);
-        byte[][] values =
-            NativeKafka.encodeKafkaJsonBatch(
+        byte[][][] records =
+            NativeKafka.encodeKafkaJsonRecords(
                 array.memoryAddress(),
                 schema.memoryAddress(),
                 ignoreNullFields,
                 timestampFormat,
-                logicalTypes);
+                logicalTypes,
+                keyFields,
+                valueFields,
+                upsert);
+        byte[][] keys = records[0];
+        byte[][] values = records[1];
         long bytes = 0;
-        for (byte[] value : values) {
-          bytes += value.length;
-          output.collect(new StreamRecord<>(new PreSerializedKafkaRecord(null, value)));
+        for (int index = 0; index < values.length; index++) {
+          byte[] key = keys[index];
+          byte[] value = values[index];
+          if (key != null) {
+            bytes += key.length;
+          }
+          if (value != null) {
+            bytes += value.length;
+          }
+          output.collect(new StreamRecord<>(new PreSerializedKafkaRecord(key, value)));
         }
         serializationBatches.inc();
         serializationRows.inc(values.length);
