@@ -25,6 +25,42 @@ fn transient_consumer_error(error: rdkafka::bindings::rd_kafka_resp_err_t) -> bo
     )
 }
 
+#[cfg(feature = "kafka")]
+fn encode_json_batch(
+    batch: &RecordBatch,
+    ignore_null_fields: bool,
+    timestamp_format: &str,
+) -> Result<Vec<Vec<u8>>, String> {
+    use arrow::json::writer::{LineDelimited, WriterBuilder};
+
+    let mut builder =
+        WriterBuilder::new().with_explicit_nulls(!ignore_null_fields);
+    if timestamp_format.eq_ignore_ascii_case("ISO-8601") {
+        builder = builder
+            .with_timestamp_format("%Y-%m-%dT%H:%M:%S%.f".to_string())
+            .with_timestamp_tz_format("%Y-%m-%dT%H:%M:%S%.fZ".to_string());
+    } else {
+        builder = builder
+            .with_timestamp_format("%Y-%m-%d %H:%M:%S%.f".to_string())
+            .with_timestamp_tz_format("%Y-%m-%d %H:%M:%S%.fZ".to_string());
+    }
+    let mut bytes = Vec::new();
+    {
+        let mut writer = builder.build::<_, LineDelimited>(&mut bytes);
+        writer
+            .write(batch)
+            .map_err(|error| format!("failed to encode Kafka JSON batch: {error}"))?;
+        writer
+            .finish()
+            .map_err(|error| format!("failed to finish Kafka JSON batch: {error}"))?;
+    }
+    Ok(bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(<[u8]>::to_vec)
+        .collect())
+}
+
 /// The production native Kafka consumer for one Flink subtask: a single rdkafka `BaseConsumer` that
 /// multiplexes all of the subtask's assigned partitions (Flink-parity — one consumer, not one per
 /// split). Each `poll` buckets the drained payloads by partition directly into Arrow binary body
@@ -491,8 +527,12 @@ impl KafkaSplitReader {
 
 #[cfg(all(test, feature = "kafka"))]
 mod kafka_error_tests {
-    use super::transient_consumer_error;
+    use super::{encode_json_batch, transient_consumer_error};
+    use arrow::array::{ArrayRef, BooleanArray, Int64Array, StringArray};
+    use arrow::datatypes::{DataType, Field, Schema};
+    use arrow::record_batch::RecordBatch;
     use rdkafka::bindings::rd_kafka_resp_err_t::*;
+    use std::sync::Arc;
 
     #[test]
     fn retries_transport_but_surfaces_semantic_and_security_failures() {
@@ -503,6 +543,30 @@ mod kafka_error_tests {
         assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR__AUTHENTICATION));
         assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR_TOPIC_AUTHORIZATION_FAILED));
         assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR__UNKNOWN_TOPIC));
+    }
+
+    #[test]
+    fn encodes_a_whole_arrow_batch_as_individual_json_values() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("name", DataType::Utf8, true),
+            Field::new("active", DataType::Boolean, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![1, 2])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("one"), None])),
+                Arc::new(BooleanArray::from(vec![true, false])),
+            ],
+        )
+        .unwrap();
+
+        let explicit = encode_json_batch(&batch, false, "SQL").unwrap();
+        assert_eq!(explicit[0], br#"{"id":1,"name":"one","active":true}"#);
+        assert_eq!(explicit[1], br#"{"id":2,"name":null,"active":false}"#);
+        let omitted = encode_json_batch(&batch, true, "SQL").unwrap();
+        assert_eq!(omitted[1], br#"{"id":2,"active":false}"#);
     }
 }
 
@@ -717,6 +781,51 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_wa
     let reader = handle as *const KafkaSplitReader;
     let queue = unsafe { (*reader).consumer_queue };
     unsafe { rdkafka::bindings::rd_kafka_queue_yield(queue) };
+}
+
+/// Imports a whole Arrow batch once and materializes the final `byte[]` values consumed by
+/// KafkaProducer. The JNI boundary is batch-grained even though Kafka's Java API requires one heap
+/// array per record.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_encodeKafkaJsonBatch<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    array_address: jlong,
+    schema_address: jlong,
+    ignore_null_fields: jboolean,
+    timestamp_format: JString<'local>,
+) -> jni::sys::jobjectArray {
+    kafka_jni(&mut env, std::ptr::null_mut(), |env| {
+        let batch = import_record_batch(array_address, schema_address);
+        let timestamp_format: String = env
+            .get_string(&timestamp_format)
+            .map_err(|error| format!("failed to read JSON timestamp format: {error}"))?
+            .into();
+        let encoded = encode_json_batch(&batch, ignore_null_fields != 0, &timestamp_format)?;
+        if encoded.len() != batch.num_rows() {
+            return Err(format!(
+                "Kafka JSON encoder produced {} records for {} Arrow rows",
+                encoded.len(),
+                batch.num_rows()
+            ));
+        }
+        let values = env
+            .new_object_array(
+                encoded.len() as i32,
+                "[B",
+                jni::objects::JObject::null(),
+            )
+            .map_err(|error| format!("failed to allocate Kafka JSON result: {error}"))?;
+        for (index, value) in encoded.iter().enumerate() {
+            let value = env
+                .byte_array_from_slice(value)
+                .map_err(|error| format!("failed to materialize Kafka JSON value: {error}"))?;
+            env.set_object_array_element(&values, index as i32, value)
+                .map_err(|error| format!("failed to store Kafka JSON value: {error}"))?;
+        }
+        Ok(values.into_raw())
+    })
 }
 
 /// Drains one pending per-partition body batch, writes `[partition, nextOffset]` into `splitMeta`, and
