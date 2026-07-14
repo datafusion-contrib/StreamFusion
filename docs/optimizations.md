@@ -483,6 +483,14 @@ away).
 files at a row target or checkpoint instead of one file per batch — per-batch footer/syscall
 overhead was a major cost. Parquet copy 2.61x → 4.68x, Parquet sink 1.06x → 2.24x (`16b18fc`).
 
+**Batch-native Kafka JSON serialization** (`5392cf0`, `7921ad0`). A whole Arrow batch crosses JNI
+once and arrow-json encodes its rows in one writer pass, rather than transposing the batch to
+`RowData` and invoking Flink/Jackson once per record. The JNI call materializes the final heap
+`byte[]` values directly because KafkaProducer's Java API requires them; there is no intermediate
+native pointer registry or second copy/drain call. Flink's stock Kafka sink consumes those bytes, so
+the optimization changes only serialization while retaining its transaction and recovery path.
+Criterion and end-to-end exactly-once measurements are tracked with the remaining sink work.
+
 ## 7. Measurement discipline
 
 Not optimizations themselves, but what makes them findable and trustworthy:

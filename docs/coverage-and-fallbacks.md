@@ -442,6 +442,20 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
     streaming-mode rejection.
   - A **changelog (retracting) input** — defense-in-depth; Flink's own validation rejects it first.
 - **Filesystem sink, non-Parquet format** — any non-Parquet sink format falls back.
+- **Kafka JSON sink** — a fixed-topic, value-only, insert-only JSON table serializes each Arrow
+  batch natively and hands the final value bytes to Flink's unmodified `KafkaSink`. Delivery
+  guarantees (`none`/`at-least-once`/`exactly-once`), producer properties, transactional ID prefix,
+  transaction naming strategy, sink parallelism, checkpoint/recovery commit and abort, and Kafka
+  metrics therefore remain Flink's own contract. Broker tests pin committed output both normally
+  and across a post-checkpoint failover. The native serializer currently covers BOOLEAN,
+  TINYINT/SMALLINT/INT/BIGINT, FLOAT/DOUBLE, CHAR/VARCHAR, and TIMESTAMP (SQL or ISO-8601), including
+  `encode.ignore-null-fields`. Every sink fallback cause:
+  - a non-JSON value format, multiple/dynamic topics, a key format or key/value projection;
+  - a non-default partitioner, sink-side buffer flushing, writable metadata, or any other sink
+    ability;
+  - a changelog input, a column outside the verified scalar family above, or an unrecognized
+    delivery/transaction option;
+  - missing `properties.bootstrap.servers`, or exactly-once without a transactional ID prefix.
 - **Kafka** — missing `streamfusion-kafka` or the matching `streamfusion-*` format JAR; a value format
   outside JSON/CSV/raw/bare-Avro/`avro-confluent`/protobuf; a `key.format`;
   a `scan.bounded.mode` other than unbounded/latest-offset; protobuf fields needing representation
