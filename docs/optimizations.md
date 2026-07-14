@@ -488,8 +488,11 @@ once and arrow-json encodes its rows in one writer pass, rather than transposing
 `RowData` and invoking Flink/Jackson once per record. The JNI call materializes the final heap
 `byte[]` values directly because KafkaProducer's Java API requires them; there is no intermediate
 native pointer registry or second copy/drain call. Flink's stock Kafka sink consumes those bytes, so
-the optimization changes only serialization while retaining its transaction and recovery path.
-Criterion and end-to-end exactly-once measurements are tracked with the remaining sink work.
+the optimization changes only serialization while retaining its transaction and recovery path. A
+4096-row scalar JSON Criterion comparison measured 592 µs / 6.92 M rows/s for one batch writer
+versus 3.55 ms / 1.15 M rows/s when invoking the production writer once per row: **6.0x** from
+batching alone. Broker tests additionally prove committed exactly-once output before and after a
+post-checkpoint failover (`03f723c`, `91da821`).
 
 ## 7. Measurement discipline
 

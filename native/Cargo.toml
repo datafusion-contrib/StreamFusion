@@ -131,3 +131,8 @@ bytes = "1"
 [[bench]]
 name = "operators"
 harness = false
+
+[[bench]]
+name = "kafka_sink"
+harness = false
+required-features = ["kafka"]

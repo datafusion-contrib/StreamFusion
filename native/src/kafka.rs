@@ -26,7 +26,7 @@ fn transient_consumer_error(error: rdkafka::bindings::rd_kafka_resp_err_t) -> bo
 }
 
 #[cfg(feature = "kafka")]
-fn encode_json_batch(
+pub(crate) fn encode_json_batch(
     batch: &RecordBatch,
     ignore_null_fields: bool,
     timestamp_format: &str,

@@ -16,6 +16,12 @@ Run:
 cd native && cargo bench
 ```
 
+The optional Kafka sink encoder benchmark requires its connector feature:
+
+```bash
+cd native && cargo bench --features kafka --bench kafka_sink
+```
+
 Criterion reports time per batch with a confidence interval and compares against the
 previous run, so a regression in a hot loop is visible commit-to-commit. Each bench
 declares its row count as throughput, so Criterion also prints elements/s.
@@ -62,6 +68,9 @@ Current benches:
 - `date_format/compiled` vs `date_format/per_row_parse` — the DATE_FORMAT hot loop after and
   before the compile-once change (pattern parsed once vs re-parsed inside every row's Display),
   kept as an A/B pair so the win stays visible.
+- `kafka_json_sink/{whole_arrow_batch,one_writer_per_row}` — the production JSON encoder over one
+  4096-row Arrow batch versus the same encoder invoked on 4096 one-row slices, isolating the sink's
+  batching win from Kafka I/O and checkpointing.
 
 ### Results
 
@@ -91,6 +100,8 @@ measured before the pin (or without it) are not comparable to these.
 | `date_format/compiled` | 4096 | 378 µs | ~10.8 Melem/s | pattern compiled once (`per_row_parse` pins the old loop at 670 µs) |
 | `json_decode/three_field_object` | 4096 | 610 µs | ~6.7 Melem/s | ~46 B docs, simd-json tape walk |
 | `json_decode/nexmark_bid_shape` | 4096 | 985 µs | ~4.2 Melem/s | ~210 B docs, 4 of 7 fields skipped |
+| `kafka_json_sink/whole_arrow_batch` | 4096 | 592 µs | ~6.92 Melem/s | one Arrow JSON writer per batch |
+| `kafka_json_sink/one_writer_per_row` | 4096 | 3.55 ms | ~1.15 Melem/s | same production encoder, one writer per row (6.0x slower) |
 
 Local GROUP BY count-boundary baseline on the same Apple M1 Max (median of 100 Criterion samples,
 64 bigint keys):
