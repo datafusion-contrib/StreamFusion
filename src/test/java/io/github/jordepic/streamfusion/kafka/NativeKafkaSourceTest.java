@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import org.apache.arrow.c.ArrowArray;
@@ -92,8 +93,85 @@ class NativeKafkaSourceTest {
     }
   }
 
+  @Test
+  void capsEachBatchAtTheBoundedStoppingOffset() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      produce(brokers, TOPIC, 0, 100);
+
+      Set<Long> ids = new HashSet<>();
+      long[] checkpoint = {0};
+      long handle = open(brokers, new String[] {TOPIC}, new long[] {0}, new long[] {37});
+      try (BufferAllocator allocator = new RootAllocator();
+          CDataDictionaryProvider dictionaries = new CDataDictionaryProvider()) {
+        for (int attempts = 0; checkpoint[0] < 37 && attempts < 10; attempts++) {
+          poll(handle, allocator, dictionaries, ids, checkpoint);
+        }
+      } finally {
+        NativeKafka.closeKafkaConsumer(handle);
+      }
+
+      assertEquals(37, checkpoint[0]);
+      assertEquals(37, ids.size());
+      for (long id = 0; id < 37; id++) {
+        assertTrue(ids.contains(id), "missing bounded id " + id);
+      }
+    }
+  }
+
+  @Test
+  void keepsTheSamePartitionNumberSeparateAcrossTopics() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      String first = "native-source-topic-a";
+      String second = "native-source-topic-b";
+      produce(brokers, first, 0, 10);
+      produce(brokers, second, 100, 110);
+
+      Map<String, Set<Long>> ids =
+          Map.of(first, new HashSet<>(), second, new HashSet<>());
+      Map<String, Long> checkpoints = new java.util.HashMap<>();
+      long handle =
+          open(
+              brokers,
+              new String[] {first, second},
+              new long[] {0, 0},
+              new long[] {10, 10});
+      try (BufferAllocator allocator = new RootAllocator();
+          CDataDictionaryProvider dictionaries = new CDataDictionaryProvider()) {
+        for (int attempts = 0;
+            ids.values().stream().mapToInt(Set::size).sum() < 20 && attempts < 10;
+            attempts++) {
+          pollByTopic(handle, allocator, dictionaries, ids, checkpoints);
+        }
+      } finally {
+        NativeKafka.closeKafkaConsumer(handle);
+      }
+
+      assertEquals(Set.of(0L, 1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L), ids.get(first));
+      assertEquals(
+          Set.of(100L, 101L, 102L, 103L, 104L, 105L, 106L, 107L, 108L, 109L),
+          ids.get(second));
+      assertEquals(10L, checkpoints.get(first));
+      assertEquals(10L, checkpoints.get(second));
+    }
+  }
+
   /** Opens a native reader and assigns it {@code (TOPIC, 0)} starting at {@code startOffset}. */
   private static long open(String brokers, long startOffset) {
+    return open(
+        brokers,
+        new String[] {TOPIC},
+        new long[] {startOffset},
+        new long[] {Long.MIN_VALUE});
+  }
+
+  private static long open(
+      String brokers, String[] topics, long[] startOffsets, long[] stoppingOffsets) {
     Properties props = new Properties();
     props.setProperty("bootstrap.servers", brokers);
     props.setProperty("group.id", "native-source-it");
@@ -106,7 +184,8 @@ class NativeKafkaSourceTest {
       values[i] = config.config().get(keys[i]);
     }
     long handle = NativeKafka.openKafkaConsumer(keys, values);
-    NativeKafka.assignKafkaSplits(handle, new String[] {TOPIC}, new long[] {0}, new long[] {startOffset});
+    NativeKafka.assignKafkaSplits(
+        handle, topics, new long[topics.length], startOffsets, stoppingOffsets);
     return handle;
   }
 
@@ -142,7 +221,44 @@ class NativeKafkaSourceTest {
     }
   }
 
+  private static void pollByTopic(
+      long handle,
+      BufferAllocator allocator,
+      CDataDictionaryProvider dictionaries,
+      Map<String, Set<Long>> ids,
+      Map<String, Long> checkpoints) {
+    int pending = NativeKafka.pollKafkaBatch(handle, 1024, 2000);
+    for (int p = 0; p < pending; p++) {
+      try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
+          ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+        long[] meta = new long[2];
+        String[] topic = new String[1];
+        NativeKafka.drainKafkaSplit(
+            handle, meta, topic, outArray.memoryAddress(), outSchema.memoryAddress());
+        checkpoints.put(topic[0], meta[1]);
+        try (VectorSchemaRoot out =
+            Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries)) {
+          VarBinaryVector body = (VarBinaryVector) out.getVector("body");
+          for (int i = 0; i < out.getRowCount(); i++) {
+            ids.get(topic[0]).add(id(body.get(i)));
+          }
+        }
+      }
+    }
+  }
+
+  private static long id(byte[] body) {
+    String message = new String(body, StandardCharsets.UTF_8);
+    int start = message.indexOf(":") + 1;
+    int end = message.indexOf(",", start);
+    return Long.parseLong(message.substring(start, end).trim());
+  }
+
   private static void produce(String brokers, int messages) {
+    produce(brokers, TOPIC, 0, messages);
+  }
+
+  private static void produce(String brokers, String topic, int from, int to) {
     Properties props = new Properties();
     props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
     props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
@@ -150,11 +266,11 @@ class NativeKafkaSourceTest {
     props.put(ProducerConfig.LINGER_MS_CONFIG, 50);
     props.put(ProducerConfig.BATCH_SIZE_CONFIG, 1 << 20);
     try (KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(props)) {
-      for (int i = 0; i < messages; i++) {
+      for (int i = from; i < to; i++) {
         byte[] value =
             String.format("{\"id\": %d, \"name\": \"row-%d\", \"score\": %d.5}", i, i, i % 100)
                 .getBytes(StandardCharsets.UTF_8);
-        producer.send(new ProducerRecord<>(TOPIC, 0, null, value));
+        producer.send(new ProducerRecord<>(topic, 0, null, value));
       }
       producer.flush();
     }

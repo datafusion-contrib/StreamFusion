@@ -19,6 +19,8 @@ pub(crate) struct KafkaSplitReader {
     decode: Option<(DecodeBodyBatch, i64)>,
     /// Next offset to consume per assigned partition — the split's checkpoint position.
     next_offsets: HashMap<(String, i32), i64>,
+    /// Concrete bounded stopping offsets. The poll callback drops records at or beyond this boundary.
+    stopping_offsets: HashMap<(String, i32), i64>,
     /// Topics whose broker metadata has been primed (see `reassign`).
     warmed_topics: std::collections::HashSet<String>,
     /// Body (or decoded, when a decoder is attached) batches ready for the JVM to drain one split at a
@@ -59,6 +61,7 @@ impl KafkaSplitReader {
             body_schema: Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)])),
             decode: None,
             next_offsets: HashMap::default(),
+            stopping_offsets: HashMap::default(),
             warmed_topics: std::collections::HashSet::default(),
             pending: std::collections::VecDeque::new(),
         }
@@ -71,11 +74,24 @@ impl KafkaSplitReader {
     /// A negative start offset is one of Flink's `KafkaPartitionSplit` markers, which the enumerator
     /// leaves for the reader to resolve: -2 EARLIEST -> beginning, -1 LATEST -> end, -3 COMMITTED ->
     /// the group's stored offset. A concrete (>= 0) offset seeks to exactly there.
-    fn assign_splits(&mut self, topics: &[String], partitions: &[i64], offsets: &[i64]) {
+    fn assign_splits(
+        &mut self,
+        topics: &[String],
+        partitions: &[i64],
+        offsets: &[i64],
+        stopping_offsets: &[i64],
+    ) {
+        assert_eq!(topics.len(), partitions.len());
+        assert_eq!(topics.len(), offsets.len());
+        assert_eq!(topics.len(), stopping_offsets.len());
         for i in 0..topics.len() {
+            let key = (topics[i].clone(), partitions[i] as i32);
             self.next_offsets
-                .entry((topics[i].clone(), partitions[i] as i32))
+                .entry(key.clone())
                 .or_insert(offsets[i]);
+            if stopping_offsets[i] != i64::MIN {
+                self.stopping_offsets.insert(key, stopping_offsets[i]);
+            }
         }
         self.reassign();
     }
@@ -86,6 +102,8 @@ impl KafkaSplitReader {
     fn unassign_splits(&mut self, topics: &[String], partitions: &[i64]) {
         for i in 0..topics.len() {
             self.next_offsets.remove(&(topics[i].clone(), partitions[i] as i32));
+            self.stopping_offsets
+                .remove(&(topics[i].clone(), partitions[i] as i32));
         }
         self.reassign();
     }
@@ -152,8 +170,16 @@ impl KafkaSplitReader {
             /// Per-partition buckets: a subtask holds a handful of partitions and a fetch response
             /// delivers a partition's records contiguously, so a last-bucket cache + linear scan
             /// beats a per-message hash lookup.
-            buckets: Vec<(i32, String, BinaryBuilder, i64)>,
+            buckets: Vec<(
+                *mut rdsys::rd_kafka_topic_t,
+                i32,
+                String,
+                BinaryBuilder,
+                i64,
+                Option<i64>,
+            )>,
             last_bucket: usize,
+            stopping_offsets: *const HashMap<(String, i32), i64>,
         }
         unsafe extern "C" fn bucket_message(
             message: *mut rdsys::rd_kafka_message_t,
@@ -169,11 +195,14 @@ impl KafkaSplitReader {
                 let index = if context
                     .buckets
                     .get(context.last_bucket)
-                    .is_some_and(|bucket| bucket.0 == message.partition)
+                    .is_some_and(|bucket| bucket.0 == message.rkt && bucket.1 == message.partition)
                 {
                     context.last_bucket
                 } else if let Some(found) =
-                    context.buckets.iter().position(|bucket| bucket.0 == message.partition)
+                    context
+                        .buckets
+                        .iter()
+                        .position(|bucket| bucket.0 == message.rkt && bucket.1 == message.partition)
                 {
                     found
                 } else {
@@ -186,19 +215,26 @@ impl KafkaSplitReader {
                     // Pre-size for the poll cap (bounded — the cap can be huge when a caller wants
                     // an unchunked drain; the builder grows amortized past this).
                     let presize = context.max_records.min(65536);
+                    let stop = (*context.stopping_offsets)
+                        .get(&(topic.clone(), message.partition))
+                        .copied();
                     context.buckets.push((
+                        message.rkt,
                         message.partition,
                         topic,
                         BinaryBuilder::with_capacity(presize, presize * 64),
                         0,
+                        stop,
                     ));
                     context.buckets.len() - 1
                 };
                 context.last_bucket = index;
                 let bucket = &mut context.buckets[index];
-                bucket.2.append_value(payload);
-                bucket.3 = message.offset + 1;
-                context.buffered += 1;
+                if bucket.5.is_none_or(|stop| message.offset < stop) {
+                    bucket.3.append_value(payload);
+                    bucket.4 = message.offset + 1;
+                    context.buffered += 1;
+                }
             }
             // Errors are queue events (e.g. transient connectivity); they are counted against the cap
             // but otherwise skipped. librdkafka destroys every op after this returns.
@@ -213,6 +249,7 @@ impl KafkaSplitReader {
             buffered: 0,
             buckets: Vec::new(),
             last_bucket: 0,
+            stopping_offsets: &self.stopping_offsets,
         };
         unsafe {
             rdsys::rd_kafka_consume_callback_queue(
@@ -228,15 +265,58 @@ impl KafkaSplitReader {
         // callback's copies — deferring the decode to a later pass re-streamed the payload bytes cold
         // and, with the JVM round trip, measured at roughly half the fused throughput.
         self.pending.clear();
-        for (partition, topic, mut builder, next_offset) in context.buckets {
+        let positions = self
+            .consumer
+            .position()
+            .expect("failed to retrieve Kafka consumer positions")
+            .elements()
+            .into_iter()
+            .filter_map(|position| match position.offset() {
+                rdkafka::Offset::Offset(offset) => Some((
+                    (position.topic().to_owned(), position.partition()),
+                    offset,
+                )),
+                _ => None,
+            })
+            .collect::<HashMap<_, _>>();
+        let mut reported = HashSet::default();
+        for (_rkt, partition, topic, mut builder, payload_next_offset, stop) in context.buckets {
+            let key = (topic.clone(), partition);
+            let position = positions.get(&key).copied().unwrap_or(payload_next_offset);
+            let next_offset = stop.map_or(position, |stop| position.min(stop));
             let body = RecordBatch::try_new(self.body_schema.clone(), vec![Arc::new(builder.finish())])
                 .expect("failed to build kafka body batch");
-            let batch = match self.decode {
-                None => body,
-                Some((entry, decoder)) => Self::decode_bucket(entry, decoder, body),
+            let batch = match (self.decode, body.num_rows()) {
+                (_, 0) | (None, _) => body,
+                (Some((entry, decoder)), _) => Self::decode_bucket(entry, decoder, body),
             };
             self.next_offsets.insert((topic.clone(), partition), next_offset);
             self.pending.push_back((topic, partition, next_offset, batch));
+            reported.insert(key);
+        }
+        // Empty partitions, null-only tails, and read_committed control records can advance Kafka's
+        // position without producing a payload bucket. Emit an empty body batch so the JVM advances the
+        // split state and can report a bounded split finished.
+        for (key, position) in positions {
+            if reported.contains(&key) {
+                continue;
+            }
+            let previous = self.next_offsets.get(&key).copied();
+            let next_offset = self
+                .stopping_offsets
+                .get(&key)
+                .map_or(position, |stop| position.min(*stop));
+            let reached_stop = self
+                .stopping_offsets
+                .get(&key)
+                .is_some_and(|stop| position >= *stop);
+            if previous == Some(next_offset) && !reached_stop {
+                continue;
+            }
+            self.next_offsets.insert(key.clone(), next_offset);
+            let body = RecordBatch::new_empty(self.body_schema.clone());
+            self.pending
+                .push_back((key.0, key.1, next_offset, body));
         }
         self.pending.len()
     }
@@ -332,7 +412,8 @@ extern "C" fn unsupported_decode(_: i64, _: i64, _: i64, _: i64, _: i64) -> i32 
 }
 
 /// Adds splits to the reader and re-assigns: `topics`/`partitions`/`startOffsets` are index-aligned;
-/// new partitions seek to their start offset, existing ones keep their tracked position.
+/// new partitions seek to their start offset, existing ones keep their tracked position. Concrete
+/// `stoppingOffsets` are enforced inside the poll callback; `i64::MIN` means unbounded.
 #[cfg(feature = "kafka")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_assignKafkaSplits<'local>(
@@ -342,12 +423,14 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_as
     topics: JObjectArray<'local>,
     partitions: JLongArray<'local>,
     start_offsets: JLongArray<'local>,
+    stopping_offsets: JLongArray<'local>,
 ) {
     let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
     let topics = read_string_array(&mut env, &topics);
     let partitions = read_longs(&env, &partitions);
     let offsets = read_longs(&env, &start_offsets);
-    reader.assign_splits(&topics, &partitions, &offsets);
+    let stopping_offsets = read_longs(&env, &stopping_offsets);
+    reader.assign_splits(&topics, &partitions, &offsets, &stopping_offsets);
 }
 
 /// Removes finished splits (reached their bounded stopping offset) from the assignment so the consumer
@@ -450,7 +533,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_be
     let topic: String = env.get_string(&topic).expect("failed to read topic").into();
     let _ = (format, schema_array_address, schema_address, avro_schema, schema_id);
     let mut reader = KafkaSplitReader::open(&config);
-    reader.assign_splits(&[topic], &[0], &[-2]); // partition 0, earliest
+    reader.assign_splits(&[topic], &[0], &[-2], &[i64::MIN]); // partition 0, earliest
 
     let timeout = std::time::Duration::from_millis(250);
     let mut rows: i64 = 0;

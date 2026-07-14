@@ -57,6 +57,7 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
   private final Map<String, Long> positions = new HashMap<>();
   private final Map<String, TopicPartition> partitionsById = new HashMap<>();
   private final Set<String> finished = new HashSet<>();
+  private final Set<String> pendingFinished = new HashSet<>();
 
   NativeKafkaSplitReader(
       String[] configKeys,
@@ -95,6 +96,12 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
 
   @Override
   public RecordsWithSplitIds<NativeKafkaRecord> fetch() {
+    if (!pendingFinished.isEmpty()) {
+      RecordsBySplits.Builder<NativeKafkaRecord> builder = new RecordsBySplits.Builder<>();
+      builder.addFinishedSplits(pendingFinished);
+      pendingFinished.clear();
+      return builder.build();
+    }
     int pending = NativeKafka.pollKafkaBatch(handle, maxRecords, pollTimeoutMillis);
     RecordsBySplits.Builder<NativeKafkaRecord> builder = new RecordsBySplits.Builder<>();
     for (int i = 0; i < pending; i++) {
@@ -122,9 +129,9 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
                 typed == null ? null : new ArrowBatch(typed), meta[1], maxRowtime));
       }
     }
-    // Bounded mode: a split is done once its next offset reaches its stopping offset. (No data exists
-    // past a latest-offset stop at run time, so the emitted batches never overshoot it.) Unassign each
-    // finished partition natively so the consumer stops fetching/blocking on it (no bounded-tail stall).
+    // Native polling caps every batch at the split's stopping offset and reports the consumer's actual
+    // position, including progress over Kafka control records. Unassign each completed partition so it
+    // cannot fetch beyond the bounded snapshot while the task thread drains this result.
     List<TopicPartition> justFinished = new java.util.ArrayList<>();
     for (Map.Entry<String, Long> stop : stoppingOffsets.entrySet()) {
       String splitId = stop.getKey();
@@ -153,18 +160,38 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
     String[] topics = new String[splits.size()];
     long[] partitions = new long[splits.size()];
     long[] offsets = new long[splits.size()];
+    long[] stops = new long[splits.size()];
+    java.util.Arrays.fill(stops, KafkaPartitionSplit.NO_STOPPING_OFFSET);
+    List<KafkaPartitionSplit> assigned = new java.util.ArrayList<>(splits.size());
     for (int i = 0; i < splits.size(); i++) {
       KafkaPartitionSplit split = splits.get(i);
-      topics[i] = split.getTopic();
-      partitions[i] = split.getPartition();
-      offsets[i] = split.getStartingOffset();
+      long stop = split.getStoppingOffset().orElse(KafkaPartitionSplit.NO_STOPPING_OFFSET);
+      if (stop >= 0 && split.getStartingOffset() >= 0 && split.getStartingOffset() >= stop) {
+        pendingFinished.add(split.splitId());
+        finished.add(split.splitId());
+        continue;
+      }
+      int assignedIndex = assigned.size();
+      topics[assignedIndex] = split.getTopic();
+      partitions[assignedIndex] = split.getPartition();
+      offsets[assignedIndex] = split.getStartingOffset();
+      stops[assignedIndex] = stop;
+      assigned.add(split);
       partitionsById.put(split.splitId(), split.getTopicPartition());
-      split
-          .getStoppingOffset()
-          .filter(stop -> stop != KafkaPartitionSplit.NO_STOPPING_OFFSET)
-          .ifPresent(stop -> stoppingOffsets.put(split.splitId(), stop));
+      if (stop != KafkaPartitionSplit.NO_STOPPING_OFFSET) {
+        stoppingOffsets.put(split.splitId(), stop);
+      }
+      positions.put(split.splitId(), split.getStartingOffset());
     }
-    NativeKafka.assignKafkaSplits(handle, topics, partitions, offsets);
+    if (!assigned.isEmpty()) {
+      int count = assigned.size();
+      NativeKafka.assignKafkaSplits(
+          handle,
+          java.util.Arrays.copyOf(topics, count),
+          java.util.Arrays.copyOf(partitions, count),
+          java.util.Arrays.copyOf(offsets, count),
+          java.util.Arrays.copyOf(stops, count));
+    }
   }
 
   /** Body batch → typed root when this reader carries the format decode; null for an empty result. */

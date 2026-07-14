@@ -25,7 +25,11 @@ public final class NativeKafka {
   public static native boolean attachKafkaDecoder(long handle, long initAddress, long decoderHandle);
 
   public static native void assignKafkaSplits(
-      long handle, String[] topics, long[] partitions, long[] startOffsets);
+      long handle,
+      String[] topics,
+      long[] partitions,
+      long[] startOffsets,
+      long[] stoppingOffsets);
 
   public static native void unassignKafkaSplits(long handle, String[] topics, long[] partitions);
 
