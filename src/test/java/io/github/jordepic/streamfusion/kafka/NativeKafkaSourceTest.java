@@ -400,7 +400,7 @@ class NativeKafkaSourceTest {
     for (int p = 0; p < pending; p++) {
       try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
           ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-        long[] meta = new long[2];
+        long[] meta = new long[5];
         String[] topic = new String[1];
         NativeKafka.drainKafkaSplit(
             handle, meta, topic, outArray.memoryAddress(), outSchema.memoryAddress());
@@ -427,12 +427,19 @@ class NativeKafkaSourceTest {
     for (int p = 0; p < pending; p++) {
       try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
           ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-        long[] meta = new long[2];
+        long[] meta = new long[5];
         String[] topic = new String[1];
         int rows =
             NativeKafka.drainKafkaSplit(
                 handle, meta, topic, outArray.memoryAddress(), outSchema.memoryAddress());
         checkpoint[0] = meta[1]; // single partition in this test
+        assertEquals(rows, meta[3], "native metadata must count consumed records");
+        if (rows > 0) {
+          assertTrue(meta[2] > 0, "non-empty payload batches must report consumed bytes");
+        }
+        assertTrue(
+            meta[4] == -1 || meta[4] >= meta[1],
+            "cached high watermark must not trail the consumer position");
         try (VectorSchemaRoot out =
             Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries)) {
           assertEquals(rows, out.getRowCount());

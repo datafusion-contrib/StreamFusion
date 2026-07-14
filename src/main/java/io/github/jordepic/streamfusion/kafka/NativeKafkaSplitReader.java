@@ -51,6 +51,7 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
   // its max rowtime as the record timestamp, feeding the source operator's per-split watermarks.
   private final int rowtimeIndex;
   private final NativeBodyBatchDecoder decoder;
+  private final NativeKafkaSourceMetrics metrics;
   /** Whether the format's decode is attached natively — polls then emit typed batches directly. */
   private final boolean nativeDecode;
   private final BufferAllocator allocator = NativeAllocator.SHARED;
@@ -69,10 +70,12 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
       long pollTimeoutMillis,
       NativeMessageDecoderFactory decoderFactory,
       RowType decodedType,
-      int rowtimeIndex) {
+      int rowtimeIndex,
+      NativeKafkaSourceMetrics metrics) {
     this.maxRecords = maxRecords;
     this.pollTimeoutMillis = pollTimeoutMillis;
     this.rowtimeIndex = rowtimeIndex;
+    this.metrics = metrics;
     this.handle = NativeKafka.openKafkaConsumer(configKeys, configValues);
     try {
       this.decoder =
@@ -110,7 +113,7 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
     for (int i = 0; i < pending; i++) {
       try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
           ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-        long[] meta = new long[3];
+        long[] meta = new long[5];
         String[] topic = new String[1];
         NativeKafka.drainKafkaSplit(
             handle, meta, topic, outArray.memoryAddress(), outSchema.memoryAddress());
@@ -118,6 +121,8 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
             Data.importVectorSchemaRoot(allocator, outArray, outSchema, NativeAllocator.DICTIONARIES);
         String splitId =
             KafkaPartitionSplit.toSplitId(new TopicPartition(topic[0], (int) meta[0]));
+        metrics.recordPoll(
+            new TopicPartition(topic[0], (int) meta[0]), meta[1], meta[2], meta[3], meta[4]);
         positions.put(splitId, meta[1]);
         VectorSchemaRoot typed = decoded(root);
         long maxRowtime =
@@ -181,6 +186,7 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
       stops[assignedIndex] = stop;
       assigned.add(split);
       partitionsById.put(split.splitId(), split.getTopicPartition());
+      metrics.register(split.getTopicPartition());
       if (stop != KafkaPartitionSplit.NO_STOPPING_OFFSET) {
         stoppingOffsets.put(split.splitId(), stop);
       }

@@ -87,6 +87,7 @@ public final class NativeKafkaSource
 
   @Override
   public SourceReader<ArrowBatch, KafkaPartitionSplit> createReader(SourceReaderContext context) {
+    NativeKafkaSourceMetrics metrics = new NativeKafkaSourceMetrics(context.metricGroup());
     Supplier<SplitReader<NativeKafkaRecord, KafkaPartitionSplit>> splitReaderSupplier =
         () ->
             new NativeKafkaSplitReader(
@@ -96,13 +97,15 @@ public final class NativeKafkaSource
                 pollTimeoutMillis,
                 decoderFactory,
                 decodedType,
-                rowtimeIndex);
+                rowtimeIndex,
+                metrics);
     Configuration configuration = toConfiguration(props);
     return new NativeKafkaSourceReader(
         new NativeKafkaSourceFetcherManager(splitReaderSupplier, configuration),
         new NativeKafkaRecordEmitter(),
         configuration,
-        context);
+        context,
+        metrics);
   }
 
   @Override

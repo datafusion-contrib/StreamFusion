@@ -26,7 +26,7 @@ pub(crate) struct KafkaSplitReader {
     /// Body (or decoded, when a decoder is attached) batches ready for the JVM to drain one split at a
     /// time, in arrival (offset) order so a split's offset never goes backwards when several of its
     /// batches are drained in one cycle. Fields: (topic, partition, next offset, batch).
-    pending: std::collections::VecDeque<(String, i32, i64, RecordBatch)>,
+    pending: std::collections::VecDeque<(String, i32, i64, RecordBatch, i64, i64, i64)>,
 }
 
 #[cfg(feature = "kafka")]
@@ -230,6 +230,7 @@ impl KafkaSplitReader {
                 BinaryBuilder,
                 i64,
                 Option<i64>,
+                i64,
             )>,
             last_bucket: usize,
             stopping_offsets: *const HashMap<(String, i32), i64>,
@@ -276,6 +277,7 @@ impl KafkaSplitReader {
                         BinaryBuilder::with_capacity(presize, presize * 64),
                         0,
                         stop,
+                        0,
                     ));
                     context.buckets.len() - 1
                 };
@@ -288,6 +290,7 @@ impl KafkaSplitReader {
                         let payload =
                             std::slice::from_raw_parts(message.payload as *const u8, message.len);
                         bucket.3.append_value(payload);
+                        bucket.6 += message.len as i64;
                     }
                     bucket.4 = message.offset + 1;
                     context.buffered += 1;
@@ -348,18 +351,28 @@ impl KafkaSplitReader {
             })
             .collect::<HashMap<_, _>>();
         let mut reported = HashSet::default();
-        for (_rkt, partition, topic, mut builder, payload_next_offset, stop) in context.buckets {
+        for (_rkt, partition, topic, mut builder, payload_next_offset, stop, bytes) in context.buckets {
             let key = (topic.clone(), partition);
             let position = positions.get(&key).copied().unwrap_or(payload_next_offset);
             let next_offset = stop.map_or(position, |stop| position.min(stop));
             let body = RecordBatch::try_new(self.body_schema.clone(), vec![Arc::new(builder.finish())])
                 .expect("failed to build kafka body batch");
+            let records = body.num_rows() as i64;
             let batch = match (self.decode, body.num_rows()) {
                 (_, 0) | (None, _) => body,
                 (Some((entry, decoder)), _) => Self::decode_bucket(entry, decoder, body),
             };
             self.next_offsets.insert((topic.clone(), partition), next_offset);
-            self.pending.push_back((topic, partition, next_offset, batch));
+            let high_watermark = self.cached_high_watermark(&topic, partition);
+            self.pending.push_back((
+                topic,
+                partition,
+                next_offset,
+                batch,
+                bytes,
+                records,
+                high_watermark,
+            ));
             reported.insert(key);
         }
         // Empty partitions, null-only tails, and read_committed control records can advance Kafka's
@@ -383,10 +396,43 @@ impl KafkaSplitReader {
             }
             self.next_offsets.insert(key.clone(), next_offset);
             let body = RecordBatch::new_empty(self.body_schema.clone());
-            self.pending
-                .push_back((key.0, key.1, next_offset, body));
+            let high_watermark = self.cached_high_watermark(&key.0, key.1);
+            self.pending.push_back((
+                key.0,
+                key.1,
+                next_offset,
+                body,
+                0,
+                0,
+                high_watermark,
+            ));
         }
         Ok(self.pending.len())
+    }
+
+    /// Returns librdkafka's locally cached high watermark without a broker round trip.
+    fn cached_high_watermark(&self, topic: &str, partition: i32) -> i64 {
+        use rdkafka::consumer::Consumer;
+
+        let Ok(topic) = std::ffi::CString::new(topic) else {
+            return -1;
+        };
+        let mut low = -1;
+        let mut high = -1;
+        let result = unsafe {
+            rdkafka::bindings::rd_kafka_get_watermark_offsets(
+                self.consumer.client().native_ptr(),
+                topic.as_ptr(),
+                partition,
+                &mut low,
+                &mut high,
+            )
+        };
+        if result == rdkafka::bindings::rd_kafka_resp_err_t::RD_KAFKA_RESP_ERR_NO_ERROR {
+            high
+        } else {
+            -1
+        }
     }
 
     /// Runs the attached format's C-ABI decode on one body batch. In and out cross as Arrow C Data on
@@ -629,10 +675,14 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_dr
     out_schema_address: jlong,
 ) -> jint {
     let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
-    let (topic, partition, next_offset, batch) =
+    let (topic, partition, next_offset, batch, bytes, records, high_watermark) =
         reader.pending.pop_front().expect("drainKafkaSplit called with no pending batch");
     let rows = batch.num_rows() as jint;
-    env.set_long_array_region(&split_meta, 0, &[partition as i64, next_offset])
+    let metadata = [partition as i64, next_offset, bytes, records, high_watermark];
+    let metadata_len = env
+        .get_array_length(&split_meta)
+        .expect("failed to read split meta length") as usize;
+    env.set_long_array_region(&split_meta, 0, &metadata[..metadata_len.min(metadata.len())])
         .expect("failed to write split meta");
     let topic_jstr = env.new_string(&topic).expect("failed to make topic string");
     env.set_object_array_element(&out_topic, 0, &topic_jstr)
@@ -700,7 +750,9 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_be
             continue;
         }
         idle = 0;
-        for (_topic, _partition, _next_offset, batch) in reader.pending.drain(..) {
+        for (_topic, _partition, _next_offset, batch, _bytes, _records, _high) in
+            reader.pending.drain(..)
+        {
             rows += batch.num_rows() as i64; // consumed in Rust; no JVM export
         }
     }

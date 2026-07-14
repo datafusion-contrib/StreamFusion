@@ -38,14 +38,17 @@ final class NativeKafkaSourceReader
   private final ConcurrentMap<TopicPartition, OffsetAndMetadata> offsetsOfFinishedSplits =
       new ConcurrentHashMap<>();
   private final boolean commitOffsetsOnCheckpoint;
+  private final NativeKafkaSourceMetrics metrics;
 
   NativeKafkaSourceReader(
       NativeKafkaSourceFetcherManager fetcherManager,
       RecordEmitter<NativeKafkaRecord, ArrowBatch, KafkaPartitionSplitState> recordEmitter,
       Configuration config,
-      SourceReaderContext context) {
+      SourceReaderContext context,
+      NativeKafkaSourceMetrics metrics) {
     super(fetcherManager, recordEmitter, config, context);
     this.commitOffsetsOnCheckpoint = config.get(KafkaSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT);
+    this.metrics = metrics;
   }
 
   @Override
@@ -92,9 +95,13 @@ final class NativeKafkaSourceReader
               offsets,
               error -> {
                 if (error == null) {
+                  offsets.forEach(
+                      (partition, offset) -> metrics.recordCommit(partition, offset.offset()));
+                  metrics.recordSucceededCommit();
                   offsetsOfFinishedSplits.keySet().removeAll(offsets.keySet());
                   removeOffsetsThrough(checkpointId);
                 } else {
+                  metrics.recordFailedCommit();
                   LOG.warn(
                       "Failed to commit consumer offsets for checkpoint {}", checkpointId, error);
                 }
