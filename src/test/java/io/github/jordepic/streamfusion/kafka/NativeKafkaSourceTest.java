@@ -256,6 +256,61 @@ class NativeKafkaSourceTest {
     }
   }
 
+  @Test
+  void pausesAndResumesIndividualSplits() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      String pausedTopic = "native-source-paused";
+      String runningTopic = "native-source-running";
+      produce(brokers, pausedTopic, 0, 10);
+      produce(brokers, runningTopic, 100, 110);
+
+      Map<String, Set<Long>> ids =
+          Map.of(pausedTopic, new HashSet<>(), runningTopic, new HashSet<>());
+      Map<String, Long> checkpoints = new java.util.HashMap<>();
+      long handle =
+          open(
+              brokers,
+              new String[] {pausedTopic, runningTopic},
+              new long[] {0, 0},
+              new long[] {Long.MIN_VALUE, Long.MIN_VALUE});
+      try (BufferAllocator allocator = new RootAllocator();
+          CDataDictionaryProvider dictionaries = new CDataDictionaryProvider()) {
+        for (int attempts = 0;
+            ids.values().stream().mapToInt(Set::size).sum() < 20 && attempts < 10;
+            attempts++) {
+          pollByTopic(handle, allocator, dictionaries, ids, checkpoints);
+        }
+        assertEquals(20, ids.values().stream().mapToInt(Set::size).sum());
+
+        NativeKafka.setKafkaSplitsPaused(
+            handle, new String[] {pausedTopic}, new long[] {0}, true);
+        produce(brokers, pausedTopic, 10, 20);
+        produce(brokers, runningTopic, 110, 120);
+        for (int attempts = 0;
+            checkpoints.getOrDefault(runningTopic, 0L) < 20 && attempts < 10;
+            attempts++) {
+          pollByTopic(handle, allocator, dictionaries, ids, checkpoints);
+        }
+        assertEquals(10L, checkpoints.get(pausedTopic));
+        assertEquals(20L, checkpoints.get(runningTopic));
+
+        NativeKafka.setKafkaSplitsPaused(
+            handle, new String[] {pausedTopic}, new long[] {0}, false);
+        for (int attempts = 0;
+            checkpoints.getOrDefault(pausedTopic, 0L) < 20 && attempts < 10;
+            attempts++) {
+          pollByTopic(handle, allocator, dictionaries, ids, checkpoints);
+        }
+        assertEquals(20L, checkpoints.get(pausedTopic));
+      } finally {
+        NativeKafka.closeKafkaConsumer(handle);
+      }
+    }
+  }
+
   /** Opens a native reader and assigns it {@code (TOPIC, 0)} starting at {@code startOffset}. */
   private static long open(String brokers, long startOffset) {
     return open(

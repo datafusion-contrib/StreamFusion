@@ -134,6 +134,33 @@ impl KafkaSplitReader {
             .map_err(|error| format!("failed to commit Kafka offsets: {error}"))
     }
 
+    /// Pauses or resumes only the requested assigned partitions for Flink watermark alignment.
+    fn set_paused(
+        &self,
+        topics: &[String],
+        partitions: &[i64],
+        paused: bool,
+    ) -> Result<(), String> {
+        use rdkafka::consumer::Consumer;
+        use rdkafka::topic_partition_list::TopicPartitionList;
+
+        let mut tpl = TopicPartitionList::with_capacity(topics.len());
+        for i in 0..topics.len() {
+            tpl.add_partition(&topics[i], partitions[i] as i32);
+        }
+        let result = if paused {
+            self.consumer.pause(&tpl)
+        } else {
+            self.consumer.resume(&tpl)
+        };
+        result.map_err(|error| {
+            format!(
+                "failed to {} Kafka partitions: {error}",
+                if paused { "pause" } else { "resume" }
+            )
+        })
+    }
+
     /// (Re)assigns the consumer to exactly the currently-tracked partitions, each seeked to its tracked
     /// offset (or start marker). assign() with explicit offsets replaces the whole assignment.
     fn reassign(&mut self) {
@@ -543,6 +570,28 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_co
             return Err("Kafka offset commit arrays have different lengths".to_string());
         }
         reader.commit_offsets(&topics, &partitions, &offsets)
+    });
+}
+
+/// Applies Flink's split-level pause/resume request on the fetcher-owned native consumer.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_setKafkaSplitsPaused<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    topics: JObjectArray<'local>,
+    partitions: JLongArray<'local>,
+    paused: jboolean,
+) {
+    kafka_jni(&mut env, (), |env| {
+        let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
+        let topics = read_string_array(env, &topics);
+        let partitions = read_longs(env, &partitions);
+        if topics.len() != partitions.len() {
+            return Err("Kafka pause arrays have different lengths".to_string());
+        }
+        reader.set_paused(&topics, &partitions, paused != 0)
     });
 }
 

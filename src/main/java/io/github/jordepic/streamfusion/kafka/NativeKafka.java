@@ -37,6 +37,9 @@ public final class NativeKafka {
   public static native void commitKafkaOffsets(
       long handle, String[] topics, long[] partitions, long[] offsets) throws IOException;
 
+  public static native void setKafkaSplitsPaused(
+      long handle, String[] topics, long[] partitions, boolean paused) throws IOException;
+
   public static native int pollKafkaBatch(long handle, int maxRecords, long timeoutMillis);
 
   public static native int drainKafkaSplit(

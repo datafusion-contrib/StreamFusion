@@ -9,6 +9,7 @@ import io.github.jordepic.streamfusion.operator.NativeSourceWatermarks;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -240,6 +241,33 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
       index++;
     }
     NativeKafka.commitKafkaOffsets(handle, topics, partitions, positions);
+  }
+
+  @Override
+  public void pauseOrResumeSplits(
+      Collection<KafkaPartitionSplit> splitsToPause,
+      Collection<KafkaPartitionSplit> splitsToResume) {
+    setPaused(splitsToPause, true);
+    setPaused(splitsToResume, false);
+  }
+
+  private void setPaused(Collection<KafkaPartitionSplit> splits, boolean paused) {
+    if (splits.isEmpty()) {
+      return;
+    }
+    String[] topics = new String[splits.size()];
+    long[] partitions = new long[splits.size()];
+    int index = 0;
+    for (KafkaPartitionSplit split : splits) {
+      topics[index] = split.getTopic();
+      partitions[index] = split.getPartition();
+      index++;
+    }
+    try {
+      NativeKafka.setKafkaSplitsPaused(handle, topics, partitions, paused);
+    } catch (IOException error) {
+      throw new java.io.UncheckedIOException(error);
+    }
   }
 
   @Override
