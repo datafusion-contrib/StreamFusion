@@ -1,10 +1,15 @@
 package io.github.jordepic.streamfusion.kafka;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -161,6 +166,60 @@ class NativeKafkaSourceTest {
     }
   }
 
+  @Test
+  void preservesTombstonesAndAdvancesPastThem() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      produceWithTombstone(brokers);
+
+      List<byte[]> bodies = new ArrayList<>();
+      long[] checkpoint = {0};
+      long handle = open(brokers, new String[] {TOPIC}, new long[] {0}, new long[] {3});
+      try (BufferAllocator allocator = new RootAllocator();
+          CDataDictionaryProvider dictionaries = new CDataDictionaryProvider()) {
+        for (int attempts = 0; checkpoint[0] < 3 && attempts < 10; attempts++) {
+          pollBodies(handle, allocator, dictionaries, bodies, checkpoint);
+        }
+      } finally {
+        NativeKafka.closeKafkaConsumer(handle);
+      }
+
+      assertEquals(3, checkpoint[0]);
+      assertEquals(3, bodies.size());
+      assertEquals(0L, id(bodies.get(0)));
+      assertNull(bodies.get(1));
+      assertEquals(2L, id(bodies.get(2)));
+    }
+  }
+
+  @Test
+  void surfacesAnUnresettableOffsetAsAnIOException() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      produce(brokers, TOPIC, 0, 1);
+      Properties props = consumerProperties(brokers);
+      props.setProperty("auto.offset.reset", "none");
+      long handle = open(props, new String[] {TOPIC}, new long[] {10_000}, new long[] {Long.MIN_VALUE});
+      try {
+        IOException error =
+            assertThrows(
+                IOException.class,
+                () -> {
+                  for (int attempts = 0; attempts < 10; attempts++) {
+                    NativeKafka.pollKafkaBatch(handle, 1024, 1000);
+                  }
+                });
+        assertTrue(error.getMessage().contains("_AUTO_OFFSET_RESET"), error::getMessage);
+      } finally {
+        NativeKafka.closeKafkaConsumer(handle);
+      }
+    }
+  }
+
   /** Opens a native reader and assigns it {@code (TOPIC, 0)} starting at {@code startOffset}. */
   private static long open(String brokers, long startOffset) {
     return open(
@@ -172,10 +231,19 @@ class NativeKafkaSourceTest {
 
   private static long open(
       String brokers, String[] topics, long[] startOffsets, long[] stoppingOffsets) {
+    return open(consumerProperties(brokers), topics, startOffsets, stoppingOffsets);
+  }
+
+  private static Properties consumerProperties(String brokers) {
     Properties props = new Properties();
     props.setProperty("bootstrap.servers", brokers);
     props.setProperty("group.id", "native-source-it");
     props.setProperty("enable.auto.commit", "false");
+    return props;
+  }
+
+  private static long open(
+      Properties props, String[] topics, long[] startOffsets, long[] stoppingOffsets) {
     KafkaConfigTranslator.Result config = KafkaConfigTranslator.translate(props);
     assertTrue(config.isTranslated(), () -> "config should translate: " + config.fallbackReason());
     String[] keys = config.config().keySet().toArray(new String[0]);
@@ -187,6 +255,32 @@ class NativeKafkaSourceTest {
     NativeKafka.assignKafkaSplits(
         handle, topics, new long[topics.length], startOffsets, stoppingOffsets);
     return handle;
+  }
+
+  private static void pollBodies(
+      long handle,
+      BufferAllocator allocator,
+      CDataDictionaryProvider dictionaries,
+      List<byte[]> bodies,
+      long[] checkpoint) {
+    int pending = NativeKafka.pollKafkaBatch(handle, 1024, 2000);
+    for (int p = 0; p < pending; p++) {
+      try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
+          ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+        long[] meta = new long[2];
+        String[] topic = new String[1];
+        NativeKafka.drainKafkaSplit(
+            handle, meta, topic, outArray.memoryAddress(), outSchema.memoryAddress());
+        checkpoint[0] = meta[1];
+        try (VectorSchemaRoot out =
+            Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries)) {
+          VarBinaryVector body = (VarBinaryVector) out.getVector("body");
+          for (int i = 0; i < out.getRowCount(); i++) {
+            bodies.add(body.isNull(i) ? null : body.get(i));
+          }
+        }
+      }
+    }
   }
 
   /** Polls a cycle, draining each per-partition batch's ids and the (single) split's next offset. */
@@ -271,6 +365,25 @@ class NativeKafkaSourceTest {
             String.format("{\"id\": %d, \"name\": \"row-%d\", \"score\": %d.5}", i, i, i % 100)
                 .getBytes(StandardCharsets.UTF_8);
         producer.send(new ProducerRecord<>(topic, 0, null, value));
+      }
+      producer.flush();
+    }
+  }
+
+  private static void produceWithTombstone(String brokers) {
+    Properties props = new Properties();
+    props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
+    props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+    props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+    try (KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(props)) {
+      for (int id : new int[] {0, 2}) {
+        byte[] value =
+            String.format("{\"id\": %d, \"name\": \"row-%d\", \"score\": 1.5}", id, id)
+                .getBytes(StandardCharsets.UTF_8);
+        producer.send(new ProducerRecord<>(TOPIC, 0, null, value));
+        if (id == 0) {
+          producer.send(new ProducerRecord<>(TOPIC, 0, null, null));
+        }
       }
       producer.flush();
     }

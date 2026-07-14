@@ -156,6 +156,13 @@ fn protobuf_decode_emits_one_row_per_message() {
     assert_eq!(scores.values(), &[1.5, 2.5]);
 }
 
+#[test]
+#[should_panic(expected = "protobuf cannot deserialize a null Kafka value")]
+fn protobuf_decode_rejects_a_tombstone_like_flink() {
+    let descriptor = proto_descriptor_set();
+    ProtobufDecoder::new(&descriptor, "bench.Row").decode(&bodies(vec![None]));
+}
+
 // Each body is one CSV record (no header); CSV decode (format 2) emits one typed row per record.
 #[test]
 fn csv_decode_emits_one_row_per_record() {

@@ -151,7 +151,7 @@ impl KafkaSplitReader {
     /// Polls up to `max_records` messages, buckets them by partition, and decodes one typed Arrow batch
     /// per partition into `pending`, advancing each split's next offset. Returns the number of
     /// per-partition batches now pending (0 on a poll timeout).
-    fn poll(&mut self, max_records: usize, timeout: std::time::Duration) -> usize {
+    fn poll(&mut self, max_records: usize, timeout: std::time::Duration) -> Result<usize, String> {
         use arrow::array::BinaryBuilder;
         use rdkafka::bindings as rdsys;
         use rdkafka::consumer::Consumer;
@@ -180,6 +180,7 @@ impl KafkaSplitReader {
             )>,
             last_bucket: usize,
             stopping_offsets: *const HashMap<(String, i32), i64>,
+            error: Option<String>,
         }
         unsafe extern "C" fn bucket_message(
             message: *mut rdsys::rd_kafka_message_t,
@@ -188,10 +189,7 @@ impl KafkaSplitReader {
             let context = &mut *(opaque as *mut PollContext);
             context.seen += 1;
             let message = &*message;
-            if message.err == rdsys::rd_kafka_resp_err_t::RD_KAFKA_RESP_ERR_NO_ERROR
-                && !message.payload.is_null()
-            {
-                let payload = std::slice::from_raw_parts(message.payload as *const u8, message.len);
+            if message.err == rdsys::rd_kafka_resp_err_t::RD_KAFKA_RESP_ERR_NO_ERROR {
                 let index = if context
                     .buckets
                     .get(context.last_bucket)
@@ -231,13 +229,26 @@ impl KafkaSplitReader {
                 context.last_bucket = index;
                 let bucket = &mut context.buckets[index];
                 if bucket.5.is_none_or(|stop| message.offset < stop) {
-                    bucket.3.append_value(payload);
+                    if message.payload.is_null() {
+                        bucket.3.append_null();
+                    } else {
+                        let payload =
+                            std::slice::from_raw_parts(message.payload as *const u8, message.len);
+                        bucket.3.append_value(payload);
+                    }
                     bucket.4 = message.offset + 1;
                     context.buffered += 1;
                 }
+            } else if message.err
+                != rdsys::rd_kafka_resp_err_t::RD_KAFKA_RESP_ERR__PARTITION_EOF
+                && context.error.is_none()
+            {
+                let name = std::ffi::CStr::from_ptr(rdsys::rd_kafka_err2name(message.err))
+                    .to_string_lossy();
+                let description = std::ffi::CStr::from_ptr(rdsys::rd_kafka_err2str(message.err))
+                    .to_string_lossy();
+                context.error = Some(format!("Kafka consumer error {name}: {description}"));
             }
-            // Errors are queue events (e.g. transient connectivity); they are counted against the cap
-            // but otherwise skipped. librdkafka destroys every op after this returns.
             if context.seen >= context.max_records {
                 rdsys::rd_kafka_yield(context.rk);
             }
@@ -250,6 +261,7 @@ impl KafkaSplitReader {
             buckets: Vec::new(),
             last_bucket: 0,
             stopping_offsets: &self.stopping_offsets,
+            error: None,
         };
         unsafe {
             rdsys::rd_kafka_consume_callback_queue(
@@ -259,6 +271,9 @@ impl KafkaSplitReader {
                 &mut context as *mut PollContext as *mut std::os::raw::c_void,
             )
         };
+        if let Some(error) = context.error {
+            return Err(error);
+        }
         // One batch per partition, straight into `pending` (the JVM drains all of them right after this
         // returns, so nothing is ever left behind on a bounded finish). With a decoder attached, each
         // body batch is decoded to its typed batch here, while its bytes are still cache-hot from the
@@ -268,7 +283,7 @@ impl KafkaSplitReader {
         let positions = self
             .consumer
             .position()
-            .expect("failed to retrieve Kafka consumer positions")
+            .map_err(|error| format!("failed to retrieve Kafka consumer positions: {error}"))?
             .elements()
             .into_iter()
             .filter_map(|position| match position.offset() {
@@ -318,7 +333,7 @@ impl KafkaSplitReader {
             self.pending
                 .push_back((key.0, key.1, next_offset, body));
         }
-        self.pending.len()
+        Ok(self.pending.len())
     }
 
     /// Runs the attached format's C-ABI decode on one body batch. In and out cross as Arrow C Data on
@@ -346,6 +361,37 @@ impl KafkaSplitReader {
             &mut out_array as *mut FFI_ArrowArray as jlong,
             &mut out_schema as *mut FFI_ArrowSchema as jlong,
         )
+    }
+}
+
+/// Contains native failures at the JNI boundary and turns them into the checked exception the
+/// FLIP-27 split-reader contract expects. This follows the same boundary discipline as Comet: no
+/// Rust panic may unwind through a JVM native frame.
+#[cfg(feature = "kafka")]
+fn kafka_jni<T, F>(env: &mut JNIEnv, default: T, f: F) -> T
+where
+    F: FnOnce(&mut JNIEnv) -> Result<T, String>,
+{
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(env))) {
+        Ok(Ok(value)) => value,
+        Ok(Err(message)) => {
+            let _ = env.throw_new("java/io/IOException", message);
+            default
+        }
+        Err(payload) => {
+            let message = if let Some(message) = payload.downcast_ref::<&str>() {
+                (*message).to_string()
+            } else if let Some(message) = payload.downcast_ref::<String>() {
+                message.clone()
+            } else {
+                "unknown panic".to_string()
+            };
+            let _ = env.throw_new(
+                "java/io/IOException",
+                format!("native Kafka reader panic: {message}"),
+            );
+            default
+        }
     }
 }
 
@@ -455,17 +501,19 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_un
 #[cfg(feature = "kafka")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_pollKafkaBatch<'local>(
-    _env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     max_records: jint,
     timeout_ms: jlong,
 ) -> jint {
-    let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
-    reader.poll(
-        max_records as usize,
-        std::time::Duration::from_millis(timeout_ms as u64),
-    ) as jint
+    kafka_jni(&mut env, 0, |_env| {
+        let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
+        Ok(reader.poll(
+            max_records as usize,
+            std::time::Duration::from_millis(timeout_ms as u64),
+        )? as jint)
+    })
 }
 
 /// Drains one pending per-partition body batch, writes `[partition, nextOffset]` into `splitMeta`, and
@@ -547,7 +595,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_be
         .and_then(|v| v.parse().ok())
         .unwrap_or(65536);
     while rows < max_messages && idle < 40 {
-        let count = reader.poll(poll_cap, timeout);
+        let count = reader.poll(poll_cap, timeout).expect("failed to poll Kafka");
         if count == 0 {
             idle += 1;
             continue;

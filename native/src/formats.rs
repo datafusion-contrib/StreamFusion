@@ -132,10 +132,16 @@ impl ProtobufDecoder {
     }
 
     /// Decodes the single binary body column into a typed batch (schema derived from the descriptor).
-    /// A null body decodes to a null row (ptars keeps the batch 1:1 with the input column).
+    /// Flink's protobuf converter rejects a null byte array in strict mode; ignore-parse-errors protobuf
+    /// tables already stay on Flink, so a tombstone must fail rather than becoming a synthetic null row.
     pub(crate) fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
-        use arrow::array::BinaryArray;
+        use arrow::array::{Array, BinaryArray};
         let column = bodies.column(0).as_any().downcast_ref::<BinaryArray>().expect("binary body");
+        assert_eq!(
+            column.null_count(),
+            0,
+            "protobuf cannot deserialize a null Kafka value"
+        );
         ptars::binary_array_to_record_batch_direct(column, &self.message, &self.config)
             .expect("failed to decode protobuf batch")
     }
