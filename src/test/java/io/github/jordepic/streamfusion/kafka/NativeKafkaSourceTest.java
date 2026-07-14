@@ -23,6 +23,7 @@ import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.OffsetSpec;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -311,6 +312,47 @@ class NativeKafkaSourceTest {
     }
   }
 
+  @Test
+  void readCommittedFinishesAcrossAbortedTransactionsAndControlRecords() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      produceTransactions(brokers);
+
+      TopicPartition partition = new TopicPartition(TOPIC, 0);
+      Properties adminProps = new Properties();
+      adminProps.setProperty(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
+      long stop;
+      try (AdminClient admin = AdminClient.create(adminProps)) {
+        stop =
+            admin
+                .listOffsets(Map.of(partition, OffsetSpec.latest()))
+                .partitionResult(partition)
+                .get()
+                .offset();
+      }
+
+      Properties props = consumerProperties(brokers);
+      props.setProperty("group.id", "native-source-read-committed-it");
+      props.setProperty("isolation.level", "read_committed");
+      List<byte[]> bodies = new ArrayList<>();
+      long[] checkpoint = {0};
+      long handle = open(props, new String[] {TOPIC}, new long[] {0}, new long[] {stop});
+      try (BufferAllocator allocator = new RootAllocator();
+          CDataDictionaryProvider dictionaries = new CDataDictionaryProvider()) {
+        for (int attempts = 0; checkpoint[0] < stop && attempts < 10; attempts++) {
+          pollBodies(handle, allocator, dictionaries, bodies, checkpoint);
+        }
+      } finally {
+        NativeKafka.closeKafkaConsumer(handle);
+      }
+
+      assertEquals(stop, checkpoint[0], "control records must advance the bounded position");
+      assertEquals(List.of(0L, 2L), bodies.stream().map(NativeKafkaSourceTest::id).toList());
+    }
+  }
+
   /** Opens a native reader and assigns it {@code (TOPIC, 0)} starting at {@code startOffset}. */
   private static long open(String brokers, long startOffset) {
     return open(
@@ -478,5 +520,32 @@ class NativeKafkaSourceTest {
       }
       producer.flush();
     }
+  }
+
+  private static void produceTransactions(String brokers) {
+    Properties props = new Properties();
+    props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
+    props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+    props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+    props.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "native-source-control-records-it");
+    try (KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(props)) {
+      producer.initTransactions();
+      producer.beginTransaction();
+      producer.send(new ProducerRecord<>(TOPIC, 0, null, message(0)));
+      producer.commitTransaction();
+
+      producer.beginTransaction();
+      producer.send(new ProducerRecord<>(TOPIC, 0, null, message(1)));
+      producer.abortTransaction();
+
+      producer.beginTransaction();
+      producer.send(new ProducerRecord<>(TOPIC, 0, null, message(2)));
+      producer.commitTransaction();
+    }
+  }
+
+  private static byte[] message(int id) {
+    return String.format("{\"id\": %d, \"name\": \"row-%d\", \"score\": 1.5}", id, id)
+        .getBytes(StandardCharsets.UTF_8);
   }
 }
