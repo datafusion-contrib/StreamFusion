@@ -181,6 +181,31 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
 
     // A sink is terminal, so the changelog guard below (which protects operator substitution within a
     // stream) does not apply; it is eligible as long as its input is insert-only.
+    if (kafkaExtensionAvailable
+        && current instanceof StreamPhysicalSink
+        && KafkaSinkMatcher.appliesTo((StreamPhysicalSink) current)) {
+      StreamPhysicalSink sink = (StreamPhysicalSink) current;
+      if (!ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) current.getInputs().get(0))) {
+        recordFallback("kafka sink: the input is a changelog, not an insert-only stream");
+        return current;
+      }
+      if (!NativeConfig.operatorEnabled("kafkaSink")) {
+        return noteDisabled(current, "kafkaSink");
+      }
+      KafkaSinkMatcher.Planned planned = KafkaSinkMatcher.plan(sink);
+      if (planned.fallbackReason != null) {
+        recordFallback("kafka sink: " + planned.fallbackReason);
+        return current;
+      }
+      substitutions++;
+      return new StreamPhysicalNativeKafkaSink(
+          sink.getCluster(),
+          sink.getTraitSet(),
+          sink.getInputs().get(0),
+          sink.getRowType(),
+          planned);
+    }
+
     if (parquetExtensionAvailable
         && current instanceof StreamPhysicalSink
         && ParquetSinkMatcher.appliesTo((StreamPhysicalSink) current)) {

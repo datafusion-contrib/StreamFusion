@@ -61,9 +61,13 @@
                                     <includes>
                                         <include>io/github/jordepic/streamfusion/kafka/**</include>
                                         <include>io/github/jordepic/streamfusion/planner/KafkaTables*.class</include>
+                                        <include>io/github/jordepic/streamfusion/planner/KafkaSinkMatcher*.class</include>
+                                        <include>io/github/jordepic/streamfusion/planner/KafkaSinkTranslator*.class</include>
                                         <include>io/github/jordepic/streamfusion/planner/NativeKafkaDecodeExecNode*.class</include>
+                                        <include>io/github/jordepic/streamfusion/planner/NativeKafkaSinkExecNode*.class</include>
                                         <include>io/github/jordepic/streamfusion/planner/NativeKafkaSourceExecNode*.class</include>
                                         <include>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeKafkaDecode*.class</include>
+                                        <include>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeKafkaSink*.class</include>
                                         <include>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeKafkaSource*.class</include>
                                     </includes>
                                     <excludes>
