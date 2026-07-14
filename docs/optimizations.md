@@ -244,6 +244,19 @@ to 362/176. The same change moved q15's enabled path from 1.535 to 1.857 M rows/
 mini-batched path is now slightly faster than immediate (1.02x) and 1.64x stock Flink with
 mini-batching enabled.
 
+**Append-only local numeric MIN/MAX keeps one running extreme.** The two-phase local aggregate had
+been giving every numeric MIN/MAX group a retractable `BTreeMap<value, count>`, although the local
+input in an insert-only plan can only add values. It now uses the existing scalar running MIN/MAX
+state when no row-kind column is present; retracting input, strings, decimals, and the global merge
+retain the counted tree and its delete semantics. Criterion's 4096-row, 64-key MIN/MAX logical
+bundle rose from 9.50 to 33.89 M rows/s (3.57x, +258%). A contemporaneous release+mimalloc q17
+mini-batch A/B rose from 1.535 to 1.661 M events/s (+8.2%); the immediate path, which does not use
+the local pre-aggregate, remained approximately flat at 1.750 versus 1.745 M events/s. The matched
+25-second CPU profile completed 180 iterations versus 163 before and removed the local aggregate's
+87-sample tree search, 68-sample tree destruction, and 37-sample aggregate-state destruction
+leaves; `GroupAggState::accumulate` fell from 55 to 31 samples. The few remaining tree samples are
+from the downstream global aggregate, whose input is retracting partial updates.
+
 **Keep-last dedup stages first touches in a vector** (`dc35fb8`). Its mini-batch path formerly kept
 both an ordered key vector and a hash map of endpoints, rescanned the whole map for memory accounting
 after every physical batch, then rehashed every key through that map and durable state at flush.

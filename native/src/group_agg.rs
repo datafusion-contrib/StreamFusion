@@ -228,7 +228,7 @@ impl DistinctSet {
 }
 
 /// Per-(key, aggregate) state. SUM and COUNT fold/retract a single running value (SUM also keeps a
-/// non-null count so it reports NULL once fully retracted). MIN/MAX cannot be retracted from a single
+/// non-null count so it reports NULL once fully retracted). Retracting MIN/MAX cannot use a single
 /// value, so they keep a value→count multiset and read the extreme off its ends — what makes them
 /// retractable (Flink's `*WithRetractAccumulator` uses a `MapView`; Arroyo calls this the batch state).
 pub(crate) enum GroupAggState {
@@ -274,6 +274,30 @@ impl GroupAggState {
                 agg: RunningAgg::new(kind, value_type),
                 non_null: 0,
             },
+        }
+    }
+
+    fn new_local(kind: i64, value_type: &DataType, append_only: bool) -> Self {
+        // The local half of an insert-only two-phase aggregate never retracts its inputs. Its
+        // numeric MIN/MAX partial therefore needs one value, not the global/retracting multiset.
+        let running_extreme = append_only
+            && matches!(kind, 1 | 2)
+            && matches!(
+                value_type,
+                DataType::Int64
+                    | DataType::Int32
+                    | DataType::Int16
+                    | DataType::Int8
+                    | DataType::Float64
+                    | DataType::Float32
+            );
+        if running_extreme {
+            GroupAggState::Running {
+                agg: RunningAgg::new(kind, value_type),
+                non_null: 0,
+            }
+        } else {
+            Self::new(kind, value_type)
         }
     }
 
@@ -1836,6 +1860,7 @@ impl LocalGroupAggregator {
             })
             .collect();
         let row_kinds = row_kind_column(batch);
+        let append_only = row_kinds.is_none();
         let track = self.memory.tracking();
         for row in 0..n {
             let entry = if scalar_key_mode {
@@ -1845,7 +1870,7 @@ impl LocalGroupAggregator {
                         .kinds
                         .iter()
                         .zip(&self.value_types)
-                        .map(|(&kind, vt)| GroupAggState::new(kind, vt))
+                        .map(|(&kind, vt)| GroupAggState::new_local(kind, vt, append_only))
                         .collect();
                     if track {
                         self.memory.record(
@@ -1874,7 +1899,7 @@ impl LocalGroupAggregator {
                         .kinds
                         .iter()
                         .zip(&self.value_types)
-                        .map(|(&kind, vt)| GroupAggState::new(kind, vt))
+                        .map(|(&kind, vt)| GroupAggState::new_local(kind, vt, append_only))
                         .collect();
                     let owned = ByteKey::from(key);
                     if track {

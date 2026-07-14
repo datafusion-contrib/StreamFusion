@@ -1473,6 +1473,40 @@ fn group_batch(keys: Vec<i64>, values: Vec<i64>) -> RecordBatch {
     group_changelog(keys, values.into_iter().map(Some).collect(), kinds)
 }
 
+#[test]
+fn local_group_extremes_preserve_append_only_and_retracting_results() {
+    let make = || {
+        LocalGroupAggregator::new(
+            vec![1, 2],
+            vec![0, 0],
+            vec![1, 1],
+            vec![],
+            vec![0],
+            vec![],
+        )
+    };
+
+    let mut append_only = make();
+    append_only
+        .update(&join_batch(vec![1, 1, 2], vec![10, 5, 7], vec![0, 0, 0]))
+        .unwrap();
+    let out = append_only.flush();
+    assert_eq!(values(&out, 1), vec![5, 7]);
+    assert_eq!(values(&out, 2), vec![10, 7]);
+
+    let mut retracting = make();
+    retracting
+        .update(&group_changelog(
+            vec![1, 1, 1],
+            vec![Some(10), Some(5), Some(5)],
+            vec![0, 0, 3],
+        ))
+        .unwrap();
+    let out = retracting.flush();
+    assert_eq!(values(&out, 1), vec![10]);
+    assert_eq!(values(&out, 2), vec![10]);
+}
+
 fn row_kinds(batch: &RecordBatch) -> Vec<i8> {
     batch
         .column_by_name(ROW_KIND_COLUMN)
