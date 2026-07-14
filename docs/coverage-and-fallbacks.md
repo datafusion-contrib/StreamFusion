@@ -449,7 +449,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   metrics therefore remain Flink's own contract. The serialization boundary separately reports
   native batch, row, byte, and elapsed-nanosecond counters, so encoding cost can be distinguished
   from producer and checkpoint cost. Broker tests pin committed output both normally and across a
-  post-checkpoint failover. The native serializer currently covers BOOLEAN,
+  post-checkpoint failover, and pin a native Kafka source-to-sink plan with no RowData transpose at
+  either edge. The native serializer currently covers BOOLEAN,
   TINYINT/SMALLINT/INT/BIGINT, FLOAT/DOUBLE, CHAR/VARCHAR, BINARY/VARBINARY, DECIMAL, DATE, TIME,
   TIMESTAMP, and TIMESTAMP_LTZ (SQL or ISO-8601), including `encode.ignore-null-fields`. Every sink
   fallback cause:

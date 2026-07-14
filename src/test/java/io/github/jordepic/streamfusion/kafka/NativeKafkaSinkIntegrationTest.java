@@ -1,6 +1,7 @@
 package io.github.jordepic.streamfusion.kafka;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.jordepic.streamfusion.planner.NativePlanner;
@@ -33,7 +34,11 @@ import org.apache.flink.types.Row;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -47,6 +52,59 @@ class NativeKafkaSinkIntegrationTest {
 
   private static final int ROWS = 100;
   private static final AtomicBoolean FAILED_ONCE = new AtomicBoolean();
+
+  @Test
+  void keepsNativeKafkaInputColumnarThroughExactlyOnceOutput() throws Exception {
+    System.setProperty("streamfusion.operator.kafkaSource.enabled", "true");
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
+            .withEnv("KAFKA_TRANSACTION_MAX_TIMEOUT_MS", "7200000")) {
+      kafka.start();
+      int rows = 100;
+      String inputTopic = "native-source-sink-input-" + UUID.randomUUID();
+      String outputTopic = "native-source-sink-output-" + UUID.randomUUID();
+      produceJson(kafka.getBootstrapServers(), inputTopic, rows);
+
+      StreamExecutionEnvironment environment =
+          StreamExecutionEnvironment.getExecutionEnvironment();
+      environment.setParallelism(1);
+      environment.enableCheckpointing(50);
+      StreamTableEnvironment table = StreamTableEnvironment.create(environment);
+      table.executeSql(
+          "CREATE TABLE input (id BIGINT, name STRING) WITH ("
+              + "'connector' = 'kafka', 'topic' = '"
+              + inputTopic
+              + "', 'properties.bootstrap.servers' = '"
+              + kafka.getBootstrapServers()
+              + "', 'properties.group.id' = 'native-source-sink', "
+              + "'scan.startup.mode' = 'earliest-offset', "
+              + "'scan.bounded.mode' = 'latest-offset', 'format' = 'json')");
+      table.executeSql(
+          "CREATE TABLE output (id BIGINT, name STRING) WITH ("
+              + "'connector' = 'kafka', 'topic' = '"
+              + outputTopic
+              + "', 'properties.bootstrap.servers' = '"
+              + kafka.getBootstrapServers()
+              + "', 'format' = 'json', "
+              + "'sink.delivery-guarantee' = 'exactly-once', "
+              + "'sink.transactional-id-prefix' = 'native-source-sink')");
+      PhysicalPlanScan scan = NativePlanner.install(table);
+      String statement = "INSERT INTO output SELECT * FROM input";
+      String plan = table.explainSql(statement);
+
+      table.executeSql(statement).await();
+
+      assertTrue(scan.substitutions() >= 2, scan::explainSummary);
+      assertFalse(plan.contains("RowDataToArrow"), plan);
+      assertFalse(plan.contains("ArrowToRowData"), plan);
+      List<String> committed =
+          consumeCommitted(kafka.getBootstrapServers(), outputTopic, rows);
+      assertEquals(rows, committed.size());
+      assertEquals(rows, new HashSet<>(committed).size());
+    } finally {
+      System.clearProperty("streamfusion.operator.kafkaSource.enabled");
+    }
+  }
 
   @Test
   void publishesWithNonTransactionalDeliveryGuarantees() throws Exception {
@@ -211,6 +269,24 @@ class NativeKafkaSinkIntegrationTest {
 
   private static List<String> consumeCommitted(String brokers, String topic, int expected) {
     return consume(brokers, topic, expected, "read_committed");
+  }
+
+  private static void produceJson(String brokers, String topic, int rows) {
+    Properties properties = new Properties();
+    properties.setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
+    properties.setProperty(
+        ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+    properties.setProperty(
+        ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+    try (KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(properties)) {
+      for (long id = 0; id < rows; id++) {
+        byte[] value =
+            ("{\"id\":" + id + ",\"name\":\"row-" + id + "\"}")
+                .getBytes(StandardCharsets.UTF_8);
+        producer.send(new ProducerRecord<>(topic, value));
+      }
+      producer.flush();
+    }
   }
 
   private static List<String> consume(
