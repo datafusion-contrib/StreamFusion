@@ -413,6 +413,24 @@ impl LocalGroupBy {
         Self::new(vec![0], vec![0], vec![value_column], key_columns)
     }
 
+    pub fn filtered(
+        kinds: Vec<i64>,
+        value_types: Vec<i64>,
+        value_columns: Vec<i64>,
+        filter_columns: Vec<i64>,
+        key_columns: Vec<usize>,
+        distinct_view_sources: Vec<i64>,
+    ) -> Self {
+        LocalGroupBy(LocalGroupAggregator::new(
+            kinds,
+            value_types,
+            value_columns,
+            filter_columns,
+            key_columns,
+            distinct_view_sources,
+        ))
+    }
+
     pub fn update(&mut self, batch: &RecordBatch) {
         self.0.update(batch).expect("budget exceeded");
     }

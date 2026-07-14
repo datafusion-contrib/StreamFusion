@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, Int8Array, Int64Array, RecordBatch, StringArray};
+use arrow::array::{ArrayRef, BooleanArray, Int8Array, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use criterion::{
     black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,
@@ -282,6 +282,67 @@ fn bench_local_group_by_extremes(c: &mut Criterion) {
     group.bench_function("min_max_logical_4096_physical_1024", |b| {
         b.iter_batched(
             || LocalGroupBy::new(vec![1, 2], vec![0, 0], vec![1, 1], vec![0]),
+            |mut aggregator| {
+                for offset in (0..ROWS).step_by(1024) {
+                    aggregator.update(black_box(&batch.slice(offset, 1024)));
+                }
+                black_box(aggregator.flush());
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.finish();
+}
+
+// q15's two-phase local shape: four COUNTs plus four filtered DISTINCT sets for each of bidder and
+// auction. The physical chunks share one logical bundle, so the benchmark includes the real partial
+// list materialization at its boundary.
+fn bench_local_group_by_multi_distinct(c: &mut Criterion) {
+    let keys: ArrayRef = Arc::new(Int64Array::from_iter_values(
+        (0..ROWS as i64).map(|i| i % 16),
+    ));
+    let bidders: ArrayRef = Arc::new(Int64Array::from_iter_values(
+        (0..ROWS as i64).map(|i| i % 1024),
+    ));
+    let auctions: ArrayRef = Arc::new(Int64Array::from_iter_values(
+        (0..ROWS as i64).map(|i| (i * 37) % 2048),
+    ));
+    let rank1: ArrayRef = Arc::new(BooleanArray::from(
+        (0..ROWS).map(|i| i % 3 == 0).collect::<Vec<_>>(),
+    ));
+    let rank2: ArrayRef = Arc::new(BooleanArray::from(
+        (0..ROWS).map(|i| i % 3 == 1).collect::<Vec<_>>(),
+    ));
+    let rank3: ArrayRef = Arc::new(BooleanArray::from(
+        (0..ROWS).map(|i| i % 3 == 2).collect::<Vec<_>>(),
+    ));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("day", DataType::Int64, false),
+            Field::new("bidder", DataType::Int64, false),
+            Field::new("auction", DataType::Int64, false),
+            Field::new("rank1", DataType::Boolean, false),
+            Field::new("rank2", DataType::Boolean, false),
+            Field::new("rank3", DataType::Boolean, false),
+        ])),
+        vec![keys, bidders, auctions, rank1, rank2, rank3],
+    )
+    .unwrap();
+    let make = || {
+        LocalGroupBy::filtered(
+            vec![3, 3, 3, 3, 7, 7, 7, 7, 7, 7, 7, 7],
+            vec![0; 12],
+            vec![-1, -1, -1, -1, 1, 1, 1, 1, 2, 2, 2, 2],
+            vec![-1, 3, 4, 5, -1, 3, 4, 5, -1, 3, 4, 5],
+            vec![0],
+            (4..12).collect(),
+        )
+    };
+    let mut group = c.benchmark_group("local_group_by_multi_distinct");
+    group.throughput(Throughput::Elements(ROWS as u64));
+    group.bench_function("q15_logical_4096_physical_1024", |b| {
+        b.iter_batched(
+            make,
             |mut aggregator| {
                 for offset in (0..ROWS).step_by(1024) {
                     aggregator.update(black_box(&batch.slice(offset, 1024)));
@@ -1006,6 +1067,7 @@ criterion_group!(
     bench_group_by_logical_bundle,
     bench_local_group_by_logical_bundle,
     bench_local_group_by_extremes,
+    bench_local_group_by_multi_distinct,
     bench_json_decode,
     bench_session_keyed,
     bench_over,
