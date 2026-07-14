@@ -230,8 +230,7 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
 
   @Override
   public void wakeUp() {
-    // fetch() polls with a bounded timeout and returns promptly, so the fetcher loop is never blocked
-    // for long; no interrupt of an in-flight native poll is needed.
+    NativeKafka.wakeKafkaConsumer(handle);
   }
 
   /** Commits completed-checkpoint positions from the fetcher thread that owns this consumer. */

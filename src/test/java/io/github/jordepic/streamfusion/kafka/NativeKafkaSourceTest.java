@@ -13,6 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
@@ -435,6 +438,37 @@ class NativeKafkaSourceTest {
       }
       assertEquals(
           List.of(2L, 3L), committedBodies.stream().map(NativeKafkaSourceTest::id).toList());
+    }
+  }
+
+  @Test
+  void wakeUpInterruptsAnInflightNativePoll() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      produce(brokers, TOPIC, 0, 1);
+      long handle = open(brokers, 1);
+      java.util.concurrent.ExecutorService executor = Executors.newSingleThreadExecutor();
+      try {
+        CountDownLatch entered = new CountDownLatch(1);
+        java.util.concurrent.Future<Integer> poll =
+            executor.submit(
+                () -> {
+                  entered.countDown();
+                  return NativeKafka.pollKafkaBatch(handle, 1024, 10_000);
+                });
+        assertTrue(entered.await(1, TimeUnit.SECONDS));
+        Thread.sleep(100);
+        long started = System.nanoTime();
+        NativeKafka.wakeKafkaConsumer(handle);
+        assertEquals(0, poll.get(1, TimeUnit.SECONDS));
+        long wakeMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+        assertTrue(wakeMillis < 1_000, "native wakeup took " + wakeMillis + " ms");
+      } finally {
+        executor.shutdownNow();
+        NativeKafka.closeKafkaConsumer(handle);
+      }
     }
   }
 

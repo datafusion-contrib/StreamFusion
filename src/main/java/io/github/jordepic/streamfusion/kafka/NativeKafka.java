@@ -42,6 +42,8 @@ public final class NativeKafka {
 
   public static native int pollKafkaBatch(long handle, int maxRecords, long timeoutMillis);
 
+  public static native void wakeKafkaConsumer(long handle);
+
   public static native int drainKafkaSplit(
       long handle, long[] splitMeta, String[] outTopic, long outArrayAddress, long outSchemaAddress);
 

@@ -704,6 +704,21 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_po
     })
 }
 
+/// Interrupts an in-flight queue poll. `rd_kafka_queue_yield` is thread-safe and intentionally
+/// touches only librdkafka's queue object, so Flink's task thread need not borrow the fetcher-owned
+/// Rust reader while requesting cancellation.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_wakeKafkaConsumer<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    let reader = handle as *const KafkaSplitReader;
+    let queue = unsafe { (*reader).consumer_queue };
+    unsafe { rdkafka::bindings::rd_kafka_queue_yield(queue) };
+}
+
 /// Drains one pending per-partition body batch, writes `[partition, nextOffset]` into `splitMeta`, and
 /// the topic into `outTopic[0]`, so the JVM can form the split id and advance its checkpoint offset.
 #[cfg(feature = "kafka")]
