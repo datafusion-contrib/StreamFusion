@@ -30,11 +30,19 @@ pub(crate) fn encode_json_batch(
     batch: &RecordBatch,
     ignore_null_fields: bool,
     timestamp_format: &str,
+    logical_types: &[String],
 ) -> Result<Vec<Vec<u8>>, String> {
     use arrow::json::writer::{LineDelimited, WriterBuilder};
 
+    let batch = annotate_flink_types(batch, logical_types)?;
+
     let mut builder =
-        WriterBuilder::new().with_explicit_nulls(!ignore_null_fields);
+        WriterBuilder::new()
+            .with_explicit_nulls(!ignore_null_fields)
+            .with_time_format("%H:%M:%S".to_string())
+            .with_encoder_factory(Arc::new(FlinkJsonEncoderFactory {
+                timestamp_format: timestamp_format.to_string(),
+            }));
     if timestamp_format.eq_ignore_ascii_case("ISO-8601") {
         builder = builder
             .with_timestamp_format("%Y-%m-%dT%H:%M:%S%.f".to_string())
@@ -48,7 +56,7 @@ pub(crate) fn encode_json_batch(
     {
         let mut writer = builder.build::<_, LineDelimited>(&mut bytes);
         writer
-            .write(batch)
+            .write(&batch)
             .map_err(|error| format!("failed to encode Kafka JSON batch: {error}"))?;
         writer
             .finish()
@@ -59,6 +67,204 @@ pub(crate) fn encode_json_batch(
         .filter(|line| !line.is_empty())
         .map(<[u8]>::to_vec)
         .collect())
+}
+
+#[cfg(feature = "kafka")]
+const FLINK_LOGICAL_TYPE: &str = "streamfusion.flink.logical-type";
+
+#[cfg(feature = "kafka")]
+fn annotate_flink_types(
+    batch: &RecordBatch,
+    logical_types: &[String],
+) -> Result<RecordBatch, String> {
+    if logical_types.is_empty() {
+        return Ok(batch.clone());
+    }
+    if logical_types.len() != batch.num_columns() {
+        return Err(format!(
+            "Kafka JSON encoder received {} logical types for {} columns",
+            logical_types.len(),
+            batch.num_columns()
+        ));
+    }
+    let fields = batch
+        .schema()
+        .fields()
+        .iter()
+        .zip(logical_types)
+        .map(|(field, logical_type)| {
+            let mut metadata = field.metadata().clone();
+            metadata.insert(FLINK_LOGICAL_TYPE.to_string(), logical_type.clone());
+            field.as_ref().clone().with_metadata(metadata)
+        })
+        .collect::<Vec<_>>();
+    let schema = Arc::new(Schema::new_with_metadata(
+        fields,
+        batch.schema().metadata().clone(),
+    ));
+    RecordBatch::try_new(schema, batch.columns().to_vec())
+        .map_err(|error| format!("failed to annotate Kafka JSON schema: {error}"))
+}
+
+#[cfg(feature = "kafka")]
+/// Overrides the Arrow JSON defaults whose wire representation differs from Flink's Jackson format.
+#[derive(Debug)]
+struct FlinkJsonEncoderFactory {
+    timestamp_format: String,
+}
+
+#[cfg(feature = "kafka")]
+impl arrow::json::writer::EncoderFactory for FlinkJsonEncoderFactory {
+    fn make_default_encoder<'a>(
+        &self,
+        field: &'a FieldRef,
+        array: &'a dyn Array,
+        _options: &'a arrow::json::writer::EncoderOptions,
+    ) -> Result<Option<arrow::json::writer::NullableEncoder<'a>>, arrow::error::ArrowError> {
+        use arrow::array::cast::AsArray;
+        use arrow::datatypes::{Decimal128Type, TimestampNanosecondType};
+        use arrow::json::writer::{Encoder, NullableEncoder};
+
+        let encoder: Option<Box<dyn Encoder + 'a>> = match array.data_type() {
+            DataType::Binary => Some(Box::new(FlinkBinaryEncoder {
+                array: array.as_binary::<i32>(),
+            })),
+            DataType::LargeBinary => Some(Box::new(FlinkBinaryEncoder {
+                array: array.as_binary::<i64>(),
+            })),
+            DataType::Decimal128(_, scale) => Some(Box::new(FlinkDecimal128Encoder {
+                array: array.as_primitive::<Decimal128Type>(),
+                scale: *scale,
+            })),
+            DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, _)
+                if field
+                    .metadata()
+                    .get(FLINK_LOGICAL_TYPE)
+                    .is_some_and(|logical_type| logical_type.starts_with("TIMESTAMP_LTZ")) =>
+            {
+                let logical_type = &field.metadata()[FLINK_LOGICAL_TYPE];
+                Some(Box::new(FlinkLocalTimestampEncoder {
+                    array: array.as_primitive::<TimestampNanosecondType>(),
+                    precision: flink_temporal_precision(logical_type),
+                    iso_8601: self.timestamp_format.eq_ignore_ascii_case("ISO-8601"),
+                }))
+            }
+            _ => None,
+        };
+        Ok(encoder.map(|encoder| NullableEncoder::new(encoder, array.nulls().cloned())))
+    }
+}
+
+#[cfg(feature = "kafka")]
+fn flink_temporal_precision(logical_type: &str) -> usize {
+    logical_type
+        .strip_prefix("TIMESTAMP_LTZ(")
+        .and_then(|value| value.strip_suffix(')'))
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(6)
+}
+
+#[cfg(feature = "kafka")]
+struct FlinkBinaryEncoder<'a, O: arrow::array::OffsetSizeTrait> {
+    array: &'a arrow::array::GenericBinaryArray<O>,
+}
+
+#[cfg(feature = "kafka")]
+impl<O: arrow::array::OffsetSizeTrait> arrow::json::writer::Encoder for FlinkBinaryEncoder<'_, O> {
+    fn encode(&mut self, index: usize, output: &mut Vec<u8>) {
+        use base64::Engine;
+        output.push(b'"');
+        let input = self.array.value(index);
+        let start = output.len();
+        let encoded_len = base64::encoded_len(input.len(), true).expect("base64 output length");
+        output.resize(start + encoded_len, 0);
+        base64::engine::general_purpose::STANDARD
+            .encode_slice(input, &mut output[start..])
+            .expect("sized base64 output");
+        output.push(b'"');
+    }
+}
+
+#[cfg(feature = "kafka")]
+struct FlinkDecimal128Encoder<'a> {
+    array: &'a arrow::array::Decimal128Array,
+    scale: i8,
+}
+
+#[cfg(feature = "kafka")]
+impl arrow::json::writer::Encoder for FlinkDecimal128Encoder<'_> {
+    fn encode(&mut self, index: usize, output: &mut Vec<u8>) {
+        let value = self.array.value(index);
+        let negative = value < 0;
+        let digits = value.unsigned_abs().to_string();
+        if negative {
+            output.push(b'-');
+        }
+        let scale = self.scale as usize;
+        if scale == 0 {
+            output.extend_from_slice(digits.as_bytes());
+            return;
+        }
+        if digits.len() <= scale {
+            output.extend_from_slice(b"0.");
+            for _ in 0..scale - digits.len() {
+                output.push(b'0');
+            }
+            output.extend_from_slice(digits.as_bytes());
+        } else {
+            let split = digits.len() - scale;
+            output.extend_from_slice(digits[..split].as_bytes());
+            output.push(b'.');
+            output.extend_from_slice(digits[split..].as_bytes());
+        }
+        while output.last() == Some(&b'0') {
+            output.pop();
+        }
+        if output.last() == Some(&b'.') {
+            output.pop();
+        }
+    }
+}
+
+#[cfg(feature = "kafka")]
+struct FlinkLocalTimestampEncoder<'a> {
+    array: &'a arrow::array::TimestampNanosecondArray,
+    precision: usize,
+    iso_8601: bool,
+}
+
+#[cfg(feature = "kafka")]
+impl arrow::json::writer::Encoder for FlinkLocalTimestampEncoder<'_> {
+    fn encode(&mut self, index: usize, output: &mut Vec<u8>) {
+        use chrono::{DateTime, Utc};
+        use std::io::Write;
+        let value = self.array.value(index);
+        let seconds = value.div_euclid(1_000_000_000);
+        let nanos = value.rem_euclid(1_000_000_000) as u32;
+        let timestamp =
+            DateTime::<Utc>::from_timestamp(seconds, nanos).expect("valid Flink timestamp");
+        output.push(b'"');
+        let separator = if self.iso_8601 { 'T' } else { ' ' };
+        write!(
+            output,
+            "{}{separator}{}",
+            timestamp.format("%Y-%m-%d"),
+            timestamp.format("%H:%M:%S")
+        )
+        .expect("write timestamp");
+        if self.precision > 0 {
+            let mut precision = self.precision.min(9);
+            let mut fraction = nanos / 10_u32.pow((9 - precision) as u32);
+            while fraction != 0 && fraction % 10 == 0 {
+                fraction /= 10;
+                precision -= 1;
+            }
+            if fraction != 0 {
+                write!(output, ".{fraction:0precision$}").expect("write timestamp fraction");
+            }
+        }
+        output.extend_from_slice(b"Z\"");
+    }
 }
 
 /// The production native Kafka consumer for one Flink subtask: a single rdkafka `BaseConsumer` that
@@ -562,10 +768,10 @@ mod kafka_error_tests {
         )
         .unwrap();
 
-        let explicit = encode_json_batch(&batch, false, "SQL").unwrap();
+        let explicit = encode_json_batch(&batch, false, "SQL", &[]).unwrap();
         assert_eq!(explicit[0], br#"{"id":1,"name":"one","active":true}"#);
         assert_eq!(explicit[1], br#"{"id":2,"name":null,"active":false}"#);
-        let omitted = encode_json_batch(&batch, true, "SQL").unwrap();
+        let omitted = encode_json_batch(&batch, true, "SQL", &[]).unwrap();
         assert_eq!(omitted[1], br#"{"id":2,"active":false}"#);
     }
 }
@@ -795,6 +1001,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_en
     schema_address: jlong,
     ignore_null_fields: jboolean,
     timestamp_format: JString<'local>,
+    logical_types: JObjectArray<'local>,
 ) -> jni::sys::jobjectArray {
     kafka_jni(&mut env, std::ptr::null_mut(), |env| {
         let batch = import_record_batch(array_address, schema_address);
@@ -802,7 +1009,13 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_en
             .get_string(&timestamp_format)
             .map_err(|error| format!("failed to read JSON timestamp format: {error}"))?
             .into();
-        let encoded = encode_json_batch(&batch, ignore_null_fields != 0, &timestamp_format)?;
+        let logical_types = read_string_array(env, &logical_types);
+        let encoded = encode_json_batch(
+            &batch,
+            ignore_null_fields != 0,
+            &timestamp_format,
+            &logical_types,
+        )?;
         if encoded.len() != batch.num_rows() {
             return Err(format!(
                 "Kafka JSON encoder produced {} records for {} Arrow rows",

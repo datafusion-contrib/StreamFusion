@@ -35,13 +35,34 @@ class NativeKafkaSinkSqlPlanTest {
   }
 
   @Test
+  void plansTheVerifiedScalarJsonFamily() {
+    StreamTableEnvironment table = environment();
+    table.executeSql(
+        "CREATE TABLE src (amount DECIMAL(10, 2), payload BYTES, event_day DATE, tod TIME(3), "
+            + "instant TIMESTAMP_LTZ(3)) "
+            + "WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
+    table.executeSql(
+        "CREATE TABLE output (amount DECIMAL(10, 2), payload BYTES, event_day DATE, tod TIME(3), "
+            + "instant TIMESTAMP_LTZ(3)) WITH ("
+            + "'connector' = 'kafka', "
+            + "'topic' = 'output', "
+            + "'properties.bootstrap.servers' = 'broker:9092', "
+            + "'format' = 'json')");
+
+    PhysicalPlanScan scan = NativePlanner.install(table);
+    table.explainSql("INSERT INTO output SELECT * FROM src");
+
+    assertTrue(scan.substitutions() > 0, scan::explainSummary);
+  }
+
+  @Test
   void recordsWhyAnUnverifiedJsonTypeFallsBack() {
     StreamTableEnvironment table = environment();
     table.executeSql(
-        "CREATE TABLE src (id INT, amount DECIMAL(10, 2)) "
+        "CREATE TABLE src (id INT, items ARRAY<INT>) "
             + "WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
     table.executeSql(
-        "CREATE TABLE output (id INT, amount DECIMAL(10, 2)) WITH ("
+        "CREATE TABLE output (id INT, items ARRAY<INT>) WITH ("
             + "'connector' = 'kafka', "
             + "'topic' = 'output', "
             + "'properties.bootstrap.servers' = 'broker:9092', "
@@ -52,7 +73,7 @@ class NativeKafkaSinkSqlPlanTest {
 
     assertEquals(0, scan.substitutions());
     assertTrue(
-        scan.fallbackReasons().stream().anyMatch(reason -> reason.contains("DECIMAL")),
+        scan.fallbackReasons().stream().anyMatch(reason -> reason.contains("ARRAY")),
         scan::explainSummary);
   }
 

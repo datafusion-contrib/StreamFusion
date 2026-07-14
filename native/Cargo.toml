@@ -87,6 +87,8 @@ csv-core = "0.1"
 # NumCast for the JSON number → Arrow primitive conversions, mirroring arrow-json's number path.
 # Already in the tree transitively via arrow; pinned here for direct use.
 num-traits = "0.2"
+# Flink's JSON format writes binary values as RFC 4648 base64 rather than arrow-json's hexadecimal.
+base64 = "0.22"
 # Opt-in mimalloc (see the `mimalloc` feature): librdkafka allocates one op per consumed message
 # on the broker thread and frees it on the app thread; the system allocator makes that cross-thread
 # malloc/free pattern the top cost on both threads (macOS even madvises pages back mid-loop), and

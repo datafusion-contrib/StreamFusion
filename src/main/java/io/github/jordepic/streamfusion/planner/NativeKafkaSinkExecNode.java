@@ -59,7 +59,11 @@ public final class NativeKafkaSinkExecNode extends ExecNodeBase<Object>
             "native-kafka-json-serialization",
             SimpleOperatorFactory.of(
                 new NativeKafkaJsonSerializationOperator(
-                    planned.ignoreNullFields, planned.timestampFormat)),
+                    planned.ignoreNullFields,
+                    planned.timestampFormat,
+                    planned.rowType.getChildren().stream()
+                        .map(Object::toString)
+                        .toArray(String[]::new))),
             PrimitiveArrayTypeInfo.BYTE_PRIMITIVE_ARRAY_TYPE_INFO,
             parallelism,
             parallelismConfigured);

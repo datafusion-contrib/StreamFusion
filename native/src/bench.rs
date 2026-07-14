@@ -3,7 +3,7 @@ use super::*;
 /// The production Kafka JSON encoder, exposed only to its Criterion benchmark.
 #[cfg(feature = "kafka")]
 pub fn encode_kafka_json(batch: &RecordBatch) -> Vec<Vec<u8>> {
-    encode_json_batch(batch, false, "SQL").expect("Kafka JSON encode")
+    encode_json_batch(batch, false, "SQL", &[]).expect("Kafka JSON encode")
 }
 
 /// A filter predicate compiled once (on the first `run`) and reused, as the operator uses it.

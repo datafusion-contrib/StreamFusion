@@ -46,7 +46,11 @@ public final class NativeKafka {
 
   /** Serializes one Arrow batch directly into the final heap byte arrays KafkaProducer requires. */
   public static native byte[][] encodeKafkaJsonBatch(
-      long arrayAddress, long schemaAddress, boolean ignoreNullFields, String timestampFormat);
+      long arrayAddress,
+      long schemaAddress,
+      boolean ignoreNullFields,
+      String timestampFormat,
+      String[] logicalTypes);
 
   public static native int drainKafkaSplit(
       long handle, long[] splitMeta, String[] outTopic, long outArrayAddress, long outSchemaAddress);

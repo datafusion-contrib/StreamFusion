@@ -81,7 +81,13 @@ final class KafkaSinkMatcher {
       case BOOLEAN:
       case CHAR:
       case VARCHAR:
+      case BINARY:
+      case VARBINARY:
+      case DECIMAL:
+      case DATE:
+      case TIME_WITHOUT_TIME_ZONE:
       case TIMESTAMP_WITHOUT_TIME_ZONE:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
         return true;
       default:
         return false;

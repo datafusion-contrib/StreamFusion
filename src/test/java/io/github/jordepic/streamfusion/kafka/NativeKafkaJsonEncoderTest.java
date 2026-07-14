@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.github.jordepic.streamfusion.operator.RowDataArrowConverter;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.List;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
@@ -18,16 +21,22 @@ import org.apache.flink.formats.json.JsonFormatOptions;
 import org.apache.flink.formats.json.JsonRowDataSerializationSchema;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.metrics.groups.UnregisteredMetricsGroup;
+import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.logical.BooleanType;
+import org.apache.flink.table.types.logical.DateType;
+import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.DoubleType;
 import org.apache.flink.table.types.logical.IntType;
+import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.logical.TimeType;
 import org.apache.flink.table.types.logical.TimestampType;
+import org.apache.flink.table.types.logical.VarBinaryType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.util.SimpleUserCodeClassLoader;
 import org.apache.flink.util.UserCodeClassLoader;
@@ -71,6 +80,43 @@ class NativeKafkaJsonEncoderTest {
 
     assertMatchesFlink(rows, timestamps, TimestampFormat.SQL, false);
     assertMatchesFlink(rows, timestamps, TimestampFormat.ISO_8601, false);
+  }
+
+  @Test
+  void matchesFlinkForRemainingScalarTypes() throws Exception {
+    RowType scalars =
+        RowType.of(
+            new LogicalType[] {
+              new DecimalType(10, 2),
+              new VarBinaryType(VarBinaryType.MAX_LENGTH),
+              new DateType(),
+              new TimeType(3),
+              new LocalZonedTimestampType(3)
+            },
+            new String[] {"amount", "payload", "day", "time", "instant"});
+    List<RowData> rows =
+        List.of(
+            GenericRowData.of(
+                DecimalData.fromBigDecimal(new BigDecimal("12345678.90"), 10, 2),
+                new byte[] {0, 1, 2, -1},
+                (int) LocalDate.of(2020, 2, 29).toEpochDay(),
+                45_296_789,
+                TimestampData.fromEpochMillis(1_577_934_245_678L)),
+            GenericRowData.of(
+                DecimalData.fromBigDecimal(new BigDecimal("1.00"), 10, 2),
+                new byte[0],
+                (int) LocalDate.of(1970, 1, 1).toEpochDay(),
+                0,
+                TimestampData.fromEpochMillis(0)),
+            GenericRowData.of(
+                DecimalData.fromBigDecimal(new BigDecimal("-0.01"), 10, 2),
+                new byte[] {-128, 127},
+                (int) LocalDate.of(1969, 12, 31).toEpochDay(),
+                86_399_999,
+                TimestampData.fromEpochMillis(-1)));
+
+    assertMatchesFlink(rows, scalars, TimestampFormat.SQL, false);
+    assertMatchesFlink(rows, scalars, TimestampFormat.ISO_8601, false);
   }
 
   private static void assertMatchesFlink(List<RowData> rows, boolean ignoreNullFields)
@@ -117,11 +163,21 @@ class NativeKafkaJsonEncoderTest {
               array.memoryAddress(),
               schema.memoryAddress(),
               ignoreNullFields,
-              timestampFormat == TimestampFormat.SQL ? "SQL" : "ISO-8601");
+              timestampFormat == TimestampFormat.SQL ? "SQL" : "ISO-8601",
+              rowType.getChildren().stream().map(Object::toString).toArray(String[]::new));
 
       assertEquals(rows.size(), actual.length);
       for (int i = 0; i < rows.size(); i++) {
-        assertArrayEquals(flink.serialize(rows.get(i)), actual[i], "row " + i);
+        byte[] expected = flink.serialize(rows.get(i));
+        assertArrayEquals(
+            expected,
+            actual[i],
+            "row "
+                + i
+                + ": expected "
+                + new String(expected, StandardCharsets.UTF_8)
+                + ", actual "
+                + new String(actual[i], StandardCharsets.UTF_8));
       }
     }
   }

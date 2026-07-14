@@ -18,14 +18,17 @@ public final class NativeKafkaJsonSerializationOperator extends AbstractStreamOp
 
   private final boolean ignoreNullFields;
   private final String timestampFormat;
+  private final String[] logicalTypes;
   private transient Counter serializationBatches;
   private transient Counter serializationRows;
   private transient Counter serializedBytes;
   private transient Counter serializationNanos;
 
-  public NativeKafkaJsonSerializationOperator(boolean ignoreNullFields, String timestampFormat) {
+  public NativeKafkaJsonSerializationOperator(
+      boolean ignoreNullFields, String timestampFormat, String[] logicalTypes) {
     this.ignoreNullFields = ignoreNullFields;
     this.timestampFormat = timestampFormat;
+    this.logicalTypes = logicalTypes;
   }
 
   @Override
@@ -54,7 +57,8 @@ public final class NativeKafkaJsonSerializationOperator extends AbstractStreamOp
                 array.memoryAddress(),
                 schema.memoryAddress(),
                 ignoreNullFields,
-                timestampFormat);
+                timestampFormat,
+                logicalTypes);
         long bytes = 0;
         for (byte[] value : values) {
           bytes += value.length;

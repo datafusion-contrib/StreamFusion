@@ -450,8 +450,9 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   native batch, row, byte, and elapsed-nanosecond counters, so encoding cost can be distinguished
   from producer and checkpoint cost. Broker tests pin committed output both normally and across a
   post-checkpoint failover. The native serializer currently covers BOOLEAN,
-  TINYINT/SMALLINT/INT/BIGINT, FLOAT/DOUBLE, CHAR/VARCHAR, and TIMESTAMP (SQL or ISO-8601), including
-  `encode.ignore-null-fields`. Every sink fallback cause:
+  TINYINT/SMALLINT/INT/BIGINT, FLOAT/DOUBLE, CHAR/VARCHAR, BINARY/VARBINARY, DECIMAL, DATE, TIME,
+  TIMESTAMP, and TIMESTAMP_LTZ (SQL or ISO-8601), including `encode.ignore-null-fields`. Every sink
+  fallback cause:
   - a non-JSON value format, multiple/dynamic topics, a key format or key/value projection;
   - a non-default partitioner, sink-side buffer flushing, writable metadata, or any other sink
     ability;

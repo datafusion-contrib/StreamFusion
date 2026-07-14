@@ -37,7 +37,10 @@ class NativeKafkaJsonSerializationOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         OneInputStreamOperatorTestHarness<ArrowBatch, byte[]> harness =
             new OneInputStreamOperatorTestHarness<>(
-                new NativeKafkaJsonSerializationOperator(false, "SQL"),
+                new NativeKafkaJsonSerializationOperator(
+                    false,
+                    "SQL",
+                    rowType.getChildren().stream().map(Object::toString).toArray(String[]::new)),
                 new ArrowBatchSerializer())) {
       harness.open();
       harness.processElement(
