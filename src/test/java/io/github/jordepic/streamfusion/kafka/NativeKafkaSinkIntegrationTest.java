@@ -49,6 +49,52 @@ class NativeKafkaSinkIntegrationTest {
   private static final AtomicBoolean FAILED_ONCE = new AtomicBoolean();
 
   @Test
+  void publishesWithNonTransactionalDeliveryGuarantees() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      for (String guarantee : List.of("none", "at-least-once")) {
+        int rows = 50;
+        String topic = "native-sink-" + guarantee + "-" + UUID.randomUUID();
+        StreamExecutionEnvironment environment =
+            StreamExecutionEnvironment.getExecutionEnvironment();
+        environment.setParallelism(1);
+        StreamTableEnvironment table = StreamTableEnvironment.create(environment);
+        List<Row> input = new ArrayList<>(rows);
+        for (long id = 0; id < rows; id++) {
+          input.add(Row.of(id, "row-" + id));
+        }
+        table.createTemporaryView(
+            "src",
+            environment.fromData(
+                Types.ROW_NAMED(new String[] {"id", "name"}, Types.LONG, Types.STRING),
+                input.toArray(Row[]::new)),
+            Schema.newBuilder()
+                .column("id", DataTypes.BIGINT())
+                .column("name", DataTypes.STRING())
+                .build());
+        table.executeSql(
+            "CREATE TABLE output (id BIGINT, name STRING) WITH ("
+                + "'connector' = 'kafka', 'topic' = '"
+                + topic
+                + "', 'properties.bootstrap.servers' = '"
+                + kafka.getBootstrapServers()
+                + "', 'format' = 'json', 'sink.delivery-guarantee' = '"
+                + guarantee
+                + "')");
+        PhysicalPlanScan scan = NativePlanner.install(table);
+
+        table.executeSql("INSERT INTO output SELECT * FROM src").await();
+
+        assertTrue(scan.substitutions() > 0, scan::explainSummary);
+        assertEquals(
+            rows,
+            consume(kafka.getBootstrapServers(), topic, rows, "read_uncommitted").size());
+      }
+    }
+  }
+
+  @Test
   void publishesEveryNativeJsonValueInCommittedTransactions() throws Exception {
     try (KafkaContainer kafka =
         new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
@@ -164,11 +210,16 @@ class NativeKafkaSinkIntegrationTest {
   }
 
   private static List<String> consumeCommitted(String brokers, String topic, int expected) {
+    return consume(brokers, topic, expected, "read_committed");
+  }
+
+  private static List<String> consume(
+      String brokers, String topic, int expected, String isolationLevel) {
     Properties properties = new Properties();
     properties.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
     properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "verify-" + UUID.randomUUID());
     properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-    properties.setProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
+    properties.setProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, isolationLevel);
     properties.setProperty(
         ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
     properties.setProperty(
