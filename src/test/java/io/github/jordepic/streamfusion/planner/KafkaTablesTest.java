@@ -41,6 +41,13 @@ class KafkaTablesTest {
             Map.of("properties.auto.offset.reset", "latest"), OffsetsInitializer.earliest());
     assertEquals("earliest", earliest.getProperty("auto.offset.reset"));
     assertEquals("false", earliest.getProperty("commit.offsets.on.checkpoint"));
+    org.junit.jupiter.api.Assertions.assertTrue(
+        earliest.getProperty("client.id.prefix").startsWith("KafkaSource-"));
+
+    Properties grouped =
+        KafkaTables.configuredSourceProperties(
+            Map.of("properties.group.id", "orders"), OffsetsInitializer.earliest());
+    assertEquals("orders", grouped.getProperty("client.id.prefix"));
 
     assertEquals(
         OffsetResetStrategy.NONE,

@@ -602,6 +602,11 @@ final class KafkaTables {
     if (!props.containsKey("group.id")) {
       props.setProperty("commit.offsets.on.checkpoint", "false");
     }
+    props.putIfAbsent(
+        "client.id.prefix",
+        props.containsKey("group.id")
+            ? props.getProperty("group.id")
+            : "KafkaSource-" + new java.util.Random().nextLong());
     return props;
   }
 

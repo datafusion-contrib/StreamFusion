@@ -88,11 +88,21 @@ public final class NativeKafkaSource
   @Override
   public SourceReader<ArrowBatch, KafkaPartitionSplit> createReader(SourceReaderContext context) {
     NativeKafkaSourceMetrics metrics = new NativeKafkaSourceMetrics(context.metricGroup());
+    java.util.LinkedHashMap<String, String> readerConfig = new java.util.LinkedHashMap<>();
+    for (int i = 0; i < configKeys.length; i++) {
+      readerConfig.put(configKeys[i], configValues[i]);
+    }
+    readerConfig.put(
+        "client.id",
+        props.getProperty("client.id.prefix") + "-" + context.getIndexOfSubtask());
+    String[] readerConfigKeys = readerConfig.keySet().toArray(new String[0]);
+    String[] readerConfigValues =
+        java.util.Arrays.stream(readerConfigKeys).map(readerConfig::get).toArray(String[]::new);
     Supplier<SplitReader<NativeKafkaRecord, KafkaPartitionSplit>> splitReaderSupplier =
         () ->
             new NativeKafkaSplitReader(
-                configKeys,
-                configValues,
+                readerConfigKeys,
+                readerConfigValues,
                 maxRecords,
                 pollTimeoutMillis,
                 decoderFactory,
