@@ -164,7 +164,8 @@ class NativeKafkaJsonEncoderTest {
               schema.memoryAddress(),
               ignoreNullFields,
               timestampFormat == TimestampFormat.SQL ? "SQL" : "ISO-8601",
-              rowType.getChildren().stream().map(Object::toString).toArray(String[]::new));
+              rowType.getChildren().stream().map(Object::toString).toArray(String[]::new),
+              rowType.getFieldNames().toArray(String[]::new));
 
       assertEquals(rows.size(), actual.length);
       for (int i = 0; i < rows.size(); i++) {

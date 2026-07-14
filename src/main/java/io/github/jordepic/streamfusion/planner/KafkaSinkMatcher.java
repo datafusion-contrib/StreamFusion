@@ -4,7 +4,6 @@ import java.util.Map;
 import org.apache.flink.table.catalog.ContextResolvedTable;
 import org.apache.flink.table.catalog.ResolvedCatalogBaseTable;
 import org.apache.flink.table.catalog.ResolvedCatalogTable;
-import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.abilities.sink.SinkAbilitySpec;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.types.logical.LogicalType;
@@ -20,6 +19,9 @@ final class KafkaSinkMatcher {
     final KafkaSinkTranslator.Planned sink;
     final String timestampFormat;
     final boolean ignoreNullFields;
+    final int[] keyFields;
+    final int[] valueFields;
+    final boolean upsert;
     final String fallbackReason;
 
     private Planned(
@@ -27,22 +29,30 @@ final class KafkaSinkMatcher {
         KafkaSinkTranslator.Planned sink,
         String timestampFormat,
         boolean ignoreNullFields,
+        int[] keyFields,
+        int[] valueFields,
+        boolean upsert,
         String fallbackReason) {
       this.rowType = rowType;
       this.sink = sink;
       this.timestampFormat = timestampFormat;
       this.ignoreNullFields = ignoreNullFields;
+      this.keyFields = keyFields;
+      this.valueFields = valueFields;
+      this.upsert = upsert;
       this.fallbackReason = fallbackReason;
     }
 
     private static Planned fallback(String reason) {
-      return new Planned(null, null, null, false, reason);
+      return new Planned(null, null, null, false, null, null, false, reason);
     }
   }
 
   static boolean appliesTo(StreamPhysicalSink sink) {
     Map<String, String> options = options(sink);
-    if (options == null || !"kafka".equals(options.get("connector"))) {
+    if (options == null
+        || !("kafka".equals(options.get("connector"))
+            || "upsert-kafka".equals(options.get("connector")))) {
       return false;
     }
     return "json".equals(options.getOrDefault("value.format", options.get("format")));
@@ -57,7 +67,10 @@ final class KafkaSinkMatcher {
     if (!translated.isTranslated()) {
       return Planned.fallback(translated.fallbackReason().orElseThrow());
     }
-    RowType rowType = FlinkTypeFactory$.MODULE$.toLogicalRowType(sink.getRowType());
+    ContextResolvedTable context = sink.contextResolvedTable();
+    ResolvedCatalogTable table = (ResolvedCatalogTable) context.getResolvedTable();
+    RowType rowType =
+        (RowType) table.getResolvedSchema().toPhysicalRowDataType().getLogicalType();
     for (LogicalType type : rowType.getChildren()) {
       if (!supportsJsonType(type)) {
         return Planned.fallback("JSON type " + type.asSummaryString());
@@ -67,7 +80,23 @@ final class KafkaSinkMatcher {
     String timestampFormat = json.getOrDefault("timestamp-format.standard", "SQL");
     boolean ignoreNullFields =
         Boolean.parseBoolean(json.getOrDefault("encode.ignore-null-fields", "false"));
-    return new Planned(rowType, translated.planned(), timestampFormat, ignoreNullFields, null);
+    int[] valueFields = java.util.stream.IntStream.range(0, rowType.getFieldCount()).toArray();
+    int[] keyFields = new int[0];
+    if (translated.planned().upsert) {
+      java.util.List<String> primaryKey =
+          table.getResolvedSchema().getPrimaryKey().orElseThrow().getColumns();
+      keyFields =
+          primaryKey.stream().mapToInt(rowType.getFieldNames()::indexOf).toArray();
+    }
+    return new Planned(
+        rowType,
+        translated.planned(),
+        timestampFormat,
+        ignoreNullFields,
+        keyFields,
+        valueFields,
+        translated.planned().upsert,
+        null);
   }
 
   private static boolean supportsJsonType(LogicalType type) {

@@ -20,6 +20,7 @@ public final class NativeKafkaJsonSerializationOperator
   private final boolean ignoreNullFields;
   private final String timestampFormat;
   private final String[] logicalTypes;
+  private final String[] fieldNames;
   private final int[] keyFields;
   private final int[] valueFields;
   private final boolean upsert;
@@ -32,12 +33,14 @@ public final class NativeKafkaJsonSerializationOperator
       boolean ignoreNullFields,
       String timestampFormat,
       String[] logicalTypes,
+      String[] fieldNames,
       int[] keyFields,
       int[] valueFields,
       boolean upsert) {
     this.ignoreNullFields = ignoreNullFields;
     this.timestampFormat = timestampFormat;
     this.logicalTypes = logicalTypes;
+    this.fieldNames = fieldNames;
     this.keyFields = keyFields;
     this.valueFields = valueFields;
     this.upsert = upsert;
@@ -71,6 +74,7 @@ public final class NativeKafkaJsonSerializationOperator
                 ignoreNullFields,
                 timestampFormat,
                 logicalTypes,
+                fieldNames,
                 keyFields,
                 valueFields,
                 upsert);

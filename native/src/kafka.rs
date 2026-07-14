@@ -31,10 +31,11 @@ pub(crate) fn encode_json_batch(
     ignore_null_fields: bool,
     timestamp_format: &str,
     logical_types: &[String],
+    field_names: &[String],
 ) -> Result<Vec<Vec<u8>>, String> {
     use arrow::json::writer::{LineDelimited, WriterBuilder};
 
-    let batch = annotate_flink_types(batch, logical_types)?;
+    let batch = annotate_flink_types(batch, logical_types, field_names)?;
 
     let mut builder =
         WriterBuilder::new()
@@ -75,6 +76,7 @@ fn encode_json_records(
     ignore_null_fields: bool,
     timestamp_format: &str,
     logical_types: &[String],
+    field_names: &[String],
     key_fields: &[usize],
     value_fields: &[usize],
     upsert: bool,
@@ -91,6 +93,12 @@ fn encode_json_records(
             .map(|index| logical_types[*index].clone())
             .collect::<Vec<_>>()
     };
+    let project_names = |fields: &[usize]| {
+        fields
+            .iter()
+            .map(|index| field_names[*index].clone())
+            .collect::<Vec<_>>()
+    };
     let keys = if key_fields.is_empty() {
         vec![None; batch.num_rows()]
     } else {
@@ -99,6 +107,7 @@ fn encode_json_records(
             ignore_null_fields,
             timestamp_format,
             &project_types(key_fields),
+            &project_names(key_fields),
         )?
         .into_iter()
         .map(Some)
@@ -109,6 +118,7 @@ fn encode_json_records(
         ignore_null_fields,
         timestamp_format,
         &project_types(value_fields),
+        &project_names(value_fields),
     )?
     .into_iter()
     .map(Some)
@@ -133,14 +143,16 @@ const FLINK_LOGICAL_TYPE: &str = "streamfusion.flink.logical-type";
 fn annotate_flink_types(
     batch: &RecordBatch,
     logical_types: &[String],
+    field_names: &[String],
 ) -> Result<RecordBatch, String> {
-    if logical_types.is_empty() {
+    if logical_types.is_empty() && field_names.is_empty() {
         return Ok(batch.clone());
     }
-    if logical_types.len() != batch.num_columns() {
+    if logical_types.len() != batch.num_columns() || field_names.len() != batch.num_columns() {
         return Err(format!(
-            "Kafka JSON encoder received {} logical types for {} columns",
+            "Kafka JSON encoder received {} logical types and {} names for {} columns",
             logical_types.len(),
+            field_names.len(),
             batch.num_columns()
         ));
     }
@@ -148,11 +160,15 @@ fn annotate_flink_types(
         .schema()
         .fields()
         .iter()
-        .zip(logical_types)
-        .map(|(field, logical_type)| {
+        .zip(logical_types.iter().zip(field_names))
+        .map(|(field, (logical_type, field_name))| {
             let mut metadata = field.metadata().clone();
             metadata.insert(FLINK_LOGICAL_TYPE.to_string(), logical_type.clone());
-            field.as_ref().clone().with_metadata(metadata)
+            field
+                .as_ref()
+                .clone()
+                .with_name(field_name)
+                .with_metadata(metadata)
         })
         .collect::<Vec<_>>();
     let schema = Arc::new(Schema::new_with_metadata(
@@ -825,10 +841,10 @@ mod kafka_error_tests {
         )
         .unwrap();
 
-        let explicit = encode_json_batch(&batch, false, "SQL", &[]).unwrap();
+        let explicit = encode_json_batch(&batch, false, "SQL", &[], &[]).unwrap();
         assert_eq!(explicit[0], br#"{"id":1,"name":"one","active":true}"#);
         assert_eq!(explicit[1], br#"{"id":2,"name":null,"active":false}"#);
-        let omitted = encode_json_batch(&batch, true, "SQL", &[]).unwrap();
+        let omitted = encode_json_batch(&batch, true, "SQL", &[], &[]).unwrap();
         assert_eq!(omitted[1], br#"{"id":2,"active":false}"#);
     }
 }
@@ -1059,6 +1075,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_en
     ignore_null_fields: jboolean,
     timestamp_format: JString<'local>,
     logical_types: JObjectArray<'local>,
+    field_names: JObjectArray<'local>,
 ) -> jni::sys::jobjectArray {
     kafka_jni(&mut env, std::ptr::null_mut(), |env| {
         let batch = import_record_batch(array_address, schema_address);
@@ -1067,11 +1084,13 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_en
             .map_err(|error| format!("failed to read JSON timestamp format: {error}"))?
             .into();
         let logical_types = read_string_array(env, &logical_types);
+        let field_names = read_string_array(env, &field_names);
         let encoded = encode_json_batch(
             &batch,
             ignore_null_fields != 0,
             &timestamp_format,
             &logical_types,
+            &field_names,
         )?;
         if encoded.len() != batch.num_rows() {
             return Err(format!(
@@ -1130,6 +1149,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_en
     ignore_null_fields: jboolean,
     timestamp_format: JString<'local>,
     logical_types: JObjectArray<'local>,
+    field_names: JObjectArray<'local>,
     key_fields: JIntArray<'local>,
     value_fields: JIntArray<'local>,
     upsert: jboolean,
@@ -1141,6 +1161,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_en
             .map_err(|error| format!("failed to read JSON timestamp format: {error}"))?
             .into();
         let logical_types = read_string_array(env, &logical_types);
+        let field_names = read_string_array(env, &field_names);
         let key_fields = read_int_array(env, &key_fields)
             .into_iter()
             .map(|index| index as usize)
@@ -1154,6 +1175,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_en
             ignore_null_fields != 0,
             &timestamp_format,
             &logical_types,
+            &field_names,
             &key_fields,
             &value_fields,
             upsert != 0,

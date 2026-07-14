@@ -5,7 +5,6 @@ import io.github.jordepic.streamfusion.kafka.PreSerializedKafkaRecord;
 import io.github.jordepic.streamfusion.kafka.PreSerializedKafkaRecordSchema;
 import io.github.jordepic.streamfusion.operator.ArrowBatch;
 import java.util.Collections;
-import java.util.stream.IntStream;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -66,9 +65,10 @@ public final class NativeKafkaSinkExecNode extends ExecNodeBase<Object>
                     planned.rowType.getChildren().stream()
                         .map(Object::toString)
                         .toArray(String[]::new),
-                    new int[0],
-                    IntStream.range(0, planned.rowType.getFieldCount()).toArray(),
-                    false)),
+                    planned.rowType.getFieldNames().toArray(String[]::new),
+                    planned.keyFields,
+                    planned.valueFields,
+                    planned.upsert)),
             TypeInformation.of(PreSerializedKafkaRecord.class),
             parallelism,
             parallelismConfigured);

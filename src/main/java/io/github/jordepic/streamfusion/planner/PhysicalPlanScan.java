@@ -185,16 +185,17 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         && current instanceof StreamPhysicalSink
         && KafkaSinkMatcher.appliesTo((StreamPhysicalSink) current)) {
       StreamPhysicalSink sink = (StreamPhysicalSink) current;
-      if (!ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) current.getInputs().get(0))) {
-        recordFallback("kafka sink: the input is a changelog, not an insert-only stream");
-        return current;
-      }
       if (!NativeConfig.operatorEnabled("kafkaSink")) {
         return noteDisabled(current, "kafkaSink");
       }
       KafkaSinkMatcher.Planned planned = KafkaSinkMatcher.plan(sink);
       if (planned.fallbackReason != null) {
         recordFallback("kafka sink: " + planned.fallbackReason);
+        return current;
+      }
+      if (!planned.upsert
+          && !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) current.getInputs().get(0))) {
+        recordFallback("kafka sink: the input is a changelog, not an insert-only stream");
         return current;
       }
       substitutions++;

@@ -50,6 +50,7 @@ final class KafkaSinkTranslator {
     final TransactionNamingStrategy transactionNamingStrategy;
     final Integer parallelism;
     final Map<String, String> jsonOptions;
+    final boolean upsert;
 
     private Planned(
         String topic,
@@ -58,7 +59,8 @@ final class KafkaSinkTranslator {
         String transactionalIdPrefix,
         TransactionNamingStrategy transactionNamingStrategy,
         Integer parallelism,
-        Map<String, String> jsonOptions) {
+        Map<String, String> jsonOptions,
+        boolean upsert) {
       this.topic = topic;
       this.producerProperties = producerProperties;
       this.deliveryGuarantee = deliveryGuarantee;
@@ -66,10 +68,12 @@ final class KafkaSinkTranslator {
       this.transactionNamingStrategy = transactionNamingStrategy;
       this.parallelism = parallelism;
       this.jsonOptions = jsonOptions;
+      this.upsert = upsert;
     }
   }
 
   static Result translate(Map<String, String> options) {
+    boolean upsert = "upsert-kafka".equals(options.get("connector"));
     String topic = options.get("topic");
     if (topic == null || topic.contains(";")) {
       return Result.fallback("native serialization currently requires one fixed topic");
@@ -81,8 +85,11 @@ final class KafkaSinkTranslator {
     if (!"json".equals(format)) {
       return Result.fallback("value format " + format + " is not yet natively encoded");
     }
-    if (options.containsKey("key.format")
-        || options.containsKey("key.fields")
+    if ((upsert && !"json".equals(options.get("key.format")))
+        || (!upsert && options.containsKey("key.format"))) {
+      return Result.fallback("key format is not yet natively encoded for this connector");
+    }
+    if (options.containsKey("key.fields")
         || options.containsKey("key.fields-prefix")
         || !"ALL".equalsIgnoreCase(options.getOrDefault("value.fields-include", "ALL"))) {
       return Result.fallback("key/value projection is not yet natively encoded");
@@ -150,7 +157,8 @@ final class KafkaSinkTranslator {
             transactionalIdPrefix,
             naming,
             parallelism,
-            jsonOptions));
+            jsonOptions,
+            upsert));
   }
 
   private static boolean isZeroDuration(String value) {

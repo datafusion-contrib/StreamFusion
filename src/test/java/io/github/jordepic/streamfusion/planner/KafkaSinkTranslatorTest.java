@@ -38,7 +38,7 @@ class KafkaSinkTranslatorTest {
             "topic", "output",
             "properties.bootstrap.servers", "broker:9092",
             "format", "json");
-    assertFallback(with(base, "key.format", "json"), "key/value projection");
+    assertFallback(with(base, "key.format", "json"), "key format");
     assertFallback(with(base, "sink.partitioner", "fixed"), "partitioner");
     assertFallback(with(base, "sink.buffer-flush.max-rows", "10"), "buffer");
     assertFallback(with(base, "topic", "a;b"), "one fixed topic");

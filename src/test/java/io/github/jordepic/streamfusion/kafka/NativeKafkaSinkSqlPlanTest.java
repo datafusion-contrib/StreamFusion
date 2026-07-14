@@ -77,6 +77,30 @@ class NativeKafkaSinkSqlPlanTest {
         scan::explainSummary);
   }
 
+  @Test
+  void plansUpdatingResultsThroughNativeUpsertSerialization() {
+    StreamTableEnvironment table = environment();
+    table.executeSql(
+        "CREATE TABLE src (id BIGINT) "
+            + "WITH ('connector' = 'datagen', 'number-of-rows' = '10')");
+    table.executeSql(
+        "CREATE TABLE output (id BIGINT, total BIGINT, PRIMARY KEY (id) NOT ENFORCED) WITH ("
+            + "'connector' = 'upsert-kafka', "
+            + "'topic' = 'output', "
+            + "'properties.bootstrap.servers' = 'broker:9092', "
+            + "'key.format' = 'json', "
+            + "'value.format' = 'json', "
+            + "'sink.delivery-guarantee' = 'exactly-once', "
+            + "'sink.transactional-id-prefix' = 'streamfusion-upsert-test')");
+
+    PhysicalPlanScan scan = NativePlanner.install(table);
+    String plan =
+        table.explainSql("INSERT INTO output SELECT id, COUNT(*) FROM src GROUP BY id");
+
+    assertTrue(scan.substitutions() > 0, scan::explainSummary);
+    assertTrue(plan.contains("NativeKafkaSink"), plan);
+  }
+
   private static StreamTableEnvironment environment() {
     StreamExecutionEnvironment environment =
         StreamExecutionEnvironment.getExecutionEnvironment();

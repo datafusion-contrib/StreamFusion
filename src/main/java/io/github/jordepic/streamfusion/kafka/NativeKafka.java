@@ -50,7 +50,8 @@ public final class NativeKafka {
       long schemaAddress,
       boolean ignoreNullFields,
       String timestampFormat,
-      String[] logicalTypes);
+      String[] logicalTypes,
+      String[] fieldNames);
 
   /** Serializes projected key/value bytes together; null values are upsert tombstones. */
   public static native byte[][][] encodeKafkaJsonRecords(
@@ -59,6 +60,7 @@ public final class NativeKafka {
       boolean ignoreNullFields,
       String timestampFormat,
       String[] logicalTypes,
+      String[] fieldNames,
       int[] keyFields,
       int[] valueFields,
       boolean upsert);

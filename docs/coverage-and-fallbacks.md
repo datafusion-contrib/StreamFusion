@@ -442,23 +442,30 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
     streaming-mode rejection.
   - A **changelog (retracting) input** — defense-in-depth; Flink's own validation rejects it first.
 - **Filesystem sink, non-Parquet format** — any non-Parquet sink format falls back.
-- **Kafka JSON sink** — a fixed-topic, value-only, insert-only JSON table serializes each Arrow
-  batch natively and hands the final value bytes to Flink's unmodified `KafkaSink`. Delivery
+- **Kafka JSON sink** — a fixed-topic JSON table serializes each Arrow batch natively and hands the
+  final key/value bytes to Flink's unmodified `KafkaSink`. Ordinary `kafka` tables support
+  value-only insert streams. `upsert-kafka` tables support the default primary-key projection and
+  default `ALL` value projection: INSERT/UPDATE_AFTER rows carry a JSON value, while
+  UPDATE_BEFORE/DELETE rows carry a Kafka tombstone. Serialization uses the declared sink field
+  names even when the input plan uses generated expression names. Delivery
   guarantees (`none`/`at-least-once`/`exactly-once`), producer properties, transactional ID prefix,
   transaction naming strategy, sink parallelism, checkpoint/recovery commit and abort, and Kafka
   metrics therefore remain Flink's own contract. The serialization boundary separately reports
   native batch, row, byte, and elapsed-nanosecond counters, so encoding cost can be distinguished
   from producer and checkpoint cost. Broker tests pin committed output both normally and across a
-  post-checkpoint failover, and pin a native Kafka source-to-sink plan with no RowData transpose at
-  either edge. The native serializer currently covers BOOLEAN,
+  post-checkpoint failover, pin an updating aggregate's exactly-once upsert state, and pin a native
+  Kafka source-to-sink plan with no RowData transpose at either edge. The native serializer
+  currently covers BOOLEAN,
   TINYINT/SMALLINT/INT/BIGINT, FLOAT/DOUBLE, CHAR/VARCHAR, BINARY/VARBINARY, DECIMAL, DATE, TIME,
   TIMESTAMP, and TIMESTAMP_LTZ (SQL or ISO-8601), including `encode.ignore-null-fields`. Every sink
   fallback cause:
-  - a non-JSON value format, multiple/dynamic topics, a key format or key/value projection;
+  - a non-JSON value format or multiple/dynamic topics; a keyed ordinary `kafka` table; an
+    `upsert-kafka` table without JSON key and value formats; or an explicit key/value projection,
+    key prefix, or `EXCEPT_KEY` value projection;
   - a non-default partitioner, sink-side buffer flushing, writable metadata, or any other sink
     ability;
-  - a changelog input, a column outside the verified scalar family above, or an unrecognized
-    delivery/transaction option;
+  - a changelog input to ordinary `kafka`, a column outside the verified scalar family above, or an
+    unrecognized delivery/transaction option;
   - missing `properties.bootstrap.servers`, or exactly-once without a transactional ID prefix.
 - **Kafka** — missing `streamfusion-kafka` or the matching `streamfusion-*` format JAR; a value format
   outside JSON/CSV/raw/bare-Avro/`avro-confluent`/protobuf; a `key.format`;
