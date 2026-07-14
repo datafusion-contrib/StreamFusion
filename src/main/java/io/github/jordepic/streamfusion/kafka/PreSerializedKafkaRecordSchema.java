@@ -11,7 +11,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 
 /** Hands native-serialized values to Flink's Kafka writer without another serialization pass. */
 public final class PreSerializedKafkaRecordSchema
-    implements KafkaRecordSerializationSchema<byte[]>, KafkaDatasetFacetProvider {
+    implements KafkaRecordSerializationSchema<PreSerializedKafkaRecord>, KafkaDatasetFacetProvider {
 
   private final String topic;
 
@@ -21,8 +21,8 @@ public final class PreSerializedKafkaRecordSchema
 
   @Override
   public ProducerRecord<byte[], byte[]> serialize(
-      byte[] value, KafkaSinkContext context, Long timestamp) {
-    return new ProducerRecord<>(topic, null, value);
+      PreSerializedKafkaRecord record, KafkaSinkContext context, Long timestamp) {
+    return new ProducerRecord<>(topic, record.key(), record.value());
   }
 
   @Override

@@ -1,10 +1,11 @@
 package io.github.jordepic.streamfusion.planner;
 
 import io.github.jordepic.streamfusion.kafka.NativeKafkaJsonSerializationOperator;
+import io.github.jordepic.streamfusion.kafka.PreSerializedKafkaRecord;
 import io.github.jordepic.streamfusion.kafka.PreSerializedKafkaRecordSchema;
 import io.github.jordepic.streamfusion.operator.ArrowBatch;
 import java.util.Collections;
-import org.apache.flink.api.common.typeinfo.PrimitiveArrayTypeInfo;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
@@ -53,7 +54,7 @@ public final class NativeKafkaSinkExecNode extends ExecNodeBase<Object>
     boolean parallelismConfigured = planned.sink.parallelism != null;
     int parallelism =
         parallelismConfigured ? planned.sink.parallelism : input.getParallelism();
-    OneInputTransformation<ArrowBatch, byte[]> serialization =
+    OneInputTransformation<ArrowBatch, PreSerializedKafkaRecord> serialization =
         new OneInputTransformation<>(
             input,
             "native-kafka-json-serialization",
@@ -64,12 +65,12 @@ public final class NativeKafkaSinkExecNode extends ExecNodeBase<Object>
                     planned.rowType.getChildren().stream()
                         .map(Object::toString)
                         .toArray(String[]::new))),
-            PrimitiveArrayTypeInfo.BYTE_PRIMITIVE_ARRAY_TYPE_INFO,
+            TypeInformation.of(PreSerializedKafkaRecord.class),
             parallelism,
             parallelismConfigured);
 
-    KafkaSinkBuilder<byte[]> builder =
-        KafkaSink.<byte[]>builder()
+    KafkaSinkBuilder<PreSerializedKafkaRecord> builder =
+        KafkaSink.<PreSerializedKafkaRecord>builder()
             .setKafkaProducerConfig(planned.sink.producerProperties)
             .setRecordSerializer(new PreSerializedKafkaRecordSchema(planned.sink.topic))
             .setDeliveryGuarantee(planned.sink.deliveryGuarantee)
@@ -77,8 +78,9 @@ public final class NativeKafkaSinkExecNode extends ExecNodeBase<Object>
     if (planned.sink.transactionalIdPrefix != null) {
       builder.setTransactionalIdPrefix(planned.sink.transactionalIdPrefix);
     }
-    DataStream<byte[]> stream = new DataStream<>(planner.getExecEnv(), serialization);
-    DataStreamSink<byte[]> sink =
+    DataStream<PreSerializedKafkaRecord> stream =
+        new DataStream<>(planner.getExecEnv(), serialization);
+    DataStreamSink<PreSerializedKafkaRecord> sink =
         stream.sinkTo(builder.build()).name("native-kafka-sink").setParallelism(parallelism);
     return (Transformation<Object>) (Transformation<?>) sink.getTransformation();
   }

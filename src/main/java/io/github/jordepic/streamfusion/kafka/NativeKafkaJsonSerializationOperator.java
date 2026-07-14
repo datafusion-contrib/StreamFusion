@@ -13,8 +13,9 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
 /** Encodes each input Arrow batch once and emits the final Kafka value bytes for its rows. */
-public final class NativeKafkaJsonSerializationOperator extends AbstractStreamOperator<byte[]>
-    implements OneInputStreamOperator<ArrowBatch, byte[]> {
+public final class NativeKafkaJsonSerializationOperator
+    extends AbstractStreamOperator<PreSerializedKafkaRecord>
+    implements OneInputStreamOperator<ArrowBatch, PreSerializedKafkaRecord> {
 
   private final boolean ignoreNullFields;
   private final String timestampFormat;
@@ -62,7 +63,7 @@ public final class NativeKafkaJsonSerializationOperator extends AbstractStreamOp
         long bytes = 0;
         for (byte[] value : values) {
           bytes += value.length;
-          output.collect(new StreamRecord<>(value));
+          output.collect(new StreamRecord<>(new PreSerializedKafkaRecord(null, value)));
         }
         serializationBatches.inc();
         serializationRows.inc(values.length);

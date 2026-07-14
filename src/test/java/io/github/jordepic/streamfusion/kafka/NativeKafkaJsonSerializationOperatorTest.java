@@ -35,7 +35,7 @@ class NativeKafkaJsonSerializationOperatorTest {
             new String[] {"id", "name"});
     List<byte[]> output = new ArrayList<>();
     try (BufferAllocator allocator = new RootAllocator();
-        OneInputStreamOperatorTestHarness<ArrowBatch, byte[]> harness =
+        OneInputStreamOperatorTestHarness<ArrowBatch, PreSerializedKafkaRecord> harness =
             new OneInputStreamOperatorTestHarness<>(
                 new NativeKafkaJsonSerializationOperator(
                     false,
@@ -54,7 +54,7 @@ class NativeKafkaJsonSerializationOperatorTest {
                       allocator))));
       for (Object record : harness.getOutput()) {
         if (record instanceof StreamRecord) {
-          output.add(((StreamRecord<byte[]>) record).getValue());
+          output.add(((StreamRecord<PreSerializedKafkaRecord>) record).getValue().value());
         }
       }
     }
@@ -68,13 +68,15 @@ class NativeKafkaJsonSerializationOperatorTest {
 
   @Test
   void stockKafkaSchemaPublishesTheBytesUnchanged() {
+    byte[] key = "{\"id\":1}".getBytes(StandardCharsets.UTF_8);
     byte[] value = "{\"id\":1}".getBytes(StandardCharsets.UTF_8);
     PreSerializedKafkaRecordSchema schema = new PreSerializedKafkaRecordSchema("output");
 
-    ProducerRecord<byte[], byte[]> record = schema.serialize(value, null, 123L);
+    ProducerRecord<byte[], byte[]> record =
+        schema.serialize(new PreSerializedKafkaRecord(key, value), null, 123L);
 
     assertEquals("output", record.topic());
-    assertNull(record.key());
+    assertArrayEquals(key, record.key());
     assertNull(record.timestamp());
     assertArrayEquals(value, record.value());
     assertEquals(
