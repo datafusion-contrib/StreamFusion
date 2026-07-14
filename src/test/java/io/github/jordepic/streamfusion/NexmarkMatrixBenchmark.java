@@ -834,7 +834,10 @@ class NexmarkMatrixBenchmark {
     }
     try (Admin admin =
         Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokers))) {
-      admin.deleteTopics(List.of("nexmark-output-" + suffix)).all().get();
+      String topic = "nexmark-output-" + suffix;
+      if (admin.listTopics().names().get().contains(topic)) {
+        admin.deleteTopics(List.of(topic)).all().get();
+      }
     }
     return seconds;
   }
