@@ -22,6 +22,7 @@ import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDe
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.util.TimeUtils;
+import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 
@@ -246,9 +247,17 @@ final class KafkaTables {
       NativeMessageDecoderFactory decoderFactory,
       RowType decodedType,
       int rowtimeIndex) {
-    Properties props = consumerProperties(options);
+    OffsetsInitializer startingOffsets = mapStartupMode(options);
+    Properties props = configuredSourceProperties(options, startingOffsets);
+    Properties nativeProps = new Properties();
+    nativeProps.putAll(props);
+    // librdkafka requires group.id even for manual assign(), while Kafka's Java consumer does not.
+    // Keep this implementation detail out of the enumerator/source properties so it cannot make
+    // group-offset startup or checkpoint commits appear configured when the table omitted a group.
+    nativeProps.putIfAbsent(
+        "group.id", "streamfusion-native-" + java.util.UUID.randomUUID());
     Map<String, String> librdkafka =
-        new java.util.HashMap<>(KafkaConfigTranslator.translate(props).config());
+        new java.util.HashMap<>(KafkaConfigTranslator.translate(nativeProps).config());
     // librdkafka-specific throughput tuning with no Java analog (so not produced by the translator):
     // prefetch eagerly instead of idling 1s before refetching, and keep a deep queue so the background
     // fetcher stays ahead of the reader. Measured to lift native consume throughput meaningfully.
@@ -263,7 +272,7 @@ final class KafkaTables {
     boolean bounded = "latest-offset".equals(options.get("scan.bounded.mode"));
     return new NativeKafkaSource(
         subscriber(options),
-        mapStartupMode(options),
+        startingOffsets,
         bounded ? OffsetsInitializer.latest() : new NoStoppingOffsetsInitializer(),
         bounded ? Boundedness.BOUNDED : Boundedness.CONTINUOUS_UNBOUNDED,
         props,
@@ -577,20 +586,40 @@ final class KafkaTables {
                 .toMillis()));
     // Offsets are checkpointed, never auto-committed; the reader assigns+seeks to concrete offsets.
     props.setProperty("enable.auto.commit", "false");
-    // A group id is needed for the enumerator's committed-offset reads; synthesize one if absent.
-    props.putIfAbsent("group.id", "streamfusion-" + Integer.toHexString(options.hashCode()));
+    return props;
+  }
+
+  /** Applies the overrides {@link KafkaSourceBuilder} makes when it builds a source. */
+  static Properties configuredSourceProperties(
+      Map<String, String> options, OffsetsInitializer startingOffsets) {
+    Properties props = consumerProperties(options);
+    props.setProperty(
+        "auto.offset.reset",
+        startingOffsets
+            .getAutoOffsetResetStrategy()
+            .name()
+            .toLowerCase(java.util.Locale.ROOT));
+    if (!props.containsKey("group.id")) {
+      props.setProperty("commit.offsets.on.checkpoint", "false");
+    }
     return props;
   }
 
   /** The {@code scan.startup.mode} as an {@link OffsetsInitializer}, or null if unsupported. */
-  private static OffsetsInitializer mapStartupMode(Map<String, String> options) {
+  static OffsetsInitializer mapStartupMode(Map<String, String> options) {
     switch (options.getOrDefault("scan.startup.mode", "group-offsets")) {
       case "earliest-offset":
         return OffsetsInitializer.earliest();
       case "latest-offset":
         return OffsetsInitializer.latest();
       case "group-offsets":
-        return OffsetsInitializer.committedOffsets();
+        String reset = options.getOrDefault(PROPERTIES_PREFIX + "auto.offset.reset", "none");
+        try {
+          return OffsetsInitializer.committedOffsets(
+              OffsetResetStrategy.valueOf(reset.toUpperCase(java.util.Locale.ROOT)));
+        } catch (IllegalArgumentException ignored) {
+          return null;
+        }
       case "timestamp":
         return OffsetsInitializer.timestamp(
             Long.parseLong(options.get("scan.startup.timestamp-millis")));

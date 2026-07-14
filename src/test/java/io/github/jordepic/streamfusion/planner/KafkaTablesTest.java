@@ -1,9 +1,12 @@
 package io.github.jordepic.streamfusion.planner;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.Map;
 import java.util.Properties;
+import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
+import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +29,31 @@ class KafkaTablesTest {
     assertEquals(
         "300000",
         discoveryInterval(Map.of("properties.partition.discovery.interval.ms", "1000")));
+  }
+
+  @Test
+  void groupIdentityAndOffsetResetFollowFlinkSourceBuilder() {
+    Properties raw = KafkaTables.consumerProperties(Map.of());
+    assertFalse(raw.containsKey("group.id"), "a table without a group must remain groupless");
+
+    Properties earliest =
+        KafkaTables.configuredSourceProperties(
+            Map.of("properties.auto.offset.reset", "latest"), OffsetsInitializer.earliest());
+    assertEquals("earliest", earliest.getProperty("auto.offset.reset"));
+    assertEquals("false", earliest.getProperty("commit.offsets.on.checkpoint"));
+
+    assertEquals(
+        OffsetResetStrategy.NONE,
+        KafkaTables.mapStartupMode(Map.of()).getAutoOffsetResetStrategy());
+    assertEquals(
+        OffsetResetStrategy.EARLIEST,
+        KafkaTables.mapStartupMode(
+                Map.of(
+                    "scan.startup.mode",
+                    "group-offsets",
+                    "properties.auto.offset.reset",
+                    "earliest"))
+            .getAutoOffsetResetStrategy());
   }
 
   private static String discoveryInterval(Map<String, String> options) {
