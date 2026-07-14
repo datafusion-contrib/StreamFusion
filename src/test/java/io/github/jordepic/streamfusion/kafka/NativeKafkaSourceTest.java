@@ -353,6 +353,91 @@ class NativeKafkaSourceTest {
     }
   }
 
+  @Test
+  void groupOffsetsHonorCommittedAndResetStrategies() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      produce(brokers, TOPIC, 0, 3);
+
+      Properties none = consumerProperties(brokers);
+      none.setProperty("group.id", "native-source-no-offset-none");
+      none.setProperty("auto.offset.reset", "none");
+      long handle = open(none, new String[] {TOPIC}, new long[] {-3}, new long[] {Long.MIN_VALUE});
+      long noOffsetHandle = handle;
+      try {
+        assertThrows(
+            IOException.class,
+            () -> {
+              for (int attempts = 0; attempts < 10; attempts++) {
+                NativeKafka.pollKafkaBatch(noOffsetHandle, 1024, 1000);
+              }
+            });
+      } finally {
+        NativeKafka.closeKafkaConsumer(handle);
+      }
+
+      Properties earliest = consumerProperties(brokers);
+      earliest.setProperty("group.id", "native-source-no-offset-earliest");
+      earliest.setProperty("auto.offset.reset", "earliest");
+      List<byte[]> earliestBodies = new ArrayList<>();
+      long[] earliestPosition = {0};
+      handle =
+          open(earliest, new String[] {TOPIC}, new long[] {-3}, new long[] {Long.MIN_VALUE});
+      try (BufferAllocator allocator = new RootAllocator();
+          CDataDictionaryProvider dictionaries = new CDataDictionaryProvider()) {
+        for (int attempts = 0; earliestBodies.size() < 3 && attempts < 10; attempts++) {
+          pollBodies(handle, allocator, dictionaries, earliestBodies, earliestPosition);
+        }
+      } finally {
+        NativeKafka.closeKafkaConsumer(handle);
+      }
+      assertEquals(List.of(0L, 1L, 2L), earliestBodies.stream().map(NativeKafkaSourceTest::id).toList());
+
+      Properties latest = consumerProperties(brokers);
+      latest.setProperty("group.id", "native-source-no-offset-latest");
+      latest.setProperty("auto.offset.reset", "latest");
+      List<byte[]> latestBodies = new ArrayList<>();
+      long[] latestPosition = {0};
+      handle = open(latest, new String[] {TOPIC}, new long[] {-3}, new long[] {Long.MIN_VALUE});
+      try (BufferAllocator allocator = new RootAllocator();
+          CDataDictionaryProvider dictionaries = new CDataDictionaryProvider()) {
+        for (int attempts = 0; latestPosition[0] < 3 && attempts < 10; attempts++) {
+          pollBodies(handle, allocator, dictionaries, latestBodies, latestPosition);
+        }
+        produce(brokers, TOPIC, 3, 4);
+        for (int attempts = 0; latestBodies.isEmpty() && attempts < 10; attempts++) {
+          pollBodies(handle, allocator, dictionaries, latestBodies, latestPosition);
+        }
+      } finally {
+        NativeKafka.closeKafkaConsumer(handle);
+      }
+      assertEquals(List.of(3L), latestBodies.stream().map(NativeKafkaSourceTest::id).toList());
+
+      Properties committed = consumerProperties(brokers);
+      committed.setProperty("group.id", "native-source-stored-offset");
+      committed.setProperty("auto.offset.reset", "none");
+      handle = open(committed, new String[] {TOPIC}, new long[] {0}, new long[] {Long.MIN_VALUE});
+      NativeKafka.commitKafkaOffsets(
+          handle, new String[] {TOPIC}, new long[] {0}, new long[] {2});
+      NativeKafka.closeKafkaConsumer(handle);
+      List<byte[]> committedBodies = new ArrayList<>();
+      long[] committedPosition = {0};
+      handle = open(committed, new String[] {TOPIC}, new long[] {-3}, new long[] {Long.MIN_VALUE});
+      try (BufferAllocator allocator = new RootAllocator();
+          CDataDictionaryProvider dictionaries = new CDataDictionaryProvider()) {
+        for (int attempts = 0; committedBodies.isEmpty() && attempts < 10; attempts++) {
+          pollBodies(handle, allocator, dictionaries, committedBodies, committedPosition);
+        }
+      } finally {
+        NativeKafka.closeKafkaConsumer(handle);
+      }
+      assertEquals(
+          List.of(2L, 3L), committedBodies.stream().map(NativeKafkaSourceTest::id).toList());
+    }
+  }
+
   /** Opens a native reader and assigns it {@code (TOPIC, 0)} starting at {@code startOffset}. */
   private static long open(String brokers, long startOffset) {
     return open(
