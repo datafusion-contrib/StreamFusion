@@ -7,6 +7,7 @@ import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.metrics.Counter;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
@@ -17,6 +18,10 @@ public final class NativeKafkaJsonSerializationOperator extends AbstractStreamOp
 
   private final boolean ignoreNullFields;
   private final String timestampFormat;
+  private transient Counter serializationBatches;
+  private transient Counter serializationRows;
+  private transient Counter serializedBytes;
+  private transient Counter serializationNanos;
 
   public NativeKafkaJsonSerializationOperator(boolean ignoreNullFields, String timestampFormat) {
     this.ignoreNullFields = ignoreNullFields;
@@ -24,7 +29,17 @@ public final class NativeKafkaJsonSerializationOperator extends AbstractStreamOp
   }
 
   @Override
+  public void open() throws Exception {
+    super.open();
+    serializationBatches = getMetricGroup().counter("nativeKafkaSerializationBatches");
+    serializationRows = getMetricGroup().counter("nativeKafkaSerializationRows");
+    serializedBytes = getMetricGroup().counter("nativeKafkaSerializedBytes");
+    serializationNanos = getMetricGroup().counter("nativeKafkaSerializationNanos");
+  }
+
+  @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
+    long started = System.nanoTime();
     try (VectorSchemaRoot root = element.getValue().root()) {
       BufferAllocator allocator =
           root.getFieldVectors().isEmpty()
@@ -40,9 +55,15 @@ public final class NativeKafkaJsonSerializationOperator extends AbstractStreamOp
                 schema.memoryAddress(),
                 ignoreNullFields,
                 timestampFormat);
+        long bytes = 0;
         for (byte[] value : values) {
+          bytes += value.length;
           output.collect(new StreamRecord<>(value));
         }
+        serializationBatches.inc();
+        serializationRows.inc(values.length);
+        serializedBytes.inc(bytes);
+        serializationNanos.inc(System.nanoTime() - started);
       }
     }
   }

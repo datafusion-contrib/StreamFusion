@@ -446,8 +446,10 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
   batch natively and hands the final value bytes to Flink's unmodified `KafkaSink`. Delivery
   guarantees (`none`/`at-least-once`/`exactly-once`), producer properties, transactional ID prefix,
   transaction naming strategy, sink parallelism, checkpoint/recovery commit and abort, and Kafka
-  metrics therefore remain Flink's own contract. Broker tests pin committed output both normally
-  and across a post-checkpoint failover. The native serializer currently covers BOOLEAN,
+  metrics therefore remain Flink's own contract. The serialization boundary separately reports
+  native batch, row, byte, and elapsed-nanosecond counters, so encoding cost can be distinguished
+  from producer and checkpoint cost. Broker tests pin committed output both normally and across a
+  post-checkpoint failover. The native serializer currently covers BOOLEAN,
   TINYINT/SMALLINT/INT/BIGINT, FLOAT/DOUBLE, CHAR/VARCHAR, and TIMESTAMP (SQL or ISO-8601), including
   `encode.ignore-null-fields`. Every sink fallback cause:
   - a non-JSON value format, multiple/dynamic topics, a key format or key/value projection;
