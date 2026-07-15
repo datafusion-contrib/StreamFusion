@@ -976,12 +976,8 @@ public final class Native {
       long memoryBudgetBytes);
 
   /** Lists the non-empty Flink key groups in a normalizer raw keyed-state checkpoint. */
-  public static native int[] changelogNormalizerSnapshotKeyGroups(
+  public static native byte[][] snapshotChangelogNormalizerPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
-
-  /** Serializes one normalizer key-group payload for a raw keyed-state checkpoint. */
-  public static native byte[] snapshotChangelogNormalizerKeyGroup(
-      long handle, int keyGroup, int maxParallelism, int[] timestampPrecisions);
 
   /** Restores a normalizer from all raw keyed-state partitions assigned to this subtask. */
   public static native long restoreChangelogNormalizerPartitions(

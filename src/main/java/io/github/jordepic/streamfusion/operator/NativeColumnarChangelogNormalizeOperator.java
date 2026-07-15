@@ -222,15 +222,10 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    int[] keyGroups =
-        Native.changelogNormalizerSnapshotKeyGroups(
-            handle, maxParallelism, keyTimestampPrecisions);
-    RawKeyedState.snapshot(
+    RawKeyedState.snapshotPartitions(
         context,
-        keyGroups,
-        keyGroup ->
-            Native.snapshotChangelogNormalizerKeyGroup(
-                handle, keyGroup, maxParallelism, keyTimestampPrecisions));
+        Native.snapshotChangelogNormalizerPartitions(
+            handle, maxParallelism, keyTimestampPrecisions));
   }
 
   @Override
