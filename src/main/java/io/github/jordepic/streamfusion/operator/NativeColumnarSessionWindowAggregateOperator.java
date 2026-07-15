@@ -101,14 +101,9 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   }
 
   @Override
-  protected int[] snapshotRawKeyGroups() {
-    return Native.sessionAggregatorSnapshotKeyGroups(handle, maxParallelism(), keyTimestampPrecisions());
-  }
-
-  @Override
-  protected byte[] snapshotRawKeyGroup(int keyGroup) {
-    return Native.snapshotSessionAggregatorKeyGroup(
-        handle, keyGroup, maxParallelism(), keyTimestampPrecisions());
+  protected byte[][] snapshotRawPartitions() {
+    return Native.snapshotSessionAggregatorPartitions(
+        handle, maxParallelism(), keyTimestampPrecisions());
   }
 
   @Override

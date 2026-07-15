@@ -192,6 +192,11 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
         handle, keyGroup, maxParallelism, keyTimestampPrecisions);
   }
 
+  /** Returns one-pass framed partitions when a stateful subclass supports that checkpoint path. */
+  protected byte[][] snapshotRawPartitions() {
+    return null;
+  }
+
   /**
    * The managed-memory budget bounding the native state (see {@link ManagedMemoryBudget}), for this
    * class's handle creation and any subclass override's.
@@ -275,11 +280,17 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
     flushPending();
-    RawKeyedState.snapshotWithTimer(
-        context,
-        snapshotRawKeyGroups(),
-        processingTimeTimerDeadlineForSnapshot(),
-        this::snapshotRawKeyGroup);
+    byte[][] partitions = snapshotRawPartitions();
+    if (partitions == null) {
+      RawKeyedState.snapshotWithTimer(
+          context,
+          snapshotRawKeyGroups(),
+          processingTimeTimerDeadlineForSnapshot(),
+          this::snapshotRawKeyGroup);
+    } else {
+      RawKeyedState.snapshotPartitionsWithTimer(
+          context, partitions, processingTimeTimerDeadlineForSnapshot());
+    }
   }
 
   @Override

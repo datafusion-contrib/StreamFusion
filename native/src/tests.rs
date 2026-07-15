@@ -1264,12 +1264,12 @@ fn session_state_over_budget_fails_clearly() {
 fn session_state_partitions_and_restores_by_flink_key_group() {
     let mut before = SessionAggregator::new(1000, vec![0], vec![0]);
     before.update(&keyed_window_batch(0, vec![1, 2])).unwrap();
-    let groups = before.snapshot_key_groups(128, &[-1]);
-    assert!(groups.len() >= 2, "test keys should cover distinct raw key groups");
-    let snapshots: Vec<Vec<u8>> = groups
-        .iter()
-        .map(|&group| before.snapshot_key_group(group, 128, &[-1]))
-        .collect();
+    let partitions = before.snapshot_partitions(128, &[-1]);
+    assert!(
+        partitions.len() >= 2,
+        "test keys should cover distinct raw key groups"
+    );
+    let snapshots: Vec<Vec<u8>> = partitions.into_values().collect();
 
     let mut restored = SessionAggregator::restore_partitions(1000, vec![0], vec![0], &snapshots);
     let out = restored.flush(1000);

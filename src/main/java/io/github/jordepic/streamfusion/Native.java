@@ -1635,13 +1635,9 @@ public final class Native {
   public static native long restoreSessionAggregator(
       long gapMillis, int[] valueTypes, int[] aggregateKinds, byte[] snapshot, long memoryBudgetBytes);
 
-  /** Lists the non-empty Flink key groups in a session-window raw keyed-state checkpoint. */
-  public static native int[] sessionAggregatorSnapshotKeyGroups(
+  /** Serializes every non-empty session-window key group once, framed by key-group id. */
+  public static native byte[][] snapshotSessionAggregatorPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
-
-  /** Serializes one session-window key group for a raw keyed-state checkpoint. */
-  public static native byte[] snapshotSessionAggregatorKeyGroup(
-      long handle, int keyGroup, int maxParallelism, int[] timestampPrecisions);
 
   /** Restores a session-window aggregator from raw keyed-state partitions assigned to this task. */
   public static native long restoreSessionAggregatorPartitions(
