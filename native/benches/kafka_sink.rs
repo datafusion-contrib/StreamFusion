@@ -6,7 +6,7 @@ use std::sync::Arc;
 use arrow::array::{ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use streamfusion::bench::encode_kafka_json;
+use streamfusion::bench::{encode_kafka_json, encode_kafka_timestamps};
 
 const ROWS: usize = 4096;
 
@@ -51,6 +51,19 @@ fn bench_kafka_json(c: &mut Criterion) {
         })
     });
     group.finish();
+
+    let timestamps = (0..ROWS as i64)
+        .map(|row| 1_700_000_000_000_000_000 + row * 1_001_000_000)
+        .collect::<Vec<_>>();
+    let mut timestamp_group = c.benchmark_group("kafka_timestamp_sink");
+    timestamp_group.throughput(Throughput::Elements(ROWS as u64));
+    timestamp_group.bench_function("chrono_format", |b| {
+        b.iter(|| black_box(encode_kafka_timestamps(black_box(&timestamps), false)))
+    });
+    timestamp_group.bench_function("direct_digits", |b| {
+        b.iter(|| black_box(encode_kafka_timestamps(black_box(&timestamps), true)))
+    });
+    timestamp_group.finish();
 }
 
 criterion_group!(benches, bench_kafka_json);

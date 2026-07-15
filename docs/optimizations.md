@@ -688,3 +688,18 @@ anything else (and a year outside 4 digits, which chrono prints unpadded) falls 
 `format_with_items` per row, so output stays byte-identical (a Rust parity sweep pins the two
 renderings against each other). Criterion (`date_format/digit_plan` vs `compiled`, same 4096-row
 batch): 362 µs → 78.7 µs — **4.6× on the hot loop**, 11.3 → 52 Melem/s.
+
+## Kafka timestamps: write fixed JSON syntax directly
+
+The exactly-once Kafka q19 profile showed `StrftimeItems::next` and `DelayedFormat::fmt` beneath
+the native JSON serializer: every `TIMESTAMP_LTZ` row reparsed two fixed chrono patterns and paid
+the generic formatting machinery for syntax that never changes. The Kafka encoder now converts
+the epoch value to UTC components once and writes the fixed-width date and time digits directly
+into arrow-json's reused output buffer. Fraction trimming and the SQL/ISO separator remain
+byte-identical to the old formatter, pinned by a parity sweep across the full nanosecond timestamp
+range, precisions 0–12, and both formats.
+
+Measured with Criterion (`kafka_timestamp_sink/*`, 4096 values): 935.6 µs → 174.3 µs per batch,
+**5.37× throughput** (4.38 → 23.49 Melem/s) and 81.4% less formatter time. The 50K-row
+exactly-once Kafka profile loop improved q9 from 50 → 53 completed jobs in 60 seconds (+6.0%);
+q19 remained 27 jobs in both repeat runs, so no q19 end-to-end gain is claimed.

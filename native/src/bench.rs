@@ -6,6 +6,22 @@ pub fn encode_kafka_json(batch: &RecordBatch) -> Vec<Vec<u8>> {
     encode_json_batch(batch, false, "SQL", &[], &[]).expect("Kafka JSON encode")
 }
 
+#[cfg(feature = "kafka")]
+pub fn encode_kafka_timestamps(values: &[i64], direct: bool) -> usize {
+    let mut output = Vec::with_capacity(32);
+    let mut bytes = 0;
+    for &value in values {
+        output.clear();
+        if direct {
+            encode_local_timestamp(value, 3, false, &mut output);
+        } else {
+            encode_local_timestamp_chrono(value, 3, false, &mut output);
+        }
+        bytes += output.len();
+    }
+    bytes
+}
+
 /// A filter predicate compiled once (on the first `run`) and reused, as the operator uses it.
 pub struct Filter(FilterExpression);
 

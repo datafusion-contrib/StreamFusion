@@ -16,7 +16,9 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.StringData;
+import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.logical.IntType;
+import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.VarCharType;
@@ -69,6 +71,45 @@ class NativeKafkaJsonSerializationOperatorTest {
         "{\"id\":1,\"name\":\"one\"}".getBytes(StandardCharsets.UTF_8), output.get(0));
     assertArrayEquals(
         "{\"id\":2,\"name\":null}".getBytes(StandardCharsets.UTF_8), output.get(1));
+  }
+
+  @Test
+  void serializesLocalTimestampsWithFlinkFormatting() throws Exception {
+    RowType rowType =
+        RowType.of(
+            new LogicalType[] {new LocalZonedTimestampType(3)}, new String[] {"timestamp"});
+    List<byte[]> output = new ArrayList<>();
+    try (BufferAllocator allocator = new RootAllocator();
+        OneInputStreamOperatorTestHarness<ArrowBatch, PreSerializedKafkaRecord> harness =
+            new OneInputStreamOperatorTestHarness<>(
+                new NativeKafkaJsonSerializationOperator(
+                    false,
+                    "SQL",
+                    rowType.getChildren().stream().map(Object::toString).toArray(String[]::new),
+                    rowType.getFieldNames().toArray(String[]::new),
+                    new int[0],
+                    new int[] {0},
+                    false),
+                new ArrowBatchSerializer())) {
+      harness.open();
+      harness.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(TimestampData.fromEpochMillis(1_700_000_000_100L))),
+                      rowType,
+                      allocator))));
+      for (Object record : harness.getOutput()) {
+        if (record instanceof StreamRecord) {
+          output.add(((StreamRecord<PreSerializedKafkaRecord>) record).getValue().value());
+        }
+      }
+    }
+
+    assertEquals(1, output.size());
+    assertArrayEquals(
+        "{\"timestamp\":\"2023-11-14 22:13:20.1Z\"}".getBytes(StandardCharsets.UTF_8),
+        output.get(0));
   }
 
   @Test

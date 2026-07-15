@@ -309,34 +309,143 @@ struct FlinkLocalTimestampEncoder<'a> {
 #[cfg(feature = "kafka")]
 impl arrow::json::writer::Encoder for FlinkLocalTimestampEncoder<'_> {
     fn encode(&mut self, index: usize, output: &mut Vec<u8>) {
-        use chrono::{DateTime, Utc};
-        use std::io::Write;
-        let value = self.array.value(index);
-        let seconds = value.div_euclid(1_000_000_000);
-        let nanos = value.rem_euclid(1_000_000_000) as u32;
-        let timestamp =
-            DateTime::<Utc>::from_timestamp(seconds, nanos).expect("valid Flink timestamp");
-        output.push(b'"');
-        let separator = if self.iso_8601 { 'T' } else { ' ' };
-        write!(
+        encode_local_timestamp(
+            self.array.value(index),
+            self.precision,
+            self.iso_8601,
             output,
-            "{}{separator}{}",
-            timestamp.format("%Y-%m-%d"),
-            timestamp.format("%H:%M:%S")
-        )
-        .expect("write timestamp");
-        if self.precision > 0 {
-            let mut precision = self.precision.min(9);
-            let mut fraction = nanos / 10_u32.pow((9 - precision) as u32);
-            while fraction != 0 && fraction % 10 == 0 {
-                fraction /= 10;
-                precision -= 1;
-            }
-            if fraction != 0 {
-                write!(output, ".{fraction:0precision$}").expect("write timestamp fraction");
+        );
+    }
+}
+
+#[cfg(feature = "kafka")]
+pub(crate) fn encode_local_timestamp(
+    value: i64,
+    precision: usize,
+    iso_8601: bool,
+    output: &mut Vec<u8>,
+) {
+    use chrono::{DateTime, Datelike, Timelike, Utc};
+    let seconds = value.div_euclid(1_000_000_000);
+    let nanos = value.rem_euclid(1_000_000_000) as u32;
+    let timestamp = DateTime::<Utc>::from_timestamp(seconds, nanos).expect("valid Flink timestamp");
+    let year = timestamp.year();
+    if !(0..=9999).contains(&year) {
+        encode_local_timestamp_chrono(value, precision, iso_8601, output);
+        return;
+    }
+    output.push(b'"');
+    push_four_digits(output, year as u32);
+    output.push(b'-');
+    push_two_digits(output, timestamp.month());
+    output.push(b'-');
+    push_two_digits(output, timestamp.day());
+    output.push(if iso_8601 { b'T' } else { b' ' });
+    push_two_digits(output, timestamp.hour());
+    output.push(b':');
+    push_two_digits(output, timestamp.minute());
+    output.push(b':');
+    push_two_digits(output, timestamp.second());
+    if precision > 0 {
+        let mut width = precision.min(9);
+        let mut fraction = nanos / 10_u32.pow((9 - width) as u32);
+        while fraction != 0 && fraction % 10 == 0 {
+            fraction /= 10;
+            width -= 1;
+        }
+        if fraction != 0 {
+            output.push(b'.');
+            let mut divisor = 10_u32.pow((width - 1) as u32);
+            while divisor != 0 {
+                output.push(b'0' + ((fraction / divisor) % 10) as u8);
+                divisor /= 10;
             }
         }
-        output.extend_from_slice(b"Z\"");
+    }
+    output.extend_from_slice(b"Z\"");
+}
+
+#[cfg(feature = "kafka")]
+fn push_two_digits(output: &mut Vec<u8>, value: u32) {
+    output.push(b'0' + (value / 10) as u8);
+    output.push(b'0' + (value % 10) as u8);
+}
+
+#[cfg(feature = "kafka")]
+fn push_four_digits(output: &mut Vec<u8>, value: u32) {
+    output.push(b'0' + (value / 1000) as u8);
+    output.push(b'0' + ((value / 100) % 10) as u8);
+    output.push(b'0' + ((value / 10) % 10) as u8);
+    output.push(b'0' + (value % 10) as u8);
+}
+
+#[cfg(feature = "kafka")]
+pub(crate) fn encode_local_timestamp_chrono(
+    value: i64,
+    precision: usize,
+    iso_8601: bool,
+    output: &mut Vec<u8>,
+) {
+    use chrono::{DateTime, Utc};
+    use std::io::Write;
+    let seconds = value.div_euclid(1_000_000_000);
+    let nanos = value.rem_euclid(1_000_000_000) as u32;
+    let timestamp = DateTime::<Utc>::from_timestamp(seconds, nanos).expect("valid Flink timestamp");
+    output.push(b'"');
+    let separator = if iso_8601 { 'T' } else { ' ' };
+    write!(
+        output,
+        "{}{separator}{}",
+        timestamp.format("%Y-%m-%d"),
+        timestamp.format("%H:%M:%S")
+    )
+    .expect("write timestamp");
+    if precision > 0 {
+        let mut precision = precision.min(9);
+        let mut fraction = nanos / 10_u32.pow((9 - precision) as u32);
+        while fraction != 0 && fraction % 10 == 0 {
+            fraction /= 10;
+            precision -= 1;
+        }
+        if fraction != 0 {
+            write!(output, ".{fraction:0precision$}").expect("write timestamp fraction");
+        }
+    }
+    output.extend_from_slice(b"Z\"");
+}
+
+#[cfg(all(test, feature = "kafka"))]
+mod timestamp_encoder_tests {
+    use super::{encode_local_timestamp, encode_local_timestamp_chrono};
+
+    #[test]
+    fn direct_timestamp_encoding_matches_chrono() {
+        let mut values = vec![
+            i64::MIN,
+            -2_208_988_800_999_999_999,
+            -1,
+            0,
+            951_827_696_123_456_789,
+            1_700_000_000_100_000_000,
+            i64::MAX,
+        ];
+        values.extend((0..=2048_i128).map(|index| {
+            (i64::MIN as i128 + (u64::MAX as i128 * index / 2048)) as i64
+        }));
+        for value in values {
+            for precision in 0..=12 {
+                for iso_8601 in [false, true] {
+                    let mut direct = Vec::new();
+                    let mut chrono = Vec::new();
+                    encode_local_timestamp(value, precision, iso_8601, &mut direct);
+                    encode_local_timestamp_chrono(value, precision, iso_8601, &mut chrono);
+                    assert_eq!(
+                        direct, chrono,
+                        "value={value}, precision={precision}, iso={iso_8601}"
+                    );
+                }
+            }
+        }
     }
 }
 
