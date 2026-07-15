@@ -291,15 +291,11 @@ public class NativeWindowJoinOperator extends AbstractStreamOperator<ArrowBatch>
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    int[] keyGroups =
-        Native.windowJoinerSnapshotKeyGroups(handle, maxParallelism, keyTimestampPrecisions);
-    RawKeyedState.snapshotWithTimer(
+    RawKeyedState.snapshotPartitionsWithTimer(
         context,
-        keyGroups,
-        proctime ? maxOpenEnd : Long.MIN_VALUE,
-        keyGroup ->
-            Native.snapshotWindowJoinerKeyGroup(
-                handle, keyGroup, maxParallelism, keyTimestampPrecisions));
+        Native.snapshotWindowJoinerPartitions(
+            handle, maxParallelism, keyTimestampPrecisions),
+        proctime ? maxOpenEnd : Long.MIN_VALUE);
   }
 
   @Override

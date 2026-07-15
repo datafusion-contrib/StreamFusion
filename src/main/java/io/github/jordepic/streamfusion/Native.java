@@ -1524,13 +1524,9 @@ public final class Native {
   /** Serializes a window joiner's buffered rows for a checkpoint. */
   public static native byte[] snapshotWindowJoiner(long handle);
 
-  /** Lists the non-empty Flink key groups in a window-join raw keyed-state checkpoint. */
-  public static native int[] windowJoinerSnapshotKeyGroups(
+  /** Serializes every non-empty window-join key group once, framed by key-group id. */
+  public static native byte[][] snapshotWindowJoinerPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
-
-  /** Serializes one window-join key group for a raw keyed-state checkpoint. */
-  public static native byte[] snapshotWindowJoinerKeyGroup(
-      long handle, int keyGroup, int maxParallelism, int[] timestampPrecisions);
 
   /** Rebuilds a window joiner from a snapshot and returns a fresh handle. */
   public static native long restoreWindowJoiner(
