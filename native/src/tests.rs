@@ -2639,19 +2639,23 @@ fn interval_outer_raw_state_remaps_subtask_local_row_ids() {
     let mut matched = left_interval_joiner(-1000, 1000);
     let _ = matched.push_left(join_batch(vec![1], vec![10], vec![5000]), None);
     let _ = matched.push_right(join_batch(vec![1], vec![100], vec![5000]), None);
-    let matched_groups = matched.snapshot_key_groups(128, &[-1]);
-    assert_eq!(matched_groups.len(), 1);
+    let matched_partitions = matched.snapshot_partitions(128, &[-1]);
+    assert_eq!(matched_partitions.len(), 1);
 
     let mut unmatched = left_interval_joiner(-1000, 1000);
     let _ = unmatched.push_left(join_batch(vec![2], vec![20], vec![5000]), None);
-    let unmatched_groups = unmatched.snapshot_key_groups(128, &[-1]);
-    assert_eq!(unmatched_groups.len(), 1);
-    assert_ne!(matched_groups, unmatched_groups, "test keys need distinct raw key groups");
+    let unmatched_partitions = unmatched.snapshot_partitions(128, &[-1]);
+    assert_eq!(unmatched_partitions.len(), 1);
+    assert_ne!(
+        matched_partitions.keys().next(),
+        unmatched_partitions.keys().next(),
+        "test keys need distinct raw key groups"
+    );
 
-    let snapshots = vec![
-        matched.snapshot_key_group(matched_groups[0], 128, &[-1]),
-        unmatched.snapshot_key_group(unmatched_groups[0], 128, &[-1]),
-    ];
+    let snapshots = matched_partitions
+        .into_values()
+        .chain(unmatched_partitions.into_values())
+        .collect::<Vec<_>>();
     let mut restored = IntervalJoiner::restore_partitions(
         vec![0],
         vec![0],

@@ -289,15 +289,11 @@ public class NativeIntervalJoinOperator extends AbstractStreamOperator<ArrowBatc
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    int[] keyGroups =
-        Native.intervalJoinerSnapshotKeyGroups(handle, maxParallelism, keyTimestampPrecisions);
-    RawKeyedState.snapshotWithTimer(
+    RawKeyedState.snapshotPartitionsWithTimer(
         context,
-        keyGroups,
-        proctime ? registeredTimer : Long.MIN_VALUE,
-        keyGroup ->
-            Native.snapshotIntervalJoinerKeyGroup(
-                handle, keyGroup, maxParallelism, keyTimestampPrecisions));
+        Native.snapshotIntervalJoinerPartitions(
+            handle, maxParallelism, keyTimestampPrecisions),
+        proctime ? registeredTimer : Long.MIN_VALUE);
   }
 
   @Override

@@ -98,6 +98,34 @@ final class RawKeyedState {
     out.close();
   }
 
+  /** Writes one-pass native partitions plus a cleanup deadline into each rescale-safe payload. */
+  static void snapshotPartitionsWithTimer(
+      StateSnapshotContext context, byte[][] partitions, long deadline) throws Exception {
+    if (partitions.length == 0) {
+      return;
+    }
+    KeyedStateCheckpointOutputStream out = context.getRawKeyedOperatorStateOutput();
+    for (byte[] partition : partitions) {
+      if (partition.length < Integer.BYTES) {
+        throw new IllegalStateException("native keyed-state partition has no key-group id");
+      }
+      int keyGroup = ByteBuffer.wrap(partition).getInt();
+      if (!out.getKeyGroupList().contains(keyGroup)) {
+        throw new IllegalStateException(
+            "native state for key group " + keyGroup + " is outside this subtask's Flink range");
+      }
+      out.startNewKeyGroup(keyGroup);
+      int payloadLength = partition.length - Integer.BYTES;
+      writeLength(out, TIMER_FRAME_BYTES + payloadLength);
+      ByteBuffer timerFrame = ByteBuffer.allocate(TIMER_FRAME_BYTES);
+      timerFrame.putInt(TIMER_FRAME_MAGIC);
+      timerFrame.putLong(deadline);
+      out.write(timerFrame.array());
+      out.write(partition, Integer.BYTES, payloadLength);
+    }
+    out.close();
+  }
+
   /** Writes a cleanup deadline into every native key-group payload, keeping it rescale-safe. */
   static void snapshotWithTimer(
       StateSnapshotContext context,

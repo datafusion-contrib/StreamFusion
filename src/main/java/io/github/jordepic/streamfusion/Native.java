@@ -1167,13 +1167,9 @@ public final class Native {
   /** Serializes an interval joiner's buffered rows for a checkpoint. */
   public static native byte[] snapshotIntervalJoiner(long handle);
 
-  /** Lists the non-empty Flink key groups in an interval-join raw keyed-state checkpoint. */
-  public static native int[] intervalJoinerSnapshotKeyGroups(
+  /** Serializes every non-empty interval-join key group once, framed by key-group id. */
+  public static native byte[][] snapshotIntervalJoinerPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
-
-  /** Serializes one interval-join key group for a raw keyed-state checkpoint. */
-  public static native byte[] snapshotIntervalJoinerKeyGroup(
-      long handle, int keyGroup, int maxParallelism, int[] timestampPrecisions);
 
   /** Rebuilds an interval joiner from a snapshot and returns a fresh handle. */
   public static native long restoreIntervalJoiner(
