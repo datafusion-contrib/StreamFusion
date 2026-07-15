@@ -703,3 +703,11 @@ Measured with Criterion (`kafka_timestamp_sink/*`, 4096 values): 935.6 µs → 1
 **5.37× throughput** (4.38 → 23.49 Melem/s) and 81.4% less formatter time. The 50K-row
 exactly-once Kafka profile loop improved q9 from 50 → 53 completed jobs in 60 seconds (+6.0%);
 q19 remained 27 jobs in both repeat runs, so no q19 end-to-end gain is claimed.
+
+A fresh profile after that change showed the remaining timestamp frame was Chrono's
+epoch-to-calendar conversion. The second stage replaces that conversion with integer Gregorian
+calendar arithmetic before writing the same components. The retained three-way Criterion A/B
+measures generic Chrono formatting at 944.3 µs, Chrono components plus direct digits at 172.9 µs,
+and integer calendar plus direct digits at 116.1 µs per 4096 values. The second stage is another
+**1.49× throughput gain** (32.8% less timestamp time); its q9 guard remained neutral at 53 jobs in
+60 seconds.

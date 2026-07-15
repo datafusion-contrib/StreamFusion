@@ -325,27 +325,75 @@ pub(crate) fn encode_local_timestamp(
     iso_8601: bool,
     output: &mut Vec<u8>,
 ) {
+    let seconds = value.div_euclid(1_000_000_000);
+    let nanos = value.rem_euclid(1_000_000_000) as u32;
+    let days = seconds.div_euclid(86_400);
+    let second_of_day = seconds.rem_euclid(86_400) as u32;
+    let (year, month, day) = civil_date_from_epoch_days(days);
+    encode_timestamp_parts(
+        year,
+        month,
+        day,
+        second_of_day / 3_600,
+        (second_of_day / 60) % 60,
+        second_of_day % 60,
+        nanos,
+        precision,
+        iso_8601,
+        output,
+    );
+}
+
+#[cfg(feature = "kafka")]
+pub(crate) fn encode_local_timestamp_chrono_components(
+    value: i64,
+    precision: usize,
+    iso_8601: bool,
+    output: &mut Vec<u8>,
+) {
     use chrono::{DateTime, Datelike, Timelike, Utc};
     let seconds = value.div_euclid(1_000_000_000);
     let nanos = value.rem_euclid(1_000_000_000) as u32;
     let timestamp = DateTime::<Utc>::from_timestamp(seconds, nanos).expect("valid Flink timestamp");
-    let year = timestamp.year();
-    if !(0..=9999).contains(&year) {
-        encode_local_timestamp_chrono(value, precision, iso_8601, output);
-        return;
-    }
+    encode_timestamp_parts(
+        timestamp.year(),
+        timestamp.month(),
+        timestamp.day(),
+        timestamp.hour(),
+        timestamp.minute(),
+        timestamp.second(),
+        nanos,
+        precision,
+        iso_8601,
+        output,
+    );
+}
+
+#[cfg(feature = "kafka")]
+fn encode_timestamp_parts(
+    year: i32,
+    month: u32,
+    day: u32,
+    hour: u32,
+    minute: u32,
+    second: u32,
+    nanos: u32,
+    precision: usize,
+    iso_8601: bool,
+    output: &mut Vec<u8>,
+) {
     output.push(b'"');
     push_four_digits(output, year as u32);
     output.push(b'-');
-    push_two_digits(output, timestamp.month());
+    push_two_digits(output, month);
     output.push(b'-');
-    push_two_digits(output, timestamp.day());
+    push_two_digits(output, day);
     output.push(if iso_8601 { b'T' } else { b' ' });
-    push_two_digits(output, timestamp.hour());
+    push_two_digits(output, hour);
     output.push(b':');
-    push_two_digits(output, timestamp.minute());
+    push_two_digits(output, minute);
     output.push(b':');
-    push_two_digits(output, timestamp.second());
+    push_two_digits(output, second);
     if precision > 0 {
         let mut width = precision.min(9);
         let mut fraction = nanos / 10_u32.pow((9 - width) as u32);
@@ -363,6 +411,24 @@ pub(crate) fn encode_local_timestamp(
         }
     }
     output.extend_from_slice(b"Z\"");
+}
+
+#[cfg(feature = "kafka")]
+fn civil_date_from_epoch_days(days: i64) -> (i32, u32, u32) {
+    // Decompose the proleptic Gregorian calendar into 400-year eras; the shift aligns Unix day 0.
+    let shifted = days + 719_468;
+    let era = (if shifted >= 0 { shifted } else { shifted - 146_096 }) / 146_097;
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year =
+        day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    year += i64::from(month <= 2);
+    (year as i32, month as u32, day as u32)
 }
 
 #[cfg(feature = "kafka")]

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use arrow::array::{ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use streamfusion::bench::{encode_kafka_json, encode_kafka_timestamps};
+use streamfusion::bench::{encode_kafka_json, encode_kafka_timestamps, KafkaTimestampStrategy};
 
 const ROWS: usize = 4096;
 
@@ -58,10 +58,28 @@ fn bench_kafka_json(c: &mut Criterion) {
     let mut timestamp_group = c.benchmark_group("kafka_timestamp_sink");
     timestamp_group.throughput(Throughput::Elements(ROWS as u64));
     timestamp_group.bench_function("chrono_format", |b| {
-        b.iter(|| black_box(encode_kafka_timestamps(black_box(&timestamps), false)))
+        b.iter(|| {
+            black_box(encode_kafka_timestamps(
+                black_box(&timestamps),
+                KafkaTimestampStrategy::ChronoFormat,
+            ))
+        })
+    });
+    timestamp_group.bench_function("chrono_components", |b| {
+        b.iter(|| {
+            black_box(encode_kafka_timestamps(
+                black_box(&timestamps),
+                KafkaTimestampStrategy::ChronoComponents,
+            ))
+        })
     });
     timestamp_group.bench_function("direct_digits", |b| {
-        b.iter(|| black_box(encode_kafka_timestamps(black_box(&timestamps), true)))
+        b.iter(|| {
+            black_box(encode_kafka_timestamps(
+                black_box(&timestamps),
+                KafkaTimestampStrategy::DirectDigits,
+            ))
+        })
     });
     timestamp_group.finish();
 }

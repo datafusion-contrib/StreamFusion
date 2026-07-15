@@ -7,15 +7,28 @@ pub fn encode_kafka_json(batch: &RecordBatch) -> Vec<Vec<u8>> {
 }
 
 #[cfg(feature = "kafka")]
-pub fn encode_kafka_timestamps(values: &[i64], direct: bool) -> usize {
+pub enum KafkaTimestampStrategy {
+    ChronoFormat,
+    ChronoComponents,
+    DirectDigits,
+}
+
+#[cfg(feature = "kafka")]
+pub fn encode_kafka_timestamps(values: &[i64], strategy: KafkaTimestampStrategy) -> usize {
     let mut output = Vec::with_capacity(32);
     let mut bytes = 0;
     for &value in values {
         output.clear();
-        if direct {
-            encode_local_timestamp(value, 3, false, &mut output);
-        } else {
-            encode_local_timestamp_chrono(value, 3, false, &mut output);
+        match strategy {
+            KafkaTimestampStrategy::ChronoFormat => {
+                encode_local_timestamp_chrono(value, 3, false, &mut output)
+            }
+            KafkaTimestampStrategy::ChronoComponents => {
+                encode_local_timestamp_chrono_components(value, 3, false, &mut output)
+            }
+            KafkaTimestampStrategy::DirectDigits => {
+                encode_local_timestamp(value, 3, false, &mut output)
+            }
         }
         bytes += output.len();
     }
