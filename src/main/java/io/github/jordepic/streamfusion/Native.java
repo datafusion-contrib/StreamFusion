@@ -844,13 +844,9 @@ public final class Native {
       byte[] snapshot,
       long memoryBudgetBytes);
 
-  /** Lists the non-empty Flink key groups in a window-rank raw keyed-state checkpoint. */
-  public static native int[] windowRankerSnapshotKeyGroups(
+  /** Serializes every non-empty window-rank key group once, framed by key-group id. */
+  public static native byte[][] snapshotWindowRankerPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
-
-  /** Serializes one window-rank key group for a raw keyed-state checkpoint. */
-  public static native byte[] snapshotWindowRankerKeyGroup(
-      long handle, int keyGroup, int maxParallelism, int[] timestampPrecisions);
 
   /** Restores a window ranker from raw keyed-state partitions assigned to this subtask. */
   public static native long restoreWindowRankerPartitions(

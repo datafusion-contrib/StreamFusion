@@ -260,15 +260,11 @@ public class NativeColumnarWindowRankOperator extends AbstractStreamOperator<Arr
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    int[] keyGroups =
-        Native.windowRankerSnapshotKeyGroups(handle, maxParallelism, keyTimestampPrecisions);
-    RawKeyedState.snapshotWithTimer(
+    RawKeyedState.snapshotPartitionsWithTimer(
         context,
-        keyGroups,
-        proctime ? maxOpenEnd : Long.MIN_VALUE,
-        keyGroup ->
-            Native.snapshotWindowRankerKeyGroup(
-                handle, keyGroup, maxParallelism, keyTimestampPrecisions));
+        Native.snapshotWindowRankerPartitions(
+            handle, maxParallelism, keyTimestampPrecisions),
+        proctime ? maxOpenEnd : Long.MIN_VALUE);
   }
 
   @Override
