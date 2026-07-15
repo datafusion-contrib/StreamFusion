@@ -103,8 +103,15 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
   @Override
   public RecordsWithSplitIds<NativeKafkaRecord> fetch() {
     if (!pendingFinished.isEmpty()) {
+      List<TopicPartition> partitions =
+          pendingFinished.stream().map(partitionsById::get).toList();
+      NativeKafka.unassignKafkaSplits(
+          handle,
+          partitions.stream().map(TopicPartition::topic).toArray(String[]::new),
+          partitions.stream().mapToLong(TopicPartition::partition).toArray());
       RecordsBySplits.Builder<NativeKafkaRecord> builder = new RecordsBySplits.Builder<>();
       builder.addFinishedSplits(pendingFinished);
+      finished.addAll(pendingFinished);
       pendingFinished.clear();
       return builder.build();
     }
@@ -174,10 +181,8 @@ final class NativeKafkaSplitReader implements SplitReader<NativeKafkaRecord, Kaf
     for (int i = 0; i < splits.size(); i++) {
       KafkaPartitionSplit split = splits.get(i);
       long stop = split.getStoppingOffset().orElse(KafkaPartitionSplit.NO_STOPPING_OFFSET);
-      if (stop >= 0 && split.getStartingOffset() >= 0 && split.getStartingOffset() >= stop) {
+      if (stop >= 0 && split.getStartingOffset() >= stop) {
         pendingFinished.add(split.splitId());
-        finished.add(split.splitId());
-        continue;
       }
       int assignedIndex = assigned.size();
       topics[assignedIndex] = split.getTopic();

@@ -35,6 +35,10 @@ import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
+import org.apache.flink.util.CloseableIterator;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -106,6 +110,29 @@ class NativeKafkaSinkIntegrationTest {
           consumeCommitted(kafka.getBootstrapServers(), outputTopic, rows);
       assertEquals(rows, committed.size());
       assertEquals(rows, new HashSet<>(committed).size());
+    } finally {
+      System.clearProperty("streamfusion.operator.kafkaSource.enabled");
+    }
+  }
+
+  @Test
+  void finishesEmptyAndStartAtStopBoundedPartitions() throws Exception {
+    System.setProperty("streamfusion.operator.kafkaSource.enabled", "true");
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      String emptyTopic = "native-source-empty-" + UUID.randomUUID();
+      Properties adminProperties = new Properties();
+      adminProperties.setProperty(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
+      try (AdminClient admin = AdminClient.create(adminProperties)) {
+        admin.createTopics(List.of(new NewTopic(emptyTopic, 1, (short) 1))).all().get();
+      }
+      assertBoundedScanEmpty(brokers, emptyTopic, "earliest-offset");
+
+      String startAtStopTopic = "native-source-start-at-stop-" + UUID.randomUUID();
+      produceJson(brokers, startAtStopTopic, 10);
+      assertBoundedScanEmpty(brokers, startAtStopTopic, "latest-offset");
     } finally {
       System.clearProperty("streamfusion.operator.kafkaSource.enabled");
     }
@@ -471,6 +498,30 @@ class NativeKafkaSinkIntegrationTest {
 
   private static List<String> consumeCommitted(String brokers, String topic, int expected) {
     return consume(brokers, topic, expected, "read_committed");
+  }
+
+  private static void assertBoundedScanEmpty(String brokers, String topic, String startupMode)
+      throws Exception {
+    StreamExecutionEnvironment environment =
+        StreamExecutionEnvironment.getExecutionEnvironment();
+    environment.setParallelism(1);
+    StreamTableEnvironment table = StreamTableEnvironment.create(environment);
+    table.executeSql(
+        "CREATE TABLE input (id BIGINT, name STRING) WITH ("
+            + "'connector' = 'kafka', 'topic' = '"
+            + topic
+            + "', 'properties.bootstrap.servers' = '"
+            + brokers
+            + "', 'properties.group.id' = 'native-empty-"
+            + UUID.randomUUID()
+            + "', 'scan.startup.mode' = '"
+            + startupMode
+            + "', 'scan.bounded.mode' = 'latest-offset', 'format' = 'json')");
+    PhysicalPlanScan scan = NativePlanner.install(table);
+    try (CloseableIterator<Row> rows = table.executeSql("SELECT * FROM input").collect()) {
+      assertFalse(rows.hasNext());
+    }
+    assertTrue(scan.substitutions() > 0, scan::explainSummary);
   }
 
   private static void produceJson(String brokers, String topic, int rows) {

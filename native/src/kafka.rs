@@ -562,6 +562,7 @@ impl KafkaSplitReader {
         for (key, value) in config {
             client.set(key, value);
         }
+        client.set("enable.partition.eof", "true");
         let consumer: rdkafka::consumer::BaseConsumer =
             client.create().expect("failed to create kafka consumer");
         // The consumer's queue, for draining. (assign/seek still go through the BaseConsumer.)
@@ -749,6 +750,7 @@ impl KafkaSplitReader {
             )>,
             last_bucket: usize,
             stopping_offsets: *const HashMap<(String, i32), i64>,
+            partition_eofs: Vec<(String, i32, i64)>,
             error: Option<String>,
         }
         unsafe extern "C" fn bucket_message(
@@ -810,11 +812,14 @@ impl KafkaSplitReader {
                     bucket.4 = message.offset + 1;
                     context.buffered += 1;
                 }
-            } else if message.err
-                != rdsys::rd_kafka_resp_err_t::RD_KAFKA_RESP_ERR__PARTITION_EOF
-                && !transient_consumer_error(message.err)
-                && context.error.is_none()
-            {
+            } else if message.err == rdsys::rd_kafka_resp_err_t::RD_KAFKA_RESP_ERR__PARTITION_EOF {
+                let topic = std::ffi::CStr::from_ptr(rdsys::rd_kafka_topic_name(message.rkt))
+                    .to_string_lossy()
+                    .into_owned();
+                context
+                    .partition_eofs
+                    .push((topic, message.partition, message.offset));
+            } else if !transient_consumer_error(message.err) && context.error.is_none() {
                 let name = std::ffi::CStr::from_ptr(rdsys::rd_kafka_err2name(message.err))
                     .to_string_lossy();
                 let description = std::ffi::CStr::from_ptr(rdsys::rd_kafka_err2str(message.err))
@@ -833,6 +838,7 @@ impl KafkaSplitReader {
             buckets: Vec::new(),
             last_bucket: 0,
             stopping_offsets: &self.stopping_offsets,
+            partition_eofs: Vec::new(),
             error: None,
         };
         unsafe {
@@ -852,7 +858,7 @@ impl KafkaSplitReader {
         // callback's copies — deferring the decode to a later pass re-streamed the payload bytes cold
         // and, with the JVM round trip, measured at roughly half the fused throughput.
         self.pending.clear();
-        let positions = self
+        let mut positions = self
             .consumer
             .position()
             .map_err(|error| format!("failed to retrieve Kafka consumer positions: {error}"))?
@@ -866,6 +872,9 @@ impl KafkaSplitReader {
                 _ => None,
             })
             .collect::<HashMap<_, _>>();
+        for (topic, partition, offset) in context.partition_eofs {
+            positions.insert((topic, partition), offset);
+        }
         let mut reported = HashSet::default();
         for (_rkt, partition, topic, mut builder, payload_next_offset, stop, bytes) in context.buckets {
             let key = (topic.clone(), partition);
