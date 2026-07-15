@@ -119,15 +119,10 @@ public class NativeColumnarDeduplicateOperator extends AbstractStreamOperator<Ar
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    int[] keyGroups =
-        Native.keepFirstDeduplicatorSnapshotKeyGroups(
-            handle, maxParallelism, keyTimestampPrecisions);
-    RawKeyedState.snapshot(
+    RawKeyedState.snapshotPartitions(
         context,
-        keyGroups,
-        keyGroup ->
-            Native.snapshotKeepFirstDeduplicatorKeyGroup(
-                handle, keyGroup, maxParallelism, keyTimestampPrecisions));
+        Native.snapshotKeepFirstDeduplicatorPartitions(
+            handle, maxParallelism, keyTimestampPrecisions));
   }
 
   @Override

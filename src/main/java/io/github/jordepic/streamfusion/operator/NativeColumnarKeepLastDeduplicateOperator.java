@@ -234,15 +234,10 @@ public class NativeColumnarKeepLastDeduplicateOperator extends AbstractStreamOpe
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    int[] keyGroups =
-        Native.keepLastDeduplicatorSnapshotKeyGroups(
-            handle, maxParallelism, keyTimestampPrecisions);
-    RawKeyedState.snapshot(
+    RawKeyedState.snapshotPartitions(
         context,
-        keyGroups,
-        keyGroup ->
-            Native.snapshotKeepLastDeduplicatorKeyGroup(
-                handle, keyGroup, maxParallelism, keyTimestampPrecisions));
+        Native.snapshotKeepLastDeduplicatorPartitions(
+            handle, maxParallelism, keyTimestampPrecisions));
   }
 
   @Override

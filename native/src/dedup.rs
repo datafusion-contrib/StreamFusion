@@ -206,35 +206,16 @@ impl KeepFirstDeduplicator {
         Some(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("dedup emitted"))
     }
 
-    fn snapshot_key_groups(
+    fn snapshot_partitions(
         &mut self,
         max_parallelism: usize,
         timestamp_precisions: &[i32],
-    ) -> Vec<i32> {
+    ) -> BTreeMap<i32, Vec<u8>> {
         self.materialize_raw_keyed_snapshots(max_parallelism, timestamp_precisions);
         self.snapshot_cache
-            .as_ref()
+            .take()
             .expect("dedup raw snapshot cache")
             .snapshots
-            .keys()
-            .copied()
-            .collect()
-    }
-
-    fn snapshot_key_group(
-        &mut self,
-        key_group: i32,
-        max_parallelism: usize,
-        timestamp_precisions: &[i32],
-    ) -> Vec<u8> {
-        self.materialize_raw_keyed_snapshots(max_parallelism, timestamp_precisions);
-        self.snapshot_cache
-            .as_ref()
-            .expect("dedup raw snapshot cache")
-            .snapshots
-            .get(&key_group)
-            .cloned()
-            .expect("requested non-empty dedup raw key group")
     }
 
     fn materialize_raw_keyed_snapshots(
@@ -674,35 +655,16 @@ impl KeepLastDeduplicator {
         Some(RecordBatch::try_new(schema.clone(), columns).expect("keep-last snapshot"))
     }
 
-    fn snapshot_key_groups(
+    fn snapshot_partitions(
         &mut self,
         max_parallelism: usize,
         timestamp_precisions: &[i32],
-    ) -> Vec<i32> {
+    ) -> BTreeMap<i32, Vec<u8>> {
         self.materialize_raw_keyed_snapshots(max_parallelism, timestamp_precisions);
         self.snapshot_cache
-            .as_ref()
+            .take()
             .expect("dedup raw snapshot cache")
             .snapshots
-            .keys()
-            .copied()
-            .collect()
-    }
-
-    fn snapshot_key_group(
-        &mut self,
-        key_group: i32,
-        max_parallelism: usize,
-        timestamp_precisions: &[i32],
-    ) -> Vec<u8> {
-        self.materialize_raw_keyed_snapshots(max_parallelism, timestamp_precisions);
-        self.snapshot_cache
-            .as_ref()
-            .expect("dedup raw snapshot cache")
-            .snapshots
-            .get(&key_group)
-            .cloned()
-            .expect("requested non-empty dedup raw key group")
     }
 
     fn materialize_raw_keyed_snapshots(
@@ -946,49 +908,25 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepFi
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_keepFirstDeduplicatorSnapshotKeyGroups<
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotKeepFirstDeduplicatorPartitions<
     'local,
 >(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     max_parallelism: jint,
     timestamp_precisions: JIntArray<'local>,
-) -> jni::sys::jintArray {
+) -> jni::sys::jobjectArray {
     let dedup = unsafe { &mut *(handle as *mut KeepFirstDeduplicator) };
     let precisions: Vec<i32> = read_int_array(&env, &timestamp_precisions)
         .into_iter()
         .map(|precision| precision as i32)
         .collect();
-    let groups = dedup.snapshot_key_groups(max_parallelism as usize, &precisions);
-    let output = env
-        .new_int_array(groups.len() as i32)
-        .expect("allocate keep-first dedup raw key groups");
-    env.set_int_array_region(&output, 0, &groups)
-        .expect("write keep-first dedup raw key groups");
-    output.into_raw()
-}
-
-#[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotKeepFirstDeduplicatorKeyGroup<
-    'local,
->(
-    env: JNIEnv<'local>,
-    _class: JClass<'local>,
-    handle: jlong,
-    key_group: jint,
-    max_parallelism: jint,
-    timestamp_precisions: JIntArray<'local>,
-) -> jbyteArray {
-    let dedup = unsafe { &mut *(handle as *mut KeepFirstDeduplicator) };
-    let precisions: Vec<i32> = read_int_array(&env, &timestamp_precisions)
-        .into_iter()
-        .map(|precision| precision as i32)
-        .collect();
-    let snapshot = dedup.snapshot_key_group(key_group, max_parallelism as usize, &precisions);
-    env.byte_array_from_slice(&snapshot)
-        .expect("allocate keep-first dedup raw key-group snapshot")
-        .into_raw()
+    keyed_state_partition_array(
+        &mut env,
+        dedup.snapshot_partitions(max_parallelism as usize, &precisions),
+        "keep-first-dedup",
+    )
 }
 
 #[no_mangle]
@@ -1154,49 +1092,25 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepLa
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_keepLastDeduplicatorSnapshotKeyGroups<
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotKeepLastDeduplicatorPartitions<
     'local,
 >(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     max_parallelism: jint,
     timestamp_precisions: JIntArray<'local>,
-) -> jni::sys::jintArray {
+) -> jni::sys::jobjectArray {
     let dedup = unsafe { &mut *(handle as *mut KeepLastDeduplicator) };
     let precisions: Vec<i32> = read_int_array(&env, &timestamp_precisions)
         .into_iter()
         .map(|precision| precision as i32)
         .collect();
-    let groups = dedup.snapshot_key_groups(max_parallelism as usize, &precisions);
-    let output = env
-        .new_int_array(groups.len() as i32)
-        .expect("allocate keep-last dedup raw key groups");
-    env.set_int_array_region(&output, 0, &groups)
-        .expect("write keep-last dedup raw key groups");
-    output.into_raw()
-}
-
-#[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotKeepLastDeduplicatorKeyGroup<
-    'local,
->(
-    env: JNIEnv<'local>,
-    _class: JClass<'local>,
-    handle: jlong,
-    key_group: jint,
-    max_parallelism: jint,
-    timestamp_precisions: JIntArray<'local>,
-) -> jbyteArray {
-    let dedup = unsafe { &mut *(handle as *mut KeepLastDeduplicator) };
-    let precisions: Vec<i32> = read_int_array(&env, &timestamp_precisions)
-        .into_iter()
-        .map(|precision| precision as i32)
-        .collect();
-    let snapshot = dedup.snapshot_key_group(key_group, max_parallelism as usize, &precisions);
-    env.byte_array_from_slice(&snapshot)
-        .expect("allocate keep-last dedup raw key-group snapshot")
-        .into_raw()
+    keyed_state_partition_array(
+        &mut env,
+        dedup.snapshot_partitions(max_parallelism as usize, &precisions),
+        "keep-last-dedup",
+    )
 }
 
 #[no_mangle]

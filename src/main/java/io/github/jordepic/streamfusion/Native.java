@@ -714,12 +714,8 @@ public final class Native {
       int[] partitionColumns, int rtColumn, byte[] snapshot, long memoryBudgetBytes);
 
   /** Lists the non-empty Flink key groups in a keep-first deduplication raw keyed-state checkpoint. */
-  public static native int[] keepFirstDeduplicatorSnapshotKeyGroups(
+  public static native byte[][] snapshotKeepFirstDeduplicatorPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
-
-  /** Serializes one keep-first deduplication key group for a raw keyed-state checkpoint. */
-  public static native byte[] snapshotKeepFirstDeduplicatorKeyGroup(
-      long handle, int keyGroup, int maxParallelism, int[] timestampPrecisions);
 
   /** Restores a keep-first deduplicator from raw keyed-state partitions assigned to this subtask. */
   public static native long restoreKeepFirstDeduplicatorPartitions(
@@ -772,12 +768,8 @@ public final class Native {
       long memoryBudgetBytes);
 
   /** Lists the non-empty Flink key groups in a keep-last deduplication raw keyed-state checkpoint. */
-  public static native int[] keepLastDeduplicatorSnapshotKeyGroups(
+  public static native byte[][] snapshotKeepLastDeduplicatorPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
-
-  /** Serializes one keep-last deduplication key group for a raw keyed-state checkpoint. */
-  public static native byte[] snapshotKeepLastDeduplicatorKeyGroup(
-      long handle, int keyGroup, int maxParallelism, int[] timestampPrecisions);
 
   /** Restores a keep-last deduplicator from the raw keyed-state partitions assigned to this subtask. */
   public static native long restoreKeepLastDeduplicatorPartitions(
