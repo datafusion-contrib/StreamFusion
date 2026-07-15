@@ -701,6 +701,31 @@ fn bench_unique_updating_join_logical_bundle(c: &mut Criterion) {
             BatchSize::SmallInput,
         )
     });
+    group.bench_function("checkpoint_4096_rows_per_side", |b| {
+        let checkpoint_batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("k", DataType::Int64, false),
+                Field::new("v", DataType::Int64, false),
+                Field::new("$row_kind$", DataType::Int8, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from_iter_values(0..ROWS as i64)),
+                Arc::new(Int64Array::from_iter_values((0..ROWS as i64).map(|key| key * 7))),
+                Arc::new(Int8Array::from(vec![0; ROWS])),
+            ],
+        )
+        .unwrap();
+        b.iter_batched(
+            || {
+                let mut join = UniqueUpdatingJoin::new(data_schema.clone(), false);
+                black_box(join.push(&checkpoint_batch, false));
+                black_box(join.push(&checkpoint_batch, true));
+                join
+            },
+            |join| black_box(join.snapshot_partitions(128)),
+            BatchSize::SmallInput,
+        )
+    });
     group.finish();
 }
 

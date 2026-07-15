@@ -438,6 +438,14 @@ with mini-batching off; q20 moved from **0.07x to 1.55x** and q23 from **0.05x t
 mini-batching on, those four queries measured **2.19x, 2.44x, 1.77x, and 1.00x** Flink,
 respectively. Snapshot payloads, restore behavior, and Flink rescaling ownership are unchanged.
 
+**Updating joins partition the materialized snapshot before IPC encoding.** The one-pass checkpoint
+still encoded each complete join side to IPC, decoded it immediately, split the decoded batch by
+Flink key group, and encoded each partition again. The partitioner now keeps that first materialized
+Arrow batch in memory and writes only the final per-key-group IPC payloads. The checkpoint bytes and
+restore/rescale contract are unchanged. Criterion on 4,096 rows per side (`checkpoint_4096_rows_per_side`,
+release+mimalloc) improved from 2.116 ms to 1.940 ms per checkpoint, an **8.3% latency reduction**;
+the native-symbol q9 profile that motivated it was dominated by the removed IPC round trip.
+
 ## 5. Keeping the island whole
 
 The all-or-nothing gate (`196058a`) raises the stakes on every expression and operator: a single

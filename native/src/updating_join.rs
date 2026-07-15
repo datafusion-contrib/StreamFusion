@@ -819,9 +819,9 @@ impl UpdatingJoiner {
         }
     }
 
-    /// Serializes one side's multiset as `[data cols.., __count__, __assoc__]` (one row per distinct
-    /// live row), or no bytes when the side has no rows yet.
-    fn serialize_side(&self, is_left: bool) -> Vec<u8> {
+    /// Materializes one side's multiset as `[data cols.., __count__, __assoc__]` (one row per
+    /// distinct live row), or no batch when the side has no rows yet.
+    fn side_snapshot_batch(&self, is_left: bool) -> Option<RecordBatch> {
         let (schema, state, conv) = if is_left {
             (&self.left_schema, &self.left_state, &self.left_payload)
         } else {
@@ -839,7 +839,7 @@ impl UpdatingJoiner {
             }
         }
         if rows.is_empty() {
-            return Vec::new();
+            return None;
         }
         let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
         let mut columns: Vec<ArrayRef> = conv
@@ -849,7 +849,13 @@ impl UpdatingJoiner {
         columns.push(Arc::new(Int64Array::from(counts)));
         fields.push(Field::new("__assoc__", DataType::Int32, false));
         columns.push(Arc::new(Int32Array::from(assocs)));
-        write_ipc(&RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("join side"))
+        Some(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("join side"))
+    }
+
+    fn serialize_side(&self, is_left: bool) -> Vec<u8> {
+        self.side_snapshot_batch(is_left)
+            .map(|batch| write_ipc(&batch))
+            .unwrap_or_default()
     }
 
     pub(crate) fn snapshot(&self) -> Vec<u8> {
@@ -879,13 +885,13 @@ impl UpdatingJoiner {
         timestamp_precisions: &[i32],
     ) -> BTreeMap<i32, Vec<u8>> {
         let left = self.side_raw_partitions(
-            &self.serialize_side(true),
+            self.side_snapshot_batch(true),
             &self.left_keys,
             max_parallelism,
             timestamp_precisions,
         );
         let right = self.side_raw_partitions(
-            &self.serialize_side(false),
+            self.side_snapshot_batch(false),
             &self.right_keys,
             max_parallelism,
             timestamp_precisions,
@@ -908,13 +914,13 @@ impl UpdatingJoiner {
 
     fn side_raw_partitions(
         &self,
-        bytes: &[u8],
+        batch: Option<RecordBatch>,
         key_columns: &[usize],
         max_parallelism: usize,
         timestamp_precisions: &[i32],
     ) -> BTreeMap<i32, Vec<RecordBatch>> {
         let mut partitions = BTreeMap::new();
-        for batch in read_ipc_if_present(bytes) {
+        if let Some(batch) = batch {
             let mut rows_by_group: BTreeMap<i32, Vec<u32>> = BTreeMap::new();
             for row in 0..batch.num_rows() {
                 let key_group = flink_key_group(

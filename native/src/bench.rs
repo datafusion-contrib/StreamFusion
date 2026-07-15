@@ -228,6 +228,10 @@ impl UniqueUpdatingJoin {
     pub fn flush(&mut self) -> RecordBatch {
         self.0.flush_mini_batch().expect("budget exceeded")
     }
+
+    pub fn snapshot_partitions(&self, max_parallelism: usize) -> usize {
+        self.0.snapshot_partitions(max_parallelism, &[-1]).values().map(Vec::len).sum()
+    }
 }
 
 /// Append-only Top-N with explicit logical mini-batch flushes.
