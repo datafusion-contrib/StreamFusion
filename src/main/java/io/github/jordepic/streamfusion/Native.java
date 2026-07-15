@@ -1363,13 +1363,9 @@ public final class Native {
   /** Serializes an updating joiner's per-side state for a checkpoint. */
   public static native byte[] snapshotUpdatingJoiner(long handle);
 
-  /** Lists the non-empty Flink key groups in an updating join raw keyed-state checkpoint. */
-  public static native int[] updatingJoinerSnapshotKeyGroups(
+  /** Serializes every non-empty updating-join key group once, framed by key-group id. */
+  public static native byte[][] snapshotUpdatingJoinerPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
-
-  /** Serializes one updating join key group for a raw keyed-state checkpoint. */
-  public static native byte[] snapshotUpdatingJoinerKeyGroup(
-      long handle, int keyGroup, int maxParallelism, int[] timestampPrecisions);
 
   /** Rebuilds an updating joiner from a snapshot and returns a fresh handle. */
   public static native long restoreUpdatingJoiner(

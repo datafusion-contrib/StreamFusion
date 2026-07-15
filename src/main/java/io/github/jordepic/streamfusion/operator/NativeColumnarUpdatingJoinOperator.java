@@ -300,14 +300,10 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    int[] keyGroups =
-        Native.updatingJoinerSnapshotKeyGroups(handle, maxParallelism, keyTimestampPrecisions);
-    RawKeyedState.snapshot(
+    RawKeyedState.snapshotPartitions(
         context,
-        keyGroups,
-        keyGroup ->
-            Native.snapshotUpdatingJoinerKeyGroup(
-                handle, keyGroup, maxParallelism, keyTimestampPrecisions));
+        Native.snapshotUpdatingJoinerPartitions(
+            handle, maxParallelism, keyTimestampPrecisions));
   }
 
   @Override

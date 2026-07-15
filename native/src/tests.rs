@@ -2032,12 +2032,12 @@ fn updating_join_state_partitions_and_restores_by_flink_key_group() {
     before
         .push(&changelog_join_batch(vec![1, 2], vec![10, 20], vec![0, 0]), true)
         .unwrap();
-    let groups = before.snapshot_key_groups(128, &[-1]);
-    assert!(groups.len() >= 2, "test keys should cover distinct raw key groups");
-    let snapshots: Vec<Vec<u8>> = groups
-        .iter()
-        .map(|&group| before.snapshot_key_group(group, 128, &[-1]))
-        .collect();
+    let partitions = before.snapshot_partitions(128, &[-1]);
+    assert!(
+        partitions.len() >= 2,
+        "test keys should cover distinct raw key groups"
+    );
+    let snapshots: Vec<Vec<u8>> = partitions.into_values().collect();
     let mut restored = UpdatingJoiner::restore_partitions(
         vec![0],
         vec![0],
