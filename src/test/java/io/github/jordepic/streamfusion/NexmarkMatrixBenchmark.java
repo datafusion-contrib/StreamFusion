@@ -785,6 +785,17 @@ class NexmarkMatrixBenchmark {
 
   private static double kafkaSinkBest(
       String brokers, Query q, boolean nativeRun, Map<String, String> config) throws Exception {
+    return kafkaSinkBest(brokers, q, nativeRun, config, WARMUP, RUNS);
+  }
+
+  private static double kafkaSinkBest(
+      String brokers,
+      Query q,
+      boolean nativeRun,
+      Map<String, String> config,
+      int warmup,
+      int runs)
+      throws Exception {
     Map<String, String> properties =
         nativeRun
             ? Map.of(
@@ -796,9 +807,9 @@ class NexmarkMatrixBenchmark {
     properties.forEach(System::setProperty);
     try {
       double best = Double.MAX_VALUE;
-      for (int run = 0; run < WARMUP + RUNS; run++) {
+      for (int run = 0; run < warmup + runs; run++) {
         double seconds = runKafkaSinkOnce(brokers, q, nativeRun, config);
-        if (run >= WARMUP) {
+        if (run >= warmup) {
           best = Math.min(best, seconds);
         }
       }
@@ -930,6 +941,45 @@ class NexmarkMatrixBenchmark {
       tableConfigExtras = Map.of();
     }
     System.out.println("[profile] " + (nativeRun ? "native " : "flink ") + label + " iterations: " + iterations);
+  }
+
+  /** Profiles one exactly-once Kafka input/output query repeatedly against a single broker. */
+  @Test
+  @EnabledIfEnvironmentVariable(named = "SF_PROFILE_KAFKA_SINK", matches = "true")
+  void exactlyOnceKafkaSinkProfileLoop() throws Exception {
+    String label = System.getProperty("profile.query", "q19");
+    Query q =
+        Arrays.stream(ALL_QUERIES)
+            .filter(candidate -> candidate.label.equals(label))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("unknown profile.query: " + label));
+    boolean nativeRun = !"false".equals(System.getProperty("profile.native", "true"));
+    Map<String, String> config =
+        "true".equals(System.getProperty("profile.minibatch"))
+            ? Map.of(
+                "table.exec.mini-batch.enabled", "true",
+                "table.exec.mini-batch.allow-latency", "2 s",
+                "table.exec.mini-batch.size", "50000")
+            : Map.of();
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
+            .withEnv("KAFKA_TRANSACTION_MAX_TIMEOUT_MS", "7200000")) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      NexmarkKafkaBenchmark.produce(brokers, "nexmark", "json", ROWS);
+      long deadline = System.currentTimeMillis() + Long.getLong("profile.seconds", 60L) * 1000L;
+      long iterations = 0;
+      do {
+        kafkaSinkBest(brokers, q, nativeRun, config, 0, 1);
+        iterations++;
+      } while (System.currentTimeMillis() < deadline);
+      System.out.println(
+          "[profile] exactly-once Kafka "
+              + (nativeRun ? "native " : "flink ")
+              + label
+              + " iterations: "
+              + iterations);
+    }
   }
 
   /**

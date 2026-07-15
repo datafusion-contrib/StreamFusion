@@ -865,6 +865,13 @@ shapes: q0 completed all four append-mode cells, and q4 completed all four upser
 short runs validate routing and transaction completion only; they are intentionally not reported as
 performance results.
 
+For differential profiling, `SF_PROFILE_KAFKA_SINK=true` runs one selected query repeatedly against
+one broker and bypasses the matrix warmup/repetition. Select the query with `-Dprofile.query=q19`,
+the engine with `-Dprofile.native=true|false`, mini-batching with `-Dprofile.minibatch=true|false`,
+and the sampling window with `-Dprofile.seconds=60`. JVM profilers can be attached through
+`-Dsf.extraJvmArgs`; for example, JFR uses
+`-Dsf.extraJvmArgs=-XX:StartFlightRecording=filename=/tmp/kafka-sink.jfr,settings=profile,dumponexit=true`.
+
 #### Historical tuned-only matrix (2026-07-05)
 
 Production Flink deployments routinely enable mini-batch for stateful queries, so the matrix has a
