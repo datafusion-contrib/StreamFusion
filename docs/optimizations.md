@@ -428,6 +428,16 @@ the release+mimalloc 50K-event q19 exactly-once Kafka profile loop, 60 seconds c
 instead of 15: **67% more end-to-end work**, with the former repeated snapshot call removed from the
 hot path.
 
+**Joins checkpoint each key group from one native partitioning pass.** Updating and interval joins
+had the same multiplicative checkpoint shape as Top-N: serialize and partition both sides once to
+discover non-empty key groups, then repeat the complete operation for every group. Their JNI calls
+now return the complete framed partition set in one pass; interval joins retain the existing
+per-key-group processing-time timer frame. In the release+mimalloc 500K-event exactly-once Kafka
+matrix, the former outliers moved from q4 **0.13x to 1.77x** Flink and q7 **0.07x to 2.44x** Flink
+with mini-batching off; q20 moved from **0.07x to 1.55x** and q23 from **0.05x to 0.96x**. With
+mini-batching on, those four queries measured **2.19x, 2.44x, 1.77x, and 1.00x** Flink,
+respectively. Snapshot payloads, restore behavior, and Flink rescaling ownership are unchanged.
+
 ## 5. Keeping the island whole
 
 The all-or-nothing gate (`196058a`) raises the stakes on every expression and operator: a single
