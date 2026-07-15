@@ -1463,39 +1463,17 @@ impl GroupAggregator {
         write_framed(&batches)
     }
 
-    /// Returns the non-empty Flink key groups in this checkpoint. The companion payload method
-    /// reuses the materialized map, so the JVM writes each raw key group without re-walking state.
-    pub(crate) fn snapshot_key_groups(
+    /// Materializes every non-empty Flink key group once and transfers ownership to the caller.
+    pub(crate) fn snapshot_partitions(
         &mut self,
         max_parallelism: usize,
         timestamp_precisions: &[i32],
-    ) -> Vec<i32> {
+    ) -> BTreeMap<i32, Vec<u8>> {
         self.materialize_raw_keyed_snapshots(max_parallelism, timestamp_precisions);
         self.snapshot_cache
-            .as_ref()
+            .take()
             .expect("raw keyed snapshot cache")
             .snapshots
-            .keys()
-            .copied()
-            .collect()
-    }
-
-    /// Returns one previously materialized key-group payload. Calling this for an empty group is a
-    /// caller error: raw keyed state deliberately omits empty key groups from a checkpoint.
-    pub(crate) fn snapshot_key_group(
-        &mut self,
-        key_group: i32,
-        max_parallelism: usize,
-        timestamp_precisions: &[i32],
-    ) -> Vec<u8> {
-        self.materialize_raw_keyed_snapshots(max_parallelism, timestamp_precisions);
-        self.snapshot_cache
-            .as_ref()
-            .expect("raw keyed snapshot cache")
-            .snapshots
-            .get(&key_group)
-            .cloned()
-            .expect("requested non-empty raw keyed group")
     }
 
     fn materialize_raw_keyed_snapshots(
@@ -2332,51 +2310,25 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotGroup
 
 /// Lists the non-empty Flink key groups represented by this group aggregator's current state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_groupAggregatorSnapshotKeyGroups<
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotGroupAggregatorPartitions<
     'local,
 >(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     max_parallelism: jint,
     timestamp_precisions: JIntArray<'local>,
-) -> jni::sys::jintArray {
+) -> jni::sys::jobjectArray {
     let aggregator = unsafe { &mut *(handle as *mut GroupAggregator) };
     let precisions: Vec<i32> = read_int_array(&env, &timestamp_precisions)
         .into_iter()
         .map(|precision| precision as i32)
         .collect();
-    let groups = aggregator.snapshot_key_groups(max_parallelism as usize, &precisions);
-    let output = env
-        .new_int_array(groups.len() as i32)
-        .expect("allocate raw group key-group list");
-    env.set_int_array_region(&output, 0, &groups)
-        .expect("write raw group key-group list");
-    output.into_raw()
-}
-
-/// Returns one raw keyed-state payload after `groupAggregatorSnapshotKeyGroups` materialized the
-/// checkpoint's disjoint group snapshots.
-#[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotGroupAggregatorKeyGroup<
-    'local,
->(
-    env: JNIEnv<'local>,
-    _class: JClass<'local>,
-    handle: jlong,
-    key_group: jint,
-    max_parallelism: jint,
-    timestamp_precisions: JIntArray<'local>,
-) -> jbyteArray {
-    let aggregator = unsafe { &mut *(handle as *mut GroupAggregator) };
-    let precisions: Vec<i32> = read_int_array(&env, &timestamp_precisions)
-        .into_iter()
-        .map(|precision| precision as i32)
-        .collect();
-    let snapshot = aggregator.snapshot_key_group(key_group, max_parallelism as usize, &precisions);
-    env.byte_array_from_slice(&snapshot)
-        .expect("allocate raw group key-group snapshot")
-        .into_raw()
+    keyed_state_partition_array(
+        &mut env,
+        aggregator.snapshot_partitions(max_parallelism as usize, &precisions),
+        "group-aggregate",
+    )
 }
 
 /// Rebuilds a `GROUP BY` aggregator from a snapshot taken by a prior run and returns a fresh handle.

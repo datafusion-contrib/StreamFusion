@@ -237,14 +237,10 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    int[] keyGroups =
-        Native.groupAggregatorSnapshotKeyGroups(handle, maxParallelism, keyTimestampPrecisions);
-    RawKeyedState.snapshot(
+    RawKeyedState.snapshotPartitions(
         context,
-        keyGroups,
-        keyGroup ->
-            Native.snapshotGroupAggregatorKeyGroup(
-                handle, keyGroup, maxParallelism, keyTimestampPrecisions));
+        Native.snapshotGroupAggregatorPartitions(
+            handle, maxParallelism, keyTimestampPrecisions));
   }
 
   @Override

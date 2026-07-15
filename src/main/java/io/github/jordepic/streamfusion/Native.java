@@ -912,12 +912,8 @@ public final class Native {
   public static native byte[] snapshotGroupAggregator(long handle);
 
   /** Lists the non-empty Flink key groups in the group aggregator's raw keyed-state checkpoint. */
-  public static native int[] groupAggregatorSnapshotKeyGroups(
+  public static native byte[][] snapshotGroupAggregatorPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
-
-  /** Serializes the state of one group returned by {@link #groupAggregatorSnapshotKeyGroups}. */
-  public static native byte[] snapshotGroupAggregatorKeyGroup(
-      long handle, int keyGroup, int maxParallelism, int[] timestampPrecisions);
 
   /** Rebuilds a {@code GROUP BY} aggregator from a snapshot and returns a fresh handle. */
   public static native long restoreGroupAggregator(
