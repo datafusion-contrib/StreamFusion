@@ -1209,12 +1209,9 @@ fn window_state_reserves_and_releases_memory() {
 fn window_state_partitions_and_restores_by_flink_key_group() {
     let mut before = TumblingAggregator::new(1000, 1000, false, vec![0], vec![0]);
     before.update(&keyed_window_batch(0, vec![1, 2])).unwrap();
-    let groups = before.snapshot_key_groups(128, &[-1]);
-    assert!(!groups.is_empty());
-    let snapshots: Vec<Vec<u8>> = groups
-        .iter()
-        .map(|&group| before.snapshot_key_group(group, 128, &[-1]))
-        .collect();
+    let partitions = before.snapshot_partitions(128, &[-1]);
+    assert!(!partitions.is_empty());
+    let snapshots: Vec<Vec<u8>> = partitions.into_values().collect();
 
     let mut restored =
         TumblingAggregator::restore_partitions(1000, 1000, false, vec![0], vec![0], &snapshots);

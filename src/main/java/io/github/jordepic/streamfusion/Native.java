@@ -564,12 +564,8 @@ public final class Native {
       long memoryBudgetBytes);
 
   /** Lists the non-empty Flink key groups in a fixed-window raw keyed-state checkpoint. */
-  public static native int[] tumblingAggregatorSnapshotKeyGroups(
+  public static native byte[][] snapshotTumblingAggregatorPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
-
-  /** Serializes one fixed-window key group for a raw keyed-state checkpoint. */
-  public static native byte[] snapshotTumblingAggregatorKeyGroup(
-      long handle, int keyGroup, int maxParallelism, int[] timestampPrecisions);
 
   /** Restores a tumbling, hopping, or cumulative window aggregator from assigned raw key groups. */
   public static native long restoreTumblingAggregatorPartitions(

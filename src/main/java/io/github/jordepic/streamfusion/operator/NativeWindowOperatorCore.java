@@ -181,20 +181,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
         memoryBudgetBytes());
   }
 
-  /** Lists non-empty raw key groups for this fixed-window handle. Stateful subclasses may override. */
-  protected int[] snapshotRawKeyGroups() {
-    return Native.tumblingAggregatorSnapshotKeyGroups(handle, maxParallelism, keyTimestampPrecisions);
-  }
-
-  /** Serializes one raw key group for this handle. Stateful subclasses may override. */
-  protected byte[] snapshotRawKeyGroup(int keyGroup) {
-    return Native.snapshotTumblingAggregatorKeyGroup(
-        handle, keyGroup, maxParallelism, keyTimestampPrecisions);
-  }
-
-  /** Returns one-pass framed partitions when a stateful subclass supports that checkpoint path. */
+  /** Returns every fixed-window raw key group from one native checkpoint pass. */
   protected byte[][] snapshotRawPartitions() {
-    return null;
+    return Native.snapshotTumblingAggregatorPartitions(
+        handle, maxParallelism, keyTimestampPrecisions);
   }
 
   /**
@@ -280,17 +270,8 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractStreamOperat
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
     flushPending();
-    byte[][] partitions = snapshotRawPartitions();
-    if (partitions == null) {
-      RawKeyedState.snapshotWithTimer(
-          context,
-          snapshotRawKeyGroups(),
-          processingTimeTimerDeadlineForSnapshot(),
-          this::snapshotRawKeyGroup);
-    } else {
-      RawKeyedState.snapshotPartitionsWithTimer(
-          context, partitions, processingTimeTimerDeadlineForSnapshot());
-    }
+    RawKeyedState.snapshotPartitionsWithTimer(
+        context, snapshotRawPartitions(), processingTimeTimerDeadlineForSnapshot());
   }
 
   @Override

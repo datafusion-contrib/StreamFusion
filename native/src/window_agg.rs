@@ -559,35 +559,16 @@ impl TumblingAggregator {
             .expect("failed to build snapshot batch")
     }
 
-    pub(crate) fn snapshot_key_groups(
+    pub(crate) fn snapshot_partitions(
         &mut self,
         max_parallelism: usize,
         timestamp_precisions: &[i32],
-    ) -> Vec<i32> {
+    ) -> BTreeMap<i32, Vec<u8>> {
         self.materialize_raw_keyed_snapshots(max_parallelism, timestamp_precisions);
         self.snapshot_cache
-            .as_ref()
+            .take()
             .expect("window raw snapshot cache")
             .snapshots
-            .keys()
-            .copied()
-            .collect()
-    }
-
-    pub(crate) fn snapshot_key_group(
-        &mut self,
-        key_group: i32,
-        max_parallelism: usize,
-        timestamp_precisions: &[i32],
-    ) -> Vec<u8> {
-        self.materialize_raw_keyed_snapshots(max_parallelism, timestamp_precisions);
-        self.snapshot_cache
-            .as_ref()
-            .expect("window raw snapshot cache")
-            .snapshots
-            .get(&key_group)
-            .cloned()
-            .expect("requested non-empty window raw key group")
     }
 
     fn materialize_raw_keyed_snapshots(
@@ -1016,49 +997,25 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreCumula
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_tumblingAggregatorSnapshotKeyGroups<
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTumblingAggregatorPartitions<
     'local,
 >(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     max_parallelism: jint,
     timestamp_precisions: JIntArray<'local>,
-) -> jni::sys::jintArray {
+) -> jni::sys::jobjectArray {
     let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
     let precisions: Vec<i32> = read_int_array(&env, &timestamp_precisions)
         .into_iter()
         .map(|precision| precision as i32)
         .collect();
-    let groups = aggregator.snapshot_key_groups(max_parallelism as usize, &precisions);
-    let output = env
-        .new_int_array(groups.len() as i32)
-        .expect("allocate window raw key groups");
-    env.set_int_array_region(&output, 0, &groups)
-        .expect("write window raw key groups");
-    output.into_raw()
-}
-
-#[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTumblingAggregatorKeyGroup<
-    'local,
->(
-    env: JNIEnv<'local>,
-    _class: JClass<'local>,
-    handle: jlong,
-    key_group: jint,
-    max_parallelism: jint,
-    timestamp_precisions: JIntArray<'local>,
-) -> jbyteArray {
-    let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
-    let precisions: Vec<i32> = read_int_array(&env, &timestamp_precisions)
-        .into_iter()
-        .map(|precision| precision as i32)
-        .collect();
-    let snapshot = aggregator.snapshot_key_group(key_group, max_parallelism as usize, &precisions);
-    env.byte_array_from_slice(&snapshot)
-        .expect("allocate window raw key-group snapshot")
-        .into_raw()
+    keyed_state_partition_array(
+        &mut env,
+        aggregator.snapshot_partitions(max_parallelism as usize, &precisions),
+        "fixed-window",
+    )
 }
 
 #[no_mangle]
