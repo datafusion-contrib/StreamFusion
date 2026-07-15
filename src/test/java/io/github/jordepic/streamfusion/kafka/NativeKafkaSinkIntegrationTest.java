@@ -109,6 +109,77 @@ class NativeKafkaSinkIntegrationTest {
   }
 
   @Test
+  void restoresNativeKafkaInputAcrossExactlyOnceFailover() throws Exception {
+    System.setProperty("streamfusion.operator.kafkaSource.enabled", "true");
+    FAILED_ONCE.set(false);
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
+            .withEnv("KAFKA_TRANSACTION_MAX_TIMEOUT_MS", "7200000")) {
+      kafka.start();
+      int rows = 10_000;
+      String inputTopic = "native-source-failover-input-" + UUID.randomUUID();
+      String outputTopic = "native-source-failover-output-" + UUID.randomUUID();
+      produceJson(kafka.getBootstrapServers(), inputTopic, rows);
+
+      StreamExecutionEnvironment environment =
+          StreamExecutionEnvironment.getExecutionEnvironment();
+      environment.setParallelism(1);
+      environment.enableCheckpointing(50);
+      Configuration configuration = new Configuration();
+      configuration.set(RestartStrategyOptions.RESTART_STRATEGY, "fixed-delay");
+      configuration.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_ATTEMPTS, 1);
+      configuration.set(
+          RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_DELAY, Duration.ofMillis(10));
+      environment.configure(configuration);
+      StreamTableEnvironment table = StreamTableEnvironment.create(environment);
+      table.executeSql(
+          "CREATE TABLE input (id BIGINT, name STRING) WITH ("
+              + "'connector' = 'kafka', 'topic' = '"
+              + inputTopic
+              + "', 'properties.bootstrap.servers' = '"
+              + kafka.getBootstrapServers()
+              + "', 'properties.group.id' = 'native-source-failover', "
+              + "'scan.startup.mode' = 'earliest-offset', "
+              + "'scan.bounded.mode' = 'latest-offset', 'format' = 'json')");
+      PhysicalPlanScan scan = NativePlanner.install(table);
+      DataStream<Row> recovered =
+          table
+              .toDataStream(table.from("input"))
+              .map(new CheckpointFailingMap(250_000))
+              .returns(
+                  Types.ROW_NAMED(
+                      new String[] {"id", "name"}, Types.LONG, Types.STRING));
+      table.createTemporaryView(
+          "recovered",
+          recovered,
+          Schema.newBuilder()
+              .column("id", DataTypes.BIGINT())
+              .column("name", DataTypes.STRING())
+              .build());
+      table.executeSql(
+          "CREATE TABLE output (id BIGINT, name STRING) WITH ("
+              + "'connector' = 'kafka', 'topic' = '"
+              + outputTopic
+              + "', 'properties.bootstrap.servers' = '"
+              + kafka.getBootstrapServers()
+              + "', 'format' = 'json', "
+              + "'sink.delivery-guarantee' = 'exactly-once', "
+              + "'sink.transactional-id-prefix' = 'native-source-failover')");
+
+      table.executeSql("INSERT INTO output SELECT * FROM recovered").await();
+
+      assertTrue(FAILED_ONCE.get(), "native source never exercised recovery");
+      assertTrue(scan.substitutions() >= 2, scan::explainSummary);
+      List<String> committed =
+          consumeCommitted(kafka.getBootstrapServers(), outputTopic, rows);
+      assertEquals(rows, committed.size(), "replayed source records must remain invisible");
+      assertEquals(rows, new HashSet<>(committed).size(), "restored source records must be unique");
+    } finally {
+      System.clearProperty("streamfusion.operator.kafkaSource.enabled");
+    }
+  }
+
+  @Test
   void publishesWithNonTransactionalDeliveryGuarantees() throws Exception {
     try (KafkaContainer kafka =
         new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
@@ -399,9 +470,18 @@ class NativeKafkaSinkIntegrationTest {
   private static final class CheckpointFailingMap extends RichMapFunction<Row, Row>
       implements CheckpointedFunction, CheckpointListener {
 
+    private final long delayNanos;
     private volatile boolean checkpointCompleted;
     private transient ListState<Long> state;
     private long seen;
+
+    private CheckpointFailingMap() {
+      this(2_000_000);
+    }
+
+    private CheckpointFailingMap(long delayNanos) {
+      this.delayNanos = delayNanos;
+    }
 
     @Override
     public Row map(Row value) throws Exception {
@@ -409,7 +489,7 @@ class NativeKafkaSinkIntegrationTest {
       if (checkpointCompleted && seen >= 100 && FAILED_ONCE.compareAndSet(false, true)) {
         throw new RuntimeException("intentional post-checkpoint failure");
       }
-      Thread.sleep(2);
+      java.util.concurrent.locks.LockSupport.parkNanos(delayNanos);
       return value;
     }
 
