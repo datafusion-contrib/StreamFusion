@@ -1841,25 +1841,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTopNR
         .into_iter()
         .map(|precision| precision as i32)
         .collect();
-    let partitions = ranker.snapshot_partitions(max_parallelism as usize, &precisions);
-    let output = env
-        .new_object_array(
-            partitions.len() as i32,
-            "[B",
-            jni::objects::JObject::null(),
-        )
-        .expect("allocate top-n raw keyed-state partitions");
-    for (index, (key_group, payload)) in partitions.into_iter().enumerate() {
-        let mut framed = Vec::with_capacity(std::mem::size_of::<i32>() + payload.len());
-        framed.extend_from_slice(&key_group.to_be_bytes());
-        framed.extend_from_slice(&payload);
-        let framed = env
-            .byte_array_from_slice(&framed)
-            .expect("allocate top-n raw keyed-state partition");
-        env.set_object_array_element(&output, index as i32, framed)
-            .expect("store top-n raw keyed-state partition");
-    }
-    output.into_raw()
+    keyed_state_partition_array(
+        &mut env,
+        ranker.snapshot_partitions(max_parallelism as usize, &precisions),
+        "top-n",
+    )
 }
 
 #[no_mangle]

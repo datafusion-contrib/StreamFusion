@@ -32,6 +32,34 @@ pub(crate) fn throw_memory_limit(env: &mut JNIEnv, message: &str) {
     );
 }
 
+/// Frames every raw keyed-state payload with its big-endian Flink key-group id and returns the
+/// partitions as one JNI object array. This keeps checkpoint partitioning to one native pass and
+/// lets Java stream each payload directly into Flink's keyed-state output.
+pub(crate) fn keyed_state_partition_array(
+    env: &mut JNIEnv,
+    partitions: BTreeMap<i32, Vec<u8>>,
+    operator: &str,
+) -> jni::sys::jobjectArray {
+    let output = env
+        .new_object_array(
+            partitions.len() as i32,
+            "[B",
+            jni::objects::JObject::null(),
+        )
+        .unwrap_or_else(|_| panic!("allocate {operator} raw keyed-state partitions"));
+    for (index, (key_group, payload)) in partitions.into_iter().enumerate() {
+        let mut framed = Vec::with_capacity(std::mem::size_of::<i32>() + payload.len());
+        framed.extend_from_slice(&key_group.to_be_bytes());
+        framed.extend_from_slice(&payload);
+        let framed = env
+            .byte_array_from_slice(&framed)
+            .unwrap_or_else(|_| panic!("allocate {operator} raw keyed-state partition"));
+        env.set_object_array_element(&output, index as i32, framed)
+            .unwrap_or_else(|_| panic!("store {operator} raw keyed-state partition"));
+    }
+    output.into_raw()
+}
+
 pub(crate) fn import_record_batch(array_address: jlong, schema_address: jlong) -> RecordBatch {
     let ffi_array = unsafe {
         std::ptr::replace(array_address as *mut FFI_ArrowArray, FFI_ArrowArray::empty())
