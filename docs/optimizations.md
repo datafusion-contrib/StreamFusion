@@ -444,7 +444,9 @@ Flink key group, and encoded each partition again. The partitioner now keeps tha
 Arrow batch in memory and writes only the final per-key-group IPC payloads. The checkpoint bytes and
 restore/rescale contract are unchanged. Criterion on 4,096 rows per side (`checkpoint_4096_rows_per_side`,
 release+mimalloc) improved from 2.116 ms to 1.940 ms per checkpoint, an **8.3% latency reduction**;
-the native-symbol q9 profile that motivated it was dominated by the removed IPC round trip.
+the native-symbol q9 profile that motivated it was dominated by the removed IPC round trip. The
+50K-event exactly-once Kafka profile loop subsequently completed 50 jobs in 60 seconds instead of
+45, **11.1% more end-to-end work**.
 
 ## 5. Keeping the island whole
 
