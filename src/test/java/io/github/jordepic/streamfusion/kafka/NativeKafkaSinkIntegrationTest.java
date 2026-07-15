@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.jordepic.streamfusion.planner.NativePlanner;
 import io.github.jordepic.streamfusion.planner.PhysicalPlanScan;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -44,6 +46,7 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -174,6 +177,80 @@ class NativeKafkaSinkIntegrationTest {
           consumeCommitted(kafka.getBootstrapServers(), outputTopic, rows);
       assertEquals(rows, committed.size(), "replayed source records must remain invisible");
       assertEquals(rows, new HashSet<>(committed).size(), "restored source records must be unique");
+    } finally {
+      System.clearProperty("streamfusion.operator.kafkaSource.enabled");
+    }
+  }
+
+  @Test
+  void restoresNativeKafkaInputIntoCheckpointedFilesystemSink(@TempDir Path outputDirectory)
+      throws Exception {
+    System.setProperty("streamfusion.operator.kafkaSource.enabled", "true");
+    FAILED_ONCE.set(false);
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      int rows = 10_000;
+      String inputTopic = "native-source-filesystem-input-" + UUID.randomUUID();
+      produceJson(kafka.getBootstrapServers(), inputTopic, rows);
+
+      StreamExecutionEnvironment environment =
+          StreamExecutionEnvironment.getExecutionEnvironment();
+      environment.setParallelism(1);
+      environment.enableCheckpointing(50);
+      Configuration configuration = new Configuration();
+      configuration.set(RestartStrategyOptions.RESTART_STRATEGY, "fixed-delay");
+      configuration.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_ATTEMPTS, 1);
+      configuration.set(
+          RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_DELAY, Duration.ofMillis(10));
+      environment.configure(configuration);
+      StreamTableEnvironment table = StreamTableEnvironment.create(environment);
+      table.executeSql(
+          "CREATE TABLE input (id BIGINT, name STRING) WITH ("
+              + "'connector' = 'kafka', 'topic' = '"
+              + inputTopic
+              + "', 'properties.bootstrap.servers' = '"
+              + kafka.getBootstrapServers()
+              + "', 'properties.group.id' = 'native-source-filesystem-failover', "
+              + "'scan.startup.mode' = 'earliest-offset', "
+              + "'scan.bounded.mode' = 'latest-offset', 'format' = 'json')");
+      PhysicalPlanScan scan = NativePlanner.install(table);
+      DataStream<Row> recovered =
+          table
+              .toDataStream(table.from("input"))
+              .map(new CheckpointFailingMap(250_000))
+              .returns(
+                  Types.ROW_NAMED(
+                      new String[] {"id", "name"}, Types.LONG, Types.STRING));
+      table.createTemporaryView(
+          "recovered",
+          recovered,
+          Schema.newBuilder()
+              .column("id", DataTypes.BIGINT())
+              .column("name", DataTypes.STRING())
+              .build());
+      table.executeSql(
+          "CREATE TABLE output (id BIGINT, name STRING) WITH ("
+              + "'connector' = 'filesystem', 'path' = '"
+              + outputDirectory.toUri()
+              + "', 'format' = 'json')");
+
+      table.executeSql("INSERT INTO output SELECT * FROM recovered").await();
+
+      assertTrue(FAILED_ONCE.get(), "native source never exercised recovery");
+      assertTrue(scan.substitutions() > 0, scan::explainSummary);
+      List<String> output = new ArrayList<>();
+      try (java.util.stream.Stream<Path> paths = Files.walk(outputDirectory)) {
+        for (Path path :
+            paths
+                .filter(Files::isRegularFile)
+                .filter(file -> !file.getFileName().toString().startsWith("."))
+                .toList()) {
+          output.addAll(Files.readAllLines(path));
+        }
+      }
+      assertEquals(rows, output.size(), "checkpointed sink must not retain replayed records");
+      assertEquals(rows, new HashSet<>(output).size(), "restored source records must be unique");
     } finally {
       System.clearProperty("streamfusion.operator.kafkaSource.enabled");
     }
