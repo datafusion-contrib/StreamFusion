@@ -246,14 +246,10 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    int[] keyGroups =
-        Native.topNRankerSnapshotKeyGroups(handle, maxParallelism, keyTimestampPrecisions);
-    RawKeyedState.snapshot(
+    RawKeyedState.snapshotPartitions(
         context,
-        keyGroups,
-        keyGroup ->
-            Native.snapshotTopNRankerKeyGroup(
-                handle, keyGroup, maxParallelism, keyTimestampPrecisions));
+        Native.snapshotTopNRankerPartitions(
+            handle, maxParallelism, keyTimestampPrecisions));
   }
 
   @Override

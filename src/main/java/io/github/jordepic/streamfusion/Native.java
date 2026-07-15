@@ -1465,13 +1465,9 @@ public final class Native {
       byte[] snapshot,
       long memoryBudgetBytes);
 
-  /** Lists the non-empty Flink key groups in a Top-N raw keyed-state checkpoint. */
-  public static native int[] topNRankerSnapshotKeyGroups(
+  /** Serializes every non-empty Top-N key group once; each payload starts with its key-group id. */
+  public static native byte[][] snapshotTopNRankerPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
-
-  /** Serializes one Top-N key group for a raw keyed-state checkpoint. */
-  public static native byte[] snapshotTopNRankerKeyGroup(
-      long handle, int keyGroup, int maxParallelism, int[] timestampPrecisions);
 
   /** Restores a Top-N ranker from raw keyed-state partitions assigned to this subtask. */
   public static native long restoreTopNRankerPartitions(

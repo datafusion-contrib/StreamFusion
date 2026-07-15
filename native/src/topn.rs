@@ -1013,36 +1013,17 @@ impl TopNHandle {
         }
     }
 
-    fn snapshot_key_groups(
+    fn snapshot_partitions(
         &self,
         max_parallelism: usize,
         timestamp_precisions: &[i32],
-    ) -> Vec<i32> {
+    ) -> BTreeMap<i32, Vec<u8>> {
         topn_snapshot_partitions(
             &self.snapshot(),
             self.partition_columns(),
             max_parallelism,
             timestamp_precisions,
         )
-        .keys()
-        .copied()
-        .collect()
-    }
-
-    fn snapshot_key_group(
-        &self,
-        key_group: i32,
-        max_parallelism: usize,
-        timestamp_precisions: &[i32],
-    ) -> Vec<u8> {
-        topn_snapshot_partitions(
-            &self.snapshot(),
-            self.partition_columns(),
-            max_parallelism,
-            timestamp_precisions,
-        )
-        .remove(&key_group)
-        .expect("requested non-empty top-n raw key group")
     }
 
     fn partition_columns(&self) -> &[usize] {
@@ -1846,49 +1827,39 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTopNRa
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_topNRankerSnapshotKeyGroups<
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTopNRankerPartitions<
     'local,
 >(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     max_parallelism: jint,
     timestamp_precisions: JIntArray<'local>,
-) -> jni::sys::jintArray {
+) -> jni::sys::jobjectArray {
     let ranker = unsafe { &*(handle as *const TopNHandle) };
     let precisions: Vec<i32> = read_int_array(&env, &timestamp_precisions)
         .into_iter()
         .map(|precision| precision as i32)
         .collect();
-    let groups = ranker.snapshot_key_groups(max_parallelism as usize, &precisions);
+    let partitions = ranker.snapshot_partitions(max_parallelism as usize, &precisions);
     let output = env
-        .new_int_array(groups.len() as i32)
-        .expect("allocate top-n raw key groups");
-    env.set_int_array_region(&output, 0, &groups)
-        .expect("write top-n raw key groups");
+        .new_object_array(
+            partitions.len() as i32,
+            "[B",
+            jni::objects::JObject::null(),
+        )
+        .expect("allocate top-n raw keyed-state partitions");
+    for (index, (key_group, payload)) in partitions.into_iter().enumerate() {
+        let mut framed = Vec::with_capacity(std::mem::size_of::<i32>() + payload.len());
+        framed.extend_from_slice(&key_group.to_be_bytes());
+        framed.extend_from_slice(&payload);
+        let framed = env
+            .byte_array_from_slice(&framed)
+            .expect("allocate top-n raw keyed-state partition");
+        env.set_object_array_element(&output, index as i32, framed)
+            .expect("store top-n raw keyed-state partition");
+    }
     output.into_raw()
-}
-
-#[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTopNRankerKeyGroup<
-    'local,
->(
-    env: JNIEnv<'local>,
-    _class: JClass<'local>,
-    handle: jlong,
-    key_group: jint,
-    max_parallelism: jint,
-    timestamp_precisions: JIntArray<'local>,
-) -> jbyteArray {
-    let ranker = unsafe { &*(handle as *const TopNHandle) };
-    let precisions: Vec<i32> = read_int_array(&env, &timestamp_precisions)
-        .into_iter()
-        .map(|precision| precision as i32)
-        .collect();
-    let snapshot = ranker.snapshot_key_group(key_group, max_parallelism as usize, &precisions);
-    env.byte_array_from_slice(&snapshot)
-        .expect("allocate top-n raw key-group snapshot")
-        .into_raw()
 }
 
 #[no_mangle]

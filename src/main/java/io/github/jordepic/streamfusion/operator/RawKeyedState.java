@@ -74,6 +74,30 @@ final class RawKeyedState {
     out.close();
   }
 
+  /** Writes key-group payloads framed by native code as a big-endian id followed by state bytes. */
+  static void snapshotPartitions(StateSnapshotContext context, byte[][] partitions)
+      throws Exception {
+    if (partitions.length == 0) {
+      return;
+    }
+    KeyedStateCheckpointOutputStream out = context.getRawKeyedOperatorStateOutput();
+    for (byte[] partition : partitions) {
+      if (partition.length < Integer.BYTES) {
+        throw new IllegalStateException("native keyed-state partition has no key-group id");
+      }
+      int keyGroup = ByteBuffer.wrap(partition).getInt();
+      if (!out.getKeyGroupList().contains(keyGroup)) {
+        throw new IllegalStateException(
+            "native state for key group " + keyGroup + " is outside this subtask's Flink range");
+      }
+      out.startNewKeyGroup(keyGroup);
+      int payloadLength = partition.length - Integer.BYTES;
+      writeLength(out, payloadLength);
+      out.write(partition, Integer.BYTES, payloadLength);
+    }
+    out.close();
+  }
+
   /** Writes a cleanup deadline into every native key-group payload, keeping it rescale-safe. */
   static void snapshotWithTimer(
       StateSnapshotContext context,

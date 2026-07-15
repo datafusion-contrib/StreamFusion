@@ -418,6 +418,16 @@ the tuple's `ScalarValue`s each time — a 2026-07-12 q17 profile flagged it, so
 cached next to the tuple and maintained where the cache changes, making the per-row measurement
 pure arithmetic.
 
+**Top-N checkpoints partition native state once.** The raw keyed-state bridge originally called the
+full Top-N snapshot/partition routine to list non-empty key groups, then called that same routine
+again for every group while writing its payload. A checkpoint was therefore O(key groups x state)
+and dominated exactly-once Kafka q19 at a one-second checkpoint interval. The JNI boundary now
+returns all key-group-framed payloads from one partitioning pass, and Java streams those payloads
+directly into Flink's raw keyed-state output. Snapshot/restore and rescale bytes are unchanged. In
+the release+mimalloc 50K-event q19 exactly-once Kafka profile loop, 60 seconds completed 25 jobs
+instead of 15: **67% more end-to-end work**, with the former repeated snapshot call removed from the
+hot path.
+
 ## 5. Keeping the island whole
 
 The all-or-nothing gate (`196058a`) raises the stakes on every expression and operator: a single
