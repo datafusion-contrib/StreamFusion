@@ -1265,13 +1265,9 @@ public final class Native {
   /** Serializes a temporal joiner's buffered probe rows and versioned build state for a checkpoint. */
   public static native byte[] snapshotTemporalJoiner(long handle);
 
-  /** Lists the non-empty Flink key groups in a temporal-join raw keyed-state checkpoint. */
-  public static native int[] temporalJoinerSnapshotKeyGroups(
+  /** Serializes every non-empty temporal-join key group once, framed by key-group id. */
+  public static native byte[][] snapshotTemporalJoinerPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
-
-  /** Serializes one temporal-join key group for a raw keyed-state checkpoint. */
-  public static native byte[] snapshotTemporalJoinerKeyGroup(
-      long handle, int keyGroup, int maxParallelism, int[] timestampPrecisions);
 
   /** Rebuilds a temporal joiner from a snapshot and returns a fresh handle. */
   public static native long restoreTemporalJoiner(

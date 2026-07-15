@@ -2216,12 +2216,12 @@ fn temporal_join_state_partitions_and_restores_by_flink_key_group() {
     let mut before = temporal_joiner(JoinKind::Inner);
     let _ = before.push_right(&temporal_build_batch(vec![1, 2], vec![10, 20], vec![100, 100], vec![0, 0]));
     let _ = before.push_left(&temporal_probe_batch(vec![1, 2], vec![1, 2], vec![500, 500]));
-    let groups = before.snapshot_key_groups(128, &[-1]);
-    assert!(groups.len() >= 2, "test keys should cover distinct raw key groups");
-    let snapshots: Vec<Vec<u8>> = groups
-        .iter()
-        .map(|&group| before.snapshot_key_group(group, 128, &[-1]))
-        .collect();
+    let partitions = before.snapshot_partitions(128, &[-1]);
+    assert!(
+        partitions.len() >= 2,
+        "test keys should cover distinct raw key groups"
+    );
+    let snapshots: Vec<Vec<u8>> = partitions.into_values().collect();
 
     let mut restored = TemporalJoiner::restore_partitions(
         vec![0],

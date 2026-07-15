@@ -345,26 +345,12 @@ impl TemporalJoiner {
         out
     }
 
-    pub(crate) fn snapshot_key_groups(
+    pub(crate) fn snapshot_partitions(
         &self,
         max_parallelism: usize,
         timestamp_precisions: &[i32],
-    ) -> Vec<i32> {
+    ) -> BTreeMap<i32, Vec<u8>> {
         self.raw_snapshot_partitions(max_parallelism, timestamp_precisions)
-            .keys()
-            .copied()
-            .collect()
-    }
-
-    pub(crate) fn snapshot_key_group(
-        &self,
-        key_group: i32,
-        max_parallelism: usize,
-        timestamp_precisions: &[i32],
-    ) -> Vec<u8> {
-        self.raw_snapshot_partitions(max_parallelism, timestamp_precisions)
-            .remove(&key_group)
-            .expect("requested non-empty temporal-join raw key group")
     }
 
     fn raw_snapshot_partitions(
@@ -682,49 +668,25 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTempo
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_temporalJoinerSnapshotKeyGroups<
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTemporalJoinerPartitions<
     'local,
 >(
-    env: JNIEnv<'local>,
+    mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
     max_parallelism: jint,
     timestamp_precisions: JIntArray<'local>,
-) -> jni::sys::jintArray {
+) -> jni::sys::jobjectArray {
     let joiner = unsafe { &*(handle as *const TemporalJoiner) };
     let precisions: Vec<i32> = read_int_array(&env, &timestamp_precisions)
         .into_iter()
         .map(|precision| precision as i32)
         .collect();
-    let groups = joiner.snapshot_key_groups(max_parallelism as usize, &precisions);
-    let output = env
-        .new_int_array(groups.len() as i32)
-        .expect("allocate temporal raw key groups");
-    env.set_int_array_region(&output, 0, &groups)
-        .expect("write temporal raw key groups");
-    output.into_raw()
-}
-
-#[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTemporalJoinerKeyGroup<
-    'local,
->(
-    env: JNIEnv<'local>,
-    _class: JClass<'local>,
-    handle: jlong,
-    key_group: jint,
-    max_parallelism: jint,
-    timestamp_precisions: JIntArray<'local>,
-) -> jbyteArray {
-    let joiner = unsafe { &*(handle as *const TemporalJoiner) };
-    let precisions: Vec<i32> = read_int_array(&env, &timestamp_precisions)
-        .into_iter()
-        .map(|precision| precision as i32)
-        .collect();
-    let snapshot = joiner.snapshot_key_group(key_group, max_parallelism as usize, &precisions);
-    env.byte_array_from_slice(&snapshot)
-        .expect("allocate temporal raw key-group snapshot")
-        .into_raw()
+    keyed_state_partition_array(
+        &mut env,
+        joiner.snapshot_partitions(max_parallelism as usize, &precisions),
+        "temporal-join",
+    )
 }
 
 /// Rebuilds a temporal joiner from a snapshot taken by a prior run and returns a fresh handle.
