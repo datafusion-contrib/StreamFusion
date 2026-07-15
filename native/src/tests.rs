@@ -988,12 +988,12 @@ fn over_state_partitions_and_restores_by_flink_key_group() {
     .unwrap();
     let mut before = OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 0, 0, false);
     before.push(batch).unwrap();
-    let groups = before.snapshot_key_groups(128, &[-1]);
-    assert!(groups.len() >= 2, "test keys should cover distinct raw key groups");
-    let snapshots: Vec<Vec<u8>> = groups
-        .iter()
-        .map(|&group| before.snapshot_key_group(group, 128, &[-1]))
-        .collect();
+    let partitions = before.snapshot_partitions(128, &[-1]);
+    assert!(
+        partitions.len() >= 2,
+        "test keys should cover distinct raw key groups"
+    );
+    let snapshots: Vec<Vec<u8>> = partitions.into_values().collect();
     let mut restored = OverWindowAggregator::restore_partitions(
         vec![0], vec![0], 2, vec![1], vec![0], 0, 0, false, &snapshots,
     );

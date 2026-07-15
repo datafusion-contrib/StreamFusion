@@ -180,14 +180,10 @@ public class NativeOverAggregateOperator extends AbstractStreamOperator<ArrowBat
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    int[] keyGroups =
-        Native.overAggregatorSnapshotKeyGroups(handle, maxParallelism, keyTimestampPrecisions);
-    RawKeyedState.snapshot(
+    RawKeyedState.snapshotPartitions(
         context,
-        keyGroups,
-        keyGroup ->
-            Native.snapshotOverAggregatorKeyGroup(
-                handle, keyGroup, maxParallelism, keyTimestampPrecisions));
+        Native.snapshotOverAggregatorPartitions(
+            handle, maxParallelism, keyTimestampPrecisions));
   }
 
   @Override

@@ -634,13 +634,9 @@ public final class Native {
   /** Serializes an OVER aggregator's running state and buffered rows for a checkpoint. */
   public static native byte[] snapshotOverAggregator(long handle);
 
-  /** Lists the non-empty Flink key groups in an OVER raw keyed-state checkpoint. */
-  public static native int[] overAggregatorSnapshotKeyGroups(
+  /** Serializes every non-empty OVER key group once, framed by key-group id. */
+  public static native byte[][] snapshotOverAggregatorPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
-
-  /** Serializes one OVER key group for a raw keyed-state checkpoint. */
-  public static native byte[] snapshotOverAggregatorKeyGroup(
-      long handle, int keyGroup, int maxParallelism, int[] timestampPrecisions);
 
   /** Rebuilds an OVER aggregator from a snapshot and returns a fresh handle. */
   public static native long restoreOverAggregator(
