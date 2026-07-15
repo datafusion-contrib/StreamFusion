@@ -14,6 +14,10 @@ import org.junit.jupiter.api.Test;
  * accumulator and divides by the non-null count on emit with Flink's exact decimal division (the
  * 38-significant-digit quotient, then the rescale to {@code DECIMAL(38, max(6, s))} —
  * {@code findAvgAggType}'s type — both HALF_UP), so it too matches the host byte for byte.
+ *
+ * <p>The host and native Parquet source paths may read files in different orders. Group aggregates
+ * therefore compare their collapsed changelogs: intermediate updates are order-dependent, while the
+ * final materialized result is the deterministic SQL contract.
  */
 class FlinkDecimalAggregateSqlHarnessTest {
 
@@ -21,7 +25,7 @@ class FlinkDecimalAggregateSqlHarnessTest {
   void keyedDecimalSumMatchesHost() throws Exception {
     Path input = Files.createTempDirectory("dec-keyed-in");
     writeInput(input);
-    NativeParity.assertParity(
+    NativeParity.assertChangelogParity(
         () -> readEnvironment(input), "SELECT k, SUM(d) AS s FROM t GROUP BY k");
   }
 
@@ -42,7 +46,7 @@ class FlinkDecimalAggregateSqlHarnessTest {
     // COUNT over a decimal counts non-null rows. SUM is DECIMAL(38, s).
     Path input = Files.createTempDirectory("dec-minmax-in");
     writeInput(input);
-    NativeParity.assertParity(
+    NativeParity.assertChangelogParity(
         () -> readEnvironment(input),
         "SELECT k, MIN(d) AS mn, MAX(d) AS mx, COUNT(d) AS c, SUM(d) AS s FROM t GROUP BY k");
   }
@@ -53,7 +57,7 @@ class FlinkDecimalAggregateSqlHarnessTest {
     // DECIMAL(38, 6); alongside the SUM sharing the same accumulator.
     Path input = Files.createTempDirectory("dec-avg-in");
     writeInput(input);
-    NativeParity.assertParity(
+    NativeParity.assertChangelogParity(
         () -> readEnvironment(input), "SELECT k, AVG(d) AS a, SUM(d) AS s FROM t GROUP BY k");
   }
 
