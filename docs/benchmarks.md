@@ -852,6 +852,57 @@ order per query. Append-only queries use `kafka`; q4, q9, and q15-q19 use `upser
 query result's actual unique key. Every measured run uses a fresh topic and transactional ID, waits
 for the bounded job's final commit, then removes the output topic outside the timed interval.
 
+#### Current full comparison (2026-07-16)
+
+Apple M1 Max, 500K input events, one-second checkpoints, release+`mimalloc,kafka,json`, one warmup
+and best of two measured runs. Throughput is millions of input events per second.
+
+| Query | Flink off | StreamFusion off | SF/Flink off | Flink on | StreamFusion on | SF/Flink on | Flink on/off | SF on/off |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| q0 | 0.211 | 0.320 | 1.51x | 0.233 | 0.281 | 1.20x | 1.10x | 0.88x |
+| q1 | 0.196 | 0.324 | 1.65x | 0.190 | 0.270 | 1.42x | 0.97x | 0.83x |
+| q2 | 0.324 | 0.534 | 1.65x | 0.324 | 0.540 | 1.67x | 1.00x | 1.01x |
+| q3 | 0.438 | 0.630 | 1.44x | 0.429 | 0.623 | 1.45x | 0.98x | 0.99x |
+| q4 | 0.285 | 0.491 | 1.72x | 0.286 | 0.579 | 2.02x | 1.00x | 1.18x |
+| q5 | 0.403 | 0.592 | 1.47x | 0.394 | 0.538 | 1.37x | 0.98x | 0.91x |
+| q7 | 0.265 | 0.672 | 2.54x | 0.236 | 0.565 | 2.40x | 0.89x | 0.84x |
+| q8 | 0.437 | 0.572 | 1.31x | 0.443 | 0.565 | 1.28x | 1.01x | 0.99x |
+| q9 | 0.233 | 0.128 | 0.55x | 0.210 | 0.372 | 1.77x | 0.90x | 2.91x |
+| q10 | 0.210 | 0.290 | 1.38x | 0.202 | 0.229 | 1.14x | 0.96x | 0.79x |
+| q11 | 0.252 | 0.661 | 2.62x | 0.259 | 0.675 | 2.61x | 1.03x | 1.02x |
+| q12 | 0.361 | 0.557 | 1.54x | 0.364 | 0.560 | 1.54x | 1.01x | 1.00x |
+| q13 | 0.268 | 0.394 | 1.47x | 0.259 | 0.370 | 1.43x | 0.97x | 0.94x |
+| q14 | 0.221 | 0.320 | 1.45x | 0.225 | 0.323 | 1.43x | 1.02x | 1.01x |
+| q15 | 0.157 | 0.190 | 1.21x | 0.331 | 0.587 | 1.77x | 2.11x | 3.08x |
+| q16 | 0.122 | 0.173 | 1.42x | 0.256 | 0.481 | 1.88x | 2.09x | 2.78x |
+| q17 | 0.197 | 0.200 | 1.02x | 0.314 | 0.478 | 1.52x | 1.60x | 2.39x |
+| q18 | 0.204 | 0.201 | 0.99x | 0.167 | 0.193 | 1.15x | 0.82x | 0.96x |
+| q19 | 0.053 | 0.031 | 0.58x | 0.043 | 0.238 | 5.49x | 0.82x | 7.73x |
+| q20 | 0.301 | 0.467 | 1.55x | 0.261 | 0.458 | 1.76x | 0.87x | 0.98x |
+| q21 | 0.335 | 0.693 | 2.07x | 0.342 | 0.767 | 2.24x | 1.02x | 1.11x |
+| q22 | 0.249 | 0.326 | 1.31x | 0.245 | 0.328 | 1.34x | 0.99x | 1.01x |
+| q23 | 0.144 | 0.120 | 0.83x | 0.097 | 0.127 | 1.31x | 0.67x | 1.06x |
+
+The complete run has 19 of 23 StreamFusion wins with mini-batching disabled and 23 of 23 enabled.
+The enabled lead ranges from 1.14x to 5.49x. Unlike the blackhole matrix, this workload exposes the
+economic value of logical changelog coalescing: q9/q15/q16/q17/q19 avoid serializer calls, broker
+records, transaction bookkeeping, and checkpoint work for updates cancelled inside the bundle.
+
+A same-day focused repeat of q9/q15-q19/q23 produced:
+
+| Query | SF/Flink off | SF/Flink on | SF on/off |
+|---|---:|---:|---:|
+| q9 | 0.65x | 1.73x | 2.69x |
+| q15 | 1.41x | 2.30x | 3.09x |
+| q16 | 1.27x | 1.94x | 2.52x |
+| q17 | 1.03x | 1.56x | 2.04x |
+| q18 | 0.94x | 1.22x | 1.06x |
+| q19 | 0.60x | 4.80x | 8.16x |
+| q23 | 1.12x | 0.99x | 0.90x |
+
+Thus the high-churn gains reproduce, while q23 should be treated as parity: its short, sparse output
+makes fixed job/checkpoint cost large enough to move the ratio from 0.99x to 1.31x.
+
 Run the four-way comparison in the mandatory release build with:
 
 `SF_BENCHMARK=true SF_MATRIX_KAFKA_SINK=true SF_ROWS=500000
@@ -860,15 +911,11 @@ mvn -pl :streamfusion-runtime test -Pbench
 -Dnative.cargo.args="build --release --features mimalloc,kafka,json"
 -Dtest=NexmarkMatrixBenchmark#exactlyOnceKafkaSinkModeComparison`.
 
-`SF_MATRIX_QUERIES` may select a focused subset. A 10,000-event release smoke run pins both sink
-shapes: q0 completed all four append-mode cells, and q4 completed all four upsert-mode cells. Those
-short runs validate routing and transaction completion only; they are intentionally not reported as
-performance results.
-
-For differential profiling, `SF_PROFILE_KAFKA_SINK=true` runs one selected query repeatedly against
-one broker and bypasses the matrix warmup/repetition. Select the query with `-Dprofile.query=q19`,
-the engine with `-Dprofile.native=true|false`, mini-batching with `-Dprofile.minibatch=true|false`,
-and the sampling window with `-Dprofile.seconds=60`. JVM profilers can be attached through
+`SF_MATRIX_QUERIES` may select a focused subset. For differential profiling,
+`SF_PROFILE_KAFKA_SINK=true` runs one selected query repeatedly against one broker and bypasses the
+matrix warmup/repetition. Select the query with `-Dprofile.query=q19`, the engine with
+`-Dprofile.native=true|false`, mini-batching with `-Dprofile.minibatch=true|false`, and the
+sampling window with `-Dprofile.seconds=60`. JVM profilers can be attached through
 `-Dsf.extraJvmArgs`; for example, JFR uses
 `-Dsf.extraJvmArgs=-XX:StartFlightRecording=filename=/tmp/kafka-sink.jfr,settings=profile,dumponexit=true`.
 
