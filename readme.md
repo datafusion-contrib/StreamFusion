@@ -77,101 +77,61 @@ Divergences from these references are recorded in [`divergences/`](divergences/)
 
 ## Nexmark benchmarks
 
-The steelman: the source is the rowwise `nexmark` datagen (wide event row) and the sink is
-`blackhole` (also rowwise) — exactly the published Nexmark plan — so a native island pays a
-`RowData → Arrow` transpose at the source **and** an `Arrow → RowData` transpose at the sink. Both
-transposes are kept in the measured path on purpose: a real deployment feeds rowwise records and
-drains to a rowwise sink, so this is the honest end-to-end number. Object reuse is on for both
-engines (standard tuned-prod setting).
+The headline benchmark is an end-to-end, exactly-once Kafka pipeline—not a blackhole sink. Stock
+Flink and StreamFusion read the same 500K-event Kafka JSON corpus and publish each query result to a
+fresh Kafka topic with a one-second checkpoint interval. Append-only queries use `kafka`; updating
+queries use `upsert-kafka` with the result's actual primary key. Each timed run includes source
+consumption, query execution, serialization, Kafka writes, checkpoints, and the bounded job's final
+transaction commit.
 
-StreamFusion runs **every runnable Nexmark query** (q0–q5, q7–q23) natively end-to-end with no
-fallback and no flags; only q6 stays out, because Flink SQL itself can't run it
-([analysis](.claude/wontdos/39-nexmark-q6-exclusion.md)). These are the current 500K-event release
-measurements (2026-07-13), using `mimalloc`, Flink's default configuration with object reuse on, and
-the same compressed source bytes for both engines. The Kafka columns compare stock Flink with the
-complete native poll-and-decode path, not a selectively faster intermediate rung.
+On StreamFusion, Kafka poll/decode, every supported operator, and sink key/value/tombstone
+serialization stay native and columnar; Flink's unmodified `KafkaSink` owns producer I/O and the
+exactly-once transaction lifecycle. The native plan is asserted for every cell. q6 is omitted because
+Flink SQL itself cannot run it ([analysis](.claude/wontdos/39-nexmark-q6-exclusion.md)).
 
-| Query | Shape | From RowData | From Parquet file | From Fluss | From JSON on Kafka | From Avro on Kafka | From Protobuf on Kafka |
-|---|---|---|---|---|---|---|---|
-| q0 | pass-through projection of `bid` | **1.31×** | **3.25×** | **3.23×** | **2.70×** | **3.98×** | **2.57×** |
-| q1 | `0.908 * price` — exact `Decimal128` | **1.44×** | **3.23×** | **3.21×** | **2.58×** | **3.23×** | **2.52×** |
-| q2 | filter `WHERE MOD(auction, 123) = 0` | **1.28×** | **3.09×** | **2.60×** | **2.22×** | **2.42×** | **2.01×** |
-| q3 | updating join `auction ⋈ person` | 0.97× | **3.96×** | **2.03×** | **2.17×** | **2.28×** | **1.86×** |
-| q4 | regular join → `MAX` → `AVG` per category | **1.50×** | **2.92×** | **1.56×** | **2.36×** | **3.16×** | **2.54×** |
-| q5 | Hot Items (window re-agg + window join) | **1.24×** | **4.24×** | **2.29×** | **2.51×** | **3.62×** | **3.04×** |
-| q7 | tumble `MAX` ⋈ bid | **1.61×** | **3.93×** | **3.41×** | **3.32×** | **3.61×** | **3.07×** |
-| q8 | tumble windowed-distinct ⋈ join | 0.84× | **4.61×** | **2.03×** | **1.95×** | **2.93×** | **2.55×** |
-| q9 | regular join → `ROW_NUMBER` (≤ 1) | **1.34×** | **1.74×** | **1.45×** | **2.07×** | **2.23×** | **1.91×** |
-| q10 | `DATE_FORMAT` projection | **1.39×** | **4.69×** | **3.31×** | **3.00×** | **2.96×** | **2.58×** |
-| q11 | session-window `COUNT` per bidder | **2.77×** | **5.43×** | **4.05×** | **4.07×** | **5.09×** | **5.28×** |
-| q12 | proctime tumble `COUNT` per bidder | **1.41×** | **4.36×** | — | **2.29×** | **2.55×** | **2.16×** |
-| q13 | lookup join (bounded dimension) | **1.25×** | **3.25×** | **2.13×** | **2.21×** | **2.56×** | **2.22×** |
-| q14 | `HOUR`/`CASE` + `count_char` UDF + decimal | **1.06×** | **3.49×** | **2.50×** | **2.69×** | **3.16×** | **2.84×** |
-| q15 | multi-`DISTINCT` `COUNT`s per day | **1.61×** | **2.47×** | **1.37×** | **2.95×** | **3.00×** | **2.55×** |
-| q16 | multi-`DISTINCT` per channel/day | **1.36×** | **1.42×** | 0.98× | **1.82×** | **1.40×** | **1.44×** |
-| q17 | group agg + `AVG`/`MIN`/`MAX`/`SUM` per day | **1.46×** | **2.00×** | **1.40×** | **2.71×** | **2.72×** | **2.13×** |
-| q18 | `ROW_NUMBER` dedup (≤ 1) | **1.26×** | **2.22×** | **1.28×** | **2.62×** | **3.61×** | **2.94×** |
-| q19 | `ROW_NUMBER` topN (≤ 10) | **1.58×** | **1.58×** | **2.48×** | **2.00×** | **1.64×** | **1.96×** |
-| q20 | updating join (`category = 10`) | 0.95× | **4.39×** | **2.25×** | **2.71×** | **3.62×** | **2.95×** |
-| q21 | `CASE` + `REGEXP_EXTRACT`/`LOWER` — byte-parity | **1.01×** | **2.53×** | **2.12×** | **2.36×** | **2.88×** | **2.58×** |
-| q21 † | …opt-in native regex/case | **1.77×** | **6.17×** | **5.13×** | **2.39×** | **2.87×** | **2.49×** |
-| q22 | `SPLIT_INDEX(url, '/', n)` projection | **1.31×** | **4.74×** | **3.10×** | **2.61×** | **2.99×** | **2.50×** |
-| q23 | three-way join `bid ⋈ person ⋈ auction` | **1.18×** | **4.38×** | **1.73×** | **2.11×** | **2.70×** | **2.34×** |
+These are the 2026-07-16 Apple M1 Max release+`mimalloc` results, best of two after one warmup.
+Mini-batching uses the same production-style configuration on both engines
+(`allow-latency=2s`, `size=50000`). Throughput is millions of input events per second. `SF/Flink`
+compares engines within one mode; `on/off` measures the effect of enabling mini-batching on that
+engine, where a value below 1× is a regression.
 
-From `RowData`, 20 of 23 default queries win; only the perimeter-transpose/join-state cluster
-trails (q3, q8, and q20 just under parity). The opt-in q21 path is faster still, but deliberately
-gives up edge-case compatibility with Flink's regex and case rules
-([docs/optimizations.md](docs/optimizations.md) has the hot-path ledger).
+| Query | Flink off | StreamFusion off | SF/Flink off | Flink on | StreamFusion on | SF/Flink on | Flink on/off | SF on/off |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| q0 | 0.211 M/s | 0.320 M/s | **1.51×** | 0.233 M/s | 0.281 M/s | **1.20×** | **1.10×** | 0.88× |
+| q1 | 0.196 M/s | 0.324 M/s | **1.65×** | 0.190 M/s | 0.270 M/s | **1.42×** | 0.97× | 0.83× |
+| q2 | 0.324 M/s | 0.534 M/s | **1.65×** | 0.324 M/s | 0.540 M/s | **1.67×** | 1.00× | **1.01×** |
+| q3 | 0.438 M/s | 0.630 M/s | **1.44×** | 0.429 M/s | 0.623 M/s | **1.45×** | 0.98× | 0.99× |
+| q4 | 0.285 M/s | 0.491 M/s | **1.72×** | 0.286 M/s | 0.579 M/s | **2.02×** | 1.00× | **1.18×** |
+| q5 | 0.403 M/s | 0.592 M/s | **1.47×** | 0.394 M/s | 0.538 M/s | **1.37×** | 0.98× | 0.91× |
+| q7 | 0.265 M/s | 0.672 M/s | **2.54×** | 0.236 M/s | 0.565 M/s | **2.40×** | 0.89× | 0.84× |
+| q8 | 0.437 M/s | 0.572 M/s | **1.31×** | 0.443 M/s | 0.565 M/s | **1.28×** | **1.01×** | 0.99× |
+| q9 | 0.233 M/s | 0.128 M/s | 0.55× | 0.210 M/s | 0.372 M/s | **1.77×** | 0.90× | **2.91×** |
+| q10 | 0.210 M/s | 0.290 M/s | **1.38×** | 0.202 M/s | 0.229 M/s | **1.14×** | 0.96× | 0.79× |
+| q11 | 0.252 M/s | 0.661 M/s | **2.62×** | 0.259 M/s | 0.675 M/s | **2.61×** | **1.03×** | **1.02×** |
+| q12 | 0.361 M/s | 0.557 M/s | **1.54×** | 0.364 M/s | 0.560 M/s | **1.54×** | **1.01×** | 1.00× |
+| q13 | 0.268 M/s | 0.394 M/s | **1.47×** | 0.259 M/s | 0.370 M/s | **1.43×** | 0.97× | 0.94× |
+| q14 | 0.221 M/s | 0.320 M/s | **1.45×** | 0.225 M/s | 0.323 M/s | **1.43×** | **1.02×** | **1.01×** |
+| q15 | 0.157 M/s | 0.190 M/s | **1.21×** | 0.331 M/s | 0.587 M/s | **1.77×** | **2.11×** | **3.08×** |
+| q16 | 0.122 M/s | 0.173 M/s | **1.42×** | 0.256 M/s | 0.481 M/s | **1.88×** | **2.09×** | **2.78×** |
+| q17 | 0.197 M/s | 0.200 M/s | **1.02×** | 0.314 M/s | 0.478 M/s | **1.52×** | **1.60×** | **2.39×** |
+| q18 | 0.204 M/s | 0.201 M/s | 0.99× | 0.167 M/s | 0.193 M/s | **1.15×** | 0.82× | 0.96× |
+| q19 | 0.053 M/s | 0.031 M/s | 0.58× | 0.043 M/s | 0.238 M/s | **5.49×** | 0.82× | **7.73×** |
+| q20 | 0.301 M/s | 0.467 M/s | **1.55×** | 0.261 M/s | 0.458 M/s | **1.76×** | 0.87× | 0.98× |
+| q21 | 0.335 M/s | 0.693 M/s | **2.07×** | 0.342 M/s | 0.767 M/s | **2.24×** | **1.02×** | **1.11×** |
+| q22 | 0.249 M/s | 0.326 M/s | **1.31×** | 0.245 M/s | 0.328 M/s | **1.34×** | 0.99× | **1.01×** |
+| q23 | 0.144 M/s | 0.120 M/s | 0.83× | 0.097 M/s | 0.127 M/s | **1.31×** | 0.67× | **1.06×** |
 
-The columnar sources remain the clear strength: **all 23 Parquet queries win (1.42–5.43×) and 21
-of 22 measurable Fluss queries win (1.28–4.05×)** — q16 sits at 0.98× and q12 has no deterministic
-unbounded finish line.
+With mini-batching disabled, StreamFusion wins 19 of 23 queries. With it enabled, the full matrix
+wins all 23, from 1.14× to 5.49×. The largest direct mini-batch gains occur where logical bundles
+remove Kafka-visible changelog churn: q9 2.91×, q15 3.08×, q16 2.78×, q17 2.39×, and q19 7.73×
+over StreamFusion's own disabled path. A focused repeat reproduced those conclusions
+(2.69×/3.09×/2.52×/2.04×/8.16× direct gains; 1.73×/2.30×/1.94×/1.56×/4.80× versus enabled Flink).
 
-**Every Kafka cell wins — 1.40× to 5.28×.** The Kafka tables declare the canonical Nexmark
-watermark, and the native source now regenerates it per split (previous charts silently fell back
-to Flink's consume+decode on exactly these cells, compressing them to near parity). The format
-decode runs inside the native poll, dispatched through a versioned cross-library ABI; see
-[docs/benchmarks.md](docs/benchmarks.md) for the source ladder and every intermediate rung.
-
-### Mini-batching enabled versus disabled
-
-This is a separate apples-to-apples **5M-event generator** run: stock Flink and StreamFusion each
-run once with mini-batching disabled and once with the same production-style configuration enabled
-(`allow-latency=2s`, `size=50000`). Every cell is best-of-two after a warmup. `SF/Flink` compares
-the engines within one mode; the final two columns show what enabling mini-batching did to each
-engine itself, where a value below 1× is a regression.
-
-| Query | SF/Flink off | SF/Flink on | Flink on/off | StreamFusion on/off |
-|---|---:|---:|---:|---:|
-| q0 | **1.24×** | **1.15×** | 0.97× | 0.89× |
-| q1 | **1.23×** | **1.19×** | 0.98× | 0.95× |
-| q2 | **1.37×** | **1.36×** | 0.99× | 0.98× |
-| q3 | 0.62× | 0.65× | **1.01×** | **1.06×** |
-| q4 | **1.24×** | **2.57×** | 0.52× | **1.07×** |
-| q5 | **1.10×** | **1.15×** | 0.97× | **1.02×** |
-| q7 | **1.01×** | **1.50×** | 0.68× | **1.02×** |
-| q8 | 0.68× | 0.68× | 0.99× | 1.00× |
-| q9 | **1.39×** | **2.42×** | 0.56× | 0.97× |
-| q10 | **1.46×** | **1.45×** | 0.97× | 0.96× |
-| q11 | **2.94×** | **2.87×** | 1.00× | 0.97× |
-| q12 | **1.51×** | **1.56×** | 0.97× | 1.00× |
-| q13 | **1.05×** | **1.08×** | 0.97× | 1.00× |
-| q14 | 0.99× | **1.02×** | 0.95× | 0.98× |
-| q15 | **1.61×** | **1.38×** | 0.97× | 0.84× |
-| q16 | **1.18×** | **1.39×** | 0.82× | 0.97× |
-| q17 | **1.42×** | **1.07×** | 0.92× | 0.69× |
-| q18 | **1.66×** | **1.81×** | 0.62× | 0.67× |
-| q19 | **1.49×** | **2.84×** | 0.99× | **1.87×** |
-| q20 | **1.07×** | **1.62×** | 0.66× | 0.99× |
-| q21 | **1.02×** | **1.05×** | 0.97× | 1.00× |
-| q22 | **1.37×** | **1.42×** | 0.97× | **1.02×** |
-| q23 | **1.61×** | **3.14×** | 0.55× | **1.07×** |
-
-The clearest direct StreamFusion mini-batch win is q19's retracting Top-N at **1.87× over its own
-disabled path**. q4 and q23 improve by 7%, while q15/q17/q18 regress and need further profiling.
-Several cross-engine leads widen primarily because Flink's enabled plan slows down, so those ratios
-are not presented as direct StreamFusion mini-batch gains. Absolute throughput and the reproduction
-command are in [docs/benchmarks.md](docs/benchmarks.md#current-four-way-comparison-2026-07-13).
+q23 is the noisy boundary: it measured 1.31× enabled in the complete run and 0.99× in the focused
+repeat, so it should be treated as parity rather than a stable lead. Mini-batching also costs some
+append-only queries because they have no changelog churn to amortize. The multi-source/blackhole
+ladder, raw timings, focused repeat, reproduction command, and profiling controls remain in
+[docs/benchmarks.md](docs/benchmarks.md).
 
 _Apple M1 Max; numbers are comparable only within a machine._
 
