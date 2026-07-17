@@ -23,14 +23,11 @@ public final class NativeKafka {
    * decode. Polls of an attached consumer emit typed batches, decoded on the fetch thread with no
    * JVM round trip. The decoder handle's Java owner must outlive the consumer.
    */
-  public static native boolean attachKafkaDecoder(long handle, long initAddress, long decoderHandle);
+  public static native boolean attachKafkaDecoder(
+      long handle, long initAddress, long decoderHandle);
 
   public static native void assignKafkaSplits(
-      long handle,
-      String[] topics,
-      long[] partitions,
-      long[] startOffsets,
-      long[] stoppingOffsets);
+      long handle, String[] topics, long[] partitions, long[] startOffsets, long[] stoppingOffsets);
 
   public static native void unassignKafkaSplits(long handle, String[] topics, long[] partitions);
 
@@ -66,7 +63,11 @@ public final class NativeKafka {
       boolean upsert);
 
   public static native int drainKafkaSplit(
-      long handle, long[] splitMeta, String[] outTopic, long outArrayAddress, long outSchemaAddress);
+      long handle,
+      long[] splitMeta,
+      String[] outTopic,
+      long outArrayAddress,
+      long outSchemaAddress);
 
   public static native void closeKafkaConsumer(long handle);
 
@@ -78,7 +79,12 @@ public final class NativeKafka {
    * statistics.interval.ms} (the only channel librdkafka exposes the producer id/epoch through).
    */
   public static native long openTransactionalKafkaProducer(
-      String[] configKeys, String[] configValues);
+      int configVersion,
+      String[] configKeys,
+      String[] configValues,
+      String transactionalId,
+      long maxBlockMillis,
+      int maxRequestSize);
 
   /**
    * Runs init_transactions and writes the broker-assigned {@code [producerId, epoch]} into {@code
@@ -93,17 +99,33 @@ public final class NativeKafka {
   public static native void produceKafkaRecord(long handle, String topic, byte[] key, byte[] value);
 
   /**
-   * Flushes the open transaction's records and writes the {@code [producerId, epoch]} it runs
-   * under into {@code outIdentity}. Afterwards the transaction is fully materialized on the broker
-   * (still ongoing) and survives {@link #closeKafkaProducer}.
+   * Encodes one Arrow batch and enqueues all of its Kafka records without materializing JVM rows.
+   */
+  public static native long produceKafkaJsonBatch(
+      long handle,
+      String topic,
+      long arrayAddress,
+      long schemaAddress,
+      boolean ignoreNullFields,
+      String timestampFormat,
+      String[] logicalTypes,
+      String[] fieldNames,
+      int[] keyFields,
+      int[] valueFields,
+      boolean upsert);
+
+  /**
+   * Flushes the open transaction's records and writes the {@code [producerId, epoch]} it runs under
+   * into {@code outIdentity}. Afterwards the transaction is fully materialized on the broker (still
+   * ongoing) and survives {@link #closeKafkaProducer}.
    */
   public static native void flushKafkaProducer(long handle, long timeoutMillis, long[] outIdentity);
 
   public static native void abortKafkaTransaction(long handle, long timeoutMillis);
 
   /**
-   * Destroys the producer without committing or aborting: an open flushed transaction stays
-   * ongoing on the broker for the Java committer to finish.
+   * Destroys the producer without committing or aborting: an open flushed transaction stays ongoing
+   * on the broker for the Java committer to finish.
    */
   public static native void closeKafkaProducer(long handle);
 

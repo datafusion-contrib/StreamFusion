@@ -1735,6 +1735,8 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_be
 pub(crate) struct KafkaTransactionalProducer {
     producer: rdkafka::producer::ThreadedProducer<TxnProducerContext>,
     shared: Arc<TxnProducerShared>,
+    max_block: std::time::Duration,
+    max_request_size: usize,
 }
 
 #[cfg(feature = "kafka")]
@@ -1746,6 +1748,8 @@ struct TxnProducerShared {
     /// First asynchronous per-record delivery failure; a flushed epoch with any failed delivery
     /// must never become a committable.
     delivery_error: Mutex<Option<String>>,
+    records: std::sync::atomic::AtomicU64,
+    bytes: std::sync::atomic::AtomicU64,
 }
 
 #[cfg(feature = "kafka")]
@@ -1785,7 +1789,11 @@ impl rdkafka::producer::ProducerContext for TxnProducerContext {
 
 #[cfg(feature = "kafka")]
 impl KafkaTransactionalProducer {
-    fn open(config: &[(String, String)]) -> Result<KafkaTransactionalProducer, String> {
+    fn open(
+        config: &[(String, String)],
+        max_block: std::time::Duration,
+        max_request_size: usize,
+    ) -> Result<KafkaTransactionalProducer, String> {
         use rdkafka::config::ClientConfig;
 
         let mut client = ClientConfig::new();
@@ -1796,7 +1804,12 @@ impl KafkaTransactionalProducer {
         let producer = client
             .create_with_context(TxnProducerContext { shared: Arc::clone(&shared) })
             .map_err(|error| format!("failed to create Kafka transactional producer: {error}"))?;
-        Ok(KafkaTransactionalProducer { producer, shared })
+        Ok(KafkaTransactionalProducer {
+            producer,
+            shared,
+            max_block,
+            max_request_size,
+        })
     }
 
     /// Runs `init_transactions` and waits for the statistics tick that carries the assigned
@@ -1824,25 +1837,64 @@ impl KafkaTransactionalProducer {
     fn begin_transaction(&self) -> Result<(), String> {
         use rdkafka::producer::Producer;
 
+        *self.shared.delivery_error.lock().unwrap() = None;
+        self.shared
+            .records
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.shared
+            .bytes
+            .store(0, std::sync::atomic::Ordering::Relaxed);
         self.producer
             .begin_transaction()
             .map_err(|error| format!("begin_transaction failed: {error}"))
     }
 
-    fn produce(&self, topic: &str, key: Option<&[u8]>, value: &[u8]) -> Result<(), String> {
+    fn produce(
+        &self,
+        topic: &str,
+        key: Option<&[u8]>,
+        value: Option<&[u8]>,
+    ) -> Result<(), String> {
         use rdkafka::error::KafkaError;
         use rdkafka::producer::BaseRecord;
         use rdkafka::types::RDKafkaErrorCode;
 
-        let mut record = BaseRecord::<[u8], [u8]>::to(topic).payload(value);
+        let record_bytes = key.map_or(0, <[u8]>::len) + value.map_or(0, <[u8]>::len);
+        if record_bytes > self.max_request_size {
+            return Err(format!(
+                "Kafka record is {record_bytes} bytes, exceeding max.request.size={}",
+                self.max_request_size
+            ));
+        }
+        let mut record = BaseRecord::<[u8], [u8]>::to(topic);
         if let Some(key) = key {
             record = record.key(key);
         }
+        if let Some(value) = value {
+            record = record.payload(value);
+        }
+        let deadline = std::time::Instant::now() + self.max_block;
         loop {
+            if let Some(error) = self.shared.delivery_error.lock().unwrap().clone() {
+                return Err(format!("record delivery failed: {error}"));
+            }
             match self.producer.send(record) {
-                Ok(()) => return Ok(()),
+                Ok(()) => {
+                    self.shared
+                        .records
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    self.shared
+                        .bytes
+                        .fetch_add(record_bytes as u64, std::sync::atomic::Ordering::Relaxed);
+                    return Ok(());
+                }
                 Err((KafkaError::MessageProduction(RDKafkaErrorCode::QueueFull), returned)) => {
-                    // Backpressure, not failure: wait for the poll thread to drain deliveries.
+                    if std::time::Instant::now() >= deadline {
+                        return Err(format!(
+                            "Kafka producer queue remained full for max.block.ms={}ms",
+                            self.max_block.as_millis()
+                        ));
+                    }
                     std::thread::sleep(std::time::Duration::from_millis(10));
                     record = returned;
                 }
@@ -1871,6 +1923,10 @@ impl KafkaTransactionalProducer {
             .ok_or_else(|| "producer identity unknown after flush".to_string())
     }
 
+    fn byte_count(&self) -> u64 {
+        self.shared.bytes.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     fn abort_transaction(&self, timeout: std::time::Duration) -> Result<(), String> {
         use rdkafka::producer::Producer;
 
@@ -1893,7 +1949,12 @@ fn write_identity(
     out_identity: &JLongArray,
     identity: (i64, i64),
 ) -> Result<(), String> {
-    env.set_long_array_region(out_identity, 0, &[identity.0, identity.1])
+    let values = [identity.0, identity.1];
+    let length = env
+        .get_array_length(out_identity)
+        .map_err(|error| format!("failed to read producer identity array length: {error}"))?
+        as usize;
+    env.set_long_array_region(out_identity, 0, &values[..length.min(values.len())])
         .map_err(|error| format!("failed to write producer identity: {error}"))
 }
 
@@ -1907,17 +1968,45 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_op
 >(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
+    config_version: jint,
     config_keys: JObjectArray<'local>,
     config_values: JObjectArray<'local>,
+    transactional_id: JString<'local>,
+    max_block_millis: jlong,
+    max_request_size: jint,
 ) -> jlong {
     kafka_jni(&mut env, 0, |env| {
+        if config_version != 1 {
+            return Err(format!("unsupported Kafka producer config ABI {config_version}"));
+        }
         let keys = read_string_array(env, &config_keys);
         let values = read_string_array(env, &config_values);
         if keys.len() != values.len() {
             return Err("Kafka producer config arrays have different lengths".to_string());
         }
-        let config: Vec<(String, String)> = keys.into_iter().zip(values).collect();
-        Ok(into_handle(KafkaTransactionalProducer::open(&config)?))
+        let mut seen = std::collections::HashSet::with_capacity(keys.len());
+        for key in &keys {
+            if !seen.insert(key) {
+                return Err(format!("duplicate Kafka producer config key {key}"));
+            }
+            if key == "transactional.id" {
+                return Err("transactional.id is runtime-owned".to_string());
+            }
+        }
+        let transactional_id: String = env
+            .get_string(&transactional_id)
+            .map_err(|error| format!("failed to read transactional id: {error}"))?
+            .into();
+        if transactional_id.is_empty() {
+            return Err("transactional id must not be empty".to_string());
+        }
+        let mut config: Vec<(String, String)> = keys.into_iter().zip(values).collect();
+        config.push(("transactional.id".to_string(), transactional_id));
+        Ok(into_handle(KafkaTransactionalProducer::open(
+            &config,
+            producer_timeout(max_block_millis),
+            max_request_size.max(1) as usize,
+        )?))
     })
 }
 
@@ -1983,11 +2072,76 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_pr
                     .map_err(|error| format!("failed to read record key: {error}"))?,
             )
         };
-        let value = env
-            .convert_byte_array(&value)
-            .map_err(|error| format!("failed to read record value: {error}"))?;
-        producer.produce(&topic, key.as_deref(), &value)
+        let value = if value.is_null() {
+            None
+        } else {
+            Some(
+                env.convert_byte_array(&value)
+                    .map_err(|error| format!("failed to read record value: {error}"))?,
+            )
+        };
+        producer.produce(&topic, key.as_deref(), value.as_deref())
     });
+}
+
+/// Imports, JSON-encodes, and produces a complete Arrow batch without constructing per-row JNI
+/// objects. Returns the total key+value payload bytes enqueued for producer metrics.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_produceKafkaJsonBatch<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    topic: JString<'local>,
+    array_address: jlong,
+    schema_address: jlong,
+    ignore_null_fields: jboolean,
+    timestamp_format: JString<'local>,
+    logical_types: JObjectArray<'local>,
+    field_names: JObjectArray<'local>,
+    key_fields: JIntArray<'local>,
+    value_fields: JIntArray<'local>,
+    upsert: jboolean,
+) -> jlong {
+    kafka_jni(&mut env, 0, |env| {
+        let producer = unsafe { &*(handle as *const KafkaTransactionalProducer) };
+        let topic: String = env
+            .get_string(&topic)
+            .map_err(|error| format!("failed to read topic: {error}"))?
+            .into();
+        let batch = import_record_batch(array_address, schema_address);
+        let timestamp_format: String = env
+            .get_string(&timestamp_format)
+            .map_err(|error| format!("failed to read JSON timestamp format: {error}"))?
+            .into();
+        let logical_types = read_string_array(env, &logical_types);
+        let field_names = read_string_array(env, &field_names);
+        let key_fields = read_int_array(env, &key_fields)
+            .into_iter()
+            .map(|index| index as usize)
+            .collect::<Vec<_>>();
+        let value_fields = read_int_array(env, &value_fields)
+            .into_iter()
+            .map(|index| index as usize)
+            .collect::<Vec<_>>();
+        let (keys, values) = encode_json_records(
+            &batch,
+            ignore_null_fields != 0,
+            &timestamp_format,
+            &logical_types,
+            &field_names,
+            &key_fields,
+            &value_fields,
+            upsert != 0,
+        )?;
+        let before = producer.byte_count();
+        for (key, value) in keys.iter().zip(&values) {
+            producer.produce(&topic, key.as_deref(), value.as_deref())?;
+        }
+        Ok((producer.byte_count() - before) as jlong)
+    })
 }
 
 /// Flushes the open transaction's records and writes the `[producerId, epoch]` it runs under into

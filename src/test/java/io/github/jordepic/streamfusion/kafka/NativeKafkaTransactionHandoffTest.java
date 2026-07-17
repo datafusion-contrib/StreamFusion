@@ -197,11 +197,15 @@ class NativeKafkaTransactionHandoffTest {
       String bootstrap, String transactionalId, int transactionTimeoutMs) {
     Map<String, String> config = new LinkedHashMap<>();
     config.put("bootstrap.servers", bootstrap);
-    config.put("transactional.id", transactionalId);
     config.put("transaction.timeout.ms", String.valueOf(transactionTimeoutMs));
     config.put("statistics.interval.ms", "50");
     return NativeKafka.openTransactionalKafkaProducer(
-        config.keySet().toArray(new String[0]), config.values().toArray(new String[0]));
+        KafkaProducerConfigTranslator.ABI_VERSION,
+        config.keySet().toArray(new String[0]),
+        config.values().toArray(new String[0]),
+        transactionalId,
+        TIMEOUT_MS,
+        1_048_576);
   }
 
   private static FlinkKafkaInternalProducer<byte[], byte[]> committer(
@@ -217,8 +221,8 @@ class NativeKafkaTransactionHandoffTest {
     return props;
   }
 
-  private static TransactionDescription describeTransaction(String bootstrap, String transactionalId)
-      throws Exception {
+  private static TransactionDescription describeTransaction(
+      String bootstrap, String transactionalId) throws Exception {
     Properties props = new Properties();
     props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap);
     try (AdminClient admin = AdminClient.create(props)) {
@@ -245,8 +249,7 @@ class NativeKafkaTransactionHandoffTest {
     props.put(ConsumerConfig.GROUP_ID_CONFIG, "handoff-consumer-" + UUID.randomUUID());
     props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
     props.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, isolation);
-    props.put(
-        ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+    props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
     props.put(
         ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
     List<ConsumerRecord<byte[], byte[]>> records = new ArrayList<>();
