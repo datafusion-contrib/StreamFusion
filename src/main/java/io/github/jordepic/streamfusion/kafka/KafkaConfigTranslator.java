@@ -8,16 +8,18 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Translates a Flink Kafka consumer's {@code Properties} into an equivalent librdkafka configuration
- * for a native consumer, or reports why it cannot — in which case the source falls back to the shallow
- * (Flink-client) path. The goal is behavioral parity, so beyond renaming keys it pins the Java client's
- * default for keys whose librdkafka default differs (the silent-divergence trap, e.g. {@code
- * isolation.level}), and it refuses (falls back) on anything it cannot map faithfully rather than
- * guessing — the same conservative stance as the expression layer's opt-in incompatibility.
+ * Translates a Flink Kafka consumer's {@code Properties} into an equivalent librdkafka
+ * configuration for a native consumer, or reports why it cannot — in which case the source falls
+ * back to the shallow (Flink-client) path. The goal is behavioral parity, so beyond renaming keys
+ * it pins the Java client's default for keys whose librdkafka default differs (the
+ * silent-divergence trap, e.g. {@code isolation.level}), and it refuses (falls back) on anything it
+ * cannot map faithfully rather than guessing — the same conservative stance as the expression
+ * layer's opt-in incompatibility.
  *
- * <p>Pure {@code Properties} → {@code Map} (no Kafka-client or connector classes), so it is unit-tested
- * without a broker. SASL/SSL material that needs real conversion (JKS→PEM) or an unrecognized JAAS
- * login module falls back; the recognized cases (PLAIN/SCRAM credentials, Kerberos keytab) are mapped.
+ * <p>Pure {@code Properties} → {@code Map} (no Kafka-client or connector classes), so it is
+ * unit-tested without a broker. SASL/SSL material that needs real conversion (JKS→PEM) or an
+ * unrecognized JAAS login module falls back; the recognized cases (PLAIN/SCRAM credentials,
+ * Kerberos keytab) are mapped.
  */
 public final class KafkaConfigTranslator {
 
@@ -93,14 +95,18 @@ public final class KafkaConfigTranslator {
           "send.buffer.bytes", "socket.send.buffer.bytes",
           "receive.buffer.bytes", "socket.receive.buffer.bytes");
 
-  // Keys whose librdkafka default differs from the Java client's *in a way that affects what data you
-  // get*: copy the user's value, or pin the Java default when unset, so behavior matches what a Flink
+  // Keys whose librdkafka default differs from the Java client's *in a way that affects what data
+  // you
+  // get*: copy the user's value, or pin the Java default when unset, so behavior matches what a
+  // Flink
   // user expects. Keyed by the Java property name -> (librdkafka key, java default).
   //
   // Note: socket send/receive buffer sizes are deliberately NOT pinned here. They only affect
   // throughput, not correctness, and librdkafka's default (OS-auto-tuned) outperforms Java's small
-  // fixed defaults — pinning Java's 64KB receive buffer measurably throttled the native consumer. The
-  // user's explicit value is still honored via the rename above; we just don't force Java's default.
+  // fixed defaults — pinning Java's 64KB receive buffer measurably throttled the native consumer.
+  // The
+  // user's explicit value is still honored via the rename above; we just don't force Java's
+  // default.
   //
   // check.crcs is likewise not pinned (librdkafka default: false, the posture Arroyo ships with).
   // CRC verification is corruption-detection robustness, not a results-affecting semantic, and
@@ -159,21 +165,29 @@ public final class KafkaConfigTranslator {
     if (props.containsKey("auto.offset.reset")) {
       String reset = mapAutoOffsetReset(props.getProperty("auto.offset.reset"));
       if (reset == null) {
-        return Result.fallback("unmappable auto.offset.reset=" + props.getProperty("auto.offset.reset"));
+        return Result.fallback(
+            "unmappable auto.offset.reset=" + props.getProperty("auto.offset.reset"));
       }
       out.put("auto.offset.reset", reset);
     }
 
-    String sasl = sasl(props, out);
-    if (sasl != null) {
-      return Result.fallback(sasl);
-    }
-    String ssl = ssl(props, out);
-    if (ssl != null) {
-      return Result.fallback(ssl);
+    String security = translateSecurity(props, out);
+    if (security != null) {
+      return Result.fallback(security);
     }
 
     return Result.translated(out);
+  }
+
+  /**
+   * Adds the shared Java-to-librdkafka SASL/SSL settings. Returns a fallback reason, or {@code
+   * null} when the security configuration is representable. Producer and consumer translation
+   * deliberately share this narrow conversion while retaining separate property allowlists and
+   * defaults.
+   */
+  static String translateSecurity(Properties props, Map<String, String> out) {
+    String sasl = sasl(props, out);
+    return sasl != null ? sasl : ssl(props, out);
   }
 
   /** Java reset strategies → librdkafka names; null if there is no equivalent. */
@@ -195,8 +209,9 @@ public final class KafkaConfigTranslator {
 
   /**
    * Parses {@code sasl.jaas.config} into librdkafka SASL keys. Recognizes PLAIN/SCRAM (username +
-   * password) and Kerberos (keytab + principal); returns a fallback reason for an unrecognized login
-   * module or a malformed config, and {@code null} on success (or when SASL isn't configured).
+   * password) and Kerberos (keytab + principal); returns a fallback reason for an unrecognized
+   * login module or a malformed config, and {@code null} on success (or when SASL isn't
+   * configured).
    */
   private static String sasl(Properties props, Map<String, String> out) {
     String jaas = props.getProperty("sasl.jaas.config");
@@ -230,14 +245,17 @@ public final class KafkaConfigTranslator {
   }
 
   /**
-   * Maps SSL trust/key material. PEM stores pass through to librdkafka's PEM paths; JKS/PKCS12 stores
-   * need conversion that is not done here, so they fall back. Returns a fallback reason or {@code null}.
+   * Maps SSL trust/key material. PEM stores pass through to librdkafka's PEM paths; JKS/PKCS12
+   * stores need conversion that is not done here, so they fall back. Returns a fallback reason or
+   * {@code null}.
    */
   private static String ssl(Properties props, Map<String, String> out) {
     String trustType = props.getProperty("ssl.truststore.type", "JKS");
     if (props.containsKey("ssl.truststore.location")) {
       if (!"PEM".equalsIgnoreCase(trustType)) {
-        return "ssl.truststore.type=" + trustType + " needs JKS->PEM conversion (not yet supported)";
+        return "ssl.truststore.type="
+            + trustType
+            + " needs JKS->PEM conversion (not yet supported)";
       }
       out.put("ssl.ca.location", props.getProperty("ssl.truststore.location"));
     }
