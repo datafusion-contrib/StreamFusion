@@ -1718,3 +1718,325 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_be
     }
     rows
 }
+
+/// The exactly-once producer hand-off (Phase 0A spike): the native side owns only the data plane of
+/// a Kafka transaction — init, begin, produce, flush — and surfaces the broker-assigned producer
+/// identity. The commit is deliberately absent. A Kafka transaction's identity is just
+/// (transactional.id, producer id, epoch), and the coordinator accepts EndTxn from any connection
+/// presenting that tuple, so the Flink Java committer finishes (or fences) the transaction after
+/// the checkpoint completes. Destroying this producer sends neither commit nor abort — the broker
+/// keeps the transaction ONGOING — which is exactly what the hand-off relies on.
+///
+/// librdkafka reveals the producer id/epoch only through the statistics callback, so the config
+/// must set `statistics.interval.ms`. Timer-driven statistics are the spike's capture mechanism,
+/// cross-checked by the Java side against the transaction coordinator (describeTransactions); a
+/// deterministic accessor is the Phase 0B follow-up.
+#[cfg(feature = "kafka")]
+pub(crate) struct KafkaTransactionalProducer {
+    producer: rdkafka::producer::ThreadedProducer<TxnProducerContext>,
+    shared: Arc<TxnProducerShared>,
+}
+
+#[cfg(feature = "kafka")]
+#[derive(Default)]
+struct TxnProducerShared {
+    /// Latest (producer id, epoch) seen in an eos statistics tick; None until the first tick after
+    /// `init_transactions` assigns one.
+    identity: Mutex<Option<(i64, i64)>>,
+    /// First asynchronous per-record delivery failure; a flushed epoch with any failed delivery
+    /// must never become a committable.
+    delivery_error: Mutex<Option<String>>,
+}
+
+#[cfg(feature = "kafka")]
+struct TxnProducerContext {
+    shared: Arc<TxnProducerShared>,
+}
+
+#[cfg(feature = "kafka")]
+impl rdkafka::ClientContext for TxnProducerContext {
+    fn stats(&self, statistics: rdkafka::Statistics) {
+        if let Some(eos) = statistics.eos {
+            if eos.producer_id >= 0 {
+                *self.shared.identity.lock().unwrap() =
+                    Some((eos.producer_id, eos.producer_epoch));
+            }
+        }
+    }
+}
+
+#[cfg(feature = "kafka")]
+impl rdkafka::producer::ProducerContext for TxnProducerContext {
+    type DeliveryOpaque = ();
+
+    fn delivery(
+        &self,
+        delivery_result: &rdkafka::message::DeliveryResult<'_>,
+        _: Self::DeliveryOpaque,
+    ) {
+        if let Err((error, _)) = delivery_result {
+            let mut slot = self.shared.delivery_error.lock().unwrap();
+            if slot.is_none() {
+                *slot = Some(error.to_string());
+            }
+        }
+    }
+}
+
+#[cfg(feature = "kafka")]
+impl KafkaTransactionalProducer {
+    fn open(config: &[(String, String)]) -> Result<KafkaTransactionalProducer, String> {
+        use rdkafka::config::ClientConfig;
+
+        let mut client = ClientConfig::new();
+        for (key, value) in config {
+            client.set(key, value);
+        }
+        let shared = Arc::new(TxnProducerShared::default());
+        let producer = client
+            .create_with_context(TxnProducerContext { shared: Arc::clone(&shared) })
+            .map_err(|error| format!("failed to create Kafka transactional producer: {error}"))?;
+        Ok(KafkaTransactionalProducer { producer, shared })
+    }
+
+    /// Runs `init_transactions` and waits for the statistics tick that carries the assigned
+    /// producer id/epoch (the ThreadedProducer's poll thread delivers the callback).
+    fn init_transactions(&self, timeout: std::time::Duration) -> Result<(i64, i64), String> {
+        use rdkafka::producer::Producer;
+
+        self.producer
+            .init_transactions(timeout)
+            .map_err(|error| format!("init_transactions failed: {error}"))?;
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if let Some(identity) = *self.shared.identity.lock().unwrap() {
+                return Ok(identity);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err("timed out waiting for the producer identity statistics tick; \
+                            the producer config must set statistics.interval.ms"
+                    .to_string());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    fn begin_transaction(&self) -> Result<(), String> {
+        use rdkafka::producer::Producer;
+
+        self.producer
+            .begin_transaction()
+            .map_err(|error| format!("begin_transaction failed: {error}"))
+    }
+
+    fn produce(&self, topic: &str, key: Option<&[u8]>, value: &[u8]) -> Result<(), String> {
+        use rdkafka::error::KafkaError;
+        use rdkafka::producer::BaseRecord;
+        use rdkafka::types::RDKafkaErrorCode;
+
+        let mut record = BaseRecord::<[u8], [u8]>::to(topic).payload(value);
+        if let Some(key) = key {
+            record = record.key(key);
+        }
+        loop {
+            match self.producer.send(record) {
+                Ok(()) => return Ok(()),
+                Err((KafkaError::MessageProduction(RDKafkaErrorCode::QueueFull), returned)) => {
+                    // Backpressure, not failure: wait for the poll thread to drain deliveries.
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    record = returned;
+                }
+                Err((error, _)) => return Err(format!("produce to {topic} failed: {error}")),
+            }
+        }
+    }
+
+    /// Flushes every buffered record and returns the identity the flushed transaction runs under.
+    /// Fails if any delivery failed — such an epoch must never become a committable. The returned
+    /// identity is the latest statistics capture; the Java caller validates it against the
+    /// transaction coordinator before relying on it.
+    fn flush(&self, timeout: std::time::Duration) -> Result<(i64, i64), String> {
+        use rdkafka::producer::Producer;
+
+        self.producer
+            .flush(timeout)
+            .map_err(|error| format!("flush failed: {error}"))?;
+        if let Some(error) = self.shared.delivery_error.lock().unwrap().clone() {
+            return Err(format!("record delivery failed: {error}"));
+        }
+        self.shared
+            .identity
+            .lock()
+            .unwrap()
+            .ok_or_else(|| "producer identity unknown after flush".to_string())
+    }
+
+    fn abort_transaction(&self, timeout: std::time::Duration) -> Result<(), String> {
+        use rdkafka::producer::Producer;
+
+        self.producer
+            .abort_transaction(timeout)
+            .map_err(|error| format!("abort_transaction failed: {error}"))
+    }
+}
+
+#[cfg(feature = "kafka")]
+fn producer_timeout(timeout_millis: jlong) -> std::time::Duration {
+    std::time::Duration::from_millis(timeout_millis.max(0) as u64)
+}
+
+/// Writes an identity into the caller-allocated `[producerId, epoch]` array, following the
+/// caller-owned out-array convention of `drainKafkaSplit`.
+#[cfg(feature = "kafka")]
+fn write_identity(
+    env: &JNIEnv,
+    out_identity: &JLongArray,
+    identity: (i64, i64),
+) -> Result<(), String> {
+    env.set_long_array_region(out_identity, 0, &[identity.0, identity.1])
+        .map_err(|error| format!("failed to write producer identity: {error}"))
+}
+
+/// Opens a native transactional producer and returns an opaque handle, released with
+/// `closeKafkaProducer`. `configKeys`/`configValues` are librdkafka config applied verbatim; it
+/// must include `transactional.id` and `statistics.interval.ms`.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_openTransactionalKafkaProducer<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    config_keys: JObjectArray<'local>,
+    config_values: JObjectArray<'local>,
+) -> jlong {
+    kafka_jni(&mut env, 0, |env| {
+        let keys = read_string_array(env, &config_keys);
+        let values = read_string_array(env, &config_values);
+        if keys.len() != values.len() {
+            return Err("Kafka producer config arrays have different lengths".to_string());
+        }
+        let config: Vec<(String, String)> = keys.into_iter().zip(values).collect();
+        Ok(into_handle(KafkaTransactionalProducer::open(&config)?))
+    })
+}
+
+/// Runs `init_transactions` and writes the broker-assigned `[producerId, epoch]` into
+/// `outIdentity`.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_initKafkaTransactions<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    timeout_millis: jlong,
+    out_identity: JLongArray<'local>,
+) {
+    kafka_jni(&mut env, (), |env| {
+        let producer = unsafe { &*(handle as *const KafkaTransactionalProducer) };
+        let identity = producer.init_transactions(producer_timeout(timeout_millis))?;
+        write_identity(env, &out_identity, identity)
+    });
+}
+
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_beginKafkaTransaction<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    kafka_jni(&mut env, (), |_env| {
+        let producer = unsafe { &*(handle as *const KafkaTransactionalProducer) };
+        producer.begin_transaction()
+    });
+}
+
+/// Produces one record into the open transaction. A null `key` produces an unkeyed record.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_produceKafkaRecord<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    topic: JString<'local>,
+    key: JByteArray<'local>,
+    value: JByteArray<'local>,
+) {
+    kafka_jni(&mut env, (), |env| {
+        let producer = unsafe { &*(handle as *const KafkaTransactionalProducer) };
+        let topic: String = env
+            .get_string(&topic)
+            .map_err(|error| format!("failed to read topic: {error}"))?
+            .into();
+        let key = if key.is_null() {
+            None
+        } else {
+            Some(
+                env.convert_byte_array(&key)
+                    .map_err(|error| format!("failed to read record key: {error}"))?,
+            )
+        };
+        let value = env
+            .convert_byte_array(&value)
+            .map_err(|error| format!("failed to read record value: {error}"))?;
+        producer.produce(&topic, key.as_deref(), &value)
+    });
+}
+
+/// Flushes the open transaction's records and writes the `[producerId, epoch]` it runs under into
+/// `outIdentity`. After this returns the transaction is fully materialized on the broker (still
+/// ONGOING) and the producer can be closed without losing it.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_flushKafkaProducer<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    timeout_millis: jlong,
+    out_identity: JLongArray<'local>,
+) {
+    kafka_jni(&mut env, (), |env| {
+        let producer = unsafe { &*(handle as *const KafkaTransactionalProducer) };
+        let identity = producer.flush(producer_timeout(timeout_millis))?;
+        write_identity(env, &out_identity, identity)
+    });
+}
+
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_abortKafkaTransaction<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    timeout_millis: jlong,
+) {
+    kafka_jni(&mut env, (), |_env| {
+        let producer = unsafe { &*(handle as *const KafkaTransactionalProducer) };
+        producer.abort_transaction(producer_timeout(timeout_millis))
+    });
+}
+
+/// Destroys the producer WITHOUT committing or aborting: librdkafka sends nothing on destroy, so an
+/// open flushed transaction stays ONGOING on the broker for the Java committer to finish.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_closeKafkaProducer<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    drop(unsafe { from_handle::<KafkaTransactionalProducer>(handle) });
+}

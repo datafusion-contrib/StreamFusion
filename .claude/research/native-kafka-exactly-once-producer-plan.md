@@ -268,6 +268,21 @@ visibility. Cover Java abort-by-`initTransactions`, destroy-before-commit, dupli
 fencing, and crash-after-checkpoint-before-commit. Cross-check the tuple with
 `AdminClient.describeTransactions` where supported.
 
+*Done 2026-07-17* — `NativeKafkaTransactionHandoffTest` (3 tests green against cp-kafka 7.6.1 /
+Kafka 3.6, kafka-clients 3.7.1, bundled librdkafka 2.12.1), backed by a spike-scoped native producer
+in `native/src/kafka.rs` (`KafkaTransactionalProducer` + `openTransactionalKafkaProducer`/`init`/
+`begin`/`produce`/`flush`/`abort`/`close` JNI surface). Proven: statistics-captured pid/epoch matches
+`describeTransactions` exactly; destroy sends neither commit nor abort (transaction stays ONGOING);
+Java resume-commit of the librdkafka transaction makes exactly the produced records visible under
+`read_committed`; duplicate resume-commit is idempotent (commit-retry-after-crash safe); Java
+`initTransactions` fences the native transaction and stale-identity commit throws `KafkaException`;
+broker reaps an abandoned transaction after `transaction.timeout.ms` and late commit fails.
+Internal-package question resolved: `FlinkKafkaInternalProducer` is public with a public
+`(Properties, transactionalId)` constructor and its reflection is version-agnostic where it matters
+(`createProducerIdAndEpoch` derives the class from the field type), so direct reuse works — no shim
+or copy needed for the committer path. The spike keeps statistics capture as the identity source;
+Phase 0B still owes the deterministic accessor.
+
 **Phase 0B — stable producer identity API.** Add and test a direct producer ID/epoch accessor in the
 smallest appropriate layer (prefer rust-rdkafka backed by a public librdkafka API; otherwise carry a
 minimal pinned patch and propose it upstream). Do not ship timer-driven statistics polling as the sole

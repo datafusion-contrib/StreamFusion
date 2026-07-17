@@ -70,6 +70,43 @@ public final class NativeKafka {
 
   public static native void closeKafkaConsumer(long handle);
 
+  /**
+   * Opens a native transactional producer (the exactly-once hand-off data plane: it initializes,
+   * begins, produces, and flushes a Kafka transaction, but never commits — the Java committer
+   * finishes the transaction by presenting the identity this producer reports). The librdkafka
+   * config is applied verbatim and must include {@code transactional.id} and {@code
+   * statistics.interval.ms} (the only channel librdkafka exposes the producer id/epoch through).
+   */
+  public static native long openTransactionalKafkaProducer(
+      String[] configKeys, String[] configValues);
+
+  /**
+   * Runs init_transactions and writes the broker-assigned {@code [producerId, epoch]} into {@code
+   * outIdentity}.
+   */
+  public static native void initKafkaTransactions(
+      long handle, long timeoutMillis, long[] outIdentity);
+
+  public static native void beginKafkaTransaction(long handle);
+
+  /** Produces one record into the open transaction; a null key produces an unkeyed record. */
+  public static native void produceKafkaRecord(long handle, String topic, byte[] key, byte[] value);
+
+  /**
+   * Flushes the open transaction's records and writes the {@code [producerId, epoch]} it runs
+   * under into {@code outIdentity}. Afterwards the transaction is fully materialized on the broker
+   * (still ongoing) and survives {@link #closeKafkaProducer}.
+   */
+  public static native void flushKafkaProducer(long handle, long timeoutMillis, long[] outIdentity);
+
+  public static native void abortKafkaTransaction(long handle, long timeoutMillis);
+
+  /**
+   * Destroys the producer without committing or aborting: an open flushed transaction stays
+   * ongoing on the broker for the Java committer to finish.
+   */
+  public static native void closeKafkaProducer(long handle);
+
   public static native long benchmarkKafkaConsume(
       String brokers, String topic, long schemaArrayAddress, long schemaAddress, long maxMessages);
 
