@@ -13,6 +13,9 @@ Research snapshots:
   registry is authoritative where it differs from either local 2.3.0 checkout.
 - Kafka 4.2.0 `ProducerConfig.java` from the connector's Maven source artifact, plus the local Kafka
   checkout for coordinator protocol behavior.
+- **Java build authority:** StreamFusion pins kafka-clients 4.2.0 to match flink-connector-kafka
+  5.0.0-2.2. Before this work its direct 3.7.1 dependency silently won Maven mediation over the
+  connector's declared 4.2.0 client; that mismatch is fixed before property normalization is built.
 
 All source references below are repository-relative; the local research roots are `~/data/flink`,
 `~/data/flink-connector-kafka`, `~/data/rust-rdkafka`, and `~/data/librdkafka`.
