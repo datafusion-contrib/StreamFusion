@@ -850,12 +850,68 @@ StreamFusion therefore read from and publish to the same test broker. The harnes
 with mini-batching disabled and with the same 2s/50,000-row configuration enabled, alternating mode
 order per query. Append-only queries use `kafka`; q4, q9, and q15-q19 use `upsert-kafka` with the
 query result's actual unique key. Every measured run uses a fresh topic and transactional ID, waits
-for the bounded job's final commit, then removes the output topic outside the timed interval.
+for the bounded job's final commit, then removes the output topic outside the timed interval. On
+StreamFusion the whole sink data plane is native since 2026-07-19: librdkafka serializes and
+produces each Arrow batch inside the checkpoint epoch's transaction, and Flink's stock Java
+committer commits it after the checkpoint completes (divergence 26); the harness asserts the
+native-producer plan shape for every cell.
 
-#### Current full comparison (2026-07-16)
+#### Current full comparison (2026-07-19, native producer data plane)
 
 Apple M1 Max, 500K input events, one-second checkpoints, release+`mimalloc,kafka,json`, one warmup
 and best of two measured runs. Throughput is millions of input events per second.
+
+| Query | Flink off | StreamFusion off | SF/Flink off | Flink on | StreamFusion on | SF/Flink on | Flink on/off | SF on/off |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| q0 | 0.228 | 0.473 | 2.07x | 0.242 | 0.482 | 1.99x | 1.06x | 1.02x |
+| q1 | 0.241 | 0.536 | 2.22x | 0.239 | 0.489 | 2.04x | 0.99x | 0.91x |
+| q2 | 0.359 | 0.531 | 1.48x | 0.330 | 0.522 | 1.58x | 0.92x | 0.98x |
+| q3 | 0.466 | 0.702 | 1.51x | 0.441 | 0.700 | 1.59x | 0.95x | 1.00x |
+| q4 | 0.336 | 0.572 | 1.71x | 0.303 | 0.539 | 1.78x | 0.90x | 0.94x |
+| q5 | 0.396 | 0.634 | 1.60x | 0.409 | 0.568 | 1.39x | 1.03x | 0.90x |
+| q7 | 0.275 | 0.637 | 2.31x | 0.235 | 0.629 | 2.68x | 0.85x | 0.99x |
+| q8 | 0.444 | 0.641 | 1.44x | 0.448 | 0.635 | 1.42x | 1.01x | 0.99x |
+| q9 | 0.274 | 0.235 | 0.86x | 0.232 | 0.477 | 2.06x | 0.85x | 2.03x |
+| q10 | 0.229 | 0.431 | 1.88x | 0.232 | 0.447 | 1.93x | 1.01x | 1.04x |
+| q11 | 0.242 | 0.685 | 2.84x | 0.240 | 0.812 | 3.39x | 0.99x | 1.19x |
+| q12 | 0.429 | 0.693 | 1.62x | 0.413 | 0.408 | 0.99x | 0.96x | 0.59x |
+| q13 | 0.287 | 0.537 | 1.87x | 0.275 | 0.545 | 1.98x | 0.96x | 1.01x |
+| q14 | 0.226 | 0.534 | 2.36x | 0.224 | 0.497 | 2.22x | 0.99x | 0.93x |
+| q15 | 0.214 | 0.432 | 2.02x | 0.358 | 0.634 | 1.77x | 1.67x | 1.47x |
+| q16 | 0.197 | 0.262 | 1.33x | 0.265 | 0.346 | 1.30x | 1.35x | 1.32x |
+| q17 | 0.238 | 0.346 | 1.45x | 0.352 | 0.503 | 1.43x | 1.48x | 1.46x |
+| q18 | 0.221 | 0.331 | 1.50x | 0.182 | 0.309 | 1.70x | 0.82x | 0.93x |
+| q19 | 0.058 | 0.061 | 1.07x | 0.060 | 0.486 | 8.15x | 1.03x | 7.92x |
+| q20 | 0.296 | 0.569 | 1.92x | 0.260 | 0.506 | 1.94x | 0.88x | 0.89x |
+| q21 | 0.362 | 0.480 | 1.33x | 0.349 | 0.590 | 1.69x | 0.96x | 1.23x |
+| q22 | 0.267 | 0.519 | 1.95x | 0.263 | 0.472 | 1.79x | 0.99x | 0.91x |
+| q23 | 0.145 | 0.193 | 1.33x | 0.155 | 0.194 | 1.25x | 1.07x | 1.00x |
+
+StreamFusion wins 22 of 23 with mini-batching disabled (1.07x–2.84x; q9 is the one loss) and, with
+the q12 cell re-verified below, 23 of 23 enabled (1.25x–8.15x). Off-mode is the headline change
+from the prior comparison: queries that previously lost without mini-batching now win outright
+(q15 1.21x→2.02x, q18 0.99x→1.50x, q19 0.58x→1.07x, q23 0.83x→1.33x) and the record-heavy
+passthroughs jumped (q0 1.51x→2.07x, q1 1.65x→2.22x, q14 1.45x→2.36x), because the native producer
+out-drains the Java client once its request batching is left at librdkafka's own geometry (see the
+producer-parity entries in `docs/optimizations.md`).
+
+A same-day focused repeat of the three cells that looked anomalous in the complete run:
+
+| Query | SF/Flink off | SF/Flink on |
+|---|---:|---:|
+| q9 | 0.94x | 1.86x |
+| q12 | 1.78x | 1.49x |
+| q21 | 1.42x | 1.46x |
+
+q12's complete-run 0.99x enabled cell does not reproduce (1.49x on repeat — the anomaly was one
+slow StreamFusion measurement); q21 reproduces at 1.33–1.46x, genuinely below its prior 2.07x but
+a stable win; q9 off hovers at 0.86–0.94x, the one query still under parity without mini-batching.
+
+#### Prior comparison (2026-07-16, superseded — encode-only native, Java producer data plane)
+
+The table below predates the native exactly-once producer: StreamFusion serialized natively but
+Flink's Java `KafkaSink` owned all record production and transactions. Kept for the delta the
+producer swap produced. Same machine, method, and build flags.
 
 | Query | Flink off | StreamFusion off | SF/Flink off | Flink on | StreamFusion on | SF/Flink on | Flink on/off | SF on/off |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|

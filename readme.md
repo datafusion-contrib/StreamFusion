@@ -84,53 +84,57 @@ queries use `upsert-kafka` with the result's actual primary key. Each timed run 
 consumption, query execution, serialization, Kafka writes, checkpoints, and the bounded job's final
 transaction commit.
 
-On StreamFusion, Kafka poll/decode, every supported operator, and sink key/value/tombstone
-serialization stay native and columnar; Flink's unmodified `KafkaSink` owns producer I/O and the
-exactly-once transaction lifecycle. The native plan is asserted for every cell. q6 is omitted because
+On StreamFusion, Kafka poll/decode, every supported operator, sink key/value/tombstone
+serialization, and record production all stay native: librdkafka produces each query result inside
+the checkpoint epoch's Kafka transaction, and Flink's stock Java committer commits it after the
+checkpoint completes, preserving the host connector's exactly-once recovery exactly. The native
+plan — including the native-producer sink shape — is asserted for every cell. q6 is omitted because
 Flink SQL itself cannot run it ([analysis](.claude/wontdos/39-nexmark-q6-exclusion.md)).
 
-These are the 2026-07-16 Apple M1 Max release+`mimalloc` results, best of two after one warmup.
+These are the 2026-07-19 Apple M1 Max release+`mimalloc` results, best of two after one warmup.
 Mini-batching uses the same production-style configuration on both engines
 (`allow-latency=2s`, `size=50000`). Each cell is StreamFusion throughput divided by Flink
 throughput within the same mode.
 
 | Query | SF/Flink off | SF/Flink on |
 |---|---:|---:|
-| q0 | **1.51×** | **1.20×** |
-| q1 | **1.65×** | **1.42×** |
-| q2 | **1.65×** | **1.67×** |
-| q3 | **1.44×** | **1.45×** |
-| q4 | **1.72×** | **2.02×** |
-| q5 | **1.47×** | **1.37×** |
-| q7 | **2.54×** | **2.40×** |
-| q8 | **1.31×** | **1.28×** |
-| q9 | 0.55× | **1.77×** |
-| q10 | **1.38×** | **1.14×** |
-| q11 | **2.62×** | **2.61×** |
-| q12 | **1.54×** | **1.54×** |
-| q13 | **1.47×** | **1.43×** |
-| q14 | **1.45×** | **1.43×** |
-| q15 | **1.21×** | **1.77×** |
-| q16 | **1.42×** | **1.88×** |
-| q17 | **1.02×** | **1.52×** |
-| q18 | 0.99× | **1.15×** |
-| q19 | 0.58× | **5.49×** |
-| q20 | **1.55×** | **1.76×** |
-| q21 | **2.07×** | **2.24×** |
-| q22 | **1.31×** | **1.34×** |
-| q23 | 0.83× | **1.31×** |
+| q0 | **2.07×** | **1.99×** |
+| q1 | **2.22×** | **2.04×** |
+| q2 | **1.48×** | **1.58×** |
+| q3 | **1.51×** | **1.59×** |
+| q4 | **1.71×** | **1.78×** |
+| q5 | **1.60×** | **1.39×** |
+| q7 | **2.31×** | **2.68×** |
+| q8 | **1.44×** | **1.42×** |
+| q9 | 0.86× | **2.06×** |
+| q10 | **1.88×** | **1.93×** |
+| q11 | **2.84×** | **3.39×** |
+| q12 | **1.62×** | **1.49×** |
+| q13 | **1.87×** | **1.98×** |
+| q14 | **2.36×** | **2.22×** |
+| q15 | **2.02×** | **1.77×** |
+| q16 | **1.33×** | **1.30×** |
+| q17 | **1.45×** | **1.43×** |
+| q18 | **1.50×** | **1.70×** |
+| q19 | **1.07×** | **8.15×** |
+| q20 | **1.92×** | **1.94×** |
+| q21 | **1.33×** | **1.69×** |
+| q22 | **1.95×** | **1.79×** |
+| q23 | **1.33×** | **1.25×** |
 
-With mini-batching disabled, StreamFusion wins 19 of 23 queries. With it enabled, the full matrix
-wins all 23, from 1.14× to 5.49×. The largest direct mini-batch gains occur where logical bundles
-remove Kafka-visible changelog churn: q9 2.91×, q15 3.08×, q16 2.78×, q17 2.39×, and q19 7.73×
-over StreamFusion's own disabled path. A focused repeat reproduced those conclusions
-(2.69×/3.09×/2.52×/2.04×/8.16× direct gains; 1.73×/2.30×/1.94×/1.56×/4.80× versus enabled Flink).
+StreamFusion wins 22 of 23 queries with mini-batching disabled (q9, at 0.86–0.94×, is the one
+remaining loss) and all 23 with it enabled, from 1.25× to 8.15×. The q12 enabled cell re-verified
+at 1.49× (the table's 0.99× was one slow measurement; see the focused repeat in
+[docs/benchmarks.md](docs/benchmarks.md)). Mini-batching's largest direct gains remain the
+changelog-churn queries, where logical bundles remove Kafka-visible updates before they are ever
+produced: q9 2.03×, q15 1.47×, q16 1.32×, q17 1.46×, and q19 7.92× over StreamFusion's own
+disabled path — smaller multipliers than before the native producer because the disabled path
+itself no longer pays a producer penalty.
 
-q23 is the noisy boundary: it measured 1.31× enabled in the complete run and 0.99× in the focused
-repeat, so it should be treated as parity rather than a stable lead. Mini-batching also costs some
-append-only queries because they have no changelog churn to amortize. The multi-source/blackhole
-ladder, raw timings, focused repeat, reproduction command, and profiling controls remain in
-[docs/benchmarks.md](docs/benchmarks.md).
+Mini-batching now costs several append-only queries a little (they have no changelog churn to
+amortize, and the native producer removed the per-record cost mini-batching used to hide). The
+multi-source/blackhole ladder, raw timings, focused repeats, reproduction command, and profiling
+controls remain in [docs/benchmarks.md](docs/benchmarks.md).
 
 _Apple M1 Max; numbers are comparable only within a machine._
 

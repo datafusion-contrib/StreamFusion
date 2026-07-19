@@ -1,10 +1,13 @@
 # Plan: Native exactly-once Kafka producer (native data plane, Java commit plane)
 
-Status: Phases 0A/0B/0C/1/2/3 complete and Phase 4 substantially complete as of 2026-07-19 (41
-tests green: hand-off contract, sink integration incl. commit-phase failover and downscale restore,
-plan-shape, translators). Open: Phase 5 (release-build benchmark + optimizations.md entry),
-cross-client SASL/TLS tests under the security part of the property contract, and POOLING/LISTING
-as a separate parity phase. All work is uncommitted in the working tree pending review.
+Status: Phases 0A–5 complete as of 2026-07-19 and shipped (see `git log` from `494ff02`). The
+headline exactly-once Kafka Nexmark matrix runs on the native producer: 22-of-23 wins with
+mini-batching off (1.07–2.84x; q9 at 0.86–0.94x is the one loss), 23-of-23 on (1.25–8.15x) —
+after the produce-path parity fixes in `42adbaa` (see `docs/optimizations.md` and
+`docs/benchmarks.md`). Open: cross-client SASL/TLS tests under the security part of the property
+contract, POOLING/LISTING as a separate parity phase, committer-side producer reuse if commit-path
+cost ever measures, an upstream librdkafka ARM hardware-CRC32C contribution, and closing q9's
+remaining off-mode gap.
 
 Research snapshots:
 
@@ -122,7 +125,7 @@ producer construction.
 | `compression.type` | librdkafka alias to `compression.codec` | Verify requested codec is compiled into the static build. |
 | codec-specific compression levels | translate the selected codec's level to `compression.level` | Fall back for conflicting/multiple explicit level controls. |
 | `linger.ms` | supported alias | Explicitly pin Kafka 4.2's 5 ms default. |
-| `batch.size` | same name | Explicitly pin Kafka 4.2's 16,384-byte default; librdkafka otherwise uses 1,000,000. |
+| `batch.size` | same name, no pinned default | librdkafka's batch.size caps the whole MessageSet (Java's is a per-partition accumulator target); pinning Java's 16,384 default measured ~4x slower produce drain (2026-07-19 probe). librdkafka keeps its 1MB default; explicit user values pass through. |
 | `delivery.timeout.ms` | alias to `message.timeout.ms` | Explicitly pin 120,000 ms. With a transactional ID librdkafka otherwise expands it to the one-hour transaction timeout. |
 | `request.timeout.ms` | same name | Pin 30,000 ms and test timeout classification. |
 | `transaction.timeout.ms` | same name | Apply Flink builder's one-hour default before translation; preserve explicit override. |
@@ -133,11 +136,12 @@ producer construction.
 | `client.dns.lookup` | same-name values | Pin Kafka's value and integration-test multi-address and canonical-name modes. |
 | `socket.connection.setup.timeout.ms` | same name | Pin Kafka's initial timeout. The Java `*.max.ms` cap has no exact native control and is an explicit-property fallback initially. |
 | `max.request.size` | `message.max.bytes` plus native serialized-record validation | librdkafka's request-size enforcement is not identical; reject oversize records at the writer boundary to match Java. |
-| `buffer.memory` | `queue.buffering.max.kbytes` plus writer accounting | Byte-to-KiB conversion is approximate in librdkafka; enforce a Java-compatible byte budget in StreamFusion. |
+| `buffer.memory` | `queue.buffering.max.kbytes` plus `queue.buffering.max.messages=0` | Java bounds its accumulator by bytes alone; librdkafka's default 100K message-count cap binds ~3x earlier for small records, so it is disabled and the byte budget governs. |
 | `max.block.ms` | native enqueue/metadata deadline | No config-only equivalent. On `QueueFull`, poll/wait with a deadline and surface failure after the same 60 s default. |
 | default partitioner | runtime `murmur2_random` for keyed records | Exact Java Murmur2 keyed placement. Null-key sticky/adaptive selection cannot yield the identical partition sequence across different clients; preserve Kafka's distribution semantics, not trace identity. |
 | explicit record partition | pass directly on produce | Exact. |
 | SASL PLAIN/SCRAM/Kerberos and supported SSL PEM | translate with shared security helpers | Integration-test produce and Java commit under the same credentials. |
+| (runtime-owned) `socket.nagle.disable` | pinned `true` | kafka-clients hardcodes TCP_NODELAY on every connection; librdkafka leaves Nagle on by default, stalling the produce request/ack cycle behind delayed ACKs. |
 | `key.serializer`, `value.serializer` | reserved; native produces bytes | Accept only the builder's ByteArray serializers. Any custom serializer falls back. |
 | `transactional.id` | runtime-owned per epoch | Reject a user property; derive only from Flink's transactional ID prefix/naming strategy. |
 | `partitioner.class`, `interceptor.classes` | unsupported Java callbacks | Fall back when nonempty; never ignore them. |
