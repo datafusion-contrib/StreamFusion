@@ -24,8 +24,11 @@ import org.apache.flink.api.common.state.CheckpointListener;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.ExternalizedCheckpointRetention;
 import org.apache.flink.configuration.RestartStrategyOptions;
+import org.apache.flink.configuration.StateRecoveryOptions;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
@@ -38,7 +41,10 @@ import org.apache.flink.types.Row;
 import org.apache.flink.util.CloseableIterator;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.TransactionListing;
+import org.apache.kafka.clients.admin.TransactionState;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -496,6 +502,189 @@ class NativeKafkaSinkIntegrationTest {
     }
   }
 
+  @Test
+  void commitsExactlyOnceWhenFailoverStrikesTheCommitPhase() throws Exception {
+    FAILED_ONCE.set(false);
+    int rows = 300;
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
+            .withEnv("KAFKA_TRANSACTION_MAX_TIMEOUT_MS", "7200000")) {
+      kafka.start();
+      String topic = "native-sink-commit-crash-" + UUID.randomUUID();
+      StreamExecutionEnvironment environment =
+          StreamExecutionEnvironment.getExecutionEnvironment();
+      environment.setParallelism(1);
+      environment.enableCheckpointing(50);
+      Configuration configuration = new Configuration();
+      configuration.set(RestartStrategyOptions.RESTART_STRATEGY, "fixed-delay");
+      configuration.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_ATTEMPTS, 1);
+      configuration.set(
+          RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_DELAY, Duration.ofMillis(10));
+      environment.configure(configuration);
+      StreamTableEnvironment table = StreamTableEnvironment.create(environment);
+      DataStream<Row> source =
+          environment
+              .fromData(
+                  Types.ROW_NAMED(new String[] {"id", "name"}, Types.LONG, Types.STRING),
+                  rowRange(rows).toArray(Row[]::new))
+              .map(new CommitPhaseFailingMap())
+              .returns(
+                  Types.ROW_NAMED(new String[] {"id", "name"}, Types.LONG, Types.STRING));
+      table.createTemporaryView(
+          "src",
+          source,
+          Schema.newBuilder()
+              .column("id", DataTypes.BIGINT())
+              .column("name", DataTypes.STRING())
+              .build());
+      table.executeSql(
+          "CREATE TABLE output (id BIGINT, name STRING) WITH ("
+              + "'connector' = 'kafka', 'topic' = '"
+              + topic
+              + "', 'properties.bootstrap.servers' = '"
+              + kafka.getBootstrapServers()
+              + "', 'format' = 'json', "
+              + "'sink.delivery-guarantee' = 'exactly-once', "
+              + "'sink.transactional-id-prefix' = 'native-sink-commit-crash')");
+      PhysicalPlanScan scan = NativePlanner.install(table);
+
+      table.executeSql("INSERT INTO output SELECT * FROM src").await();
+
+      // The failure races the committer inside the same checkpoint-completion notification:
+      // whichever side of the commit it lands on, recovery must yield exactly the input.
+      assertTrue(FAILED_ONCE.get(), "job never failed during the commit phase");
+      assertTrue(scan.substitutions() > 0, scan::explainSummary);
+      List<String> committed = consumeCommitted(kafka.getBootstrapServers(), topic, rows);
+      assertEquals(rows, committed.size(), "commit-phase failover lost or duplicated records");
+      assertEquals(rows, new HashSet<>(committed).size(), "committed records must be unique");
+    }
+  }
+
+  @Test
+  void restoresDownscaledExactlyOnceWriterFromRetainedCheckpoint(@TempDir Path checkpoints)
+      throws Exception {
+    FAILED_ONCE.set(false);
+    // Parallelism 2 halves each subtask's share, so the failure window (a completed checkpoint
+    // plus 100 post-completion records on one subtask) needs a larger input to open reliably.
+    int rows = 600;
+    String prefix = "native-sink-downscale";
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
+            .withEnv("KAFKA_TRANSACTION_MAX_TIMEOUT_MS", "7200000")) {
+      kafka.start();
+      String topic = "native-sink-downscale-" + UUID.randomUUID();
+
+      try {
+        runDownscaleJob(kafka.getBootstrapServers(), topic, prefix, rows, 2, checkpoints, null);
+      } catch (Exception expectedFailure) {
+        // Restart is disabled: the intentional post-checkpoint failure terminates the job,
+        // leaving a retained checkpoint with parallelism-2 writer state behind.
+      }
+      assertTrue(FAILED_ONCE.get(), "first job never exercised the intentional failure");
+      Path retained = latestRetainedCheckpoint(checkpoints);
+
+      runDownscaleJob(kafka.getBootstrapServers(), topic, prefix, rows, 1, checkpoints, retained);
+
+      List<String> committed = consumeCommitted(kafka.getBootstrapServers(), topic, rows);
+      assertEquals(rows, committed.size(), "downscaled restore lost or duplicated records");
+      assertEquals(rows, new HashSet<>(committed).size(), "committed records must be unique");
+      assertNoOngoingTransactions(kafka.getBootstrapServers(), prefix);
+    }
+  }
+
+  private static void runDownscaleJob(
+      String brokers,
+      String topic,
+      String prefix,
+      int rows,
+      int parallelism,
+      Path checkpoints,
+      Path restoreFrom)
+      throws Exception {
+    Configuration configuration = new Configuration();
+    configuration.set(RestartStrategyOptions.RESTART_STRATEGY, "disable");
+    configuration.set(
+        CheckpointingOptions.CHECKPOINTS_DIRECTORY, checkpoints.toUri().toString());
+    configuration.set(
+        CheckpointingOptions.EXTERNALIZED_CHECKPOINT_RETENTION,
+        ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION);
+    if (restoreFrom != null) {
+      configuration.set(StateRecoveryOptions.SAVEPOINT_PATH, restoreFrom.toUri().toString());
+    }
+    StreamExecutionEnvironment environment =
+        StreamExecutionEnvironment.getExecutionEnvironment(configuration);
+    environment.setParallelism(parallelism);
+    environment.enableCheckpointing(50);
+    StreamTableEnvironment table = StreamTableEnvironment.create(environment);
+    DataStream<Row> source =
+        environment
+            .fromData(
+                Types.ROW_NAMED(new String[] {"id", "name"}, Types.LONG, Types.STRING),
+                rowRange(rows).toArray(Row[]::new))
+            .uid("downscale-source")
+            // Failing inside the completion notification is guaranteed to fire before a bounded
+            // exactly-once job can finish (finishing requires a final completed checkpoint), so
+            // the first job always leaves a retained checkpoint behind.
+            .map(new CommitPhaseFailingMap())
+            .returns(Types.ROW_NAMED(new String[] {"id", "name"}, Types.LONG, Types.STRING))
+            .uid("downscale-map");
+    table.createTemporaryView(
+        "src",
+        source,
+        Schema.newBuilder()
+            .column("id", DataTypes.BIGINT())
+            .column("name", DataTypes.STRING())
+            .build());
+    table.executeSql(
+        "CREATE TABLE output (id BIGINT, name STRING) WITH ("
+            + "'connector' = 'kafka', 'topic' = '"
+            + topic
+            + "', 'properties.bootstrap.servers' = '"
+            + brokers
+            + "', 'format' = 'json', "
+            + "'sink.delivery-guarantee' = 'exactly-once', "
+            + "'sink.transactional-id-prefix' = '"
+            + prefix
+            + "')");
+    NativePlanner.install(table);
+    table.executeSql("INSERT INTO output SELECT * FROM src").await();
+  }
+
+  private static List<Row> rowRange(int rows) {
+    List<Row> input = new ArrayList<>(rows);
+    for (long id = 0; id < rows; id++) {
+      input.add(Row.of(id, "row-" + id));
+    }
+    return input;
+  }
+
+  private static Path latestRetainedCheckpoint(Path checkpoints) throws Exception {
+    try (var stream = Files.walk(checkpoints)) {
+      return stream
+          .filter(path -> path.getFileName().toString().equals("_metadata"))
+          .map(Path::getParent)
+          .max(
+              java.util.Comparator.comparingLong(
+                  chk -> Long.parseLong(chk.getFileName().toString().substring("chk-".length()))))
+          .orElseThrow(() -> new AssertionError("no retained checkpoint found"));
+    }
+  }
+
+  private static void assertNoOngoingTransactions(String brokers, String prefix)
+      throws Exception {
+    Properties properties = new Properties();
+    properties.setProperty(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
+    try (Admin admin = Admin.create(properties)) {
+      List<String> ongoing =
+          admin.listTransactions().all().get().stream()
+              .filter(listing -> listing.transactionalId().startsWith(prefix))
+              .filter(listing -> listing.state() == TransactionState.ONGOING)
+              .map(TransactionListing::transactionalId)
+              .toList();
+      assertTrue(ongoing.isEmpty(), () -> "transactions left open after restore: " + ongoing);
+    }
+  }
+
   private static List<String> consumeCommitted(String brokers, String topic, int expected) {
     return consume(brokers, topic, expected, "read_committed");
   }
@@ -593,6 +782,50 @@ class NativeKafkaSinkIntegrationTest {
       }
     }
     return records;
+  }
+
+  /**
+   * Fails the task inside the checkpoint-completion notification itself — the window where the
+   * committer is (or is about to be) committing — instead of on the record path.
+   */
+  private static final class CommitPhaseFailingMap extends RichMapFunction<Row, Row>
+      implements CheckpointedFunction, CheckpointListener {
+
+    private transient ListState<Long> state;
+    private long seen;
+
+    @Override
+    public Row map(Row value) throws Exception {
+      seen++;
+      java.util.concurrent.locks.LockSupport.parkNanos(2_000_000);
+      return value;
+    }
+
+    @Override
+    public void notifyCheckpointComplete(long checkpointId) {
+      if (seen >= 100 && FAILED_ONCE.compareAndSet(false, true)) {
+        throw new RuntimeException("intentional failure during the commit phase");
+      }
+    }
+
+    @Override
+    public void snapshotState(FunctionSnapshotContext context) throws Exception {
+      state.clear();
+      state.add(seen);
+    }
+
+    @Override
+    public void initializeState(FunctionInitializationContext context) throws Exception {
+      state =
+          context
+              .getOperatorStateStore()
+              .getListState(new ListStateDescriptor<>("next", Long.class));
+      if (context.isRestored()) {
+        for (long restored : state.get()) {
+          seen = restored;
+        }
+      }
+    }
   }
 
   private static final class CheckpointFailingMap extends RichMapFunction<Row, Row>
