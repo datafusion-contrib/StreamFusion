@@ -59,8 +59,10 @@ class NativeKafkaTransactionHandoffTest {
       createTopic(bootstrap, topic);
 
       long handle = openNativeProducer(bootstrap, transactionalId, 60_000);
-      long[] identity = new long[2];
-      NativeKafka.initKafkaTransactions(handle, TIMEOUT_MS, identity);
+      NativeKafka.initKafkaTransactions(handle, TIMEOUT_MS, new long[2]);
+      // The coordinator is the authoritative identity source; the statistics tick is advisory.
+      TransactionDescription initialized = describeTransaction(bootstrap, transactionalId);
+      long[] identity = new long[] {initialized.producerId(), initialized.producerEpoch()};
       assertTrue(identity[0] >= 0, "producer id assigned");
       assertTrue(identity[1] >= 0, "epoch assigned");
 
@@ -68,14 +70,13 @@ class NativeKafkaTransactionHandoffTest {
       for (int i = 0; i < 5; i++) {
         NativeKafka.produceKafkaRecord(handle, topic, bytes("key-" + i), bytes("value-" + i));
       }
-      long[] flushedIdentity = new long[2];
-      NativeKafka.flushKafkaProducer(handle, TIMEOUT_MS, flushedIdentity);
-      assertArrayEquals(identity, flushedIdentity, "identity stable across the epoch");
+      long[] flushedIdentity = flushUntilAdvisoryIdentity(handle);
+      assertArrayEquals(identity, flushedIdentity, "statistics cross-check matches coordinator");
 
       TransactionDescription described = describeTransaction(bootstrap, transactionalId);
       assertEquals(TransactionState.ONGOING, described.state());
-      assertEquals(identity[0], described.producerId(), "statistics producer id matches broker");
-      assertEquals(identity[1], described.producerEpoch(), "statistics epoch matches broker");
+      assertEquals(identity[0], described.producerId(), "producer id stable across the epoch");
+      assertEquals(identity[1], described.producerEpoch(), "epoch stable across the epoch");
 
       assertEquals(5, consume(bootstrap, topic, "read_uncommitted", 5).size());
       assertTrue(
@@ -178,19 +179,64 @@ class NativeKafkaTransactionHandoffTest {
     }
   }
 
+  @Test
+  void failsFastWhenBrokersAreUnreachable() {
+    long handle =
+        NativeKafka.openTransactionalKafkaProducer(
+            KafkaProducerConfigTranslator.ABI_VERSION,
+            new String[] {"bootstrap.servers", "transaction.timeout.ms", "statistics.interval.ms"},
+            new String[] {"127.0.0.1:1", "5000", "50"},
+            "unreachable-" + UUID.randomUUID(),
+            2_000,
+            1_048_576);
+    try {
+      long started = System.nanoTime();
+      assertThrows(
+          Exception.class, () -> NativeKafka.initKafkaTransactions(handle, 2_000, new long[2]));
+      long elapsedMillis = (System.nanoTime() - started) / 1_000_000;
+      assertTrue(
+          elapsedMillis < 30_000,
+          "init against an unreachable broker must fail within its timeout, took "
+              + elapsedMillis
+              + "ms");
+    } finally {
+      NativeKafka.closeKafkaProducer(handle);
+    }
+  }
+
   /** Opens a native producer, writes one flushed-but-uncommitted transaction, and destroys it. */
   private static long[] writeFlushedTransaction(
-      String bootstrap, String topic, String transactionalId, int transactionTimeoutMs) {
+      String bootstrap, String topic, String transactionalId, int transactionTimeoutMs)
+      throws Exception {
     long handle = openNativeProducer(bootstrap, transactionalId, transactionTimeoutMs);
-    long[] identity = new long[2];
-    NativeKafka.initKafkaTransactions(handle, TIMEOUT_MS, identity);
+    NativeKafka.initKafkaTransactions(handle, TIMEOUT_MS, new long[2]);
     NativeKafka.beginKafkaTransaction(handle);
     for (int i = 0; i < 3; i++) {
       NativeKafka.produceKafkaRecord(handle, topic, null, bytes("orphan-" + i));
     }
-    NativeKafka.flushKafkaProducer(handle, TIMEOUT_MS, identity);
+    NativeKafka.flushKafkaProducer(handle, TIMEOUT_MS, new long[2]);
     NativeKafka.closeKafkaProducer(handle);
-    return identity;
+    TransactionDescription described = describeTransaction(bootstrap, transactionalId);
+    return new long[] {described.producerId(), described.producerEpoch()};
+  }
+
+  /**
+   * Re-flushes (idempotent once the queue is drained) until the advisory statistics identity has
+   * been observed, pinning that the cross-check channel really carries the identity.
+   */
+  private static long[] flushUntilAdvisoryIdentity(long handle) throws Exception {
+    long[] advisory = new long[2];
+    long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+    while (true) {
+      NativeKafka.flushKafkaProducer(handle, TIMEOUT_MS, advisory);
+      if (advisory[0] >= 0) {
+        return advisory;
+      }
+      if (System.nanoTime() >= deadline) {
+        throw new AssertionError("statistics advisory identity never observed");
+      }
+      Thread.sleep(100);
+    }
   }
 
   private static long openNativeProducer(

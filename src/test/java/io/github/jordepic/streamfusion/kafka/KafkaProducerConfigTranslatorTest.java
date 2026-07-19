@@ -24,7 +24,7 @@ class KafkaProducerConfigTranslatorTest {
     assertEquals("32768", nativeConfig.get("queue.buffering.max.kbytes"));
     assertEquals("1048576", nativeConfig.get("message.max.bytes"));
     assertEquals("murmur2_random", nativeConfig.get("partitioner"));
-    assertEquals("1000", nativeConfig.get("statistics.interval.ms"));
+    assertEquals("100", nativeConfig.get("statistics.interval.ms"));
     assertEquals("3600000", result.javaProperties().getProperty("transaction.timeout.ms"));
   }
 

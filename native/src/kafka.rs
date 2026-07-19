@@ -1727,10 +1727,10 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_be
 /// the checkpoint completes. Destroying this producer sends neither commit nor abort — the broker
 /// keeps the transaction ONGOING — which is exactly what the hand-off relies on.
 ///
-/// librdkafka reveals the producer id/epoch only through the statistics callback, so the config
-/// must set `statistics.interval.ms`. Timer-driven statistics are the spike's capture mechanism,
-/// cross-checked by the Java side against the transaction coordinator (describeTransactions); a
-/// deterministic accessor is the Phase 0B follow-up.
+/// The producer identity is sourced authoritatively from the transaction coordinator by the Java
+/// host (describeTransactions) after `init_transactions` returns. librdkafka's statistics callback
+/// (`statistics.interval.ms`) supplies an advisory copy used purely as an epoch-bump cross-check —
+/// nothing correctness-bearing waits on the timer-driven tick.
 #[cfg(feature = "kafka")]
 pub(crate) struct KafkaTransactionalProducer {
     producer: rdkafka::producer::ThreadedProducer<TxnProducerContext>,
@@ -1812,26 +1812,17 @@ impl KafkaTransactionalProducer {
         })
     }
 
-    /// Runs `init_transactions` and waits for the statistics tick that carries the assigned
-    /// producer id/epoch (the ThreadedProducer's poll thread delivers the callback).
+    /// Runs `init_transactions` and returns the identity if a statistics tick has already carried
+    /// it, else `(-1, -1)`. The identity here is advisory: the authoritative source is the
+    /// transaction coordinator itself, which the Java host queries (describeTransactions) after
+    /// this returns — so nothing blocks on the timer-driven statistics callback.
     fn init_transactions(&self, timeout: std::time::Duration) -> Result<(i64, i64), String> {
         use rdkafka::producer::Producer;
 
         self.producer
             .init_transactions(timeout)
             .map_err(|error| format!("init_transactions failed: {error}"))?;
-        let deadline = std::time::Instant::now() + timeout;
-        loop {
-            if let Some(identity) = *self.shared.identity.lock().unwrap() {
-                return Ok(identity);
-            }
-            if std::time::Instant::now() >= deadline {
-                return Err("timed out waiting for the producer identity statistics tick; \
-                            the producer config must set statistics.interval.ms"
-                    .to_string());
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
+        Ok(self.shared.identity.lock().unwrap().unwrap_or((-1, -1)))
     }
 
     fn begin_transaction(&self) -> Result<(), String> {
@@ -1903,10 +1894,11 @@ impl KafkaTransactionalProducer {
         }
     }
 
-    /// Flushes every buffered record and returns the identity the flushed transaction runs under.
-    /// Fails if any delivery failed — such an epoch must never become a committable. The returned
-    /// identity is the latest statistics capture; the Java caller validates it against the
-    /// transaction coordinator before relying on it.
+    /// Flushes every buffered record and returns the latest statistics-observed identity, or
+    /// `(-1, -1)` if no tick has carried one yet. Fails if any delivery failed — such an epoch
+    /// must never become a committable. The identity is an advisory cross-check: the Java host
+    /// compares it against the coordinator-authoritative identity captured at warm-up, and an
+    /// epoch bump additionally surfaces as an abortable transaction error on this flush.
     fn flush(&self, timeout: std::time::Duration) -> Result<(i64, i64), String> {
         use rdkafka::producer::Producer;
 
@@ -1916,11 +1908,7 @@ impl KafkaTransactionalProducer {
         if let Some(error) = self.shared.delivery_error.lock().unwrap().clone() {
             return Err(format!("record delivery failed: {error}"));
         }
-        self.shared
-            .identity
-            .lock()
-            .unwrap()
-            .ok_or_else(|| "producer identity unknown after flush".to_string())
+        Ok(self.shared.identity.lock().unwrap().unwrap_or((-1, -1)))
     }
 
     fn byte_count(&self) -> u64 {

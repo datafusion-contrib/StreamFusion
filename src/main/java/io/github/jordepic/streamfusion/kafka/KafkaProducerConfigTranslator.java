@@ -230,9 +230,11 @@ public final class KafkaProducerConfigTranslator {
       out.put("sasl.mechanisms", out.remove("sasl.mechanism"));
     }
 
-    // Runtime-owned settings are appended after user translation and cannot be overridden.
+    // Runtime-owned settings are appended after user translation and cannot be overridden. The
+    // statistics tick is the only channel librdkafka reveals the producer id/epoch through, and
+    // producer warm-up blocks on the first tick, so the interval directly bounds warm-up latency.
     out.put("partitioner", "murmur2_random");
-    out.put("statistics.interval.ms", "1000");
+    out.put("statistics.interval.ms", "100");
     return Result.translated(javaProperties, out, maxBlockMs, maxRequestSize, bufferMemory);
   }
 

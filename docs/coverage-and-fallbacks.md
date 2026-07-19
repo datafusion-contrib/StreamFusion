@@ -442,20 +442,30 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
     streaming-mode rejection.
   - A **changelog (retracting) input** — defense-in-depth; Flink's own validation rejects it first.
 - **Filesystem sink, non-Parquet format** — any non-Parquet sink format falls back.
-- **Kafka JSON sink** — a fixed-topic JSON table serializes each Arrow batch natively and hands the
-  final key/value bytes to Flink's unmodified `KafkaSink`. Ordinary `kafka` tables support
-  value-only insert streams. `upsert-kafka` tables support the default primary-key projection and
+- **Kafka JSON sink** — a fixed-topic JSON table runs natively in one of two shapes. With
+  **exactly-once delivery and incremental transaction naming**, the whole data plane is native: Rust
+  serializes and produces each Arrow batch inside a librdkafka transaction, flushes it at the
+  checkpoint barrier, and surfaces the transaction's (producer id, epoch) as a real Flink
+  `KafkaCommittable`; Flink's stock committer, checkpoint-completion commit, recovery re-commit,
+  and probing abort remain the host's own contract (see divergence 26 for why the commit stays in
+  Java). The producer identity is read authoritatively from the transaction coordinator
+  (`DescribeTransactions`, KIP-664), so the native exactly-once sink requires brokers ≥ 3.0 — on an
+  older cluster the writer fails at startup with the admin error; use the Java sink there.
+  Producer properties are normalized against kafka-clients' defaults and translated to
+  librdkafka one classified key at a time — a property outside the classification is a planner
+  fallback, never silently dropped. With **`none`/`at-least-once` delivery**, serialization is
+  native and the final key/value bytes feed Flink's unmodified `KafkaSink`, whose producer,
+  parallelism, and metrics contracts apply verbatim. Ordinary `kafka` tables support value-only
+  insert streams. `upsert-kafka` tables support the default primary-key projection and
   default `ALL` value projection: INSERT/UPDATE_AFTER rows carry a JSON value, while
   UPDATE_BEFORE/DELETE rows carry a Kafka tombstone. Serialization uses the declared sink field
-  names even when the input plan uses generated expression names. Delivery
-  guarantees (`none`/`at-least-once`/`exactly-once`), producer properties, transactional ID prefix,
-  transaction naming strategy, sink parallelism, checkpoint/recovery commit and abort, and Kafka
-  metrics therefore remain Flink's own contract. The serialization boundary separately reports
-  native batch, row, byte, and elapsed-nanosecond counters, so encoding cost can be distinguished
-  from producer and checkpoint cost. Broker tests pin committed output both normally and across a
-  post-checkpoint failover, pin an updating aggregate's exactly-once upsert state, and pin a native
-  Kafka source-to-sink plan with no RowData transpose at either edge. The native serializer
-  currently covers BOOLEAN,
+  names even when the input plan uses generated expression names. The sink boundary separately
+  reports native batch, row, byte, and flush-nanosecond counters, so encoding cost can be
+  distinguished from producer and checkpoint cost. Broker tests pin committed output both normally
+  and across a post-checkpoint failover, pin an updating aggregate's exactly-once upsert state, pin
+  a native Kafka source-to-sink plan with no RowData transpose at either edge, and pin the
+  cross-client transaction hand-off itself (commit, duplicate-commit idempotency, fencing, and
+  broker timeout reaping). The native serializer currently covers BOOLEAN,
   TINYINT/SMALLINT/INT/BIGINT, FLOAT/DOUBLE, CHAR/VARCHAR, BINARY/VARBINARY, DECIMAL, DATE, TIME,
   TIMESTAMP, and TIMESTAMP_LTZ (SQL or ISO-8601), including `encode.ignore-null-fields`. Every sink
   fallback cause:
@@ -466,7 +476,14 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
     ability;
   - a changelog input to ordinary `kafka`, a column outside the verified scalar family above, or an
     unrecognized delivery/transaction option;
-  - missing `properties.bootstrap.servers`, or exactly-once without a transactional ID prefix.
+  - missing `properties.bootstrap.servers`, or exactly-once without a transactional ID prefix;
+  - exactly-once with a transaction naming strategy other than `INCREMENTING` (`POOLING` is a
+    planned follow-up);
+  - exactly-once with a producer property the native translator cannot guarantee parity for: an
+    unclassified/unknown key, `transactional.id` (owned by Flink's naming strategy),
+    `enable.idempotence=false`, custom serializers/partitioner/interceptors, non-default adaptive
+    partitioning or `partitioner.ignore.keys=true`, `batch.size=0`, JKS or other
+    non-PEM security material, or a config kafka-clients itself rejects.
 - **Kafka** — missing `streamfusion-kafka` or the matching `streamfusion-*` format JAR; a value format
   outside JSON/CSV/raw/bare-Avro/`avro-confluent`/protobuf; a `key.format`;
   a `scan.bounded.mode` other than unbounded/latest-offset; protobuf fields needing representation

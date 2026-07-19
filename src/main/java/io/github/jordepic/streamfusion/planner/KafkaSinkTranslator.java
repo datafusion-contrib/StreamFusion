@@ -1,5 +1,6 @@
 package io.github.jordepic.streamfusion.planner;
 
+import io.github.jordepic.streamfusion.kafka.KafkaProducerConfigTranslator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -51,6 +52,7 @@ final class KafkaSinkTranslator {
     final Integer parallelism;
     final Map<String, String> jsonOptions;
     final boolean upsert;
+    final KafkaProducerConfigTranslator.Result nativeProducerConfig;
 
     private Planned(
         String topic,
@@ -60,7 +62,8 @@ final class KafkaSinkTranslator {
         TransactionNamingStrategy transactionNamingStrategy,
         Integer parallelism,
         Map<String, String> jsonOptions,
-        boolean upsert) {
+        boolean upsert,
+        KafkaProducerConfigTranslator.Result nativeProducerConfig) {
       this.topic = topic;
       this.producerProperties = producerProperties;
       this.deliveryGuarantee = deliveryGuarantee;
@@ -69,6 +72,7 @@ final class KafkaSinkTranslator {
       this.parallelism = parallelism;
       this.jsonOptions = jsonOptions;
       this.upsert = upsert;
+      this.nativeProducerConfig = nativeProducerConfig;
     }
   }
 
@@ -135,6 +139,17 @@ final class KafkaSinkTranslator {
     if (!producer.containsKey("bootstrap.servers")) {
       return Result.fallback("properties.bootstrap.servers is required");
     }
+    KafkaProducerConfigTranslator.Result nativeProducerConfig = null;
+    if (guarantee == DeliveryGuarantee.EXACTLY_ONCE) {
+      if (naming != TransactionNamingStrategy.INCREMENTING) {
+        return Result.fallback(
+            "native exactly-once producer currently requires incremental transaction naming");
+      }
+      nativeProducerConfig = KafkaProducerConfigTranslator.translate(producer);
+      if (!nativeProducerConfig.isTranslated()) {
+        return Result.fallback(nativeProducerConfig.fallbackReason().orElseThrow());
+      }
+    }
 
     Map<String, String> jsonOptions = new LinkedHashMap<>();
     options.forEach(
@@ -158,7 +173,8 @@ final class KafkaSinkTranslator {
             naming,
             parallelism,
             jsonOptions,
-            upsert));
+            upsert,
+            nativeProducerConfig));
   }
 
   private static boolean isZeroDuration(String value) {

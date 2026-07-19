@@ -1,5 +1,6 @@
 package io.github.jordepic.streamfusion.planner;
 
+import io.github.jordepic.streamfusion.kafka.NativeKafkaExactlyOnceSink;
 import io.github.jordepic.streamfusion.kafka.NativeKafkaJsonSerializationOperator;
 import io.github.jordepic.streamfusion.kafka.PreSerializedKafkaRecord;
 import io.github.jordepic.streamfusion.kafka.PreSerializedKafkaRecordSchema;
@@ -52,8 +53,35 @@ public final class NativeKafkaSinkExecNode extends ExecNodeBase<Object>
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     boolean parallelismConfigured = planned.sink.parallelism != null;
-    int parallelism =
-        parallelismConfigured ? planned.sink.parallelism : input.getParallelism();
+    int parallelism = parallelismConfigured ? planned.sink.parallelism : input.getParallelism();
+    if (planned.sink.nativeProducerConfig != null) {
+      NativeKafkaExactlyOnceSink nativeSink =
+          new NativeKafkaExactlyOnceSink(
+              planned.sink.topic,
+              planned.sink.transactionalIdPrefix,
+              planned.sink.nativeProducerConfig.javaProperties(),
+              planned.sink.nativeProducerConfig.nativeConfig(),
+              planned.sink.nativeProducerConfig.maxBlockMs(),
+              planned.sink.nativeProducerConfig.maxRequestSize(),
+              planned.ignoreNullFields,
+              planned.timestampFormat,
+              planned.rowType.getChildren().stream().map(Object::toString).toArray(String[]::new),
+              planned.rowType.getFieldNames().toArray(String[]::new),
+              planned.keyFields,
+              planned.valueFields,
+              planned.upsert);
+      DataStream<ArrowBatch> nativeStream = new DataStream<>(planner.getExecEnv(), input);
+      DataStreamSink<ArrowBatch> nativeDataSink =
+          nativeStream
+              .sinkTo(nativeSink)
+              .name("native-kafka-exactly-once-sink")
+              // The transactional-id prefix is unique and stable per sink, so it pins the writer
+              // and committer operator ids across restores and rescale (Flink derives the
+              // committer uid from the sink uid).
+              .uid("native-kafka-exactly-once-sink-" + planned.sink.transactionalIdPrefix)
+              .setParallelism(parallelism);
+      return (Transformation<Object>) (Transformation<?>) nativeDataSink.getTransformation();
+    }
     OneInputTransformation<ArrowBatch, PreSerializedKafkaRecord> serialization =
         new OneInputTransformation<>(
             input,

@@ -28,6 +28,8 @@ class KafkaSinkTranslatorTest {
     assertEquals(DeliveryGuarantee.EXACTLY_ONCE, result.planned().deliveryGuarantee);
     assertEquals("orders", result.planned().transactionalIdPrefix);
     assertEquals("lz4", result.planned().producerProperties.getProperty("compression.type"));
+    assertEquals(
+        "lz4", result.planned().nativeProducerConfig.nativeConfig().get("compression.type"));
     assertEquals(3, result.planned().parallelism);
   }
 
@@ -58,14 +60,28 @@ class KafkaSinkTranslatorTest {
     assertTrue(result.fallbackReason().orElseThrow().contains("transactional-id-prefix"));
   }
 
+  @Test
+  void fallsBackWhenAProducerPropertyCannotRunNatively() {
+    KafkaSinkTranslator.Result result =
+        KafkaSinkTranslator.translate(
+            Map.of(
+                "topic", "output",
+                "properties.bootstrap.servers", "broker:9092",
+                "properties.interceptor.classes", "com.example.AuditInterceptor",
+                "format", "json",
+                "sink.delivery-guarantee", "exactly-once",
+                "sink.transactional-id-prefix", "orders"));
+    assertFalse(result.isTranslated());
+    assertTrue(result.fallbackReason().orElseThrow().contains("interceptor.classes"));
+  }
+
   private static void assertFallback(Map<String, String> options, String expected) {
     KafkaSinkTranslator.Result result = KafkaSinkTranslator.translate(options);
     assertFalse(result.isTranslated());
     assertTrue(result.fallbackReason().orElseThrow().contains(expected));
   }
 
-  private static Map<String, String> with(
-      Map<String, String> base, String key, String value) {
+  private static Map<String, String> with(Map<String, String> base, String key, String value) {
     java.util.HashMap<String, String> copy = new java.util.HashMap<>(base);
     copy.put(key, value);
     return copy;
