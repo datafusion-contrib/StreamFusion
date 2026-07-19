@@ -835,11 +835,18 @@ class NexmarkMatrixBenchmark {
     PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
     String suffix = q.label + "-" + java.util.UUID.randomUUID();
     tEnv.executeSql(kafkaSinkDdl(q, brokers, "nexmark-output-" + suffix));
-    String plan = tEnv.explainSql(q.insertSql);
+    String plan =
+        tEnv.explainSql(
+            q.insertSql, org.apache.flink.table.api.ExplainDetail.JSON_EXECUTION_PLAN);
     long start = System.nanoTime();
     tEnv.executeSql(q.insertSql).await();
     double seconds = (System.nanoTime() - start) / 1e9;
-    if (nativeRun && (!plan.contains("NativeKafkaSink") || scan.substitutions() < 2)) {
+    // The exec-node name covers both sink shapes; the transformation name pins that the fully
+    // native exactly-once producer engaged rather than the encode-only Java-KafkaSink shape.
+    if (nativeRun
+        && (!plan.contains("NativeKafkaSink")
+            || !plan.contains("native-kafka-exactly-once-sink")
+            || scan.substitutions() < 2)) {
       throw new IllegalStateException(
           q.label + ": native Kafka source/sink did not engage. " + scan.explainSummary());
     }
