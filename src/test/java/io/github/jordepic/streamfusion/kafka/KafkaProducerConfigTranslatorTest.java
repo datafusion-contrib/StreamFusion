@@ -18,7 +18,11 @@ class KafkaProducerConfigTranslatorTest {
     KafkaProducerConfigTranslator.Result result = translated(props("bootstrap.servers", "b:9092"));
     Map<String, String> nativeConfig = result.nativeConfig();
     assertEquals("3600000", nativeConfig.get("transaction.timeout.ms"));
-    assertEquals("16384", nativeConfig.get("batch.size"));
+    // librdkafka's batch.size caps the whole MessageSet, unlike Java's per-partition target, so
+    // no default is pinned across (pinning Java's 16384 measured ~4x slower produce throughput).
+    assertEquals(null, nativeConfig.get("batch.size"));
+    assertEquals("0", nativeConfig.get("queue.buffering.max.messages"));
+    assertEquals("true", nativeConfig.get("socket.nagle.disable"));
     assertEquals("5", nativeConfig.get("linger.ms"));
     assertEquals("120000", nativeConfig.get("delivery.timeout.ms"));
     assertEquals("32768", nativeConfig.get("queue.buffering.max.kbytes"));

@@ -123,6 +123,10 @@ public final class NativeKafka {
 
   public static native void abortKafkaTransaction(long handle, long timeoutMillis);
 
+  /** Diagnostic-only: produces {@code count} copies of one record inside a single JNI call. */
+  public static native void produceKafkaRecordRepeated(
+      long handle, String topic, byte[] value, long count);
+
   /**
    * Destroys the producer without committing or aborting: an open flushed transaction stays ongoing
    * on the broker for the Java committer to finish.

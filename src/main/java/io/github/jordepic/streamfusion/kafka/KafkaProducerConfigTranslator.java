@@ -69,7 +69,10 @@ public final class KafkaProducerConfigTranslator {
     DEFAULTS.put("acks", "all");
     DEFAULTS.put("retries", String.valueOf(Integer.MAX_VALUE));
     DEFAULTS.put("compression.type", "none");
-    DEFAULTS.put("batch.size", "16384");
+    // batch.size is deliberately NOT defaulted across: kafka-clients' 16384 is a per-partition
+    // accumulator target, while librdkafka's batch.size caps the whole MessageSet — pinning the
+    // Java default measured ~4x slower produce throughput (2026-07-19 producer probe). librdkafka
+    // keeps its own 1MB default; an explicit user value still passes through by name.
     DEFAULTS.put("linger.ms", "5");
     DEFAULTS.put("delivery.timeout.ms", "120000");
     DEFAULTS.put("request.timeout.ms", "30000");
@@ -209,6 +212,11 @@ public final class KafkaProducerConfigTranslator {
     long maxBlockMs = longValue(javaProperties, "max.block.ms", 60_000);
     long bufferMemory = longValue(javaProperties, "buffer.memory", 32L * 1024 * 1024);
     out.put("message.max.bytes", String.valueOf(maxRequestSize));
+    // Java's accumulator is bounded by bytes alone (buffer.memory); librdkafka additionally caps
+    // message count at 100K by default, which binds ~3x earlier for small records and turns into
+    // producer backpressure Java would not apply. Disable the count cap so the byte budget is the
+    // only bound, matching kafka-clients semantics.
+    out.put("queue.buffering.max.messages", "0");
     out.put(
         "queue.buffering.max.kbytes", String.valueOf(Math.max(1, (bufferMemory + 1023) / 1024)));
 
@@ -218,7 +226,7 @@ public final class KafkaProducerConfigTranslator {
       out.put("compression.level", javaProperties.getProperty(levelKey));
     }
 
-    if ("0".equals(out.get("batch.size"))) {
+    if ("0".equals(javaProperties.getProperty("batch.size"))) {
       return Result.fallback("batch.size=0 has no librdkafka equivalent");
     }
 
@@ -235,6 +243,9 @@ public final class KafkaProducerConfigTranslator {
     // producer warm-up blocks on the first tick, so the interval directly bounds warm-up latency.
     out.put("partitioner", "murmur2_random");
     out.put("statistics.interval.ms", "100");
+    // kafka-clients hardcodes TCP_NODELAY on every connection; librdkafka leaves Nagle enabled by
+    // default, which stalls the produce request/ack cycle behind delayed ACKs.
+    out.put("socket.nagle.disable", "true");
     return Result.translated(javaProperties, out, maxBlockMs, maxRequestSize, bufferMemory);
   }
 

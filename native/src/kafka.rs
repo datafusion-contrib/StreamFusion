@@ -1886,7 +1886,10 @@ impl KafkaTransactionalProducer {
                             self.max_block.as_millis()
                         ));
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    // The wait must be fine-grained: at 10ms the producing thread spent ~80% of a
+                    // full-queue epoch asleep (q15 differential profile, 2026-07-19); 1ms keeps
+                    // the retry close to the queue's actual drain granularity.
+                    std::thread::sleep(std::time::Duration::from_millis(1));
                     record = returned;
                 }
                 Err((error, _)) => return Err(format!("produce to {topic} failed: {error}")),
@@ -2181,4 +2184,34 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_cl
     handle: jlong,
 ) {
     drop(unsafe { from_handle::<KafkaTransactionalProducer>(handle) });
+}
+
+/// Diagnostic-only (producer throughput probe): produces `count` copies of one record inside a
+/// single JNI call, isolating librdkafka's drain rate from per-record JNI crossing cost.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_produceKafkaRecordRepeated<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    topic: JString<'local>,
+    value: JByteArray<'local>,
+    count: jlong,
+) {
+    kafka_jni(&mut env, (), |env| {
+        let producer = unsafe { &*(handle as *const KafkaTransactionalProducer) };
+        let topic: String = env
+            .get_string(&topic)
+            .map_err(|error| format!("failed to read topic: {error}"))?
+            .into();
+        let value = env
+            .convert_byte_array(&value)
+            .map_err(|error| format!("failed to read record value: {error}"))?;
+        for _ in 0..count {
+            producer.produce(&topic, None, Some(&value))?;
+        }
+        Ok(())
+    });
 }
