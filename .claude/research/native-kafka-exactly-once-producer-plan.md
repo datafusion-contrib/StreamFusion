@@ -1,6 +1,10 @@
 # Plan: Native exactly-once Kafka producer (native data plane, Java commit plane)
 
-Status: design and local-source audit complete 2026-07-17; implementation not started.
+Status: Phases 0A/0B/0C/1/2/3 complete and Phase 4 substantially complete as of 2026-07-19 (41
+tests green: hand-off contract, sink integration incl. commit-phase failover and downscale restore,
+plan-shape, translators). Open: Phase 5 (release-build benchmark + optimizations.md entry),
+cross-client SASL/TLS tests under the security part of the property contract, and POOLING/LISTING
+as a separate parity phase. All work is uncommitted in the working tree pending review.
 
 Research snapshots:
 
@@ -291,6 +295,16 @@ smallest appropriate layer (prefer rust-rdkafka backed by a public librdkafka AP
 minimal pinned patch and propose it upstream). Do not ship timer-driven statistics polling as the sole
 correctness source.
 
+*Done 2026-07-19 — resolved without patching librdkafka.* The transaction coordinator itself is the
+authoritative identity source: the warmer thread calls `Admin.describeTransactions(txnId)`
+(KIP-664) right after native `init_transactions` and the committable is built from the
+coordinator's answer — by definition the identity `EndTxn` will be validated against, and a plain
+bounded RPC off the barrier path. The statistics tick is demoted to an advisory cross-check: native
+init/flush no longer wait on it, and flush fails if an observed identity disagrees with the
+authoritative one (an epoch bump also independently surfaces as an abortable transaction error).
+This adds the broker ≥ 3.0 requirement recorded in coverage. A vendored librdkafka accessor patch
+is no longer needed for correctness; upstreaming one remains optional for observability only.
+
 **Phase 0C — producer configuration inventory.** Implement the classification table against kafka-clients
 4.2.0's complete ProducerConfig set. Unit-test normalization, Flink's one-hour timeout default, aliases,
 unit conversions, reserved keys, secret redaction, and fallback for every unsupported category. Add
@@ -304,12 +318,64 @@ Rust/broker tests.
 stock committer, backchannel, and probing abort. Tests for normal completion, empty epochs, restart commit,
 restart abort, rescale/downscale, authentication failure, and commit retry.
 
+*2026-07-18* — `NativeKafkaExactlyOnceSink` built (native batch produce; real `KafkaCommittable`s;
+stock committer/serializers via a delegate `KafkaSink`; backchannel drain; PROBING abort with
+empty/skipped-checkpoint transaction probing so the INCREMENTING chain stays dense) and wired into
+the planner behind the property translator (exactly-once + INCREMENTING only; every untranslatable
+property is a named fallback). Green: translator/plan unit tests including JSON-execution-plan
+shape assertions (EO plans the native sink transformation, non-EO provably keeps the encode-only
+shape), plus the full broker suite — 3 hand-off tests and all 8 sink integration tests including
+committed-output across a post-checkpoint failover. Still owed from the Phase 2 test list:
+rescale/downscale, authentication failure, and commit-retry cases (Phase 4 covers the crash
+matrix).
+
+*2026-07-18, producer pre-warming* — each epoch's one-shot producer is now created and
+`init_transactions`-initialized on a per-writer single-thread warmer as soon as the previous
+barrier assigns the next transactional id; the first write just takes the handle and begins.
+Warming a fresh INCREMENTING id can never fence a pending transaction. Consequences: the
+empty-checkpoint Java probe became a fallback (the warm-up's init already initializes the id, and
+a producer destroyed before its first record leaves nothing on the broker); `init_transactions` is
+bounded by `max.block.ms` (kafka-clients parity), not the transaction timeout; the runtime-owned
+`statistics.interval.ms` dropped 1000→100 since it directly bounds warm-up latency. Hard-won
+lifecycle rules, enforced by the integration tests' native-handle leak checks: checkpoints after
+end of input run `snapshotState` without `prepareCommit`, so an unconsumed warm-up must be
+released when the next epoch is prepared and no new warm-up should start once input ended; the
+writer's `close()` drains the in-flight warm-up synchronously (bounded, with async release as the
+unreachable-broker fallback so cancellation cannot hang); the single-threaded FIFO warmer
+guarantees a released stale warm-up frees its producer before a newer drain completes. Suite went
+from 121s to 86s wall-clock with init off the barrier path.
+
 **Phase 3 — planner and coverage.** Exact eligibility/fallback reasons, native plan assertions, full
 property-parity tests, committed-output parity (append and upsert), and documentation updates.
 
 **Phase 4 — failure matrix.** Inject failure before barrier, after native flush, after checkpoint
 completion, during Java commit, and after commit acknowledgement. Assert no duplicates/loss with
 `read_committed`, no leaked transactions after restore, and stock-equivalent exception classification.
+
+*2026-07-19 status — matrix rows and their pins:*
+- *Crash before the barrier (uncommitted records):* `restoresNativeKafkaInputAcrossExactlyOnceFailover`
+  and `abortsReplayedTransactionsAcrossFailover` (record-path failure after a completed checkpoint;
+  replayed records invisible, committed output unique).
+- *Crash during the commit phase (checkpoint complete, commit racing):*
+  `commitsExactlyOnceWhenFailoverStrikesTheCommitPhase` — fails inside the completion notification,
+  landing on either side of the committer's `EndTxn`; both outcomes must (and do) yield exactly-once.
+  This is the crash-after-completion-before/during-commit case Arroyo loses.
+- *Crash after native flush but before checkpoint completion:* no dedicated deterministic injection —
+  Flink offers no hook inside the async completion window. Covered at protocol level by the hand-off
+  fencing test (a flushed, abandoned transaction is fenced by restore probing and never becomes
+  visible) and exercised probabilistically by the failover tests; accepted as sufficient.
+- *Duplicate commit / commit retry after acknowledgement:* hand-off test pins broker-side idempotency
+  of a replayed `EndTxn`; retriable-vs-fatal classification is stock `KafkaCommitter` (upstream-tested),
+  and the fenced/timeout classifications are pinned broker-level by the hand-off tests.
+- *Downscale restore:* `restoresDownscaledExactlyOnceWriterFromRetainedCheckpoint` — parallelism 2 job
+  fails in the commit phase leaving a retained checkpoint; a parallelism 1 job restores it, commits
+  exactly-once, and `listTransactions` proves no transaction with the sink's prefix is left ONGOING.
+  This surfaced a production fix: the sink transformation now sets an explicit uid derived from the
+  transactional-id prefix, so the writer and derived committer operator ids survive rescale (without
+  it, position-generated hashes shift with chaining and restore fails on operator mapping).
+- *Connectivity/auth failure:* `failsFastWhenBrokersAreUnreachable` pins bounded, clean startup
+  failure (no hang, no handle leak) against an unreachable endpoint. Cross-client SASL/TLS testing
+  remains with the security phase of the property contract.
 
 **Phase 5 — performance and profiles.** Criterion-test the native encode+produce primitives and run the
 release `-Pbench` exactly-once Kafka Nexmark matrix against the same cluster/config for stock Flink and
