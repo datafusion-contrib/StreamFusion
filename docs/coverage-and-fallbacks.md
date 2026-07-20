@@ -486,7 +486,20 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
     non-PEM security material, or a config kafka-clients itself rejects.
 - **Kafka** — missing `streamfusion-kafka` or the matching `streamfusion-*` format JAR; a value format
   outside JSON/CSV/raw/bare-Avro/`avro-confluent`/protobuf; a `key.format`;
-  a `scan.bounded.mode` other than unbounded/latest-offset; protobuf fields needing representation
+  a `scan.bounded.mode` other than unbounded/latest-offset; a consumer property the translator
+  cannot map faithfully — the contract is fail-closed like the sink's (vanilla Flink forwards
+  arbitrary `properties.*` keys and kafka-clients merely warns on unknown ones; the native source
+  instead classifies every supplied key against kafka-clients 4.2's `ConsumerConfig`, guard-tested,
+  and falls back on anything unclassified). Java-owned coordination keys (Flink's
+  `client.id.prefix`/discovery/commit-on-checkpoint options, deserializers, group-membership and
+  assignment machinery that never engages under manual assignment, reader-call tuning like
+  `max.poll.records`) are honored on the JVM side and deliberately not forwarded. Falling back:
+  client plugins (`interceptor.classes`, metric reporters, `config.providers`,
+  `security.providers`), all `sasl.login.*`/`sasl.oauthbearer.*` (OAUTHBEARER needs the Java
+  client), Kerberos ticket-renewal tuning, JVM-specific SSL machinery (protocol/algorithm
+  selection, engine factories, inline PEM strings, JKS/PKCS#12 stores needing conversion),
+  `metadata.recovery.*`, an unrecognized JAAS login module, an unmappable `auto.offset.reset`
+  (`by_duration:...`), and any unknown key; protobuf fields needing representation
   reconciliation (enum/unsigned/bytes/proto3-defaults/well-known types); **`ignore-parse-errors` on a
   protobuf table** (Flink skips malformed messages; that native decoder fails on them — the
   JSON-decoded formats honor the per-message skip, and CSV reproduces Flink's finer per-field

@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -77,6 +78,7 @@ public final class KafkaConfigTranslator {
     "retry.backoff.ms",
     "retry.backoff.max.ms",
     "security.protocol",
+    "client.dns.lookup",
     "sasl.mechanism", // also emitted under the librdkafka plural name below
     "sasl.kerberos.service.name",
     "sasl.kerberos.kinit.cmd",
@@ -125,20 +127,120 @@ public final class KafkaConfigTranslator {
               "reconnect.backoff.ms", new String[] {"reconnect.backoff.ms", "50"},
               "reconnect.backoff.max.ms", new String[] {"reconnect.backoff.max.ms", "1000"}));
 
-  // Java keys with no librdkafka analog: their presence (non-default) forces a fallback.
-  private static final String[] NO_ANALOG = {
-    "ssl.protocol",
-    "ssl.enabled.protocols",
-    "ssl.keymanager.algorithm",
-    "ssl.trustmanager.algorithm",
-  };
+  // Security material consumed (converted, not copied) by translateSecurity.
+  private static final Set<String> SECURITY_INPUTS =
+      Set.of(
+          "sasl.jaas.config",
+          "ssl.truststore.location",
+          "ssl.truststore.type",
+          "ssl.keystore.location",
+          "ssl.keystore.type");
+
+  // Keys owned by the Java side of the native source — the shared Flink enumerator (discovery,
+  // startup-offset resolution) and the reader wrapper — or forced by Flink's own builder. They are
+  // deliberately not forwarded to librdkafka: the machinery they configure either runs on the JVM
+  // for the native path too, or never engages because both clients use manual assignment.
+  private static final Set<String> JAVA_OWNED =
+      Set.of(
+          // Flink KafkaSource keys injected by the connector/builder, not kafka-clients keys.
+          "client.id.prefix",
+          "partition.discovery.interval.ms",
+          "register.consumer.metrics",
+          "commit.offsets.on.checkpoint",
+          // Flink always forces ByteArray deserializers; user values are overridden on the Java
+          // path as well.
+          "key.deserializer",
+          "value.deserializer",
+          // Subscribe/group-membership machinery: both the Java KafkaSource and the native reader
+          // use manual assignment, and topic discovery runs in the shared Java enumerator.
+          "exclude.internal.topics",
+          "group.protocol",
+          "group.remote.assignor",
+          "partition.assignment.strategy",
+          "share.acknowledgement.mode",
+          "share.acquire.mode",
+          // Java-consumer call scheduling with no data-affecting semantics on the native reader:
+          // it batches by its own poll cap, and enumerator-side API calls keep Java behavior.
+          "max.poll.records",
+          "default.api.timeout.ms",
+          // enable.auto.commit is forced false on both paths, so the interval never engages.
+          "auto.commit.interval.ms");
+
+  // Java keys with no faithful librdkafka analog: their presence forces a fallback.
+  private static final Set<String> NO_ANALOG =
+      Set.of(
+          "ssl.protocol",
+          "ssl.enabled.protocols",
+          "ssl.keymanager.algorithm",
+          "ssl.trustmanager.algorithm",
+          "ssl.engine.factory.class",
+          "ssl.provider",
+          "ssl.secure.random.implementation",
+          "ssl.keystore.key",
+          "ssl.keystore.certificate.chain",
+          "ssl.truststore.certificates",
+          "ssl.truststore.password",
+          "sasl.client.callback.handler.class",
+          "sasl.kerberos.ticket.renew.window.factor",
+          "sasl.kerberos.ticket.renew.jitter",
+          "interceptor.classes",
+          "metric.reporters",
+          "config.providers",
+          "security.providers",
+          "metadata.recovery.strategy",
+          "metadata.recovery.rebootstrap.trigger.ms",
+          "socket.connection.setup.timeout.max.ms");
+
+  /**
+   * Why {@code key} cannot run natively, or null when it is classified (translated, converted
+   * security material, or deliberately Java-owned). Vanilla Flink forwards arbitrary
+   * {@code properties.*} keys and kafka-clients merely warns on unknown ones; the native path is
+   * fail-closed instead — an unclassified key keeps the whole table on Flink with this reason,
+   * because a key librdkafka interprets differently is worse than one it does not know.
+   */
+  private static String unsupportedReason(String key) {
+    if (NO_ANALOG.contains(key)) {
+      return "no librdkafka equivalent for " + key;
+    }
+    if (key.startsWith("sasl.login.") || key.startsWith("sasl.oauthbearer.")) {
+      return "OAUTHBEARER/login-callback SASL requires the Java consumer (" + key + ")";
+    }
+    if (key.startsWith("metrics.") || key.startsWith("internal.")) {
+      return "no librdkafka equivalent for " + key;
+    }
+    for (String passthrough : PASSTHROUGH) {
+      if (passthrough.equals(key)) {
+        return null;
+      }
+    }
+    if (RENAMED.containsKey(key)
+        || DEFAULT_PINS.containsKey(key)
+        || SECURITY_INPUTS.contains(key)
+        || JAVA_OWNED.contains(key)
+        || "auto.offset.reset".equals(key)) {
+      return null;
+    }
+    return "unsupported Kafka consumer property " + key;
+  }
+
+  /** The supplied keys the native contract covers, used by the upgrade guard test. */
+  static Set<String> classifiedKeys() {
+    Set<String> keys = new java.util.LinkedHashSet<>(java.util.List.of(PASSTHROUGH));
+    keys.addAll(RENAMED.keySet());
+    keys.addAll(DEFAULT_PINS.keySet());
+    keys.addAll(SECURITY_INPUTS);
+    keys.addAll(JAVA_OWNED);
+    keys.add("auto.offset.reset");
+    return keys;
+  }
 
   public static Result translate(Properties props) {
     Map<String, String> out = new LinkedHashMap<>();
 
-    for (String key : NO_ANALOG) {
-      if (props.containsKey(key)) {
-        return Result.fallback("no librdkafka equivalent for " + key);
+    for (String key : props.stringPropertyNames()) {
+      String reason = unsupportedReason(key);
+      if (reason != null) {
+        return Result.fallback(reason);
       }
     }
 

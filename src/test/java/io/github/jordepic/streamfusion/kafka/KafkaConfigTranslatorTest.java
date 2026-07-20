@@ -164,4 +164,65 @@ class KafkaConfigTranslatorTest {
     assertTrue(
         fallback(props("ssl.trustmanager.algorithm", "PKIX")).contains("ssl.trustmanager.algorithm"));
   }
+
+  @Test
+  void refusesJavaClientPluginsAndUnknownProperties() {
+    assertTrue(fallback(props("interceptor.classes", "com.example.I")).contains("interceptor"));
+    assertTrue(
+        fallback(props("sasl.login.callback.handler.class", "com.example.H"))
+            .contains("sasl.login.callback.handler.class"));
+    assertTrue(
+        fallback(props("sasl.oauthbearer.token.endpoint.url", "https://idp/token"))
+            .contains("sasl.oauthbearer.token.endpoint.url"));
+    assertTrue(fallback(props("metrics.recording.level", "DEBUG")).contains("metrics."));
+    assertTrue(
+        fallback(props("unknown.property", "value")).contains("unknown.property"));
+  }
+
+  @Test
+  void ignoresJavaOwnedCoordinationKeysWithoutForwardingThem() {
+    Map<String, String> c =
+        translated(
+            props(
+                "bootstrap.servers", "b:9092",
+                "partition.discovery.interval.ms", "60000",
+                "client.id.prefix", "my-source",
+                "commit.offsets.on.checkpoint", "true",
+                "max.poll.records", "100",
+                "partition.assignment.strategy", "org.apache.kafka.clients.consumer.RoundRobinAssignor"));
+    assertEquals("b:9092", c.get("bootstrap.servers"));
+    assertFalse(c.containsKey("partition.discovery.interval.ms"));
+    assertFalse(c.containsKey("client.id.prefix"));
+    assertFalse(c.containsKey("commit.offsets.on.checkpoint"));
+    assertFalse(c.containsKey("max.poll.records"));
+    assertFalse(c.containsKey("partition.assignment.strategy"));
+  }
+
+  @Test
+  void everyKafka42ConsumerPropertyIsEitherClassifiedOrExplicitlyFallsBack() {
+    java.util.Set<String> flinkSourceKeys =
+        java.util.Set.of(
+            "client.id.prefix",
+            "partition.discovery.interval.ms",
+            "register.consumer.metrics",
+            "commit.offsets.on.checkpoint");
+    java.util.Set<String> nonKafkaKeys =
+        new java.util.LinkedHashSet<>(KafkaConfigTranslator.classifiedKeys());
+    nonKafkaKeys.removeAll(org.apache.kafka.clients.consumer.ConsumerConfig.configNames());
+    nonKafkaKeys.removeAll(flinkSourceKeys);
+    assertTrue(
+        nonKafkaKeys.isEmpty(),
+        () -> "classified keys absent from Kafka 4.2 and Flink's source options: " + nonKafkaKeys);
+    for (String key : org.apache.kafka.clients.consumer.ConsumerConfig.configNames()) {
+      if (KafkaConfigTranslator.classifiedKeys().contains(key)) {
+        continue;
+      }
+      java.util.Properties input = props("bootstrap.servers", "b:9092");
+      input.setProperty(key, "__explicit__");
+      KafkaConfigTranslator.Result result = KafkaConfigTranslator.translate(input);
+      assertFalse(
+          result.isTranslated(), () -> "new ConsumerConfig key needs classification: " + key);
+      assertTrue(result.fallbackReason().orElseThrow().contains(key));
+    }
+  }
 }
