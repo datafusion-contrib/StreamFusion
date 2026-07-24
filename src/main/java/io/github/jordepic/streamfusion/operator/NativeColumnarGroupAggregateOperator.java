@@ -3,8 +3,7 @@ package io.github.jordepic.streamfusion.operator;
 import io.github.jordepic.streamfusion.Native;
 import io.github.jordepic.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import io.github.jordepic.streamfusion.planner.NativeConfig;
-import io.github.jordepic.streamfusion.state.PaimonKeyedStateBackend;
-import io.github.jordepic.streamfusion.state.PaimonRestoredSource;
+import io.github.jordepic.streamfusion.state.PaimonNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
@@ -92,45 +91,26 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
     super.initializeState(context);
     java.util.List<byte[]> snapshots = RawKeyedState.restore(context);
     memoryBudget = ManagedMemoryBudget.reserveFor(this);
-    // The Paimon backend takes over only when the job selected it, this build carries it, the
-    // aggregate list is persistable, and no raw keyed state arrived (a checkpoint written by the
-    // memory backend restores on the memory backend — no silent migration).
-    PaimonKeyedStateBackend<?> paimonBackend =
-        getKeyedStateBackend() instanceof PaimonKeyedStateBackend
-            ? (PaimonKeyedStateBackend<?>) getKeyedStateBackend()
-            : null;
-    paimonState =
-        paimonBackend != null
-            && snapshots.isEmpty()
-            && Native.paimonStateAvailable()
-            && Native.paimonGroupAggregatorSupported(aggregateKinds, valueTypes);
+    PaimonNativeStateSupport paimon =
+        PaimonNativeStateSupport.resolve(
+            getKeyedStateBackend(),
+            "group aggregate",
+            !snapshots.isEmpty(),
+            () -> Native.paimonGroupAggregatorSupported(aggregateKinds, valueTypes));
+    paimonState = paimon != null;
     if (paimonState) {
-      java.util.List<PaimonRestoredSource> sources = paimonBackend.restoredSources();
-      String[] sourceDirs = new String[sources.size()];
-      long[] sourceSnapshots = new long[sources.size()];
-      for (int i = 0; i < sources.size(); i++) {
-        sourceDirs[i] = sources.get(i).directory();
-        sourceSnapshots[i] = sources.get(i).snapshotId();
-      }
       handle =
           Native.createPaimonGroupAggregator(
               aggregateKinds, valueTypes, valueColumns, keyColumns, keyTimestampPrecisions,
               filterColumns, countColumns, distinctViewColumns, recordCountColumn,
               generateUpdateBefore, miniBatch, memoryBudget.bytes(),
-              paimonBackend.tableDirectory(), maxParallelism,
+              paimon.tableDirectory(), maxParallelism,
               NativeConfig.paimonFileFormat(), NativeConfig.paimonFileCompression(),
-              sourceDirs, sourceSnapshots,
-              paimonBackend.getKeyGroupRange().getStartKeyGroup(),
-              paimonBackend.getKeyGroupRange().getEndKeyGroup());
+              paimon.sourceDirectories(), paimon.sourceSnapshotIds(),
+              paimon.keyGroupStart(), paimon.keyGroupEnd());
       long nativeHandle = handle;
-      paimonBackend.registerNativeState(
-          linkDir -> Native.checkpointPaimonGroupAggregator(nativeHandle, linkDir));
+      paimon.register(linkDir -> Native.checkpointPaimonGroupAggregator(nativeHandle, linkDir));
       return;
-    }
-    if (paimonBackend != null) {
-      LOG.info(
-          "group aggregate falls back to memory state under the Paimon backend "
-              + "(unsupported aggregate list, missing native feature, or raw-state restore)");
     }
     handle =
         snapshots.isEmpty()
