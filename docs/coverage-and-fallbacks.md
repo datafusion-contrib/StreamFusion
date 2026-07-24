@@ -599,3 +599,39 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 
   Every decline above surfaces through the usual channel — `NativePlanner.explain(...)` /
   `-Dstreamfusion.logFallbackReasons=true`.
+
+---
+
+## (c) State backend
+
+Native operator state is **memory-resident by default** and checkpointed as full raw keyed-state
+blobs. Selecting the **Paimon state backend** (`state.backend.type:
+io.github.jordepic.streamfusion.state.PaimonStateBackendFactory`) moves a supported operator's state
+into a local Apache Paimon primary-key table (Vortex data files) with **incremental checkpoints**:
+snapshots travel through the keyed-state backend as `IncrementalRemoteKeyedStateHandle`s, so a data
+file already uploaded by a completed checkpoint is referenced, not re-uploaded, and rescale
+reassigns whole bucket directories (bucket = Flink key group). JVM-side keyed state in the same job
+(fallback operators, timers) runs unchanged on the wrapped hashmap backend.
+
+What runs on the Paimon backend today, and every condition that keeps an operator on memory state
+(memory state remains correct — these are not query fallbacks, and the query still accelerates;
+the operator just checkpoints its state the old way, in full):
+
+- **Operator coverage** — only the non-windowed `GROUP BY` aggregate (single- and two-phase global)
+  so far. Every other stateful operator keeps memory state under this backend.
+- **Multiset-state aggregates** — retracting `MIN`/`MAX` and `COUNT`/`SUM(DISTINCT)` keep per-key
+  multisets, which the persistent row codec does not carry yet; an aggregate list containing them
+  keeps the whole operator on memory state.
+- **State scalar types** — an aggregate whose persisted scalar falls outside
+  boolean/tinyint/smallint/int/bigint/float/double/varchar/decimal/date/timestamp(3,6 non-LTZ)
+  keeps the operator on memory state.
+- **A restore from a memory-backend checkpoint** — raw keyed-state blobs restore on memory state;
+  there is no silent migration between backends.
+- **A native build without the `paimon-state` feature** — the backend probe answers unavailable and
+  operators keep memory state (never a linkage failure).
+- **Canonical savepoints** are rejected for Paimon-backed operators (`UnsupportedOperationException`);
+  native-format savepoints work (uploaded whole, no file sharing, restorable in CLAIM/NO_CLAIM).
+
+Tuning: `-Dstreamfusion.state.paimon.compaction-trigger` (default 8) bounds a bucket's live file
+count — a bucket over the trigger is rewritten into one merged file at the next checkpoint;
+`-Dstreamfusion.state.paimon.file-format` (default `vortex`) selects the data file format.
