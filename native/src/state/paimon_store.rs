@@ -27,13 +27,13 @@ use arrow::array::{Array, BinaryArray, Int32Array, Int8Array};
 use paimon::catalog::Identifier;
 use paimon::io::FileIO;
 use paimon::spec::{
-    BigIntType, BooleanType, DataField, DataFileMeta, DataType as PaimonType, Datum, DateType,
+    BigIntType, BooleanType, DataField, DataType as PaimonType, Datum, DateType,
     DecimalType, DoubleType, FloatType, IntType, PredicateBuilder, Schema as PaimonSchema,
     SmallIntType, TableSchema, TimestampType, TinyIntType, VarBinaryType, VarCharType,
     EMPTY_SERIALIZED_ROW,
 };
 use paimon::table::{CommitMessage, Table};
-use std::collections::{HashMap as StdHashMap, HashSet as StdHashSet};
+use std::collections::HashSet as StdHashSet;
 use std::sync::OnceLock;
 
 const KG_COLUMN: &str = "kg";
@@ -228,22 +228,29 @@ enum Slot<V> {
     Absent { dirty: bool },
 }
 
-/// Read-through Paimon-backed store, generic over the operator's value codec (see the module
-/// docs).
-pub(crate) struct PaimonStore<C: PaimonStateCodec> {
+/// The value-agnostic core every Paimon-backed store shares: table lifecycle, snapshot pinning,
+/// hydration scans, commits, rescale bucket adoption, and the checkpoint file protocol
+/// (listing, hard-links, local GC). The stores compose it with their own working sets and codecs.
+pub(crate) struct PaimonTableCore {
     table: Table,
     /// The table pinned at the last committed snapshot; probes read this.
     read_table: Option<Table>,
     read_snapshot: Option<i64>,
     fields: Vec<DataField>,
     config: PaimonStoreConfig,
+    /// Relative paths reachable from the last committed snapshot — the previous set minus the
+    /// current one is exactly what local GC may unlink after a commit.
+    live_files: StdHashSet<String>,
+}
+
+/// Read-through Paimon-backed store, generic over the operator's value codec (see the module
+/// docs).
+pub(crate) struct PaimonStore<C: PaimonStateCodec> {
+    core: PaimonTableCore,
     codec: C,
     /// The codec's value columns as Arrow fields, in persisted order after `kg`/`k`.
     value_fields: Vec<Field>,
     working: ahash::HashMap<ByteKey, Slot<C::Value>>,
-    /// Relative paths reachable from the last committed snapshot — the previous set minus the
-    /// current one is exactly what local GC may unlink after a commit.
-    live_files: StdHashSet<String>,
     footprint: isize,
 }
 
@@ -347,12 +354,9 @@ impl<C: PaimonStateCodec> KeyedStateStore<C::Value> for PaimonStore<C> {
     }
 }
 
-impl<C: PaimonStateCodec> PaimonStore<C> {
-    const SLOT_OVERHEAD: usize = std::mem::size_of::<Slot<C::Value>>() + GROUP_ENTRY_OVERHEAD;
-
+impl PaimonTableCore {
     /// Creates a fresh table under `config.table_dir` (schema document + directory skeleton).
-    pub(crate) fn create(config: PaimonStoreConfig, codec: C) -> Result<Self, DataFusionError> {
-        let schema = Self::paimon_schema(&config, &codec)?;
+    fn create(config: PaimonStoreConfig, schema: PaimonSchema) -> Result<Self, DataFusionError> {
         let table_schema = TableSchema::new(0, &schema);
         let file_io = Self::file_io(&config.table_dir)?;
         runtime().block_on(async {
@@ -374,30 +378,54 @@ impl<C: PaimonStateCodec> PaimonStore<C> {
                 .await
                 .map_err(pe)
         })?;
-        Self::open_at(config, codec, file_io, table_schema, None)
+        Self::open_at(config, file_io, table_schema, None)
     }
 
     /// Opens a table directory previously materialized from a checkpoint, pinned at its snapshot.
-    pub(crate) fn open(
-        config: PaimonStoreConfig,
-        codec: C,
-        snapshot_id: i64,
-    ) -> Result<Self, DataFusionError> {
+    fn open(config: PaimonStoreConfig, snapshot_id: i64) -> Result<Self, DataFusionError> {
         let file_io = Self::file_io(&config.table_dir)?;
         let table_schema = Self::latest_schema(&file_io, &config.table_dir)?;
-        Self::open_at(config, codec, file_io, table_schema, Some(snapshot_id))
+        Self::open_at(config, file_io, table_schema, Some(snapshot_id))
     }
 
-    /// Builds a fresh table at `config.table_dir` from one or more restored table directories
-    /// (rescale): every bucket in `key_groups` is adopted by hard-linking its data files and
-    /// committing their existing metadata — no row is read or rewritten.
-    pub(crate) fn open_merged(
+    fn open_at(
         config: PaimonStoreConfig,
-        codec: C,
+        file_io: FileIO,
+        table_schema: TableSchema,
+        snapshot_id: Option<i64>,
+    ) -> Result<Self, DataFusionError> {
+        let fields = table_schema.fields().to_vec();
+        let table = Table::new(
+            file_io,
+            Identifier::new("streamfusion", "state"),
+            config.table_dir.clone(),
+            table_schema,
+            None,
+        );
+        let mut core = PaimonTableCore {
+            read_table: None,
+            read_snapshot: None,
+            fields,
+            table,
+            config,
+            live_files: StdHashSet::new(),
+        };
+        if let Some(id) = snapshot_id {
+            core.read_snapshot = Some(id);
+            core.read_table = Some(Self::pin(&core.table, id));
+            core.live_files = core.reachable_files(id)?.into_iter().collect();
+        }
+        Ok(core)
+    }
+
+    /// Adopts every bucket in `key_groups` from one or more restored table directories (rescale):
+    /// their data files are hard-linked and committed by existing metadata — no row is read or
+    /// rewritten.
+    fn adopt_buckets(
+        &mut self,
         sources: &[(String, i64)],
         key_groups: std::ops::RangeInclusive<i32>,
-    ) -> Result<Self, DataFusionError> {
-        let mut store = Self::create(config, codec)?;
+    ) -> Result<(), DataFusionError> {
         let mut messages: Vec<CommitMessage> = Vec::new();
         for (source_dir, snapshot_id) in sources {
             let file_io = Self::file_io(source_dir)?;
@@ -419,7 +447,7 @@ impl<C: PaimonStateCodec> PaimonStore<C> {
                 if !key_groups.contains(&bucket) {
                     continue;
                 }
-                let bucket_dir = format!("{}/bucket-{}", store.config.table_dir, bucket);
+                let bucket_dir = format!("{}/bucket-{}", self.config.table_dir, bucket);
                 std::fs::create_dir_all(&bucket_dir).map_err(io)?;
                 for file in split.data_files() {
                     let from = format!("{}/bucket-{}/{}", source_dir, bucket, file.file_name);
@@ -436,58 +464,13 @@ impl<C: PaimonStateCodec> PaimonStore<C> {
             }
         }
         if !messages.is_empty() {
-            let builder = store.table.new_write_builder();
+            let builder = self.table.new_write_builder();
             runtime()
                 .block_on(builder.new_commit().commit(messages))
                 .map_err(pe)?;
-            store.refresh_after_commit()?;
+            self.refresh_after_commit()?;
         }
-        Ok(store)
-    }
-
-    fn open_at(
-        config: PaimonStoreConfig,
-        codec: C,
-        file_io: FileIO,
-        table_schema: TableSchema,
-        snapshot_id: Option<i64>,
-    ) -> Result<Self, DataFusionError> {
-        if !codec.supported() {
-            return Err(DataFusionError::Plan(
-                "state shape not supported by the paimon state backend".into(),
-            ));
-        }
-        let value_fields: Vec<Field> = codec
-            .value_fields()
-            .into_iter()
-            .map(|(name, data_type)| Field::new(name, data_type, true))
-            .collect();
-        let fields = table_schema.fields().to_vec();
-        let table = Table::new(
-            file_io,
-            Identifier::new("streamfusion", "state"),
-            config.table_dir.clone(),
-            table_schema,
-            None,
-        );
-        let mut store = PaimonStore {
-            read_table: None,
-            read_snapshot: None,
-            fields,
-            table,
-            config,
-            codec,
-            value_fields,
-            working: ahash::HashMap::default(),
-            live_files: StdHashSet::new(),
-            footprint: 0,
-        };
-        if let Some(id) = snapshot_id {
-            store.read_snapshot = Some(id);
-            store.read_table = Some(Self::pin(&store.table, id));
-            store.live_files = store.reachable_files(id)?.into_iter().collect();
-        }
-        Ok(store)
+        Ok(())
     }
 
     fn file_io(dir: &str) -> Result<FileIO, DataFusionError> {
@@ -512,236 +495,90 @@ impl<C: PaimonStateCodec> PaimonStore<C> {
         )
     }
 
-    fn paimon_schema(
+    /// The shared leading schema columns of every store: the key-group bucket column and the
+    /// BinaryRow key, plus the per-store columns appended by the caller.
+    fn schema_builder(
         config: &PaimonStoreConfig,
-        codec: &C,
-    ) -> Result<PaimonSchema, DataFusionError> {
-        let mut builder = PaimonSchema::builder()
+    ) -> Result<paimon::spec::SchemaBuilder, DataFusionError> {
+        Ok(PaimonSchema::builder()
             .column(KG_COLUMN, PaimonType::Int(IntType::new()))
             .column(
                 KEY_COLUMN,
                 PaimonType::VarBinary(
                     VarBinaryType::try_new(true, VarBinaryType::MAX_LENGTH).map_err(pe)?,
                 ),
-            );
-        for (name, data_type) in codec.value_fields() {
-            let paimon_type = paimon_type_of(&data_type).ok_or_else(|| {
-                DataFusionError::Plan(format!(
-                    "state type {data_type} not supported by the paimon state backend"
-                ))
-            })?;
-            builder = builder.column(name, paimon_type);
-        }
-        builder
-            .primary_key([KG_COLUMN, KEY_COLUMN])
+            )
             .option("bucket", &config.max_parallelism.to_string())
             .option("bucket-key", KG_COLUMN)
             .option("bucket-function.type", "mod")
             .option("file.format", &config.file_format)
             .option("file.compression", &config.file_compression)
-            .option("merge-engine", "deduplicate")
-            .build()
-            .map_err(pe)
-    }
-
-    /// The Arrow schema of persisted rows (also the write-batch schema, which additionally
-    /// carries `_VALUE_KIND`).
-    fn arrow_fields(&self) -> Vec<Field> {
-        let mut fields = vec![
-            Field::new(KG_COLUMN, DataType::Int32, false),
-            Field::new(KEY_COLUMN, DataType::Binary, false),
-        ];
-        fields.extend(self.value_fields.iter().cloned());
-        fields
+            .option("merge-engine", "deduplicate"))
     }
 
     fn key_group(&self, key: &ByteKey) -> i32 {
         flink_key_group(hash_bytes_by_words(&key.0), self.config.max_parallelism) as i32
     }
 
-    /// Probes the committed snapshot for the given missing keys and records every result —
-    /// present or absent — in the working set.
-    fn hydrate(&mut self, misses: Vec<ByteKey>) -> Result<(), DataFusionError> {
-        let mut found = 0usize;
-        if self.read_table.is_some() {
-            let buckets: StdHashSet<i32> = misses.iter().map(|k| self.key_group(k)).collect();
-            let key_set: StdHashSet<&[u8]> = misses.iter().map(|k| &*k.0).collect();
-            let predicate = PredicateBuilder::new(&self.fields)
-                .is_in(
-                    KEY_COLUMN,
-                    misses.iter().map(|k| Datum::Bytes(k.0.to_vec())).collect(),
-                )
-                .map_err(pe)?;
-            let read_table = self.read_table.as_ref().expect("pinned read table");
-            let mut builder = read_table.new_read_builder();
-            builder.with_filter(predicate);
-            let batches: Vec<RecordBatch> = runtime()
-                .block_on(async {
-                    let plan = builder.new_scan().plan().await?;
-                    let splits: Vec<_> = plan
-                        .splits()
-                        .iter()
-                        .filter(|split| buckets.contains(&split.bucket()))
-                        .cloned()
-                        .collect();
-                    let read = builder.new_read()?;
-                    let mut stream = read.to_arrow(&splits)?;
-                    let mut batches = Vec::new();
-                    use futures::StreamExt;
-                    while let Some(batch) = stream.next().await {
-                        batches.push(batch?);
-                    }
-                    Ok::<_, paimon::Error>(batches)
-                })
-                .map_err(pe)?;
-            for batch in batches {
-                found += self.absorb_probe_batch(&batch, &key_set)?;
-            }
+    /// Scans the pinned snapshot for every row whose key is in `misses` (bucket-filtered splits,
+    /// best-effort `is_in` pushdown — callers must re-check the key per row). Empty when no
+    /// snapshot is pinned yet.
+    fn scan_keys(&self, misses: &[ByteKey]) -> Result<Vec<RecordBatch>, DataFusionError> {
+        if self.read_table.is_none() {
+            return Ok(Vec::new());
         }
-        let mut added_bytes = 0usize;
-        for key in misses {
-            self.working.entry(key).or_insert_with(|| {
-                // Slot overhead only: if the operator creates this key, its own tracking charges
-                // the key and state bytes (see `end_bundle` for the split).
-                added_bytes += Self::SLOT_OVERHEAD;
-                Slot::Absent { dirty: false }
-            });
-        }
-        self.footprint += added_bytes as isize;
-        let _ = found;
-        Ok(())
-    }
-
-    /// Decodes probe rows into clean working-set entries, ignoring any row whose key was not
-    /// probed (predicate pushdown is best-effort, not exact, on every format).
-    fn absorb_probe_batch(
-        &mut self,
-        batch: &RecordBatch,
-        probed: &StdHashSet<&[u8]>,
-    ) -> Result<usize, DataFusionError> {
-        let expected = self.arrow_fields();
-        let key_index = 1;
-        let keys = normalized_column(batch, key_index, &expected[key_index])?;
-        let keys = keys
-            .as_any()
-            .downcast_ref::<BinaryArray>()
-            .ok_or_else(|| DataFusionError::Internal("paimon key column".into()))?;
-        let mut value_columns: Vec<ArrayRef> = Vec::with_capacity(self.value_fields.len());
-        for i in 0..self.value_fields.len() {
-            value_columns.push(normalized_column(batch, 2 + i, &expected[2 + i])?);
-        }
-        let mut added = 0usize;
-        let mut added_bytes = 0usize;
-        for row in 0..batch.num_rows() {
-            let key = keys.value(row);
-            if !probed.contains(key) || self.working.contains_key(key) {
-                continue;
-            }
-            let mut scalars: Vec<ScalarValue> = Vec::with_capacity(value_columns.len());
-            for column in &value_columns {
-                scalars.push(
-                    ScalarValue::try_from_array(column, row)
-                        .map_err(|e| DataFusionError::External(Box::new(e)))?,
-                );
-            }
-            let state = self.codec.decode(&scalars);
-            let owned = ByteKey::from(key);
-            added_bytes +=
-                byte_key_bytes(&owned.0) + self.codec.value_bytes(&state) + Self::SLOT_OVERHEAD;
-            self.working
-                .insert(owned, Slot::Present { state, dirty: false });
-            added += 1;
-        }
-        self.footprint += added_bytes as isize;
-        Ok(added)
-    }
-
-    /// Builds the write batch for all dirty slots: upserts carry the encoded state row, deletions
-    /// a `_VALUE_KIND = 3` tombstone. Returns `None` when nothing changed since the last commit.
-    fn dirty_batch(&self) -> Option<RecordBatch> {
-        let num_value = self.value_fields.len();
-        let mut kgs: Vec<i32> = Vec::new();
-        let mut keys: Vec<&[u8]> = Vec::new();
-        let mut values: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_value];
-        let mut kinds: Vec<i8> = Vec::new();
-        for (key, slot) in self.working.iter() {
-            match slot {
-                Slot::Present { state, dirty: true } => {
-                    kgs.push(self.key_group(key));
-                    keys.push(&key.0);
-                    for (i, scalar) in self.codec.encode(state).into_iter().enumerate() {
-                        values[i].push(scalar);
-                    }
-                    kinds.push(0); // +I upsert — deduplicate keeps the latest by sequence
+        let buckets: StdHashSet<i32> = misses.iter().map(|k| self.key_group(k)).collect();
+        let predicate = PredicateBuilder::new(&self.fields)
+            .is_in(
+                KEY_COLUMN,
+                misses.iter().map(|k| Datum::Bytes(k.0.to_vec())).collect(),
+            )
+            .map_err(pe)?;
+        let read_table = self.read_table.as_ref().expect("pinned read table");
+        let mut builder = read_table.new_read_builder();
+        builder.with_filter(predicate);
+        runtime()
+            .block_on(async {
+                let plan = builder.new_scan().plan().await?;
+                let splits: Vec<_> = plan
+                    .splits()
+                    .iter()
+                    .filter(|split| buckets.contains(&split.bucket()))
+                    .cloned()
+                    .collect();
+                let read = builder.new_read()?;
+                let mut stream = read.to_arrow(&splits)?;
+                let mut batches = Vec::new();
+                use futures::StreamExt;
+                while let Some(batch) = stream.next().await {
+                    batches.push(batch?);
                 }
-                Slot::Absent { dirty: true } => {
-                    kgs.push(self.key_group(key));
-                    keys.push(&key.0);
-                    for (i, field) in self.value_fields.iter().enumerate() {
-                        values[i].push(null_scalar(field.data_type()));
-                    }
-                    kinds.push(3); // -D tombstone
-                }
-                _ => {}
-            }
-        }
-        if keys.is_empty() {
-            return None;
-        }
-        let mut fields = self.arrow_fields();
-        fields.push(Field::new(VALUE_KIND_COLUMN, DataType::Int8, false));
-        let mut columns: Vec<ArrayRef> = vec![
-            Arc::new(Int32Array::from(kgs)),
-            Arc::new(BinaryArray::from_iter_values(keys)),
-        ];
-        for (i, field) in self.value_fields.iter().enumerate() {
-            columns.push(scalars_to_array(std::mem::take(&mut values[i]), field.data_type()));
-        }
-        columns.push(Arc::new(Int8Array::from(kinds)));
-        Some(
-            RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-                .expect("paimon dirty write batch"),
-        )
+                Ok::<_, paimon::Error>(batches)
+            })
+            .map_err(pe)
     }
 
-    /// Checkpoint sync phase, called at the barrier: commit the dirty
-    /// write buffer as the checkpoint's snapshot, hard-link the snapshot's reachable files under
-    /// `link_dir` (so uploads survive later local GC and compaction), garbage-collect local files
-    /// no longer reachable, and return the file manifest for the host to upload.
-    pub(crate) fn checkpoint(
+    /// Commits one write batch as a new snapshot and re-pins reads on it.
+    fn commit(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        let builder = self.table.new_write_builder();
+        runtime()
+            .block_on(async {
+                let mut write = builder.new_write()?;
+                write.write_arrow_batch(batch).await?;
+                let messages = write.prepare_commit().await?;
+                builder.new_commit().commit(messages).await
+            })
+            .map_err(pe)?;
+        self.refresh_after_commit()
+    }
+
+    /// The checkpoint file phase, after the dirty commit: hard-link the pinned snapshot's
+    /// reachable files under `link_dir` (so uploads survive later local GC and compaction),
+    /// garbage-collect local files no longer reachable, and return the manifest for upload.
+    fn checkpoint_manifest(
         &mut self,
         link_dir: &str,
     ) -> Result<PaimonCheckpointManifest, DataFusionError> {
-        // An external compactor (the Java Paimon glue) may have committed a maintenance snapshot
-        // just before this call: adopt the latest snapshot so the flush lands on top of it, the
-        // manifest lists it, and local GC sees its file set.
-        self.refresh_to_latest()?;
-        if let Some(batch) = self.dirty_batch() {
-            let builder = self.table.new_write_builder();
-            runtime()
-                .block_on(async {
-                    let mut write = builder.new_write()?;
-                    write.write_arrow_batch(&batch).await?;
-                    let messages = write.prepare_commit().await?;
-                    builder.new_commit().commit(messages).await
-                })
-                .map_err(pe)?;
-            self.refresh_after_commit()?;
-        }
-        // All dirty slots are durable now; drop them (pure read-through, no cache across bundles).
-        let footprint = &mut self.footprint;
-        let codec = &self.codec;
-        self.working.retain(|key, slot| {
-            match slot {
-                Slot::Present { state, .. } => {
-                    *footprint -= (byte_key_bytes(&key.0)
-                        + codec.value_bytes(state)
-                        + Self::SLOT_OVERHEAD) as isize;
-                }
-                Slot::Absent { .. } => *footprint -= Self::SLOT_OVERHEAD as isize,
-            }
-            false
-        });
         let Some(snapshot_id) = self.read_snapshot else {
             return Ok(PaimonCheckpointManifest {
                 snapshot_id: -1,
@@ -866,5 +703,227 @@ impl<C: PaimonStateCodec> PaimonStore<C> {
         }
         self.live_files = next;
         Ok(())
+    }
+}
+
+impl<C: PaimonStateCodec> PaimonStore<C> {
+    const SLOT_OVERHEAD: usize = std::mem::size_of::<Slot<C::Value>>() + GROUP_ENTRY_OVERHEAD;
+
+    /// Creates a fresh table under `config.table_dir` (schema document + directory skeleton).
+    pub(crate) fn create(config: PaimonStoreConfig, codec: C) -> Result<Self, DataFusionError> {
+        let schema = Self::paimon_schema(&config, &codec)?;
+        Self::assemble(PaimonTableCore::create(config, schema)?, codec)
+    }
+
+    /// Opens a table directory previously materialized from a checkpoint, pinned at its snapshot.
+    pub(crate) fn open(
+        config: PaimonStoreConfig,
+        codec: C,
+        snapshot_id: i64,
+    ) -> Result<Self, DataFusionError> {
+        Self::assemble(PaimonTableCore::open(config, snapshot_id)?, codec)
+    }
+
+    /// Builds a fresh table at `config.table_dir` from one or more restored table directories
+    /// (rescale); see `PaimonTableCore::adopt_buckets`.
+    pub(crate) fn open_merged(
+        config: PaimonStoreConfig,
+        codec: C,
+        sources: &[(String, i64)],
+        key_groups: std::ops::RangeInclusive<i32>,
+    ) -> Result<Self, DataFusionError> {
+        let mut store = Self::create(config, codec)?;
+        store.core.adopt_buckets(sources, key_groups)?;
+        Ok(store)
+    }
+
+    fn assemble(core: PaimonTableCore, codec: C) -> Result<Self, DataFusionError> {
+        if !codec.supported() {
+            return Err(DataFusionError::Plan(
+                "state shape not supported by the paimon state backend".into(),
+            ));
+        }
+        let value_fields: Vec<Field> = codec
+            .value_fields()
+            .into_iter()
+            .map(|(name, data_type)| Field::new(name, data_type, true))
+            .collect();
+        Ok(PaimonStore {
+            core,
+            codec,
+            value_fields,
+            working: ahash::HashMap::default(),
+            footprint: 0,
+        })
+    }
+
+    fn paimon_schema(
+        config: &PaimonStoreConfig,
+        codec: &C,
+    ) -> Result<PaimonSchema, DataFusionError> {
+        let mut builder = PaimonTableCore::schema_builder(config)?;
+        for (name, data_type) in codec.value_fields() {
+            let paimon_type = paimon_type_of(&data_type).ok_or_else(|| {
+                DataFusionError::Plan(format!(
+                    "state type {data_type} not supported by the paimon state backend"
+                ))
+            })?;
+            builder = builder.column(name, paimon_type);
+        }
+        builder.primary_key([KG_COLUMN, KEY_COLUMN]).build().map_err(pe)
+    }
+
+    /// The Arrow schema of persisted rows (also the write-batch schema, which additionally
+    /// carries `_VALUE_KIND`).
+    fn arrow_fields(&self) -> Vec<Field> {
+        let mut fields = vec![
+            Field::new(KG_COLUMN, DataType::Int32, false),
+            Field::new(KEY_COLUMN, DataType::Binary, false),
+        ];
+        fields.extend(self.value_fields.iter().cloned());
+        fields
+    }
+
+    /// Probes the committed snapshot for the given missing keys and records every result —
+    /// present or absent — in the working set.
+    fn hydrate(&mut self, misses: Vec<ByteKey>) -> Result<(), DataFusionError> {
+        let key_set: StdHashSet<&[u8]> = misses.iter().map(|k| &*k.0).collect();
+        for batch in self.core.scan_keys(&misses)? {
+            self.absorb_probe_batch(&batch, &key_set)?;
+        }
+        let mut added_bytes = 0usize;
+        for key in misses {
+            self.working.entry(key).or_insert_with(|| {
+                // Slot overhead only: if the operator creates this key, its own tracking charges
+                // the key and state bytes (see `end_bundle` for the split).
+                added_bytes += Self::SLOT_OVERHEAD;
+                Slot::Absent { dirty: false }
+            });
+        }
+        self.footprint += added_bytes as isize;
+        Ok(())
+    }
+
+    /// Decodes probe rows into clean working-set entries, ignoring any row whose key was not
+    /// probed (predicate pushdown is best-effort, not exact, on every format).
+    fn absorb_probe_batch(
+        &mut self,
+        batch: &RecordBatch,
+        probed: &StdHashSet<&[u8]>,
+    ) -> Result<usize, DataFusionError> {
+        let expected = self.arrow_fields();
+        let key_index = 1;
+        let keys = normalized_column(batch, key_index, &expected[key_index])?;
+        let keys = keys
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .ok_or_else(|| DataFusionError::Internal("paimon key column".into()))?;
+        let mut value_columns: Vec<ArrayRef> = Vec::with_capacity(self.value_fields.len());
+        for i in 0..self.value_fields.len() {
+            value_columns.push(normalized_column(batch, 2 + i, &expected[2 + i])?);
+        }
+        let mut added = 0usize;
+        let mut added_bytes = 0usize;
+        for row in 0..batch.num_rows() {
+            let key = keys.value(row);
+            if !probed.contains(key) || self.working.contains_key(key) {
+                continue;
+            }
+            let mut scalars: Vec<ScalarValue> = Vec::with_capacity(value_columns.len());
+            for column in &value_columns {
+                scalars.push(
+                    ScalarValue::try_from_array(column, row)
+                        .map_err(|e| DataFusionError::External(Box::new(e)))?,
+                );
+            }
+            let state = self.codec.decode(&scalars);
+            let owned = ByteKey::from(key);
+            added_bytes +=
+                byte_key_bytes(&owned.0) + self.codec.value_bytes(&state) + Self::SLOT_OVERHEAD;
+            self.working
+                .insert(owned, Slot::Present { state, dirty: false });
+            added += 1;
+        }
+        self.footprint += added_bytes as isize;
+        Ok(added)
+    }
+
+    /// Builds the write batch for all dirty slots: upserts carry the encoded state row, deletions
+    /// a `_VALUE_KIND = 3` tombstone. Returns `None` when nothing changed since the last commit.
+    fn dirty_batch(&self) -> Option<RecordBatch> {
+        let num_value = self.value_fields.len();
+        let mut kgs: Vec<i32> = Vec::new();
+        let mut keys: Vec<&[u8]> = Vec::new();
+        let mut values: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_value];
+        let mut kinds: Vec<i8> = Vec::new();
+        for (key, slot) in self.working.iter() {
+            match slot {
+                Slot::Present { state, dirty: true } => {
+                    kgs.push(self.core.key_group(key));
+                    keys.push(&key.0);
+                    for (i, scalar) in self.codec.encode(state).into_iter().enumerate() {
+                        values[i].push(scalar);
+                    }
+                    kinds.push(0); // +I upsert — deduplicate keeps the latest by sequence
+                }
+                Slot::Absent { dirty: true } => {
+                    kgs.push(self.core.key_group(key));
+                    keys.push(&key.0);
+                    for (i, field) in self.value_fields.iter().enumerate() {
+                        values[i].push(null_scalar(field.data_type()));
+                    }
+                    kinds.push(3); // -D tombstone
+                }
+                _ => {}
+            }
+        }
+        if keys.is_empty() {
+            return None;
+        }
+        let mut fields = self.arrow_fields();
+        fields.push(Field::new(VALUE_KIND_COLUMN, DataType::Int8, false));
+        let mut columns: Vec<ArrayRef> = vec![
+            Arc::new(Int32Array::from(kgs)),
+            Arc::new(BinaryArray::from_iter_values(keys)),
+        ];
+        for (i, field) in self.value_fields.iter().enumerate() {
+            columns.push(scalars_to_array(std::mem::take(&mut values[i]), field.data_type()));
+        }
+        columns.push(Arc::new(Int8Array::from(kinds)));
+        Some(
+            RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+                .expect("paimon dirty write batch"),
+        )
+    }
+
+    /// Checkpoint sync phase, called at the barrier: commit the dirty write buffer as the
+    /// checkpoint's snapshot and run the checkpoint file phase (see
+    /// `PaimonTableCore::checkpoint_manifest`).
+    pub(crate) fn checkpoint(
+        &mut self,
+        link_dir: &str,
+    ) -> Result<PaimonCheckpointManifest, DataFusionError> {
+        // An external compactor (the Java Paimon glue) may have committed a maintenance snapshot
+        // just before this call: adopt the latest snapshot so the flush lands on top of it, the
+        // manifest lists it, and local GC sees its file set.
+        self.core.refresh_to_latest()?;
+        if let Some(batch) = self.dirty_batch() {
+            self.core.commit(&batch)?;
+        }
+        // All dirty slots are durable now; drop them (pure read-through, no cache across bundles).
+        let footprint = &mut self.footprint;
+        let codec = &self.codec;
+        self.working.retain(|key, slot| {
+            match slot {
+                Slot::Present { state, .. } => {
+                    *footprint -= (byte_key_bytes(&key.0)
+                        + codec.value_bytes(state)
+                        + Self::SLOT_OVERHEAD) as isize;
+                }
+                Slot::Absent { .. } => *footprint -= Self::SLOT_OVERHEAD as isize,
+            }
+            false
+        });
+        self.core.checkpoint_manifest(link_dir)
     }
 }
