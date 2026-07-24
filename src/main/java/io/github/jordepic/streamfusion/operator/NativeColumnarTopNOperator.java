@@ -126,7 +126,7 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
                       NativeConfig.paimonFileFormat(),
                       NativeConfig.paimonFileCompression(),
                       paimon.sourceDirectories(),
-                      paimon.sourceSnapshotIds(),
+                      paimon.sourceSnapshotTokens(),
                       paimon.keyGroupStart(),
                       paimon.keyGroupEnd()));
       long nativeHandle = handle;

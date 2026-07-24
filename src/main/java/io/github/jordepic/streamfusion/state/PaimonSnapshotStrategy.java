@@ -53,14 +53,20 @@ import java.util.UUID;
  * RocksIncrementalSnapshotStrategy}: only checkpoints confirmed complete are a reuse base, a file
  * re-uploaded by a later checkpoint drops out of the base (notification-delay race), and
  * complete/abort notifications prune the map.
+ *
+ * <p>The manifest's first entry is an OPAQUE snapshot token, defined and consumed only by the
+ * native store (a single-table store uses its Paimon snapshot id; a multi-table operator can pack
+ * several). This layer stores it in the meta document and hands it back on restore; the one thing
+ * it interprets is emptiness — an empty token means no state was ever committed.
  */
 final class PaimonSnapshotStrategy
     implements SnapshotStrategy<KeyedStateHandle, PaimonSnapshotStrategy.PaimonSnapshotResources> {
 
   private static final Logger LOG = LoggerFactory.getLogger(PaimonSnapshotStrategy.class);
 
-  /** Version tag of the checkpoint metadata document. */
-  private static final int META_VERSION = 1;
+  /** Version tag of the checkpoint metadata document; v2 replaced the snapshot-id long with an
+   * opaque token string (v1 documents read back as the id's decimal string). */
+  private static final int META_VERSION = 2;
 
   private static final int COPY_BUFFER_BYTES = 64 * 1024;
 
@@ -136,7 +142,7 @@ final class PaimonSnapshotStrategy
     }
     File linkDir = new File(checkpointLinkRoot, "chk-" + checkpointId);
     String[] manifest = nativeState.checkpoint(linkDir.getAbsolutePath());
-    long snapshotId = Long.parseLong(manifest[0]);
+    String snapshotToken = manifest[0];
     List<String> dataFiles = new ArrayList<>();
     List<String> metaFiles = new ArrayList<>();
     for (int i = 1; i < manifest.length; i++) {
@@ -153,7 +159,7 @@ final class PaimonSnapshotStrategy
     synchronized (uploadedFiles) {
       confirmedBase = confirmedBase(uploadedFiles, lastCompletedCheckpointId);
     }
-    return new PaimonSnapshotResources(snapshotId, dataFiles, metaFiles, linkDir, confirmedBase);
+    return new PaimonSnapshotResources(snapshotToken, dataFiles, metaFiles, linkDir, confirmedBase);
   }
 
   /**
@@ -190,7 +196,7 @@ final class PaimonSnapshotStrategy
       CheckpointStreamFactory streamFactory,
       CheckpointOptions checkpointOptions) {
 
-    if (resources.snapshotId < 0) {
+    if (resources.snapshotToken.isEmpty()) {
       return registry -> SnapshotResult.empty();
     }
 
@@ -237,7 +243,7 @@ final class PaimonSnapshotStrategy
           checkpointedSize += uploaded.getStateSize();
         }
         StreamStateHandle metaHandle =
-            writeMetaDocument(resources.snapshotId, streamFactory, snapshotCloseableRegistry);
+            writeMetaDocument(resources.snapshotToken, streamFactory, snapshotCloseableRegistry);
         uploadedNow.add(metaHandle);
         checkpointedSize += metaHandle.getStateSize();
 
@@ -304,7 +310,7 @@ final class PaimonSnapshotStrategy
   }
 
   private static StreamStateHandle writeMetaDocument(
-      long paimonSnapshotId,
+      String snapshotToken,
       CheckpointStreamFactory streamFactory,
       CloseableRegistry closeableRegistry)
       throws IOException {
@@ -314,7 +320,7 @@ final class PaimonSnapshotStrategy
     try {
       DataOutputStream data = new DataOutputStream(out);
       data.writeInt(META_VERSION);
-      data.writeLong(paimonSnapshotId);
+      data.writeUTF(snapshotToken);
       data.flush();
       StreamStateHandle handle = out.closeAndGetHandle();
       closeableRegistry.unregisterCloseable(out);
@@ -327,32 +333,37 @@ final class PaimonSnapshotStrategy
     }
   }
 
-  /** Reads the Paimon snapshot id back out of a checkpoint's metadata document. */
-  static long readMetaDocument(StreamStateHandle metaHandle) throws IOException {
+  /** Reads the snapshot token back out of a checkpoint's metadata document. */
+  static String readMetaDocument(StreamStateHandle metaHandle) throws IOException {
     try (InputStream in = metaHandle.openInputStream()) {
       java.io.DataInputStream data = new java.io.DataInputStream(in);
       int version = data.readInt();
+      if (version == 1) {
+        // v1 carried the single-table Paimon snapshot id as a long; its token form is the
+        // decimal string, so pre-token checkpoints stay restorable.
+        return Long.toString(data.readLong());
+      }
       if (version != META_VERSION) {
         throw new IOException("unknown paimon state metadata version " + version);
       }
-      return data.readLong();
+      return data.readUTF();
     }
   }
 
   static final class PaimonSnapshotResources implements SnapshotResources {
-    final long snapshotId;
+    final String snapshotToken;
     final List<String> dataFiles;
     final List<String> metaFiles;
     final File linkDir;
     final Map<String, StreamStateHandle> confirmedBase;
 
     PaimonSnapshotResources(
-        long snapshotId,
+        String snapshotToken,
         List<String> dataFiles,
         List<String> metaFiles,
         File linkDir,
         Map<String, StreamStateHandle> confirmedBase) {
-      this.snapshotId = snapshotId;
+      this.snapshotToken = snapshotToken;
       this.dataFiles = dataFiles;
       this.metaFiles = metaFiles;
       this.linkDir = linkDir;

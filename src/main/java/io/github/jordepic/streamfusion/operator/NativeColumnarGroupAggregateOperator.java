@@ -106,7 +106,7 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
               generateUpdateBefore, miniBatch, memoryBudget.bytes(),
               paimon.tableDirectory(), maxParallelism,
               NativeConfig.paimonFileFormat(), NativeConfig.paimonFileCompression(),
-              paimon.sourceDirectories(), paimon.sourceSnapshotIds(),
+              paimon.sourceDirectories(), paimon.sourceSnapshotTokens(),
               paimon.keyGroupStart(), paimon.keyGroupEnd());
       long nativeHandle = handle;
       paimon.register(linkDir -> Native.checkpointPaimonGroupAggregator(nativeHandle, linkDir));

@@ -5,7 +5,7 @@
 //! manifest the host uploads.
 
 use crate::*;
-use jni::objects::{JClass, JIntArray, JLongArray, JObject, JObjectArray, JString};
+use jni::objects::{JClass, JIntArray, JObject, JObjectArray, JString};
 use jni::sys::{jboolean, jint, jlong, jobjectArray};
 use jni::JNIEnv;
 
@@ -20,14 +20,20 @@ fn throw_runtime(env: &mut JNIEnv, message: &str) {
 }
 
 /// Serializes a checkpoint manifest as the host-facing string array —
-/// `["<snapshot id>", "d:<data file>"…, "m:<meta file>"…]`, paths relative to the table root.
+/// `["<snapshot token>", "d:<data file>"…, "m:<meta file>"…]`, paths relative to the table root.
+/// The token is opaque to the host (a single-table store uses its decimal Paimon snapshot id);
+/// an empty token means no state was ever committed.
 fn manifest_array<'local>(
     env: &mut JNIEnv<'local>,
     manifest: &PaimonCheckpointManifest,
 ) -> jobjectArray {
     let mut lines =
         Vec::with_capacity(1 + manifest.data_files.len() + manifest.meta_files.len());
-    lines.push(manifest.snapshot_id.to_string());
+    lines.push(if manifest.snapshot_id < 0 {
+        String::new()
+    } else {
+        manifest.snapshot_id.to_string()
+    });
     lines.extend(manifest.data_files.iter().map(|f| format!("d:{f}")));
     lines.extend(manifest.meta_files.iter().map(|f| format!("m:{f}")));
     let array = env
@@ -64,7 +70,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonG
     file_format: JString<'local>,
     file_compression: JString<'local>,
     source_directories: JObjectArray<'local>,
-    source_snapshot_ids: JLongArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
     key_group_start: jint,
     key_group_end: jint,
 ) -> jlong {
@@ -86,7 +92,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonG
         .into_iter()
         .flatten()
         .collect();
-    let source_snapshots = read_longs(&env, &source_snapshot_ids);
+    let source_snapshots: Vec<i64> = read_strings(&mut env, &source_snapshot_tokens)
+        .into_iter()
+        .flatten()
+        .map(|token| token.parse::<i64>().expect("single-table paimon snapshot token"))
+        .collect();
 
     let arrow_value_types: Vec<DataType> =
         value_type_codes.iter().map(|&code| value_data_type(code)).collect();
@@ -264,7 +274,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonK
     file_format: JString<'local>,
     file_compression: JString<'local>,
     source_directories: JObjectArray<'local>,
-    source_snapshot_ids: JLongArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
     key_group_start: jint,
     key_group_end: jint,
 ) -> jlong {
@@ -285,7 +295,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonK
         .into_iter()
         .flatten()
         .collect();
-    let source_snapshots = read_longs(&env, &source_snapshot_ids);
+    let source_snapshots: Vec<i64> = read_strings(&mut env, &source_snapshot_tokens)
+        .into_iter()
+        .flatten()
+        .map(|token| token.parse::<i64>().expect("single-table paimon snapshot token"))
+        .collect();
 
     let codec = DedupStateCodec::new(row_types, rt_column as usize, rowtime_ordered != 0);
     let config = PaimonStoreConfig {
@@ -447,7 +461,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonC
     file_format: JString<'local>,
     file_compression: JString<'local>,
     source_directories: JObjectArray<'local>,
-    source_snapshot_ids: JLongArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
     key_group_start: jint,
     key_group_end: jint,
 ) -> jlong {
@@ -468,7 +482,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonC
         .into_iter()
         .flatten()
         .collect();
-    let source_snapshots = read_longs(&env, &source_snapshot_ids);
+    let source_snapshots: Vec<i64> = read_strings(&mut env, &source_snapshot_tokens)
+        .into_iter()
+        .flatten()
+        .map(|token| token.parse::<i64>().expect("single-table paimon snapshot token"))
+        .collect();
 
     let codec = NormalizerStateCodec::new(row_types);
     let config = PaimonStoreConfig {
@@ -628,7 +646,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonT
     file_format: JString<'local>,
     file_compression: JString<'local>,
     source_directories: JObjectArray<'local>,
-    source_snapshot_ids: JLongArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
     key_group_start: jint,
     key_group_end: jint,
 ) -> jlong {
@@ -650,7 +668,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonT
         .into_iter()
         .flatten()
         .collect();
-    let source_snapshots = read_longs(&env, &source_snapshot_ids);
+    let source_snapshots: Vec<i64> = read_strings(&mut env, &source_snapshot_tokens)
+        .into_iter()
+        .flatten()
+        .map(|token| token.parse::<i64>().expect("single-table paimon snapshot token"))
+        .collect();
 
     let codec = TopNStateCodec::new(row_types, sort.clone());
     // Hydrated rows must come from the SAME converter instances the operator emits with

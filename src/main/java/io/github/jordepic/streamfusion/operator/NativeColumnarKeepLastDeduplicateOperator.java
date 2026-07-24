@@ -116,7 +116,7 @@ public class NativeColumnarKeepLastDeduplicateOperator extends AbstractStreamOpe
                       NativeConfig.paimonFileFormat(),
                       NativeConfig.paimonFileCompression(),
                       paimon.sourceDirectories(),
-                      paimon.sourceSnapshotIds(),
+                      paimon.sourceSnapshotTokens(),
                       paimon.keyGroupStart(),
                       paimon.keyGroupEnd()));
       long nativeHandle = handle;

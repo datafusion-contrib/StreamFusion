@@ -131,7 +131,7 @@ public class PaimonStateBackend implements StateBackend {
   /** Downloads one restored checkpoint's files to local disk at their checkpoint-local paths. */
   private static PaimonRestoredSource materialize(
       IncrementalRemoteKeyedStateHandle handle, File directory) throws IOException {
-    long paimonSnapshotId = PaimonSnapshotStrategy.readMetaDocument(handle.getMetaDataStateHandle());
+    String snapshotToken = PaimonSnapshotStrategy.readMetaDocument(handle.getMetaDataStateHandle());
     List<HandleAndLocalPath> files = new ArrayList<>(handle.getSharedState());
     files.addAll(handle.getPrivateState());
     for (HandleAndLocalPath file : files) {
@@ -147,7 +147,7 @@ public class PaimonStateBackend implements StateBackend {
         }
       }
     }
-    return new PaimonRestoredSource(directory.getAbsolutePath(), paimonSnapshotId);
+    return new PaimonRestoredSource(directory.getAbsolutePath(), snapshotToken);
   }
 
   @Override

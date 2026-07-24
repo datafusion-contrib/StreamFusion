@@ -21,16 +21,16 @@ public final class PaimonNativeStateSupport {
 
   private final PaimonKeyedStateBackend<?> backend;
   private final String[] sourceDirectories;
-  private final long[] sourceSnapshotIds;
+  private final String[] sourceSnapshotTokens;
 
   private PaimonNativeStateSupport(PaimonKeyedStateBackend<?> backend) {
     this.backend = backend;
     List<PaimonRestoredSource> sources = backend.restoredSources();
     this.sourceDirectories = new String[sources.size()];
-    this.sourceSnapshotIds = new long[sources.size()];
+    this.sourceSnapshotTokens = new String[sources.size()];
     for (int i = 0; i < sources.size(); i++) {
       sourceDirectories[i] = sources.get(i).directory();
-      sourceSnapshotIds[i] = sources.get(i).snapshotId();
+      sourceSnapshotTokens[i] = sources.get(i).snapshotToken();
     }
   }
 
@@ -68,8 +68,8 @@ public final class PaimonNativeStateSupport {
     return sourceDirectories;
   }
 
-  public long[] sourceSnapshotIds() {
-    return sourceSnapshotIds;
+  public String[] sourceSnapshotTokens() {
+    return sourceSnapshotTokens;
   }
 
   public int keyGroupStart() {

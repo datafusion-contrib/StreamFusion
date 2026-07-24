@@ -102,7 +102,7 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
                       NativeConfig.paimonFileFormat(),
                       NativeConfig.paimonFileCompression(),
                       paimon.sourceDirectories(),
-                      paimon.sourceSnapshotIds(),
+                      paimon.sourceSnapshotTokens(),
                       paimon.keyGroupStart(),
                       paimon.keyGroupEnd()));
       long nativeHandle = handle;

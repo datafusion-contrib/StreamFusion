@@ -978,7 +978,7 @@ public final class Native {
       String fileFormat,
       String fileCompression,
       String[] sourceDirectories,
-      long[] sourceSnapshotIds,
+      String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd);
 
@@ -1037,7 +1037,7 @@ public final class Native {
       String fileFormat,
       String fileCompression,
       String[] sourceDirectories,
-      long[] sourceSnapshotIds,
+      String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd);
 
@@ -1085,7 +1085,7 @@ public final class Native {
       String fileFormat,
       String fileCompression,
       String[] sourceDirectories,
-      long[] sourceSnapshotIds,
+      String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd);
 
@@ -1139,7 +1139,7 @@ public final class Native {
       String fileFormat,
       String fileCompression,
       String[] sourceDirectories,
-      long[] sourceSnapshotIds,
+      String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd);
 

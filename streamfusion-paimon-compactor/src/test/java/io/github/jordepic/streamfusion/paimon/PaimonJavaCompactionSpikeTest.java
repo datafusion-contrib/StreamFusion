@@ -68,7 +68,7 @@ class PaimonJavaCompactionSpikeTest {
     String tableDir = Files.createTempDirectory("spike-table").toString();
 
     // --- Rust writes: SUM(v) GROUP BY k over four checkpoints -> four level-0 runs.
-    long handle = createAggregator(tableDir, new String[0], new long[0]);
+    long handle = createAggregator(tableDir, new String[0], new String[0]);
     long snapshotId = -1;
     try (BufferAllocator allocator = new RootAllocator()) {
       for (int round = 1; round <= 4; round++) {
@@ -128,7 +128,7 @@ class PaimonJavaCompactionSpikeTest {
     // top of it.
     String restoredDir = Files.createTempDirectory("spike-restored").toString();
     long restored =
-        createAggregator(restoredDir, new String[] {tableDir}, new long[] {javaSnapshot});
+        createAggregator(restoredDir, new String[] {tableDir}, new String[] {Long.toString(javaSnapshot)});
     try (BufferAllocator allocator = new RootAllocator()) {
       List<List<Object>> out =
           update(allocator, restored, insertBatch(allocator, 100));
@@ -143,7 +143,7 @@ class PaimonJavaCompactionSpikeTest {
     }
   }
 
-  private static long createAggregator(String tableDir, String[] sources, long[] snapshots) {
+  private static long createAggregator(String tableDir, String[] sources, String[] snapshots) {
     return Native.createPaimonGroupAggregator(
         new int[] {0}, // SUM
         new int[] {0}, // BIGINT
