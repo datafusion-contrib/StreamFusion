@@ -618,9 +618,11 @@ What runs on the Paimon backend today, and every condition that keeps an operato
 (memory state remains correct — these are not query fallbacks, and the query still accelerates;
 the operator just checkpoints its state the old way, in full):
 
-- **Operator coverage** — only the non-windowed `GROUP BY` aggregate (single- and two-phase global)
-  so far. Every other stateful operator keeps memory state under this backend. The
-  point-access-shaped operators (keep-last dedup, changelog normalize, Top-N, updating join) are
+- **Operator coverage** — the non-windowed `GROUP BY` aggregate (single- and two-phase global) and
+  the eager deduplicator (rowtime/proctime keep-last and proctime keep-first; its persisted state
+  row is the stored full row as typed columns, so the state table reads like the deduplicated
+  table itself). Every other stateful operator keeps memory state under this backend. The
+  remaining point-access-shaped operators (changelog normalize, Top-N, updating join) are
   being brought over on the same store. The **watermark/timer-driven operators** (keep-first
   dedup, `OVER` aggregates, window rank, interval/window/temporal joins, session/window
   aggregates) stay on memory state for now for two concrete reasons, neither a storage limit:
@@ -631,9 +633,10 @@ the operator just checkpoints its state the old way, in full):
 - **Multiset-state aggregates** — retracting `MIN`/`MAX` and `COUNT`/`SUM(DISTINCT)` keep per-key
   multisets, which the persistent row codec does not carry yet; an aggregate list containing them
   keeps the whole operator on memory state.
-- **State scalar types** — an aggregate whose persisted scalar falls outside
-  boolean/tinyint/smallint/int/bigint/float/double/varchar/decimal/date/timestamp(3,6 non-LTZ)
-  keeps the operator on memory state.
+- **State scalar types** — an aggregate whose persisted scalar (or, for the deduplicator, any
+  column of its row type) falls outside
+  boolean/tinyint/smallint/int/bigint/float/double/varchar/varbinary/decimal/date/timestamp(3,6
+  non-LTZ) keeps the operator on memory state.
 - **A restore from a memory-backend checkpoint** — raw keyed-state blobs restore on memory state;
   there is no silent migration between backends.
 - **A native build without the `paimon-state` feature** — the backend probe answers unavailable and

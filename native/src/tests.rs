@@ -3476,4 +3476,92 @@ mod paimon_state {
         assert_eq!(values(&out, 1), vec![10, 11, 50, 51, 80, 81]);
         assert_eq!(row_kinds(&out), vec![1, 2, 1, 2, 1, 2]);
     }
+
+    // -----------------------------------------------------------------------------------------
+    // Keep-last dedup on the same store: the persisted row is the stored full row as typed
+    // columns (k, v, rt as BIGINT here), rowtime re-derived on hydration.
+    // -----------------------------------------------------------------------------------------
+
+    fn dedup_codec() -> DedupStateCodec {
+        DedupStateCodec::new(vec![DataType::Int64, DataType::Int64, DataType::Int64], 2, true)
+    }
+
+    /// Rowtime keep-last over key column 0 with rowtime column 2, update-before on.
+    fn paimon_dedup(dir: &str) -> KeepLastDeduplicator<PaimonDedupStore> {
+        let store = PaimonDedupStore::create(config(dir), dedup_codec()).unwrap();
+        KeepLastDeduplicator::new(vec![0], 2, true, true, false).with_backend(store)
+    }
+
+    #[test]
+    fn paimon_dedup_matches_memory_across_checkpoints() {
+        let dir = temp_dir("dedup-parity");
+        let mut paimon = paimon_dedup(&dir).with_mini_batch(true);
+        let mut memory =
+            KeepLastDeduplicator::new(vec![0], 2, true, true, false).with_mini_batch(true);
+
+        let bundles: Vec<RecordBatch> = vec![
+            join_batch(vec![1, 2, 1], vec![10, 20, 11], vec![1, 1, 2]),
+            join_batch(vec![1, 3], vec![12, 30], vec![3, 1]),
+            // An older rowtime for key 2 must be ignored on both backends.
+            join_batch(vec![2, 2], vec![19, 21], vec![0, 5]),
+            join_batch(vec![3, 1], vec![31, 9], vec![2, 1]),
+        ];
+        for (i, bundle) in bundles.iter().enumerate() {
+            paimon.push(bundle).unwrap();
+            memory.push(bundle).unwrap();
+            assert_same_output(
+                &memory.flush_mini_batch().unwrap(),
+                &paimon.flush_mini_batch().unwrap(),
+            );
+            // A checkpoint between every bundle forces every probe through the table.
+            let link = temp_dir(&format!("dedup-parity-cp{i}"));
+            paimon.store_mut().checkpoint(&link).unwrap();
+        }
+    }
+
+    #[test]
+    fn paimon_dedup_rowtime_survives_hydration() {
+        let dir = temp_dir("dedup-rt");
+        let mut dedup = paimon_dedup(&dir);
+        dedup.push(&join_batch(vec![7], vec![70], vec![5])).unwrap();
+        dedup.store_mut().checkpoint(&temp_dir("dedup-rt-cp1")).unwrap();
+
+        // The working set is empty now; both probes below hydrate from the table, so the ignore
+        // depends on the rowtime re-derived from the persisted row.
+        let ignored = dedup.push(&join_batch(vec![7], vec![71], vec![3])).unwrap();
+        assert_eq!(ignored.num_rows(), 0, "older rowtime must lose against hydrated state");
+        dedup.store_mut().checkpoint(&temp_dir("dedup-rt-cp2")).unwrap();
+
+        let out = dedup.push(&join_batch(vec![7], vec![72], vec![9])).unwrap();
+        assert_eq!(row_kinds(&out), vec![1, 2]);
+        assert_eq!(values(&out, 1), vec![70, 72], "-U must carry the persisted payload");
+    }
+
+    #[test]
+    fn paimon_dedup_restores_from_listed_files_only() {
+        let dir = temp_dir("dedup-restore-src");
+        let mut dedup = paimon_dedup(&dir);
+        dedup.push(&join_batch(vec![1, 2, 3], vec![10, 20, 30], vec![1, 1, 1])).unwrap();
+        let link = temp_dir("dedup-restore-cp");
+        let manifest = dedup.store_mut().checkpoint(&link).unwrap();
+        assert!(manifest.snapshot_id > 0);
+
+        // Restore goes through the production path: adopt the source's in-range buckets.
+        let restored_dir = temp_dir("dedup-restore-mat");
+        materialize(&manifest, &link, &restored_dir);
+        let merged_dir = temp_dir("dedup-restore-dst");
+        let store = PaimonDedupStore::open_merged(
+            config(&merged_dir),
+            dedup_codec(),
+            &[(restored_dir, manifest.snapshot_id)],
+            0..=127,
+        )
+        .unwrap();
+        let mut restored =
+            KeepLastDeduplicator::new(vec![0], 2, true, true, false).with_backend(store);
+
+        let out = restored.push(&join_batch(vec![2, 4], vec![25, 40], vec![9, 1])).unwrap();
+        assert_eq!(row_kinds(&out), vec![1, 2, 0]);
+        assert_eq!(values(&out, 1), vec![20, 25, 40], "-U carries the pre-restore payload");
+    }
 }

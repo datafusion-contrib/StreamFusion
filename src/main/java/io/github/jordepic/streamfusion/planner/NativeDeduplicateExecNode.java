@@ -90,6 +90,7 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
                 partitionColumns,
                 keyTimestampPrecisions,
                 rowtimeColumn,
+                (RowType) getOutputType(),
                 generateUpdateBefore,
                 !proctime,
                 !keepLast,

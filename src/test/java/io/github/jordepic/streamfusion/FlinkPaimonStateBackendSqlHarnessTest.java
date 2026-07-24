@@ -32,6 +32,16 @@ class FlinkPaimonStateBackendSqlHarnessTest {
   }
 
   @Test
+  void proctimeDeduplicationOnPaimonBackendMatchesHost() throws Exception {
+    Path input = Files.createTempDirectory("paimon-dedup-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        () -> paimonEnvironment(input),
+        "SELECT k, v FROM (SELECT k, v, ROW_NUMBER() OVER (PARTITION BY k ORDER BY PROCTIME() DESC)"
+            + " AS rn FROM t) WHERE rn = 1");
+  }
+
+  @Test
   void unsupportedAggregatesFallBackToMemoryStateUnderPaimonBackend() throws Exception {
     Path input = Files.createTempDirectory("paimon-minmax-in");
     writeInput(input);

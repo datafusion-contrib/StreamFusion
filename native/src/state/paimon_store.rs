@@ -133,9 +133,14 @@ fn paimon_type_of(dt: &DataType) -> Option<PaimonType> {
     })
 }
 
+/// True when every listed column type is persistable by this backend's type map.
+pub(crate) fn paimon_row_supported(types: &[DataType]) -> bool {
+    types.iter().all(|t| paimon_type_of(t).is_some())
+}
+
 /// True when every aggregate state column (and by construction the row codec) is persistable.
 pub(crate) fn paimon_group_supported(kinds: &[i64], state_types: &[DataType]) -> bool {
-    group_kinds_persistable(kinds) && state_types.iter().all(|t| paimon_type_of(t).is_some())
+    group_kinds_persistable(kinds) && paimon_row_supported(state_types)
 }
 
 pub(crate) struct PaimonStoreConfig {

@@ -45,6 +45,36 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonGroupAg
     }
 }
 
+/// Whether a row-payload operator (keep-last dedup, changelog normalize) can persist its stored
+/// rows on the Paimon backend: every column of the row type must map to a Paimon scalar column.
+/// Consumes the FFI schema at `row_schema_address`. Always resolvable; answers false in a build
+/// without the backend.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonRowStateSupported<
+    'local,
+>(
+    _env: jni::JNIEnv<'local>,
+    _class: jni::objects::JClass<'local>,
+    row_schema_address: jni::sys::jlong,
+) -> jni::sys::jboolean {
+    #[cfg(feature = "paimon-state")]
+    {
+        let row_types: Vec<DataType> = import_schema(row_schema_address)
+            .fields()
+            .iter()
+            .map(|field| field.data_type().clone())
+            .collect();
+        return paimon_row_supported(&row_types) as jni::sys::jboolean;
+    }
+    #[cfg(not(feature = "paimon-state"))]
+    {
+        // The FFI schema must still be consumed (imported and dropped) so the host-side export is
+        // released even when this build lacks the backend.
+        let _ = import_schema(row_schema_address);
+        0
+    }
+}
+
 /// The storage seam between a stateful operator and its per-key state. Operators are generic over
 /// this trait and fully monomorphized — the memory implementation must compile to exactly the
 /// direct `HashMap` accesses it replaced, so the hot per-row loop pays nothing for the seam.

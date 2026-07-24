@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.jordepic.streamfusion.operator.ArrowBatch;
 import io.github.jordepic.streamfusion.operator.ArrowBatchSerializer;
 import io.github.jordepic.streamfusion.operator.NativeColumnarGroupAggregateOperator;
+import io.github.jordepic.streamfusion.operator.NativeColumnarKeepLastDeduplicateOperator;
 import io.github.jordepic.streamfusion.operator.RowDataArrowConverter;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,8 +32,8 @@ import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
 
 /**
- * The group aggregate on the Paimon state backend: state lives in a local Paimon table, snapshots
- * go through the keyed-state backend as {@link IncrementalRemoteKeyedStateHandle}s (not raw keyed
+ * Native operators on the Paimon state backend: state lives in a local Paimon table, snapshots go
+ * through the keyed-state backend as {@link IncrementalRemoteKeyedStateHandle}s (not raw keyed
  * state), a completed checkpoint's files are referenced by placeholders instead of re-uploaded
  * (incremental), and a fresh operator restored from the handle continues the changelog exactly.
  */
@@ -47,6 +48,11 @@ class PaimonStateBackendOperatorTest {
       RowType.of(
           new LogicalType[] {new BigIntType(), new BigIntType()},
           new String[] {"key0", "result0"});
+
+  private static final RowType DEDUP_ROW =
+      RowType.of(
+          new LogicalType[] {new BigIntType(), new BigIntType(), new BigIntType()},
+          new String[] {"k", "v", "rt"});
 
   @Test
   void checkpointsIncrementallyAndRestores() throws Exception {
@@ -158,6 +164,92 @@ class PaimonStateBackendOperatorTest {
       harness.processElement(new StreamRecord<>(batch(allocator, row(7, 1))));
       assertEquals(List.of(insert(7, 1)), collect(harness));
     }
+  }
+
+  /**
+   * The keep-last deduplicator rides the same backend: its checkpoint is an incremental Paimon
+   * handle, and a restored operator's retraction carries the payload persisted before the restore.
+   */
+  @Test
+  void dedupCheckpointsAndRestores() throws Exception {
+    OperatorSubtaskState snapshot;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            dedupHarness()) {
+      harness.setStateBackend(new PaimonStateBackend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+
+      harness.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(1L, 10L, 1L), GenericRowData.of(2L, 20L, 1L)),
+                      DEDUP_ROW,
+                      allocator))));
+      assertEquals(
+          List.of(
+              List.of(RowKind.INSERT, 1L, 10L, 1L), List.of(RowKind.INSERT, 2L, 20L, 1L)),
+          collectDedup(harness));
+
+      snapshot = harness.snapshot(1, 1);
+      paimonHandle(snapshot); // the dedup checkpoint travels as an incremental handle, not raw state
+      harness.notifyOfCompletedCheckpoint(1);
+    }
+
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            dedupHarness()) {
+      harness.setStateBackend(new PaimonStateBackend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(snapshot);
+      harness.open();
+
+      harness.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(1L, 11L, 5L)), DEDUP_ROW, allocator))));
+      assertEquals(
+          List.of(
+              List.of(RowKind.UPDATE_BEFORE, 1L, 10L, 1L),
+              List.of(RowKind.UPDATE_AFTER, 1L, 11L, 5L)),
+          collectDedup(harness));
+    }
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      dedupHarness() throws Exception {
+    NativeColumnarKeepLastDeduplicateOperator operator =
+        new NativeColumnarKeepLastDeduplicateOperator(
+            new int[] {0},
+            new int[] {-1},
+            2,
+            DEDUP_ROW,
+            true,
+            true,
+            false,
+            false,
+            0,
+            MAX_PARALLELISM);
+    return new KeyedOneInputStreamOperatorTestHarness<>(
+        operator, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0);
+  }
+
+  private static List<List<Object>> collectDedup(
+      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness) {
+    List<List<Object>> rows = new ArrayList<>();
+    while (!harness.getOutput().isEmpty()) {
+      Object event = harness.getOutput().poll();
+      if (event instanceof StreamRecord) {
+        try (VectorSchemaRoot root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
+          for (RowData row : RowDataArrowConverter.read(root, DEDUP_ROW)) {
+            rows.add(List.of(row.getRowKind(), row.getLong(0), row.getLong(1), row.getLong(2)));
+          }
+        }
+      }
+    }
+    return rows;
   }
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness()

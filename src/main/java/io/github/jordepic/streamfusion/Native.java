@@ -759,6 +759,7 @@ public final class Native {
   /** Rebuilds an eager deduplicator from a snapshot and returns a fresh handle. */
   public static native long restoreKeepLastDeduplicator(
       int[] partitionColumns,
+      int[] keyTimestampPrecisions,
       int rtColumn,
       boolean generateUpdateBefore,
       boolean rowtimeOrdered,
@@ -1007,6 +1008,66 @@ public final class Native {
 
   /** Releases a Paimon-backed {@code GROUP BY} aggregator handle. */
   public static native void closePaimonGroupAggregator(long handle);
+
+  /**
+   * Whether a row-payload operator (keep-last dedup, changelog normalize) can persist its stored
+   * rows on the Paimon backend — every column of the row type must map to a Paimon scalar column.
+   * Consumes the exported FFI schema at {@code rowSchemaAddress}. Resolvable in every build.
+   */
+  public static native boolean paimonRowStateSupported(long rowSchemaAddress);
+
+  /**
+   * {@code createKeepLastDeduplicator} on the Paimon state backend. The persisted state row is the
+   * stored full row as typed columns ({@code rowSchemaAddress} carries the exported FFI schema of
+   * the input row type); an empty {@code sourceDirectories} creates a fresh table, otherwise the
+   * in-range buckets of each restored source are adopted (rescale merge).
+   */
+  public static native long createPaimonKeepLastDeduplicator(
+      int[] partitionColumns,
+      int[] keyTimestampPrecisions,
+      int rtColumn,
+      long rowSchemaAddress,
+      boolean generateUpdateBefore,
+      boolean rowtimeOrdered,
+      boolean keepFirst,
+      boolean miniBatch,
+      long memoryBudgetBytes,
+      String tableDirectory,
+      int maxParallelism,
+      String fileFormat,
+      String fileCompression,
+      String[] sourceDirectories,
+      long[] sourceSnapshotIds,
+      int keyGroupStart,
+      int keyGroupEnd);
+
+  /** {@code pushKeepLastDeduplicator} for a Paimon-backed handle. */
+  public static native void pushPaimonKeepLastDeduplicator(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  /** {@code flushKeepLastDeduplicator} for a Paimon-backed handle. */
+  public static native void flushPaimonKeepLastDeduplicator(
+      long handle, long outArrayAddress, long outSchemaAddress);
+
+  /** {@code checkpointPaimonGroupAggregator} for a Paimon-backed keep-last deduplicator. */
+  public static native String[] checkpointPaimonKeepLastDeduplicator(
+      long handle, String linkDirectory);
+
+  /** Estimated bytes of a Paimon-backed deduplicator's resident working set. */
+  public static native long paimonKeepLastDeduplicatorStateBytes(long handle);
+
+  /** {@code keepLastDeduplicatorStagingBytes} for a Paimon-backed handle. */
+  public static native long paimonKeepLastDeduplicatorStagingBytes(long handle);
+
+  /** {@code keepLastDeduplicatorStagedKeys} for a Paimon-backed handle. */
+  public static native long paimonKeepLastDeduplicatorStagedKeys(long handle);
+
+  /** Releases a Paimon-backed keep-last deduplicator handle. */
+  public static native void closePaimonKeepLastDeduplicator(long handle);
 
   /**
    * Creates a changelog normalizer (keep-last per unique key) and returns an opaque handle. Each

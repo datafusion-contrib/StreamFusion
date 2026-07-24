@@ -232,6 +232,7 @@ class NativeColumnarDeduplicateOperatorTest {
             new int[] {0},
             new int[] {-1},
             2,
+            SCHEMA,
             true,
             true,
             false,

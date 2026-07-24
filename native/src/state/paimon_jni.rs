@@ -19,6 +19,28 @@ fn throw_runtime(env: &mut JNIEnv, message: &str) {
     let _ = env.throw_new("java/lang/RuntimeException", message);
 }
 
+/// Serializes a checkpoint manifest as the host-facing string array —
+/// `["<snapshot id>", "d:<data file>"…, "m:<meta file>"…]`, paths relative to the table root.
+fn manifest_array<'local>(
+    env: &mut JNIEnv<'local>,
+    manifest: &PaimonCheckpointManifest,
+) -> jobjectArray {
+    let mut lines =
+        Vec::with_capacity(1 + manifest.data_files.len() + manifest.meta_files.len());
+    lines.push(manifest.snapshot_id.to_string());
+    lines.extend(manifest.data_files.iter().map(|f| format!("d:{f}")));
+    lines.extend(manifest.meta_files.iter().map(|f| format!("m:{f}")));
+    let array = env
+        .new_object_array(lines.len() as i32, "java/lang/String", JObject::null())
+        .expect("manifest array");
+    for (i, line) in lines.iter().enumerate() {
+        let value = env.new_string(line).expect("manifest line");
+        env.set_object_array_element(&array, i as i32, value)
+            .expect("manifest element");
+    }
+    array.into_raw()
+}
+
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonGroupAggregator<
     'local,
@@ -163,21 +185,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPai
     let aggregator = unsafe { &mut *(handle as *mut PaimonGroupAggregator) };
     let link_dir = read_string(&mut env, &link_directory);
     match aggregator.store_mut().checkpoint(&link_dir) {
-        Ok(manifest) => {
-            let mut lines = Vec::with_capacity(1 + manifest.data_files.len() + manifest.meta_files.len());
-            lines.push(manifest.snapshot_id.to_string());
-            lines.extend(manifest.data_files.iter().map(|f| format!("d:{f}")));
-            lines.extend(manifest.meta_files.iter().map(|f| format!("m:{f}")));
-            let array = env
-                .new_object_array(lines.len() as i32, "java/lang/String", JObject::null())
-                .expect("manifest array");
-            for (i, line) in lines.iter().enumerate() {
-                let value = env.new_string(line).expect("manifest line");
-                env.set_object_array_element(&array, i as i32, value)
-                    .expect("manifest element");
-            }
-            array.into_raw()
-        }
+        Ok(manifest) => manifest_array(&mut env, &manifest),
         Err(e) => {
             throw_runtime(&mut env, &format!("paimon state checkpoint failed: {e}"));
             std::ptr::null_mut()
@@ -231,5 +239,191 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonGr
 ) {
     unsafe {
         drop(from_handle::<PaimonGroupAggregator>(handle));
+    }
+}
+
+type PaimonKeepLastDeduplicator = KeepLastDeduplicator<PaimonDedupStore>;
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonKeepLastDeduplicator<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    partition_columns: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
+    rt_column: jint,
+    row_schema_address: jlong,
+    generate_update_before: jboolean,
+    rowtime_ordered: jboolean,
+    keep_first: jboolean,
+    mini_batch: jboolean,
+    memory_budget_bytes: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    file_format: JString<'local>,
+    file_compression: JString<'local>,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_ids: JLongArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+) -> jlong {
+    let partitions = read_columns(&env, &partition_columns);
+    let timestamp_precisions: Vec<i32> = read_int_array(&env, &key_timestamp_precisions)
+        .into_iter()
+        .map(|precision| precision as i32)
+        .collect();
+    let row_types: Vec<DataType> = import_schema(row_schema_address)
+        .fields()
+        .iter()
+        .map(|field| field.data_type().clone())
+        .collect();
+    let table_dir = read_string(&mut env, &table_directory);
+    let format = read_string(&mut env, &file_format);
+    let compression = read_string(&mut env, &file_compression);
+    let source_dirs: Vec<String> = read_strings(&mut env, &source_directories)
+        .into_iter()
+        .flatten()
+        .collect();
+    let source_snapshots = read_longs(&env, &source_snapshot_ids);
+
+    let codec = DedupStateCodec::new(row_types, rt_column as usize, rowtime_ordered != 0);
+    let config = PaimonStoreConfig {
+        table_dir,
+        max_parallelism: max_parallelism as usize,
+        file_format: format,
+        file_compression: compression,
+    };
+    let store = if source_dirs.is_empty() {
+        PaimonDedupStore::create(config, codec)
+    } else {
+        let sources: Vec<(String, i64)> =
+            source_dirs.into_iter().zip(source_snapshots).collect();
+        PaimonDedupStore::open_merged(config, codec, &sources, key_group_start..=key_group_end)
+    };
+    let dedup = store.and_then(|store| {
+        KeepLastDeduplicator::new(
+            partitions,
+            rt_column as usize,
+            generate_update_before != 0,
+            rowtime_ordered != 0,
+            keep_first != 0,
+        )
+        .with_mini_batch(mini_batch != 0)
+        .with_key_timestamp_precisions(timestamp_precisions)
+        .with_backend(store)
+        .with_read_through_budget(memory_budget_bytes)
+    });
+    boxed_or_throw(&mut env, dedup)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonKeepLastDeduplicator<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let dedup = unsafe { &mut *(handle as *mut PaimonKeepLastDeduplicator) };
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        dedup.push(&batch)
+    };
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonKeepLastDeduplicator<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let dedup = unsafe { &mut *(handle as *mut PaimonKeepLastDeduplicator) };
+    match dedup.flush_mini_batch() {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
+}
+
+/// Checkpoint sync phase (task thread, at the barrier); see `checkpointPaimonGroupAggregator`.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonKeepLastDeduplicator<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    link_directory: JString<'local>,
+) -> jobjectArray {
+    let dedup = unsafe { &mut *(handle as *mut PaimonKeepLastDeduplicator) };
+    let link_dir = read_string(&mut env, &link_directory);
+    match dedup.store_mut().checkpoint(&link_dir) {
+        Ok(manifest) => manifest_array(&mut env, &manifest),
+        Err(e) => {
+            throw_runtime(&mut env, &format!("paimon state checkpoint failed: {e}"));
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonKeepLastDeduplicatorStateBytes<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let dedup = unsafe { &*(handle as *const PaimonKeepLastDeduplicator) };
+    dedup.memory.state_bytes as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonKeepLastDeduplicatorStagingBytes<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let dedup = unsafe { &*(handle as *const PaimonKeepLastDeduplicator) };
+    dedup.staging_bytes() as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonKeepLastDeduplicatorStagedKeys<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let dedup = unsafe { &*(handle as *const PaimonKeepLastDeduplicator) };
+    dedup.staged_keys() as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonKeepLastDeduplicator<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    unsafe {
+        drop(from_handle::<PaimonKeepLastDeduplicator>(handle));
     }
 }
