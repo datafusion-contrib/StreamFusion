@@ -138,6 +138,62 @@ pub(crate) fn paimon_row_supported(types: &[DataType]) -> bool {
     types.iter().all(|t| paimon_type_of(t).is_some())
 }
 
+/// The shared half of every row-payload codec (keep-last dedup, changelog normalize): the
+/// persisted value IS the operator's stored full row as typed columns — never the transient
+/// arrow-row bytes, mirroring the raw keyed-state snapshots (arrow-row encoding is not a stable
+/// wire format). A side effect worth having: the state table reads like the operator's output
+/// table itself.
+pub(crate) struct RowPayloadCodec {
+    row_types: Vec<DataType>,
+    converter: arrow::row::RowConverter,
+}
+
+impl RowPayloadCodec {
+    pub(crate) fn new(row_types: Vec<DataType>) -> Self {
+        let converter = arrow::row::RowConverter::new(
+            row_types.iter().map(|t| arrow::row::SortField::new(t.clone())).collect(),
+        )
+        .expect("row payload codec converter");
+        RowPayloadCodec { row_types, converter }
+    }
+
+    pub(crate) fn supported(&self) -> bool {
+        paimon_row_supported(&self.row_types)
+    }
+
+    pub(crate) fn fields(&self) -> Vec<(String, DataType)> {
+        self.row_types
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (format!("c{i}"), t.clone()))
+            .collect()
+    }
+
+    pub(crate) fn encode_payload(&self, payload: &[u8]) -> Vec<ScalarValue> {
+        let parser = self.converter.parser();
+        let columns = self
+            .converter
+            .convert_rows([parser.parse(payload)])
+            .expect("decode row payload for persistence");
+        columns
+            .iter()
+            .map(|column| ScalarValue::try_from_array(column, 0).expect("row payload scalar"))
+            .collect()
+    }
+
+    /// Rebuilds the one-row typed columns and the arrow-row payload from a persisted row. The
+    /// columns come back too so a codec can derive extra state from them (dedup's rowtime).
+    pub(crate) fn decode_payload(&self, scalars: &[ScalarValue]) -> (Arc<[u8]>, Vec<ArrayRef>) {
+        let columns: Vec<ArrayRef> = scalars
+            .iter()
+            .zip(&self.row_types)
+            .map(|(scalar, data_type)| scalars_to_array(vec![scalar.clone()], data_type))
+            .collect();
+        let rows = self.converter.convert_columns(&columns).expect("encode hydrated row payload");
+        (Arc::from(rows.row(0).data()), columns)
+    }
+}
+
 /// True when every aggregate state column (and by construction the row codec) is persistable.
 pub(crate) fn paimon_group_supported(kinds: &[i64], state_types: &[DataType]) -> bool {
     group_kinds_persistable(kinds) && paimon_row_supported(state_types)

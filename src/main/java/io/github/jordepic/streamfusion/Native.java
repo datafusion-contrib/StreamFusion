@@ -1070,6 +1070,54 @@ public final class Native {
   public static native void closePaimonKeepLastDeduplicator(long handle);
 
   /**
+   * {@code createChangelogNormalizer} on the Paimon state backend; state row and restore semantics
+   * as in {@link #createPaimonKeepLastDeduplicator}.
+   */
+  public static native long createPaimonChangelogNormalizer(
+      int[] keyColumns,
+      int[] keyTimestampPrecisions,
+      long rowSchemaAddress,
+      boolean generateUpdateBefore,
+      boolean miniBatch,
+      long memoryBudgetBytes,
+      String tableDirectory,
+      int maxParallelism,
+      String fileFormat,
+      String fileCompression,
+      String[] sourceDirectories,
+      long[] sourceSnapshotIds,
+      int keyGroupStart,
+      int keyGroupEnd);
+
+  /** {@code pushChangelogNormalizer} for a Paimon-backed handle. */
+  public static native void pushPaimonChangelogNormalizer(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  /** {@code flushChangelogNormalizer} for a Paimon-backed handle. */
+  public static native void flushPaimonChangelogNormalizer(
+      long handle, long outArrayAddress, long outSchemaAddress);
+
+  /** {@code checkpointPaimonGroupAggregator} for a Paimon-backed changelog normalizer. */
+  public static native String[] checkpointPaimonChangelogNormalizer(
+      long handle, String linkDirectory);
+
+  /** Estimated bytes of a Paimon-backed changelog normalizer's resident working set. */
+  public static native long paimonChangelogNormalizerStateBytes(long handle);
+
+  /** {@code changelogNormalizerStagingBytes} for a Paimon-backed handle. */
+  public static native long paimonChangelogNormalizerStagingBytes(long handle);
+
+  /** {@code changelogNormalizerStagedKeys} for a Paimon-backed handle. */
+  public static native long paimonChangelogNormalizerStagedKeys(long handle);
+
+  /** Releases a Paimon-backed changelog normalizer handle. */
+  public static native void closePaimonChangelogNormalizer(long handle);
+
+  /**
    * Creates a changelog normalizer (keep-last per unique key) and returns an opaque handle. Each
    * input changelog batch folds into per-key state and the normalizer exports the normalized
    * changelog (INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE on the {@code $row_kind$} column). Released

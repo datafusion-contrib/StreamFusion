@@ -1,7 +1,10 @@
 package io.github.jordepic.streamfusion.operator;
 
 import io.github.jordepic.streamfusion.Native;
+import io.github.jordepic.streamfusion.arrow.ArrowConversion;
 import io.github.jordepic.streamfusion.operator.MiniBatchMetrics.FlushReason;
+import io.github.jordepic.streamfusion.planner.NativeConfig;
+import io.github.jordepic.streamfusion.state.PaimonNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
@@ -14,6 +17,7 @@ import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Changelog normalization (Flink's {@code ChangelogNormalize}), fed Arrow batches and emitting Arrow
@@ -29,6 +33,7 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
 
   private final int[] keyColumns;
   private final int[] keyTimestampPrecisions;
+  private final RowType rowType;
   private final boolean generateUpdateBefore;
   private final boolean miniBatch;
   private final long miniBatchSize;
@@ -37,6 +42,7 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
+  private transient boolean paimonState;
   private transient MiniBatchBoundary boundary;
   private transient MiniBatchMetrics miniBatchMetrics;
   private transient ManagedMemoryBudget memoryBudget;
@@ -44,12 +50,14 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
   public NativeColumnarChangelogNormalizeOperator(
       int[] keyColumns,
       int[] keyTimestampPrecisions,
+      RowType rowType,
       boolean generateUpdateBefore,
       boolean miniBatch,
       long miniBatchSize,
       int maxParallelism) {
     this.keyColumns = keyColumns;
     this.keyTimestampPrecisions = keyTimestampPrecisions;
+    this.rowType = rowType;
     this.generateUpdateBefore = generateUpdateBefore;
     this.miniBatch = miniBatch;
     this.miniBatchSize = miniBatchSize;
@@ -70,6 +78,38 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
     super.initializeState(context);
     java.util.List<byte[]> snapshots = RawKeyedState.restore(context);
     memoryBudget = ManagedMemoryBudget.reserveFor(this);
+    PaimonNativeStateSupport paimon =
+        PaimonNativeStateSupport.resolve(
+            getKeyedStateBackend(),
+            "changelog normalize",
+            !snapshots.isEmpty(),
+            () ->
+                withRowSchema(address -> Native.paimonRowStateSupported(address) ? 1L : 0L) != 0);
+    paimonState = paimon != null;
+    if (paimonState) {
+      handle =
+          withRowSchema(
+              rowSchemaAddress ->
+                  Native.createPaimonChangelogNormalizer(
+                      keyColumns,
+                      keyTimestampPrecisions,
+                      rowSchemaAddress,
+                      generateUpdateBefore,
+                      miniBatch,
+                      memoryBudget.bytes(),
+                      paimon.tableDirectory(),
+                      maxParallelism,
+                      NativeConfig.paimonFileFormat(),
+                      NativeConfig.paimonFileCompression(),
+                      paimon.sourceDirectories(),
+                      paimon.sourceSnapshotIds(),
+                      paimon.keyGroupStart(),
+                      paimon.keyGroupEnd()));
+      long nativeHandle = handle;
+      paimon.register(
+          linkDir -> Native.checkpointPaimonChangelogNormalizer(nativeHandle, linkDir));
+      return;
+    }
     handle =
         snapshots.isEmpty()
             ? Native.createChangelogNormalizer(
@@ -85,6 +125,21 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
                 miniBatch,
                 snapshots.toArray(new byte[0][]),
                 memoryBudget.bytes());
+  }
+
+  /**
+   * Exports the input row type as an FFI Arrow schema for the duration of one native call; the
+   * native side consumes the schema contents, the wrapper struct is released here.
+   */
+  private long withRowSchema(java.util.function.LongUnaryOperator call) {
+    try (ArrowSchema rowSchema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+      Data.exportSchema(
+          NativeAllocator.SHARED,
+          ArrowConversion.toArrowSchema(rowType),
+          NativeAllocator.DICTIONARIES,
+          rowSchema);
+      return call.applyAsLong(rowSchema.memoryAddress());
+    }
   }
 
   @Override
@@ -152,12 +207,21 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
         ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
-      Native.pushChangelogNormalizer(
-          handle,
-          inArray.memoryAddress(),
-          inSchema.memoryAddress(),
-          outArray.memoryAddress(),
-          outSchema.memoryAddress());
+      if (paimonState) {
+        Native.pushPaimonChangelogNormalizer(
+            handle,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      } else {
+        Native.pushChangelogNormalizer(
+            handle,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       if (out.getRowCount() > 0) {
@@ -194,11 +258,23 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
   }
 
   private void flushBundle(FlushReason reason) {
-    long transientBytes = Native.changelogNormalizerStagingBytes(handle);
-    long touchedKeys = Native.changelogNormalizerStagedKeys(handle);
+    long transientBytes =
+        paimonState
+            ? Native.paimonChangelogNormalizerStagingBytes(handle)
+            : Native.changelogNormalizerStagingBytes(handle);
+    long touchedKeys =
+        paimonState
+            ? Native.paimonChangelogNormalizerStagedKeys(handle)
+            : Native.changelogNormalizerStagedKeys(handle);
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushChangelogNormalizer(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      if (paimonState) {
+        Native.flushPaimonChangelogNormalizer(
+            handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      } else {
+        Native.flushChangelogNormalizer(
+            handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       int outputRows = out.getRowCount();
@@ -215,23 +291,34 @@ public class NativeColumnarChangelogNormalizeOperator extends AbstractStreamOper
   /** Samples the native state size for the operator's gauges; task-thread only. */
   private void publishStateBytes() {
     if (memoryBudget.bounded()) {
-      memoryBudget.publishStateBytes(Native.changelogNormalizerStateBytes(handle));
+      memoryBudget.publishStateBytes(
+          paimonState
+              ? Native.paimonChangelogNormalizerStateBytes(handle)
+              : Native.changelogNormalizerStateBytes(handle));
     }
   }
 
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    RawKeyedState.snapshotPartitions(
-        context,
-        Native.snapshotChangelogNormalizerPartitions(
-            handle, maxParallelism, keyTimestampPrecisions));
+    // Paimon state checkpoints through the keyed state backend's snapshot (an incremental Paimon
+    // commit); only memory state travels as raw keyed-state blobs.
+    if (!paimonState) {
+      RawKeyedState.snapshotPartitions(
+          context,
+          Native.snapshotChangelogNormalizerPartitions(
+              handle, maxParallelism, keyTimestampPrecisions));
+    }
   }
 
   @Override
   public void close() throws Exception {
     if (handle != 0) {
-      Native.closeChangelogNormalizer(handle);
+      if (paimonState) {
+        Native.closePaimonChangelogNormalizer(handle);
+      } else {
+        Native.closeChangelogNormalizer(handle);
+      }
       handle = 0;
     }
     if (memoryBudget != null) {

@@ -240,6 +240,7 @@ class NativeColumnarChangelogNormalizeOperatorTest {
     return new NativeColumnarChangelogNormalizeOperator(
         new int[] {0},
         new int[] {-1},
+        SCHEMA,
         generateUpdateBefore,
         miniBatch,
         miniBatchSize,

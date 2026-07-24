@@ -427,3 +427,180 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonKe
         drop(from_handle::<PaimonKeepLastDeduplicator>(handle));
     }
 }
+
+type PaimonChangelogNormalizer = ChangelogNormalizer<PaimonNormalizerStore>;
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonChangelogNormalizer<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    key_columns: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
+    row_schema_address: jlong,
+    generate_update_before: jboolean,
+    mini_batch: jboolean,
+    memory_budget_bytes: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    file_format: JString<'local>,
+    file_compression: JString<'local>,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_ids: JLongArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+) -> jlong {
+    let keys = read_columns(&env, &key_columns);
+    let timestamp_precisions: Vec<i32> = read_int_array(&env, &key_timestamp_precisions)
+        .into_iter()
+        .map(|precision| precision as i32)
+        .collect();
+    let row_types: Vec<DataType> = import_schema(row_schema_address)
+        .fields()
+        .iter()
+        .map(|field| field.data_type().clone())
+        .collect();
+    let table_dir = read_string(&mut env, &table_directory);
+    let format = read_string(&mut env, &file_format);
+    let compression = read_string(&mut env, &file_compression);
+    let source_dirs: Vec<String> = read_strings(&mut env, &source_directories)
+        .into_iter()
+        .flatten()
+        .collect();
+    let source_snapshots = read_longs(&env, &source_snapshot_ids);
+
+    let codec = NormalizerStateCodec::new(row_types);
+    let config = PaimonStoreConfig {
+        table_dir,
+        max_parallelism: max_parallelism as usize,
+        file_format: format,
+        file_compression: compression,
+    };
+    let store = if source_dirs.is_empty() {
+        PaimonNormalizerStore::create(config, codec)
+    } else {
+        let sources: Vec<(String, i64)> =
+            source_dirs.into_iter().zip(source_snapshots).collect();
+        PaimonNormalizerStore::open_merged(config, codec, &sources, key_group_start..=key_group_end)
+    };
+    let normalizer = store.and_then(|store| {
+        ChangelogNormalizer::new(keys, generate_update_before != 0)
+            .with_mini_batch(mini_batch != 0)
+            .with_key_timestamp_precisions(timestamp_precisions)
+            .with_backend(store)
+            .with_read_through_budget(memory_budget_bytes)
+    });
+    boxed_or_throw(&mut env, normalizer)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonChangelogNormalizer<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let normalizer = unsafe { &mut *(handle as *mut PaimonChangelogNormalizer) };
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        normalizer.push(&batch)
+    };
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonChangelogNormalizer<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let normalizer = unsafe { &mut *(handle as *mut PaimonChangelogNormalizer) };
+    match normalizer.flush_mini_batch() {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
+}
+
+/// Checkpoint sync phase (task thread, at the barrier); see `checkpointPaimonGroupAggregator`.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonChangelogNormalizer<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    link_directory: JString<'local>,
+) -> jobjectArray {
+    let normalizer = unsafe { &mut *(handle as *mut PaimonChangelogNormalizer) };
+    let link_dir = read_string(&mut env, &link_directory);
+    match normalizer.store_mut().checkpoint(&link_dir) {
+        Ok(manifest) => manifest_array(&mut env, &manifest),
+        Err(e) => {
+            throw_runtime(&mut env, &format!("paimon state checkpoint failed: {e}"));
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonChangelogNormalizerStateBytes<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let normalizer = unsafe { &*(handle as *const PaimonChangelogNormalizer) };
+    normalizer.memory.state_bytes as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonChangelogNormalizerStagingBytes<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let normalizer = unsafe { &*(handle as *const PaimonChangelogNormalizer) };
+    normalizer.staging_bytes() as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonChangelogNormalizerStagedKeys<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let normalizer = unsafe { &*(handle as *const PaimonChangelogNormalizer) };
+    normalizer.staged_keys() as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonChangelogNormalizer<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    unsafe {
+        drop(from_handle::<PaimonChangelogNormalizer>(handle));
+    }
+}

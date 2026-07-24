@@ -74,6 +74,7 @@ public class NativeChangelogNormalizeExecNode extends ExecNodeBase<ArrowBatch>
             new NativeColumnarChangelogNormalizeOperator(
                 keyColumns,
                 keyTimestampPrecisions,
+                (RowType) getOutputType(),
                 generateUpdateBefore,
                 miniBatch,
                 miniBatchSize,

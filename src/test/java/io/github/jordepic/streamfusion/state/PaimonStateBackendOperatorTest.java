@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.jordepic.streamfusion.operator.ArrowBatch;
 import io.github.jordepic.streamfusion.operator.ArrowBatchSerializer;
+import io.github.jordepic.streamfusion.operator.NativeColumnarChangelogNormalizeOperator;
 import io.github.jordepic.streamfusion.operator.NativeColumnarGroupAggregateOperator;
 import io.github.jordepic.streamfusion.operator.NativeColumnarKeepLastDeduplicateOperator;
 import io.github.jordepic.streamfusion.operator.RowDataArrowConverter;
@@ -216,6 +217,60 @@ class PaimonStateBackendOperatorTest {
               List.of(RowKind.UPDATE_AFTER, 1L, 11L, 5L)),
           collectDedup(harness));
     }
+  }
+
+  /**
+   * The changelog normalizer rides the same backend; a restored operator's delete emits the
+   * stored full row (hydrated from the pre-restore table) and tombstones it.
+   */
+  @Test
+  void normalizerCheckpointsAndRestores() throws Exception {
+    OperatorSubtaskState snapshot;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            normalizerHarness()) {
+      harness.setStateBackend(new PaimonStateBackend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 10), row(2, 20))));
+      assertEquals(List.of(insert(1, 10), insert(2, 20)), collect(harness));
+      snapshot = harness.snapshot(1, 1);
+      paimonHandle(snapshot);
+      harness.notifyOfCompletedCheckpoint(1);
+    }
+
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            normalizerHarness()) {
+      harness.setStateBackend(new PaimonStateBackend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(snapshot);
+      harness.open();
+
+      VectorSchemaRoot changes =
+          RowDataArrowConverter.write(
+              List.of(rowOfKind(RowKind.UPDATE_AFTER, 1, 11), rowOfKind(RowKind.DELETE, 2, 0)),
+              INPUT,
+              allocator,
+              true);
+      harness.processElement(new StreamRecord<>(new ArrowBatch(changes)));
+      assertEquals(
+          List.of(
+              update(RowKind.UPDATE_BEFORE, 1, 10),
+              update(RowKind.UPDATE_AFTER, 1, 11),
+              update(RowKind.DELETE, 2, 20)),
+          collect(harness));
+    }
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      normalizerHarness() throws Exception {
+    NativeColumnarChangelogNormalizeOperator operator =
+        new NativeColumnarChangelogNormalizeOperator(
+            new int[] {0}, new int[] {-1}, INPUT, true, false, 0, MAX_PARALLELISM);
+    return new KeyedOneInputStreamOperatorTestHarness<>(
+        operator, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0);
   }
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>

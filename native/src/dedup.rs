@@ -420,26 +420,23 @@ pub(crate) fn dedup_entry_bytes(key: &[u8], payload: &[u8]) -> usize {
 #[cfg(feature = "paimon-state")]
 pub(crate) type PaimonDedupStore = crate::state::PaimonStore<DedupStateCodec>;
 
-/// The dedup value codec for the Paimon store: the persisted row IS the stored full row as typed
-/// columns — never the transient arrow-row bytes, mirroring the raw keyed-state snapshot (which
-/// also decodes payloads, because arrow-row encoding is not a stable wire format). The rowtime is
-/// re-derived from the row's own rowtime column on hydration, exactly as restore does.
+/// The dedup value codec for the Paimon store: a row-payload codec (see `RowPayloadCodec`), with
+/// the rowtime re-derived from the row's own rowtime column on hydration, exactly as restore does.
 #[cfg(feature = "paimon-state")]
 pub(crate) struct DedupStateCodec {
-    row_types: Vec<DataType>,
+    row: crate::state::RowPayloadCodec,
     rt_column: usize,
     rowtime_ordered: bool,
-    converter: RowConverter,
 }
 
 #[cfg(feature = "paimon-state")]
 impl DedupStateCodec {
     pub(crate) fn new(row_types: Vec<DataType>, rt_column: usize, rowtime_ordered: bool) -> Self {
-        let converter = RowConverter::new(
-            row_types.iter().map(|t| SortField::new(t.clone())).collect(),
-        )
-        .expect("dedup codec converter");
-        DedupStateCodec { row_types, rt_column, rowtime_ordered, converter }
+        DedupStateCodec {
+            row: crate::state::RowPayloadCodec::new(row_types),
+            rt_column,
+            rowtime_ordered,
+        }
     }
 }
 
@@ -448,42 +445,25 @@ impl crate::state::PaimonStateCodec for DedupStateCodec {
     type Value = DedupRow;
 
     fn supported(&self) -> bool {
-        crate::state::paimon_row_supported(&self.row_types)
+        self.row.supported()
     }
 
     fn value_fields(&self) -> Vec<(String, DataType)> {
-        self.row_types
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (format!("c{i}"), t.clone()))
-            .collect()
+        self.row.fields()
     }
 
     fn encode(&self, row: &DedupRow) -> Vec<ScalarValue> {
-        let parser = self.converter.parser();
-        let columns = self
-            .converter
-            .convert_rows([parser.parse(&row.payload)])
-            .expect("decode dedup payload for persistence");
-        columns
-            .iter()
-            .map(|column| ScalarValue::try_from_array(column, 0).expect("dedup state scalar"))
-            .collect()
+        self.row.encode_payload(&row.payload)
     }
 
     fn decode(&self, scalars: &[ScalarValue]) -> DedupRow {
-        let columns: Vec<ArrayRef> = scalars
-            .iter()
-            .zip(&self.row_types)
-            .map(|(scalar, data_type)| scalars_to_array(vec![scalar.clone()], data_type))
-            .collect();
+        let (payload, columns) = self.row.decode_payload(scalars);
         let rowtime = if self.rowtime_ordered {
             rt_to_millis(&columns[self.rt_column]).value(0)
         } else {
             0
         };
-        let rows = self.converter.convert_columns(&columns).expect("encode hydrated dedup payload");
-        DedupRow { rowtime, payload: Arc::from(rows.row(0).data()), staged: false }
+        DedupRow { rowtime, payload, staged: false }
     }
 
     fn value_bytes(&self, row: &DedupRow) -> usize {

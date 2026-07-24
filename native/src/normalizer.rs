@@ -9,21 +9,24 @@ use crate::*;
 ///   * a "remove" (`-D`/`-U`): emit `-D`(the stored full row, since a tombstone may carry only the
 ///     key) and clear the key; a remove of an absent key emits nothing.
 /// Proctime — it emits synchronously per input row, so there is no watermark buffering.
-pub(crate) struct ChangelogNormalizer {
+pub(crate) struct ChangelogNormalizer<S: KeyedStateStore<NormalizedRow> = MemoryNormalizerStore> {
     key_columns: Vec<usize>,
     key_timestamp_precisions: Vec<i32>,
     generate_update_before: bool,
     schema: Option<SchemaRef>,
     payload_converter: Option<RowConverter>,
-    rows: HashMap<ByteKey, NormalizedRow>,
+    rows: S,
     mini_batch: bool,
     staged: MiniBatchChanges<ByteKey, Arc<[u8]>>,
     staged_bytes: usize,
     snapshot_cache: Option<NormalizerSnapshotCache>,
-    memory: OperatorMemory,
+    pub(crate) memory: OperatorMemory,
 }
 
-struct NormalizedRow {
+/// The resident default backend for the normalizer store (see `state/` for the seam).
+pub(crate) type MemoryNormalizerStore = MemoryStateStore<NormalizedRow>;
+
+pub(crate) struct NormalizedRow {
     payload: Arc<[u8]>,
     staged: bool,
 }
@@ -40,6 +43,50 @@ pub(crate) fn scalar_row_bytes(row: &[ScalarValue]) -> usize {
     row.iter().map(ScalarValue::size).sum()
 }
 
+/// The normalizer persistent backend: the generic Paimon store under a plain row-payload codec.
+#[cfg(feature = "paimon-state")]
+pub(crate) type PaimonNormalizerStore = crate::state::PaimonStore<NormalizerStateCodec>;
+
+/// The normalizer value codec for the Paimon store: exactly a row-payload codec (see
+/// `RowPayloadCodec`) — the stored last row per unique key, as typed columns.
+#[cfg(feature = "paimon-state")]
+pub(crate) struct NormalizerStateCodec {
+    row: crate::state::RowPayloadCodec,
+}
+
+#[cfg(feature = "paimon-state")]
+impl NormalizerStateCodec {
+    pub(crate) fn new(row_types: Vec<DataType>) -> Self {
+        NormalizerStateCodec { row: crate::state::RowPayloadCodec::new(row_types) }
+    }
+}
+
+#[cfg(feature = "paimon-state")]
+impl crate::state::PaimonStateCodec for NormalizerStateCodec {
+    type Value = NormalizedRow;
+
+    fn supported(&self) -> bool {
+        self.row.supported()
+    }
+
+    fn value_fields(&self) -> Vec<(String, DataType)> {
+        self.row.fields()
+    }
+
+    fn encode(&self, row: &NormalizedRow) -> Vec<ScalarValue> {
+        self.row.encode_payload(&row.payload)
+    }
+
+    fn decode(&self, scalars: &[ScalarValue]) -> NormalizedRow {
+        let (payload, _) = self.row.decode_payload(scalars);
+        NormalizedRow { payload, staged: false }
+    }
+
+    fn value_bytes(&self, row: &NormalizedRow) -> usize {
+        row.payload.len()
+    }
+}
+
 impl ChangelogNormalizer {
     pub(crate) fn new(key_columns: Vec<usize>, generate_update_before: bool) -> Self {
         let key_arity = key_columns.len();
@@ -49,18 +96,13 @@ impl ChangelogNormalizer {
             generate_update_before,
             schema: None,
             payload_converter: None,
-            rows: HashMap::default(),
+            rows: MemoryNormalizerStore::default(),
             mini_batch: false,
             staged: MiniBatchChanges::default(),
             staged_bytes: 0,
             snapshot_cache: None,
             memory: OperatorMemory::unaccounted(),
         }
-    }
-
-    pub(crate) fn with_mini_batch(mut self, mini_batch: bool) -> Self {
-        self.mini_batch = mini_batch;
-        self
     }
 
     /// Bounds the stored last-row-per-key state by the operator's managed-memory budget (negative =
@@ -74,8 +116,55 @@ impl ChangelogNormalizer {
         self.memory.attach("changelog-normalize", budget_bytes, state)?;
         Ok(self)
     }
+}
 
-    fn with_key_timestamp_precisions(mut self, key_timestamp_precisions: Vec<i32>) -> Self {
+impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
+    /// Moves this freshly built (empty, memory-backed) normalizer's configuration onto another
+    /// state backend; construction goes through `new` + builders first so backend choice stays
+    /// orthogonal to the shape builders.
+    pub(crate) fn with_backend<T: KeyedStateStore<NormalizedRow>>(
+        self,
+        rows: T,
+    ) -> ChangelogNormalizer<T> {
+        ChangelogNormalizer {
+            key_columns: self.key_columns,
+            key_timestamp_precisions: self.key_timestamp_precisions,
+            generate_update_before: self.generate_update_before,
+            schema: self.schema,
+            payload_converter: self.payload_converter,
+            rows,
+            mini_batch: self.mini_batch,
+            staged: self.staged,
+            staged_bytes: self.staged_bytes,
+            snapshot_cache: None,
+            memory: self.memory,
+        }
+    }
+
+    /// Attaches the managed-memory budget for a backend that starts with nothing resident (a
+    /// read-through store hydrates on demand; there is no restored map to pre-account).
+    pub(crate) fn with_read_through_budget(
+        mut self,
+        budget_bytes: i64,
+    ) -> Result<Self, DataFusionError> {
+        self.memory.attach("changelog-normalize", budget_bytes, 0)?;
+        Ok(self)
+    }
+
+    /// The backing store, for backend-specific control paths (checkpointing a persistent store).
+    pub(crate) fn store_mut(&mut self) -> &mut S {
+        &mut self.rows
+    }
+
+    pub(crate) fn with_mini_batch(mut self, mini_batch: bool) -> Self {
+        self.mini_batch = mini_batch;
+        self
+    }
+
+    pub(crate) fn with_key_timestamp_precisions(
+        mut self,
+        key_timestamp_precisions: Vec<i32>,
+    ) -> Self {
         self.key_timestamp_precisions = key_timestamp_precisions;
         self
     }
@@ -98,6 +187,8 @@ impl ChangelogNormalizer {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         self.ensure_payload_converter(batch, arity);
+        self.rows
+            .begin_batch(batch, &self.key_columns, &self.key_timestamp_precisions)?;
         let track = self.memory.tracking();
         let mut delta = 0isize;
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
@@ -162,16 +253,18 @@ impl ChangelogNormalizer {
                         prev.payload = current;
                     }
                 }
-            } else if let Some(prev) = self.rows.remove(key) {
+            } else if let Some(prev) = self.rows.get(key) {
+                let (payload, staged) = (prev.payload.clone(), prev.staged);
+                self.rows.remove(key);
                 if track {
-                    delta -= (byte_key_bytes(key) + prev.payload.len()) as isize;
+                    delta -= (byte_key_bytes(key) + payload.len()) as isize;
                 }
                 if self.mini_batch {
-                    if !prev.staged {
-                        self.staged.touch(ByteKey::from(key), Some(prev.payload));
+                    if !staged {
+                        self.staged.touch(ByteKey::from(key), Some(payload));
                     }
                 } else {
-                    out_rows.push(prev.payload); // emit the stored full row, not the (maybe key-only) tombstone
+                    out_rows.push(payload); // emit the stored full row, not the (maybe key-only) tombstone
                     out_kinds.push(3); // -D
                 }
             }
@@ -184,7 +277,12 @@ impl ChangelogNormalizer {
             delta += retained as isize - self.staged_bytes as isize;
             self.staged_bytes = retained;
         }
-        self.memory.record(delta);
+        // A mini-batch bundle spans pushes: hydrated keys stay resident until the flush ends the
+        // bundle, so the staged re-probes there stay truthful.
+        if !self.mini_batch {
+            self.rows.end_bundle()?;
+        }
+        self.memory.record(delta + self.rows.footprint_delta());
         self.memory.account()?;
         Ok(self.emit(out_rows, out_kinds))
     }
@@ -194,7 +292,7 @@ impl ChangelogNormalizer {
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
         let changes = self.staged.drain_final(|key| {
-            self.rows.get_mut(key).map(|row| {
+            self.rows.get_mut(&key.0).map(|row| {
                 row.staged = false;
                 row.payload.clone()
             })
@@ -221,17 +319,19 @@ impl ChangelogNormalizer {
                 }
             }
         }
-        self.memory.record(-(self.staged_bytes as isize));
+        self.rows.end_bundle()?;
+        self.memory
+            .record(self.rows.footprint_delta() - self.staged_bytes as isize);
         self.staged_bytes = 0;
         self.memory.account()?;
         Ok(self.emit(out_rows, out_kinds))
     }
 
-    fn staged_keys(&self) -> usize {
+    pub(crate) fn staged_keys(&self) -> usize {
         self.staged.touched_keys()
     }
 
-    fn staging_bytes(&self) -> usize {
+    pub(crate) fn staging_bytes(&self) -> usize {
         self.staged_bytes
     }
 
@@ -251,7 +351,11 @@ impl ChangelogNormalizer {
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build changelog-normalize batch")
     }
+}
 
+/// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
+/// store checkpoints through its own commit path instead of materializing the key space.
+impl ChangelogNormalizer {
     /// Serializes the stored last-row-per-key set with its already canonical BinaryRow key.
     fn snapshot(&self) -> Vec<u8> {
         let selected: Vec<ByteKey> = self.rows.keys().cloned().collect();
@@ -272,7 +376,9 @@ impl ChangelogNormalizer {
         let parser = converter.parser();
         columns.extend(
             converter
-                .convert_rows(selected.iter().map(|key| parser.parse(&self.rows[key].payload)))
+                .convert_rows(selected.iter().map(|key| {
+                    parser.parse(&self.rows.get(&key.0).expect("selected key present").payload)
+                }))
                 .expect("decode normalizer snapshot payloads"),
         );
         write_ipc(
@@ -374,7 +480,7 @@ impl ChangelogNormalizer {
                 merged.schema = restored.schema.clone();
                 merged.payload_converter = restored.payload_converter;
             }
-            merged.rows.extend(restored.rows);
+            merged.rows.absorb(restored.rows);
         }
         merged
     }

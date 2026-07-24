@@ -3564,4 +3564,92 @@ mod paimon_state {
         assert_eq!(row_kinds(&out), vec![1, 2, 0]);
         assert_eq!(values(&out, 1), vec![20, 25, 40], "-U carries the pre-restore payload");
     }
+
+    // -----------------------------------------------------------------------------------------
+    // Changelog normalize on the same store: a plain row-payload codec, with deletes exercising
+    // tombstones for a hydrated row.
+    // -----------------------------------------------------------------------------------------
+
+    fn changelog_batch(keys: Vec<i64>, values: Vec<i64>, kinds: Vec<i8>) -> RecordBatch {
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("key", DataType::Int64, false),
+                Field::new("value", DataType::Int64, false),
+                Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(keys)),
+                Arc::new(Int64Array::from(values)),
+                Arc::new(Int8Array::from(kinds)),
+            ],
+        )
+        .unwrap()
+    }
+
+    fn paimon_normalizer(dir: &str) -> ChangelogNormalizer<PaimonNormalizerStore> {
+        let codec = NormalizerStateCodec::new(vec![DataType::Int64, DataType::Int64]);
+        let store = PaimonNormalizerStore::create(config(dir), codec).unwrap();
+        ChangelogNormalizer::new(vec![0], true).with_backend(store)
+    }
+
+    #[test]
+    fn paimon_normalizer_matches_memory_across_checkpoints() {
+        let dir = temp_dir("norm-parity");
+        let mut paimon = paimon_normalizer(&dir).with_mini_batch(true);
+        let mut memory = ChangelogNormalizer::new(vec![0], true).with_mini_batch(true);
+
+        let bundles: Vec<RecordBatch> = vec![
+            changelog_batch(vec![1, 2, 1], vec![10, 20, 11], vec![0, 0, 2]),
+            changelog_batch(vec![1, 3], vec![12, 30], vec![2, 0]),
+            changelog_batch(vec![2, 2], vec![20, 21], vec![3, 0]),
+            changelog_batch(vec![3, 1], vec![30, 12], vec![3, 3]),
+        ];
+        for (i, bundle) in bundles.iter().enumerate() {
+            paimon.push(bundle).unwrap();
+            memory.push(bundle).unwrap();
+            assert_same_output(
+                &memory.flush_mini_batch().unwrap(),
+                &paimon.flush_mini_batch().unwrap(),
+            );
+            let link = temp_dir(&format!("norm-parity-cp{i}"));
+            paimon.store_mut().checkpoint(&link).unwrap();
+        }
+    }
+
+    #[test]
+    fn paimon_normalizer_restores_and_deletes_hydrated_rows() {
+        let dir = temp_dir("norm-restore-src");
+        let mut normalizer = paimon_normalizer(&dir);
+        normalizer
+            .push(&changelog_batch(vec![1, 2], vec![10, 20], vec![0, 0]))
+            .unwrap();
+        let link = temp_dir("norm-restore-cp");
+        let manifest = normalizer.store_mut().checkpoint(&link).unwrap();
+
+        let restored_dir = temp_dir("norm-restore-mat");
+        materialize(&manifest, &link, &restored_dir);
+        let merged_dir = temp_dir("norm-restore-dst");
+        let store = PaimonNormalizerStore::open_merged(
+            config(&merged_dir),
+            NormalizerStateCodec::new(vec![DataType::Int64, DataType::Int64]),
+            &[(restored_dir, manifest.snapshot_id)],
+            0..=127,
+        )
+        .unwrap();
+        let mut restored = ChangelogNormalizer::new(vec![0], true).with_backend(store);
+
+        // The delete's tombstone may carry only the key: the emitted -D must be the STORED row,
+        // which here can only come from hydration of the pre-restore table.
+        let out = restored
+            .push(&changelog_batch(vec![1, 2], vec![11, 0], vec![2, 3]))
+            .unwrap();
+        assert_eq!(row_kinds(&out), vec![1, 2, 3]);
+        assert_eq!(values(&out, 1), vec![10, 11, 20]);
+        restored.store_mut().checkpoint(&temp_dir("norm-restore-cp2")).unwrap();
+
+        // After the tombstone commits, the key probes as absent: a fresh row is +I.
+        let out = restored.push(&changelog_batch(vec![2], vec![9], vec![0])).unwrap();
+        assert_eq!(row_kinds(&out), vec![0]);
+        assert_eq!(values(&out, 1), vec![9]);
+    }
 }
