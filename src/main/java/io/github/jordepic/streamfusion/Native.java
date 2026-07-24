@@ -935,6 +935,77 @@ public final class Native {
       byte[][] snapshots,
       long memoryBudgetBytes);
 
+  /** Whether this native build carries the Paimon persistent state backend. */
+  public static native boolean paimonStateAvailable();
+
+  /**
+   * Whether the given aggregate list can run on the Paimon state backend (every aggregate's
+   * per-key state must be a plain running scalar of a persistable type; multiset-backed aggregates
+   * — retracting MIN/MAX, DISTINCT — stay on the memory backend).
+   */
+  public static native boolean paimonGroupAggregatorSupported(int[] aggregateKinds, int[] valueTypes);
+
+  /**
+   * Creates a {@code GROUP BY} aggregator whose state lives in a local Paimon primary-key table
+   * under {@code tableDirectory} instead of a resident map (see {@link #createGroupAggregator} for
+   * the aggregate-shape parameters). With restore {@code sourceDirectories} (downloaded checkpoint
+   * tables, each pinned at its snapshot id), the table adopts every bucket in the operator's
+   * key-group range from each source by linking data files — buckets are Flink key groups, so
+   * rescale reassigns files without rewriting rows.
+   *
+   * @param maxParallelism the job's max parallelism — the table's bucket count and key-group math
+   * @param compactionTrigger rewrite a bucket into one file when its live file count exceeds this
+   * @param fileFormat Paimon data file format for state (normally {@code vortex})
+   */
+  public static native long createPaimonGroupAggregator(
+      int[] aggregateKinds,
+      int[] valueTypes,
+      int[] valueColumns,
+      int[] keyColumns,
+      int[] keyTimestampPrecisions,
+      int[] filterColumns,
+      int[] countColumns,
+      int[] distinctViewColumns,
+      int recordCountColumn,
+      boolean generateUpdateBefore,
+      boolean miniBatch,
+      long memoryBudgetBytes,
+      String tableDirectory,
+      int maxParallelism,
+      int compactionTrigger,
+      String fileFormat,
+      String[] sourceDirectories,
+      long[] sourceSnapshotIds,
+      int keyGroupStart,
+      int keyGroupEnd);
+
+  /** {@link #updateGroupAggregator} for a Paimon-backed handle. */
+  public static native void updatePaimonGroupAggregator(
+      long handle, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress);
+
+  /** {@link #flushGroupAggregator} for a Paimon-backed handle. */
+  public static native void flushPaimonGroupAggregator(
+      long handle, long outArrayAddress, long outSchemaAddress);
+
+  /**
+   * Checkpoint sync phase at the barrier: flushes the write buffer, commits the Paimon snapshot,
+   * hard-links its files under {@code linkDirectory}, and returns the manifest (see {@link
+   * io.github.jordepic.streamfusion.state.PaimonNativeState#checkpoint}).
+   */
+  public static native String[] checkpointPaimonGroupAggregator(long handle, String linkDirectory);
+
+  /** Estimated bytes of a Paimon-backed group aggregator's resident working set. */
+  public static native long paimonGroupAggregatorStateBytes(long handle);
+
+  /** {@code groupAggregatorStagingBytes} for a Paimon-backed handle. */
+  public static native long paimonGroupAggregatorStagingBytes(long handle);
+
+  /** {@code groupAggregatorStagedKeys} for a Paimon-backed handle. */
+  public static native long paimonGroupAggregatorStagedKeys(long handle);
+
+  /** Releases a Paimon-backed {@code GROUP BY} aggregator handle. */
+  public static native void closePaimonGroupAggregator(long handle);
+
   /**
    * Creates a changelog normalizer (keep-last per unique key) and returns an opaque handle. Each
    * input changelog batch folds into per-key state and the normalizer exports the normalized

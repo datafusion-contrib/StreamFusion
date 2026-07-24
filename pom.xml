@@ -61,7 +61,7 @@
              Deployment packaging builds a
              connector-free core and feature-specific extension DSOs separately in
              bin/build-release.sh. -->
-        <native.cargo.args>build --features kafka,parquet,json,csv,raw,avro,protobuf</native.cargo.args>
+        <native.cargo.args>build --features kafka,parquet,json,csv,raw,avro,protobuf,paimon-state</native.cargo.args>
         <native.build.skip>false</native.build.skip>
         <native.resource.directory>${project.basedir}/../native/target/${native.profile}</native.resource.directory>
         <!-- Extra JVM args appended to the Surefire fork's argLine; empty by default. Used to attach a
@@ -504,7 +504,7 @@
             <id>bench</id>
             <properties>
                 <native.profile>release</native.profile>
-                <native.cargo.args>build --release --features mimalloc,kafka,parquet,json,csv,raw,avro,protobuf</native.cargo.args>
+                <native.cargo.args>build --release --features mimalloc,kafka,parquet,json,csv,raw,avro,protobuf,paimon-state</native.cargo.args>
             </properties>
         </profile>
         <!-- Produces the deployable, performance-oriented runtime payload. Callers may override
@@ -513,7 +513,9 @@
             <id>dist</id>
             <properties>
                 <native.profile>release</native.profile>
-                <native.cargo.args>build --release --no-default-features --features mimalloc</native.cargo.args>
+                <!-- paimon-state is core-engine infrastructure (the persistent state backend),
+                     not a connector: it ships in the core DSO. -->
+                <native.cargo.args>build --release --no-default-features --features mimalloc,paimon-state</native.cargo.args>
             </properties>
         </profile>
         <!-- Packages the resource tree staged by bin/build-release.sh. It deliberately does not

@@ -867,11 +867,21 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         &mut self.store
     }
 
+    /// Attaches the managed-memory budget for a backend that starts with nothing resident (a
+    /// read-through store hydrates on demand; there is no restored map to pre-account).
+    pub(crate) fn with_read_through_budget(
+        mut self,
+        budget_bytes: i64,
+    ) -> Result<Self, DataFusionError> {
+        self.memory.attach("group-aggregate", budget_bytes, 0)?;
+        Ok(self)
+    }
+
     pub(crate) fn staging_bytes(&self) -> usize {
         self.staged_bytes
     }
 
-    fn with_key_timestamp_precisions(mut self, key_timestamp_precisions: Vec<i32>) -> Self {
+    pub(crate) fn with_key_timestamp_precisions(mut self, key_timestamp_precisions: Vec<i32>) -> Self {
         self.key_timestamp_precisions = key_timestamp_precisions;
         self
     }
@@ -887,7 +897,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
 
     /// Sets the per-aggregate two-phase AVG count-partial columns (-1 = not a merge). A builder for
     /// the same reason as {@link with_filter_columns}.
-    fn with_count_columns(mut self, count_columns: Vec<i64>) -> Self {
+    pub(crate) fn with_count_columns(mut self, count_columns: Vec<i64>) -> Self {
         if !count_columns.is_empty() {
             self.count_columns = count_columns;
         }
@@ -896,7 +906,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
 
     /// Sets the per-aggregate two-phase distinct-view columns (-1 = not a distinct merge). A builder
     /// for the same reason as {@link with_filter_columns}.
-    fn with_distinct_view_columns(mut self, distinct_view_columns: Vec<i64>) -> Self {
+    pub(crate) fn with_distinct_view_columns(mut self, distinct_view_columns: Vec<i64>) -> Self {
         if !distinct_view_columns.is_empty() {
             self.distinct_view_columns = distinct_view_columns;
         }
@@ -905,7 +915,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
 
     /// Sets the count1 record-counter partial column of a retracting two-phase merge (-1 = count
     /// rows ±1). A builder for the same reason as {@link with_filter_columns}.
-    fn with_record_count_column(mut self, record_count_column: i64) -> Self {
+    pub(crate) fn with_record_count_column(mut self, record_count_column: i64) -> Self {
         self.record_count_column = record_count_column;
         self
     }
