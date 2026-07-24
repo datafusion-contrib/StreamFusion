@@ -1,34 +1,51 @@
 use crate::*;
 
-pub(crate) struct UpdatingJoiner {
+pub(crate) struct UpdatingJoiner<S: KeyedStateStore<JoinBucket> = MemoryJoinStore> {
     left_keys: Vec<usize>,
     right_keys: Vec<usize>,
+    key_timestamp_precisions: Vec<i32>,
     kind: JoinKind,
     left_schema: SchemaRef,
     right_schema: SchemaRef,
     predicate: Option<JoinPredicate>,
-    /// arrow-row codecs: the memcomparable equi-key (shared config across sides, so equal keys encode
-    /// to equal bytes and match), and the value-encoded full row per side. State holds these bytes, not
+    /// arrow-row codecs for the value-encoded full row per side. State holds these bytes, not
     /// `Vec<ScalarValue>` — so build/probe hash a byte slice and a stored row is one byte buffer.
-    key_converter: RowConverter,
+    /// The equi-key encodes as Flink BinaryRow bytes (the encoding whose hash IS the key group;
+    /// both sides' key types are equal, so equal keys encode to equal bytes and match).
     left_payload: RowConverter,
     right_payload: RowConverter,
     /// A value-encoded all-null row per side, used to null-pad the absent side of an outer join.
     left_null: ByteKey,
     right_null: ByteKey,
-    left_state: SideState,
-    right_state: SideState,
+    left_state: S,
+    right_state: S,
     mini_batch: bool,
     left_staged: MiniBatchChanges<ByteKey, ByteKey>,
     right_staged: MiniBatchChanges<ByteKey, ByteKey>,
     pub(crate) memory: OperatorMemory,
 }
 
-/// One side's multiset state: equi-key bytes → (row bytes → appear-count/degree). Keys are
-/// `ByteKey`, so the steady-state probe — an input row whose key and content are already stored —
-/// hashes the borrowed arrow-row bytes and allocates nothing; only a first insert copies them.
-/// This was the differential profile's system-allocator signal vs Flink's pooled BinaryRowData.
-pub(crate) type SideState = ahash::HashMap<ByteKey, ahash::HashMap<ByteKey, RowMeta>>;
+/// One side's per-key multiset: row bytes → appear-count/degree. Keys are `ByteKey`, so the
+/// steady-state probe — an input row whose key and content are already stored — hashes the
+/// borrowed arrow-row bytes and allocates nothing; only a first insert copies them. This was the
+/// differential profile's system-allocator signal vs Flink's pooled BinaryRowData.
+pub(crate) type JoinBucket = ahash::HashMap<ByteKey, RowMeta>;
+
+/// The resident default backend for a join side (see `state/` for the seam).
+pub(crate) type MemoryJoinStore = MemoryStateStore<JoinBucket>;
+
+/// The joined `[left fields.., right fields..]` schema (columns named `c0..`) the non-equi
+/// predicate's input refs index into.
+pub(crate) fn joined_schema(left_schema: &SchemaRef, right_schema: &SchemaRef) -> SchemaRef {
+    let fields: Vec<Field> = left_schema
+        .fields()
+        .iter()
+        .chain(right_schema.fields().iter())
+        .enumerate()
+        .map(|(j, f)| Field::new(format!("c{j}"), f.data_type().clone(), true))
+        .collect();
+    Arc::new(Schema::new(fields))
+}
 
 /// Estimated footprint of one stored join row (arrow-row bytes + its appear-count meta + map entry).
 pub(crate) fn join_row_entry_bytes(row: &[u8]) -> usize {
@@ -41,7 +58,7 @@ pub(crate) fn join_key_entry_bytes(key: &[u8]) -> usize {
 }
 
 /// Estimated footprint of one side of the updating join's state (for the restore-time account).
-pub(crate) fn join_state_bytes(state: &SideState) -> usize {
+pub(crate) fn join_state_bytes(state: &MemoryJoinStore) -> usize {
     state
         .iter()
         .map(|(key, bucket)| {
@@ -60,40 +77,30 @@ impl UpdatingJoiner {
         right_schema: SchemaRef,
         predicate: Option<JoinPredicate>,
     ) -> Self {
-        // The equi-key types are the same on both sides; one converter config encodes either side's
-        // key columns to identical bytes for equal values.
-        let key_converter = RowConverter::new(
-            left_keys.iter().map(|&i| SortField::new(left_schema.field(i).data_type().clone())).collect(),
-        )
-        .expect("join key converter");
         let left_payload = payload_converter(&left_schema);
         let right_payload = payload_converter(&right_schema);
         let left_null = ByteKey::from(encode_null_row(&left_payload, &left_schema).row().as_ref());
         let right_null = ByteKey::from(encode_null_row(&right_payload, &right_schema).row().as_ref());
+        let key_arity = left_keys.len();
         UpdatingJoiner {
             left_keys,
             right_keys,
+            key_timestamp_precisions: vec![-1; key_arity],
             kind,
             left_schema,
             right_schema,
             predicate,
-            key_converter,
             left_payload,
             right_payload,
             left_null,
             right_null,
-            left_state: ahash::HashMap::default(),
-            right_state: ahash::HashMap::default(),
+            left_state: MemoryJoinStore::default(),
+            right_state: MemoryJoinStore::default(),
             mini_batch: false,
             left_staged: MiniBatchChanges::default(),
             right_staged: MiniBatchChanges::default(),
             memory: OperatorMemory::unaccounted(),
         }
-    }
-
-    pub(crate) fn with_mini_batch(mut self, mini_batch: bool) -> Self {
-        self.mini_batch = mini_batch;
-        self
     }
 
     /// Bounds both sides' row state by the operator's managed-memory budget (negative =
@@ -103,18 +110,64 @@ impl UpdatingJoiner {
         self.memory.attach("updating-join", budget_bytes, state)?;
         Ok(self)
     }
+}
 
-    /// The joined `[left fields.., right fields..]` schema (columns named `c0..`) the non-equi
-    /// predicate's input refs index into.
-    pub(crate) fn joined_schema(left_schema: &SchemaRef, right_schema: &SchemaRef) -> SchemaRef {
-        let fields: Vec<Field> = left_schema
-            .fields()
-            .iter()
-            .chain(right_schema.fields().iter())
-            .enumerate()
-            .map(|(j, f)| Field::new(format!("c{j}"), f.data_type().clone(), true))
-            .collect();
-        Arc::new(Schema::new(fields))
+impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
+    /// Moves this freshly built (empty, memory-backed) joiner's configuration onto another state
+    /// backend (one store per side); construction goes through `new` + builders first so backend
+    /// choice stays orthogonal to the shape builders.
+    pub(crate) fn with_backend<T: KeyedStateStore<JoinBucket>>(
+        self,
+        left_state: T,
+        right_state: T,
+    ) -> UpdatingJoiner<T> {
+        UpdatingJoiner {
+            left_keys: self.left_keys,
+            right_keys: self.right_keys,
+            key_timestamp_precisions: self.key_timestamp_precisions,
+            kind: self.kind,
+            left_schema: self.left_schema,
+            right_schema: self.right_schema,
+            predicate: self.predicate,
+            left_payload: self.left_payload,
+            right_payload: self.right_payload,
+            left_null: self.left_null,
+            right_null: self.right_null,
+            left_state,
+            right_state,
+            mini_batch: self.mini_batch,
+            left_staged: self.left_staged,
+            right_staged: self.right_staged,
+            memory: self.memory,
+        }
+    }
+
+    /// Attaches the managed-memory budget for a backend that starts with nothing resident (a
+    /// read-through store hydrates on demand; there is no restored map to pre-account).
+    pub(crate) fn with_read_through_budget(
+        mut self,
+        budget_bytes: i64,
+    ) -> Result<Self, DataFusionError> {
+        self.memory.attach("updating-join", budget_bytes, 0)?;
+        Ok(self)
+    }
+
+    /// The backing stores, for backend-specific control paths (checkpointing persistent stores).
+    pub(crate) fn stores_mut(&mut self) -> (&mut S, &mut S) {
+        (&mut self.left_state, &mut self.right_state)
+    }
+
+    pub(crate) fn with_key_timestamp_precisions(
+        mut self,
+        key_timestamp_precisions: Vec<i32>,
+    ) -> Self {
+        self.key_timestamp_precisions = key_timestamp_precisions;
+        self
+    }
+
+    pub(crate) fn with_mini_batch(mut self, mini_batch: bool) -> Self {
+        self.mini_batch = mini_batch;
+        self
     }
 
     /// Drops the candidate matches whose `[left.., right..]` pair fails the residual non-equi
@@ -124,7 +177,7 @@ impl UpdatingJoiner {
         if associated.is_empty() || self.predicate.is_none() {
             return;
         }
-        let joined = Self::joined_schema(&self.left_schema, &self.right_schema);
+        let joined = joined_schema(&self.left_schema, &self.right_schema);
         let n = associated.len();
         // Assemble the candidate `[left.., right..]` batch directly from arrows, no ScalarValue
         // round-trip: decode the input row's columns once (length-1 arrays), broadcast them to `n`
@@ -163,7 +216,7 @@ impl UpdatingJoiner {
     /// appear-times (so multiplicity is preserved) and capturing its degree once per distinct row. A
     /// null in the equi-key matches nothing (Flink's null-filtering equi semantics), so an empty key
     /// match means "no associated rows".
-    fn associated(other_state: &SideState, key: &[u8]) -> Vec<OuterRecord> {
+    fn associated(other_state: &S, key: &[u8]) -> Vec<OuterRecord> {
         // A null in the equi-key matches nothing (Flink's null-rejecting equality); the caller skips
         // association for null-key rows (a null can't be read back from the encoded key), so this just
         // gathers the matches for a non-null key.
@@ -181,16 +234,16 @@ impl UpdatingJoiner {
     /// The bucket for `key`, creating it on first touch — the probe hashes the borrowed bytes and
     /// copies them only when the key is new.
     fn bucket_mut<'s>(
-        state: &'s mut SideState,
+        state: &'s mut S,
         key: &[u8],
         track: bool,
         delta: &mut isize,
-    ) -> &'s mut ahash::HashMap<ByteKey, RowMeta> {
-        if !state.contains_key(key) {
+    ) -> &'s mut JoinBucket {
+        if !state.contains(key) {
             if track {
                 *delta += join_key_entry_bytes(key) as isize;
             }
-            state.insert(ByteKey::from(key), ahash::HashMap::default());
+            return state.insert(ByteKey::from(key), JoinBucket::default());
         }
         state.get_mut(key).expect("bucket just ensured")
     }
@@ -198,7 +251,7 @@ impl UpdatingJoiner {
     /// Bumps `row`'s appear-times in `bucket`, applying `on_existing` to its meta when it is already
     /// stored (the zero-allocation steady state) and inserting a fresh entry otherwise.
     fn bump_row(
-        bucket: &mut ahash::HashMap<ByteKey, RowMeta>,
+        bucket: &mut JoinBucket,
         row: &[u8],
         fresh: RowMeta,
         on_existing: impl FnOnce(&mut RowMeta),
@@ -218,7 +271,7 @@ impl UpdatingJoiner {
     /// `state.addRecord(record, num_assoc)` — bumps appear-times and (re)sets the degree, as Flink's
     /// no-unique-key `OuterJoinRecordStateView.addRecord`.
     fn add_record(
-        state: &mut SideState,
+        state: &mut S,
         key: &[u8],
         row: &[u8],
         num_assoc: i32,
@@ -241,7 +294,7 @@ impl UpdatingJoiner {
 
     /// `state.updateNumOfAssociations(record, num_assoc)` — sets the degree of an existing row.
     fn update_num_assoc(
-        state: &mut SideState,
+        state: &mut S,
         key: &[u8],
         row: &[u8],
         num_assoc: i32,
@@ -260,7 +313,8 @@ impl UpdatingJoiner {
     }
 
     /// `state.retractRecord(record)` — drops one appear-time, removing the row (and emptied key) at 0.
-    fn retract_record(state: &mut SideState, key: &[u8], row: &[u8], track: bool, delta: &mut isize) {
+    fn retract_record(state: &mut S, key: &[u8], row: &[u8], track: bool, delta: &mut isize) {
+        let mut emptied = false;
         if let Some(bucket) = state.get_mut(key) {
             if let Some(meta) = bucket.get_mut(row) {
                 meta.count -= 1;
@@ -271,11 +325,12 @@ impl UpdatingJoiner {
                     }
                 }
             }
-            if bucket.is_empty() {
-                state.remove(key);
-                if track {
-                    *delta -= join_key_entry_bytes(key) as isize;
-                }
+            emptied = bucket.is_empty();
+        }
+        if emptied {
+            state.remove(key);
+            if track {
+                *delta -= join_key_entry_bytes(key) as isize;
             }
         }
     }
@@ -294,18 +349,21 @@ impl UpdatingJoiner {
         is_left: bool,
     ) -> Result<RecordBatch, DataFusionError> {
         let arity = data_arity(batch);
-        let key_indices = if is_left { &self.left_keys } else { &self.right_keys };
+        let key_indices: &[usize] = if is_left { &self.left_keys } else { &self.right_keys };
         let key_arrays: Vec<ArrayRef> = key_indices.iter().map(|&i| batch.column(i).clone()).collect();
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
         let row_kinds = row_kind_column(batch);
-        // Encode the batch's equi-keys and full rows columnar->row in two vectorized passes (these
-        // `Rows` own their buffers, so no borrow of self is held into the per-row loop below).
-        let keys = self.key_converter.convert_columns(&key_arrays).expect("encode join key");
+        // A probe reads (and, for the degree, writes) the OTHER side's whole bucket for each input
+        // key, so both sides hydrate the batch's equi-keys before the fold.
+        self.left_state
+            .begin_batch(batch, key_indices, &self.key_timestamp_precisions)?;
+        self.right_state
+            .begin_batch(batch, key_indices, &self.key_timestamp_precisions)?;
         let payloads = if is_left { &self.left_payload } else { &self.right_payload }
             .convert_columns(&data_arrays)
             .expect("encode join payload");
         // A null in any equi-key column matches nothing; flagged per row off the key arrays (the null
-        // can't be recovered from the memcomparable key bytes once encoded).
+        // can't be recovered from the encoded key bytes).
         let key_null: Vec<bool> =
             (0..batch.num_rows()).map(|r| key_arrays.iter().any(|a| a.is_null(r))).collect();
 
@@ -315,7 +373,7 @@ impl UpdatingJoiner {
         // convert_rows/predicate batch, no per-pair row clone, no emit round-trip (the hot q3/q9/q23
         // path). The per-row state machine below still serves the degree-bearing outer/semi/anti kinds.
         if self.kind == JoinKind::Inner {
-            return self.push_inner(is_left, &keys, &payloads, &key_null, row_kinds);
+            return self.push_inner(is_left, batch, &payloads, &key_null, row_kinds);
         }
 
         let track = self.memory.tracking();
@@ -324,25 +382,31 @@ impl UpdatingJoiner {
         let mut out_right: Vec<ByteKey> = Vec::new();
         let mut out_kinds: Vec<i8> = Vec::new();
 
+        let mut key_encoder =
+            BinaryRowBatchEncoder::new(batch, key_indices, &self.key_timestamp_precisions);
         for row in 0..batch.num_rows() {
             // Absent `$row_kind$` (insert-only columnar input) ⇒ every row is an INSERT.
             let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
             // Borrowed byte rows: the state probes hash these directly and copy only on first insert.
-            let key = keys.row(row);
+            let key = key_encoder.encode(row);
             let full = payloads.row(row);
             if self.kind.is_semi_anti() {
                 self.process_semi_anti(
-                    key.as_ref(), full.as_ref(), kind, is_left, key_null[row], &mut out_left,
+                    key, full.as_ref(), kind, is_left, key_null[row], &mut out_left,
                     &mut out_kinds, track, &mut delta,
                 );
             } else {
                 self.process_inner_outer(
-                    key.as_ref(), full.as_ref(), kind, is_left, key_null[row], &mut out_left,
+                    key, full.as_ref(), kind, is_left, key_null[row], &mut out_left,
                     &mut out_right, &mut out_kinds, track, &mut delta,
                 );
             }
         }
-        self.memory.record(delta);
+        self.left_state.end_bundle()?;
+        self.right_state.end_bundle()?;
+        self.memory.record(
+            delta + self.left_state.footprint_delta() + self.right_state.footprint_delta(),
+        );
         self.memory.account()?;
         Ok(self.emit(out_left, out_right, out_kinds))
     }
@@ -370,30 +434,38 @@ impl UpdatingJoiner {
         is_left: bool,
     ) -> Result<RecordBatch, DataFusionError> {
         let arity = data_arity(batch);
-        let key_indices = if is_left { &self.left_keys } else { &self.right_keys };
-        let key_arrays: Vec<ArrayRef> = key_indices.iter().map(|&i| batch.column(i).clone()).collect();
+        let key_indices: &[usize] = if is_left { &self.left_keys } else { &self.right_keys };
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
-        let keys = self.key_converter.convert_columns(&key_arrays).expect("encode join key");
+        // The first-durable-row capture reads the input side's buckets, so they must be resident.
+        if is_left {
+            self.left_state
+                .begin_batch(batch, key_indices, &self.key_timestamp_precisions)?;
+        } else {
+            self.right_state
+                .begin_batch(batch, key_indices, &self.key_timestamp_precisions)?;
+        }
         let payloads = if is_left { &self.left_payload } else { &self.right_payload }
             .convert_columns(&data_arrays)
             .expect("encode join payload");
         let row_kinds = row_kind_column(batch);
         let before_bytes = if self.memory.tracking() { self.staging_bytes() } else { 0 };
+        let mut key_encoder =
+            BinaryRowBatchEncoder::new(batch, key_indices, &self.key_timestamp_precisions);
         let (staged, state) = if is_left {
             (&mut self.left_staged, &self.left_state)
         } else {
             (&mut self.right_staged, &self.right_state)
         };
         for row in 0..batch.num_rows() {
-            let key = keys.row(row);
-            if !staged.contains_key(key.as_ref()) {
-                let durable = state.get(key.as_ref()).and_then(|bucket| {
+            let key = key_encoder.encode(row);
+            if !staged.contains_key(key) {
+                let durable = state.get(key).and_then(|bucket| {
                     bucket
                         .iter()
                         .find(|(_, meta)| meta.count > 0)
                         .map(|(payload, _)| payload.clone())
                 });
-                staged.touch(ByteKey::from(key.as_ref()), durable);
+                staged.touch(ByteKey::from(key), durable);
             }
             let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
             let after = if matches!(kind, 1 | 3) {
@@ -401,11 +473,19 @@ impl UpdatingJoiner {
             } else {
                 Some(ByteKey::from(payloads.row(row).as_ref()))
             };
-            staged.set_after(key.as_ref(), after);
+            staged.set_after(key, after);
+        }
+        if is_left {
+            self.left_state.end_bundle()?;
+        } else {
+            self.right_state.end_bundle()?;
         }
         if self.memory.tracking() {
             self.memory.record(self.staging_bytes() as isize - before_bytes as isize);
         }
+        self.memory.record(
+            self.left_state.footprint_delta() + self.right_state.footprint_delta(),
+        );
         self.memory.account()?;
         Ok(RecordBatch::new_empty(Arc::new(Schema::empty())))
     }
@@ -519,15 +599,18 @@ impl UpdatingJoiner {
     fn push_inner(
         &mut self,
         is_left: bool,
-        keys: &Rows,
+        batch: &RecordBatch,
         payloads: &Rows,
         key_null: &[bool],
         row_kinds: Option<&Int8Array>,
     ) -> Result<RecordBatch, DataFusionError> {
-        // Split the two state maps so the input side can be mutated while the probe side is borrowed
+        // Split the two state stores so the input side can be mutated while the probe side is borrowed
         // (INNER never mutates the probe side, so the gathered match rows stay valid for the batch).
         let track = self.memory.tracking();
         let mut delta = 0isize;
+        let key_indices: &[usize] = if is_left { &self.left_keys } else { &self.right_keys };
+        let mut key_encoder =
+            BinaryRowBatchEncoder::new(batch, key_indices, &self.key_timestamp_precisions);
         let (input_state, other_state) = if is_left {
             (&mut self.left_state, &self.right_state)
         } else {
@@ -536,15 +619,15 @@ impl UpdatingJoiner {
         let mut cand_input_idx: Vec<usize> = Vec::new();
         let mut cand_other: Vec<&ByteKey> = Vec::new();
         let mut cand_kind: Vec<i8> = Vec::new();
-        for row in 0..keys.num_rows() {
+        for row in 0..batch.num_rows() {
             let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
             // Borrowed byte rows: probes hash these directly; a steady-state row (key and content
             // already stored) allocates nothing — the SYS_ALLOC a differential profile flagged vs
             // Flink's reused BinaryRowData.
-            let key = keys.row(row);
+            let key = key_encoder.encode(row);
             let full = payloads.row(row);
             if !key_null[row] {
-                if let Some(bucket) = other_state.get(key.as_ref()) {
+                if let Some(bucket) = other_state.get(key) {
                     for (other, meta) in bucket.iter() {
                         for _ in 0..meta.count.max(0) {
                             cand_input_idx.push(row);
@@ -555,7 +638,7 @@ impl UpdatingJoiner {
                 }
             }
             if kind == 0 || kind == 2 {
-                let bucket = Self::bucket_mut(input_state, key.as_ref(), track, &mut delta);
+                let bucket = Self::bucket_mut(input_state, key, track, &mut delta);
                 Self::bump_row(
                     bucket,
                     full.as_ref(),
@@ -565,27 +648,38 @@ impl UpdatingJoiner {
                     &mut delta,
                 );
             } else {
-                Self::retract_record(input_state, key.as_ref(), full.as_ref(), track, &mut delta);
+                Self::retract_record(input_state, key, full.as_ref(), track, &mut delta);
             }
         }
         self.memory.record(delta);
         self.memory.account()?;
         if cand_input_idx.is_empty() {
+            self.left_state.end_bundle()?;
+            self.right_state.end_bundle()?;
+            self.memory.record(
+                self.left_state.footprint_delta() + self.right_state.footprint_delta(),
+            );
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
 
-        // Decode the matched other-side rows in one pass (releases the probe-side borrow), then the
-        // input rows repeated per candidate — assembled into the joined `[left.., right..]` layout.
+        // Decode the matched other-side rows in one pass (releases the probe-side borrow — which
+        // must happen before the bundle ends and drops clean hydrated slots), then the input rows
+        // repeated per candidate — assembled into the joined `[left.., right..]` layout.
         let other_conv = if is_left { &self.right_payload } else { &self.left_payload };
         let other_parser = other_conv.parser();
         let other_cols = other_conv
             .convert_rows(cand_other.iter().map(|b| other_parser.parse(&b.0)))
             .expect("decode associated rows");
+        drop(cand_other);
+        self.left_state.end_bundle()?;
+        self.right_state.end_bundle()?;
+        self.memory
+            .record(self.left_state.footprint_delta() + self.right_state.footprint_delta());
         let input_conv = if is_left { &self.left_payload } else { &self.right_payload };
         let input_cols = input_conv
             .convert_rows(cand_input_idx.iter().map(|&r| payloads.row(r)))
             .expect("decode join input rows");
-        let joined = Self::joined_schema(&self.left_schema, &self.right_schema);
+        let joined = joined_schema(&self.left_schema, &self.right_schema);
         let mut data_columns: Vec<ArrayRef> = Vec::with_capacity(input_cols.len() + other_cols.len());
         if is_left {
             data_columns.extend(input_cols);
@@ -746,13 +840,13 @@ impl UpdatingJoiner {
         }
     }
 
-    /// The state map for the arriving (input) side.
-    fn input_state(&mut self, is_left: bool) -> &mut SideState {
+    /// The state store for the arriving (input) side.
+    fn input_state(&mut self, is_left: bool) -> &mut S {
         if is_left { &mut self.left_state } else { &mut self.right_state }
     }
 
-    /// The state map for the side opposite the arriving one.
-    fn other_state(&mut self, is_left: bool) -> &mut SideState {
+    /// The state store for the side opposite the arriving one.
+    fn other_state(&mut self, is_left: bool) -> &mut S {
         if is_left { &mut self.right_state } else { &mut self.left_state }
     }
 
@@ -819,6 +913,11 @@ impl UpdatingJoiner {
         }
     }
 
+}
+
+/// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
+/// store checkpoints through its own commit path instead of materializing the key space.
+impl UpdatingJoiner {
     /// Materializes one side's multiset as `[data cols.., __count__, __assoc__]` (one row per
     /// distinct live row), or no batch when the side has no rows yet.
     fn side_snapshot_batch(&self, is_left: bool) -> Option<RecordBatch> {
@@ -831,7 +930,7 @@ impl UpdatingJoiner {
         let mut rows: Vec<&ByteKey> = Vec::new();
         let mut counts: Vec<i64> = Vec::new();
         let mut assocs: Vec<i32> = Vec::new();
-        for bucket in state.values() {
+        for (_, bucket) in state.iter() {
             for (row, meta) in bucket.iter() {
                 rows.push(row);
                 counts.push(meta.count);
@@ -1022,13 +1121,20 @@ impl UpdatingJoiner {
             let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
             let counts = column_i64(&batch, "__count__");
             let assocs = column_i32(&batch, "__assoc__");
-            let keys = self.key_converter.convert_columns(&key_arrays).expect("encode join key");
+            let mut key_encoder =
+                BinaryRowBatchEncoder::new(&batch, key_indices, &self.key_timestamp_precisions);
             let payloads = if is_left { &self.left_payload } else { &self.right_payload }
                 .convert_columns(&data_arrays)
                 .expect("encode join payload");
             let state = if is_left { &mut self.left_state } else { &mut self.right_state };
             for row in 0..batch.num_rows() {
-                state.entry(ByteKey::from(keys.row(row).as_ref())).or_default().insert(
+                let key = key_encoder.encode(row);
+                let bucket = if state.contains(key) {
+                    state.get_mut(key).expect("bucket present")
+                } else {
+                    state.insert(ByteKey::from(key), JoinBucket::default())
+                };
+                bucket.insert(
                     ByteKey::from(payloads.row(row).as_ref()),
                     RowMeta { count: counts.value(row), num_assoc: assocs.value(row) },
                 );

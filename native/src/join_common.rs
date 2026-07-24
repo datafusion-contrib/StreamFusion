@@ -173,7 +173,7 @@ pub(crate) fn residual_filter(
 ) -> Option<JoinFilter> {
     let left_n = left_schema.fields().len();
     let right_n = right_schema.fields().len();
-    let intermediate = UpdatingJoiner::joined_schema(left_schema, right_schema);
+    let intermediate = joined_schema(left_schema, right_schema);
     let mut conjuncts: Vec<Arc<dyn PhysicalExpr>> = Vec::new();
     if let Some((left_rt, right_rt, lower, upper)) = interval {
         let right_type = right_schema.field(right_rt).data_type();

@@ -230,7 +230,7 @@ impl TemporalJoiner {
         // A candidate that fails the residual non-equi predicate is not a match (Flink's
         // `joinCondition.apply`), so it falls back to a null-pad (LEFT) or is dropped (INNER).
         if has_pred && !pred_pairs.is_empty() {
-            let joined = UpdatingJoiner::joined_schema(&self.left_schema, &self.right_schema);
+            let joined = joined_schema(&self.left_schema, &self.right_schema);
             let mask = self.predicate.as_mut().expect("predicate present").evaluate(&joined, &pred_pairs);
             for (k, &idx) in pred_idx.iter().enumerate() {
                 if !mask.get(k).copied().unwrap_or(false) {
