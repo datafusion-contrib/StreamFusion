@@ -3765,4 +3765,110 @@ mod paimon_state {
         store.begin_batch(&probe, &[0], &[-1]).unwrap();
         assert!(store.get(&key.0).is_none(), "removed key must probe as absent");
     }
+
+    // -----------------------------------------------------------------------------------------
+    // Updating join on the MAP store: one typed table row per stored join row under PK
+    // [kg, k, r], one table per side, degrees and retraction tombstones surviving restore.
+    // -----------------------------------------------------------------------------------------
+
+    /// A LEFT OUTER k=k joiner over `[k BIGINT, v BIGINT]` sides on Paimon-backed stores.
+    fn paimon_joiner(dir: &str) -> UpdatingJoiner<PaimonJoinStore> {
+        let left = PaimonJoinStore::create(
+            config(&format!("{dir}/left")),
+            JoinStateCodec::new(&kv_schema()),
+        )
+        .unwrap();
+        let right = PaimonJoinStore::create(
+            config(&format!("{dir}/right")),
+            JoinStateCodec::new(&kv_schema()),
+        )
+        .unwrap();
+        UpdatingJoiner::new(vec![0], vec![0], JoinKind::LeftOuter, kv_schema(), kv_schema(), None)
+            .with_backend(left, right)
+    }
+
+    #[test]
+    fn paimon_join_matches_memory_across_checkpoints() {
+        let dir = temp_dir("join-parity");
+        let mut paimon = paimon_joiner(&dir);
+        let mut memory = UpdatingJoiner::new(
+            vec![0],
+            vec![0],
+            JoinKind::LeftOuter,
+            kv_schema(),
+            kv_schema(),
+            None,
+        );
+
+        // Inserts, a match arriving later (degree flip on the stored left row), and retractions
+        // (row tombstones), interleaved across sides and checkpoints.
+        let steps: Vec<(RecordBatch, bool)> = vec![
+            (changelog_join_batch(vec![1, 2], vec![10, 20], vec![0, 0]), true),
+            (changelog_join_batch(vec![1], vec![100], vec![0]), false),
+            (changelog_join_batch(vec![1], vec![100], vec![3]), false),
+            (changelog_join_batch(vec![2, 1], vec![200, 101], vec![0, 0]), false),
+            (changelog_join_batch(vec![2], vec![20], vec![3]), true),
+        ];
+        for (i, (batch, is_left)) in steps.iter().enumerate() {
+            assert_same_output(
+                &memory.push(batch, *is_left).unwrap(),
+                &paimon.push(batch, *is_left).unwrap(),
+            );
+            // A checkpoint between every step forces every probe through the tables.
+            let (left, right) = paimon.stores_mut();
+            left.checkpoint(&temp_dir(&format!("join-parity-l{i}"))).unwrap();
+            right.checkpoint(&temp_dir(&format!("join-parity-r{i}"))).unwrap();
+        }
+    }
+
+    #[test]
+    fn paimon_join_restores_from_listed_files_only() {
+        let dir = temp_dir("join-restore-src");
+        let mut joiner = paimon_joiner(&dir);
+        joiner.push(&changelog_join_batch(vec![7], vec![70], vec![0]), true).unwrap();
+        joiner.push(&changelog_join_batch(vec![7], vec![700], vec![0]), false).unwrap();
+        let (left, right) = joiner.stores_mut();
+        let link_l = temp_dir("join-restore-cpl");
+        let link_r = temp_dir("join-restore-cpr");
+        let cp_l = left.checkpoint(&link_l).unwrap();
+        let cp_r = right.checkpoint(&link_r).unwrap();
+
+        let src_l = temp_dir("join-restore-matl");
+        let src_r = temp_dir("join-restore-matr");
+        materialize(&cp_l, &link_l, &src_l);
+        materialize(&cp_r, &link_r, &src_r);
+        let merged = temp_dir("join-restore-dst");
+        let left = PaimonJoinStore::open_merged(
+            config(&format!("{merged}/left")),
+            JoinStateCodec::new(&kv_schema()),
+            &[(src_l, cp_l.snapshot_id)],
+            0..=127,
+        )
+        .unwrap();
+        let right = PaimonJoinStore::open_merged(
+            config(&format!("{merged}/right")),
+            JoinStateCodec::new(&kv_schema()),
+            &[(src_r, cp_r.snapshot_id)],
+            0..=127,
+        )
+        .unwrap();
+        let mut restored = UpdatingJoiner::new(
+            vec![0],
+            vec![0],
+            JoinKind::LeftOuter,
+            kv_schema(),
+            kv_schema(),
+            None,
+        )
+        .with_backend(left, right);
+
+        // Retracting the pre-restore right row must retract the (hydrated) matched pair and
+        // re-emit the left row null-padded — degree state survived the round trip.
+        let out = restored.push(&changelog_join_batch(vec![7], vec![700], vec![3]), false).unwrap();
+        assert_eq!(row_kinds(&out), vec![3, 0]);
+        assert_eq!(values(&out, 1), vec![70, 70]);
+        let right_v = out.column(3).as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(right_v.value(0), 700);
+        assert!(right_v.is_null(1), "the re-emitted left row must be null-padded");
+    }
 }

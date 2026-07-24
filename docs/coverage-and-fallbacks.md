@@ -620,13 +620,16 @@ the operator just checkpoints its state the old way, in full):
 
 - **Operator coverage** — the non-windowed `GROUP BY` aggregate (single- and two-phase global),
   the eager deduplicator (rowtime/proctime keep-last and proctime keep-first), the changelog
-  normalizer, and the **append-only Top-N** (one typed table row per buffered element under a
+  normalizer, the **append-only Top-N** (one typed table row per buffered element under a
   positional third key column, so buffer positions — tie order, which decides evictions — survive
-  restore exactly; the analog of Flink's `ListState`). The dedup/normalizer/Top-N state rows are
-  the stored full rows as typed columns, so the state table reads like the operator's own output.
-  Every other stateful operator keeps memory state under this backend, including the
-  **retracting Top-N** (its buffer is unbounded, so the list store's whole-list rewrite per dirty
-  key is not yet acceptable there). The updating join is next, on a MapState-shaped store. The
+  restore exactly; the analog of Flink's `ListState`), and the **updating join** (all kinds:
+  INNER/LEFT/RIGHT/FULL/SEMI/ANTI; one table per side under the operator's backend — the analog of
+  Flink's two named join states — each stored row persisted as typed columns plus its appear-count
+  and degree under a content-addressed third key column, the analog of Flink's `MapState` join
+  views). The dedup/normalizer/Top-N/join state rows are the stored full rows as typed columns, so
+  the state tables read like the operators' own data. Every other stateful operator keeps memory
+  state under this backend, including the **retracting Top-N** (its buffer is unbounded, so the
+  list store's whole-list rewrite per dirty key is not yet acceptable there). The
   **watermark/timer-driven operators** (keep-first
   dedup, `OVER` aggregates, window rank, interval/window/temporal joins, session/window
   aggregates) stay on memory state for now for two concrete reasons, neither a storage limit:
@@ -637,8 +640,9 @@ the operator just checkpoints its state the old way, in full):
 - **Multiset-state aggregates** — retracting `MIN`/`MAX` and `COUNT`/`SUM(DISTINCT)` keep per-key
   multisets, which the persistent row codec does not carry yet; an aggregate list containing them
   keeps the whole operator on memory state.
-- **State scalar types** — an aggregate whose persisted scalar (or, for the deduplicator and
-  changelog normalizer, any column of the row type) falls outside
+- **State scalar types** — an aggregate whose persisted scalar (or, for the row-payload operators
+  — deduplicator, changelog normalizer, Top-N, join sides — any column of the row type) falls
+  outside
   boolean/tinyint/smallint/int/bigint/float/double/varchar/varbinary/decimal/date/timestamp(3,6
   non-LTZ) keeps the operator on memory state.
 - **A restore from a memory-backend checkpoint** — raw keyed-state blobs restore on memory state;

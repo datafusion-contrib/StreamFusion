@@ -1428,3 +1428,114 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeUpdating
         drop(from_handle::<UpdatingJoiner>(handle));
     }
 }
+
+/// The join-side persistent backend: the Paimon MAP store — one typed table row per stored join
+/// row under PK `[kg, k, r]` — under the join side codec. One store per side.
+#[cfg(feature = "paimon-state")]
+pub(crate) type PaimonJoinStore = crate::state::PaimonMapStore<JoinStateCodec>;
+
+/// One join side's codec for the Paimon map store: the persisted entry is the stored full row as
+/// typed columns plus its appear-count and degree (Flink's no-unique-key
+/// `OuterJoinRecordStateView` layout, one RocksDB-style row per map entry). The sub-key `r` is the
+/// row's Flink BinaryRow bytes — a stable wire format, unlike the arrow-row bytes the working set
+/// keys by, which do not survive an arrow upgrade.
+#[cfg(feature = "paimon-state")]
+pub(crate) struct JoinStateCodec {
+    row_types: Vec<DataType>,
+    payload: RowConverter,
+    row_schema: SchemaRef,
+    /// BinaryRow timestamp precisions per column, derived from the arrow unit (ms is always the
+    /// compact encoding, us always the non-compact one — the only distinction BinaryRow makes).
+    row_precisions: Vec<i32>,
+}
+
+#[cfg(feature = "paimon-state")]
+impl JoinStateCodec {
+    pub(crate) fn new(schema: &SchemaRef) -> Self {
+        let row_types: Vec<DataType> =
+            schema.fields().iter().map(|f| f.data_type().clone()).collect();
+        let payload = payload_converter(schema);
+        let row_precisions: Vec<i32> = row_types
+            .iter()
+            .map(|t| match t {
+                DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, _) => 3,
+                DataType::Timestamp(arrow::datatypes::TimeUnit::Microsecond, _) => 6,
+                _ => -1,
+            })
+            .collect();
+        JoinStateCodec { row_types, payload, row_schema: schema.clone(), row_precisions }
+    }
+
+    /// The stored row's one-row typed columns, rebuilt from its arrow-row bytes.
+    fn row_columns(&self, row: &[u8]) -> Vec<ArrayRef> {
+        let parser = self.payload.parser();
+        self.payload
+            .convert_rows([parser.parse(row)])
+            .expect("decode join row for persistence")
+    }
+}
+
+#[cfg(feature = "paimon-state")]
+impl crate::state::PaimonMapCodec for JoinStateCodec {
+    type Entry = RowMeta;
+
+    fn supported(&self) -> bool {
+        crate::state::paimon_row_supported(&self.row_types)
+    }
+
+    fn value_fields(&self) -> Vec<(String, DataType)> {
+        let mut fields: Vec<(String, DataType)> = self
+            .row_types
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (format!("c{i}"), t.clone()))
+            .collect();
+        fields.push(("cnt".to_string(), DataType::Int64));
+        fields.push(("deg".to_string(), DataType::Int32));
+        fields
+    }
+
+    fn sub_key(&self, row: &[u8]) -> Vec<u8> {
+        let columns = self.row_columns(row);
+        let batch = RecordBatch::try_new(self.row_schema.clone(), columns)
+            .expect("one-row join batch");
+        let all_columns: Vec<usize> = (0..self.row_types.len()).collect();
+        BinaryRowBatchEncoder::new(&batch, &all_columns, &self.row_precisions)
+            .encode(0)
+            .to_vec()
+    }
+
+    fn encode(&self, row: &[u8], entry: &RowMeta) -> Vec<ScalarValue> {
+        let columns = self.row_columns(row);
+        let mut scalars: Vec<ScalarValue> = columns
+            .iter()
+            .map(|column| ScalarValue::try_from_array(column, 0).expect("join state scalar"))
+            .collect();
+        scalars.push(ScalarValue::Int64(Some(entry.count)));
+        scalars.push(ScalarValue::Int32(Some(entry.num_assoc)));
+        scalars
+    }
+
+    fn decode(&self, scalars: &[ScalarValue]) -> (ByteKey, RowMeta) {
+        let n = self.row_types.len();
+        let columns: Vec<ArrayRef> = scalars[..n]
+            .iter()
+            .zip(&self.row_types)
+            .map(|(scalar, data_type)| scalars_to_array(vec![scalar.clone()], data_type))
+            .collect();
+        let rows = self.payload.convert_columns(&columns).expect("encode hydrated join row");
+        let count = match &scalars[n] {
+            ScalarValue::Int64(Some(v)) => *v,
+            _ => 0,
+        };
+        let num_assoc = match &scalars[n + 1] {
+            ScalarValue::Int32(Some(v)) => *v,
+            _ => -1,
+        };
+        (ByteKey::from(rows.row(0).data()), RowMeta { count, num_assoc })
+    }
+
+    fn entry_bytes(&self, row: &[u8], _entry: &RowMeta) -> usize {
+        join_row_entry_bytes(row)
+    }
+}

@@ -63,8 +63,23 @@ Why Paimon over rust-rocksdb:
   maintain and inspect them today); `vortex` is opt-in and currently unmaintained. Values stay
   Rust-defined either way.
 - Canonical savepoints cannot be expressed; native-format savepoints work.
-- Multiset-state aggregates (retracting MIN/MAX, DISTINCT) and non-scalar state shapes stay on
-  memory state until the row codec grows side tables (see `docs/coverage-and-fallbacks.md` §c).
+- Multiset-state aggregates (retracting MIN/MAX, DISTINCT) stay on memory state until the row
+  codec grows side tables (see `docs/coverage-and-fallbacks.md` §c).
+
+## State shapes mirror Flink's state primitives
+
+The store grew three shapes, each the analog of a Flink state primitive as RocksDB lays it out:
+a **single-value** store (ValueState; PK `[kg, k]`, one typed row per key), a **list** store
+(ListState; PK `[kg, k, ord]`, one row per element, a dirty key rewriting its whole list — exactly
+RocksDB ListState's whole-value rewrite — with positions preserving order-sensitive semantics like
+Top-N tie order), and a **map** store (MapState; PK `[kg, k, r]`, one row per entry, `r` the row's
+Flink BinaryRow bytes — a stable wire format, unlike arrow-row). The updating join runs two map
+tables (one per side) under one operator backend — the analog of Flink's two named join states as
+two column families in one RocksDB — carried by one incremental handle whose meta document stores
+an opaque snapshot token the native store packs both snapshot ids into. One deliberate divergence
+from RocksDB MapState remains: a dirty map key currently rewrites its whole bucket (plus
+tombstones for vanished rows) instead of per-entry writes; per-entry dirty tracking is a planned
+store-internal optimization for hot join keys with large buckets.
 
 The full design record, including the verified paimon-rust API survey and the rejected
 alternatives (rust-rocksdb baseline, Tonbo, fjall, SlateDB, ForSt), is in

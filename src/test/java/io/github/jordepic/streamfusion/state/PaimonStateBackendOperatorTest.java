@@ -10,6 +10,7 @@ import io.github.jordepic.streamfusion.operator.NativeColumnarChangelogNormalize
 import io.github.jordepic.streamfusion.operator.NativeColumnarGroupAggregateOperator;
 import io.github.jordepic.streamfusion.operator.NativeColumnarKeepLastDeduplicateOperator;
 import io.github.jordepic.streamfusion.operator.NativeColumnarTopNOperator;
+import io.github.jordepic.streamfusion.operator.NativeColumnarUpdatingJoinOperator;
 import io.github.jordepic.streamfusion.operator.RowDataArrowConverter;
 import java.util.ArrayList;
 import java.util.List;
@@ -317,6 +318,110 @@ class PaimonStateBackendOperatorTest {
   private static final RowType TOPN_ROW =
       RowType.of(
           new LogicalType[] {new BigIntType(), new BigIntType()}, new String[] {"p", "s"});
+
+  /**
+   * The updating join rides two Paimon tables under one backend (the analog of Flink's two named
+   * join states as two column families in one RocksDB): one incremental handle carries both, and a
+   * restored joiner's retraction still finds the pre-restore match.
+   */
+  @Test
+  void updatingJoinCheckpointsBothSidesAndRestores() throws Exception {
+    OperatorSubtaskState snapshot;
+    try (BufferAllocator allocator = new RootAllocator();
+        org.apache.flink.streaming.util.KeyedTwoInputStreamOperatorTestHarness<
+                Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+            harness = joinHarness()) {
+      harness.setStateBackend(new PaimonStateBackend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+
+      harness.processElement2(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(1L, 100L)), INPUT, allocator))));
+      harness.processElement1(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(1L, 10L)), INPUT, allocator))));
+      collectJoin(harness);
+      snapshot = harness.snapshot(1, 1);
+      paimonHandle(snapshot); // one incremental handle covers both side tables
+      harness.notifyOfCompletedCheckpoint(1);
+    }
+
+    try (BufferAllocator allocator = new RootAllocator();
+        org.apache.flink.streaming.util.KeyedTwoInputStreamOperatorTestHarness<
+                Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+            harness = joinHarness()) {
+      harness.setStateBackend(new PaimonStateBackend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(snapshot);
+      harness.open();
+
+      // Retracting the pre-restore left row must retract its (hydrated) match.
+      VectorSchemaRoot retract =
+          RowDataArrowConverter.write(
+              List.of(rowOfKind(RowKind.DELETE, 1, 10)), INPUT, allocator, true);
+      harness.processElement1(new StreamRecord<>(new ArrowBatch(retract)));
+      assertEquals(
+          List.of(List.of(RowKind.DELETE, 1L, 10L, 1L, 100L)), collectJoin(harness));
+    }
+  }
+
+  private static org.apache.flink.streaming.util.KeyedTwoInputStreamOperatorTestHarness<
+          Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+      joinHarness() throws Exception {
+    NativeColumnarUpdatingJoinOperator operator =
+        new NativeColumnarUpdatingJoinOperator(
+            new int[] {0},
+            new int[] {0},
+            0, // INNER
+            INPUT,
+            INPUT,
+            new int[0],
+            new int[0],
+            new int[0],
+            new long[0],
+            new double[0],
+            new String[0],
+            io.github.jordepic.streamfusion.operator.NativeUdf.Binding.EMPTY,
+            new int[] {-1},
+            false,
+            0,
+            MAX_PARALLELISM);
+    return new org.apache.flink.streaming.util.KeyedTwoInputStreamOperatorTestHarness<>(
+        operator, batch -> 0, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0);
+  }
+
+  private static final RowType JOIN_OUTPUT =
+      RowType.of(
+          new LogicalType[] {
+            new BigIntType(), new BigIntType(), new BigIntType(), new BigIntType()
+          },
+          new String[] {"lk", "lv", "rk", "rv"});
+
+  private static List<List<Object>> collectJoin(
+      org.apache.flink.streaming.util.KeyedTwoInputStreamOperatorTestHarness<
+              Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+          harness) {
+    List<List<Object>> rows = new ArrayList<>();
+    while (!harness.getOutput().isEmpty()) {
+      Object event = harness.getOutput().poll();
+      if (event instanceof StreamRecord) {
+        try (VectorSchemaRoot root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
+          for (RowData row : RowDataArrowConverter.read(root, JOIN_OUTPUT)) {
+            rows.add(
+                List.of(
+                    row.getRowKind(), row.getLong(0), row.getLong(1), row.getLong(2),
+                    row.getLong(3)));
+          }
+        }
+      }
+    }
+    return rows;
+  }
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
       topNHarness() throws Exception {

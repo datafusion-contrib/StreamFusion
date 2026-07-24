@@ -804,3 +804,290 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonTo
         drop(from_handle::<PaimonTopNRanker>(handle));
     }
 }
+
+type PaimonUpdatingJoiner = UpdatingJoiner<PaimonJoinStore>;
+
+/// Parses one restored two-table token — `"<left id>:<right id>"`, either id `-1` when that side
+/// had never committed.
+fn parse_join_token(token: &str) -> (i64, i64) {
+    let (left, right) = token.split_once(':').expect("two-table paimon snapshot token");
+    (
+        left.parse::<i64>().expect("left paimon snapshot id"),
+        right.parse::<i64>().expect("right paimon snapshot id"),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonUpdatingJoiner<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    left_keys: JIntArray<'local>,
+    right_keys: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
+    join_type: jint,
+    left_schema_address: jlong,
+    right_schema_address: jlong,
+    pred_kinds: JIntArray<'local>,
+    pred_payload: JIntArray<'local>,
+    pred_child_counts: JIntArray<'local>,
+    pred_longs: JLongArray<'local>,
+    pred_doubles: JDoubleArray<'local>,
+    pred_strings: JObjectArray<'local>,
+    mini_batch: jboolean,
+    memory_budget_bytes: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    file_format: JString<'local>,
+    file_compression: JString<'local>,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+) -> jlong {
+    let left = read_columns(&env, &left_keys);
+    let right = read_columns(&env, &right_keys);
+    let timestamp_precisions: Vec<i32> = read_int_array(&env, &key_timestamp_precisions)
+        .into_iter()
+        .map(|precision| precision as i32)
+        .collect();
+    let left_schema = import_schema(left_schema_address);
+    let right_schema = import_schema(right_schema_address);
+    let predicate = read_join_predicate(
+        &mut env,
+        &pred_kinds,
+        &pred_payload,
+        &pred_child_counts,
+        &pred_longs,
+        &pred_doubles,
+        &pred_strings,
+    );
+    let table_dir = read_string(&mut env, &table_directory);
+    let format = read_string(&mut env, &file_format);
+    let compression = read_string(&mut env, &file_compression);
+    let source_dirs: Vec<String> = read_strings(&mut env, &source_directories)
+        .into_iter()
+        .flatten()
+        .collect();
+    let source_tokens: Vec<String> = read_strings(&mut env, &source_snapshot_tokens)
+        .into_iter()
+        .flatten()
+        .collect();
+
+    // One table per side under the operator's state directory; each side restores independently
+    // from whichever sources ever committed it.
+    let side_config = |side: &str| PaimonStoreConfig {
+        table_dir: format!("{table_dir}/{side}"),
+        max_parallelism: max_parallelism as usize,
+        file_format: format.clone(),
+        file_compression: compression.clone(),
+    };
+    let side_store = |side: &str, schema: &SchemaRef, pick: fn(&str) -> i64| {
+        let codec = JoinStateCodec::new(schema);
+        let sources: Vec<(String, i64)> = source_dirs
+            .iter()
+            .zip(source_tokens.iter())
+            .filter_map(|(dir, token)| {
+                let id = pick(token);
+                (id >= 0).then(|| (format!("{dir}/{side}"), id))
+            })
+            .collect();
+        if sources.is_empty() {
+            PaimonJoinStore::create(side_config(side), codec)
+        } else {
+            PaimonJoinStore::open_merged(
+                side_config(side),
+                codec,
+                &sources,
+                key_group_start..=key_group_end,
+            )
+        }
+    };
+    let left_store = side_store("left", &left_schema, |t| parse_join_token(t).0);
+    let right_store = side_store("right", &right_schema, |t| parse_join_token(t).1);
+    let joiner = left_store.and_then(|left_store| {
+        let right_store = right_store?;
+        UpdatingJoiner::new(
+            left,
+            right,
+            JoinKind::from_code(join_type),
+            left_schema,
+            right_schema,
+            predicate,
+        )
+        .with_mini_batch(mini_batch != 0)
+        .with_key_timestamp_precisions(timestamp_precisions)
+        .with_backend(left_store, right_store)
+        .with_read_through_budget(memory_budget_bytes)
+    });
+    boxed_or_throw(&mut env, joiner)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftPaimonUpdatingJoiner<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let joiner = unsafe { &mut *(handle as *mut PaimonUpdatingJoiner) };
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        joiner.push(&batch, true)
+    };
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightPaimonUpdatingJoiner<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let joiner = unsafe { &mut *(handle as *mut PaimonUpdatingJoiner) };
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        joiner.push(&batch, false)
+    };
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonUpdatingJoiner<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let joiner = unsafe { &mut *(handle as *mut PaimonUpdatingJoiner) };
+    match joiner.flush_mini_batch() {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
+}
+
+/// Checkpoint sync phase (task thread, at the barrier): commits BOTH side tables and hands back
+/// one merged manifest — token `"<left id>:<right id>"` (empty when neither side ever committed),
+/// file paths prefixed `left/` / `right/` relative to the operator's state directory.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonUpdatingJoiner<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    link_directory: JString<'local>,
+) -> jobjectArray {
+    let joiner = unsafe { &mut *(handle as *mut PaimonUpdatingJoiner) };
+    let link_dir = read_string(&mut env, &link_directory);
+    let (left_store, right_store) = joiner.stores_mut();
+    let manifests = left_store
+        .checkpoint(&format!("{link_dir}/left"))
+        .and_then(|left| Ok((left, right_store.checkpoint(&format!("{link_dir}/right"))?)));
+    match manifests {
+        Ok((left, right)) => {
+            let token = if left.snapshot_id < 0 && right.snapshot_id < 0 {
+                String::new()
+            } else {
+                format!("{}:{}", left.snapshot_id, right.snapshot_id)
+            };
+            let mut lines = Vec::with_capacity(
+                1 + left.data_files.len()
+                    + left.meta_files.len()
+                    + right.data_files.len()
+                    + right.meta_files.len(),
+            );
+            lines.push(token);
+            lines.extend(left.data_files.iter().map(|f| format!("d:left/{f}")));
+            lines.extend(right.data_files.iter().map(|f| format!("d:right/{f}")));
+            lines.extend(left.meta_files.iter().map(|f| format!("m:left/{f}")));
+            lines.extend(right.meta_files.iter().map(|f| format!("m:right/{f}")));
+            let array = env
+                .new_object_array(lines.len() as i32, "java/lang/String", JObject::null())
+                .expect("manifest array");
+            for (i, line) in lines.iter().enumerate() {
+                let value = env.new_string(line).expect("manifest line");
+                env.set_object_array_element(&array, i as i32, value)
+                    .expect("manifest element");
+            }
+            array.into_raw()
+        }
+        Err(e) => {
+            throw_runtime(&mut env, &format!("paimon state checkpoint failed: {e}"));
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonUpdatingJoinerStateBytes<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let joiner = unsafe { &*(handle as *const PaimonUpdatingJoiner) };
+    joiner.memory.state_bytes as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonUpdatingJoinerStagingBytes<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let joiner = unsafe { &*(handle as *const PaimonUpdatingJoiner) };
+    joiner.staging_bytes() as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonUpdatingJoinerStagedKeys<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let joiner = unsafe { &*(handle as *const PaimonUpdatingJoiner) };
+    joiner.staged_keys() as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonUpdatingJoiner<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    unsafe {
+        drop(from_handle::<PaimonUpdatingJoiner>(handle));
+    }
+}

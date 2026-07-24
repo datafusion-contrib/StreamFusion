@@ -1171,6 +1171,72 @@ public final class Native {
   public static native void closePaimonTopNRanker(long handle);
 
   /**
+   * {@code createUpdatingJoiner} on the Paimon state backend: one table per side under the
+   * operator's state directory (the analog of Flink's two named join states), each row persisted
+   * as typed columns plus its appear-count and degree under PK {@code [kg, k, r]} with {@code r}
+   * the row's Flink BinaryRow bytes. The checkpoint token packs both sides' snapshot ids; a
+   * restored source adopts each side independently.
+   */
+  public static native long createPaimonUpdatingJoiner(
+      int[] leftKeys,
+      int[] rightKeys,
+      int[] keyTimestampPrecisions,
+      int joinType,
+      long leftSchemaAddress,
+      long rightSchemaAddress,
+      int[] predKinds,
+      int[] predPayload,
+      int[] predChildCounts,
+      long[] predLongs,
+      double[] predDoubles,
+      String[] predStrings,
+      boolean miniBatch,
+      long memoryBudgetBytes,
+      String tableDirectory,
+      int maxParallelism,
+      String fileFormat,
+      String fileCompression,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd);
+
+  /** {@code pushLeftUpdatingJoiner} for a Paimon-backed handle. */
+  public static native void pushLeftPaimonUpdatingJoiner(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  /** {@code pushRightUpdatingJoiner} for a Paimon-backed handle. */
+  public static native void pushRightPaimonUpdatingJoiner(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  /** {@code flushUpdatingJoiner} for a Paimon-backed handle. */
+  public static native void flushPaimonUpdatingJoiner(
+      long handle, long outArrayAddress, long outSchemaAddress);
+
+  /** {@code checkpointPaimonGroupAggregator} for a Paimon-backed updating joiner (both tables). */
+  public static native String[] checkpointPaimonUpdatingJoiner(long handle, String linkDirectory);
+
+  /** Estimated bytes of a Paimon-backed updating joiner's resident working set. */
+  public static native long paimonUpdatingJoinerStateBytes(long handle);
+
+  /** {@code updatingJoinerStagingBytes} for a Paimon-backed handle. */
+  public static native long paimonUpdatingJoinerStagingBytes(long handle);
+
+  /** {@code updatingJoinerStagedKeys} for a Paimon-backed handle. */
+  public static native long paimonUpdatingJoinerStagedKeys(long handle);
+
+  /** Releases a Paimon-backed updating joiner handle. */
+  public static native void closePaimonUpdatingJoiner(long handle);
+
+  /**
    * Creates a changelog normalizer (keep-last per unique key) and returns an opaque handle. Each
    * input changelog batch folds into per-key state and the normalizer exports the normalized
    * changelog (INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE on the {@code $row_kind$} column). Released

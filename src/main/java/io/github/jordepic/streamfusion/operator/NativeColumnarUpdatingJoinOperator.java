@@ -3,6 +3,8 @@ package io.github.jordepic.streamfusion.operator;
 import io.github.jordepic.streamfusion.Native;
 import io.github.jordepic.streamfusion.arrow.ArrowConversion;
 import io.github.jordepic.streamfusion.operator.MiniBatchMetrics.FlushReason;
+import io.github.jordepic.streamfusion.planner.NativeConfig;
+import io.github.jordepic.streamfusion.state.PaimonNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
@@ -56,6 +58,7 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
+  private transient boolean paimonState;
   private transient MiniBatchBoundary boundary;
   private transient MiniBatchMetrics miniBatchMetrics;
   private transient ManagedMemoryBudget memoryBudget;
@@ -117,6 +120,42 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
       Data.exportSchema(alloc, ArrowConversion.toArrowSchema(rightType), dicts, rightSchema);
       long[] boundPredLongs = predBinding.bind(predLongs);
       memoryBudget = ManagedMemoryBudget.reserveFor(this);
+      PaimonNativeStateSupport paimon =
+          PaimonNativeStateSupport.resolve(
+              getKeyedStateBackend(),
+              "updating join",
+              !rawSnapshots.isEmpty(),
+              () -> rowTypeSupported(leftType) && rowTypeSupported(rightType));
+      paimonState = paimon != null;
+      if (paimonState) {
+        handle =
+            Native.createPaimonUpdatingJoiner(
+                leftKeys,
+                rightKeys,
+                keyTimestampPrecisions,
+                joinType,
+                leftSchema.memoryAddress(),
+                rightSchema.memoryAddress(),
+                predKinds,
+                predPayload,
+                predChildCounts,
+                boundPredLongs,
+                predDoubles,
+                predStrings,
+                miniBatch,
+                memoryBudget.bytes(),
+                paimon.tableDirectory(),
+                maxParallelism,
+                NativeConfig.paimonFileFormat(),
+                NativeConfig.paimonFileCompression(),
+                paimon.sourceDirectories(),
+                paimon.sourceSnapshotTokens(),
+                paimon.keyGroupStart(),
+                paimon.keyGroupEnd());
+        long nativeHandle = handle;
+        paimon.register(linkDir -> Native.checkpointPaimonUpdatingJoiner(nativeHandle, linkDir));
+        return;
+      }
       if (!rawSnapshots.isEmpty()) {
         handle =
             Native.restoreUpdatingJoinerPartitions(
@@ -151,6 +190,18 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
                   miniBatch,
                   memoryBudget.bytes());
       }
+    }
+  }
+
+  /** Whether one side's row type is persistable, probed over a one-call FFI schema export. */
+  private static boolean rowTypeSupported(RowType rowType) {
+    try (ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+      Data.exportSchema(
+          NativeAllocator.SHARED,
+          ArrowConversion.toArrowSchema(rowType),
+          NativeAllocator.DICTIONARIES,
+          schema);
+      return Native.paimonRowStateSupported(schema.memoryAddress());
     }
   }
 
@@ -214,7 +265,10 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
   /** Samples the native state size for the operator's gauges; task-thread only. */
   private void publishStateBytes() {
     if (memoryBudget.bounded()) {
-      memoryBudget.publishStateBytes(Native.updatingJoinerStateBytes(handle));
+      memoryBudget.publishStateBytes(
+          paimonState
+              ? Native.paimonUpdatingJoinerStateBytes(handle)
+              : Native.updatingJoinerStateBytes(handle));
     }
   }
 
@@ -234,7 +288,17 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
         ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
-      if (left) {
+      if (paimonState) {
+        if (left) {
+          Native.pushLeftPaimonUpdatingJoiner(
+              handle, inArray.memoryAddress(), inSchema.memoryAddress(),
+              outArray.memoryAddress(), outSchema.memoryAddress());
+        } else {
+          Native.pushRightPaimonUpdatingJoiner(
+              handle, inArray.memoryAddress(), inSchema.memoryAddress(),
+              outArray.memoryAddress(), outSchema.memoryAddress());
+        }
+      } else if (left) {
         Native.pushLeftUpdatingJoiner(
             handle, inArray.memoryAddress(), inSchema.memoryAddress(),
             outArray.memoryAddress(), outSchema.memoryAddress());
@@ -279,11 +343,22 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
   }
 
   private void flushBundle(FlushReason reason) {
-    long transientBytes = Native.updatingJoinerStagingBytes(handle);
-    long touchedKeys = Native.updatingJoinerStagedKeys(handle);
+    long transientBytes =
+        paimonState
+            ? Native.paimonUpdatingJoinerStagingBytes(handle)
+            : Native.updatingJoinerStagingBytes(handle);
+    long touchedKeys =
+        paimonState
+            ? Native.paimonUpdatingJoinerStagedKeys(handle)
+            : Native.updatingJoinerStagedKeys(handle);
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushUpdatingJoiner(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      if (paimonState) {
+        Native.flushPaimonUpdatingJoiner(
+            handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      } else {
+        Native.flushUpdatingJoiner(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       int outputRows = out.getRowCount();
@@ -300,16 +375,24 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractStreamOperator<A
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    RawKeyedState.snapshotPartitions(
-        context,
-        Native.snapshotUpdatingJoinerPartitions(
-            handle, maxParallelism, keyTimestampPrecisions));
+    // Paimon state checkpoints through the keyed state backend's snapshot (an incremental Paimon
+    // commit); only memory state travels as raw keyed-state blobs.
+    if (!paimonState) {
+      RawKeyedState.snapshotPartitions(
+          context,
+          Native.snapshotUpdatingJoinerPartitions(
+              handle, maxParallelism, keyTimestampPrecisions));
+    }
   }
 
   @Override
   public void close() throws Exception {
     if (handle != 0) {
-      Native.closeUpdatingJoiner(handle);
+      if (paimonState) {
+        Native.closePaimonUpdatingJoiner(handle);
+      } else {
+        Native.closeUpdatingJoiner(handle);
+      }
       handle = 0;
     }
     if (memoryBudget != null) {
