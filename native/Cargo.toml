@@ -89,6 +89,19 @@ csv-core = "0.1"
 num-traits = "0.2"
 # Flink's JSON format writes binary values as RFC 4648 base64 rather than arrow-json's hexadecimal.
 base64 = "0.22"
+# Persistent state backend (`paimon-state` feature): local Apache Paimon primary-key tables hold
+# operator state as typed Arrow columns on disk, giving Flink incremental checkpoints (a Paimon
+# snapshot is a manifest-pinned immutable file set — "new since last checkpoint" is a manifest
+# diff). Pinned to a rev because the machinery this backend needs (Vortex format writer, mod bucket
+# function, Arrow write path) is newer than the last crates.io release. Vortex is the data file
+# format (BtrBlocks-style compression); storage-fs is the local-disk FileIO.
+paimon = { git = "https://github.com/apache/paimon-rust.git", rev = "7b54d44c487590f4d84952533f110ba16e9346a4", default-features = false, features = ["storage-fs", "vortex"], optional = true }
+# Checkpoint file manifests cross the JNI boundary as JSON (small, once per checkpoint — not a hot
+# path). Already in the tree transitively via paimon.
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+# Persisting the Paimon schema document on table creation. Already in the tree transitively.
+bytes = { version = "1", optional = true }
 # Opt-in mimalloc (see the `mimalloc` feature): librdkafka allocates one op per consumed message
 # on the broker thread and frees it on the app thread; the system allocator makes that cross-thread
 # malloc/free pattern the top cost on both threads (macOS even madvises pages back mid-loop), and
@@ -109,6 +122,11 @@ csv = []
 raw = []
 avro = []
 protobuf = []
+# Paimon-backed persistent operator state (see src/state/). Core-engine infrastructure, not a
+# connector: the toggle is Flink's state-backend selection, and a build without this feature makes
+# the persistent backend unavailable (planner/operator falls back to memory state), never a
+# linkage failure.
+paimon-state = ["dep:paimon", "dep:serde", "dep:serde_json", "dep:bytes"]
 # Rebind the C allocator to mimalloc for everything linked into THIS library (librdkafka included),
 # via link-time symbol aliases emitted by build.rs. Library-scoped: the hosting JVM process keeps
 # its own allocator, so this carries none of the risk of a process-wide malloc override (a zone-swap

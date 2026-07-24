@@ -587,8 +587,74 @@ pub(crate) struct GroupKeyState {
     last_output_bytes: usize,
 }
 
-/// The resident default backend for the group store (see `state.rs` for the seam).
+/// The resident default backend for the group store (see `state/` for the seam).
 pub(crate) type MemoryGroupStore = MemoryStateStore<GroupKeyState>;
+
+/// The Arrow type of each aggregate's persisted state scalar (equals the result type except AVG,
+/// whose running sum is wider) — the persistent row schema and the checkpoint wire format agree.
+pub(crate) fn group_state_types(kinds: &[i64], value_types: &[DataType]) -> Vec<DataType> {
+    kinds
+        .iter()
+        .zip(value_types)
+        .map(|(&kind, vt)| RunningAgg::new(kind, vt).state_type())
+        .collect()
+}
+
+/// Whether every aggregate's per-key state is a plain running scalar. MIN/MAX retraction and
+/// DISTINCT keep per-key multisets, which the persistent row codec does not carry yet — those
+/// operators stay on the memory backend.
+pub(crate) fn group_kinds_persistable(kinds: &[i64]) -> bool {
+    !kinds.iter().any(|kind| matches!(kind, 1 | 2 | 7 | 9))
+}
+
+/// One group's persisted row: live record count, per-aggregate state scalar, per-aggregate
+/// non-null count. Mirrors the raw keyed-state snapshot encoding of a `Running` aggregate, so the
+/// two persistence paths cannot drift.
+pub(crate) fn group_state_scalars(
+    state: &GroupKeyState,
+    state_types: &[DataType],
+) -> (i64, Vec<ScalarValue>, Vec<i64>) {
+    let mut scalars = Vec::with_capacity(state.aggs.len());
+    let mut non_nulls = Vec::with_capacity(state.aggs.len());
+    for (i, agg) in state.aggs.iter().enumerate() {
+        match agg {
+            GroupAggState::Running { agg, non_null } => {
+                scalars.push(agg.emit());
+                non_nulls.push(*non_null);
+            }
+            _ => {
+                debug_assert!(false, "persistent row codec requires running aggregates");
+                scalars.push(null_scalar(&state_types[i]));
+                non_nulls.push(0);
+            }
+        }
+    }
+    (state.records, scalars, non_nulls)
+}
+
+/// Rebuilds one group's state from its persisted row (the inverse of `group_state_scalars`).
+pub(crate) fn group_state_from_scalars(
+    kinds: &[i64],
+    value_types: &[DataType],
+    records: i64,
+    states: &[ScalarValue],
+    non_nulls: &[i64],
+) -> GroupKeyState {
+    let aggs = kinds
+        .iter()
+        .zip(value_types)
+        .enumerate()
+        .map(|(i, (&kind, vt))| {
+            let mut agg_state = GroupAggState::new(kind, vt);
+            if let GroupAggState::Running { agg, non_null } = &mut agg_state {
+                agg.restore_value(&states[i]);
+                *non_null = non_nulls[i];
+            }
+            agg_state
+        })
+        .collect();
+    GroupKeyState { aggs, records, last_output: None, last_output_bytes: 0 }
+}
 
 struct StagedGroupChange {
     old: Option<Vec<ScalarValue>>,
@@ -714,11 +780,7 @@ impl GroupAggregator {
             .zip(&value_types)
             .map(|(&kind, vt)| RunningAgg::new(kind, vt).result_type())
             .collect();
-        let state_types = kinds
-            .iter()
-            .zip(&value_types)
-            .map(|(&kind, vt)| RunningAgg::new(kind, vt).state_type())
-            .collect();
+        let state_types = group_state_types(&kinds, &value_types);
         let filter_columns = vec![-1; kinds.len()];
         let count_columns = vec![-1; kinds.len()];
         let distinct_view_columns = vec![-1; kinds.len()];
@@ -757,6 +819,37 @@ impl GroupAggregator {
         self.memory.attach("group-aggregate", budget_bytes, state)?;
         Ok(self)
     }
+
+    /// Moves this freshly built (empty, memory-backed) aggregator's configuration onto another
+    /// state backend. Construction goes through `new` + builders first so backend choice stays
+    /// orthogonal to the many aggregate-shape builders.
+    pub(crate) fn with_backend<T: KeyedStateStore<GroupKeyState>>(
+        self,
+        store: T,
+    ) -> GroupAggregator<T> {
+        GroupAggregator {
+            kinds: self.kinds,
+            value_types: self.value_types,
+            result_types: self.result_types,
+            state_types: self.state_types,
+            value_columns: self.value_columns,
+            filter_columns: self.filter_columns,
+            count_columns: self.count_columns,
+            distinct_view_columns: self.distinct_view_columns,
+            record_count_column: self.record_count_column,
+            key_columns: self.key_columns,
+            key_timestamp_precisions: self.key_timestamp_precisions,
+            generate_update_before: self.generate_update_before,
+            store,
+            snapshot_cache: None,
+            mini_batch: self.mini_batch,
+            staged_order: self.staged_order,
+            staged_changes: self.staged_changes,
+            staged_key_batches: self.staged_key_batches,
+            staged_bytes: self.staged_bytes,
+            memory: self.memory,
+        }
+    }
 }
 
 impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
@@ -767,6 +860,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
 
     pub(crate) fn staged_keys(&self) -> usize {
         self.staged_order.len()
+    }
+
+    /// The backing store, for backend-specific control paths (checkpointing a persistent store).
+    pub(crate) fn store_mut(&mut self) -> &mut S {
+        &mut self.store
     }
 
     pub(crate) fn staging_bytes(&self) -> usize {
@@ -832,6 +930,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     /// returns the changelog rows produced, in emission order.
     pub(crate) fn update(&mut self, batch: &RecordBatch) -> Result<RecordBatch, DataFusionError> {
         self.snapshot_cache = None;
+        // A read-through backend hydrates every key this batch can touch in one probe; point
+        // accesses in the per-row loop below are then guaranteed resident (memory: no-op).
+        self.store
+            .begin_batch(batch, &self.key_columns, &self.key_timestamp_precisions)?;
         let n = batch.num_rows();
         let num_agg = self.kinds.len();
         // `None` is a COUNT(*) aggregate (no argument column): it counts every row. A present column
@@ -1227,6 +1329,12 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         if track {
             self.memory.record(staged_delta as isize);
         }
+        if !self.mini_batch {
+            // Immediate mode: the batch is the whole bundle — the store may release what it
+            // hydrated. Mini-batch bundles end in `flush_mini_batch` instead.
+            self.store.end_bundle()?;
+        }
+        self.memory.record(self.store.footprint_delta());
         self.memory.account()?;
 
         // Mini-batch output is produced only by `flush_mini_batch`. Avoid constructing empty key
@@ -1346,6 +1454,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         if self.memory.tracking() {
             self.memory.record(new_cache_bytes as isize);
         }
+        self.store.end_bundle()?;
+        self.memory.record(self.store.footprint_delta());
         self.memory.account()?;
         Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build mini-batch group-by changelog"))

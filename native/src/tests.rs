@@ -3249,3 +3249,233 @@ fn format_driver_init_gates_on_version() {
     assert_ne!(driver.decode_body_batch as usize, sentinel as usize);
     assert_ne!(streamfusion_format_driver_init(FORMAT_DRIVER_VERSION_1, std::ptr::null_mut()), 0);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Paimon-backed group state: read-through probes, barrier commits, restore, rescale, compaction.
+// Everything runs on the vortex file format — the production configuration.
+// ---------------------------------------------------------------------------------------------
+
+#[cfg(feature = "paimon-state")]
+mod paimon_state {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> String {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "sf-paimon-{tag}-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::SeqCst)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.to_string_lossy().into_owned()
+    }
+
+    fn config(table_dir: &str, compaction_trigger: usize) -> PaimonStoreConfig {
+        PaimonStoreConfig {
+            table_dir: table_dir.to_string(),
+            max_parallelism: 128,
+            compaction_trigger,
+            file_format: "vortex".to_string(),
+        }
+    }
+
+    /// SUM + COUNT(*) aggregator over one BIGINT key, mini-batched, on the given backend.
+    fn paimon_agg(store: PaimonGroupStore) -> GroupAggregator<PaimonGroupStore> {
+        GroupAggregator::new(vec![0, 3], vec![0, 0], vec![1, -1], vec![0], true)
+            .with_mini_batch()
+            .with_backend(store)
+    }
+
+    fn memory_agg() -> GroupAggregator {
+        GroupAggregator::new(vec![0, 3], vec![0, 0], vec![1, -1], vec![0], true).with_mini_batch()
+    }
+
+    fn create_store(dir: &str, trigger: usize) -> PaimonGroupStore {
+        let value_types = vec![value_data_type(0), value_data_type(0)];
+        let state_types = group_state_types(&[0, 3], &value_types);
+        PaimonGroupStore::create(config(dir, trigger), vec![0, 3], value_types, state_types)
+            .unwrap()
+    }
+
+    fn open_store(dir: &str, trigger: usize, snapshot_id: i64) -> PaimonGroupStore {
+        let value_types = vec![value_data_type(0), value_data_type(0)];
+        let state_types = group_state_types(&[0, 3], &value_types);
+        PaimonGroupStore::open(config(dir, trigger), vec![0, 3], value_types, state_types, snapshot_id)
+            .unwrap()
+    }
+
+    /// Copies exactly the files a checkpoint manifest lists from its hard-link dir into a fresh
+    /// table dir — the restore path, and a completeness check on the listing itself.
+    fn materialize(manifest: &PaimonCheckpointManifest, link_dir: &str, target: &str) {
+        for rel in manifest.data_files.iter().chain(manifest.meta_files.iter()) {
+            let from = format!("{link_dir}/{rel}");
+            let to = format!("{target}/{rel}");
+            std::fs::create_dir_all(std::path::Path::new(&to).parent().unwrap()).unwrap();
+            std::fs::copy(&from, &to).unwrap();
+        }
+    }
+
+    fn assert_same_output(memory: &RecordBatch, paimon: &RecordBatch) {
+        assert_eq!(row_kinds(memory), row_kinds(paimon), "row kinds diverge");
+        for column in 0..memory.num_columns() {
+            assert_eq!(
+                format!("{:?}", memory.column(column)),
+                format!("{:?}", paimon.column(column)),
+                "column {column} diverges"
+            );
+        }
+    }
+
+    #[test]
+    fn paimon_group_agg_matches_memory_across_checkpoints() {
+        let dir = temp_dir("parity");
+        let mut paimon = paimon_agg(create_store(&dir, 100));
+        let mut memory = memory_agg();
+
+        let bundles: Vec<RecordBatch> = vec![
+            group_changelog(vec![1, 2, 1], vec![Some(10), Some(20), Some(5)], vec![0, 0, 0]),
+            group_changelog(vec![1, 3], vec![Some(10), Some(7)], vec![1, 0]),
+            group_changelog(vec![2, 2], vec![Some(20), Some(1)], vec![3, 0]),
+            group_changelog(vec![3, 1], vec![Some(7), Some(5)], vec![3, 3]),
+        ];
+        for (i, bundle) in bundles.iter().enumerate() {
+            paimon.update(bundle).unwrap();
+            memory.update(bundle).unwrap();
+            assert_same_output(
+                &memory.flush_mini_batch().unwrap(),
+                &paimon.flush_mini_batch().unwrap(),
+            );
+            // A checkpoint between every bundle forces every probe through the table.
+            let link = temp_dir(&format!("parity-cp{i}"));
+            paimon.store_mut().checkpoint(&link).unwrap();
+        }
+    }
+
+    #[test]
+    fn paimon_checkpoint_restores_from_listed_files_only() {
+        let dir = temp_dir("restore-src");
+        let mut agg = paimon_agg(create_store(&dir, 100));
+        agg.update(&group_batch(vec![1, 2, 3], vec![10, 20, 30])).unwrap();
+        agg.flush_mini_batch().unwrap();
+        let link1 = temp_dir("restore-cp1");
+        let first = agg.store_mut().checkpoint(&link1).unwrap();
+        assert!(first.snapshot_id > 0);
+        assert!(!first.data_files.is_empty());
+
+        // Second checkpoint reuses unchanged data files and adds only the delta.
+        agg.update(&group_changelog(vec![2], vec![Some(5)], vec![0])).unwrap();
+        agg.flush_mini_batch().unwrap();
+        let link2 = temp_dir("restore-cp2");
+        let second = agg.store_mut().checkpoint(&link2).unwrap();
+        assert!(second.snapshot_id > first.snapshot_id);
+        assert!(
+            first.data_files.iter().all(|f| second.data_files.contains(f)),
+            "unchanged data files must stay reachable (incremental reuse)"
+        );
+
+        let restored_dir = temp_dir("restore-dst");
+        materialize(&second, &link2, &restored_dir);
+        let mut restored = paimon_agg(open_store(&restored_dir, 100, second.snapshot_id));
+
+        // The restored table must serve state: retract 10 from key 1 -> SUM drops to 0 rows? No:
+        // one record remains? key 1 had a single +I of 10; retracting it deletes the group.
+        restored
+            .update(&group_changelog(vec![1, 2], vec![Some(10), Some(100)], vec![3, 0]))
+            .unwrap();
+        let out = restored.flush_mini_batch().unwrap();
+        assert_eq!(values(&out, 0), vec![1, 2, 2]);
+        assert_eq!(row_kinds(&out), vec![3, 1, 2]);
+        assert_eq!(values(&out, 1), vec![10, 25, 125]); // -D old sum; -U 20+5; +U 20+5+100
+    }
+
+    #[test]
+    fn paimon_tombstones_survive_checkpoints() {
+        let dir = temp_dir("tombstone");
+        let mut agg = paimon_agg(create_store(&dir, 100));
+        agg.update(&group_batch(vec![7], vec![70])).unwrap();
+        agg.flush_mini_batch().unwrap();
+        agg.store_mut().checkpoint(&temp_dir("tomb-cp1")).unwrap();
+
+        agg.update(&group_changelog(vec![7], vec![Some(70)], vec![3])).unwrap();
+        let out = agg.flush_mini_batch().unwrap();
+        assert_eq!(row_kinds(&out), vec![3]);
+        agg.store_mut().checkpoint(&temp_dir("tomb-cp2")).unwrap();
+
+        // After the delete is committed, the key must probe as absent: a fresh insert is +I.
+        agg.update(&group_batch(vec![7], vec![1])).unwrap();
+        let out = agg.flush_mini_batch().unwrap();
+        assert_eq!(row_kinds(&out), vec![0]);
+        assert_eq!(values(&out, 1), vec![1]);
+    }
+
+    #[test]
+    fn paimon_compaction_bounds_files_and_preserves_state() {
+        let dir = temp_dir("compact");
+        let mut agg = paimon_agg(create_store(&dir, 2));
+        // Ten checkpoints of updates to the same key pile up level-0 runs in one bucket.
+        for i in 1..=10i64 {
+            agg.update(&group_changelog(vec![42], vec![Some(i)], vec![0])).unwrap();
+            agg.flush_mini_batch().unwrap();
+            let manifest = agg
+                .store_mut()
+                .checkpoint(&temp_dir(&format!("compact-cp{i}")))
+                .unwrap();
+            assert!(
+                manifest.data_files.len() <= 3,
+                "compaction must bound live files, saw {:?}",
+                manifest.data_files
+            );
+        }
+        // State is intact after all rewrites: SUM 1+2+..+10 = 55, retracting 55 deletes.
+        agg.update(&group_changelog(vec![42], vec![Some(55)], vec![0])).unwrap();
+        let out = agg.flush_mini_batch().unwrap();
+        assert_eq!(values(&out, 1), vec![55, 110]);
+        assert_eq!(row_kinds(&out), vec![1, 2]);
+    }
+
+    #[test]
+    fn paimon_rescale_merges_bucket_ranges() {
+        // Two "subtasks" write disjoint keys, checkpoint, and a new subtask adopts the union.
+        let dir_a = temp_dir("rescale-a");
+        let dir_b = temp_dir("rescale-b");
+        let mut a = paimon_agg(create_store(&dir_a, 100));
+        let mut b = paimon_agg(create_store(&dir_b, 100));
+        a.update(&group_batch(vec![1, 2, 3, 4], vec![10, 20, 30, 40])).unwrap();
+        b.update(&group_batch(vec![5, 6, 7, 8], vec![50, 60, 70, 80])).unwrap();
+        a.flush_mini_batch().unwrap();
+        b.flush_mini_batch().unwrap();
+        let link_a = temp_dir("rescale-cpa");
+        let link_b = temp_dir("rescale-cpb");
+        let cp_a = a.store_mut().checkpoint(&link_a).unwrap();
+        let cp_b = b.store_mut().checkpoint(&link_b).unwrap();
+
+        let src_a = temp_dir("rescale-srca");
+        let src_b = temp_dir("rescale-srcb");
+        materialize(&cp_a, &link_a, &src_a);
+        materialize(&cp_b, &link_b, &src_b);
+
+        let merged_dir = temp_dir("rescale-merged");
+        let value_types = vec![value_data_type(0), value_data_type(0)];
+        let state_types = group_state_types(&[0, 3], &value_types);
+        let store = PaimonGroupStore::open_merged(
+            config(&merged_dir, 100),
+            vec![0, 3],
+            value_types,
+            state_types,
+            &[(src_a, cp_a.snapshot_id), (src_b, cp_b.snapshot_id)],
+            0..=127,
+        )
+        .unwrap();
+        let mut merged = paimon_agg(store);
+
+        // Every key from both sources must be live: an update to each changes its sum.
+        merged
+            .update(&group_batch(vec![1, 5, 8], vec![1, 1, 1]))
+            .unwrap();
+        let out = merged.flush_mini_batch().unwrap();
+        assert_eq!(values(&out, 0), vec![1, 1, 5, 5, 8, 8]);
+        assert_eq!(values(&out, 1), vec![10, 11, 50, 51, 80, 81]);
+        assert_eq!(row_kinds(&out), vec![1, 2, 1, 2, 1, 2]);
+    }
+}
