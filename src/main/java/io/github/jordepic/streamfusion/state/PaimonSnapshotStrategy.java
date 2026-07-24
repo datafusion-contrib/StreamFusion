@@ -134,10 +134,13 @@ final class PaimonSnapshotStrategy
     if (compactor != null) {
       // Maintenance commits its own snapshot directly beneath the checkpoint's data commit. A
       // failure loses maintenance, not the checkpoint.
-      try {
-        compactor.compact(tableDirectory.getAbsolutePath(), checkpointId);
-      } catch (Exception e) {
-        LOG.warn("state-table compaction failed; continuing the checkpoint without maintenance", e);
+      for (File table : discoverTables(tableDirectory)) {
+        try {
+          compactor.compact(table.getAbsolutePath(), checkpointId);
+        } catch (Exception e) {
+          LOG.warn(
+              "state-table compaction failed; continuing the checkpoint without maintenance", e);
+        }
       }
     }
     File linkDir = new File(checkpointLinkRoot, "chk-" + checkpointId);
@@ -160,6 +163,30 @@ final class PaimonSnapshotStrategy
       confirmedBase = confirmedBase(uploadedFiles, lastCompletedCheckpointId);
     }
     return new PaimonSnapshotResources(snapshotToken, dataFiles, metaFiles, linkDir, confirmedBase);
+  }
+
+  /**
+   * The Paimon tables under an operator's state directory. The native side owns the layout — a
+   * single table rooted at the directory itself, or one table per immediate child for a
+   * multi-state operator (the join's two sides) — and the presence of a {@code schema/} dir is
+   * the ground truth, so the compactor plugin interface stays a single-table contract.
+   */
+  static List<File> discoverTables(File tableDirectory) {
+    if (new File(tableDirectory, "schema").isDirectory()) {
+      return Collections.singletonList(tableDirectory);
+    }
+    File[] children = tableDirectory.listFiles(File::isDirectory);
+    if (children == null) {
+      return Collections.emptyList();
+    }
+    List<File> tables = new ArrayList<>();
+    java.util.Arrays.sort(children);
+    for (File child : children) {
+      if (new File(child, "schema").isDirectory()) {
+        tables.add(child);
+      }
+    }
+    return tables;
   }
 
   /**
