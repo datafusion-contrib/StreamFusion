@@ -63,6 +63,24 @@ public final class NativeConfig {
   }
 
   /**
+   * The sorted-run bound of the Paimon state backend ({@code streamfusion.state.paimon.compaction-trigger},
+   * default 8): a bucket whose live data file count exceeds this is rewritten into one merged file
+   * at the next checkpoint. Lower bounds probe read-amplification tighter at the cost of more
+   * rewrite IO per checkpoint.
+   */
+  public static int paimonCompactionTrigger() {
+    return Integer.getInteger("streamfusion.state.paimon.compaction-trigger", 8);
+  }
+
+  /**
+   * The Paimon data file format for native state tables ({@code streamfusion.state.paimon.file-format},
+   * default {@code vortex}).
+   */
+  public static String paimonFileFormat() {
+    return System.getProperty("streamfusion.state.paimon.file-format", "vortex");
+  }
+
+  /**
    * The operator-scope managed-memory weight, in mebibytes, a native stateful operator declares
    * ({@code streamfusion.memory.operator-weight-mb}, default 64). Flink splits the slot's
    * managed-memory OPERATOR share across declaring operators proportionally to these weights, so the

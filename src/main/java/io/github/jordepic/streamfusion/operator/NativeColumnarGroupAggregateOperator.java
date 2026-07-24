@@ -2,6 +2,9 @@ package io.github.jordepic.streamfusion.operator;
 
 import io.github.jordepic.streamfusion.Native;
 import io.github.jordepic.streamfusion.operator.MiniBatchMetrics.FlushReason;
+import io.github.jordepic.streamfusion.planner.NativeConfig;
+import io.github.jordepic.streamfusion.state.PaimonKeyedStateBackend;
+import io.github.jordepic.streamfusion.state.PaimonRestoredSource;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
@@ -42,6 +45,7 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
+  private transient boolean paimonState;
   private transient MiniBatchBoundary boundary;
   private transient MiniBatchMetrics miniBatchMetrics;
   private transient ManagedMemoryBudget memoryBudget;
@@ -88,6 +92,46 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
     super.initializeState(context);
     java.util.List<byte[]> snapshots = RawKeyedState.restore(context);
     memoryBudget = ManagedMemoryBudget.reserveFor(this);
+    // The Paimon backend takes over only when the job selected it, this build carries it, the
+    // aggregate list is persistable, and no raw keyed state arrived (a checkpoint written by the
+    // memory backend restores on the memory backend — no silent migration).
+    PaimonKeyedStateBackend<?> paimonBackend =
+        getKeyedStateBackend() instanceof PaimonKeyedStateBackend
+            ? (PaimonKeyedStateBackend<?>) getKeyedStateBackend()
+            : null;
+    paimonState =
+        paimonBackend != null
+            && snapshots.isEmpty()
+            && Native.paimonStateAvailable()
+            && Native.paimonGroupAggregatorSupported(aggregateKinds, valueTypes);
+    if (paimonState) {
+      java.util.List<PaimonRestoredSource> sources = paimonBackend.restoredSources();
+      String[] sourceDirs = new String[sources.size()];
+      long[] sourceSnapshots = new long[sources.size()];
+      for (int i = 0; i < sources.size(); i++) {
+        sourceDirs[i] = sources.get(i).directory();
+        sourceSnapshots[i] = sources.get(i).snapshotId();
+      }
+      handle =
+          Native.createPaimonGroupAggregator(
+              aggregateKinds, valueTypes, valueColumns, keyColumns, keyTimestampPrecisions,
+              filterColumns, countColumns, distinctViewColumns, recordCountColumn,
+              generateUpdateBefore, miniBatch, memoryBudget.bytes(),
+              paimonBackend.tableDirectory(), maxParallelism,
+              NativeConfig.paimonCompactionTrigger(), NativeConfig.paimonFileFormat(),
+              sourceDirs, sourceSnapshots,
+              paimonBackend.getKeyGroupRange().getStartKeyGroup(),
+              paimonBackend.getKeyGroupRange().getEndKeyGroup());
+      long nativeHandle = handle;
+      paimonBackend.registerNativeState(
+          linkDir -> Native.checkpointPaimonGroupAggregator(nativeHandle, linkDir));
+      return;
+    }
+    if (paimonBackend != null) {
+      LOG.info(
+          "group aggregate falls back to memory state under the Paimon backend "
+              + "(unsupported aggregate list, missing native feature, or raw-state restore)");
+    }
     handle =
         snapshots.isEmpty()
             ? Native.createGroupAggregator(
@@ -167,12 +211,21 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
         ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
-      Native.updateGroupAggregator(
-          handle,
-          inArray.memoryAddress(),
-          inSchema.memoryAddress(),
-          outArray.memoryAddress(),
-          outSchema.memoryAddress());
+      if (paimonState) {
+        Native.updatePaimonGroupAggregator(
+            handle,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      } else {
+        Native.updateGroupAggregator(
+            handle,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       if (out.getRowCount() > 0) {
@@ -209,11 +262,21 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
   }
 
   private void flushBundle(FlushReason reason) {
-    long transientBytes = Native.groupAggregatorStagingBytes(handle);
-    long touchedKeys = Native.groupAggregatorStagedKeys(handle);
+    long transientBytes =
+        paimonState
+            ? Native.paimonGroupAggregatorStagingBytes(handle)
+            : Native.groupAggregatorStagingBytes(handle);
+    long touchedKeys =
+        paimonState
+            ? Native.paimonGroupAggregatorStagedKeys(handle)
+            : Native.groupAggregatorStagedKeys(handle);
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushGroupAggregator(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      if (paimonState) {
+        Native.flushPaimonGroupAggregator(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      } else {
+        Native.flushGroupAggregator(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       int outputRows = out.getRowCount();
@@ -230,23 +293,34 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
   /** Samples the native state size for the operator's gauges; task-thread only. */
   private void publishStateBytes() {
     if (memoryBudget.bounded()) {
-      memoryBudget.publishStateBytes(Native.groupAggregatorStateBytes(handle));
+      memoryBudget.publishStateBytes(
+          paimonState
+              ? Native.paimonGroupAggregatorStateBytes(handle)
+              : Native.groupAggregatorStateBytes(handle));
     }
   }
 
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    RawKeyedState.snapshotPartitions(
-        context,
-        Native.snapshotGroupAggregatorPartitions(
-            handle, maxParallelism, keyTimestampPrecisions));
+    // Paimon state checkpoints through the keyed state backend's snapshot (an incremental Paimon
+    // commit); only memory state travels as raw keyed-state blobs.
+    if (!paimonState) {
+      RawKeyedState.snapshotPartitions(
+          context,
+          Native.snapshotGroupAggregatorPartitions(
+              handle, maxParallelism, keyTimestampPrecisions));
+    }
   }
 
   @Override
   public void close() throws Exception {
     if (handle != 0) {
-      Native.closeGroupAggregator(handle);
+      if (paimonState) {
+        Native.closePaimonGroupAggregator(handle);
+      } else {
+        Native.closeGroupAggregator(handle);
+      }
       handle = 0;
     }
     if (memoryBudget != null) {
