@@ -88,6 +88,7 @@ mod over_agg;
 mod rowtime;
 mod session_agg;
 mod sorter;
+mod state;
 mod temporal_join;
 mod topn;
 mod updating_join;
@@ -102,7 +103,7 @@ pub(crate) use {
     aggregates::*, bridge::*, calc::*, changelog::*, dedup::*, exchange::*, expr::*,
     flink_key::*, flatten::*, format_abi::*, group_agg::*, interval_join::*, ipc::*, join_common::*,
     keys::*, memory::*, mini_batch::*, normalizer::*, over_agg::*, rowtime::*, session_agg::*, sorter::*,
-    temporal_join::*, topn::*, updating_join::*, window_agg::*, window_join::*,
+    state::*, temporal_join::*, topn::*, updating_join::*, window_agg::*, window_join::*,
 };
 
 #[cfg(any(feature = "json", feature = "csv", feature = "raw", feature = "avro", feature = "protobuf", test))]
