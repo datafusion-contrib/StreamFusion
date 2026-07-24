@@ -10,8 +10,16 @@ needed**, better than §Phase 1 predicted), the JNI checkpoint surface, the Java
 `PaimonStateBackend`/`PaimonKeyedStateBackend`/`PaimonSnapshotStrategy` emitting
 `IncrementalRemoteKeyedStateHandle`s, and the group-aggregate pilot behind `state.backend.type`.
 Coverage/limits: `docs/coverage-and-fallbacks.md` §(c); architecture record: `divergences/27`.
+Compaction (2026-07-24): Jordan steered maintenance to **stock Java Paimon** — the optional
+`streamfusion-paimon-compactor` module runs Paimon's own compaction at each barrier through a
+ServiceLoader SPI (validated end to end against released 1.4.1 by cross-implementation tests:
+Rust writes → Java reads/compacts → Rust restores). The native fallback (no Paimon on the
+classpath / unreadable format) is a faithful port of Java's `UniversalCompaction` pick. Note:
+Java's Vortex format landed on Paimon master (#7543, targets 2.0) — vortex state tables become
+Java-maintainable/readable then; until then Java-owned maintenance means parquet state files.
 Remaining from this doc: multiset side tables (MIN/MAX retract, DISTINCT), other operators,
-time-range shape, TTL, object-store FileIO, upstreaming compaction/expiry to paimon-rust, and the
+time-range shape, TTL, object-store FileIO, upstreaming compaction/expiry + a
+sequence-preserving rewrite to paimon-rust, publishing paimon-vortex-format upstream, and the
 performance measurements (the Phase 0 rocksdb comparison and a Nexmark-style A/B of memory vs
 paimon backend) which were deferred, not run.
 
