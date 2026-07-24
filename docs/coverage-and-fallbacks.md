@@ -607,7 +607,8 @@ array`, is **not** here: Flink rejects it too, so we're at parity.)
 Native operator state is **memory-resident by default** and checkpointed as full raw keyed-state
 blobs. Selecting the **Paimon state backend** (`state.backend.type:
 io.github.jordepic.streamfusion.state.PaimonStateBackendFactory`) moves a supported operator's state
-into a local Apache Paimon primary-key table (Vortex data files) with **incremental checkpoints**:
+into a local Apache Paimon primary-key table (uncompressed parquet by default) with **incremental
+checkpoints**:
 snapshots travel through the keyed-state backend as `IncrementalRemoteKeyedStateHandle`s, so a data
 file already uploaded by a completed checkpoint is referenced, not re-uploaded, and rescale
 reassigns whole bucket directories (bucket = Flink key group). JVM-side keyed state in the same job
@@ -618,7 +619,15 @@ What runs on the Paimon backend today, and every condition that keeps an operato
 the operator just checkpoints its state the old way, in full):
 
 - **Operator coverage** — only the non-windowed `GROUP BY` aggregate (single- and two-phase global)
-  so far. Every other stateful operator keeps memory state under this backend.
+  so far. Every other stateful operator keeps memory state under this backend. The
+  point-access-shaped operators (keep-last dedup, changelog normalize, Top-N, updating join) are
+  being brought over on the same store. The **watermark/timer-driven operators** (keep-first
+  dedup, `OVER` aggregates, window rank, interval/window/temporal joins, session/window
+  aggregates) stay on memory state for now for two concrete reasons, neither a storage limit:
+  firing on a watermark needs a *range* hydration ("every row with `t ≤ watermark`", a
+  predicate-pruned scan merged with the uncommitted working set) rather than the per-key probe the
+  store does today, and their pending buffers are columnar batches that would first need
+  remodeling as keyed rows.
 - **Multiset-state aggregates** — retracting `MIN`/`MAX` and `COUNT`/`SUM(DISTINCT)` keep per-key
   multisets, which the persistent row codec does not carry yet; an aggregate list containing them
   keeps the whole operator on memory state.

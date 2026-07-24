@@ -590,6 +590,68 @@ pub(crate) struct GroupKeyState {
 /// The resident default backend for the group store (see `state/` for the seam).
 pub(crate) type MemoryGroupStore = MemoryStateStore<GroupKeyState>;
 
+/// The group aggregate's persistent backend: the generic Paimon store under the group row codec.
+#[cfg(feature = "paimon-state")]
+pub(crate) type PaimonGroupStore = crate::state::PaimonStore<GroupStateCodec>;
+
+/// The group aggregate's value codec for the Paimon store: one row per group holding the live
+/// record count and each aggregate's `(state scalar, non-null count)` pair, delegating to the same
+/// scalar round-trip the raw keyed-state snapshot uses so the two persistence paths cannot drift.
+#[cfg(feature = "paimon-state")]
+pub(crate) struct GroupStateCodec {
+    pub kinds: Vec<i64>,
+    pub value_types: Vec<DataType>,
+    pub state_types: Vec<DataType>,
+}
+
+#[cfg(feature = "paimon-state")]
+impl crate::state::PaimonStateCodec for GroupStateCodec {
+    type Value = GroupKeyState;
+
+    fn supported(&self) -> bool {
+        crate::state::paimon_group_supported(&self.kinds, &self.state_types)
+    }
+
+    fn value_fields(&self) -> Vec<(String, DataType)> {
+        let mut fields = vec![("records".to_string(), DataType::Int64)];
+        for (i, state_type) in self.state_types.iter().enumerate() {
+            fields.push((format!("s{i}"), state_type.clone()));
+            fields.push((format!("n{i}"), DataType::Int64));
+        }
+        fields
+    }
+
+    fn encode(&self, state: &GroupKeyState) -> Vec<ScalarValue> {
+        let (records, scalars, counts) = group_state_scalars(state, &self.state_types);
+        let mut row = Vec::with_capacity(1 + 2 * scalars.len());
+        row.push(ScalarValue::Int64(Some(records)));
+        for (scalar, count) in scalars.into_iter().zip(counts) {
+            row.push(scalar);
+            row.push(ScalarValue::Int64(Some(count)));
+        }
+        row
+    }
+
+    fn decode(&self, scalars: &[ScalarValue]) -> GroupKeyState {
+        let as_i64 = |scalar: &ScalarValue| match scalar {
+            ScalarValue::Int64(Some(v)) => *v,
+            _ => 0,
+        };
+        let records = as_i64(&scalars[0]);
+        let mut states = Vec::with_capacity(self.state_types.len());
+        let mut non_nulls = Vec::with_capacity(self.state_types.len());
+        for i in 0..self.state_types.len() {
+            states.push(scalars[1 + 2 * i].clone());
+            non_nulls.push(as_i64(&scalars[2 + 2 * i]));
+        }
+        group_state_from_scalars(&self.kinds, &self.value_types, records, &states, &non_nulls)
+    }
+
+    fn value_bytes(&self, state: &GroupKeyState) -> usize {
+        group_key_state_bytes(state)
+    }
+}
+
 /// The Arrow type of each aggregate's persisted state scalar (equals the result type except AVG,
 /// whose running sum is wider) — the persistent row schema and the checkpoint wire format agree.
 pub(crate) fn group_state_types(kinds: &[i64], value_types: &[DataType]) -> Vec<DataType> {

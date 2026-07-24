@@ -3291,18 +3291,18 @@ mod paimon_state {
         GroupAggregator::new(vec![0, 3], vec![0, 0], vec![1, -1], vec![0], true).with_mini_batch()
     }
 
-    fn create_store(dir: &str) -> PaimonGroupStore {
+    fn codec() -> GroupStateCodec {
         let value_types = vec![value_data_type(0), value_data_type(0)];
         let state_types = group_state_types(&[0, 3], &value_types);
-        PaimonGroupStore::create(config(dir), vec![0, 3], value_types, state_types)
-            .unwrap()
+        GroupStateCodec { kinds: vec![0, 3], value_types, state_types }
+    }
+
+    fn create_store(dir: &str) -> PaimonGroupStore {
+        PaimonGroupStore::create(config(dir), codec()).unwrap()
     }
 
     fn open_store(dir: &str, snapshot_id: i64) -> PaimonGroupStore {
-        let value_types = vec![value_data_type(0), value_data_type(0)];
-        let state_types = group_state_types(&[0, 3], &value_types);
-        PaimonGroupStore::open(config(dir), vec![0, 3], value_types, state_types, snapshot_id)
-            .unwrap()
+        PaimonGroupStore::open(config(dir), codec(), snapshot_id).unwrap()
     }
 
     /// Copies exactly the files a checkpoint manifest lists from its hard-link dir into a fresh
@@ -3458,13 +3458,9 @@ mod paimon_state {
         materialize(&cp_b, &link_b, &src_b);
 
         let merged_dir = temp_dir("rescale-merged");
-        let value_types = vec![value_data_type(0), value_data_type(0)];
-        let state_types = group_state_types(&[0, 3], &value_types);
         let store = PaimonGroupStore::open_merged(
             config(&merged_dir),
-            vec![0, 3],
-            value_types,
-            state_types,
+            codec(),
             &[(src_a, cp_a.snapshot_id), (src_b, cp_b.snapshot_id)],
             0..=127,
         )

@@ -69,6 +69,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonG
     let arrow_value_types: Vec<DataType> =
         value_type_codes.iter().map(|&code| value_data_type(code)).collect();
     let state_types = group_state_types(&kinds, &arrow_value_types);
+    let codec = GroupStateCodec {
+        kinds: kinds.clone(),
+        value_types: arrow_value_types,
+        state_types,
+    };
     let config = PaimonStoreConfig {
         table_dir,
         max_parallelism: max_parallelism as usize,
@@ -76,18 +81,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonG
         file_compression: compression,
     };
     let store = if source_dirs.is_empty() {
-        PaimonGroupStore::create(config, kinds.clone(), arrow_value_types, state_types)
+        PaimonGroupStore::create(config, codec)
     } else {
         let sources: Vec<(String, i64)> =
             source_dirs.into_iter().zip(source_snapshots).collect();
-        PaimonGroupStore::open_merged(
-            config,
-            kinds.clone(),
-            arrow_value_types,
-            state_types,
-            &sources,
-            key_group_start..=key_group_end,
-        )
+        PaimonGroupStore::open_merged(config, codec, &sources, key_group_start..=key_group_end)
     };
     let aggregator = store.and_then(|store| {
         let mut base = GroupAggregator::new(

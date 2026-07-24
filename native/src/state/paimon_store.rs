@@ -23,7 +23,7 @@
 //! bucket per checkpoint — the host warns when the backend runs unmaintained.
 
 use crate::*;
-use arrow::array::{Array, BinaryArray, Int32Array, Int64Array, Int8Array};
+use arrow::array::{Array, BinaryArray, Int32Array, Int8Array};
 use paimon::catalog::Identifier;
 use paimon::io::FileIO;
 use paimon::spec::{
@@ -38,8 +38,32 @@ use std::sync::OnceLock;
 
 const KG_COLUMN: &str = "kg";
 const KEY_COLUMN: &str = "k";
-const RECORDS_COLUMN: &str = "records";
 const VALUE_KIND_COLUMN: &str = "_VALUE_KIND";
+
+/// The per-operator half of the store: the value columns beyond `kg`/`k`, and how one state value
+/// maps to and from one row of those columns. The store owns keys, buckets, hydration, dirty
+/// tracking, and the checkpoint file protocol; a codec owns only its row shape, so a new operator
+/// plugs in with a schema fragment and a scalar round-trip.
+pub(crate) trait PaimonStateCodec {
+    type Value;
+
+    /// Whether this operator instance's state shape is persistable at all (type map coverage,
+    /// operator-specific restrictions). False keeps the operator on the memory backend.
+    fn supported(&self) -> bool;
+
+    /// The value columns beyond `kg`/`k`, in persisted order. All are stored nullable — a
+    /// tombstone row carries nulls.
+    fn value_fields(&self) -> Vec<(String, DataType)>;
+
+    /// Encodes a value as one scalar per value column, in `value_fields` order.
+    fn encode(&self, value: &Self::Value) -> Vec<ScalarValue>;
+
+    /// Decodes one probe row (one scalar per value column) — the inverse of `encode`.
+    fn decode(&self, scalars: &[ScalarValue]) -> Self::Value;
+
+    /// The value's accounted heap footprint, mirroring the operator's own per-row tracking.
+    fn value_bytes(&self, value: &Self::Value) -> usize;
+}
 
 /// One shared runtime for all Paimon state IO: probes and commits run on the Flink task thread via
 /// `block_on`, so the runtime only needs to drive opendal's local-fs operations.
@@ -92,6 +116,9 @@ fn paimon_type_of(dt: &DataType) -> Option<PaimonType> {
         DataType::Float32 => PaimonType::Float(FloatType::new()),
         DataType::Float64 => PaimonType::Double(DoubleType::new()),
         DataType::Utf8 => PaimonType::VarChar(VarCharType::string_type()),
+        DataType::Binary => {
+            PaimonType::VarBinary(VarBinaryType::try_new(true, VarBinaryType::MAX_LENGTH).ok()?)
+        }
         DataType::Date32 => PaimonType::Date(DateType::new()),
         DataType::Decimal128(p, s) if *s >= 0 => {
             PaimonType::Decimal(DecimalType::new(*p as u32, *s as u32).ok()?)
@@ -135,37 +162,38 @@ pub(crate) struct PaimonCheckpointManifest {
     pub meta_files: Vec<String>,
 }
 
-enum Slot {
-    Present { state: GroupKeyState, dirty: bool },
+enum Slot<V> {
+    Present { state: V, dirty: bool },
     Absent { dirty: bool },
 }
 
-/// Read-through Paimon-backed store for the group aggregate (see the module docs).
-pub(crate) struct PaimonGroupStore {
+/// Read-through Paimon-backed store, generic over the operator's value codec (see the module
+/// docs).
+pub(crate) struct PaimonStore<C: PaimonStateCodec> {
     table: Table,
     /// The table pinned at the last committed snapshot; probes read this.
     read_table: Option<Table>,
     read_snapshot: Option<i64>,
     fields: Vec<DataField>,
     config: PaimonStoreConfig,
-    kinds: Vec<i64>,
-    value_types: Vec<DataType>,
-    state_types: Vec<DataType>,
-    working: ahash::HashMap<ByteKey, Slot>,
+    codec: C,
+    /// The codec's value columns as Arrow fields, in persisted order after `kg`/`k`.
+    value_fields: Vec<Field>,
+    working: ahash::HashMap<ByteKey, Slot<C::Value>>,
     /// Relative paths reachable from the last committed snapshot — the previous set minus the
     /// current one is exactly what local GC may unlink after a commit.
     live_files: StdHashSet<String>,
     footprint: isize,
 }
 
-impl KeyedStateStore<GroupKeyState> for PaimonGroupStore {
+impl<C: PaimonStateCodec> KeyedStateStore<C::Value> for PaimonStore<C> {
     #[inline]
     fn contains(&self, key: &[u8]) -> bool {
         matches!(self.working.get(key), Some(Slot::Present { .. }))
     }
 
     #[inline]
-    fn get(&self, key: &[u8]) -> Option<&GroupKeyState> {
+    fn get(&self, key: &[u8]) -> Option<&C::Value> {
         match self.working.get(key) {
             Some(Slot::Present { state, .. }) => Some(state),
             _ => None,
@@ -173,7 +201,7 @@ impl KeyedStateStore<GroupKeyState> for PaimonGroupStore {
     }
 
     #[inline]
-    fn get_mut(&mut self, key: &[u8]) -> Option<&mut GroupKeyState> {
+    fn get_mut(&mut self, key: &[u8]) -> Option<&mut C::Value> {
         match self.working.get_mut(key) {
             Some(Slot::Present { state, dirty }) => {
                 *dirty = true;
@@ -184,7 +212,7 @@ impl KeyedStateStore<GroupKeyState> for PaimonGroupStore {
     }
 
     #[inline]
-    fn insert(&mut self, key: ByteKey, value: GroupKeyState) -> &mut GroupKeyState {
+    fn insert(&mut self, key: ByteKey, value: C::Value) -> &mut C::Value {
         let slot = self
             .working
             .entry(key)
@@ -236,15 +264,17 @@ impl KeyedStateStore<GroupKeyState> for PaimonGroupStore {
         // overhead for every hydrated entry, plus key + state for entries hydrated Present (which
         // the operator never charged). Dropping an entry reverses exactly that split.
         let footprint = &mut self.footprint;
+        let codec = &self.codec;
         self.working.retain(|key, slot| match slot {
             Slot::Present { dirty: true, .. } | Slot::Absent { dirty: true } => true,
             Slot::Present { dirty: false, state } => {
-                *footprint -=
-                    (byte_key_bytes(&key.0) + group_key_state_bytes(state) + SLOT_OVERHEAD) as isize;
+                *footprint -= (byte_key_bytes(&key.0)
+                    + codec.value_bytes(state)
+                    + Self::SLOT_OVERHEAD) as isize;
                 false
             }
             Slot::Absent { dirty: false } => {
-                *footprint -= SLOT_OVERHEAD as isize;
+                *footprint -= Self::SLOT_OVERHEAD as isize;
                 false
             }
         });
@@ -256,17 +286,12 @@ impl KeyedStateStore<GroupKeyState> for PaimonGroupStore {
     }
 }
 
-const SLOT_OVERHEAD: usize = std::mem::size_of::<Slot>() + GROUP_ENTRY_OVERHEAD;
+impl<C: PaimonStateCodec> PaimonStore<C> {
+    const SLOT_OVERHEAD: usize = std::mem::size_of::<Slot<C::Value>>() + GROUP_ENTRY_OVERHEAD;
 
-impl PaimonGroupStore {
     /// Creates a fresh table under `config.table_dir` (schema document + directory skeleton).
-    pub(crate) fn create(
-        config: PaimonStoreConfig,
-        kinds: Vec<i64>,
-        value_types: Vec<DataType>,
-        state_types: Vec<DataType>,
-    ) -> Result<Self, DataFusionError> {
-        let schema = Self::paimon_schema(&config, &state_types)?;
+    pub(crate) fn create(config: PaimonStoreConfig, codec: C) -> Result<Self, DataFusionError> {
+        let schema = Self::paimon_schema(&config, &codec)?;
         let table_schema = TableSchema::new(0, &schema);
         let file_io = Self::file_io(&config.table_dir)?;
         runtime().block_on(async {
@@ -288,28 +313,18 @@ impl PaimonGroupStore {
                 .await
                 .map_err(pe)
         })?;
-        Self::open_at(config, kinds, value_types, state_types, file_io, table_schema, None)
+        Self::open_at(config, codec, file_io, table_schema, None)
     }
 
     /// Opens a table directory previously materialized from a checkpoint, pinned at its snapshot.
     pub(crate) fn open(
         config: PaimonStoreConfig,
-        kinds: Vec<i64>,
-        value_types: Vec<DataType>,
-        state_types: Vec<DataType>,
+        codec: C,
         snapshot_id: i64,
     ) -> Result<Self, DataFusionError> {
         let file_io = Self::file_io(&config.table_dir)?;
         let table_schema = Self::latest_schema(&file_io, &config.table_dir)?;
-        Self::open_at(
-            config,
-            kinds,
-            value_types,
-            state_types,
-            file_io,
-            table_schema,
-            Some(snapshot_id),
-        )
+        Self::open_at(config, codec, file_io, table_schema, Some(snapshot_id))
     }
 
     /// Builds a fresh table at `config.table_dir` from one or more restored table directories
@@ -317,13 +332,11 @@ impl PaimonGroupStore {
     /// committing their existing metadata — no row is read or rewritten.
     pub(crate) fn open_merged(
         config: PaimonStoreConfig,
-        kinds: Vec<i64>,
-        value_types: Vec<DataType>,
-        state_types: Vec<DataType>,
+        codec: C,
         sources: &[(String, i64)],
         key_groups: std::ops::RangeInclusive<i32>,
     ) -> Result<Self, DataFusionError> {
-        let mut store = Self::create(config, kinds, value_types, state_types)?;
+        let mut store = Self::create(config, codec)?;
         let mut messages: Vec<CommitMessage> = Vec::new();
         for (source_dir, snapshot_id) in sources {
             let file_io = Self::file_io(source_dir)?;
@@ -373,18 +386,21 @@ impl PaimonGroupStore {
 
     fn open_at(
         config: PaimonStoreConfig,
-        kinds: Vec<i64>,
-        value_types: Vec<DataType>,
-        state_types: Vec<DataType>,
+        codec: C,
         file_io: FileIO,
         table_schema: TableSchema,
         snapshot_id: Option<i64>,
     ) -> Result<Self, DataFusionError> {
-        if !paimon_group_supported(&kinds, &state_types) {
+        if !codec.supported() {
             return Err(DataFusionError::Plan(
-                "aggregate list not supported by the paimon state backend".into(),
+                "state shape not supported by the paimon state backend".into(),
             ));
         }
+        let value_fields: Vec<Field> = codec
+            .value_fields()
+            .into_iter()
+            .map(|(name, data_type)| Field::new(name, data_type, true))
+            .collect();
         let fields = table_schema.fields().to_vec();
         let table = Table::new(
             file_io,
@@ -393,15 +409,14 @@ impl PaimonGroupStore {
             table_schema,
             None,
         );
-        let mut store = PaimonGroupStore {
+        let mut store = PaimonStore {
             read_table: None,
             read_snapshot: None,
             fields,
             table,
             config,
-            kinds,
-            value_types,
-            state_types,
+            codec,
+            value_fields,
             working: ahash::HashMap::default(),
             live_files: StdHashSet::new(),
             footprint: 0,
@@ -438,7 +453,7 @@ impl PaimonGroupStore {
 
     fn paimon_schema(
         config: &PaimonStoreConfig,
-        state_types: &[DataType],
+        codec: &C,
     ) -> Result<PaimonSchema, DataFusionError> {
         let mut builder = PaimonSchema::builder()
             .column(KG_COLUMN, PaimonType::Int(IntType::new()))
@@ -447,17 +462,14 @@ impl PaimonGroupStore {
                 PaimonType::VarBinary(
                     VarBinaryType::try_new(true, VarBinaryType::MAX_LENGTH).map_err(pe)?,
                 ),
-            )
-            .column(RECORDS_COLUMN, PaimonType::BigInt(BigIntType::new()));
-        for (i, state_type) in state_types.iter().enumerate() {
-            let paimon_type = paimon_type_of(state_type).ok_or_else(|| {
+            );
+        for (name, data_type) in codec.value_fields() {
+            let paimon_type = paimon_type_of(&data_type).ok_or_else(|| {
                 DataFusionError::Plan(format!(
-                    "state type {state_type} not supported by the paimon state backend"
+                    "state type {data_type} not supported by the paimon state backend"
                 ))
             })?;
-            builder = builder
-                .column(format!("s{i}"), paimon_type)
-                .column(format!("n{i}"), PaimonType::BigInt(BigIntType::new()));
+            builder = builder.column(name, paimon_type);
         }
         builder
             .primary_key([KG_COLUMN, KEY_COLUMN])
@@ -477,12 +489,8 @@ impl PaimonGroupStore {
         let mut fields = vec![
             Field::new(KG_COLUMN, DataType::Int32, false),
             Field::new(KEY_COLUMN, DataType::Binary, false),
-            Field::new(RECORDS_COLUMN, DataType::Int64, true),
         ];
-        for (i, state_type) in self.state_types.iter().enumerate() {
-            fields.push(Field::new(format!("s{i}"), state_type.clone(), true));
-            fields.push(Field::new(format!("n{i}"), DataType::Int64, true));
-        }
+        fields.extend(self.value_fields.iter().cloned());
         fields
     }
 
@@ -534,7 +542,7 @@ impl PaimonGroupStore {
             self.working.entry(key).or_insert_with(|| {
                 // Slot overhead only: if the operator creates this key, its own tracking charges
                 // the key and state bytes (see `end_bundle` for the split).
-                added_bytes += SLOT_OVERHEAD;
+                added_bytes += Self::SLOT_OVERHEAD;
                 Slot::Absent { dirty: false }
             });
         }
@@ -552,22 +560,14 @@ impl PaimonGroupStore {
     ) -> Result<usize, DataFusionError> {
         let expected = self.arrow_fields();
         let key_index = 1;
-        let records_index = 2;
         let keys = normalized_column(batch, key_index, &expected[key_index])?;
         let keys = keys
             .as_any()
             .downcast_ref::<BinaryArray>()
             .ok_or_else(|| DataFusionError::Internal("paimon key column".into()))?;
-        let records = normalized_column(batch, records_index, &expected[records_index])?;
-        let records = records
-            .as_any()
-            .downcast_ref::<Int64Array>()
-            .ok_or_else(|| DataFusionError::Internal("paimon records column".into()))?;
-        let mut state_columns: Vec<ArrayRef> = Vec::with_capacity(self.state_types.len());
-        let mut non_null_columns: Vec<ArrayRef> = Vec::with_capacity(self.state_types.len());
-        for i in 0..self.state_types.len() {
-            state_columns.push(normalized_column(batch, 3 + 2 * i, &expected[3 + 2 * i])?);
-            non_null_columns.push(normalized_column(batch, 4 + 2 * i, &expected[4 + 2 * i])?);
+        let mut value_columns: Vec<ArrayRef> = Vec::with_capacity(self.value_fields.len());
+        for i in 0..self.value_fields.len() {
+            value_columns.push(normalized_column(batch, 2 + i, &expected[2 + i])?);
         }
         let mut added = 0usize;
         let mut added_bytes = 0usize;
@@ -576,28 +576,17 @@ impl PaimonGroupStore {
             if !probed.contains(key) || self.working.contains_key(key) {
                 continue;
             }
-            let mut states: Vec<ScalarValue> = Vec::with_capacity(self.state_types.len());
-            let mut non_nulls: Vec<i64> = Vec::with_capacity(self.state_types.len());
-            for i in 0..self.state_types.len() {
-                states.push(
-                    ScalarValue::try_from_array(&state_columns[i], row)
+            let mut scalars: Vec<ScalarValue> = Vec::with_capacity(value_columns.len());
+            for column in &value_columns {
+                scalars.push(
+                    ScalarValue::try_from_array(column, row)
                         .map_err(|e| DataFusionError::External(Box::new(e)))?,
                 );
-                let counts = non_null_columns[i]
-                    .as_any()
-                    .downcast_ref::<Int64Array>()
-                    .ok_or_else(|| DataFusionError::Internal("paimon non-null column".into()))?;
-                non_nulls.push(if counts.is_null(row) { 0 } else { counts.value(row) });
             }
-            let state = group_state_from_scalars(
-                &self.kinds,
-                &self.value_types,
-                records.value(row),
-                &states,
-                &non_nulls,
-            );
+            let state = self.codec.decode(&scalars);
             let owned = ByteKey::from(key);
-            added_bytes += byte_key_bytes(&owned.0) + group_key_state_bytes(&state) + SLOT_OVERHEAD;
+            added_bytes +=
+                byte_key_bytes(&owned.0) + self.codec.value_bytes(&state) + Self::SLOT_OVERHEAD;
             self.working
                 .insert(owned, Slot::Present { state, dirty: false });
             added += 1;
@@ -609,33 +598,26 @@ impl PaimonGroupStore {
     /// Builds the write batch for all dirty slots: upserts carry the encoded state row, deletions
     /// a `_VALUE_KIND = 3` tombstone. Returns `None` when nothing changed since the last commit.
     fn dirty_batch(&self) -> Option<RecordBatch> {
-        let num_agg = self.state_types.len();
+        let num_value = self.value_fields.len();
         let mut kgs: Vec<i32> = Vec::new();
         let mut keys: Vec<&[u8]> = Vec::new();
-        let mut records: Vec<Option<i64>> = Vec::new();
-        let mut states: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
-        let mut non_nulls: Vec<Vec<Option<i64>>> = vec![Vec::new(); num_agg];
+        let mut values: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_value];
         let mut kinds: Vec<i8> = Vec::new();
         for (key, slot) in self.working.iter() {
             match slot {
                 Slot::Present { state, dirty: true } => {
                     kgs.push(self.key_group(key));
                     keys.push(&key.0);
-                    let (live, scalars, counts) = group_state_scalars(state, &self.state_types);
-                    records.push(Some(live));
-                    for i in 0..num_agg {
-                        states[i].push(scalars[i].clone());
-                        non_nulls[i].push(Some(counts[i]));
+                    for (i, scalar) in self.codec.encode(state).into_iter().enumerate() {
+                        values[i].push(scalar);
                     }
                     kinds.push(0); // +I upsert — deduplicate keeps the latest by sequence
                 }
                 Slot::Absent { dirty: true } => {
                     kgs.push(self.key_group(key));
                     keys.push(&key.0);
-                    records.push(None);
-                    for i in 0..num_agg {
-                        states[i].push(null_scalar(&self.state_types[i]));
-                        non_nulls[i].push(None);
+                    for (i, field) in self.value_fields.iter().enumerate() {
+                        values[i].push(null_scalar(field.data_type()));
                     }
                     kinds.push(3); // -D tombstone
                 }
@@ -650,14 +632,9 @@ impl PaimonGroupStore {
         let mut columns: Vec<ArrayRef> = vec![
             Arc::new(Int32Array::from(kgs)),
             Arc::new(BinaryArray::from_iter_values(keys)),
-            Arc::new(Int64Array::from(records)),
         ];
-        for i in 0..num_agg {
-            columns.push(scalars_to_array(
-                std::mem::take(&mut states[i]),
-                &self.state_types[i],
-            ));
-            columns.push(Arc::new(Int64Array::from(std::mem::take(&mut non_nulls[i]))));
+        for (i, field) in self.value_fields.iter().enumerate() {
+            columns.push(scalars_to_array(std::mem::take(&mut values[i]), field.data_type()));
         }
         columns.push(Arc::new(Int8Array::from(kinds)));
         Some(
@@ -692,14 +669,15 @@ impl PaimonGroupStore {
         }
         // All dirty slots are durable now; drop them (pure read-through, no cache across bundles).
         let footprint = &mut self.footprint;
+        let codec = &self.codec;
         self.working.retain(|key, slot| {
             match slot {
                 Slot::Present { state, .. } => {
                     *footprint -= (byte_key_bytes(&key.0)
-                        + group_key_state_bytes(state)
-                        + SLOT_OVERHEAD) as isize;
+                        + codec.value_bytes(state)
+                        + Self::SLOT_OVERHEAD) as isize;
                 }
-                Slot::Absent { .. } => *footprint -= SLOT_OVERHEAD as isize,
+                Slot::Absent { .. } => *footprint -= Self::SLOT_OVERHEAD as isize,
             }
             false
         });
