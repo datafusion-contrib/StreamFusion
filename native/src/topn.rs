@@ -67,8 +67,11 @@ pub(crate) fn compare_rows(a: &[ScalarValue], b: &[ScalarValue], sort: &[SortCol
 /// value-encoded full row.
 pub(crate) struct TopNConverters {
     partition: RowConverter,
-    sort: RowConverter,
-    payload: RowConverter,
+    // Arc-shared: the Paimon codec re-derives sort keys and payload rows on hydration, and
+    // arrow-row rejects rows decoded by a different converter INSTANCE — the codec and the
+    // operator must literally share these two.
+    sort: Arc<RowConverter>,
+    payload: Arc<RowConverter>,
 }
 
 impl TopNConverters {
@@ -108,7 +111,26 @@ impl TopNConverters {
         let partition_refs: Vec<&ArrayRef> =
             partition_columns.iter().map(|&i| batch.column(i)).collect();
         let partition = key_row_converter(&partition_refs);
-        TopNConverters { partition, sort, payload }
+        TopNConverters { partition, sort: Arc::new(sort), payload: Arc::new(payload) }
+    }
+
+    /// Builds the converter set from declared row types, sharing the codec's sort/payload
+    /// converters so hydrated rows and operator-built rows are interchangeable.
+    #[cfg(feature = "paimon-state")]
+    pub(crate) fn from_codec(codec: &TopNStateCodec, partition_columns: &[usize]) -> Self {
+        let partition_fields: Vec<SortField> = if partition_columns.is_empty() {
+            vec![SortField::new(DataType::Boolean)]
+        } else {
+            partition_columns
+                .iter()
+                .map(|&i| SortField::new(codec.row_types[i].clone()))
+                .collect()
+        };
+        TopNConverters {
+            partition: RowConverter::new(partition_fields).expect("top-n partition converter"),
+            sort: Arc::clone(&codec.sort),
+            payload: Arc::clone(&codec.payload),
+        }
     }
 }
 
@@ -133,8 +155,9 @@ fn topn_staged_entry_bytes(key: &ByteKey, old: &Vec<Arc<OwnedRow>>) -> usize {
         + old.capacity() * std::mem::size_of::<Arc<OwnedRow>>()
 }
 
-pub(crate) struct TopNRanker {
+pub(crate) struct TopNRanker<S: KeyedStateStore<Vec<TopNRow>> = MemoryTopNStore> {
     partition_columns: Vec<usize>,
+    key_timestamp_precisions: Vec<i32>,
     sort_columns: Vec<SortColumn>,
     limit: i64,
     output_rank_number: bool,
@@ -145,14 +168,117 @@ pub(crate) struct TopNRanker {
     net_diff: bool,
     schema: Option<SchemaRef>,
     converters: Option<TopNConverters>,
-    // Keyed by the partition key's encoded bytes (`ByteKey`): the per-row probe hashes the BORROWED
-    // bytes, so a row for an existing partition — or one dropped at rank > N — allocates nothing.
-    groups: HashMap<ByteKey, Vec<TopNRow>>,
+    // Keyed by the partition key's Flink BinaryRow bytes — the encoding every keyed store speaks
+    // (its hash IS the Flink key group) — probed borrowed, so a row for an existing partition (or
+    // one dropped at rank > N) allocates nothing.
+    groups: S,
     // Transient mini-batch preimages, captured once per partition in deterministic first-touch
     // order and drained at the next logical boundary.
     staged_order: Vec<ByteKey>,
     staged_old_tops: HashMap<ByteKey, Vec<Arc<OwnedRow>>>,
     pub(crate) memory: OperatorMemory,
+}
+
+/// The resident default backend for the Top-N buffer store (see `state/` for the seam).
+pub(crate) type MemoryTopNStore = MemoryStateStore<Vec<TopNRow>>;
+
+/// The Top-N buffer's persistent backend: the Paimon LIST store — one table row per buffered
+/// element under PK `[kg, k, ord]` — under the Top-N element codec.
+#[cfg(feature = "paimon-state")]
+pub(crate) type PaimonTopNStore = crate::state::PaimonListStore<TopNStateCodec>;
+
+/// The Top-N element codec: each buffered row persists as its full row in typed columns (never
+/// the transient arrow-row bytes; see the dedup codec for why), and the memcomparable sort key is
+/// re-derived from the row's own sort columns on hydration. The list store's `ord` column
+/// preserves buffer positions exactly, so tie order (arrival order among equal sort keys — which
+/// decides evictions at the boundary) survives restore byte-for-byte.
+#[cfg(feature = "paimon-state")]
+pub(crate) struct TopNStateCodec {
+    row_types: Vec<DataType>,
+    sort_columns: Vec<SortColumn>,
+    payload: Arc<RowConverter>,
+    sort: Arc<RowConverter>,
+}
+
+#[cfg(feature = "paimon-state")]
+impl TopNStateCodec {
+    pub(crate) fn new(row_types: Vec<DataType>, sort_columns: Vec<SortColumn>) -> Self {
+        let payload = RowConverter::new(
+            row_types.iter().map(|t| SortField::new(t.clone())).collect(),
+        )
+        .expect("top-n codec payload converter");
+        // Mirror `TopNConverters::build` exactly, so re-derived sort keys compare byte-identically
+        // with the ones the operator builds from live batches.
+        let sort = if sort_columns.is_empty() {
+            RowConverter::new(vec![SortField::new(DataType::Boolean)])
+                .expect("top-n codec empty sort converter")
+        } else {
+            RowConverter::new(
+                sort_columns
+                    .iter()
+                    .map(|s| {
+                        SortField::new_with_options(
+                            row_types[s.index].clone(),
+                            SortOptions { descending: !s.ascending, nulls_first: s.nulls_first },
+                        )
+                    })
+                    .collect(),
+            )
+            .expect("top-n codec sort converter")
+        };
+        TopNStateCodec { row_types, sort_columns, payload: Arc::new(payload), sort: Arc::new(sort) }
+    }
+}
+
+#[cfg(feature = "paimon-state")]
+impl crate::state::PaimonListCodec for TopNStateCodec {
+    type Entry = TopNRow;
+
+    fn supported(&self) -> bool {
+        crate::state::paimon_row_supported(&self.row_types)
+    }
+
+    fn value_fields(&self) -> Vec<(String, DataType)> {
+        self.row_types
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (format!("c{i}"), t.clone()))
+            .collect()
+    }
+
+    fn encode(&self, entry: &TopNRow) -> Vec<ScalarValue> {
+        let parser = self.payload.parser();
+        let columns = self
+            .payload
+            .convert_rows([parser.parse(entry.1.row().data())])
+            .expect("decode top-n payload for persistence");
+        columns
+            .iter()
+            .map(|column| ScalarValue::try_from_array(column, 0).expect("top-n state scalar"))
+            .collect()
+    }
+
+    fn decode(&self, scalars: &[ScalarValue]) -> TopNRow {
+        let columns: Vec<ArrayRef> = scalars
+            .iter()
+            .zip(&self.row_types)
+            .map(|(scalar, data_type)| scalars_to_array(vec![scalar.clone()], data_type))
+            .collect();
+        let sort_arrays: Vec<ArrayRef> =
+            self.sort_columns.iter().map(|s| columns[s.index].clone()).collect();
+        let sort_key = encode_group_keys(&self.sort, &sort_arrays, 1).row(0).owned();
+        let payload = self
+            .payload
+            .convert_columns(&columns)
+            .expect("encode hydrated top-n payload")
+            .row(0)
+            .owned();
+        (sort_key, Arc::new(payload))
+    }
+
+    fn entry_bytes(&self, entry: &TopNRow) -> usize {
+        topn_entry_bytes(entry)
+    }
 }
 
 /// Estimated footprint of one buffered Top-N entry (sort key + payload row + container overhead).
@@ -168,15 +294,17 @@ impl TopNRanker {
         output_rank_number: bool,
         net_diff: bool,
     ) -> Self {
+        let key_arity = partition_columns.len();
         TopNRanker {
             partition_columns,
+            key_timestamp_precisions: vec![-1; key_arity],
             sort_columns,
             limit,
             output_rank_number,
             net_diff,
             schema: None,
             converters: None,
-            groups: HashMap::default(),
+            groups: MemoryTopNStore::default(),
             staged_order: Vec::new(),
             staged_old_tops: HashMap::default(),
             memory: OperatorMemory::unaccounted(),
@@ -196,6 +324,61 @@ impl TopNRanker {
         self.memory.attach("top-n", budget_bytes, state)?;
         Ok(self)
     }
+}
+
+impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
+    /// Moves this freshly built (empty, memory-backed) ranker's configuration onto another state
+    /// backend; construction goes through `new` + builders first so backend choice stays
+    /// orthogonal to the shape builders.
+    pub(crate) fn with_backend<T: KeyedStateStore<Vec<TopNRow>>>(
+        self,
+        groups: T,
+    ) -> TopNRanker<T> {
+        TopNRanker {
+            partition_columns: self.partition_columns,
+            key_timestamp_precisions: self.key_timestamp_precisions,
+            sort_columns: self.sort_columns,
+            limit: self.limit,
+            output_rank_number: self.output_rank_number,
+            net_diff: self.net_diff,
+            schema: self.schema,
+            converters: self.converters,
+            groups,
+            staged_order: self.staged_order,
+            staged_old_tops: self.staged_old_tops,
+            memory: self.memory,
+        }
+    }
+
+    /// Attaches the managed-memory budget for a backend that starts with nothing resident (a
+    /// read-through store hydrates on demand; there is no restored map to pre-account).
+    pub(crate) fn with_read_through_budget(
+        mut self,
+        budget_bytes: i64,
+    ) -> Result<Self, DataFusionError> {
+        self.memory.attach("top-n", budget_bytes, 0)?;
+        Ok(self)
+    }
+
+    /// The backing store, for backend-specific control paths (checkpointing a persistent store).
+    pub(crate) fn store_mut(&mut self) -> &mut S {
+        &mut self.groups
+    }
+
+    pub(crate) fn with_key_timestamp_precisions(
+        mut self,
+        key_timestamp_precisions: Vec<i32>,
+    ) -> Self {
+        self.key_timestamp_precisions = key_timestamp_precisions;
+        self
+    }
+
+    /// Pre-installs a converter set built from declared types (the Paimon path, which must share
+    /// the codec's converters); the lazy first-batch build then never runs.
+    pub(crate) fn with_converters(mut self, converters: TopNConverters) -> Self {
+        self.converters = Some(converters);
+        self
+    }
 
     /// Builds the three arrow-row converters from a batch's column types, once.
     fn ensure_converters(&mut self, batch: &RecordBatch, arity: usize) {
@@ -212,15 +395,19 @@ impl TopNRanker {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         self.ensure_converters(batch, arity);
+        self.groups
+            .begin_batch(batch, &self.partition_columns, &self.key_timestamp_precisions)?;
         let conv = self.converters.as_ref().expect("converters set");
-        // Encode the whole batch columnar->row in three vectorized passes (partition key, sort key,
-        // full-row payload), instead of materializing a `ScalarValue` per cell.
-        let partition_arrays: Vec<ArrayRef> =
-            self.partition_columns.iter().map(|&i| batch.column(i).clone()).collect();
+        // Encode the sort key and full-row payload columnar->row in two vectorized passes; the
+        // partition key encodes per row into the BinaryRow encoder's reused buffer.
+        let mut parts = BinaryRowBatchEncoder::new(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        );
         let sort_arrays: Vec<ArrayRef> =
             self.sort_columns.iter().map(|s| batch.column(s.index).clone()).collect();
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
-        let parts = encode_group_keys(&conv.partition, &partition_arrays, batch.num_rows());
         let keys = encode_group_keys(&conv.sort, &sort_arrays, batch.num_rows());
         let payloads = conv.payload.convert_columns(&data_arrays).expect("encode payload");
 
@@ -239,14 +426,14 @@ impl TopNRanker {
             let key_row = keys.row(row);
             // Borrowed partition-key probe; the key bytes are copied only when a partition first
             // appears (buffers never empty out).
-            let part = parts.row(row).data();
+            let part = parts.encode(row);
             let buffer = match groups.get_mut(part) {
                 Some(buffer) => buffer,
                 None => {
                     if track {
                         delta += (part.len() + GROUP_ENTRY_OVERHEAD) as isize;
                     }
-                    groups.entry(ByteKey::from(part)).or_default()
+                    groups.insert(ByteKey::from(part), Vec::new())
                 }
             };
             // Insert after any rows that order equal-or-before, preserving arrival order for ties
@@ -307,7 +494,8 @@ impl TopNRanker {
                 out_kinds.push(0); // +I the new row
             }
         }
-        self.memory.record(delta);
+        self.groups.end_bundle()?;
+        self.memory.record(delta + self.groups.footprint_delta());
         self.memory.account()?;
         Ok(self.emit(out_rows, out_kinds, out_ranks))
     }
@@ -330,13 +518,19 @@ impl TopNRanker {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         self.ensure_converters(batch, arity);
+        // The mini-batch bundle spans pushes: hydrated partitions stay resident until the flush
+        // ends the bundle, so the staged preimages' re-probes there stay truthful.
+        self.groups
+            .begin_batch(batch, &self.partition_columns, &self.key_timestamp_precisions)?;
         let conv = self.converters.as_ref().expect("converters set");
-        let partition_arrays: Vec<ArrayRef> =
-            self.partition_columns.iter().map(|&i| batch.column(i).clone()).collect();
+        let mut parts = BinaryRowBatchEncoder::new(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        );
         let sort_arrays: Vec<ArrayRef> =
             self.sort_columns.iter().map(|s| batch.column(s.index).clone()).collect();
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
-        let parts = encode_group_keys(&conv.partition, &partition_arrays, batch.num_rows());
         let keys = encode_group_keys(&conv.sort, &sort_arrays, batch.num_rows());
         let payloads = conv.payload.convert_columns(&data_arrays).expect("encode payload");
 
@@ -349,14 +543,14 @@ impl TopNRanker {
         let staged_old_tops = &mut self.staged_old_tops;
         for row in 0..batch.num_rows() {
             let key_row = keys.row(row);
-            let part = parts.row(row).data();
+            let part = parts.encode(row);
             let buffer = match groups.get_mut(part) {
                 Some(buffer) => buffer,
                 None => {
                     if track {
                         delta += (part.len() + GROUP_ENTRY_OVERHEAD) as isize;
                     }
-                    groups.entry(ByteKey::from(part)).or_default()
+                    groups.insert(ByteKey::from(part), Vec::new())
                 }
             };
             if !staged_old_tops.contains_key(part) {
@@ -383,7 +577,7 @@ impl TopNRanker {
                 }
             }
         }
-        self.memory.record(delta);
+        self.memory.record(delta + self.groups.footprint_delta());
         self.memory.account()?;
 
         Ok(self.emit(Vec::new(), Vec::new(), Vec::new()))
@@ -402,7 +596,10 @@ impl TopNRanker {
         let mut out_ranks: Vec<i64> = Vec::new();
         for part in touched {
             let old = &old_tops[&part];
-            let new: Vec<Arc<OwnedRow>> = self.groups[&part]
+            let new: Vec<Arc<OwnedRow>> = self
+                .groups
+                .get(&part.0)
+                .expect("staged partition resident")
                 .iter()
                 .map(|(_, payload)| Arc::clone(payload))
                 .collect();
@@ -443,6 +640,8 @@ impl TopNRanker {
                 }
             }
         }
+        self.groups.end_bundle().expect("end top-n bundle");
+        self.memory.record(self.groups.footprint_delta());
         self.memory.forget(staged_bytes);
         self.memory.account_shrink();
         self.emit(out_rows, out_kinds, out_ranks)
@@ -458,12 +657,17 @@ impl TopNRanker {
             out_ranks,
         )
     }
+}
 
+/// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
+/// store checkpoints through its own commit path instead of materializing the key space.
+impl TopNRanker {
     /// Serializes the buffered rows in per-partition buffer order (partition derivable from the row).
     pub(crate) fn snapshot(&self) -> Vec<u8> {
         let Some(schema) = &self.schema else { return Vec::new() };
         let Some(conv) = &self.converters else { return Vec::new() };
-        let rows: Vec<Row> = self.groups.values().flatten().map(|(_, p)| p.row()).collect();
+        let rows: Vec<Row> =
+            self.groups.iter().flat_map(|(_, buffer)| buffer.iter()).map(|(_, p)| p.row()).collect();
         if rows.is_empty() {
             return Vec::new();
         }
@@ -486,20 +690,24 @@ impl TopNRanker {
             ranker.schema = Some(batch.schema());
             ranker.ensure_converters(&batch, arity);
             let conv = ranker.converters.as_ref().expect("converters set");
-            let partition_arrays: Vec<ArrayRef> =
-                ranker.partition_columns.iter().map(|&i| batch.column(i).clone()).collect();
+            let mut parts = BinaryRowBatchEncoder::new(
+                &batch,
+                &ranker.partition_columns,
+                &ranker.key_timestamp_precisions,
+            );
             let sort_arrays: Vec<ArrayRef> =
                 ranker.sort_columns.iter().map(|s| batch.column(s.index).clone()).collect();
             let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
-            let parts = encode_group_keys(&conv.partition, &partition_arrays, batch.num_rows());
             let keys = encode_group_keys(&conv.sort, &sort_arrays, batch.num_rows());
             let payloads = conv.payload.convert_columns(&data_arrays).expect("encode payload");
             let groups = &mut ranker.groups;
             for row in 0..batch.num_rows() {
-                groups
-                    .entry(ByteKey::from(parts.row(row).data()))
-                    .or_default()
-                    .push((keys.row(row).owned(), Arc::new(payloads.row(row).owned())));
+                let part = parts.encode(row);
+                let buffer = match groups.get_mut(part) {
+                    Some(buffer) => buffer,
+                    None => groups.insert(ByteKey::from(part), Vec::new()),
+                };
+                buffer.push((keys.row(row).owned(), Arc::new(payloads.row(row).owned())));
             }
         }
         ranker

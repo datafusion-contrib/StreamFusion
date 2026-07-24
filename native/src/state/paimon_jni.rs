@@ -604,3 +604,181 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonCh
         drop(from_handle::<PaimonChangelogNormalizer>(handle));
     }
 }
+
+type PaimonTopNRanker = TopNRanker<PaimonTopNStore>;
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonTopNRanker<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    partition_columns: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
+    sort_indices: JIntArray<'local>,
+    sort_ascending: JIntArray<'local>,
+    sort_nulls_first: JIntArray<'local>,
+    row_schema_address: jlong,
+    limit: jlong,
+    output_rank_number: jboolean,
+    net_diff: jboolean,
+    memory_budget_bytes: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    file_format: JString<'local>,
+    file_compression: JString<'local>,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_ids: JLongArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+) -> jlong {
+    let partitions = read_columns(&env, &partition_columns);
+    let timestamp_precisions: Vec<i32> = read_int_array(&env, &key_timestamp_precisions)
+        .into_iter()
+        .map(|precision| precision as i32)
+        .collect();
+    let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
+    let row_types: Vec<DataType> = import_schema(row_schema_address)
+        .fields()
+        .iter()
+        .map(|field| field.data_type().clone())
+        .collect();
+    let table_dir = read_string(&mut env, &table_directory);
+    let format = read_string(&mut env, &file_format);
+    let compression = read_string(&mut env, &file_compression);
+    let source_dirs: Vec<String> = read_strings(&mut env, &source_directories)
+        .into_iter()
+        .flatten()
+        .collect();
+    let source_snapshots = read_longs(&env, &source_snapshot_ids);
+
+    let codec = TopNStateCodec::new(row_types, sort.clone());
+    // Hydrated rows must come from the SAME converter instances the operator emits with
+    // (arrow-row rejects rows decoded by a different converter), so the ranker's converters are
+    // built from — and share — the codec's.
+    let converters = TopNConverters::from_codec(&codec, &partitions);
+    let config = PaimonStoreConfig {
+        table_dir,
+        max_parallelism: max_parallelism as usize,
+        file_format: format,
+        file_compression: compression,
+    };
+    let store = if source_dirs.is_empty() {
+        PaimonTopNStore::create(config, codec)
+    } else {
+        let sources: Vec<(String, i64)> =
+            source_dirs.into_iter().zip(source_snapshots).collect();
+        PaimonTopNStore::open_merged(config, codec, &sources, key_group_start..=key_group_end)
+    };
+    let ranker = store.and_then(|store| {
+        TopNRanker::new(partitions, sort, limit, output_rank_number != 0, net_diff != 0)
+            .with_key_timestamp_precisions(timestamp_precisions)
+            .with_converters(converters)
+            .with_backend(store)
+            .with_read_through_budget(memory_budget_bytes)
+    });
+    boxed_or_throw(&mut env, ranker)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonTopNRanker<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let ranker = unsafe { &mut *(handle as *mut PaimonTopNRanker) };
+    // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+    let result = {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        ranker.push(&batch)
+    };
+    match result {
+        Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonTopNRanker<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    let ranker = unsafe { &mut *(handle as *mut PaimonTopNRanker) };
+    let out = ranker.flush_net_diff();
+    export_record_batch(out, out_array_address, out_schema_address);
+}
+
+/// Checkpoint sync phase (task thread, at the barrier); see `checkpointPaimonGroupAggregator`.
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonTopNRanker<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    link_directory: JString<'local>,
+) -> jobjectArray {
+    let ranker = unsafe { &mut *(handle as *mut PaimonTopNRanker) };
+    let link_dir = read_string(&mut env, &link_directory);
+    match ranker.store_mut().checkpoint(&link_dir) {
+        Ok(manifest) => manifest_array(&mut env, &manifest),
+        Err(e) => {
+            throw_runtime(&mut env, &format!("paimon state checkpoint failed: {e}"));
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonTopNRankerStateBytes<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let ranker = unsafe { &*(handle as *const PaimonTopNRanker) };
+    ranker.memory.state_bytes as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonTopNRankerStagingBytes<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let ranker = unsafe { &*(handle as *const PaimonTopNRanker) };
+    ranker.staging_bytes() as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonTopNRankerStagedKeys<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    let ranker = unsafe { &*(handle as *const PaimonTopNRanker) };
+    ranker.staged_partitions() as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonTopNRanker<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    unsafe {
+        drop(from_handle::<PaimonTopNRanker>(handle));
+    }
+}

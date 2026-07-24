@@ -619,11 +619,15 @@ What runs on the Paimon backend today, and every condition that keeps an operato
 the operator just checkpoints its state the old way, in full):
 
 - **Operator coverage** — the non-windowed `GROUP BY` aggregate (single- and two-phase global),
-  the eager deduplicator (rowtime/proctime keep-last and proctime keep-first), and the changelog
-  normalizer. The dedup and normalizer state row is the stored full row as typed columns, so the
-  state table reads like the operator's output table itself. Every other stateful operator keeps
-  memory state under this backend. The remaining point-access-shaped operators (Top-N, updating
-  join) are being brought over on the same store. The **watermark/timer-driven operators** (keep-first
+  the eager deduplicator (rowtime/proctime keep-last and proctime keep-first), the changelog
+  normalizer, and the **append-only Top-N** (one typed table row per buffered element under a
+  positional third key column, so buffer positions — tie order, which decides evictions — survive
+  restore exactly; the analog of Flink's `ListState`). The dedup/normalizer/Top-N state rows are
+  the stored full rows as typed columns, so the state table reads like the operator's own output.
+  Every other stateful operator keeps memory state under this backend, including the
+  **retracting Top-N** (its buffer is unbounded, so the list store's whole-list rewrite per dirty
+  key is not yet acceptable there). The updating join is next, on a MapState-shaped store. The
+  **watermark/timer-driven operators** (keep-first
   dedup, `OVER` aggregates, window rank, interval/window/temporal joins, session/window
   aggregates) stay on memory state for now for two concrete reasons, neither a storage limit:
   firing on a watermark needs a *range* hydration ("every row with `t ≤ watermark`", a

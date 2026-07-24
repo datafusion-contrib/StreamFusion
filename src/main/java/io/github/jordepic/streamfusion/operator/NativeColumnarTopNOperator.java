@@ -1,7 +1,10 @@
 package io.github.jordepic.streamfusion.operator;
 
 import io.github.jordepic.streamfusion.Native;
+import io.github.jordepic.streamfusion.arrow.ArrowConversion;
 import io.github.jordepic.streamfusion.operator.MiniBatchMetrics.FlushReason;
+import io.github.jordepic.streamfusion.planner.NativeConfig;
+import io.github.jordepic.streamfusion.state.PaimonNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
@@ -14,6 +17,7 @@ import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Append-only streaming Top-N, fed Arrow batches and emitting Arrow batches. The changelog flows
@@ -26,6 +30,7 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
 
   private final int[] partitionColumns;
   private final int[] keyTimestampPrecisions;
+  private final RowType rowType;
   private final int[] sortIndices;
   private final int[] sortAscending;
   private final int[] sortNullsFirst;
@@ -40,6 +45,7 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long handle;
+  private transient boolean paimonState;
   private transient MiniBatchBoundary boundary;
   private transient MiniBatchMetrics miniBatchMetrics;
   private transient ManagedMemoryBudget memoryBudget;
@@ -47,6 +53,7 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
   public NativeColumnarTopNOperator(
       int[] partitionColumns,
       int[] keyTimestampPrecisions,
+      RowType rowType,
       int[] sortIndices,
       int[] sortAscending,
       int[] sortNullsFirst,
@@ -59,6 +66,7 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
       int maxParallelism) {
     this.partitionColumns = partitionColumns;
     this.keyTimestampPrecisions = keyTimestampPrecisions;
+    this.rowType = rowType;
     this.sortIndices = sortIndices;
     this.sortAscending = sortAscending;
     this.sortNullsFirst = sortNullsFirst;
@@ -84,6 +92,47 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
     super.initializeState(context);
     java.util.List<byte[]> snapshots = RawKeyedState.restore(context);
     memoryBudget = ManagedMemoryBudget.reserveFor(this);
+    // The Paimon list store serves the append-only ranker (its buffers are capped at N, so the
+    // whole-list rewrite per dirty key is bounded); the retracting ranker's unbounded buffers
+    // stay on memory state for now.
+    PaimonNativeStateSupport paimon =
+        retracting
+            ? null
+            : PaimonNativeStateSupport.resolve(
+                getKeyedStateBackend(),
+                "top-n",
+                !snapshots.isEmpty(),
+                () ->
+                    withRowSchema(address -> Native.paimonRowStateSupported(address) ? 1L : 0L)
+                        != 0);
+    paimonState = paimon != null;
+    if (paimonState) {
+      handle =
+          withRowSchema(
+              rowSchemaAddress ->
+                  Native.createPaimonTopNRanker(
+                      partitionColumns,
+                      keyTimestampPrecisions,
+                      sortIndices,
+                      sortAscending,
+                      sortNullsFirst,
+                      rowSchemaAddress,
+                      limit,
+                      outputRankNumber,
+                      netDiff,
+                      memoryBudget.bytes(),
+                      paimon.tableDirectory(),
+                      maxParallelism,
+                      NativeConfig.paimonFileFormat(),
+                      NativeConfig.paimonFileCompression(),
+                      paimon.sourceDirectories(),
+                      paimon.sourceSnapshotIds(),
+                      paimon.keyGroupStart(),
+                      paimon.keyGroupEnd()));
+      long nativeHandle = handle;
+      paimon.register(linkDir -> Native.checkpointPaimonTopNRanker(nativeHandle, linkDir));
+      return;
+    }
     handle =
         snapshots.isEmpty()
             ? Native.createTopNRanker(
@@ -109,6 +158,21 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
                 netDiff,
                 snapshots.toArray(new byte[0][]),
                 memoryBudget.bytes());
+  }
+
+  /**
+   * Exports the input row type as an FFI Arrow schema for the duration of one native call; the
+   * native side consumes the schema contents, the wrapper struct is released here.
+   */
+  private long withRowSchema(java.util.function.LongUnaryOperator call) {
+    try (ArrowSchema rowSchema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+      Data.exportSchema(
+          NativeAllocator.SHARED,
+          ArrowConversion.toArrowSchema(rowType),
+          NativeAllocator.DICTIONARIES,
+          rowSchema);
+      return call.applyAsLong(rowSchema.memoryAddress());
+    }
   }
 
   @Override
@@ -176,12 +240,21 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
         ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
-      Native.pushTopNRanker(
-          handle,
-          inArray.memoryAddress(),
-          inSchema.memoryAddress(),
-          outArray.memoryAddress(),
-          outSchema.memoryAddress());
+      if (paimonState) {
+        Native.pushPaimonTopNRanker(
+            handle,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      } else {
+        Native.pushTopNRanker(
+            handle,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       if (out.getRowCount() > 0) {
@@ -218,11 +291,21 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
   }
 
   private void flushBundle(FlushReason reason) {
-    long transientBytes = Native.topNRankerStagingBytes(handle);
-    long touchedPartitions = Native.topNRankerStagedPartitions(handle);
+    long transientBytes =
+        paimonState
+            ? Native.paimonTopNRankerStagingBytes(handle)
+            : Native.topNRankerStagingBytes(handle);
+    long touchedPartitions =
+        paimonState
+            ? Native.paimonTopNRankerStagedKeys(handle)
+            : Native.topNRankerStagedPartitions(handle);
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushTopNRanker(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      if (paimonState) {
+        Native.flushPaimonTopNRanker(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      } else {
+        Native.flushTopNRanker(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       int outputRows = out.getRowCount();
@@ -239,23 +322,34 @@ public class NativeColumnarTopNOperator extends AbstractStreamOperator<ArrowBatc
   /** Samples the native state size for the operator's gauges; task-thread only. */
   private void publishStateBytes() {
     if (memoryBudget.bounded()) {
-      memoryBudget.publishStateBytes(Native.topNRankerStateBytes(handle));
+      memoryBudget.publishStateBytes(
+          paimonState
+              ? Native.paimonTopNRankerStateBytes(handle)
+              : Native.topNRankerStateBytes(handle));
     }
   }
 
   @Override
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
-    RawKeyedState.snapshotPartitions(
-        context,
-        Native.snapshotTopNRankerPartitions(
-            handle, maxParallelism, keyTimestampPrecisions));
+    // Paimon state checkpoints through the keyed state backend's snapshot (an incremental Paimon
+    // commit); only memory state travels as raw keyed-state blobs.
+    if (!paimonState) {
+      RawKeyedState.snapshotPartitions(
+          context,
+          Native.snapshotTopNRankerPartitions(
+              handle, maxParallelism, keyTimestampPrecisions));
+    }
   }
 
   @Override
   public void close() throws Exception {
     if (handle != 0) {
-      Native.closeTopNRanker(handle);
+      if (paimonState) {
+        Native.closePaimonTopNRanker(handle);
+      } else {
+        Native.closeTopNRanker(handle);
+      }
       handle = 0;
     }
     if (memoryBudget != null) {

@@ -35,6 +35,7 @@ class NativeColumnarTopNOperatorTest {
     return new NativeColumnarTopNOperator(
         new int[] {0},
         new int[] {-1},
+        SCHEMA,
         new int[] {1},
         new int[] {1},
         new int[] {0},
@@ -51,6 +52,7 @@ class NativeColumnarTopNOperatorTest {
     return new NativeColumnarTopNOperator(
         new int[] {0},
         new int[] {-1},
+        SCHEMA,
         new int[] {1},
         new int[] {1},
         new int[] {0},
@@ -67,6 +69,7 @@ class NativeColumnarTopNOperatorTest {
     return new NativeColumnarTopNOperator(
         new int[] {0},
         new int[] {-1},
+        SCHEMA,
         new int[] {1},
         new int[] {1},
         new int[] {0},

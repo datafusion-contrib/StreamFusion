@@ -9,6 +9,7 @@ import io.github.jordepic.streamfusion.operator.ArrowBatchSerializer;
 import io.github.jordepic.streamfusion.operator.NativeColumnarChangelogNormalizeOperator;
 import io.github.jordepic.streamfusion.operator.NativeColumnarGroupAggregateOperator;
 import io.github.jordepic.streamfusion.operator.NativeColumnarKeepLastDeduplicateOperator;
+import io.github.jordepic.streamfusion.operator.NativeColumnarTopNOperator;
 import io.github.jordepic.streamfusion.operator.RowDataArrowConverter;
 import java.util.ArrayList;
 import java.util.List;
@@ -262,6 +263,96 @@ class PaimonStateBackendOperatorTest {
               update(RowKind.DELETE, 2, 20)),
           collect(harness));
     }
+  }
+
+  /**
+   * The append-only Top-N rides the Paimon LIST store: buffer positions (tie order) survive the
+   * restore, so the eviction after restore hits exactly the row Flink would evict.
+   */
+  @Test
+  void topNCheckpointsAndRestoresTieOrder() throws Exception {
+    OperatorSubtaskState snapshot;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            topNHarness()) {
+      harness.setStateBackend(new PaimonStateBackend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+
+      // Two rows tie on the sort key; arrival order decides who sits at rank 2.
+      harness.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(9L, 7L), GenericRowData.of(9L, 7L)),
+                      TOPN_ROW,
+                      allocator))));
+      collectDedupless(harness);
+      snapshot = harness.snapshot(1, 1);
+      paimonHandle(snapshot);
+      harness.notifyOfCompletedCheckpoint(1);
+    }
+
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            topNHarness()) {
+      harness.setStateBackend(new PaimonStateBackend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(snapshot);
+      harness.open();
+
+      // A better row (smaller sort key) evicts rank 2 — the LATER of the tie arrivals.
+      harness.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(9L, 1L)), TOPN_ROW, allocator))));
+      assertEquals(
+          List.of(
+              List.of(RowKind.DELETE, 9L, 7L), List.of(RowKind.INSERT, 9L, 1L)),
+          collectDedupless(harness));
+    }
+  }
+
+  private static final RowType TOPN_ROW =
+      RowType.of(
+          new LogicalType[] {new BigIntType(), new BigIntType()}, new String[] {"p", "s"});
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      topNHarness() throws Exception {
+    NativeColumnarTopNOperator operator =
+        new NativeColumnarTopNOperator(
+            new int[] {0},
+            new int[] {-1},
+            TOPN_ROW,
+            new int[] {1},
+            new int[] {1},
+            new int[] {0},
+            0L,
+            2L,
+            false,
+            false,
+            false,
+            -1,
+            MAX_PARALLELISM);
+    return new KeyedOneInputStreamOperatorTestHarness<>(
+        operator, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0);
+  }
+
+  private static List<List<Object>> collectDedupless(
+      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness) {
+    List<List<Object>> rows = new ArrayList<>();
+    while (!harness.getOutput().isEmpty()) {
+      Object event = harness.getOutput().poll();
+      if (event instanceof StreamRecord) {
+        try (VectorSchemaRoot root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
+          for (RowData row : RowDataArrowConverter.read(root, TOPN_ROW)) {
+            rows.add(List.of(row.getRowKind(), row.getLong(0), row.getLong(1)));
+          }
+        }
+      }
+    }
+    return rows;
   }
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>

@@ -1118,6 +1118,59 @@ public final class Native {
   public static native void closePaimonChangelogNormalizer(long handle);
 
   /**
+   * {@code createTopNRanker} (append-only variant) on the Paimon state backend: each buffered
+   * element persists as one typed table row under PK {@code [kg, k, ord]}, {@code ord} preserving
+   * buffer positions (tie order) exactly; a dirty partition rewrites its whole list — bounded, the
+   * buffer is capped at N. Restore semantics as in {@link #createPaimonKeepLastDeduplicator}.
+   */
+  public static native long createPaimonTopNRanker(
+      int[] partitionColumns,
+      int[] keyTimestampPrecisions,
+      int[] sortIndices,
+      int[] sortAscending,
+      int[] sortNullsFirst,
+      long rowSchemaAddress,
+      long limit,
+      boolean outputRankNumber,
+      boolean netDiff,
+      long memoryBudgetBytes,
+      String tableDirectory,
+      int maxParallelism,
+      String fileFormat,
+      String fileCompression,
+      String[] sourceDirectories,
+      long[] sourceSnapshotIds,
+      int keyGroupStart,
+      int keyGroupEnd);
+
+  /** {@code pushTopNRanker} for a Paimon-backed handle. */
+  public static native void pushPaimonTopNRanker(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  /** {@code flushTopNRanker} for a Paimon-backed handle. */
+  public static native void flushPaimonTopNRanker(
+      long handle, long outArrayAddress, long outSchemaAddress);
+
+  /** {@code checkpointPaimonGroupAggregator} for a Paimon-backed Top-N ranker. */
+  public static native String[] checkpointPaimonTopNRanker(long handle, String linkDirectory);
+
+  /** Estimated bytes of a Paimon-backed Top-N ranker's resident working set. */
+  public static native long paimonTopNRankerStateBytes(long handle);
+
+  /** {@code topNRankerStagingBytes} for a Paimon-backed handle. */
+  public static native long paimonTopNRankerStagingBytes(long handle);
+
+  /** {@code topNRankerStagedPartitions} for a Paimon-backed handle. */
+  public static native long paimonTopNRankerStagedKeys(long handle);
+
+  /** Releases a Paimon-backed Top-N ranker handle. */
+  public static native void closePaimonTopNRanker(long handle);
+
+  /**
    * Creates a changelog normalizer (keep-last per unique key) and returns an opaque handle. Each
    * input changelog batch folds into per-key state and the normalizer exports the normalized
    * changelog (INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE on the {@code $row_kind$} column). Released

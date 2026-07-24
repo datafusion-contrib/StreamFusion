@@ -91,6 +91,8 @@ public class NativeColumnarTopNExecNode extends ExecNodeBase<ArrowBatch>
             new NativeColumnarTopNOperator(
                 partitionColumns,
                 keyTimestampPrecisions,
+                // The buffered state row is the INPUT row; the output may append a rank column.
+                (RowType) getInputEdges().get(0).getOutputType(),
                 sortIndices,
                 sortAscending,
                 sortNullsFirst,

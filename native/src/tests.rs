@@ -3652,4 +3652,117 @@ mod paimon_state {
         assert_eq!(row_kinds(&out), vec![0]);
         assert_eq!(values(&out, 1), vec![9]);
     }
+
+    // -----------------------------------------------------------------------------------------
+    // Top-N on the LIST store: one table row per buffered element under PK [kg, k, ord], the
+    // buffer order (ties = arrival order, which decides boundary evictions) preserved by ord.
+    // -----------------------------------------------------------------------------------------
+
+    fn topn_codec() -> TopNStateCodec {
+        TopNStateCodec::new(
+            vec![DataType::Int64, DataType::Int64, DataType::Int64],
+            vec![asc(1)],
+        )
+    }
+
+    /// Append Top-2 partitioned by column 0, ordered by column 1 ascending, no rank projection.
+    fn paimon_topn(dir: &str) -> TopNRanker<PaimonTopNStore> {
+        let codec = topn_codec();
+        let converters = TopNConverters::from_codec(&codec, &[0]);
+        let store = PaimonTopNStore::create(config(dir), codec).unwrap();
+        TopNRanker::new(vec![0], vec![asc(1)], 2, false, false)
+            .with_converters(converters)
+            .with_backend(store)
+    }
+
+    #[test]
+    fn paimon_topn_matches_memory_across_checkpoints() {
+        let dir = temp_dir("topn-parity");
+        let mut paimon = paimon_topn(&dir);
+        let mut memory = TopNRanker::new(vec![0], vec![asc(1)], 2, false, false);
+
+        let batches: Vec<RecordBatch> = vec![
+            join_batch(vec![1, 1, 2], vec![30, 10, 5], vec![0, 0, 0]),
+            join_batch(vec![1, 2], vec![20, 50], vec![0, 0]),
+            join_batch(vec![1, 2], vec![5, 1], vec![0, 0]),
+        ];
+        for (i, batch) in batches.iter().enumerate() {
+            assert_same_output(&memory.push(batch).unwrap(), &paimon.push(batch).unwrap());
+            // A checkpoint between every batch forces every probe through the table.
+            let link = temp_dir(&format!("topn-parity-cp{i}"));
+            paimon.store_mut().checkpoint(&link).unwrap();
+        }
+    }
+
+    #[test]
+    fn paimon_topn_preserves_tie_order_across_restore() {
+        let dir = temp_dir("topn-tie-src");
+        let mut ranker = paimon_topn(&dir);
+        // Two rows tie on the sort key; arrival order (v=70 first) decides who sits at rank 2.
+        ranker.push(&join_batch(vec![9, 9], vec![70, 71], vec![7, 7])).unwrap();
+        let link = temp_dir("topn-tie-cp");
+        let manifest = ranker.store_mut().checkpoint(&link).unwrap();
+
+        let restored_dir = temp_dir("topn-tie-mat");
+        materialize(&manifest, &link, &restored_dir);
+        let merged_dir = temp_dir("topn-tie-dst");
+        let codec = topn_codec();
+        let converters = TopNConverters::from_codec(&codec, &[0]);
+        let store = PaimonTopNStore::open_merged(
+            config(&merged_dir),
+            codec,
+            &[(restored_dir, manifest.snapshot_id)],
+            0..=127,
+        )
+        .unwrap();
+        let mut restored = TopNRanker::new(vec![0], vec![asc(1)], 2, false, false)
+            .with_converters(converters)
+            .with_backend(store);
+
+        // A better row evicts rank 2 — which must be the LATER arrival of the tie (v=71), so the
+        // restored buffer must have preserved [70, 71] exactly, not just the same multiset.
+        // rt differs across the checkpoint: only (v) is the sort key; payload compares whole rows.
+        let out = restored.push(&join_batch(vec![9], vec![1], vec![8])).unwrap();
+        assert_eq!(row_kinds(&out), vec![3, 0]);
+        assert_eq!(values(&out, 1), vec![71, 1], "-D must hit the later tie arrival");
+    }
+
+    /// The list store's shrink/removal tombstones, exercised directly: positions vacated by a
+    /// shorter list — or a removed key — must not resurface on rehydration.
+    #[test]
+    fn paimon_list_store_shrinks_and_removes() {
+        let dir = temp_dir("list-shrink");
+        let mut store = PaimonTopNStore::create(config(&dir), topn_codec()).unwrap();
+        let probe = join_batch(vec![5], vec![0], vec![0]);
+        store.begin_batch(&probe, &[0], &[-1]).unwrap();
+        let key = {
+            let mut encoder = BinaryRowBatchEncoder::new(&probe, &[0], &[-1]);
+            ByteKey::from(encoder.encode(0))
+        };
+        let entries: Vec<TopNRow> = (0..3)
+            .map(|i| {
+                let batch = join_batch(vec![5], vec![i], vec![0]);
+                let codec = topn_codec();
+                let scalars: Vec<ScalarValue> = (0..3)
+                    .map(|c| ScalarValue::try_from_array(batch.column(c), 0).unwrap())
+                    .collect();
+                crate::state::PaimonListCodec::decode(&codec, &scalars)
+            })
+            .collect();
+        store.insert(key.clone(), entries);
+        store.checkpoint(&temp_dir("list-shrink-cp1")).unwrap();
+
+        // Shrink 3 -> 1: positions 1 and 2 must be tombstoned.
+        store.begin_batch(&probe, &[0], &[-1]).unwrap();
+        store.get_mut(&key.0).unwrap().truncate(1);
+        store.checkpoint(&temp_dir("list-shrink-cp2")).unwrap();
+        store.begin_batch(&probe, &[0], &[-1]).unwrap();
+        assert_eq!(store.get(&key.0).unwrap().len(), 1, "vacated positions must stay gone");
+
+        // Whole-key removal tombstones every persisted position.
+        store.remove(&key.0);
+        store.checkpoint(&temp_dir("list-shrink-cp3")).unwrap();
+        store.begin_batch(&probe, &[0], &[-1]).unwrap();
+        assert!(store.get(&key.0).is_none(), "removed key must probe as absent");
+    }
 }
