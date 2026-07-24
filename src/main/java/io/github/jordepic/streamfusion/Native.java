@@ -956,6 +956,8 @@ public final class Native {
    *
    * @param maxParallelism the job's max parallelism — the table's bucket count and key-group math
    * @param fileFormat Paimon data file format for state
+   * @param fileCompression Paimon {@code file.compression} for state data files (stamped into the
+   *     table schema, so the compactor's rewrites honor it too)
    */
   public static native long createPaimonGroupAggregator(
       int[] aggregateKinds,
@@ -973,6 +975,7 @@ public final class Native {
       String tableDirectory,
       int maxParallelism,
       String fileFormat,
+      String fileCompression,
       String[] sourceDirectories,
       long[] sourceSnapshotIds,
       int keyGroupStart,

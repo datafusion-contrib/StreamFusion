@@ -74,6 +74,17 @@ public final class NativeConfig {
   }
 
   /**
+   * The Paimon {@code file.compression} for native state tables
+   * ({@code streamfusion.state.paimon.file-compression}, default {@code uncompressed}).
+   * Deliberately the boring baseline until the state-format benchmarks pick a better
+   * format/compression pairing; both writers — the native store and the Java compactor's
+   * rewrites — honor it, and {@code uncompressed} is the spelling both sides accept.
+   */
+  public static String paimonFileCompression() {
+    return System.getProperty("streamfusion.state.paimon.file-compression", "uncompressed");
+  }
+
+  /**
    * The operator-scope managed-memory weight, in mebibytes, a native stateful operator declares
    * ({@code streamfusion.memory.operator-weight-mb}, default 64). Flink splits the slot's
    * managed-memory OPERATOR share across declaring operators proportionally to these weights, so the

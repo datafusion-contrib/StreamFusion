@@ -118,6 +118,9 @@ pub(crate) struct PaimonStoreConfig {
     pub max_parallelism: usize,
     /// Paimon `file.format` for state data files.
     pub file_format: String,
+    /// Paimon `file.compression` for state data files ("uncompressed", "zstd", "snappy", ...).
+    /// Stamped into the table schema, so an external compactor's rewrites honor it too.
+    pub file_compression: String,
 }
 
 /// A checkpoint's file manifest, handed to the host for upload. `data_files` are immutable,
@@ -462,6 +465,7 @@ impl PaimonGroupStore {
             .option("bucket-key", KG_COLUMN)
             .option("bucket-function.type", "mod")
             .option("file.format", &config.file_format)
+            .option("file.compression", &config.file_compression)
             .option("merge-engine", "deduplicate")
             .build()
             .map_err(pe)

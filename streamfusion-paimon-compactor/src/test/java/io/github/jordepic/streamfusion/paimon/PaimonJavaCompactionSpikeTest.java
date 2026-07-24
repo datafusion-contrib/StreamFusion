@@ -160,6 +160,7 @@ class PaimonJavaCompactionSpikeTest {
         tableDir,
         128,
         "parquet",
+        "uncompressed",
         sources,
         snapshots,
         0,

@@ -3276,6 +3276,7 @@ mod paimon_state {
             table_dir: table_dir.to_string(),
             max_parallelism: 128,
             file_format: "vortex".to_string(),
+            file_compression: "uncompressed".to_string(),
         }
     }
 

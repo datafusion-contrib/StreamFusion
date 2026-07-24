@@ -40,6 +40,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonG
     table_directory: JString<'local>,
     max_parallelism: jint,
     file_format: JString<'local>,
+    file_compression: JString<'local>,
     source_directories: JObjectArray<'local>,
     source_snapshot_ids: JLongArray<'local>,
     key_group_start: jint,
@@ -58,6 +59,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonG
         .collect();
     let table_dir = read_string(&mut env, &table_directory);
     let format = read_string(&mut env, &file_format);
+    let compression = read_string(&mut env, &file_compression);
     let source_dirs: Vec<String> = read_strings(&mut env, &source_directories)
         .into_iter()
         .flatten()
@@ -71,6 +73,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonG
         table_dir,
         max_parallelism: max_parallelism as usize,
         file_format: format,
+        file_compression: compression,
     };
     let store = if source_dirs.is_empty() {
         PaimonGroupStore::create(config, kinds.clone(), arrow_value_types, state_types)

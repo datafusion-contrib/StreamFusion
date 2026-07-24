@@ -118,7 +118,7 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
               filterColumns, countColumns, distinctViewColumns, recordCountColumn,
               generateUpdateBefore, miniBatch, memoryBudget.bytes(),
               paimonBackend.tableDirectory(), maxParallelism,
-              NativeConfig.paimonFileFormat(),
+              NativeConfig.paimonFileFormat(), NativeConfig.paimonFileCompression(),
               sourceDirs, sourceSnapshots,
               paimonBackend.getKeyGroupRange().getStartKeyGroup(),
               paimonBackend.getKeyGroupRange().getEndKeyGroup());

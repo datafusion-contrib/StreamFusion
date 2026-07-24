@@ -641,6 +641,10 @@ one sorted run accumulates per touched bucket per checkpoint, growing probe cost
 backend logs a warning. A side effect worth knowing: parquet state tables are ordinary Paimon
 tables, readable by any Paimon tooling for state inspection.
 
-`-Dstreamfusion.state.paimon.file-format` (default `parquet`) selects the state data file
-format. `vortex` is opt-in and today also opts out of maintenance: released Java Paimon has no
-vortex format (it lands with Paimon 2.0), so the compactor declines such tables.
+`-Dstreamfusion.state.paimon.file-format` (default `parquet`) and
+`-Dstreamfusion.state.paimon.file-compression` (default `uncompressed`) select the state data
+file format — deliberately the boring baseline until the state-format benchmarks (parquet vs
+lance vs vortex, compression on/off) pick a better pairing; both are stamped into the table
+schema, so the compactor's rewrites honor them too. `vortex` is opt-in and today also opts out
+of maintenance: released Java Paimon has no vortex format (it lands with Paimon 2.0), so the
+compactor declines such tables.
