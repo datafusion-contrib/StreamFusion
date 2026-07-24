@@ -10,13 +10,15 @@ needed**, better than §Phase 1 predicted), the JNI checkpoint surface, the Java
 `PaimonStateBackend`/`PaimonKeyedStateBackend`/`PaimonSnapshotStrategy` emitting
 `IncrementalRemoteKeyedStateHandle`s, and the group-aggregate pilot behind `state.backend.type`.
 Coverage/limits: `docs/coverage-and-fallbacks.md` §(c); architecture record: `divergences/27`.
-Compaction (2026-07-24): Jordan steered maintenance to **stock Java Paimon** — the optional
-`streamfusion-paimon-compactor` module runs Paimon's own compaction at each barrier through a
-ServiceLoader SPI (validated end to end against released 1.4.1 by cross-implementation tests:
-Rust writes → Java reads/compacts → Rust restores). The native fallback (no Paimon on the
-classpath / unreadable format) is a faithful port of Java's `UniversalCompaction` pick. Note:
-Java's Vortex format landed on Paimon master (#7543, targets 2.0) — vortex state tables become
-Java-maintainable/readable then; until then Java-owned maintenance means parquet state files.
+Compaction (2026-07-24, final): Jordan decided **stock Java Paimon is the only compactor** — the
+optional `streamfusion-paimon-compactor` module (paimon-bundle 1.4.2) runs Paimon's own
+compaction at each barrier through a ServiceLoader SPI, validated end to end by
+cross-implementation tests (Rust writes → Java reads/compacts → Rust restores). The native
+fallback port of `UniversalCompaction` was built and then REMOVED at his direction (git b555abf
+preserves it); without the module, tables run correct-but-unmaintained with a warning. State
+file format default flipped to parquet (Java-maintainable/inspectable today); vortex is opt-in
+and unmaintained until Paimon 2.0 ships the Java Vortex format (#7543 — absent from all 1.4.x,
+verified against the 1.4.2 release).
 Remaining from this doc: multiset side tables (MIN/MAX retract, DISTINCT), other operators,
 time-range shape, TTL, object-store FileIO, upstreaming compaction/expiry + a
 sequence-preserving rewrite to paimon-rust, publishing paimon-vortex-format upstream, and the

@@ -951,11 +951,11 @@ public final class Native {
    * the aggregate-shape parameters). With restore {@code sourceDirectories} (downloaded checkpoint
    * tables, each pinned at its snapshot id), the table adopts every bucket in the operator's
    * key-group range from each source by linking data files — buckets are Flink key groups, so
-   * rescale reassigns files without rewriting rows.
+   * rescale reassigns files without rewriting rows. The native side never compacts; table
+   * maintenance belongs to the deployed {@code StateTableCompactor} (stock Java Paimon).
    *
    * @param maxParallelism the job's max parallelism — the table's bucket count and key-group math
-   * @param compactionTrigger rewrite a bucket into one file when its live file count exceeds this
-   * @param fileFormat Paimon data file format for state (normally {@code vortex})
+   * @param fileFormat Paimon data file format for state
    */
   public static native long createPaimonGroupAggregator(
       int[] aggregateKinds,
@@ -972,7 +972,6 @@ public final class Native {
       long memoryBudgetBytes,
       String tableDirectory,
       int maxParallelism,
-      int compactionTrigger,
       String fileFormat,
       String[] sourceDirectories,
       long[] sourceSnapshotIds,

@@ -98,10 +98,6 @@ final class PaimonSnapshotStrategy
     return nativeState != null;
   }
 
-  boolean hasExternalCompactor() {
-    return compactor != null;
-  }
-
   /** Seeds the reuse base from a restored checkpoint (single-handle, claim-style restore). */
   void seedRestored(long checkpointId, List<HandleAndLocalPath> sharedState) {
     synchronized (uploadedFiles) {

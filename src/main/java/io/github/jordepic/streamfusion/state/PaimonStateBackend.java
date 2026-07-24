@@ -36,6 +36,11 @@ public class PaimonStateBackend implements StateBackend {
 
   private static final long serialVersionUID = 1L;
 
+  private static final org.slf4j.Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(PaimonStateBackend.class);
+  private static final java.util.concurrent.atomic.AtomicBoolean UNMAINTAINED_WARNING =
+      new java.util.concurrent.atomic.AtomicBoolean();
+
   private final HashMapStateBackend delegate = new HashMapStateBackend();
 
   @Override
@@ -83,9 +88,10 @@ public class PaimonStateBackend implements StateBackend {
   }
 
   /**
-   * The external table maintainer, when one is deployed (the Java Paimon compactor module), its
-   * dependencies are present, and it can read the configured state file format; otherwise the
-   * native store's fallback compaction stays on.
+   * The table maintainer, when one is deployed (the Java Paimon compactor module), its
+   * dependencies are present, and it can read the configured state file format. There is no
+   * native fallback: without a compactor, state tables stay correct but accumulate one sorted
+   * run per touched bucket per checkpoint — worth a warning, not a failure.
    */
   private static StateTableCompactor discoverCompactor() {
     String fileFormat = io.github.jordepic.streamfusion.planner.NativeConfig.paimonFileFormat();
@@ -94,6 +100,13 @@ public class PaimonStateBackend implements StateBackend {
       if (candidate.available() && candidate.supports(fileFormat)) {
         return candidate;
       }
+    }
+    if (UNMAINTAINED_WARNING.compareAndSet(false, true)) {
+      LOG.warn(
+          "no state-table compactor for file format '{}': native Paimon state tables will not be"
+              + " compacted (reads stay correct, probe cost grows with checkpoints). Deploy"
+              + " streamfusion-paimon-compactor plus a Paimon bundle that reads this format.",
+          fileFormat);
     }
     return null;
   }

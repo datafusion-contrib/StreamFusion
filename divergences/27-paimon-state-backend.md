@@ -44,25 +44,24 @@ Why Paimon over rust-rocksdb:
 
 ## Costs and edges we accept
 
-- paimon-rust has **no LSM compaction or snapshot expiry** yet, so table maintenance is ours to
-  arrange. Preferred: the optional `streamfusion-paimon-compactor` module hands the whole
-  operation to **stock Java Paimon** at each barrier (its own picks, its sequence-preserving
-  rewriter, its exact deletion handling) — cross-implementation round trips (Rust writes → Java
-  reads and compacts → Rust restores and continues) are pinned by the module's tests against
-  released Paimon 1.4.1. Fallback (no Paimon on the classpath, or a state file format the
-  deployed Paimon can't read): a faithful port of Java's `UniversalCompaction` pick strategy
-  executed natively as copy-on-write commits, with two constraints Java doesn't need because its
-  rewriter preserves per-record sequence numbers and ours assigns fresh ones — picks are taken
-  only as newest-prefixes of the run list (sound exactly because every excluded run is older),
-  and a partial pick that would carry deletion rows escalates to a full merge. Local files
-  unreachable from the latest snapshot are unlinked after each checkpoint (uploads read from
-  per-checkpoint hard-link directories, so GC and uploads never race). Upstreaming real
-  compaction (and a sequence-preserving rewrite) to paimon-rust retires both halves.
+- paimon-rust has **no LSM compaction or snapshot expiry** yet, and we deliberately carry **no
+  native compaction of our own**: table maintenance belongs exclusively to the optional
+  `streamfusion-paimon-compactor` module, which hands the whole operation to **stock Java
+  Paimon** at each barrier (its own picks, its sequence-preserving rewriter, its exact deletion
+  handling). Cross-implementation round trips (Rust writes → Java reads and compacts → Rust
+  restores and continues) are pinned by the module's tests against released Paimon. Without the
+  module, tables stay correct but accumulate one sorted run per touched bucket per checkpoint
+  (warned, not failed) — one maintenance implementation, zero drift, was judged worth that
+  degradation. (A native port of Java's `UniversalCompaction` picks was built and then removed
+  by that decision — commit b555abf holds it if the trade ever reverses; upstreaming real
+  compaction to paimon-rust is the durable fix.) Local files unreachable from the latest
+  snapshot are unlinked after each checkpoint (uploads read from per-checkpoint hard-link
+  directories, so GC and uploads never race).
 - Vortex state files are **not readable by released Java Paimon** — the Java Vortex format
-  (reader and writer over the native vortex library) exists on Paimon master, targeted at 2.0.
-  Until then the Java compactor declines vortex tables; deployments that want Java-owned
-  maintenance (or Java-readable state tables for inspection) run `parquet` state files. Values
-  stay Rust-defined either way.
+  (reader and writer over the native vortex library) exists on Paimon master, targeted at 2.0,
+  and is absent from every 1.4.x release. State files therefore default to `parquet` (Java can
+  maintain and inspect them today); `vortex` is opt-in and currently unmaintained. Values stay
+  Rust-defined either way.
 - Canonical savepoints cannot be expressed; native-format savepoints work.
 - Multiset-state aggregates (retracting MIN/MAX, DISTINCT) and non-scalar state shapes stay on
   memory state until the row codec grows side tables (see `docs/coverage-and-fallbacks.md` §c).

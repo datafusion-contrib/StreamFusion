@@ -1,13 +1,11 @@
 use crate::*;
 
 #[cfg(feature = "paimon-state")]
-pub(crate) mod paimon_compaction;
-#[cfg(feature = "paimon-state")]
 pub(crate) mod paimon_jni;
 #[cfg(feature = "paimon-state")]
 pub(crate) mod paimon_store;
 #[cfg(feature = "paimon-state")]
-pub(crate) use {paimon_compaction::*, paimon_store::*};
+pub(crate) use paimon_store::*;
 
 /// Whether this build carries the Paimon persistent state backend. Present in every build so the
 /// host can probe capability without risking an unresolved native symbol.

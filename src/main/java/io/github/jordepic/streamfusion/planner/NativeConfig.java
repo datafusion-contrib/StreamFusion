@@ -63,22 +63,14 @@ public final class NativeConfig {
   }
 
   /**
-   * The Paimon state backend's {@code num-sorted-run.compaction-trigger} for the native fallback
-   * compaction ({@code streamfusion.state.paimon.compaction-trigger}, default 5 — Java Paimon's
-   * default): each bucket's sorted runs feed Paimon's universal compaction pick at every
-   * checkpoint. Ignored when the Java Paimon compactor module is deployed — stock Paimon then
-   * owns maintenance with its own options.
-   */
-  public static int paimonCompactionTrigger() {
-    return Integer.getInteger("streamfusion.state.paimon.compaction-trigger", 5);
-  }
-
-  /**
    * The Paimon data file format for native state tables ({@code streamfusion.state.paimon.file-format},
-   * default {@code vortex}).
+   * default {@code parquet}). Table maintenance belongs exclusively to the Java Paimon compactor
+   * module, which must be able to read this format — released Paimon has no vortex format (it
+   * arrives with Paimon 2.0), so {@code vortex} state files are an opt-in that today also opts
+   * out of compaction.
    */
   public static String paimonFileFormat() {
-    return System.getProperty("streamfusion.state.paimon.file-format", "vortex");
+    return System.getProperty("streamfusion.state.paimon.file-format", "parquet");
   }
 
   /**

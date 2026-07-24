@@ -3251,7 +3251,7 @@ fn format_driver_init_gates_on_version() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Paimon-backed group state: read-through probes, barrier commits, restore, rescale, compaction.
+// Paimon-backed group state: read-through probes, barrier commits, restore, rescale.
 // Everything runs on the vortex file format — the production configuration.
 // ---------------------------------------------------------------------------------------------
 
@@ -3271,11 +3271,10 @@ mod paimon_state {
         dir.to_string_lossy().into_owned()
     }
 
-    fn config(table_dir: &str, compaction_trigger: usize) -> PaimonStoreConfig {
+    fn config(table_dir: &str) -> PaimonStoreConfig {
         PaimonStoreConfig {
             table_dir: table_dir.to_string(),
             max_parallelism: 128,
-            compaction_trigger,
             file_format: "vortex".to_string(),
         }
     }
@@ -3291,17 +3290,17 @@ mod paimon_state {
         GroupAggregator::new(vec![0, 3], vec![0, 0], vec![1, -1], vec![0], true).with_mini_batch()
     }
 
-    fn create_store(dir: &str, trigger: usize) -> PaimonGroupStore {
+    fn create_store(dir: &str) -> PaimonGroupStore {
         let value_types = vec![value_data_type(0), value_data_type(0)];
         let state_types = group_state_types(&[0, 3], &value_types);
-        PaimonGroupStore::create(config(dir, trigger), vec![0, 3], value_types, state_types)
+        PaimonGroupStore::create(config(dir), vec![0, 3], value_types, state_types)
             .unwrap()
     }
 
-    fn open_store(dir: &str, trigger: usize, snapshot_id: i64) -> PaimonGroupStore {
+    fn open_store(dir: &str, snapshot_id: i64) -> PaimonGroupStore {
         let value_types = vec![value_data_type(0), value_data_type(0)];
         let state_types = group_state_types(&[0, 3], &value_types);
-        PaimonGroupStore::open(config(dir, trigger), vec![0, 3], value_types, state_types, snapshot_id)
+        PaimonGroupStore::open(config(dir), vec![0, 3], value_types, state_types, snapshot_id)
             .unwrap()
     }
 
@@ -3330,7 +3329,7 @@ mod paimon_state {
     #[test]
     fn paimon_group_agg_matches_memory_across_checkpoints() {
         let dir = temp_dir("parity");
-        let mut paimon = paimon_agg(create_store(&dir, 100));
+        let mut paimon = paimon_agg(create_store(&dir));
         let mut memory = memory_agg();
 
         let bundles: Vec<RecordBatch> = vec![
@@ -3355,7 +3354,7 @@ mod paimon_state {
     #[test]
     fn paimon_checkpoint_restores_from_listed_files_only() {
         let dir = temp_dir("restore-src");
-        let mut agg = paimon_agg(create_store(&dir, 100));
+        let mut agg = paimon_agg(create_store(&dir));
         agg.update(&group_batch(vec![1, 2, 3], vec![10, 20, 30])).unwrap();
         agg.flush_mini_batch().unwrap();
         let link1 = temp_dir("restore-cp1");
@@ -3376,7 +3375,7 @@ mod paimon_state {
 
         let restored_dir = temp_dir("restore-dst");
         materialize(&second, &link2, &restored_dir);
-        let mut restored = paimon_agg(open_store(&restored_dir, 100, second.snapshot_id));
+        let mut restored = paimon_agg(open_store(&restored_dir, second.snapshot_id));
 
         // The restored table must serve state: retract 10 from key 1 -> SUM drops to 0 rows? No:
         // one record remains? key 1 had a single +I of 10; retracting it deletes the group.
@@ -3392,7 +3391,7 @@ mod paimon_state {
     #[test]
     fn paimon_tombstones_survive_checkpoints() {
         let dir = temp_dir("tombstone");
-        let mut agg = paimon_agg(create_store(&dir, 100));
+        let mut agg = paimon_agg(create_store(&dir));
         agg.update(&group_batch(vec![7], vec![70])).unwrap();
         agg.flush_mini_batch().unwrap();
         agg.store_mut().checkpoint(&temp_dir("tomb-cp1")).unwrap();
@@ -3409,25 +3408,27 @@ mod paimon_state {
         assert_eq!(values(&out, 1), vec![1]);
     }
 
+    /// The store never compacts (maintenance belongs to the Java Paimon compactor module):
+    /// checkpoints accumulate one level-0 run per touched bucket, and reads stay correct over
+    /// however many runs exist.
     #[test]
-    fn paimon_compaction_bounds_files_and_preserves_state() {
-        let dir = temp_dir("compact");
-        let mut agg = paimon_agg(create_store(&dir, 2));
-        // Ten checkpoints of updates to the same key pile up level-0 runs in one bucket.
+    fn paimon_reads_stay_correct_over_accumulated_runs() {
+        let dir = temp_dir("accumulate");
+        let mut agg = paimon_agg(create_store(&dir));
         for i in 1..=10i64 {
             agg.update(&group_changelog(vec![42], vec![Some(i)], vec![0])).unwrap();
             agg.flush_mini_batch().unwrap();
             let manifest = agg
                 .store_mut()
-                .checkpoint(&temp_dir(&format!("compact-cp{i}")))
+                .checkpoint(&temp_dir(&format!("accumulate-cp{i}")))
                 .unwrap();
-            assert!(
-                manifest.data_files.len() <= 3,
-                "compaction must bound live files, saw {:?}",
-                manifest.data_files
+            assert_eq!(
+                manifest.data_files.len(),
+                i as usize,
+                "one run per checkpoint, never rewritten"
             );
         }
-        // State is intact after all rewrites: SUM 1+2+..+10 = 55, retracting 55 deletes.
+        // State reads correctly across all ten runs: SUM 1+2+..+10 = 55.
         agg.update(&group_changelog(vec![42], vec![Some(55)], vec![0])).unwrap();
         let out = agg.flush_mini_batch().unwrap();
         assert_eq!(values(&out, 1), vec![55, 110]);
@@ -3439,8 +3440,8 @@ mod paimon_state {
         // Two "subtasks" write disjoint keys, checkpoint, and a new subtask adopts the union.
         let dir_a = temp_dir("rescale-a");
         let dir_b = temp_dir("rescale-b");
-        let mut a = paimon_agg(create_store(&dir_a, 100));
-        let mut b = paimon_agg(create_store(&dir_b, 100));
+        let mut a = paimon_agg(create_store(&dir_a));
+        let mut b = paimon_agg(create_store(&dir_b));
         a.update(&group_batch(vec![1, 2, 3, 4], vec![10, 20, 30, 40])).unwrap();
         b.update(&group_batch(vec![5, 6, 7, 8], vec![50, 60, 70, 80])).unwrap();
         a.flush_mini_batch().unwrap();
@@ -3459,7 +3460,7 @@ mod paimon_state {
         let value_types = vec![value_data_type(0), value_data_type(0)];
         let state_types = group_state_types(&[0, 3], &value_types);
         let store = PaimonGroupStore::open_merged(
-            config(&merged_dir, 100),
+            config(&merged_dir),
             vec![0, 3],
             value_types,
             state_types,

@@ -112,17 +112,13 @@ public class NativeColumnarGroupAggregateOperator extends AbstractStreamOperator
         sourceDirs[i] = sources.get(i).directory();
         sourceSnapshots[i] = sources.get(i).snapshotId();
       }
-      // With an external compactor deployed, Java Paimon owns table maintenance and the native
-      // fallback compaction is off (trigger 0).
-      int compactionTrigger =
-          paimonBackend.hasExternalCompactor() ? 0 : NativeConfig.paimonCompactionTrigger();
       handle =
           Native.createPaimonGroupAggregator(
               aggregateKinds, valueTypes, valueColumns, keyColumns, keyTimestampPrecisions,
               filterColumns, countColumns, distinctViewColumns, recordCountColumn,
               generateUpdateBefore, miniBatch, memoryBudget.bytes(),
               paimonBackend.tableDirectory(), maxParallelism,
-              compactionTrigger, NativeConfig.paimonFileFormat(),
+              NativeConfig.paimonFileFormat(),
               sourceDirs, sourceSnapshots,
               paimonBackend.getKeyGroupRange().getStartKeyGroup(),
               paimonBackend.getKeyGroupRange().getEndKeyGroup());

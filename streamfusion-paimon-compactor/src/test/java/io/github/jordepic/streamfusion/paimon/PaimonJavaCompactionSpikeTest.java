@@ -46,7 +46,7 @@ import org.junit.jupiter.api.Test;
 /**
  * The decisive experiment for "Java Paimon owns state-table compaction": the native store
  * (paimon-rust) writes and commits a state table across several checkpoints; stock, released Java
- * Paimon (1.4.1) opens the same directory, reads the rows back, runs its own full compaction
+ * Paimon (1.4.2) opens the same directory, reads the rows back, runs its own full compaction
  * (pick + sequence-preserving rewrite + commit); and the native store then restores from the
  * Java-compacted snapshot and keeps operating. Every arrow of the cross-implementation
  * compatibility diagram is exercised: Rust manifests/data read by Java, Java manifests/data read
@@ -159,7 +159,6 @@ class PaimonJavaCompactionSpikeTest {
         -1L,
         tableDir,
         128,
-        1_000_000, // the native side must not compact: Java is under test here
         "parquet",
         sources,
         snapshots,

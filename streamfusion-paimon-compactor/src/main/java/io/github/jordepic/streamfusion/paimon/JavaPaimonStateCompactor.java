@@ -22,8 +22,7 @@ import org.apache.paimon.table.source.Split;
  * Paimon's own compaction to look at every live bucket ({@code fullCompaction=false}, so its
  * universal strategy picks — usually nothing), and commits whatever it rewrote as a maintenance
  * snapshot directly beneath the checkpoint's data commit. Sequence numbers are preserved by
- * Paimon's rewriter and deletions drop exactly per its own rules — the semantics the native
- * fallback can only approximate.
+ * Paimon's rewriter and deletions drop exactly per its own rules.
  */
 public class JavaPaimonStateCompactor implements StateTableCompactor {
 

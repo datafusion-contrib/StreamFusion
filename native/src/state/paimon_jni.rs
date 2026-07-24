@@ -39,7 +39,6 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonG
     memory_budget_bytes: jlong,
     table_directory: JString<'local>,
     max_parallelism: jint,
-    compaction_trigger: jint,
     file_format: JString<'local>,
     source_directories: JObjectArray<'local>,
     source_snapshot_ids: JLongArray<'local>,
@@ -71,7 +70,6 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonG
     let config = PaimonStoreConfig {
         table_dir,
         max_parallelism: max_parallelism as usize,
-        compaction_trigger: compaction_trigger as usize,
         file_format: format,
     };
     let store = if source_dirs.is_empty() {

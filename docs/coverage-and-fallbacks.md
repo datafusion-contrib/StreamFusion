@@ -632,20 +632,15 @@ the operator just checkpoints its state the old way, in full):
 - **Canonical savepoints** are rejected for Paimon-backed operators (`UnsupportedOperationException`);
   native-format savepoints work (uploaded whole, no file sharing, restorable in CLAIM/NO_CLAIM).
 
-**Table maintenance (compaction)** is owned by whichever of two implementations is deployed:
+**Table maintenance (compaction) belongs exclusively to stock Java Paimon** — the native store
+never compacts. Drop `streamfusion-paimon-compactor.jar` plus a Paimon bundle (≥ 1.4.1) into
+Flink's `lib/` and Paimon maintains the state tables at every barrier: its own compaction picks,
+its sequence-preserving rewriter, its exact deletion handling. Without the module (or with a
+state file format the deployed Paimon cannot read), tables stay **correct but unmaintained** —
+one sorted run accumulates per touched bucket per checkpoint, growing probe cost — and the
+backend logs a warning. A side effect worth knowing: parquet state tables are ordinary Paimon
+tables, readable by any Paimon tooling for state inspection.
 
-- **Java Paimon** (preferred): drop `streamfusion-paimon-compactor.jar` plus a Paimon bundle
-  (≥ 1.4.1) into Flink's `lib/` and stock Paimon maintains the state tables at every barrier —
-  its own compaction picks, its sequence-preserving rewriter, its exact deletion handling. The
-  compactor declines file formats the deployed Paimon cannot read (vortex needs Paimon 2.0; use
-  `parquet` state files with released Paimon), in which case the fallback below stays on. A
-  side effect worth knowing: parquet state tables are ordinary Paimon tables, readable by any
-  Paimon tooling for state inspection.
-- **Native fallback** (always available): a port of Java Paimon's universal compaction pick
-  strategy, executed as copy-on-write commits at the barrier. Two executor constraints Java
-  doesn't have (the native rewrite assigns fresh sequence numbers): picks are only taken as
-  newest-prefixes of the run list, and a partial pick that would carry deletion rows escalates
-  to a full merge. `-Dstreamfusion.state.paimon.compaction-trigger` (default 5, Paimon's own
-  default) is its `num-sorted-run.compaction-trigger`.
-
-`-Dstreamfusion.state.paimon.file-format` (default `vortex`) selects the state data file format.
+`-Dstreamfusion.state.paimon.file-format` (default `parquet`) selects the state data file
+format. `vortex` is opt-in and today also opts out of maintenance: released Java Paimon has no
+vortex format (it lands with Paimon 2.0), so the compactor declines such tables.

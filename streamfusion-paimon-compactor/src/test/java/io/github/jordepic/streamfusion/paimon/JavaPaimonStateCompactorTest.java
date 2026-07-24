@@ -36,9 +36,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The whole delegation chain, end to end: the backend discovers this module's compactor through
- * the ServiceLoader, the operator disables the native fallback compaction, and at checkpoint
- * barriers stock Java Paimon maintains the state table — visible as a bounded run count and an
- * unchanged changelog.
+ * the ServiceLoader and at checkpoint barriers stock Java Paimon maintains the state table —
+ * visible as a bounded run count and an unchanged changelog.
  */
 class JavaPaimonStateCompactorTest {
 
@@ -53,17 +52,6 @@ class JavaPaimonStateCompactorTest {
 
   @Test
   void barrierMaintenanceRunsThroughTheServiceLoader() throws Exception {
-    // A compactor-enabled deployment on a released Paimon runs parquet state files: the
-    // discovery declines formats the deployed Paimon cannot read (vortex until Paimon 2.0).
-    System.setProperty("streamfusion.state.paimon.file-format", "parquet");
-    try {
-      runScenario();
-    } finally {
-      System.clearProperty("streamfusion.state.paimon.file-format");
-    }
-  }
-
-  private void runScenario() throws Exception {
     NativeColumnarGroupAggregateOperator operator =
         new NativeColumnarGroupAggregateOperator(
             new int[] {0},
@@ -112,8 +100,8 @@ class JavaPaimonStateCompactorTest {
       tableDir = findTableDirectory(harness.getEnvironment().getTaskManagerInfo().getTmpWorkingDirectory());
 
       // Eight barriers wrote eight level-0 runs into one bucket. Only Java Paimon's maintenance
-      // could have merged any of them (the native fallback is disabled when the compactor is
-      // discovered), so a bounded run count is the witness that the whole delegation chain ran.
+      // could have merged any of them (the native store never compacts), so a bounded run count
+      // is the witness that the whole delegation chain ran.
       // (The maintenance snapshot document itself is expired by the store's local GC, so the
       // commit user cannot serve as the witness.)
       FileStoreTable table =
