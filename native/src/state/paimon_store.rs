@@ -15,9 +15,11 @@
 //! floor-mod of an already-in-range int is the identity. Rescale therefore reassigns whole bucket
 //! directories; no row is rewritten.
 //!
-//! paimon-rust has no LSM compaction yet, so every commit adds level-0 sorted runs. This module
-//! bounds read amplification itself: when a bucket's live file count exceeds the trigger, the
-//! bucket is rewritten as one merged file in a copy-on-write commit (`new_files` + `deleted_files`)
+//! paimon-rust has no LSM compaction yet, so every commit adds level-0 sorted runs. Maintenance
+//! is owned either by the optional Java Paimon compactor module (which runs Paimon's own
+//! compaction against this table between the barrier's commits; trigger = 0 here) or by this
+//! module's fallback: Java's universal compaction pick strategy, ported in
+//! `paimon_compaction.rs`, executed as copy-on-write commits (`new_files` + `deleted_files`)
 //! immediately before the checkpoint's data commit.
 
 use crate::*;
@@ -25,9 +27,10 @@ use arrow::array::{Array, BinaryArray, Int32Array, Int64Array, Int8Array};
 use paimon::catalog::Identifier;
 use paimon::io::FileIO;
 use paimon::spec::{
-    BigIntType, BooleanType, DataField, DataType as PaimonType, Datum, DateType, DecimalType,
-    DoubleType, FloatType, IntType, PredicateBuilder, Schema as PaimonSchema, SmallIntType,
-    TableSchema, TimestampType, TinyIntType, VarBinaryType, VarCharType, EMPTY_SERIALIZED_ROW,
+    BigIntType, BooleanType, DataField, DataFileMeta, DataType as PaimonType, Datum, DateType,
+    DecimalType, DoubleType, FloatType, IntType, PredicateBuilder, Schema as PaimonSchema,
+    SmallIntType, TableSchema, TimestampType, TinyIntType, VarBinaryType, VarCharType,
+    EMPTY_SERIALIZED_ROW,
 };
 use paimon::table::{CommitMessage, Table};
 use std::collections::{HashMap as StdHashMap, HashSet as StdHashSet};
@@ -113,7 +116,8 @@ pub(crate) struct PaimonStoreConfig {
     pub table_dir: String,
     /// Flink maxParallelism — the bucket count; bucket id == key group id.
     pub max_parallelism: usize,
-    /// Rewrite a bucket into one file when its live file count exceeds this.
+    /// Paimon's `num-sorted-run.compaction-trigger` for the fallback native compaction; zero
+    /// disables it (an external compactor owns table maintenance).
     pub compaction_trigger: usize,
     /// Paimon `file.format` for state data files.
     pub file_format: String,
@@ -669,6 +673,10 @@ impl PaimonGroupStore {
         &mut self,
         link_dir: &str,
     ) -> Result<PaimonCheckpointManifest, DataFusionError> {
+        // An external compactor (the Java Paimon glue) may have committed a maintenance snapshot
+        // just before this call: adopt the latest snapshot so the flush lands on top of it, the
+        // manifest lists it, and local GC sees its file set.
+        self.refresh_to_latest()?;
         self.compact_if_needed()?;
         if let Some(batch) = self.dirty_batch() {
             let builder = self.table.new_write_builder();
@@ -716,20 +724,36 @@ impl PaimonGroupStore {
     }
 
     fn refresh_after_commit(&mut self) -> Result<(), DataFusionError> {
-        let latest = runtime()
-            .block_on(self.table.snapshot_manager().get_latest_snapshot_id())
-            .map_err(pe)?
-            .ok_or_else(|| DataFusionError::Internal("commit produced no snapshot".into()))?;
-        self.read_snapshot = Some(latest);
-        self.read_table = Some(Self::pin(&self.table, latest));
+        self.refresh_to_latest()?;
+        if self.read_snapshot.is_none() {
+            return Err(DataFusionError::Internal("commit produced no snapshot".into()));
+        }
         Ok(())
     }
 
-    /// Rewrites every bucket whose live file count exceeds the trigger into a single merged file,
-    /// as one copy-on-write commit (its own snapshot, immediately before the data commit so the
-    /// rewritten rows' sequence numbers stay below the incoming batch's).
+    /// Re-pins reads at the table's latest committed snapshot, if it moved.
+    fn refresh_to_latest(&mut self) -> Result<(), DataFusionError> {
+        let latest = runtime()
+            .block_on(self.table.snapshot_manager().get_latest_snapshot_id())
+            .map_err(pe)?;
+        if let Some(latest) = latest {
+            if self.read_snapshot != Some(latest) {
+                self.read_snapshot = Some(latest);
+                self.read_table = Some(Self::pin(&self.table, latest));
+            }
+        }
+        Ok(())
+    }
+
+    /// Bounds read amplification when this store owns table maintenance: Java Paimon's universal
+    /// compaction strategy (ported in `paimon_compaction.rs`) picks a newest-prefix of each
+    /// bucket's sorted runs, and the pick is rewritten as one copy-on-write commit (its own
+    /// snapshot, immediately before the data commit, so the rewritten rows' fresh sequence
+    /// numbers stay below the incoming batch's while still above every excluded, older run's).
+    /// A trigger of zero disables this entirely — an external compactor (the Java Paimon glue
+    /// module) owns maintenance instead.
     fn compact_if_needed(&mut self) -> Result<(), DataFusionError> {
-        if self.read_table.is_none() {
+        if self.config.compaction_trigger == 0 || self.read_table.is_none() {
             return Ok(());
         }
         let read_table = self.read_table.as_ref().expect("pinned read table").clone();
@@ -741,18 +765,46 @@ impl PaimonGroupStore {
         }
         let mut messages: Vec<CommitMessage> = Vec::new();
         for (bucket, splits) in by_bucket {
-            let files: Vec<_> = splits
+            let files: Vec<DataFileMeta> = splits
                 .iter()
                 .flat_map(|split| split.data_files().iter().cloned())
                 .collect();
-            if files.len() <= self.config.compaction_trigger {
+            let runs = level_sorted_runs(&files);
+            let Some(mut unit) = pick(self.config.compaction_trigger, &runs) else {
                 continue;
+            };
+            // The normal merged read drops deletion rows, which is only sound when nothing older
+            // than the merge output survives: a partial pick that would carry tombstones
+            // escalates to a full merge instead. (Java's rewriter keeps per-record sequence
+            // numbers and can rewrite tombstones in place; paimon-rust's write path cannot yet.)
+            if !unit.full
+                && unit
+                    .files
+                    .iter()
+                    .any(|file| file.delete_row_count.is_some_and(|count| count > 0))
+            {
+                unit = CompactUnit {
+                    // max level under Java's default num-levels = trigger + 1
+                    output_level: self.config.compaction_trigger as i32,
+                    files: files.clone(),
+                    full: true,
+                };
             }
+            let unit_split = paimon::table::DataSplit::builder()
+                .with_snapshot(self.read_snapshot.expect("pinned snapshot"))
+                .with_partition(splits[0].partition().clone())
+                .with_bucket(bucket)
+                .with_bucket_path(splits[0].bucket_path().to_string())
+                .with_total_buckets(self.config.max_parallelism as i32)
+                .with_data_files(unit.files.clone())
+                .with_raw_convertible(false)
+                .build()
+                .map_err(pe)?;
             let write_builder = self.table.new_write_builder();
             let mut merged = runtime()
                 .block_on(async {
                     let read = builder.new_read()?;
-                    let mut stream = read.to_arrow(&splits)?;
+                    let mut stream = read.to_arrow(std::slice::from_ref(&unit_split))?;
                     let mut write = write_builder.new_write()?;
                     use futures::StreamExt;
                     while let Some(batch) = stream.next().await {
@@ -761,14 +813,21 @@ impl PaimonGroupStore {
                     write.prepare_commit().await
                 })
                 .map_err(pe)?;
+            // The rewrite output is one sorted, non-overlapping run at the unit's output level —
+            // what keeps a rolled multi-file base counting as a single run next time.
+            for message in &mut merged {
+                for file in &mut message.new_files {
+                    file.level = unit.output_level;
+                }
+            }
             match merged.iter_mut().find(|message| message.bucket == bucket) {
-                Some(message) => message.deleted_files = files,
-                // Every live row of the bucket was a tombstone: the rewrite produced nothing,
+                Some(message) => message.deleted_files = unit.files,
+                // Every picked row was a tombstone (full merge): the rewrite produced nothing,
                 // and the commit only deletes the old files.
                 None => {
                     let mut message =
                         CommitMessage::new(EMPTY_SERIALIZED_ROW.to_vec(), bucket, Vec::new());
-                    message.deleted_files = files;
+                    message.deleted_files = unit.files;
                     merged.push(message);
                 }
             }

@@ -63,13 +63,14 @@ public final class NativeConfig {
   }
 
   /**
-   * The sorted-run bound of the Paimon state backend ({@code streamfusion.state.paimon.compaction-trigger},
-   * default 8): a bucket whose live data file count exceeds this is rewritten into one merged file
-   * at the next checkpoint. Lower bounds probe read-amplification tighter at the cost of more
-   * rewrite IO per checkpoint.
+   * The Paimon state backend's {@code num-sorted-run.compaction-trigger} for the native fallback
+   * compaction ({@code streamfusion.state.paimon.compaction-trigger}, default 5 — Java Paimon's
+   * default): each bucket's sorted runs feed Paimon's universal compaction pick at every
+   * checkpoint. Ignored when the Java Paimon compactor module is deployed — stock Paimon then
+   * owns maintenance with its own options.
    */
   public static int paimonCompactionTrigger() {
-    return Integer.getInteger("streamfusion.state.paimon.compaction-trigger", 8);
+    return Integer.getInteger("streamfusion.state.paimon.compaction-trigger", 5);
   }
 
   /**
