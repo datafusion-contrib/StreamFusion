@@ -18,6 +18,7 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.ServiceLoader;
 import java.util.UUID;
 
 /**
@@ -69,12 +70,32 @@ public class PaimonStateBackend implements StateBackend {
             : UUID.randomUUID();
     PaimonSnapshotStrategy strategy =
         new PaimonSnapshotStrategy(
-            backendUID, parameters.getKeyGroupRange(), new File(workingDirectory, "checkpoints"));
+            backendUID,
+            parameters.getKeyGroupRange(),
+            new File(workingDirectory, "checkpoints"),
+            new File(workingDirectory, "table"),
+            discoverCompactor());
     if (paimonHandles.size() == 1) {
       IncrementalRemoteKeyedStateHandle restored = paimonHandles.get(0);
       strategy.seedRestored(restored.getCheckpointId(), restored.getSharedState());
     }
     return new PaimonKeyedStateBackend<>(inner, strategy, workingDirectory, sources);
+  }
+
+  /**
+   * The external table maintainer, when one is deployed (the Java Paimon compactor module), its
+   * dependencies are present, and it can read the configured state file format; otherwise the
+   * native store's fallback compaction stays on.
+   */
+  private static StateTableCompactor discoverCompactor() {
+    String fileFormat = io.github.jordepic.streamfusion.planner.NativeConfig.paimonFileFormat();
+    for (StateTableCompactor candidate :
+        ServiceLoader.load(StateTableCompactor.class, StateTableCompactor.class.getClassLoader())) {
+      if (candidate.available() && candidate.supports(fileFormat)) {
+        return candidate;
+      }
+    }
+    return null;
   }
 
   private static File workingDirectory(KeyedStateBackendParameters<?> parameters) {

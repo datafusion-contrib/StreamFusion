@@ -80,6 +80,14 @@ public final class PaimonKeyedStateBackend<K>
     return restoredSources;
   }
 
+  /**
+   * Whether an external compactor (the Java Paimon glue module) owns table maintenance — the
+   * operator then disables the native store's fallback compaction.
+   */
+  public boolean hasExternalCompactor() {
+    return snapshotStrategy.hasExternalCompactor();
+  }
+
   /** Registers the operator's native checkpoint hook; snapshots then go through Paimon commits. */
   public void registerNativeState(PaimonNativeState nativeState) {
     if (snapshotStrategy.hasNativeState()) {

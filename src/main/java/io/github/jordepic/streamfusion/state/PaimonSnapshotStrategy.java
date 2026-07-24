@@ -18,6 +18,11 @@ import org.apache.flink.runtime.state.SnapshotStrategy;
 import org.apache.flink.runtime.state.StreamStateHandle;
 import org.apache.flink.util.FileUtils;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.annotation.Nullable;
+
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -52,6 +57,8 @@ import java.util.UUID;
 final class PaimonSnapshotStrategy
     implements SnapshotStrategy<KeyedStateHandle, PaimonSnapshotStrategy.PaimonSnapshotResources> {
 
+  private static final Logger LOG = LoggerFactory.getLogger(PaimonSnapshotStrategy.class);
+
   /** Version tag of the checkpoint metadata document. */
   private static final int META_VERSION = 1;
 
@@ -60,6 +67,8 @@ final class PaimonSnapshotStrategy
   private final UUID backendUID;
   private final KeyGroupRange keyGroupRange;
   private final File checkpointLinkRoot;
+  private final File tableDirectory;
+  @Nullable private final StateTableCompactor compactor;
 
   private PaimonNativeState nativeState;
 
@@ -68,10 +77,17 @@ final class PaimonSnapshotStrategy
 
   private long lastCompletedCheckpointId = -1;
 
-  PaimonSnapshotStrategy(UUID backendUID, KeyGroupRange keyGroupRange, File checkpointLinkRoot) {
+  PaimonSnapshotStrategy(
+      UUID backendUID,
+      KeyGroupRange keyGroupRange,
+      File checkpointLinkRoot,
+      File tableDirectory,
+      @Nullable StateTableCompactor compactor) {
     this.backendUID = backendUID;
     this.keyGroupRange = keyGroupRange;
     this.checkpointLinkRoot = checkpointLinkRoot;
+    this.tableDirectory = tableDirectory;
+    this.compactor = compactor;
   }
 
   void registerNativeState(PaimonNativeState nativeState) {
@@ -80,6 +96,10 @@ final class PaimonSnapshotStrategy
 
   boolean hasNativeState() {
     return nativeState != null;
+  }
+
+  boolean hasExternalCompactor() {
+    return compactor != null;
   }
 
   /** Seeds the reuse base from a restored checkpoint (single-handle, claim-style restore). */
@@ -109,6 +129,15 @@ final class PaimonSnapshotStrategy
 
   @Override
   public PaimonSnapshotResources syncPrepareResources(long checkpointId) throws Exception {
+    if (compactor != null) {
+      // Maintenance commits its own snapshot directly beneath the checkpoint's data commit. A
+      // failure loses maintenance, not the checkpoint.
+      try {
+        compactor.compact(tableDirectory.getAbsolutePath(), checkpointId);
+      } catch (Exception e) {
+        LOG.warn("state-table compaction failed; continuing the checkpoint without maintenance", e);
+      }
+    }
     File linkDir = new File(checkpointLinkRoot, "chk-" + checkpointId);
     String[] manifest = nativeState.checkpoint(linkDir.getAbsolutePath());
     long snapshotId = Long.parseLong(manifest[0]);

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.jordepic</groupId>
+        <artifactId>StreamFusion</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>streamfusion-paimon-compactor</artifactId>
+
+    <!-- Java Paimon as the maintainer of native state tables: stock Paimon's compaction (its own
+         picks, its sequence-preserving rewriter, its deletion handling) runs against the local
+         table at every checkpoint barrier, replacing the native store's fallback rewrite. An
+         optional deployment module in the connector-extension mold: drop this JAR plus a Paimon
+         bundle (>= 1.4.1) into Flink's lib directory to enable it; without them the state backend
+         works unchanged on its fallback — never a linkage failure. Both dependencies are provided:
+         the runtime is already in lib, and Paimon is the user's own bundle (bundling or shading a
+         second copy of org.apache.paimon would collide with it). -->
+    <dependencies>
+        <dependency>
+            <groupId>io.github.jordepic</groupId>
+            <artifactId>streamfusion-runtime</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.paimon</groupId>
+            <artifactId>paimon-bundle</artifactId>
+            <version>1.4.1</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>

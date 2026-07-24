@@ -21,6 +21,7 @@
         <module>streamfusion-protobuf</module>
         <module>streamfusion-fluss</module>
         <module>streamfusion-parquet</module>
+        <module>streamfusion-paimon-compactor</module>
         <module>streamfusion-loader</module>
     </modules>
 
