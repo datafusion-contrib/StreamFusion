@@ -229,8 +229,6 @@ final class KafkaSinkMatcher {
       case SMALLINT:
       case INTEGER:
       case BIGINT:
-      case FLOAT:
-      case DOUBLE:
       case BOOLEAN:
       case CHAR:
       case VARCHAR:
@@ -253,6 +251,10 @@ final class KafkaSinkMatcher {
         return type.getChildren().get(0).is(LogicalTypeFamily.CHARACTER_STRING)
             && type.getChildren().stream().allMatch(KafkaSinkMatcher::supportsJsonType);
       default:
+        // FLOAT/DOUBLE included: Flink spells them with the JVM's JDK-version-dependent
+        // Double.toString, which has no byte-exact native counterpart — the same reason the CSV
+        // sink and the float-to-string CAST stay on the host. (Decode is unaffected: parsing a
+        // JSON number is exact.)
         return false;
     }
   }

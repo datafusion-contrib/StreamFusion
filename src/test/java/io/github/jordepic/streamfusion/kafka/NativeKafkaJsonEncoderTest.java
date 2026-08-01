@@ -37,10 +37,10 @@ import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.logical.ArrayType;
+import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.BooleanType;
 import org.apache.flink.table.types.logical.DateType;
 import org.apache.flink.table.types.logical.DecimalType;
-import org.apache.flink.table.types.logical.DoubleType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.LogicalType;
@@ -66,13 +66,15 @@ class NativeKafkaJsonEncoderTest {
             new IntType(),
             new VarCharType(VarCharType.MAX_LENGTH),
             new BooleanType(),
-            new DoubleType()
+            // No FLOAT/DOUBLE: the sink gate declines them (Double.toString has no byte-exact
+            // native counterpart), so the referee corpus stays inside the plannable family.
+            new BigIntType()
           },
           new String[] {"id", "name", "enabled", "score"});
 
   @Test
   void matchesFlinkForWholeBatchesWithAndWithoutNullFields() throws Exception {
-    GenericRowData first = GenericRowData.of(1, StringData.fromString("quote: \" and 雪"), true, 2.5);
+    GenericRowData first = GenericRowData.of(1, StringData.fromString("quote: \" and 雪"), true, 25L);
     GenericRowData nulls = GenericRowData.of(2, null, false, null);
     List<RowData> rows = List.of(first, nulls);
 
@@ -197,6 +199,27 @@ class NativeKafkaJsonEncoderTest {
 
     assertMatchesFlink(rows, scalars, TimestampFormat.SQL, false);
     assertMatchesFlink(rows, scalars, TimestampFormat.ISO_8601, false);
+  }
+
+  /**
+   * DATE years outside [0, 9999]: Flink's {@code ISO_LOCAL_DATE} uses {@code
+   * SignStyle.EXCEEDS_PAD} — a {@code +} past four digits, a {@code -} for negative years, year 0
+   * spelled {@code 0000} — which arrow-json's stock chrono rendering does not reproduce.
+   */
+  @Test
+  void matchesFlinkForExtremeDateYears() throws Exception {
+    RowType dates = RowType.of(new LogicalType[] {new DateType()}, new String[] {"day"});
+    List<RowData> rows =
+        List.of(
+            GenericRowData.of((int) LocalDate.of(10_000, 1, 1).toEpochDay()),
+            GenericRowData.of((int) LocalDate.of(275_760, 9, 13).toEpochDay()),
+            GenericRowData.of((int) LocalDate.of(9_999, 12, 31).toEpochDay()),
+            GenericRowData.of((int) LocalDate.of(999, 6, 15).toEpochDay()),
+            GenericRowData.of((int) LocalDate.of(0, 1, 1).toEpochDay()),
+            GenericRowData.of((int) LocalDate.of(-1, 12, 31).toEpochDay()),
+            GenericRowData.of((int) LocalDate.of(-9_999, 1, 1).toEpochDay()));
+
+    assertMatchesFlink(rows, dates, TimestampFormat.SQL, false);
   }
 
   /**

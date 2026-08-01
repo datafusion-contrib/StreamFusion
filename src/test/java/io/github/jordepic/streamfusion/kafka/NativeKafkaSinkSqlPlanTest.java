@@ -410,6 +410,33 @@ class NativeKafkaSinkSqlPlanTest {
         scan::explainSummary);
   }
 
+  /** The JSON sink declines FLOAT/DOUBLE for the same reason CSV does — {@code Double.toString}
+   * has no byte-exact native counterpart, and unlike CSV this used to route (silently spelling
+   * some values differently than Flink). */
+  @Test
+  void jsonFloatColumnsKeepHostSerialization() {
+    StreamTableEnvironment table = environment();
+    table.executeSql(
+        "CREATE TABLE src (id BIGINT, score DOUBLE) "
+            + "WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
+    table.executeSql(
+        "CREATE TABLE output (id BIGINT, score DOUBLE) WITH ("
+            + "'connector' = 'kafka', "
+            + "'topic' = 'output', "
+            + "'properties.bootstrap.servers' = 'broker:9092', "
+            + "'format' = 'json')");
+
+    PhysicalPlanScan scan = NativePlanner.install(table);
+    String plan =
+        table.explainSql(
+            "INSERT INTO output SELECT * FROM src", ExplainDetail.JSON_EXECUTION_PLAN);
+
+    assertFalse(plan.contains("NativeKafkaSink"), plan);
+    assertTrue(
+        scan.fallbackReasons().stream().anyMatch(reason -> reason.contains("json type DOUBLE")),
+        scan::explainSummary);
+  }
+
   /**
    * A TIME(0) column crosses the Arrow boundary at second granularity, but Flink's CSV converter
    * prints whatever milliseconds the value carries — out-of-contract data would silently

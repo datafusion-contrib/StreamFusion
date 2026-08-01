@@ -343,24 +343,6 @@ fn utf16_units(value: &[u8]) -> usize {
         .sum()
 }
 
-/// `DateTimeFormatter.ISO_LOCAL_DATE`: the year at width four with `SignStyle.EXCEEDS_PAD`
-/// (`+` past four digits, `-` for negative years), two-digit month and day.
-fn iso_local_date(epoch_days: i64, out: &mut Vec<u8>) {
-    use std::io::Write;
-
-    let (year, month, day) = civil_date_from_epoch_days(epoch_days);
-    if year < 0 {
-        out.push(b'-');
-    } else if year >= 10_000 {
-        out.push(b'+');
-    }
-    write!(out, "{:04}", year.unsigned_abs()).expect("year digits");
-    out.push(b'-');
-    push_two_digits(out, month);
-    out.push(b'-');
-    push_two_digits(out, day);
-}
-
 /// `DateTimeFormatter.ISO_LOCAL_TIME` over a millisecond-of-day value: seconds always present
 /// (the optional section prints whenever the field exists, which it always does), fraction
 /// trimmed of trailing zeros and omitted at zero.

@@ -719,9 +719,30 @@ impl arrow::json::writer::EncoderFactory for FlinkJsonEncoderFactory {
                 self.map_null_key_mode,
                 self.map_null_key_literal.clone(),
             )?)),
+            // DATE is ISO_LOCAL_DATE with SignStyle.EXCEEDS_PAD years ('+' past four digits, '-'
+            // for negative years); arrow-json's stock chrono rendering differs outside [0, 9999].
+            DataType::Date32 => Some(Box::new(FlinkDateEncoder {
+                array: array.as_primitive::<arrow::datatypes::Date32Type>(),
+            })),
             _ => None,
         };
         Ok(encoder.map(|encoder| NullableEncoder::new(encoder, array.nulls().cloned())))
+    }
+}
+
+/// Flink's DATE spelling — `ISO_LOCAL_DATE` with `SignStyle.EXCEEDS_PAD` years — shared with the
+/// CSV sink's writer, quoted for JSON.
+#[cfg(feature = "kafka")]
+struct FlinkDateEncoder<'a> {
+    array: &'a arrow::array::Date32Array,
+}
+
+#[cfg(feature = "kafka")]
+impl arrow::json::writer::Encoder for FlinkDateEncoder<'_> {
+    fn encode(&mut self, index: usize, output: &mut Vec<u8>) {
+        output.push(b'"');
+        iso_local_date(i64::from(self.array.value(index)), output);
+        output.push(b'"');
     }
 }
 
@@ -1160,6 +1181,26 @@ fn encode_timestamp_parts(
 }
 
 #[cfg(feature = "kafka")]
+/// `DateTimeFormatter.ISO_LOCAL_DATE`: the year at width four with `SignStyle.EXCEEDS_PAD`
+/// (`+` past four digits, `-` for negative years), two-digit month and day. Shared by the JSON
+/// sink's DATE encoder and the CSV sink's date writer (lives here so a connector build without
+/// the csv feature still compiles it).
+pub(crate) fn iso_local_date(epoch_days: i64, out: &mut Vec<u8>) {
+    use std::io::Write;
+
+    let (year, month, day) = civil_date_from_epoch_days(epoch_days);
+    if year < 0 {
+        out.push(b'-');
+    } else if year >= 10_000 {
+        out.push(b'+');
+    }
+    write!(out, "{:04}", year.unsigned_abs()).expect("year digits");
+    out.push(b'-');
+    push_two_digits(out, month);
+    out.push(b'-');
+    push_two_digits(out, day);
+}
+
 pub(crate) fn civil_date_from_epoch_days(days: i64) -> (i32, u32, u32) {
     // Decompose the proleptic Gregorian calendar into 400-year eras; the shift aligns Unix day 0.
     let shifted = days + 719_468;

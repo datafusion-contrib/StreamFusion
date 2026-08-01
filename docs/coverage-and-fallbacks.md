@@ -570,7 +570,8 @@ shapes persist their per-key deadlines in a dedicated state table).
   a native Kafka source-to-sink plan with no RowData transpose at either edge, and pin the
   cross-client transaction hand-off itself (commit, duplicate-commit idempotency, fencing, and
   broker timeout reaping). The JSON serializer currently covers BOOLEAN,
-  TINYINT/SMALLINT/INT/BIGINT, FLOAT/DOUBLE, CHAR/VARCHAR, BINARY/VARBINARY, DECIMAL, DATE, TIME,
+  TINYINT/SMALLINT/INT/BIGINT, CHAR/VARCHAR, BINARY/VARBINARY, DECIMAL, DATE (ISO_LOCAL_DATE with
+  EXCEEDS_PAD years — `+` past 9999, `-` for negative years), TIME,
   TIMESTAMP, and TIMESTAMP_LTZ (SQL or ISO-8601), plus ROW, ARRAY, MAP, and MULTISET nested
   recursively over that set (a null field inside a nested row follows `encode.ignore-null-fields`
   exactly as Flink's recursive converter does; array elements and map values keep explicit nulls
@@ -627,10 +628,12 @@ shapes persist their per-key deadlines in a dedicated state table).
     an out-of-range `json.*` option value (Flink's format factory then raises its own validation
     error), a `json.map-null-key.literal` containing a line break, or an unrecognized
     delivery/transaction option;
-  - CSV-specific: a **FLOAT/DOUBLE column** — Flink spells them with the JVM's
+  - a **FLOAT/DOUBLE column on the JSON family or CSV** — Flink spells them with the JVM's
     JDK-version-dependent `Double.toString` (JDK 17's rendering differs from shortest-digit
     formatting on 0.16% of random doubles and 11% of random floats), so there is no byte-exact
-    portable native counterpart — the same stance as the float-to-string CAST fallback; a **TIME
+    portable native counterpart — the same stance as the float-to-string CAST fallback (decode is
+    unaffected: parsing a JSON/CSV number is exact; the Avro and protobuf sinks are also
+    unaffected: their wire floats are IEEE bytes); CSV-specific: a **TIME
     column** — SQL DDL resolves every TIME precision to TIME(0), whose Arrow boundary is
     second-granular while Flink's CSV converter prints whatever milliseconds the value carries
     (millisecond-preserving precisions ≥ 1 would run, but the SQL planner never produces them);
