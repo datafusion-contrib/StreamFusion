@@ -687,7 +687,19 @@ shapes persist their per-key deadlines in a dedicated state table).
   reordering.
 - **Kafka** — missing `streamfusion-kafka` or the matching `streamfusion-*` format JAR; a value format
   outside JSON/CSV/raw/bare-Avro/`avro-confluent`/protobuf and the CDC formats (the four JSON
-  dialects and `debezium-avro-confluent` — see the CDC entry); a `key.format`;
+  dialects and `debezium-avro-confluent` — see the CDC entry); a **keyed table** outside the
+  supported composition — natively decoded: `key.format = 'raw'` with one key field on an
+  insert-only JSON/CSV/raw value format, on the decode-operator path (the fused source's poll
+  carries only value bytes), with Flink's exact merge semantics (the raw key produces exactly one
+  key row per record, a NULL Kafka key keeps the record with a NULL key column, `EXCEPT_KEY` and
+  `ALL` projections resolve as Flink's factory does with value fields winning the `ALL` overlap,
+  and a JSON value fanning a top-level array into N rows shares the record's key across them);
+  falling back: any other `key.format` (a JSON/CSV/Avro key producing zero rows must drop the
+  whole record — the alignment machinery of the design study's increment 2), multiple `key.fields`
+  (raw is single-column), an `ALL` projection with a `key.fields-prefix` (Flink's own rejection),
+  a non-UTF-8 `key.raw.charset`, keyed CDC value formats, keyed Avro/protobuf value formats (their
+  providers derive schemas from the gated row type), and projection pushdown stays off for keyed
+  tables;
   a **metadata column** (`ts TIMESTAMP_LTZ(3) METADATA FROM 'timestamp'` and kin — the connector
   fills it, so a value decode would emit it silently NULL; this holds on every decoded path,
   insert-only and CDC alike, and a declared-but-unused metadata column also declines — Flink keeps

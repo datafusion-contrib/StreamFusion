@@ -1,6 +1,7 @@
 package io.github.jordepic.streamfusion.planner;
 
 import io.github.jordepic.streamfusion.kafka.KafkaConfigTranslator;
+import io.github.jordepic.streamfusion.kafka.KeyedKafkaBytesDeserialization;
 import io.github.jordepic.streamfusion.kafka.NativeKafka;
 import io.github.jordepic.streamfusion.kafka.NativeKafkaSource;
 import io.github.jordepic.streamfusion.format.FormatCodes;
@@ -73,6 +74,11 @@ final class KafkaTables {
   /** The Kafka-consumption prerequisites of the native source (on top of the decode ones). */
   private static boolean supports(Map<String, String> options) {
     if (!decodeCommon(options)) {
+      return false;
+    }
+    // The fused source's poll buckets carry only the value bytes; a keyed table stays on the
+    // decode-operator path, whose keyed edge carries both.
+    if (options.containsKey("key.format")) {
       return false;
     }
     return KafkaConfigTranslator.translate(consumerProperties(options)).fallbackReason == null;
@@ -157,6 +163,11 @@ final class KafkaTables {
    * decode in full.
    */
   static boolean decodeHonorsProjection(Map<String, String> options) {
+    // A keyed table's projection would have to split across the key and value decodes and
+    // re-index both position sets; disabled until that split exists (the design doc's increment 2).
+    if (options.containsKey("key.format")) {
+      return false;
+    }
     return formatProvider(options, null).map(NativeFormatProvider::honorsProjection).orElse(false);
   }
 
@@ -170,9 +181,6 @@ final class KafkaTables {
   private static boolean decodeCommon(Map<String, String> options) {
     if (options == null || !"kafka".equals(options.get("connector"))) {
       return false;
-    }
-    if (options.containsKey("key.format")) {
-      return false; // a key column would be a second decode the native operator doesn't produce yet
     }
     // Exactly one of topic / topic-pattern (the factory enforces that); discovery for a pattern is
     // the reused enumerator's job, so both forms work on both native paths.
@@ -215,8 +223,18 @@ final class KafkaTables {
     if (!FilesystemTables.scanProducesPhysicalColumnsOnly(scan)) {
       return false;
     }
-    NativeFormatProvider provider =
-        formatProvider(options, FilesystemTables.physicalRowType(scan)).orElse(null);
+    // A keyed table: the raw-key composition must resolve (see KeyedDecodeSpec), and the value
+    // format's gate then runs against the VALUE row type — the physical schema minus the key
+    // column under EXCEPT_KEY.
+    RowType valueRowType = FilesystemTables.physicalRowType(scan);
+    if (options.containsKey("key.format")) {
+      KeyedDecodeSpec keyed = KeyedDecodeSpec.resolve(options, valueRowType);
+      if (keyed == null) {
+        return false;
+      }
+      valueRowType = keyed.valueRowType();
+    }
+    NativeFormatProvider provider = formatProvider(options, valueRowType).orElse(null);
     if (provider == null) {
       // The format artifact isn't installed, or its exact options or column types are outside the
       // native decoder's Flink-faithful set (each provider owns that predicate).
@@ -255,6 +273,9 @@ final class KafkaTables {
     Map<String, String> options = FilesystemTables.options(scan);
     if (!decodeCommon(options)) {
       return false;
+    }
+    if (options.containsKey("key.format")) {
+      return false; // the keyed composition is wired for the insert-only path only, so far
     }
     NativeFormatProvider provider =
         formatProvider(options, FilesystemTables.physicalRowType(scan)).orElse(null);
@@ -368,11 +389,16 @@ final class KafkaTables {
    * decode) — the native decode operator turns those bytes into Arrow. Flink owns consume/offsets/auth. */
   static KafkaSource<byte[]> buildBytesSource(Map<String, String> options) {
     Properties props = consumerProperties(options);
+    // A keyed table's edge carries both byte arrays per record as one frame element.
+    KafkaRecordDeserializationSchema<byte[]> deserializer =
+        options.containsKey(NativeFormatOptions.KEYED_KEY_POSITION)
+            ? new KeyedKafkaBytesDeserialization()
+            : KafkaRecordDeserializationSchema.valueOnly(ByteArrayDeserializer.class);
     KafkaSourceBuilder<byte[]> builder =
         KafkaSource.<byte[]>builder()
             .setProperties(props)
             .setStartingOffsets(mapStartupMode(options))
-            .setDeserializer(KafkaRecordDeserializationSchema.valueOnly(ByteArrayDeserializer.class));
+            .setDeserializer(deserializer);
     if (options.get("topic") != null) {
       builder.setTopics(Arrays.asList(options.get("topic").split(";")));
     } else {
@@ -499,8 +525,16 @@ final class KafkaTables {
   }
 
   static RelNode substituteDecode(StreamPhysicalTableSourceScan scan, PlanContext ctx) {
+    Map<String, String> options = FilesystemTables.options(scan);
+    if (options.containsKey("key.format")) {
+      // The gate resolved the keyed composition; the markers ride the options into the exec node,
+      // the format-option lines, and the native decoder.
+      options =
+          KeyedDecodeSpec.resolve(options, FilesystemTables.physicalRowType(scan))
+              .optionsWithMarkers();
+    }
     return new StreamPhysicalNativeKafkaDecode(
-        scan.getCluster(), scan.getTraitSet(), scan.getRowType(), FilesystemTables.options(scan));
+        scan.getCluster(), scan.getTraitSet(), scan.getRowType(), options);
   }
 
   static RelNode reportCdcWatermark(RelNode node, PlanContext ctx) {

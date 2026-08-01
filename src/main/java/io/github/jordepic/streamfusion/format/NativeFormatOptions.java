@@ -9,6 +9,15 @@ public final class NativeFormatOptions {
 
   private NativeFormatOptions() {}
 
+  /** Keyed-table markers the planner injects into the table options (see the connector's
+   * {@code KeyedDecodeSpec}): the physical position the raw-decoded Kafka key fills, the positions
+   * the value decode fills, and the key's endianness. {@link #encode} forwards them as
+   * {@code keyed.*} option lines, so the keyed composition needs no new SPI or JNI surface. */
+  public static final String KEYED_KEY_POSITION = "streamfusion.keyed.key-position";
+
+  public static final String KEYED_VALUE_POSITIONS = "streamfusion.keyed.value-positions";
+  public static final String KEYED_KEY_ENDIANNESS = "streamfusion.keyed.key-endianness";
+
   /** A value-format option, resolved with Flink's own prefixing ({@code FactoryUtil.getFormatPrefix}):
    * {@code csv.field-delimiter} when the table uses {@code format = 'csv'}, but
    * {@code value.csv.field-delimiter} when it uses {@code value.format = 'csv'}. */
@@ -31,6 +40,25 @@ public final class NativeFormatOptions {
    * literal must fit the line encoding.
    */
   public static String encode(Map<String, String> options) {
+    String encoded = encodeFormat(options);
+    String keyPosition = options.get(KEYED_KEY_POSITION);
+    if (encoded == null || keyPosition == null) {
+      return encoded;
+    }
+    StringBuilder keyed = new StringBuilder(encoded);
+    keyed.append("keyed.key-position=").append(keyPosition).append('\n');
+    keyed
+        .append("keyed.value-positions=")
+        .append(options.get(KEYED_VALUE_POSITIONS))
+        .append('\n');
+    String endianness = options.get(KEYED_KEY_ENDIANNESS);
+    if ("little-endian".equals(endianness)) {
+      keyed.append("keyed.key-endianness=little-endian\n");
+    }
+    return keyed.toString();
+  }
+
+  private static String encodeFormat(Map<String, String> options) {
     String format = NativeFormatProviders.formatIdentifier(options);
     if ("raw".equals(format)) {
       return encodeRaw(options);

@@ -50,11 +50,14 @@ mask/index. A v1-only DSO degrades to JVM-mediated keyed decode (attach refusal 
 
 ## Increments
 
-1. **`key.format = 'raw'`** — provably 1:1 on both engines (null key → null field row), so NO
-   alignment machinery, no ABI change on the JVM-mediated path. Gate: connector=kafka, existing
-   decodeCommon/decodableAppendScan clauses, single key.fields entry (raw is single-column),
-   prefix/fields-include rules mirrored, projection pushdown DISABLED for keyed tables
-   (`decodeHonorsProjection` false when keyed). Covers the dominant string/long-key tables.
+1. **`key.format = 'raw'` — SHIPPED 2026-08-01** (decode-operator path; the fused source declines
+   keyed tables). Implementation deviates from the sketch in one good way: no new SPI/JNI surface
+   at all — the keyed composition (`KeyedDecodeSpec` markers → `keyed.*` option lines → a rust
+   `KeyedDecoder` wrapping the value decoder + the parity-pinned `RawDecoder`, per-record value
+   decode for exact source alignment incl. JSON array fan-out) rides the existing
+   createDecoder/decodeInto entry points, and the keyed edge frames key+value bytes into one
+   byte[] element so the plain nullable-bytes serializer carries it. Value formats admitted:
+   JSON/CSV/raw. e2e parity pinned vs stock Flink (both fields-include modes, null keys).
 2. **json/csv keys** — contract (A) + driver ABI v2 + atomic dual attach; re-enable projection
    pushdown with a key/value split in CalcMatcher; parity cases: null-key drop, whitespace-only
    key, bad key + ignore-parse-errors drops the whole record.

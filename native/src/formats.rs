@@ -971,12 +971,27 @@ pub(crate) struct FormatOptions {
     pub(crate) csv: crate::csv::CsvOptions,
     pub(crate) timestamp_mode: crate::flink_text::TimestampMode,
     pub(crate) raw_little_endian: bool,
+    pub(crate) keyed: Option<KeyedSpec>,
+}
+
+/// A keyed table's decode composition (Flink's `key.format` on the source side): which physical
+/// position the raw-decoded Kafka key fills, which positions the value decode fills (its row type
+/// is the physical schema projected to them), and the key's `key.raw.endianness`. Rides the same
+/// option lines as the format options so the connector needs no new JNI surface.
+#[derive(Clone)]
+pub(crate) struct KeyedSpec {
+    pub(crate) key_position: usize,
+    pub(crate) value_positions: Vec<usize>,
+    pub(crate) key_little_endian: bool,
 }
 
 pub(crate) fn parse_format_options(encoded: &str) -> FormatOptions {
     let mut csv = crate::csv::CsvOptions::default();
     let mut timestamp_mode = crate::flink_text::TimestampMode::default();
     let mut raw_little_endian = false;
+    let mut keyed_key_position = None;
+    let mut keyed_value_positions = None;
+    let mut keyed_key_little_endian = false;
     for line in encoded.lines().filter(|l| !l.is_empty()) {
         let (key, value) = line.split_once('=').expect("format option is not key=value");
         let single_byte = || -> u8 {
@@ -1003,10 +1018,35 @@ pub(crate) fn parse_format_options(encoded: &str) -> FormatOptions {
                     other => panic!("unknown raw.endianness {other}"),
                 }
             }
+            "keyed.key-position" => {
+                keyed_key_position = Some(value.parse::<usize>().expect("keyed.key-position"))
+            }
+            "keyed.value-positions" => {
+                keyed_value_positions = Some(if value.is_empty() {
+                    Vec::new()
+                } else {
+                    value
+                        .split(',')
+                        .map(|position| position.parse::<usize>().expect("keyed.value-positions"))
+                        .collect()
+                })
+            }
+            "keyed.key-endianness" => {
+                keyed_key_little_endian = match value {
+                    "little-endian" => true,
+                    "big-endian" => false,
+                    other => panic!("unknown keyed.key-endianness {other}"),
+                }
+            }
             other => panic!("unknown format option {other}"),
         }
     }
-    FormatOptions { csv, timestamp_mode, raw_little_endian }
+    let keyed = keyed_key_position.map(|key_position| KeyedSpec {
+        key_position,
+        value_positions: keyed_value_positions.expect("keyed decode carries no value positions"),
+        key_little_endian: keyed_key_little_endian,
+    });
+    FormatOptions { csv, timestamp_mode, raw_little_endian, keyed }
 }
 
 pub(crate) enum FormatDecoder {
@@ -1020,6 +1060,75 @@ pub(crate) enum FormatDecoder {
     Cdc(CdcJsonDecoder),
     /// Debezium envelope with Confluent-framed Avro bodies — see `AvroCdcDecoder`.
     AvroCdc(AvroCdcDecoder),
+    /// A keyed table: raw-decoded Kafka keys composed with the value decode — see `KeyedDecoder`.
+    Keyed(Box<KeyedDecoder>),
+}
+
+/// Composes a keyed table's two decodes the way Flink's key/value merge does. The input batch is
+/// two binary columns `[key, body]`. Each record's VALUE decodes alone (its own skip semantics —
+/// a JSON body may fan a top-level array into N rows or drop under `ignore-parse-errors`), and
+/// the record's key bytes are gathered once per produced row, so every output row carries its
+/// record's key — Flink's per-record cartesian with the raw key format's exactly-one key row. The
+/// keys then decode through the parity-pinned `RawDecoder` (a null Kafka key stays a row with a
+/// NULL key column — raw's special null-key rule) and scatter into the physical schema, value
+/// columns written after the key column so an `ALL` projection's value fields win the overlap,
+/// exactly `OutputProjectionCollector.emitRow`'s field order.
+pub(crate) struct KeyedDecoder {
+    value: Box<MessageDecoder>,
+    key: RawDecoder,
+    key_position: usize,
+    value_positions: Vec<usize>,
+    output: SchemaRef,
+}
+
+impl KeyedDecoder {
+    fn decode(&self, records: &RecordBatch) -> RecordBatch {
+        let keys = records.column(0);
+        let bodies = records
+            .project(&[1])
+            .expect("keyed decode expects a two-column [key, body] batch");
+        let mut kept = Vec::new();
+        let mut sources = Vec::with_capacity(records.num_rows());
+        for row in 0..records.num_rows() {
+            let decoded = self.value.decode(&bodies.slice(row, 1));
+            for _ in 0..decoded.num_rows() {
+                sources.push(row as i32);
+            }
+            if decoded.num_rows() > 0 {
+                kept.push(decoded);
+            }
+        }
+        let value_schema: SchemaRef = Arc::new(Schema::new(
+            self.value_positions
+                .iter()
+                .map(|position| self.output.field(*position).clone())
+                .collect::<Vec<_>>(),
+        ));
+        let values = match kept.len() {
+            0 => RecordBatch::new_empty(value_schema),
+            1 => kept.into_iter().next().unwrap(),
+            _ => concat_batches(&value_schema, &kept).expect("keyed value concat failed"),
+        };
+        let indices = Int32Array::from(sources);
+        let gathered = take(keys, &indices, None).expect("failed to gather Kafka keys");
+        let key_input = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new("key", gathered.data_type().clone(), true)])),
+            vec![gathered],
+        )
+        .expect("failed to build the key decode batch");
+        let key_column = self.key.decode(&key_input).column(0).clone();
+        let mut columns: Vec<Option<ArrayRef>> = vec![None; self.output.fields().len()];
+        columns[self.key_position] = Some(key_column);
+        for (index, position) in self.value_positions.iter().enumerate() {
+            columns[*position] = Some(values.column(index).clone());
+        }
+        let columns = columns
+            .into_iter()
+            .map(|column| column.expect("keyed decode left a physical column unfilled"))
+            .collect();
+        RecordBatch::try_new(self.output.clone(), columns)
+            .expect("failed to compose the keyed decode batch")
+    }
 }
 
 impl FormatDecoder {
@@ -1032,6 +1141,7 @@ impl FormatDecoder {
             FormatDecoder::Protobuf(decoder) => decoder.decode(body),
             FormatDecoder::Cdc(decoder) => decoder.decode(body),
             FormatDecoder::AvroCdc(decoder) => decoder.decode(body),
+            FormatDecoder::Keyed(decoder) => decoder.decode(body),
         }
     }
 
@@ -1095,6 +1205,45 @@ impl MessageDecoder {
             Some(arrow_avro::schema::AvroSchema::new(reader_avro_schema.to_string()))
         };
         let options = parse_format_options(format_options);
+        if let Some(keyed) = options.keyed.clone() {
+            // A keyed table: build the value decoder against the physical schema projected to the
+            // value positions (the keyed option lines stripped so the recursion is plain), and the
+            // raw key decoder against the key column; the wrapper owns per-record composition.
+            let value_options: String = format_options
+                .lines()
+                .filter(|line| !line.is_empty() && !line.starts_with("keyed."))
+                .map(|line| format!("{line}\n"))
+                .collect();
+            let value_schema: SchemaRef = Arc::new(Schema::new(
+                keyed
+                    .value_positions
+                    .iter()
+                    .map(|position| output_schema.field(*position).clone())
+                    .collect::<Vec<_>>(),
+            ));
+            let value = Box::new(MessageDecoder::new(
+                format,
+                value_schema,
+                avro_schema,
+                reader_avro_schema,
+                schema_id,
+                skip_errors,
+                &value_options,
+            ));
+            let key_schema: SchemaRef = Arc::new(Schema::new(vec![output_schema
+                .field(keyed.key_position)
+                .clone()]));
+            return MessageDecoder {
+                decoder: FormatDecoder::Keyed(Box::new(KeyedDecoder {
+                    value,
+                    key: RawDecoder::new(key_schema, keyed.key_little_endian),
+                    key_position: keyed.key_position,
+                    value_positions: keyed.value_positions,
+                    output: output_schema,
+                })),
+                skip_errors: false,
+            };
+        }
         // Every JSON-decoded format handles its own skip granularity (CdcJsonDecoder /
         // JsonDecoder's lenient appenders / CsvDecoder), so the generic per-message retry below
         // only serves a CDC batch whose ENVELOPE decode fails structurally.

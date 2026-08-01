@@ -84,10 +84,22 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
   private final long reuseBarrier = NativeRelDigests.nextId();
   @Override
   public RelWriter explainTerms(RelWriter writer) {
+    // The keyed items must be part of the digest: two tables differing only in their key format
+    // or key projection would otherwise digest identically and be wrongly share-reused.
     return NativeRelDigests.withBarrier(
         super.explainTerms(writer)
             .item("topic", options.get("topic"))
-            .item("format", options.getOrDefault("value.format", options.get("format"))),
+            .item("format", options.getOrDefault("value.format", options.get("format")))
+            .itemIf("keyFormat", options.get("key.format"), options.containsKey("key.format"))
+            .itemIf("keyFields", options.get("key.fields"), options.containsKey("key.fields"))
+            .itemIf(
+                "keyPrefix",
+                options.get("key.fields-prefix"),
+                options.containsKey("key.fields-prefix"))
+            .itemIf(
+                "valueFieldsInclude",
+                options.get("value.fields-include"),
+                options.containsKey("value.fields-include")),
         reuseBarrier);
   }
 

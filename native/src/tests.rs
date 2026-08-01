@@ -684,6 +684,67 @@ fn csv_decode_emits_one_row_per_record() {
     assert_eq!(scores.values(), &[1.5, 2.5]);
 }
 
+/// Keyed decode: the raw Kafka key composes with the value decode per record — Flink's key/value
+/// merge with the raw key format's exactly-one key row. A JSON value fanning a top-level array
+/// into N rows repeats the record's key N times; a dropped record (skip mode) contributes nothing;
+/// a NULL Kafka key keeps the record with a NULL key column (raw's null-key rule); and the key
+/// column position interleaves with the value positions in physical schema order.
+#[test]
+fn keyed_decode_composes_raw_keys_with_the_value_rows() {
+    use arrow::array::{Array, StringArray};
+
+    // Physical schema: [k BIGINT (the key, position 0), id BIGINT, name STRING] — EXCEPT_KEY, so
+    // the value decode owns positions 1 and 2.
+    let physical: SchemaRef = Arc::new(Schema::new(vec![
+        Field::new("k", DataType::Int64, true),
+        Field::new("id", DataType::Int64, true),
+        Field::new("name", DataType::Utf8, true),
+    ]));
+    let keys: ArrayRef = Arc::new(BinaryArray::from(vec![
+        Some(7i64.to_be_bytes().as_slice()),
+        Some(8i64.to_be_bytes().as_slice()),
+        None,
+        Some(9i64.to_be_bytes().as_slice()),
+    ]));
+    let bodies: ArrayRef = Arc::new(BinaryArray::from(vec![
+        Some(br#"{"id": 1, "name": "a"}"#.as_slice()),
+        // A top-level array fans out into two rows sharing record 1's key.
+        Some(br#"[{"id": 2, "name": "b"}, {"id": 3, "name": "c"}]"#.as_slice()),
+        // A null Kafka key keeps the record: raw decodes it to a NULL key column.
+        Some(br#"{"id": 4, "name": "d"}"#.as_slice()),
+        // A malformed body drops the whole record in skip mode — key and all.
+        Some(b"not json".as_slice()),
+    ]));
+    let records = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Binary, true),
+            Field::new("body", DataType::Binary, true),
+        ])),
+        vec![keys, bodies],
+    )
+    .unwrap();
+
+    let decoder = MessageDecoder::new(
+        FORMAT_JSON,
+        physical,
+        "",
+        "",
+        0,
+        true,
+        "keyed.key-position=0\nkeyed.value-positions=1,2\n",
+    );
+    let out = decoder.decode(&records);
+
+    assert_eq!(out.num_rows(), 4);
+    let k = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!((k.value(0), k.value(1), k.value(2)), (7, 8, 8));
+    assert!(k.is_null(3), "a null Kafka key must stay a NULL key column");
+    let id = out.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!(id.values(), &[1, 2, 3, 4]);
+    let names = out.column(2).as_any().downcast_ref::<StringArray>().unwrap();
+    assert_eq!(names.value(3), "d");
+}
+
 // `raw` (format 3): the body bytes pass through as the single column, cast to the declared type.
 #[test]
 fn raw_decode_passes_bytes_through() {

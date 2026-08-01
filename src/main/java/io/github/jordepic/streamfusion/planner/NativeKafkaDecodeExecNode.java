@@ -1,6 +1,7 @@
 package io.github.jordepic.streamfusion.planner;
 
 import io.github.jordepic.streamfusion.format.NativeFormatContext;
+import io.github.jordepic.streamfusion.format.NativeFormatOptions;
 import io.github.jordepic.streamfusion.format.NativeFormatProvider;
 import io.github.jordepic.streamfusion.format.NativeFormatProviders;
 import io.github.jordepic.streamfusion.operator.ArrowBatch;
@@ -74,8 +75,17 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
             WatermarkStrategy.noWatermarks(),
             SOURCE_TRANSFORMATION,
             NullableBytesTypeInformation.INSTANCE);
+    // A keyed table's value format sees only the value positions — the provider's type gate and
+    // decoder run against that projection, while the operator still exports the physical schema
+    // (the native keyed composition owns the split and the scatter).
+    boolean keyed = options.containsKey(NativeFormatOptions.KEYED_KEY_POSITION);
+    RowType formatType = keyed ? valueRowType() : writerType;
     NativeFormatContext formatContext =
-        new NativeFormatContext(outputType, writerType, options, KafkaTables.ignoreParseErrors(options));
+        new NativeFormatContext(
+            keyed ? formatType : outputType,
+            formatType,
+            options,
+            KafkaTables.ignoreParseErrors(options));
     NativeFormatProvider formatProvider =
         NativeFormatProviders.find(formatContext)
             .orElseThrow(
@@ -91,7 +101,20 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
                 outputType,
                 BATCH_SIZE,
                 formatProvider.createDecoder(formatContext),
-                FLUSH_INTERVAL_MILLIS));
+                FLUSH_INTERVAL_MILLIS,
+                keyed));
     return decoded.getTransformation();
+  }
+
+  /** The physical schema projected to the keyed markers' value positions. */
+  private RowType valueRowType() {
+    java.util.List<RowType.RowField> fields = new java.util.ArrayList<>();
+    for (String position :
+        options.get(NativeFormatOptions.KEYED_VALUE_POSITIONS).split(",", -1)) {
+      if (!position.isEmpty()) {
+        fields.add(outputType.getFields().get(Integer.parseInt(position)));
+      }
+    }
+    return new RowType(false, fields);
   }
 }

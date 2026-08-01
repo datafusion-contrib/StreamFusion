@@ -61,6 +61,7 @@
                                     <includes>
                                         <include>io/github/jordepic/streamfusion/kafka/**</include>
                                         <include>io/github/jordepic/streamfusion/planner/KafkaTables*.class</include>
+                                        <include>io/github/jordepic/streamfusion/planner/KeyedDecodeSpec*.class</include>
                                         <include>io/github/jordepic/streamfusion/planner/KafkaSinkMatcher*.class</include>
                                         <include>io/github/jordepic/streamfusion/planner/KafkaSinkTranslator*.class</include>
                                         <include>io/github/jordepic/streamfusion/planner/NativeKafkaDecodeExecNode*.class</include>

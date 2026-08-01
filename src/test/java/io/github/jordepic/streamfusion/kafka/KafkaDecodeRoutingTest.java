@@ -177,4 +177,60 @@ class KafkaDecodeRoutingTest {
         + format
         + "')";
   }
+
+  @Test
+  void rawKeyedTableRoutesToTheDecodePath() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        keyedTable(
+            "k BIGINT, id BIGINT, name STRING",
+            "'key.format' = 'raw', 'key.fields' = 'k', 'value.fields-include' = 'EXCEPT_KEY'"));
+    String plan = NativePlanner.explain(tEnv, "SELECT k, id, name FROM t");
+    assertTrue(
+        plan.contains("NativeKafkaDecode"),
+        "a raw-keyed table should route to the decode path:\n" + plan);
+    assertTrue(
+        !plan.contains("NativeKafkaSource"),
+        "the fused source cannot carry keys yet:\n" + plan);
+  }
+
+  @Test
+  void rawKeyedTableWithDefaultAllProjectionRoutes() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        keyedTable("k BIGINT, id BIGINT", "'key.format' = 'raw', 'key.fields' = 'k'"));
+    String plan = NativePlanner.explain(tEnv, "SELECT k, id FROM t");
+    assertTrue(plan.contains("NativeKafkaDecode"), plan);
+  }
+
+  @Test
+  void keyedShapesOutsideTheIncrementStayOnFlink() {
+    // A non-raw key format needs the alignment machinery (a JSON key can drop the whole record).
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        keyedTable(
+            "k BIGINT, id BIGINT",
+            "'key.format' = 'json', 'key.fields' = 'k', 'value.fields-include' = 'EXCEPT_KEY'"));
+    assertStaysOnFlink(tEnv, "SELECT k, id FROM t");
+    // A non-UTF-8 key charset decodes through Java's charset machinery — stays on Flink, like the
+    // value-side raw gate.
+    StreamTableEnvironment charset = env();
+    charset.executeSql(
+        keyedTable(
+            "k STRING, id BIGINT",
+            "'key.format' = 'raw', 'key.fields' = 'k', 'key.raw.charset' = 'UTF-16',"
+                + " 'value.fields-include' = 'EXCEPT_KEY'"));
+    assertStaysOnFlink(charset, "SELECT k, id FROM t");
+  }
+
+  private static String keyedTable(String columns, String keyOptions) {
+    return "CREATE TABLE t ("
+        + columns
+        + ") WITH ("
+        + " 'connector' = 'kafka', 'topic' = 't',"
+        + " 'properties.bootstrap.servers' = 'localhost:9092',"
+        + " 'scan.startup.mode' = 'earliest-offset', 'value.format' = 'json', "
+        + keyOptions
+        + ")";
+  }
 }
