@@ -143,6 +143,8 @@ pub(crate) enum EncodeOptions {
     Avro(crate::avro::AvroEncodeOptions),
     #[cfg(feature = "protobuf")]
     Protobuf(crate::protobuf_encode::ProtobufEncodeOptions),
+    #[cfg(feature = "raw")]
+    Raw(crate::raw_encode::RawEncodeOptions),
 }
 
 /// The CDC JSON dialect whose envelope wraps each encoded row on the sink side.
@@ -185,6 +187,10 @@ fn parse_encode_format(format: i32, encoded: &str) -> Result<EncodeOptions, Stri
         FORMAT_PROTOBUF => {
             return crate::protobuf_encode::ProtobufEncodeOptions::parse(encoded)
                 .map(EncodeOptions::Protobuf)
+        }
+        #[cfg(feature = "raw")]
+        FORMAT_RAW => {
+            return crate::raw_encode::RawEncodeOptions::parse(encoded).map(EncodeOptions::Raw)
         }
         other => return Err(format!("format code {other} is not natively encoded")),
     };
@@ -289,6 +295,11 @@ fn encode_value_lines(
             // Columns map to proto fields by name; an all-unset row is a zero-length message
             // (Flink's serializer produces the same empty byte[], not a tombstone).
             let (bytes, rows) = options.encoder().encode(batch).into_parts();
+            Ok(EncodedLines::new(bytes, rows))
+        }
+        #[cfg(feature = "raw")]
+        EncodeOptions::Raw(options) => {
+            let (bytes, rows) = crate::raw_encode::encode_raw_batch(batch, options)?;
             Ok(EncodedLines::new(bytes, rows))
         }
     }

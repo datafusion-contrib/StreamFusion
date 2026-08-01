@@ -108,7 +108,7 @@ public final class NativeFormatOptions {
     return "little-endian".equalsIgnoreCase(endianness) ? "raw.endianness=little-endian\n" : null;
   }
 
-  private static boolean isUtf8(String charsetName) {
+  public static boolean isUtf8(String charsetName) {
     try {
       return StandardCharsets.UTF_8.equals(Charset.forName(charsetName));
     } catch (Exception e) {

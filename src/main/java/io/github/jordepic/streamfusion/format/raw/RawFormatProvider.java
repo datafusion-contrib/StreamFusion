@@ -1,10 +1,13 @@
 package io.github.jordepic.streamfusion.format.raw;
 
+import io.github.jordepic.streamfusion.format.EncodeFormat;
+import io.github.jordepic.streamfusion.format.FormatCodes;
 import io.github.jordepic.streamfusion.format.NativeFormatContext;
 import io.github.jordepic.streamfusion.format.NativeFormatOptions;
 import io.github.jordepic.streamfusion.format.NativeFormatProvider;
 import io.github.jordepic.streamfusion.format.NativeMessageDecoderFactory;
 import io.github.jordepic.streamfusion.format.NativeSchemaMessageDecoder;
+import java.util.Map;
 import org.apache.flink.table.types.logical.RowType;
 
 /**
@@ -26,9 +29,14 @@ public final class RawFormatProvider implements NativeFormatProvider {
 
   /** The single column's admitted roots — kept in a method body (like the sibling providers') so
    * the class links under a Flink-less loader: the extension-JAR probe instantiates providers over
-   * the platform classloader, where a static {@code EnumSet<LogicalTypeRoot>} fails resolution. */
-  private static boolean supportedType(RowType schema) {
+   * the platform classloader, where a static {@code EnumSet<LogicalTypeRoot>} fails resolution.
+   * {@code encode} additionally admits fixed-length BINARY: writing the fixed-size boundary bytes
+   * verbatim is lossless, while the decode side cannot enforce the declared length on arbitrary
+   * message bytes. */
+  private static boolean supportedType(RowType schema, boolean encode) {
     switch (schema.getTypeAt(0).getTypeRoot()) {
+      case BINARY:
+        return encode;
       case CHAR:
       case VARCHAR:
       case VARBINARY:
@@ -60,8 +68,34 @@ public final class RawFormatProvider implements NativeFormatProvider {
     RowType schema = context.writerType();
     return !context.ignoreParseErrors()
         && schema.getFieldCount() == 1
-        && supportedType(schema)
+        && supportedType(schema, false)
         && NativeFormatOptions.encode(context.options()) != null;
+  }
+
+  /** The sink side of the same format: the single column's value IS the message. A NULLABLE column
+   * falls back — Flink serializes a null field as a null {@code byte[]}, a Kafka tombstone, which
+   * the sink's value path does not produce. The sink seam hands prefix-stripped options. */
+  @Override
+  public EncodeFormat encodeFormat(NativeFormatContext context) {
+    RowType schema = context.writerType();
+    Map<String, String> options = context.options();
+    if (schema.getFieldCount() != 1
+        || !supportedType(schema, true)
+        || schema.getTypeAt(0).isNullable()) {
+      return null;
+    }
+    String charset = options.get("charset");
+    if (charset != null && !NativeFormatOptions.isUtf8(charset)) {
+      return null;
+    }
+    String endianness = options.get("endianness");
+    if (endianness == null || "big-endian".equalsIgnoreCase(endianness)) {
+      return EncodeFormat.resolved(FormatCodes.RAW, "", null);
+    }
+    if ("little-endian".equalsIgnoreCase(endianness)) {
+      return EncodeFormat.resolved(FormatCodes.RAW, "endianness=little-endian\n", null);
+    }
+    return null; // Flink raises its own ValidationException for an invalid endianness
   }
 
   @Override

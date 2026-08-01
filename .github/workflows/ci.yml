@@ -129,7 +129,7 @@ jobs:
             # Matches the shipped connector DSO's feature set (docker/native-release.Dockerfile):
             # sink encode arms for natively encoded formats live in the kafka library.
             tag: streamfusion-kafka
-            features: kafka,csv,avro,protobuf
+            features: kafka,csv,avro,protobuf,raw
             protoc: false
             native-tests: false
           - name: JSON

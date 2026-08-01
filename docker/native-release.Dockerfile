@@ -12,7 +12,7 @@ RUN set -eux; \
     cargo build --release --no-default-features --features mimalloc; \
     mkdir -p /workspace/out/core; \
     cp target/release/libstreamfusion.so /workspace/out/core/libstreamfusion.so; \
-    cargo build --release --no-default-features --features mimalloc,kafka,csv,avro,protobuf; \
+    cargo build --release --no-default-features --features mimalloc,kafka,csv,avro,protobuf,raw; \
     mkdir -p /workspace/out/kafka; \
     cp target/release/libstreamfusion.so /workspace/out/kafka/libstreamfusion_kafka.so; \
     cargo build --release --no-default-features --features mimalloc,json; \
