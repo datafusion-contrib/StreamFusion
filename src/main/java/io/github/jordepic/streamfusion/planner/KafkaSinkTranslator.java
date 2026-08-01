@@ -200,7 +200,7 @@ final class KafkaSinkTranslator {
 
   private static void autoCompleteSchemaRegistrySubject(
       String format, Map<String, String> formatOptions, String subject) {
-    if ("avro-confluent".equals(format)
+    if (("avro-confluent".equals(format) || "debezium-avro-confluent".equals(format))
         && !formatOptions.containsKey("subject")
         && !formatOptions.containsKey("schema-registry.subject")) {
       formatOptions.put("schema-registry.subject", subject);

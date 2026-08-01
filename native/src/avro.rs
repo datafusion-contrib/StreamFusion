@@ -325,6 +325,75 @@ impl AvroEncodeOptions {
     }
 }
 
+/// Flink's Debezium envelope over one changelog batch — the sink side of `debezium-avro-confluent`.
+/// `before` carries the row image for UPDATE_BEFORE/DELETE (`op` = `d`), `after` for
+/// INSERT/UPDATE_AFTER (`op` = `c`), exactly `DebeziumAvroSerializationSchema`'s minimal envelope.
+/// The physical columns are shared between the two struct images (Arc clones); only the validity
+/// masks differ, and the envelope batch then rides the ordinary Avro encode against the envelope
+/// writer schema. An absent row-kind column is an insert-only edge (every row is an INSERT).
+#[cfg(all(feature = "kafka", feature = "avro"))]
+pub(crate) fn encode_debezium_avro_batch(
+    batch: &RecordBatch,
+    kinds: Option<&Int8Array>,
+    options: &AvroEncodeOptions,
+    logical_types: &[String],
+    field_names: &[String],
+) -> Result<crate::kafka::EncodedLines, String> {
+    use arrow::array::StructArray;
+    use arrow::buffer::NullBuffer;
+
+    let _ = field_names; // the envelope declares its own field names
+    let rows = batch.num_rows();
+    let mut delete = Vec::with_capacity(rows);
+    for row in 0..rows {
+        delete.push(match kinds.map_or(0, |kinds| kinds.value(row)) {
+            0 | 2 => false,
+            1 | 3 => true,
+            other => return Err(format!("Unsupported operation '{other}' for row kind.")),
+        });
+    }
+    let physical: Fields = batch.schema().fields().clone();
+    let before = StructArray::new(
+        physical.clone(),
+        batch.columns().to_vec(),
+        Some(NullBuffer::from_iter(delete.iter().copied())),
+    );
+    let after = StructArray::new(
+        physical.clone(),
+        batch.columns().to_vec(),
+        Some(NullBuffer::from_iter(delete.iter().map(|delete| !delete))),
+    );
+    let op = StringArray::from_iter_values(delete.iter().map(|d| if *d { "d" } else { "c" }));
+    let envelope = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("before", DataType::Struct(physical.clone()), true),
+            Field::new("after", DataType::Struct(physical), true),
+            Field::new("op", DataType::Utf8, false),
+        ])),
+        vec![Arc::new(before), Arc::new(after), Arc::new(op)],
+    )
+    .map_err(|error| format!("failed to build the Debezium envelope batch: {error}"))?;
+    let image = format!("ROW<{}>", logical_types.join(","));
+    let envelope_types = [image.clone(), image, "STRING".to_string()];
+    let envelope_names = ["before".to_string(), "after".to_string(), "op".to_string()];
+    let framed = encode_avro_batch(&envelope, options, &envelope_types, &envelope_names)?;
+    // Flink registers the envelope as a [null, record] union (the derived row type's root is
+    // nullable) and its datum writer emits the union's branch index before every record — a
+    // constant zigzag varint 1. The native writer serialized the record branch; splice the
+    // marker between the 5-byte Confluent header and the datum to match Flink's frame.
+    let mut bytes = Vec::new();
+    let mut lines = Vec::with_capacity(framed.len());
+    for row in 0..framed.len() {
+        let line = framed.line(row);
+        let start = bytes.len();
+        bytes.extend_from_slice(&line[..5]);
+        bytes.push(0x02);
+        bytes.extend_from_slice(&line[5..]);
+        lines.push(start..bytes.len());
+    }
+    Ok(crate::kafka::EncodedLines::new(bytes, lines))
+}
+
 /// Encodes one projected sink batch as per-row Avro payloads with Flink's exact bytes. The batch
 /// arrives in boundary form; [`flink_avro_array`] first rewrites it the way Flink's converters
 /// mangle values before Avro sees them (millisecond longs for every timestamp, HashMap-ordered map

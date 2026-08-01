@@ -141,6 +141,8 @@ pub(crate) enum EncodeOptions {
     Csv(crate::csv_encode::CsvEncodeOptions),
     #[cfg(feature = "avro")]
     Avro(crate::avro::AvroEncodeOptions),
+    #[cfg(feature = "avro")]
+    DebeziumAvro(crate::avro::AvroEncodeOptions),
     #[cfg(feature = "protobuf")]
     Protobuf(crate::protobuf_encode::ProtobufEncodeOptions),
     #[cfg(feature = "raw")]
@@ -182,6 +184,11 @@ fn parse_encode_format(format: i32, encoded: &str) -> Result<EncodeOptions, Stri
         #[cfg(feature = "avro")]
         FORMAT_AVRO_CONFLUENT => {
             return crate::avro::AvroEncodeOptions::parse(encoded, true).map(EncodeOptions::Avro)
+        }
+        #[cfg(feature = "avro")]
+        FORMAT_DEBEZIUM_AVRO_CONFLUENT => {
+            return crate::avro::AvroEncodeOptions::parse(encoded, true)
+                .map(EncodeOptions::DebeziumAvro)
         }
         #[cfg(feature = "protobuf")]
         FORMAT_PROTOBUF => {
@@ -290,6 +297,14 @@ fn encode_value_lines(
         EncodeOptions::Avro(options) => {
             crate::avro::encode_avro_batch(batch, options, logical_types, field_names)
         }
+        #[cfg(feature = "avro")]
+        EncodeOptions::DebeziumAvro(options) => crate::avro::encode_debezium_avro_batch(
+            batch,
+            kinds,
+            options,
+            logical_types,
+            field_names,
+        ),
         #[cfg(feature = "protobuf")]
         EncodeOptions::Protobuf(options) => {
             // Columns map to proto fields by name; an all-unset row is a zero-length message

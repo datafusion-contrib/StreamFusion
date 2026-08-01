@@ -539,8 +539,13 @@ shapes persist their per-key deadlines in a dedicated state table).
   verbatim incl. fixed-length BINARY, one-byte BOOLEAN, fixed-width numerics in the table's
   `raw.endianness`; the column must be NOT NULL, because Flink serializes a null field as a null
   `byte[]` — a Kafka tombstone — which the sink's value path does not produce; non-UTF-8
-  `raw.charset` values stay on Flink like the decode side), and full changelog streams with the
-  four CDC JSON
+  `raw.charset` values stay on Flink like the decode side), and full changelog streams with
+  `debezium-avro-confluent` (each changelog row wraps in Flink's exact envelope record — before/
+  after images by row kind, op `c`/`d` — Confluent-framed against the registered ENVELOPE schema;
+  Flink derives the envelope with a nullable root, so the registered schema is a `[null, record]`
+  union and every frame carries the union's branch marker exactly as Flink's datum writer emits
+  it; subject auto-completion, open-time registration, plain-URL registry, and the hard-wired
+  legacy timestamp mapping all follow the `avro-confluent` sink) or with the four CDC JSON
   envelope formats (`debezium-json`, `canal-json`, `maxwell-json`, `ogg-json`) — the one
   non-upsert case where changelog input is admitted, since the CDC encoding format requests the
   full changelog (UPDATE_BEFORE included) from the planner. Each row is spliced into its dialect's
@@ -607,8 +612,8 @@ shapes persist their per-key deadlines in a dedicated state table).
     bakes a stateful `SinkUpsertMaterializer` into its own sink translation, which a substituted
     sink would silently drop;
   - a value format outside the JSON family (plain `json` or the four CDC JSON envelopes), `csv`, `protobuf`,
-    `raw`, `avro`, and `avro-confluent`, or multiple/dynamic topics; a keyed ordinary `kafka`
-    table; an `upsert-kafka` table whose key or value format is outside
+    `raw`, `avro`, `avro-confluent`, and `debezium-avro-confluent`, or multiple/dynamic topics; a
+    keyed ordinary `kafka` table; an `upsert-kafka` table whose key or value format is outside
     JSON/CSV/Avro/`avro-confluent`/protobuf/raw;
     `debezium-json.schema-include=true` (rejected by Flink's own sink factory); or an explicit
     key/value projection, key prefix, or `EXCEPT_KEY` value projection;

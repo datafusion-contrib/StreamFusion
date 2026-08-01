@@ -29,4 +29,11 @@ final class DebeziumAvroEnvelope {
                 DataTypes.FIELD("op", DataTypes.STRING()))
             .getLogicalType();
   }
+
+  /** The envelope with a non-nullable root: the record branch of the nullable union Flink derives
+   * (and registers) for serialization — the schema the native Avro writer encodes against, with
+   * the union's branch marker spliced into the wire separately. */
+  static RowType recordBranch(RowType physical) {
+    return (RowType) rowType(physical).copy(false);
+  }
 }

@@ -1,9 +1,12 @@
 package io.github.jordepic.streamfusion.format.avroconfluent;
 
+import io.github.jordepic.streamfusion.format.EncodeFormat;
+import io.github.jordepic.streamfusion.format.FormatCodes;
 import io.github.jordepic.streamfusion.format.NativeFormatContext;
 import io.github.jordepic.streamfusion.format.NativeFormatProvider;
 import io.github.jordepic.streamfusion.format.NativeMessageDecoderFactory;
 import io.github.jordepic.streamfusion.format.avro.AvroDecodeGate;
+import io.github.jordepic.streamfusion.format.avro.AvroEncodeGate;
 import io.github.jordepic.streamfusion.kafka.ConfluentSchemaRegistry;
 import org.apache.flink.formats.avro.typeutils.AvroSchemaConverter;
 import org.apache.flink.table.types.logical.RowType;
@@ -55,5 +58,31 @@ public final class DebeziumAvroConfluentFormatProvider implements NativeFormatPr
   /** Flink's Debezium envelope row type over the table's physical row. */
   static RowType envelopeType(RowType physical) {
     return DebeziumAvroEnvelope.rowType(physical);
+  }
+
+  /**
+   * The sink side: Flink's serializer wraps each changelog row in the same envelope and
+   * Confluent-frames the Avro record, registering the ENVELOPE schema under the subject at open.
+   * The envelope row type Flink derives has a NULLABLE root, so the registered schema is a
+   * {@code [null, record]} union and Flink's datum writer emits the union's branch marker before
+   * every record — the native encoder serializes against the record branch and splices the marker
+   * into the frame. The timestamp mapping is hard-wired legacy, like every registry Avro path.
+   */
+  @Override
+  public EncodeFormat encodeFormat(NativeFormatContext context) {
+    RowType envelope = envelopeType(context.writerType());
+    java.util.Map<String, String> options = context.options();
+    ConfluentSchemaRegistry registry = ConfluentSchemaRegistry.fromFormatOptions(options);
+    String subject = options.getOrDefault("subject", options.get("schema-registry.subject"));
+    if (registry == null || subject == null || !AvroEncodeGate.supports(envelope, true)) {
+      return null;
+    }
+    String unionSchema = AvroEncodeGate.derivedSchema(envelope, true);
+    String recordSchema =
+        AvroEncodeGate.derivedSchema(DebeziumAvroEnvelope.recordBranch(context.writerType()), true);
+    return EncodeFormat.resolved(
+        FormatCodes.DEBEZIUM_AVRO_CONFLUENT,
+        "avro-schema=" + recordSchema + "\n",
+        new ConfluentSchemaRegistration(registry, subject, unionSchema));
   }
 }
