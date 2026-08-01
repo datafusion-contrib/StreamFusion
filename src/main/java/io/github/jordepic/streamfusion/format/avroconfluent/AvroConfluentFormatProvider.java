@@ -47,7 +47,9 @@ public final class AvroConfluentFormatProvider implements NativeFormatProvider {
   }
 
   @Override
-  public EncodeFormat encodeFormat(RowType rowType, Map<String, String> options) {
+  public EncodeFormat encodeFormat(NativeFormatContext context) {
+    RowType rowType = context.writerType();
+    Map<String, String> options = context.options();
     ConfluentSchemaRegistry registry = ConfluentSchemaRegistry.fromFormatOptions(options);
     // The subject is required for serialization; the sink translator auto-completes it from the
     // topic under the fallback spelling exactly like Flink's Kafka factories, so a missing one
@@ -57,7 +59,7 @@ public final class AvroConfluentFormatProvider implements NativeFormatProvider {
     if (registry == null || subject == null || !AvroEncodeGate.supports(rowType, true)) {
       return null;
     }
-    String schema = AvroSchemaConverter.convertToSchema(rowType).toString();
+    String schema = AvroEncodeGate.derivedSchema(rowType, true);
     return EncodeFormat.resolved(
         FormatCodes.AVRO_CONFLUENT,
         "avro-schema=" + schema + "\n",

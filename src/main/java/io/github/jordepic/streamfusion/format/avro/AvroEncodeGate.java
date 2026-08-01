@@ -33,6 +33,18 @@ public final class AvroEncodeGate {
     return rowType.getChildren().stream().allMatch(AvroEncodeGate::encodableColumn);
   }
 
+  /**
+   * The derived writer schema JSON the native encoder frames — Flink's exact record names, union
+   * order, and logical types. Lives here rather than in the provider because the call passes a
+   * {@code RowType} where Flink declares {@code LogicalType}: the bytecode verifier must load both
+   * to prove that assignability, and provider classes must stay linkable with no Flink on the
+   * classpath (the extension-JAR probe); this class only links once a provider method runs, inside
+   * a planner JVM that has Flink.
+   */
+  public static String derivedSchema(RowType rowType, boolean legacyTimestampMapping) {
+    return AvroSchemaConverter.convertToSchema(rowType, legacyTimestampMapping).toString();
+  }
+
   private static boolean encodableColumn(LogicalType type) {
     switch (type.getTypeRoot()) {
       case BOOLEAN:

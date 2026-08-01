@@ -48,9 +48,11 @@ public final class AvroFormatProvider implements NativeFormatProvider {
   }
 
   @Override
-  public EncodeFormat encodeFormat(RowType rowType, Map<String, String> options) {
+  public EncodeFormat encodeFormat(NativeFormatContext context) {
     // The sink seam hands each format instance its prefix-stripped options (a key format has no
     // value-format spelling for NativeFormatOptions to resolve).
+    RowType rowType = context.writerType();
+    Map<String, String> options = context.options();
     if (!"binary".equalsIgnoreCase(options.getOrDefault("encoding", "binary"))) {
       return null;
     }
@@ -60,7 +62,7 @@ public final class AvroFormatProvider implements NativeFormatProvider {
     }
     // The derived writer schema travels to the native encoder verbatim, so the wire bytes carry
     // Flink's exact record names, union order, and logical types.
-    String schema = AvroSchemaConverter.convertToSchema(rowType, legacy).toString();
+    String schema = AvroEncodeGate.derivedSchema(rowType, legacy);
     return EncodeFormat.resolved(FormatCodes.AVRO, "avro-schema=" + schema + "\n", null);
   }
 

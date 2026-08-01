@@ -6,10 +6,7 @@ import io.github.jordepic.streamfusion.format.NativeMessageDecoderFactory;
 import io.github.jordepic.streamfusion.format.avro.AvroDecodeGate;
 import io.github.jordepic.streamfusion.kafka.ConfluentSchemaRegistry;
 import org.apache.flink.formats.avro.typeutils.AvroSchemaConverter;
-import org.apache.flink.table.api.DataTypes;
-import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.RowType;
-import org.apache.flink.table.types.utils.TypeConversions;
 
 /**
  * Native provider for Flink's {@code debezium-avro-confluent} format: the Debezium changelog
@@ -55,17 +52,8 @@ public final class DebeziumAvroConfluentFormatProvider implements NativeFormatPr
     return () -> new RegistryAvroDecoder(registry, readerSchema, true);
   }
 
-  /** Flink's Debezium envelope row type over the table's physical row (its own derivation calls). */
+  /** Flink's Debezium envelope row type over the table's physical row. */
   static RowType envelopeType(RowType physical) {
-    if (physical == null) {
-      return null;
-    }
-    DataType image = TypeConversions.fromLogicalToDataType(physical).nullable();
-    return (RowType)
-        DataTypes.ROW(
-                DataTypes.FIELD("before", image),
-                DataTypes.FIELD("after", image),
-                DataTypes.FIELD("op", DataTypes.STRING()))
-            .getLogicalType();
+    return DebeziumAvroEnvelope.rowType(physical);
   }
 }

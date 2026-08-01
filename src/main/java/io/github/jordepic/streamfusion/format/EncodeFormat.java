@@ -60,7 +60,9 @@ public final class EncodeFormat implements Serializable {
       return json == null ? null : new EncodeFormat(code, json.options, null);
     }
     return NativeFormatProviders.forIdentifier(identifier)
-        .map(provider -> provider.encodeFormat(rowType, options))
+        .map(
+            provider ->
+                provider.encodeFormat(new NativeFormatContext(rowType, rowType, options, false)))
         .orElse(null);
   }
 
