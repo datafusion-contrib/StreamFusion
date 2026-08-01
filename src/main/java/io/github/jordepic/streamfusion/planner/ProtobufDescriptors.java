@@ -6,6 +6,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.apache.flink.table.types.logical.ArrayType;
+import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.table.types.logical.LogicalTypeRoot;
+import org.apache.flink.table.types.logical.MapType;
+import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Extracts a protobuf {@code FileDescriptorSet} and root message name from a Flink protobuf table's
@@ -108,6 +113,86 @@ public final class ProtobufDescriptors {
       return isSupportedMessageDescriptor(message, visiting);
     }
     return SUPPORTED_FIELD_TYPES.contains(type);
+  }
+
+  /** Whether the native encode of the named message serializes {@code rowType} identically to
+   * Flink: the message passes the decode-side shape gate above, and every row field names a proto
+   * field of the matching kind (Flink's own {@code PbSchemaValidationUtils} enforces the same
+   * mapping at submission, so a mismatch falls back and Flink raises its own error). Extra proto
+   * fields are legal (they stay unset), extra row fields are not. */
+  public static boolean encodes(String messageClassName, RowType rowType) {
+    try {
+      Object descriptor = Class.forName(messageClassName).getMethod("getDescriptor").invoke(null);
+      return isSupportedMessageDescriptor(descriptor, new HashSet<>())
+          && rowMatches(descriptor, rowType);
+    } catch (ReflectiveOperationException e) {
+      return false; // cannot inspect → fall back safely
+    }
+  }
+
+  private static boolean rowMatches(Object descriptor, RowType rowType)
+      throws ReflectiveOperationException {
+    for (RowType.RowField field : rowType.getFields()) {
+      Object proto =
+          descriptor
+              .getClass()
+              .getMethod("findFieldByName", String.class)
+              .invoke(descriptor, field.getName());
+      if (proto == null || !fieldMatches(proto, field.getType())) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static boolean fieldMatches(Object field, LogicalType type)
+      throws ReflectiveOperationException {
+    if ((boolean) field.getClass().getMethod("isMapField").invoke(field)) {
+      if (type.getTypeRoot() != LogicalTypeRoot.MAP) {
+        return false;
+      }
+      MapType map = (MapType) type;
+      Object entry = field.getClass().getMethod("getMessageType").invoke(field);
+      Object key = entry.getClass().getMethod("findFieldByName", String.class).invoke(entry, "key");
+      Object value =
+          entry.getClass().getMethod("findFieldByName", String.class).invoke(entry, "value");
+      return leafMatches(key, map.getKeyType()) && leafMatches(value, map.getValueType());
+    }
+    if ((boolean) field.getClass().getMethod("isRepeated").invoke(field)) {
+      return type.getTypeRoot() == LogicalTypeRoot.ARRAY
+          && leafMatches(field, ((ArrayType) type).getElementType());
+    }
+    return leafMatches(field, type);
+  }
+
+  private static boolean leafMatches(Object field, LogicalType type)
+      throws ReflectiveOperationException {
+    String protoType = field.getClass().getMethod("getType").invoke(field).toString();
+    switch (protoType) {
+      case "INT32":
+      case "SINT32":
+      case "SFIXED32":
+        return type.getTypeRoot() == LogicalTypeRoot.INTEGER;
+      case "INT64":
+      case "SINT64":
+      case "SFIXED64":
+        return type.getTypeRoot() == LogicalTypeRoot.BIGINT;
+      case "BOOL":
+        return type.getTypeRoot() == LogicalTypeRoot.BOOLEAN;
+      case "FLOAT":
+        return type.getTypeRoot() == LogicalTypeRoot.FLOAT;
+      case "DOUBLE":
+        return type.getTypeRoot() == LogicalTypeRoot.DOUBLE;
+      case "STRING":
+        return type.getTypeRoot() == LogicalTypeRoot.CHAR
+            || type.getTypeRoot() == LogicalTypeRoot.VARCHAR;
+      case "MESSAGE":
+        return type.getTypeRoot() == LogicalTypeRoot.ROW
+            && rowMatches(
+                field.getClass().getMethod("getMessageType").invoke(field), (RowType) type);
+      default:
+        return false; // outside the gated leaf set (enum/bytes/unsigned/fixed)
+    }
   }
 
   /** The fully-qualified name of the message the named class describes. */

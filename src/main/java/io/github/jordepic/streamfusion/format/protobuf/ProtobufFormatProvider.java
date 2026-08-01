@@ -1,11 +1,15 @@
 package io.github.jordepic.streamfusion.format.protobuf;
 
+import io.github.jordepic.streamfusion.format.EncodeFormat;
+import io.github.jordepic.streamfusion.format.FormatCodes;
 import io.github.jordepic.streamfusion.format.NativeFormatContext;
 import io.github.jordepic.streamfusion.format.NativeFormatProvider;
 import io.github.jordepic.streamfusion.format.NativeMessageDecoder;
 import io.github.jordepic.streamfusion.format.NativeMessageDecoderFactory;
 import io.github.jordepic.streamfusion.format.NativeSchemaMessageDecoder;
 import io.github.jordepic.streamfusion.planner.ProtobufDescriptors;
+import java.util.Base64;
+import java.util.Map;
 
 /** Native provider for Flink's protobuf value format. */
 public final class ProtobufFormatProvider implements NativeFormatProvider {
@@ -42,6 +46,34 @@ public final class ProtobufFormatProvider implements NativeFormatProvider {
     return () ->
         new Decoder(
             ProtobufDescriptors.descriptorSet(messageClass), ProtobufDescriptors.messageName(messageClass));
+  }
+
+  /** The sink seam hands prefix-stripped options; {@code read-default-values} is decode-only (the
+   * serializer never consults it), so only the row↔descriptor mapping and the null-string literal
+   * gate the encode. */
+  @Override
+  public EncodeFormat encodeFormat(NativeFormatContext context) {
+    Map<String, String> options = context.options();
+    String messageClass = options.get("message-class-name");
+    String nullLiteral = options.getOrDefault("write-null-string-literal", "");
+    if (messageClass == null
+        || nullLiteral.contains("\n")
+        || nullLiteral.contains("\r")
+        || !ProtobufDescriptors.encodes(messageClass, context.writerType())) {
+      return null;
+    }
+    StringBuilder encoded = new StringBuilder();
+    encoded
+        .append("descriptor=")
+        .append(Base64.getEncoder().encodeToString(ProtobufDescriptors.descriptorSet(messageClass)))
+        .append('\n')
+        .append("message=")
+        .append(ProtobufDescriptors.messageName(messageClass))
+        .append('\n');
+    if (!nullLiteral.isEmpty()) {
+      encoded.append("null-literal=").append(nullLiteral).append('\n');
+    }
+    return EncodeFormat.resolved(FormatCodes.PROTOBUF, encoded.toString(), null);
   }
 
   private static final class Decoder extends NativeSchemaMessageDecoder {

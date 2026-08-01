@@ -62,7 +62,7 @@ final class KafkaSinkMatcher {
 
   /** The value formats the native serializer implements, by Flink format identifier. */
   private static final Set<String> NATIVE_VALUE_FORMATS =
-      Set.of("json", "csv", "avro", "avro-confluent");
+      Set.of("json", "csv", "avro", "avro-confluent", "protobuf");
 
   static boolean appliesTo(StreamPhysicalSink sink) {
     Map<String, String> options = options(sink);
@@ -173,6 +173,9 @@ final class KafkaSinkMatcher {
       case "avro-confluent":
         // The avro providers gate their own row type by rerunning Flink's schema derivation
         // inside EncodeFormat.of; nothing to pre-screen per column here.
+        return true;
+      case "protobuf":
+        // The protobuf provider gates the row↔descriptor mapping inside EncodeFormat.of.
         return true;
       default:
         return false;

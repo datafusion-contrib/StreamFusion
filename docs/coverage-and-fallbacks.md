@@ -528,7 +528,14 @@ shapes persist their per-key deadlines in a dedicated state table).
   fallback, never silently dropped. With **`none`/`at-least-once` delivery**, serialization is
   native and the final key/value bytes feed Flink's unmodified `KafkaSink`, whose producer,
   parallelism, and metrics contracts apply verbatim. Ordinary `kafka` tables support value-only
-  insert streams with plain `json` or `csv`, and full changelog streams with the four CDC JSON
+  insert streams with plain `json`, `csv`, or `protobuf` (row fields map to proto fields by name;
+  the provider reruns the row↔descriptor mapping Flink's own submission validation enforces, so a
+  mismatched column type or name falls back and Flink raises its own error; null columns leave
+  fields unset, nulls inside containers become type defaults with
+  `protobuf.write-null-string-literal` for strings, and the wire is written in protobuf-java's
+  exact shape — including the map-entry fields protobuf-java serializes even at their defaults,
+  where prost would omit them; `read-default-values` is deserialization-only and ignored on write,
+  as in Flink), and full changelog streams with the four CDC JSON
   envelope formats (`debezium-json`, `canal-json`, `maxwell-json`, `ogg-json`) — the one
   non-upsert case where changelog input is admitted, since the CDC encoding format requests the
   full changelog (UPDATE_BEFORE included) from the planner. Each row is spliced into its dialect's
@@ -594,9 +601,10 @@ shapes persist their per-key deadlines in a dedicated state table).
   - an upsert-materialized sink — when Flink decides the upsert changelog arrives out of order it
     bakes a stateful `SinkUpsertMaterializer` into its own sink translation, which a substituted
     sink would silently drop;
-  - a value format outside the JSON family (plain `json` or the four CDC JSON envelopes), `csv`,
+  - a value format outside the JSON family (plain `json` or the four CDC JSON envelopes), `csv`, `protobuf`,
     `avro`, and `avro-confluent`, or multiple/dynamic topics; a keyed ordinary `kafka` table; an
-    `upsert-kafka` table whose key or value format is outside JSON/CSV/Avro/`avro-confluent`;
+    `upsert-kafka` table whose key or value format is outside
+    JSON/CSV/Avro/`avro-confluent`/protobuf;
     `debezium-json.schema-include=true` (rejected by Flink's own sink factory); or an explicit
     key/value projection, key prefix, or `EXCEPT_KEY` value projection;
   - a connector library built without the format's encode arm (probed at plan time, so a missing
