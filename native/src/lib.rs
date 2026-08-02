@@ -95,6 +95,7 @@ mod json_retry;
 #[cfg(feature = "kafka")]
 mod kafka;
 mod keys;
+mod logging;
 mod memory;
 mod mini_batch;
 mod normalizer;

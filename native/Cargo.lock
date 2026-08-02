@@ -5422,6 +5422,7 @@ dependencies = [
  "futures",
  "jni",
  "libmimalloc-sys",
+ "log",
  "num-bigint",
  "num-traits",
  "opendal-core",

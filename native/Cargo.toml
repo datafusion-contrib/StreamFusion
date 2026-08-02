@@ -23,6 +23,10 @@ chrono-tz = "0.10"
 # REGEXP_EXTRACT (opt-in, allowIncompatible): Rust's regex engine differs from Java's, so the JVM
 # encoder gates it. Already in the tree transitively via datafusion; pinned here for direct use.
 regex = "1"
+# The logging facade the whole native tree (rdkafka and datafusion included) emits through; the
+# JNI_OnLoad-installed bridge forwards it to the host's SLF4J. Already in the tree transitively;
+# pinned here for direct use.
+log = "0.4"
 # Byte-exact decimal division/modulo: emulating BigDecimal.divide's round-to-38-significant-digits
 # intermediate needs integers wider than i128/i256 in the worst case. Already in the tree
 # transitively via datafusion; pinned here for direct use.
