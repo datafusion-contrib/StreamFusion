@@ -2215,8 +2215,12 @@ fn json_decode_array_element_granularity_follows_flink() {
         json_schema(),
         crate::json::JsonEnv { lenient: true, ..Default::default() },
     );
-    let out = lenient.decode(&bodies(vec![Some(br#"[{"id": 1}, 5, null, [7], {"id": 3}]"#)]));
+    let out = lenient.decode(&bodies(vec![Some(br#"[{"id": 1}, 5, null, {"id": 3}]"#)]));
     assert_eq!(values(&out, 0), vec![1, 3]);
+    // A nested-array element drifts Flink's element loop itself (replayed via the token walk):
+    // only the prefix before it survives, and the tail is never read.
+    let out = lenient.decode(&bodies(vec![Some(br#"[{"id": 1}, 5, null, [7], {"id": 3}]"#)]));
+    assert_eq!(values(&out, 0), vec![1]);
     // A malformed array-rooted document still drops whole, never element by element.
     let out = lenient.decode(&bodies(vec![Some(br#"[{"id": 1}, {"id": }]"#)]));
     assert_eq!(out.num_rows(), 0);
