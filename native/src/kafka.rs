@@ -922,9 +922,10 @@ impl arrow::json::writer::Encoder for FlinkMapEncoder<'_> {
 
 /// arrow-json's string path hands every value to serde_json's scalar per-byte escape scan. The
 /// overwhelmingly common value needs no escaping at all, so this encoder finds that out with a
-/// word-at-a-time scan and bulk-copies; values that do escape go through a loop replicating
-/// serde_json's exact table (`\"`, `\\`, named controls, lowercase `\u00XX`), so output bytes
-/// are identical either way (pinned by a parity test against the stock arrow-json writer).
+/// word-at-a-time scan and bulk-copies; values that do escape go through a loop applying
+/// Jackson's table — serde_json's escape set (`\"`, `\\`, named controls, `\u00XX`) but with
+/// Jackson's default UPPERCASE hex digits (`WRITE_HEX_UPPER_CASE`), where serde_json spells
+/// lowercase. Pinned against Flink's serializer in the Java parity suite.
 #[cfg(feature = "kafka")]
 struct FlinkStringEncoder<'a, O: arrow::array::OffsetSizeTrait> {
     array: &'a arrow::array::GenericStringArray<O>,
@@ -937,7 +938,7 @@ impl<O: arrow::array::OffsetSizeTrait> arrow::json::writer::Encoder for FlinkStr
     }
 }
 
-/// One quoted, serde_json-escaped JSON string value.
+/// One quoted, Jackson-escaped JSON string value.
 #[cfg(feature = "kafka")]
 fn encode_json_string_value(value: &[u8], output: &mut Vec<u8>) {
     output.reserve(value.len() + 2);
@@ -972,10 +973,12 @@ fn json_needs_escape(bytes: &[u8]) -> bool {
     chunks.remainder().iter().any(|&byte| byte < 0x20 || byte == b'"' || byte == b'\\')
 }
 
-/// serde_json's escape table, applied over unescaped runs (without the surrounding quotes).
+/// Jackson's escape table, applied over unescaped runs (without the surrounding quotes): the
+/// same escape set as serde_json, but `\u00XX` hex digits are uppercase — Jackson's
+/// `WRITE_HEX_UPPER_CASE` default, visible on 0x0B, 0x0E, 0x0F, and 0x1A–0x1F.
 #[cfg(feature = "kafka")]
 fn encode_escaped_json(bytes: &[u8], output: &mut Vec<u8>) {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut start = 0;
     for (index, &byte) in bytes.iter().enumerate() {
         let escape: &[u8] = match byte {
@@ -2055,10 +2058,13 @@ mod kafka_error_tests {
         }
     }
 
-    /// The bulk-scan string encoder must match arrow-json's stock (serde_json) escaping byte for
-    /// byte, across every escape class and both scan paths (word chunks and the tail remainder).
+    /// The bulk-scan string encoder must match Jackson's escaping byte for byte, across every
+    /// escape class and both scan paths (word chunks and the tail remainder). Jackson's table is
+    /// serde_json's escape set with UPPERCASE `\u00XX` hex digits, so the referee is the stock
+    /// arrow-json writer with its hex escapes uppercased — the Java parity suite pins the same
+    /// bytes against Flink's own serializer.
     #[test]
-    fn string_escaping_matches_stock_arrow_json() {
+    fn string_escaping_matches_jackson() {
         let mut values: Vec<String> = vec![
             String::new(),
             "plain ascii value".into(),
@@ -2091,8 +2097,25 @@ mod kafka_error_tests {
             writer.write(&batch).unwrap();
             writer.finish().unwrap();
         }
-        let stock_lines: Vec<&[u8]> =
-            stock.split(|byte| *byte == b'\n').filter(|line| !line.is_empty()).collect();
+        let jackson_hex = |line: &[u8]| -> Vec<u8> {
+            let mut line = line.to_vec();
+            let mut index = 0;
+            while index + 6 <= line.len() {
+                if &line[index..index + 4] == b"\\u00" {
+                    line[index + 4] = line[index + 4].to_ascii_uppercase();
+                    line[index + 5] = line[index + 5].to_ascii_uppercase();
+                    index += 6;
+                } else {
+                    index += 1;
+                }
+            }
+            line
+        };
+        let stock_lines: Vec<Vec<u8>> = stock
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(jackson_hex)
+            .collect();
 
         let ours =
             encode_json_batch(&batch, &JsonEncodeOptions::default(), &[], &[])
@@ -2101,7 +2124,7 @@ mod kafka_error_tests {
         for index in 0..ours.len() {
             assert_eq!(
                 ours.line(index),
-                stock_lines[index],
+                stock_lines[index].as_slice(),
                 "row {index}: {:?}",
                 values[index]
             );

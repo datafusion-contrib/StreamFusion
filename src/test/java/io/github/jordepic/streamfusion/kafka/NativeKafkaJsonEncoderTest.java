@@ -227,6 +227,34 @@ class NativeKafkaJsonEncoderTest {
   }
 
   /**
+   * Jackson escapes control characters as uppercase {@code \\u00XX} ({@code WRITE_HEX_UPPER_CASE}
+   * is its default), where serde_json spells lowercase — visible on 0x0B, 0x0E, 0x0F, and
+   * 0x1A-0x1F, in string values and map keys alike.
+   */
+  @Test
+  void matchesFlinkControlCharacterEscapeCase() throws Exception {
+    RowType rowType =
+        RowType.of(
+            new LogicalType[] {
+              new VarCharType(VarCharType.MAX_LENGTH),
+              new MapType(new VarCharType(VarCharType.MAX_LENGTH), new IntType())
+            },
+            new String[] {"text", "tags"});
+    StringBuilder controls = new StringBuilder("all controls:");
+    for (char c = 0; c < 0x20; c++) {
+      controls.append(c);
+    }
+    List<RowData> rows =
+        List.of(
+            GenericRowData.of(
+                StringData.fromString(controls.toString()),
+                new GenericMapData(Map.of(StringData.fromString("unitsep"), 1))),
+            GenericRowData.of(StringData.fromString(""), null));
+
+    assertMatchesFlink(rows, rowType, TimestampFormat.SQL, false);
+  }
+
+  /**
    * BINARY(n) crosses the boundary as Arrow fixed-size bytes, which arrow-json's stock encoder
    * renders as hex; Flink base64-encodes every binary flavor alike, at any nesting depth.
    */

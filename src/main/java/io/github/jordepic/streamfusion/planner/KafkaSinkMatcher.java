@@ -111,6 +111,9 @@ final class KafkaSinkMatcher {
         return Planned.fallback(valueFormatId + " type " + type.asSummaryString());
       }
     }
+    if (FormatCodes.isJsonFamily(valueFormatId) && !jsonFieldNamesEscapeFreely(rowType)) {
+      return Planned.fallback("a field name needs a JSON control-character escape");
+    }
     if (!floatSpellingVerified(valueFormatId, rowType.getChildren())) {
       return Planned.fallback(FLOAT_SPELLING_MISMATCH);
     }
@@ -237,6 +240,25 @@ final class KafkaSinkMatcher {
       default:
         return false;
     }
+  }
+
+  /**
+   * Field names are written by arrow-json's own object encoder (serde_json escaping, lowercase
+   * hex), not the Jackson-parity string encoder, so a name that needs a control-character escape
+   * would spell differently than Flink's uppercase form. Defensive — SQL identifiers don't carry
+   * control characters in practice — declining keeps the byte-parity contract airtight.
+   */
+  private static boolean jsonFieldNamesEscapeFreely(LogicalType type) {
+    if (type instanceof RowType row) {
+      for (RowType.RowField field : row.getFields()) {
+        if (field.getName().chars().anyMatch(c -> c < 0x20)
+            || !jsonFieldNamesEscapeFreely(field.getType())) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return type.getChildren().stream().allMatch(KafkaSinkMatcher::jsonFieldNamesEscapeFreely);
   }
 
   private static boolean supportsJsonType(LogicalType type) {
