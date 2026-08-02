@@ -8,6 +8,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,6 +33,16 @@ public class ConfluentSchemaRegistry implements Serializable {
 
   private static final long serialVersionUID = 1L;
 
+  /**
+   * Confluent's own client defaults: {@code http.connect.timeout.ms} and {@code
+   * http.read.timeout.ms} are both 60000 in its {@code SchemaRegistryClientConfig}, applied to
+   * every request. Matching them bounds how long a hung registry can block the fetch thread or
+   * sink open (a timeout is an IOException, so the multi-URL failover still tries the next URL).
+   */
+  private static final long DEFAULT_TIMEOUT_MILLIS = 60_000;
+
+  private static final ObjectMapper MAPPER = new ObjectMapper();
+
   /** Registry-format options with no native translation: any of them present → fall back. */
   private static final Set<String> UNSUPPORTED_OPTIONS =
       Set.of(
@@ -47,11 +58,17 @@ public class ConfluentSchemaRegistry implements Serializable {
           "bearer-auth.token");
 
   private final String[] urls;
+  private long timeoutMillis = DEFAULT_TIMEOUT_MILLIS;
 
   private transient HttpClient client;
 
   private ConfluentSchemaRegistry(String[] urls) {
     this.urls = urls;
+  }
+
+  ConfluentSchemaRegistry withTimeoutMillis(long timeoutMillis) {
+    this.timeoutMillis = timeoutMillis;
+    return this;
   }
 
   /**
@@ -107,30 +124,28 @@ public class ConfluentSchemaRegistry implements Serializable {
    * without it.
    */
   public Schema fetchWriterSchema(int id) throws IOException {
-    if (client == null) {
-      client = HttpClient.newHttpClient();
-    }
     IOException failure = null;
     for (String base : urls) {
-      String url = base.trim();
-      url = (url.endsWith("/") ? url.substring(0, url.length() - 1) : url) + "/schemas/ids/" + id;
+      String url = endpoint(base, "/schemas/ids/" + id);
       try {
-        HttpRequest request =
-            HttpRequest.newBuilder(URI.create(url))
-                .header("Accept", "application/vnd.schemaregistry.v1+json")
-                .GET()
-                .build();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpRequest request = request(url).GET().build();
+        HttpResponse<String> response =
+            client().send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
           throw new IOException(
               "schema registry returned " + response.statusCode() + " for " + url);
         }
-        JsonNode body = new ObjectMapper().readTree(response.body());
+        JsonNode body = MAPPER.readTree(response.body());
         JsonNode type = body.get("schemaType");
         if (type != null && !"AVRO".equals(type.asText())) {
           throw new IOException("schema id " + id + " is not an Avro schema: " + type.asText());
         }
-        return new Schema.Parser().parse(body.get("schema").asText());
+        JsonNode schema = body.get("schema");
+        if (schema == null) {
+          throw new IOException(
+              "schema registry response from " + url + " has no \"schema\" field");
+        }
+        return new Schema.Parser().parse(schema.asText());
       } catch (IOException e) {
         failure = e;
       } catch (InterruptedException e) {
@@ -149,27 +164,18 @@ public class ConfluentSchemaRegistry implements Serializable {
    * response (Flink surfaces the same RestClientException at the first serialized record).
    */
   public int register(String subject, String schemaJson) throws IOException {
-    if (client == null) {
-      client = HttpClient.newHttpClient();
-    }
-    ObjectMapper mapper = new ObjectMapper();
-    String body = mapper.createObjectNode().put("schema", schemaJson).toString();
+    String body = MAPPER.createObjectNode().put("schema", schemaJson).toString();
     IOException failure = null;
     for (String base : urls) {
-      String url = base.trim();
-      url =
-          (url.endsWith("/") ? url.substring(0, url.length() - 1) : url)
-              + "/subjects/"
-              + subject
-              + "/versions";
+      String url = endpoint(base, "/subjects/" + subject + "/versions");
       try {
         HttpRequest request =
-            HttpRequest.newBuilder(URI.create(url))
-                .header("Accept", "application/vnd.schemaregistry.v1+json")
+            request(url)
                 .header("Content-Type", "application/vnd.schemaregistry.v1+json")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response =
+            client().send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
           throw new IOException(
               "schema registry returned "
@@ -179,7 +185,11 @@ public class ConfluentSchemaRegistry implements Serializable {
                   + ": "
                   + response.body());
         }
-        return mapper.readTree(response.body()).get("id").asInt();
+        JsonNode id = MAPPER.readTree(response.body()).get("id");
+        if (id == null) {
+          throw new IOException("schema registry response from " + url + " has no \"id\" field");
+        }
+        return id.asInt();
       } catch (IOException e) {
         failure = e;
       } catch (InterruptedException e) {
@@ -188,6 +198,25 @@ public class ConfluentSchemaRegistry implements Serializable {
       }
     }
     throw new IOException("Could not register schema under subject " + subject, failure);
+  }
+
+  private HttpClient client() {
+    if (client == null) {
+      client =
+          HttpClient.newBuilder().connectTimeout(Duration.ofMillis(timeoutMillis)).build();
+    }
+    return client;
+  }
+
+  private HttpRequest.Builder request(String url) {
+    return HttpRequest.newBuilder(URI.create(url))
+        .timeout(Duration.ofMillis(timeoutMillis))
+        .header("Accept", "application/vnd.schemaregistry.v1+json");
+  }
+
+  private static String endpoint(String base, String path) {
+    String url = base.trim();
+    return (url.endsWith("/") ? url.substring(0, url.length() - 1) : url) + path;
   }
 
   /**
