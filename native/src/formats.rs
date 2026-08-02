@@ -1647,6 +1647,7 @@ macro_rules! format_jni_facade {
         $feature:literal,
         $driver_init_address:ident,
         $is_loaded:ident,
+        $native_build_version:ident,
         $decode_into:ident,
         $close_decoder:ident
     ) => {
@@ -1668,6 +1669,15 @@ macro_rules! format_jni_facade {
             _class: JClass<'local>,
         ) -> jboolean {
             crate::bridge::jni_guard(env, move |_env| 1)
+        }
+
+        #[cfg(feature = $feature)]
+        #[no_mangle]
+        pub extern "system" fn $native_build_version<'local>(
+            env: JNIEnv<'local>,
+            class: JClass<'local>,
+        ) -> jstring {
+            crate::bridge::Java_io_github_jordepic_streamfusion_Native_version(env, class)
         }
 
         #[cfg(feature = $feature)]
@@ -1695,6 +1705,7 @@ format_jni_facade!(
     "json",
     Java_io_github_jordepic_streamfusion_format_json_NativeJsonFormat_driverInitAddress,
     Java_io_github_jordepic_streamfusion_format_json_NativeJsonFormat_isLoaded,
+    Java_io_github_jordepic_streamfusion_format_json_NativeJsonFormat_nativeBuildVersion,
     Java_io_github_jordepic_streamfusion_format_json_NativeJsonFormat_decodeInto,
     Java_io_github_jordepic_streamfusion_format_json_NativeJsonFormat_closeDecoder
 );
@@ -1703,6 +1714,7 @@ format_jni_facade!(
     "csv",
     Java_io_github_jordepic_streamfusion_format_csv_NativeCsvFormat_driverInitAddress,
     Java_io_github_jordepic_streamfusion_format_csv_NativeCsvFormat_isLoaded,
+    Java_io_github_jordepic_streamfusion_format_csv_NativeCsvFormat_nativeBuildVersion,
     Java_io_github_jordepic_streamfusion_format_csv_NativeCsvFormat_decodeInto,
     Java_io_github_jordepic_streamfusion_format_csv_NativeCsvFormat_closeDecoder
 );
@@ -1711,6 +1723,7 @@ format_jni_facade!(
     "raw",
     Java_io_github_jordepic_streamfusion_format_raw_NativeRawFormat_driverInitAddress,
     Java_io_github_jordepic_streamfusion_format_raw_NativeRawFormat_isLoaded,
+    Java_io_github_jordepic_streamfusion_format_raw_NativeRawFormat_nativeBuildVersion,
     Java_io_github_jordepic_streamfusion_format_raw_NativeRawFormat_decodeInto,
     Java_io_github_jordepic_streamfusion_format_raw_NativeRawFormat_closeDecoder
 );
@@ -1719,6 +1732,7 @@ format_jni_facade!(
     "avro",
     Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_driverInitAddress,
     Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_isLoaded,
+    Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_nativeBuildVersion,
     Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_decodeInto,
     Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_closeDecoder
 );
@@ -1727,6 +1741,7 @@ format_jni_facade!(
     "protobuf",
     Java_io_github_jordepic_streamfusion_format_protobuf_NativeProtobufFormat_driverInitAddress,
     Java_io_github_jordepic_streamfusion_format_protobuf_NativeProtobufFormat_isLoaded,
+    Java_io_github_jordepic_streamfusion_format_protobuf_NativeProtobufFormat_nativeBuildVersion,
     Java_io_github_jordepic_streamfusion_format_protobuf_NativeProtobufFormat_decodeInto,
     Java_io_github_jordepic_streamfusion_format_protobuf_NativeProtobufFormat_closeDecoder
 );

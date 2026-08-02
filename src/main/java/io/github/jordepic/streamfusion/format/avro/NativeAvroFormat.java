@@ -6,10 +6,14 @@ import io.github.jordepic.streamfusion.NativeExtensionLoader;
 public final class NativeAvroFormat {
 
   static {
-    NativeExtensionLoader.load(NativeAvroFormat.class, "avro");
+    NativeExtensionLoader.load(
+        NativeAvroFormat.class, "avro", NativeAvroFormat::nativeBuildVersion);
   }
 
   private NativeAvroFormat() {}
+
+  /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
+  private static native String nativeBuildVersion();
 
   /** Probes that this optional library has loaded. */
   public static native boolean isLoaded();

@@ -6,10 +6,14 @@ import io.github.jordepic.streamfusion.NativeExtensionLoader;
 public final class NativeJsonFormat {
 
   static {
-    NativeExtensionLoader.load(NativeJsonFormat.class, "json");
+    NativeExtensionLoader.load(
+        NativeJsonFormat.class, "json", NativeJsonFormat::nativeBuildVersion);
   }
 
   private NativeJsonFormat() {}
+
+  /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
+  private static native String nativeBuildVersion();
 
   /** Probes that this optional library has loaded. */
   public static native boolean isLoaded();

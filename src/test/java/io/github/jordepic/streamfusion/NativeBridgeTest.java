@@ -2,6 +2,7 @@ package io.github.jordepic.streamfusion;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,11 +28,33 @@ class NativeBridgeTest {
     assertThrows(NativeException.class, Native::panicForTest);
   }
 
+  /**
+   * The loaded library and the JARs must carry the same build stamp — this is what lets the loader
+   * fail loudly on a stale library — and the stamp is maintained in two places (the Maven project
+   * version and the cargo-injected {@code STREAMFUSION_VERSION} in {@code native/.cargo/config.toml}),
+   * so this equality is also the lockstep check that catches one being bumped without the other.
+   */
   @Test
-  void nativeLibraryReportsVersion() {
-    String version = Native.version();
-    assertNotNull(version);
-    assertTrue(version.matches("\\d+\\.\\d+\\.\\d+"), "unexpected version: " + version);
+  void nativeLibraryReportsTheJarBuildVersion() {
+    String jarVersion = BuildVersion.jarVersion();
+    assertNotNull(jarVersion, "the filtered build stamp is missing from the classpath");
+    assertEquals(jarVersion, Native.version());
+  }
+
+  @Test
+  void versionMismatchNamesBothVersionsAndTheResolution() {
+    assertNull(BuildVersion.mismatch("streamfusion", "1.0-SNAPSHOT", "1.0-SNAPSHOT"));
+    assertNull(BuildVersion.mismatch("streamfusion", "0.9", null));
+
+    String mismatch = BuildVersion.mismatch("streamfusion", "0.9", "1.0-SNAPSHOT");
+    assertNotNull(mismatch);
+    assertTrue(mismatch.contains("0.9"), mismatch);
+    assertTrue(mismatch.contains("1.0-SNAPSHOT"), mismatch);
+    assertTrue(mismatch.contains(System.mapLibraryName("streamfusion")), mismatch);
+
+    String unstamped = BuildVersion.mismatch("streamfusion_kafka", null, "1.0-SNAPSHOT");
+    assertNotNull(unstamped);
+    assertTrue(unstamped.contains("no build version"), unstamped);
   }
 
   @Test

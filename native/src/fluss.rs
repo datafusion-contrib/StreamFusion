@@ -18,6 +18,15 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_fluss_NativeFluss_is
 }
 
 #[cfg(feature = "fluss")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_fluss_NativeFluss_nativeBuildVersion<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+) -> jstring {
+    crate::bridge::Java_io_github_jordepic_streamfusion_Native_version(env, class)
+}
+
+#[cfg(feature = "fluss")]
 struct FlussSplitReader {
     _connection: fluss_rs::client::FlussConnection,
     scanner: fluss_rs::client::RecordBatchLogScanner,

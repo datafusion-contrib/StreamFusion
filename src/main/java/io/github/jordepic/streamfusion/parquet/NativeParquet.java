@@ -6,10 +6,13 @@ import io.github.jordepic.streamfusion.NativeExtensionLoader;
 public final class NativeParquet {
 
   static {
-    NativeExtensionLoader.load(NativeParquet.class, "parquet");
+    NativeExtensionLoader.load(NativeParquet.class, "parquet", NativeParquet::nativeBuildVersion);
   }
 
   private NativeParquet() {}
+
+  /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
+  private static native String nativeBuildVersion();
 
   /** Forces initialization of the extension class, including loading its native library. */
   public static boolean isLoaded() {

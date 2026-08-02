@@ -7,10 +7,13 @@ import java.io.IOException;
 public final class NativeKafka {
 
   static {
-    NativeExtensionLoader.load(NativeKafka.class, "kafka");
+    NativeExtensionLoader.load(NativeKafka.class, "kafka", NativeKafka::nativeBuildVersion);
   }
 
   private NativeKafka() {}
+
+  /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
+  private static native String nativeBuildVersion();
 
   public static native boolean isLoaded();
 

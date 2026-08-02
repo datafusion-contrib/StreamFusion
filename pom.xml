@@ -372,6 +372,13 @@
             <resource>
                 <directory>${project.basedir}/../src/main/resources</directory>
             </resource>
+            <!-- The build stamp: the project version filtered into a classpath resource, compared
+                 against the loaded native library's own stamp so a stale library on
+                 java.library.path fails loudly instead of silently shadowing the bundled one. -->
+            <resource>
+                <directory>${project.basedir}/../src/main/resources-filtered</directory>
+                <filtering>true</filtering>
+            </resource>
             <!-- The local-development resource. The universal release profile replaces this with
                  its OS/architecture tree, while Native keeps this location as a development fallback. -->
             <resource>

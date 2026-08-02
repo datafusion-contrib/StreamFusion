@@ -6,10 +6,13 @@ import io.github.jordepic.streamfusion.NativeExtensionLoader;
 public final class NativeCsvFormat {
 
   static {
-    NativeExtensionLoader.load(NativeCsvFormat.class, "csv");
+    NativeExtensionLoader.load(NativeCsvFormat.class, "csv", NativeCsvFormat::nativeBuildVersion);
   }
 
   private NativeCsvFormat() {}
+
+  /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
+  private static native String nativeBuildVersion();
 
   /** Probes that this optional library has loaded. */
   public static native boolean isLoaded();

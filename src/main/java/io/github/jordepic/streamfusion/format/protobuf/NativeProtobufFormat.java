@@ -6,10 +6,14 @@ import io.github.jordepic.streamfusion.NativeExtensionLoader;
 public final class NativeProtobufFormat {
 
   static {
-    NativeExtensionLoader.load(NativeProtobufFormat.class, "protobuf");
+    NativeExtensionLoader.load(
+        NativeProtobufFormat.class, "protobuf", NativeProtobufFormat::nativeBuildVersion);
   }
 
   private NativeProtobufFormat() {}
+
+  /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
+  private static native String nativeBuildVersion();
 
   /** Probes that this optional library has loaded. */
   public static native boolean isLoaded();

@@ -6,10 +6,14 @@ import io.github.jordepic.streamfusion.NativeExtensionLoader;
 public final class NativeFluss {
 
   static {
-    NativeExtensionLoader.load(NativeFluss.class, "fluss");
+    NativeExtensionLoader.load(
+        NativeFluss.class, "fluss", NativeFluss::nativeBuildVersion);
   }
 
   private NativeFluss() {}
+
+  /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
+  private static native String nativeBuildVersion();
 
   public static native boolean isLoaded();
 

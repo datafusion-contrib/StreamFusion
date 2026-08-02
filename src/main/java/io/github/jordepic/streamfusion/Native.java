@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Locale;
+import org.slf4j.LoggerFactory;
 
 /** Entry point to the native data plane. Holds the methods backed by the Rust library. */
 public final class Native {
@@ -18,9 +19,36 @@ public final class Native {
 
   static {
     loadLibrary();
+    verifyLoadedVersion();
   }
 
   private Native() {}
+
+  /**
+   * {@code System.loadLibrary} above searches java.library.path before the bundled JAR resource,
+   * so a leftover library from another StreamFusion release would silently win; its snapshot and
+   * plan wire formats may differ, which corrupts state instead of failing. Comparing the loaded
+   * library's build stamp against the JAR's turns that into an immediate, explained failure. In
+   * development mode ({@code -Dstreamfusion.native.development=true}) a locally built library may
+   * legitimately differ from the JAR stamp, so a mismatch only warns.
+   */
+  private static void verifyLoadedVersion() {
+    String loaded;
+    try {
+      loaded = version();
+    } catch (UnsatisfiedLinkError versionUnavailable) {
+      loaded = null;
+    }
+    String mismatch = BuildVersion.mismatch(LIBRARY_NAME, loaded, BuildVersion.jarVersion());
+    if (mismatch == null) {
+      return;
+    }
+    if (BuildVersion.developmentMode()) {
+      LoggerFactory.getLogger(Native.class).warn(mismatch);
+      return;
+    }
+    throw new UnsatisfiedLinkError(mismatch);
+  }
 
   private static void loadLibrary() {
     try {

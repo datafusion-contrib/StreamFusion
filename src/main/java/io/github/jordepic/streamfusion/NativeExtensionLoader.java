@@ -7,6 +7,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.function.Supplier;
+import org.slf4j.LoggerFactory;
 
 /** Loads an optional StreamFusion native extension from the JAR that declares its Java API. */
 public final class NativeExtensionLoader {
@@ -15,7 +17,21 @@ public final class NativeExtensionLoader {
 
   private NativeExtensionLoader() {}
 
-  public static void load(Class<?> owner, String extension) {
+  /**
+   * Loads the extension library and asserts its build stamp matches the JARs': {@code
+   * System.loadLibrary} searches java.library.path before the bundled resource, so a leftover
+   * library from another StreamFusion release would silently win with a possibly different wire
+   * format. {@code loadedVersion} is the owner's own version native — every extension class needs
+   * one, because a native method binds to whichever loaded library exports its class-mangled
+   * symbol, so only a probe named after the owner reads this extension's library rather than
+   * another one loaded earlier.
+   */
+  public static void load(Class<?> owner, String extension, Supplier<String> loadedVersion) {
+    loadLibrary(owner, extension);
+    verifyLoadedVersion(extension, loadedVersion);
+  }
+
+  private static void loadLibrary(Class<?> owner, String extension) {
     String libraryName = "streamfusion_" + extension;
     try {
       System.loadLibrary(libraryName);
@@ -52,6 +68,27 @@ public final class NativeExtensionLoader {
         throw developmentLibraryFailure;
       }
     }
+  }
+
+  private static void verifyLoadedVersion(String extension, Supplier<String> loadedVersion) {
+    String loaded;
+    try {
+      loaded = loadedVersion.get();
+    } catch (UnsatisfiedLinkError versionUnavailable) {
+      // The development core library only exports the version probes of its enabled features, and
+      // a pre-stamping release library exports none; the former is fine, the latter is stale.
+      loaded = null;
+    }
+    String libraryName = "streamfusion_" + extension;
+    String mismatch = BuildVersion.mismatch(libraryName, loaded, BuildVersion.jarVersion());
+    if (mismatch == null) {
+      return;
+    }
+    if (BuildVersion.developmentMode()) {
+      LoggerFactory.getLogger(NativeExtensionLoader.class).warn(mismatch);
+      return;
+    }
+    throw new UnsatisfiedLinkError(mismatch);
   }
 
   private static boolean isPackaged(Class<?> owner) {

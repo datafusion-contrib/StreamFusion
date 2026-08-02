@@ -267,13 +267,21 @@ pub(crate) fn runtime() -> &'static Runtime {
     })
 }
 
+/// The StreamFusion deployment version this library was built as (stamped by `.cargo/config.toml`
+/// to match the Maven project version), falling back to the crate version for a build that never
+/// saw the stamp (e.g. `cargo build` run outside the package directory) — the fallback can never
+/// equal a JAR version, so such a library fails the loader's version check instead of passing it.
+pub(crate) fn build_version() -> &'static str {
+    option_env!("STREAMFUSION_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
+}
+
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_version<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> jstring {
     crate::bridge::jni_guard(env, move |env| {
-        env.new_string(env!("CARGO_PKG_VERSION"))
+        env.new_string(build_version())
             .expect("failed to allocate Java string for version")
             .into_raw()
     })

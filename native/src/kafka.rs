@@ -2152,6 +2152,15 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_is
     })
 }
 
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_nativeBuildVersion<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+) -> jstring {
+    crate::bridge::Java_io_github_jordepic_streamfusion_Native_version(env, class)
+}
+
 /// Opens a native Kafka split reader for one subtask and returns an opaque handle, released with
 /// `closeKafkaConsumer`. `configKeys`/`configValues` are the translated librdkafka config (applied
 /// verbatim). It produces raw Kafka value bodies as Arrow binary batches; the following format extension

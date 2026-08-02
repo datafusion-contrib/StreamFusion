@@ -417,6 +417,14 @@ impl ParquetEncoder {
     }
 }
 
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParquet_nativeBuildVersion<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+) -> jstring {
+    crate::bridge::Java_io_github_jordepic_streamfusion_Native_version(env, class)
+}
+
 /// Creates a Parquet encoder for the sink: `schemaAddress` carries the full row schema through the
 /// C Data Interface, `partitionColumns` the indices written to the path instead of the file, and
 /// the key/value arrays the resolved writer settings. Returns an opaque handle.
