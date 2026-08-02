@@ -96,6 +96,12 @@ class JsonDecodeParityTest {
           new LogicalType[] {new DecimalType(5, 2), new TimeType(3), new VarBinaryType(8)},
           new String[] {"dec", "t", "b"});
 
+  private static final RowType PAIR_TYPE =
+      RowType.of(new LogicalType[] {new IntType(), new IntType()}, new String[] {"a", "b"});
+
+  private static final RowType SINGLE_TYPE =
+      RowType.of(new LogicalType[] {new IntType()}, new String[] {"a"});
+
   private static final String TS = "\"ts\": \"2020-01-02 03:04:05.678\"";
 
   private static final String[] SQL_MODE_SCENARIOS = {
@@ -270,6 +276,36 @@ class JsonDecodeParityTest {
       "{\"rows\": [1]}",
     };
     for (String scenario : scenarios) {
+      assertParity(NESTED_TYPE, scenario, TimestampFormat.SQL, "", false);
+      assertParity(NESTED_TYPE, scenario, TimestampFormat.SQL, "", true);
+    }
+  }
+
+  @Test
+  void duplicateRowKeysSaturateFlinksFieldCounter() throws Exception {
+    // Flink's row converter counts every MATCHED key occurrence (duplicates included) and skips
+    // ALL remaining keys once the counter reaches the arity — so a late duplicate is ignored,
+    // while an early duplicate pair burns two slots and leaves the other field null. Unknown
+    // keys never advance the counter. The rule holds at every ROW nesting level.
+    String[] pairScenarios = {
+      "{\"a\": 1, \"b\": 2, \"a\": 99}",
+      "{\"a\": 1, \"a\": 2}",
+      "{\"a\": 1, \"a\": 2, \"b\": 5}",
+      "{\"b\": 1, \"a\": 2, \"b\": 3, \"a\": 4}",
+      "{\"x\": 0, \"a\": 1, \"x\": 0, \"a\": 2, \"b\": 7}",
+      "{\"a\": null, \"a\": 2, \"b\": 5}", // an explicit null occurrence counts too
+    };
+    for (String scenario : pairScenarios) {
+      assertParity(PAIR_TYPE, scenario, TimestampFormat.SQL, "", false);
+      assertParity(PAIR_TYPE, scenario, TimestampFormat.SQL, "", true);
+    }
+    assertParity(SINGLE_TYPE, "{\"a\": 1, \"a\": 2}", TimestampFormat.SQL, "", false);
+    assertParity(SINGLE_TYPE, "{\"a\": 1, \"a\": 2}", TimestampFormat.SQL, "", true);
+    String[] nestedScenarios = {
+      "{\"r\": {\"a\": 1, \"b\": \"x\", \"c\": null, \"a\": 9}}", // inner arity 3 saturates
+      "{\"r\": {\"a\": 1, \"a\": 2}}",
+    };
+    for (String scenario : nestedScenarios) {
       assertParity(NESTED_TYPE, scenario, TimestampFormat.SQL, "", false);
       assertParity(NESTED_TYPE, scenario, TimestampFormat.SQL, "", true);
     }

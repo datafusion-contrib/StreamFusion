@@ -1647,6 +1647,49 @@ fn json_decode_whitespace_only_body_fails_strict_and_drops_lenient() {
     assert_eq!(values(&out, 1), vec![1]);
 }
 
+// Flink's row converter counts every MATCHED key occurrence — duplicates included — and skips all
+// remaining keys once the counter reaches the arity. So under (a, b): {"a":1,"b":2,"a":99} keeps
+// a=1 (the duplicate lands after saturation), while {"a":1,"a":2} spends both slots on `a` (last
+// wins) and leaves b null. The rule applies at every ROW nesting level.
+#[test]
+fn json_decode_duplicate_row_keys_saturate_flinks_field_counter() {
+    let schema: SchemaRef = Arc::new(Schema::new(vec![
+        Field::new("a", DataType::Int64, true),
+        Field::new("b", DataType::Int64, true),
+    ]));
+    let batch = bodies(vec![
+        Some(br#"{"a": 1, "b": 2, "a": 99}"#),
+        Some(br#"{"a": 1, "a": 2}"#),
+        Some(br#"{"a": 1, "a": 2, "b": 5}"#),
+        Some(br#"{"x": 0, "a": 1, "x": 0, "a": 2, "b": 7}"#), // unknown keys never count
+    ]);
+    let out = JsonDecoder::new(schema, crate::json::JsonEnv::default()).decode(&batch);
+    let a = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+    let b = out.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!((a.value(0), b.value(0)), (1, 2));
+    assert_eq!(a.value(1), 2);
+    assert!(b.is_null(1));
+    assert_eq!(a.value(2), 2);
+    assert!(b.is_null(2));
+    assert_eq!(a.value(3), 2);
+    assert!(b.is_null(3));
+
+    let nested: SchemaRef = Arc::new(Schema::new(vec![Field::new(
+        "r",
+        DataType::Struct(Fields::from(vec![
+            Field::new("a", DataType::Int64, true),
+            Field::new("b", DataType::Int64, true),
+        ])),
+        true,
+    )]));
+    let batch = bodies(vec![Some(br#"{"r": {"a": 1, "b": 2, "a": 99}}"#)]);
+    let out = JsonDecoder::new(nested, crate::json::JsonEnv::default()).decode(&batch);
+    let r = out.column(0).as_any().downcast_ref::<StructArray>().unwrap();
+    let a = r.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+    let b = r.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!((a.value(0), b.value(0)), (1, 2));
+}
+
 // An empty input batch flushes to an empty batch of the target schema, not a panic.
 #[test]
 fn json_decode_empty_batch_yields_empty() {

@@ -602,9 +602,12 @@ impl StructJsonAppender {
         }
     }
 
-    /// Collects the last value per field first (duplicate keys: last wins, like arrow-json and
-    /// Jackson; unknown keys are ignored), then appends one value per child so every column stays
-    /// row-aligned.
+    /// Collects the last value per field first, then appends one value per child so every column
+    /// stays row-aligned. Key matching follows Flink's row converter exactly
+    /// (`JsonParserToRowDataConverters.createRowConverter`): every matched key occurrence — a
+    /// duplicate included — advances a field counter, and once it reaches the arity the remaining
+    /// keys are SKIPPED, so a late duplicate no longer overwrites the earlier value. Unknown keys
+    /// are ignored and never advance the counter.
     fn append_object(&mut self, object: &simd_json::tape::Object<'_, '_>) {
         const STACK_FIELDS: usize = 32;
         let count = self.children.len();
@@ -616,9 +619,14 @@ impl StructJsonAppender {
             heap.resize(count, None);
             &mut heap
         };
+        let mut matched = 0;
         for (key, value) in object {
+            if matched == count {
+                break;
+            }
             if let Some(i) = self.field_index(key) {
                 slots[i] = Some(value);
+                matched += 1;
             }
         }
         for (child, slot) in self.children.iter_mut().zip(slots.iter()) {
