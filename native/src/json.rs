@@ -916,9 +916,24 @@ pub(crate) enum ArrayRootPolicy {
     UnwrapSingle,
 }
 
+/// Whether this body skips the decode entirely: Flink's deserialize returns before parsing only
+/// for a null or ZERO-LENGTH body. An all-whitespace document reaches Jackson, which finds no
+/// token — "no content to map due to end-of-input" — so it fails the job in strict mode and
+/// drops under `ignore-parse-errors`, never a silent skip.
+fn skip_blank_body(bytes: &[u8], lenient: bool) -> bool {
+    if bytes.is_empty() {
+        return true;
+    }
+    if bytes.iter().all(u8::is_ascii_whitespace) {
+        assert!(lenient, "failed to decode JSON record: no content to map due to end-of-input");
+        return true;
+    }
+    false
+}
+
 /// Decodes one JSON document per body row into `schema` via a simd-json tape walk. A null or
-/// all-whitespace body contributes no row (exactly what feeding it to arrow-json did). A body
-/// whose root is an object decodes as one row; a top-level array follows `array_roots`
+/// zero-length body contributes no row; an all-whitespace one fails/drops (`skip_blank_body`). A
+/// body whose root is an object decodes as one row; a top-level array follows `array_roots`
 /// (a bad *value* inside a decoded object stays the appenders' per-field null, exactly as for a
 /// single-object body). simd-json parses in place, so each body is copied into a reused scratch
 /// buffer — the copy is part of the measured win over arrow-json.
@@ -944,7 +959,7 @@ pub(crate) fn decode_json_bodies_simd(
     };
     for row in 0..bodies.num_rows() {
         let Some(bytes) = binary_body(column, row) else { continue };
-        if bytes.iter().all(u8::is_ascii_whitespace) {
+        if skip_blank_body(bytes, env.lenient) {
             continue;
         }
         scratch.clear();
@@ -1137,6 +1152,9 @@ impl JsonDecoder {
         if self.env.lenient {
             for row in 0..bodies.num_rows() {
                 let Some(bytes) = binary_body(column, row) else { continue };
+                if skip_blank_body(bytes, true) {
+                    continue;
+                }
                 let elements = match self.array_body(bytes) {
                     ArrayBody::Not => vec![bytes],
                     ArrayBody::Elements(elements) => elements,
@@ -1164,6 +1182,9 @@ impl JsonDecoder {
             let mut documents: Vec<&[u8]> = Vec::with_capacity(bodies.num_rows());
             for row in 0..bodies.num_rows() {
                 let Some(bytes) = binary_body(column, row) else { continue };
+                if skip_blank_body(bytes, false) {
+                    continue;
+                }
                 match self.array_body(bytes) {
                     ArrayBody::Not => documents.push(bytes),
                     ArrayBody::Elements(elements) => {

@@ -1616,6 +1616,37 @@ fn json_decode_tolerates_missing_fields_and_null_bodies() {
     assert!(out.column(1).is_null(0));
 }
 
+// Flink's deserialize skips only a null or ZERO-LENGTH body before parsing; an all-whitespace
+// document reaches Jackson and fails ("no content to map due to end-of-input") — the job dies in
+// strict mode, the message drops under ignore-parse-errors. Both native subpaths (simd and the
+// decimal-bearing arrow-json route) reproduce that split.
+#[test]
+fn json_decode_whitespace_only_body_fails_strict_and_drops_lenient() {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    let empty_and_blank = || bodies(vec![Some(b"".as_slice()), Some(b" \t\r\n"), Some(br#"{"id": 1}"#)]);
+    let lenient = crate::json::JsonEnv { lenient: true, ..Default::default() };
+
+    let strict = JsonDecoder::new(json_schema(), crate::json::JsonEnv::default());
+    assert!(catch_unwind(AssertUnwindSafe(|| strict.decode(&empty_and_blank()))).is_err());
+    let out = JsonDecoder::new(json_schema(), lenient).decode(&empty_and_blank());
+    assert_eq!(out.num_rows(), 1); // empty skipped silently, whitespace dropped, the document kept
+    assert_eq!(values(&out, 0), vec![1]);
+    // A zero-length body alone is not an error even in strict mode.
+    let out = JsonDecoder::new(json_schema(), crate::json::JsonEnv::default())
+        .decode(&bodies(vec![Some(b"".as_slice())]));
+    assert_eq!(out.num_rows(), 0);
+
+    let decimal: SchemaRef = Arc::new(Schema::new(vec![
+        Field::new("dec", DataType::Decimal128(5, 2), true),
+        Field::new("id", DataType::Int64, true),
+    ]));
+    let strict = JsonDecoder::new(decimal.clone(), crate::json::JsonEnv::default());
+    assert!(catch_unwind(AssertUnwindSafe(|| strict.decode(&empty_and_blank()))).is_err());
+    let out = JsonDecoder::new(decimal, lenient).decode(&empty_and_blank());
+    assert_eq!(out.num_rows(), 1);
+    assert_eq!(values(&out, 1), vec![1]);
+}
+
 // An empty input batch flushes to an empty batch of the target schema, not a panic.
 #[test]
 fn json_decode_empty_batch_yields_empty() {

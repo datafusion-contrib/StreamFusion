@@ -160,6 +160,11 @@ class JsonDecodeParityTest {
     "{\"ts\": 123456789}",
     // Malformed document.
     "{\"i\": }",
+    // Only a ZERO-LENGTH body skips silently; an all-whitespace one reaches the parser and fails
+    // ("no content to map due to end-of-input") — strict fails the job, lenient drops.
+    "",
+    " ",
+    " \t\r\n ",
   };
 
   @Test
@@ -379,12 +384,15 @@ class JsonDecodeParityTest {
       "{\"dec\": \"0.004\"}",
       "{\"wide\": \"-0.000000000000000001\"}",
       "{\"dec\": \"1,5\"}",
+      // The whitespace-only failure holds on the arrow-json (raw-literal) subpath too.
+      " ",
     };
     for (String scenario : scenarios) {
       assertParity(DECIMAL_TYPE, scenario, TimestampFormat.SQL, "", false);
     }
     // ignore-parse-errors on the decimal path: a bad decimal cell nulls per field, like the host.
     assertParity(DECIMAL_TYPE, "{\"dec\": \"junk\", \"l\": 9}", TimestampFormat.SQL, "", true);
+    assertParity(DECIMAL_TYPE, " ", TimestampFormat.SQL, "", true);
   }
 
   private static void assertParity(
