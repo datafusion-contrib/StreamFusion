@@ -1,7 +1,7 @@
 # CSV
 
 **Status:** Native for both decode and encode, parity-pinned against Flink's own converters
-(`CsvDecodeParityTest` for decode, divergences/21), with the gaps enumerated below. See
+(`CsvDecodeParityTest` for decode), with the gaps enumerated below. See
 [Kafka](../kafka.md) for the connector-level table shapes (`kafka`, `upsert-kafka`) CSV can be
 used in, and [Configuration](../../configuration.md) for the global native switches.
 

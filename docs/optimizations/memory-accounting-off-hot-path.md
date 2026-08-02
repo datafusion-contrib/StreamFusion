@@ -6,7 +6,7 @@ normalize, joins, Top-N)
 The accounting itself must not cost throughput. State footprint is tracked incrementally — only the
 groups a batch touches are re-measured, O(batch) rather than O(open state) — and there is no
 per-allocation JNI upcall into Flink's memory arbiter, the model Comet uses for Spark; the budget
-crosses JNI once at handle creation and is enforced by a local check (divergences/16). Measured
+crosses JNI once at handle creation and is enforced by a local check. Measured
 cost: **~2%** on the accounted keyed-tumbling bench, statistically unchanged on the unaccounted hot
 paths (`66fcfe3`, `2c1c487`).
 

@@ -52,9 +52,6 @@ StreamFusion is built by porting established engines rather than reinventing ope
 - **[Apache Flink](https://github.com/apache/flink)** — the **parity target**: every operator is a
   faithful port of Flink's own, verified for identical output by a parity harness.
 
-Divergences from these references — deliberate points where StreamFusion's design differs, and
-why — are recorded in [`divergences/`](https://github.com/datafusion-contrib/StreamFusion/tree/main/divergences).
-
 ## Determinism
 
 Results are byte-identical to stock Flink for everything admitted, with one necessary exception:

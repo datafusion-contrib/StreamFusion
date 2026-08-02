@@ -28,8 +28,7 @@ The walker replicates arrow-json's per-type coercions exactly, because those are
 parity tests hold against Flink. The exception is DECIMAL: simd-json parses numbers eagerly to
 i64/f64 and drops the raw literal, so a decimal wider than f64 precision would round. Schemas
 containing a decimal anywhere — recursively through ROW/ARRAY/MAP — keep the arrow-json
-raw-literal path instead, which parses the exact digit string like Flink's `BigDecimal`
-([divergences/18](../../divergences/18-simd-json-decode.md)).
+raw-literal path instead, which parses the exact digit string like Flink's `BigDecimal`.
 
 ## Measured
 

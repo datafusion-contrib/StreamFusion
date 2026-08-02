@@ -12,7 +12,7 @@ Fluss-rung profile surfaced it: `StrftimeItems::next` under `spec_to_string`, on
 `CompiledFormat` parses the pattern to owned `Item`s once per distinct pattern per batch (in
 practice once), formats with `format_with_items`, and writes into one reused buffer that the Arrow
 builder copies from — the same compile-once principle
-([divergences/07](../../divergences/07-expression-encoding-and-compile-once.md)) applies to regex.
+applies to regex.
 
 Measured (Criterion `date_format/*`, 4096 rows, the Nexmark `yyyy-MM-dd` pattern): the old
 formulation (`per_row_parse`) runs 670 µs/batch (~6.1 Melem/s); the compiled path 378 µs

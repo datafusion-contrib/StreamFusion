@@ -5,9 +5,8 @@
 The exactly-once sink's record path moves entirely into Rust: librdkafka serializes and produces
 each Arrow batch inside the checkpoint epoch's transaction, eliminating the per-record heap `byte[]`
 materialization and the Java producer from the hot path. Flink's stock committer still finishes the
-transaction from the (transactional.id, producer id, epoch) identity — see
-[divergences/26](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/26-kafka-eo-java-commit-plane.md)
-— so recovery semantics are unchanged.
+transaction from the (transactional.id, producer id, epoch) identity, so recovery semantics are
+unchanged.
 
 Producers are one-shot per epoch and pre-warmed on a dedicated thread: creation, `init_transactions`,
 and the coordinator identity read all overlap the previous epoch, keeping the barrier path to

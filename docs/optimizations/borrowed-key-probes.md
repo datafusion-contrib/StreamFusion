@@ -22,8 +22,7 @@ format unchanged).
 
 q20 gained +4% on the generator loop. The Proton-style block store (state as columnar blocks + row
 refs, emit by `take`) was rejected on that post-round profile — the stored-row decode no longer
-registers — recorded in
-[`.claude/wontdos/48-updating-join-block-state.md`](../../.claude/wontdos/48-updating-join-block-state.md).
+registers.
 
 ## Flink BinaryRow keys encode per batch, probe borrowed
 
@@ -73,7 +72,7 @@ Criterion (4096-row batches, 64–256 keys):
 - keep-first probe: **+6%**
 
 The exchange's concrete key→channel assignment changed with the hashed representation — permitted
-by divergences/10 (co-location is the only contract).
+because co-location, not a specific key→channel mapping, is the exchange's only real contract.
 
 Still scalar-keyed as of this writing, pending a bench that says they matter: the window Top-N
 ranker and the temporal join — tracked in the
@@ -97,6 +96,5 @@ Shipped for the updating join's two state levels first (q20 +4%, q23 +21% cumula
 The GROUP BY's emitted changelog keys are borrowed slices too, decoded once per batch.
 
 The second stage measured q23 **+8.5%**, q18 **+5.4%**, q16 **+3.4%** on the generator profile
-loop — and its q23 profile is what closed the block-store question
-([`.claude/wontdos/48-updating-join-block-state.md`](../../.claude/wontdos/48-updating-join-block-state.md)):
-stored-row decode no longer registers in the joiner at all.
+loop — and its q23 profile is what closed the block-store question: stored-row decode no longer
+registers in the joiner at all.

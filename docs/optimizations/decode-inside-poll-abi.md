@@ -4,9 +4,8 @@
 
 ## History
 
-The format-artifact split
-([divergences/25](../../divergences/25-flink-format-provider-artifacts.md)) had moved decode out of
-the source's poll call into a planner-inserted operator. A profiling round showed that arrangement
+The format-artifact split had moved decode out of the source's poll call into a planner-inserted
+operator. A profiling round showed that arrangement
 serializing the format work — 65% of a JSON job's CPU — behind the island on the task thread, and an
 A/B against the pre-split source pinned the rest of its cost to leaving the poll call itself.
 

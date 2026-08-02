@@ -114,9 +114,7 @@ selected by the sink's own delivery guarantee:
   probing abort on restore remain the host's contract unchanged. The producer identity is read
   authoritatively from the transaction coordinator (`DescribeTransactions`, KIP-664), so this path
   requires brokers **≥ 3.0** — on an older cluster the writer fails at startup with the broker's
-  admin error, and the table must use the Java sink instead. See
-  [divergence 26](../../divergences/26-kafka-eo-java-commit-plane.md) for why the commit itself
-  stays on the Java side rather than being resumed from Rust.
+  admin error, and the table must use the Java sink instead.
 - **`none`/at-least-once delivery** — serialization is native; the resulting key/value bytes feed
   Flink's unmodified `KafkaSink`, whose producer, parallelism, and metrics contracts apply verbatim.
 

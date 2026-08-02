@@ -114,8 +114,7 @@ reproduce correctly. So, exactly like case folding and regex above, the **defaul
 A **pure-Rust `chrono-tz`** path is opt-in under
 `-Dstreamfusion.expression.<DATE_FORMAT|EXTRACT>.allowIncompatible=true` (or the blanket flag). It
 can diverge from the JVM at time-zone-database edges — bundled-tzdb-version skew, DST transitions
-beyond roughly 2100, and deep historical dates — see
-[divergences/17](../../divergences/17-ltz-datetime-session-zone.md) for the full accounting.
+beyond roughly 2100, and deep historical dates.
 
 A **legacy zone spelling** the native parser can't read (`GMT+1`, `PST`) makes the opt-in path fall
 back; the default upcall path handles any zone Flink itself accepts. A plain `TIMESTAMP` argument

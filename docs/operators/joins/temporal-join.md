@@ -34,7 +34,7 @@ the scheme exactly:
 - when the clock reaches the deadline, the key's **entire** state clears silently — both the
   buffered probe rows and every build-side version;
 - enforcement is lazy at each key touch, plus a once-per-retention silent sweep (equivalent to
-  Flink's timer, since firing emits nothing — see `divergences/28`);
+  Flink's timer, since firing emits nothing);
 - the deadline rides checkpoints exactly as Flink's does;
 - cleaning only activates when retention exceeds one millisecond — Flink's own literal
   `minRetentionTime > 1` quirk.

@@ -2,7 +2,8 @@
 
 Adds a native rowtime **temporal table join** (`... JOIN versioned FOR SYSTEM_TIME AS OF o.rowtime`)
 as a columnar two-input operator, closing one of the largest "Flink does it, we don't" gaps. Lookup
-join is deliberately **not** ported (see the end of this doc and `coverage-and-fallbacks.md`).
+join is deliberately **not** ported the same way (see the end of this doc and
+`docs/operators/joins/lookup-join.md`).
 
 ## Why temporal, not lookup
 
@@ -73,5 +74,5 @@ exact check. A changelog left input uses `assertChangelogParity`.
 8. **Tests:** operator harness (`+I/+U/-D` on input 2, left buffering, watermark emission, version
    selection, left-outer null-pad, residual predicate) + `FlinkTemporalJoinSqlHarnessTest` (versioned
    table via `ROW_NUMBER() … ORDER BY rt DESC` dedup view) parity.
-9. **Docs:** `coverage-and-fallbacks.md` (temporal join → native; lookup join → intentional fallback)
-   + readme compatibility chart, same commit.
+9. **Docs:** `docs/operators/joins/temporal-join.md` and `docs/operators/joins/lookup-join.md` (temporal
+   join → native; lookup join → its own, separately-ported native operator), same commit.

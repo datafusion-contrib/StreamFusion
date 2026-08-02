@@ -20,8 +20,7 @@ three natively:
 - **Retracting ranker** — the general case for an arbitrary retracting input, mirroring Flink's
   `RetractableTopNFunction`. TTL expires the *whole* per-partition buffer at once, on a clock
   refreshed by every record processed for that partition — modeling Flink's own per-record
-  `SortedMap` rewrite (see
-  [divergences/28](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/28-state-ttl-clock-and-granularity.md)).
+  `SortedMap` rewrite.
 
 Idle-state TTL is native across all three — see [TTL semantics](index.md#idle-state-ttl) and
 [Configuration](../configuration.md) for the flag surface.

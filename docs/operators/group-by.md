@@ -131,8 +131,9 @@ count)` buffer null-propagates instead, so its overflow is sticky. Both are pinn
 boundary by parity tests.
 
 ⁵ **String `MIN`/`MAX`** compare byte-lexicographically, matching Flink's `BinaryStringData`
-common binary comparison path (divergences/07 covers the one place it differs — the
-materialized-Java-object path on supplementary-plane characters).
+common binary comparison path. The one place this can differ from Flink is its separate
+materialized-Java-object path for supplementary-plane characters, which this native comparison
+does not replicate.
 
 Grouping keys admit bigint/int/string/boolean/date/timestamp/decimal; multiple value columns of
 different types are each read independently (e.g. `SUM(a), SUM(b)` over columns of different

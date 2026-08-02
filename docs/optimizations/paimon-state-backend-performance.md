@@ -78,8 +78,8 @@ columns per batch — range stats cannot prune a uniformly-spread probe set — 
 several sorted runs paid the merge itself.
 
 Two resident-memory indexes were tried and rejected first: a bloom file index cannot prune
-batch-sized probe sets, and an exact per-file key set holds memory proportional to disk rows (see
-`.claude/wontdos/58`). The shipped design removes the merge instead: `deletion-vectors.enabled` on
+batch-sized probe sets, and an exact per-file key set holds memory proportional to disk rows. The
+shipped design removes the merge instead: `deletion-vectors.enabled` on
 the state tables makes every level-1+ file standalone-correct (stale rows are masked by vector files,
 maintained by stock Java Paimon's lookup compaction), so every committed read is a raw parquet scan
 with the exact `IN` probe pushed to the decoder and the vectors applied as row masks.

@@ -1,8 +1,7 @@
 # Top-N emit decodes distinct rows, not emitted rows
 
 **Applies to:** the append-only and retracting streaming [Top-N](../operators/top-n.md) rankers.
-With mini-batch off, each keeps the byte-identical per-input cascade
-([divergences/20](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/20-minibatch-netdiff-topn.md)).
+With mini-batch off, each keeps the byte-identical per-input cascade.
 
 ## The problem: decoding the same row over and over
 
@@ -25,7 +24,7 @@ each touched partition's preimage across physical Arrow batches and emits the ne
 rank diff only at count, watermark, checkpoint, or end-of-input boundaries. This preserves the
 collapsed changelog exactly — the same first-preimage/final-postimage contract described on
 [Logical mini-batches, decoupled from physical Arrow batches](mini-batch-logical-boundary.md) — while
-mini-batch off keeps the byte-identical per-input cascade (divergences/20).
+mini-batch off keeps the byte-identical per-input cascade.
 
 Criterion on 4,096 rows, 64 partitions, ascending Top-10 with sustained boundary churn finds the
 logical diff **2.70×** faster than a diff after every 256-row physical batch for membership output

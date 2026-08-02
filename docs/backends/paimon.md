@@ -58,9 +58,7 @@ of the batch's bundle. There is deliberately **no retained cache of clean rows b
 re-reads are served by the OS page cache plus decode, never a second in-memory copy of committed
 state. Watermark-driven and range-scanning operators (dedup, window rank, `OVER`, window/interval/
 temporal joins) instead query the table with a time-bounded range read merged against the write
-buffer, rather than a per-key point probe; see
-[`divergences/27-paimon-state-backend.md`](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/27-paimon-state-backend.md)
-for the full per-operator shape of each store variant.
+buffer, rather than a per-key point probe.
 
 ## Operator coverage
 
