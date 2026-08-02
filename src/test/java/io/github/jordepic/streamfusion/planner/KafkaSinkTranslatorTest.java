@@ -95,13 +95,23 @@ class KafkaSinkTranslatorTest {
     // avro-confluent hard-wires the legacy mapping, so TIMESTAMP_LTZ never resolves.
     assertNull(EncodeFormat.of("avro-confluent", confluent, ltz));
     assertNull(EncodeFormat.of("avro-confluent", Map.of("url", "http://r:8081"), rowType));
+    // Header-only registry auth resolves; the untranslated credential sources decline.
+    assertNotNull(
+        EncodeFormat.of(
+            "avro-confluent",
+            Map.of(
+                "url", "http://r:8081",
+                "subject", "t-value",
+                "basic-auth.credentials-source", "USER_INFO",
+                "basic-auth.user-info", "user:pass"),
+            rowType));
     assertNull(
         EncodeFormat.of(
             "avro-confluent",
             Map.of(
                 "url", "http://r:8081",
                 "subject", "t-value",
-                "basic-auth.user-info", "user:pass"),
+                "basic-auth.credentials-source", "URL"),
             rowType));
   }
 

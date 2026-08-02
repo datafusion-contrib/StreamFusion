@@ -13,6 +13,8 @@ import io.github.jordepic.streamfusion.operator.RowDataArrowConverter;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +58,7 @@ class NativeKafkaDebeziumAvroEncoderTest {
           new String[] {"id", "name", "score"});
 
   private HttpServer registry;
+  private final List<String> authorizations = Collections.synchronizedList(new ArrayList<>());
 
   @AfterEach
   void stopRegistry() {
@@ -183,11 +186,24 @@ class NativeKafkaDebeziumAvroEncoderTest {
     String url = stubRegistry();
     // The subject is required for serialization (Flink raises its own ValidationException).
     assertNull(EncodeFormat.of("debezium-avro-confluent", Map.of("url", url), ROW_TYPE));
-    // Registry auth/ssl/properties options stay on Flink, like the decode side.
+    // Untranslated registry options stay on Flink, like the decode side: ssl/properties and the
+    // credential sources beyond the header-only USER_INFO/STATIC_TOKEN pair.
     assertNull(
         EncodeFormat.of(
             "debezium-avro-confluent",
-            Map.of("url", url, "schema-registry.subject", "s", "basic-auth.user-info", "u:p"),
+            Map.of(
+                "url", url,
+                "schema-registry.subject", "s",
+                "basic-auth.credentials-source", "SASL_INHERIT"),
+            ROW_TYPE));
+    assertNotNull(
+        EncodeFormat.of(
+            "debezium-avro-confluent",
+            Map.of(
+                "url", url,
+                "schema-registry.subject", "s",
+                "basic-auth.credentials-source", "USER_INFO",
+                "basic-auth.user-info", "u:p"),
             ROW_TYPE));
     // The hard-wired legacy mapping cannot carry TIMESTAMP_LTZ — Flink's own derivation throws.
     RowType ltz =
@@ -201,6 +217,39 @@ class NativeKafkaDebeziumAvroEncoderTest {
             ltz));
   }
 
+  /**
+   * The registration under USER_INFO auth: Flink's Confluent client and the native open-time POST
+   * must send the identical Authorization header to the shared stub (and get the same id back).
+   */
+  @Test
+  void bothEnginesRegisterWithTheSameAuthHeader() throws Exception {
+    String url = stubRegistry();
+    DebeziumAvroSerializationSchema flink =
+        new DebeziumAvroSerializationSchema(
+            ROW_TYPE,
+            url,
+            "t-value",
+            Map.of("basic.auth.credentials.source", "USER_INFO", "basic.auth.user.info", "u:p"));
+    flink.open(null);
+    flink.serialize(GenericRowData.of(7L, StringData.fromString("x"), 2.5));
+
+    EncodeFormat format =
+        EncodeFormat.of(
+            "debezium-avro-confluent",
+            Map.of(
+                "url", url,
+                "schema-registry.subject", "t-value",
+                "basic-auth.credentials-source", "USER_INFO",
+                "basic-auth.user-info", "u:p"),
+            ROW_TYPE);
+    assertNotNull(format);
+    format.openOptions();
+
+    String expected =
+        "Basic " + Base64.getEncoder().encodeToString("u:p".getBytes(StandardCharsets.UTF_8));
+    assertEquals(List.of(expected, expected), authorizations);
+  }
+
   /** One stub registry serving Flink's Confluent client and the native POST alike: identical
    * schema strings get one id, the way a real registry deduplicates registrations. */
   private String stubRegistry() throws Exception {
@@ -209,6 +258,7 @@ class NativeKafkaDebeziumAvroEncoderTest {
     registry.createContext(
         "/subjects",
         exchange -> {
+          authorizations.add(exchange.getRequestHeaders().getFirst("Authorization"));
           String posted =
               new ObjectMapper().readTree(exchange.getRequestBody()).get("schema").asText();
           int id;

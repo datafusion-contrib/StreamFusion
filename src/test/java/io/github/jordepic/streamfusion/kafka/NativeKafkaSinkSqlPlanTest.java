@@ -738,7 +738,8 @@ class NativeKafkaSinkSqlPlanTest {
 
   /**
    * Option and type shapes whose Avro serialization the native path does not reproduce: Avro's
-   * JSON encoding, registry auth, TIME(0)'s second-precision boundary, and TIMESTAMP_LTZ under
+   * JSON encoding, an untranslated registry credential source (the header-only USER_INFO and
+   * STATIC_TOKEN schemes are native), TIME(0)'s second-precision boundary, and TIMESTAMP_LTZ under
    * avro-confluent's hard-wired legacy mapping (where Flink itself fails submission).
    */
   @Test
@@ -749,8 +750,7 @@ class NativeKafkaSinkSqlPlanTest {
         "(id BIGINT)",
         "'format' = 'avro-confluent', "
             + "'avro-confluent.url' = 'http://registry:8081', "
-            + "'avro-confluent.basic-auth.credentials-source' = 'USER_INFO', "
-            + "'avro-confluent.basic-auth.user-info' = 'user:pass'");
+            + "'avro-confluent.basic-auth.credentials-source' = 'SASL_INHERIT'");
   }
 
   private static void assertAvroFallback(String columns, String formatOptions) {

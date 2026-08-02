@@ -17,10 +17,11 @@ import org.apache.flink.table.types.logical.RowType;
  * type {@code ROW<before <physical>.nullable(), after <physical>.nullable(), op STRING>} — the
  * exact derivation Flink's deserializer performs — so the plan-time gate and the runtime registry
  * lookup both operate on the envelope, and the native decode fans the envelope out to changelog
- * rows. Like {@code avro-confluent}, the mapping is hard-wired legacy and the registry options must
- * be a plain URL; an explicit {@code schema} option (Flink validates it against the envelope) also
- * falls back. The format defines no {@code ignore-parse-errors}, so a corrupt message fails the job
- * on both engines.
+ * rows. Like {@code avro-confluent}, the mapping is hard-wired legacy and the registry options
+ * gate through the shared registry accessor (header-only auth is translated; SSL, client
+ * properties, and the other credential sources fall back); an explicit {@code schema} option
+ * (Flink validates it against the envelope) also falls back. The format defines no {@code
+ * ignore-parse-errors}, so a corrupt message fails the job on both engines.
  */
 public final class DebeziumAvroConfluentFormatProvider implements NativeFormatProvider {
 

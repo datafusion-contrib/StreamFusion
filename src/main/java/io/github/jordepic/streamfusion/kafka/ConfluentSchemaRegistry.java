@@ -8,12 +8,15 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.UnaryOperator;
 import org.apache.avro.Schema;
 
 /**
@@ -23,11 +26,17 @@ import org.apache.avro.Schema;
  * schema once at open ({@code POST /subjects/<subject>/versions}) — exactly the two calls Flink's
  * own de/serializers make through the registry client. Deliberately a plain HTTP client rather than
  * a dependency on the Confluent client library — only these two calls are used, and staying
- * dependency-free keeps the build self-contained. Registry auth/SSL options are not translated, so
- * the planner routes only tables without them (they fall back to Flink).
+ * dependency-free keeps the build self-contained. The header-only auth schemes are translated to
+ * the exact Authorization header the Confluent client sends: {@code
+ * basic-auth.credentials-source=USER_INFO} (Basic with the base64 of {@code basic-auth.user-info})
+ * and {@code bearer-auth.credentials-source=STATIC_TOKEN} (Bearer with {@code bearer-auth.token}).
+ * The other credential sources need more than a header derived from the format options — URL
+ * embeds the credential in the registry URL, SASL_INHERIT reads the Kafka SASL JAAS login, and the
+ * OAuth/CUSTOM bearer sources run a token flow or user class — so they, SSL stores, and
+ * pass-through client {@code properties} stay untranslated (the table falls back to Flink).
  *
- * <p>Serializable (the URL list travels in the operator to distributed task managers); the HTTP client
- * is created lazily on first fetch.
+ * <p>Serializable (the URL list and auth header travel in the operator to distributed task
+ * managers); the HTTP client is created lazily on first fetch.
  */
 public class ConfluentSchemaRegistry implements Serializable {
 
@@ -51,19 +60,17 @@ public class ConfluentSchemaRegistry implements Serializable {
           "ssl.keystore.location",
           "ssl.keystore.password",
           "ssl.truststore.location",
-          "ssl.truststore.password",
-          "basic-auth.credentials-source",
-          "basic-auth.user-info",
-          "bearer-auth.credentials-source",
-          "bearer-auth.token");
+          "ssl.truststore.password");
 
   private final String[] urls;
+  private final String authHeader;
   private long timeoutMillis = DEFAULT_TIMEOUT_MILLIS;
 
   private transient HttpClient client;
 
-  private ConfluentSchemaRegistry(String[] urls) {
+  private ConfluentSchemaRegistry(String[] urls, String authHeader) {
     this.urls = urls;
+    this.authHeader = authHeader;
   }
 
   ConfluentSchemaRegistry withTimeoutMillis(long timeoutMillis) {
@@ -73,9 +80,9 @@ public class ConfluentSchemaRegistry implements Serializable {
 
   /**
    * Builds the registry accessor from a table's options, or null when the format's registry options
-   * are ones the native path doesn't translate (an explicit reader {@code schema}, auth, SSL, or
-   * pass-through client {@code properties}) — the caller then leaves the table on Flink. The format
-   * factory already validated {@code url} is present.
+   * are ones the native path doesn't translate (an explicit reader {@code schema}, an auth scheme
+   * beyond the two header-only ones, SSL, or pass-through client {@code properties}) — the caller
+   * then leaves the table on Flink. The format factory already validated {@code url} is present.
    */
   public static ConfluentSchemaRegistry fromOptions(Map<String, String> options) {
     // Format options are prefixed with the format identifier — plus "value." when the format was
@@ -85,18 +92,7 @@ public class ConfluentSchemaRegistry implements Serializable {
       return null;
     }
     String prefix = (options.containsKey("value.format") ? "value." : "") + identifier + ".";
-    String url = options.get(prefix + "url");
-    if (url == null) {
-      return null;
-    }
-    for (String option : UNSUPPORTED_OPTIONS) {
-      if (options.containsKey(prefix + option)) {
-        return null;
-      }
-    }
-    // The url option accepts a comma-separated list of base URLs (the registry client's failover
-    // form); fetches try each in order.
-    return new ConfluentSchemaRegistry(url.split(","));
+    return from(options.get(prefix + "url"), key -> options.get(prefix + key));
   }
 
   /**
@@ -106,16 +102,51 @@ public class ConfluentSchemaRegistry implements Serializable {
    * ({@code schema-registry.url}, {@code schema-registry.schema}) are honored both ways.
    */
   public static ConfluentSchemaRegistry fromFormatOptions(Map<String, String> options) {
-    String url = options.getOrDefault("url", options.get("schema-registry.url"));
-    if (url == null || options.containsKey("schema-registry.schema")) {
+    if (options.containsKey("schema-registry.schema")) {
       return null;
     }
-    for (String option : UNSUPPORTED_OPTIONS) {
-      if (options.containsKey(option)) {
+    return from(options.getOrDefault("url", options.get("schema-registry.url")), options::get);
+  }
+
+  private static ConfluentSchemaRegistry from(String url, UnaryOperator<String> option) {
+    if (url == null) {
+      return null;
+    }
+    for (String unsupported : UNSUPPORTED_OPTIONS) {
+      if (option.apply(unsupported) != null) {
         return null;
       }
     }
-    return new ConfluentSchemaRegistry(url.split(","));
+    String basicSource = nonEmpty(option.apply("basic-auth.credentials-source"));
+    String bearerSource = nonEmpty(option.apply("bearer-auth.credentials-source"));
+    String authHeader = null;
+    if (basicSource != null && bearerSource != null) {
+      // The Confluent client rejects the combination with a ConfigException; falling back lets
+      // Flink raise it.
+      return null;
+    } else if (basicSource != null) {
+      String userInfo = nonEmpty(option.apply("basic-auth.user-info"));
+      if (!"USER_INFO".equals(basicSource) || userInfo == null) {
+        return null;
+      }
+      authHeader =
+          "Basic " + Base64.getEncoder().encodeToString(userInfo.getBytes(StandardCharsets.UTF_8));
+    } else if (bearerSource != null) {
+      String token = nonEmpty(option.apply("bearer-auth.token"));
+      if (!"STATIC_TOKEN".equals(bearerSource) || token == null) {
+        return null;
+      }
+      authHeader = "Bearer " + token;
+    }
+    // A dangling user-info/token without its credentials-source is ignored, exactly like the
+    // Confluent client (it only configures a credential provider from the source option). The url
+    // option accepts a comma-separated list of base URLs (the registry client's failover form);
+    // fetches try each in order.
+    return new ConfluentSchemaRegistry(url.split(","), authHeader);
+  }
+
+  private static String nonEmpty(String value) {
+    return value == null || value.isEmpty() ? null : value;
   }
 
   /**
@@ -209,9 +240,14 @@ public class ConfluentSchemaRegistry implements Serializable {
   }
 
   private HttpRequest.Builder request(String url) {
-    return HttpRequest.newBuilder(URI.create(url))
-        .timeout(Duration.ofMillis(timeoutMillis))
-        .header("Accept", "application/vnd.schemaregistry.v1+json");
+    HttpRequest.Builder request =
+        HttpRequest.newBuilder(URI.create(url))
+            .timeout(Duration.ofMillis(timeoutMillis))
+            .header("Accept", "application/vnd.schemaregistry.v1+json");
+    if (authHeader != null) {
+      request.header("Authorization", authHeader);
+    }
+    return request;
   }
 
   private static String endpoint(String base, String path) {

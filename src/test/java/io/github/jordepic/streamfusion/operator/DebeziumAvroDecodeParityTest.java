@@ -103,6 +103,10 @@ class DebeziumAvroDecodeParityTest {
 
   private static HttpServer registry;
 
+  // The stub registry demands the STATIC_TOKEN bearer header on every fetch, so each parity case
+  // also proves both engines authenticate their schema lookups identically.
+  private static final String BEARER_TOKEN = "parity-token";
+
   @BeforeAll
   static void startRegistry() throws Exception {
     Map<Integer, Schema> schemas = Map.of(V1_ID, ENVELOPE_V1, V2_ID, ENVELOPE_V2);
@@ -110,6 +114,12 @@ class DebeziumAvroDecodeParityTest {
     registry.createContext(
         "/schemas/ids/",
         exchange -> {
+          if (!("Bearer " + BEARER_TOKEN)
+              .equals(exchange.getRequestHeaders().getFirst("Authorization"))) {
+            exchange.sendResponseHeaders(401, -1);
+            exchange.close();
+            return;
+          }
           int id =
               Integer.parseInt(
                   exchange.getRequestURI().getPath().substring("/schemas/ids/".length()));
@@ -280,7 +290,11 @@ class DebeziumAvroDecodeParityTest {
             harness.nativeDecode(
                 new DebeziumAvroConfluentFormatProvider(),
                 message,
-                Map.of("format", "debezium-avro-confluent", "debezium-avro-confluent.url", url),
+                Map.of(
+                    "format", "debezium-avro-confluent",
+                    "debezium-avro-confluent.url", url,
+                    "debezium-avro-confluent.bearer-auth.credentials-source", "STATIC_TOKEN",
+                    "debezium-avro-confluent.bearer-auth.token", BEARER_TOKEN),
                 false));
   }
 
@@ -288,7 +302,13 @@ class DebeziumAvroDecodeParityTest {
       DecodeParityHarness harness, byte[] message, String registryUrl) throws Exception {
     DebeziumAvroDeserializationSchema schema =
         new DebeziumAvroDeserializationSchema(
-            ROW_TYPE, InternalTypeInfo.of(ROW_TYPE), registryUrl, null, null);
+            ROW_TYPE,
+            InternalTypeInfo.of(ROW_TYPE),
+            registryUrl,
+            null,
+            Map.of(
+                "bearer.auth.credentials.source", "STATIC_TOKEN",
+                "bearer.auth.token", BEARER_TOKEN));
     schema.open(
         new DeserializationSchema.InitializationContext() {
           @Override

@@ -121,16 +121,35 @@ class KafkaDecodeRoutingTest {
   }
 
   @Test
-  void debeziumAvroConfluentRegistryAuthKeepsTheScanOnFlink() {
-    // Registry auth/SSL/client-properties options aren't translated to the plain-HTTP native
-    // fetch — the same fallback set as avro-confluent.
+  void debeziumAvroConfluentUserInfoAuthRoutes() {
+    // The header-only auth schemes (USER_INFO basic, STATIC_TOKEN bearer) translate to the exact
+    // Authorization header the Confluent client sends, so a secured registry stays native.
     StreamTableEnvironment tEnv = env();
     tEnv.executeSql(
         table("id BIGINT, name STRING", "debezium-avro-confluent")
             .replace(
                 "'debezium-avro-confluent')",
                 "'debezium-avro-confluent', 'debezium-avro-confluent.url' = 'http://localhost:8081',"
+                    + " 'debezium-avro-confluent.basic-auth.credentials-source' = 'USER_INFO',"
                     + " 'debezium-avro-confluent.basic-auth.user-info' = 'user:pw')"));
+    String plan = NativePlanner.explain(tEnv, "SELECT id, name FROM t");
+    assertTrue(
+        plan.contains("NativeKafkaDecode"),
+        "USER_INFO registry auth should decode natively:\n" + plan);
+  }
+
+  @Test
+  void debeziumAvroConfluentUntranslatedRegistryAuthKeepsTheScanOnFlink() {
+    // Registry SSL/client-properties options and the credential sources beyond the header-only
+    // pair aren't translated to the plain-HTTP native fetch — the same fallback set as
+    // avro-confluent.
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table("id BIGINT, name STRING", "debezium-avro-confluent")
+            .replace(
+                "'debezium-avro-confluent')",
+                "'debezium-avro-confluent', 'debezium-avro-confluent.url' = 'http://localhost:8081',"
+                    + " 'debezium-avro-confluent.basic-auth.credentials-source' = 'URL')"));
     assertStaysOnFlink(tEnv, "SELECT id, name FROM t");
   }
 

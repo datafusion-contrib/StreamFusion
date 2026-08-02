@@ -693,8 +693,16 @@ shapes persist their per-key deadlines in a dedicated state table).
   - `avro.encoding = 'json'` (a different wire format);
   - a TIME(0) column — its Arrow boundary form is seconds, but Flink serializes the row's full
     milliseconds (TIME(1..3) is exact; the derivation rejects higher precisions);
-  - registry options the native client does not translate, exactly as on the decode side: an
-    explicit `schema`, `properties.*`, or any `ssl.*`/`basic-auth.*`/`bearer-auth.*` option;
+  - registry options the native client does not translate, exactly as on the decode side. The two
+    header-only auth schemes are native — `basic-auth.credentials-source = 'USER_INFO'` (with
+    `basic-auth.user-info`) and `bearer-auth.credentials-source = 'STATIC_TOKEN'` (with
+    `bearer-auth.token`) send the Confluent client's exact Authorization header on the open-time
+    registration. Still falling back: an explicit `schema`, `properties`, any `ssl.*` option, a
+    credentials source beyond that pair (`URL`, `SASL_INHERIT`, and the OAuth/`CUSTOM` bearer
+    sources need the registry URL's userinfo, the Kafka JAAS login, or a token flow — not a header
+    from the format options), a translated source missing its credential, or basic and bearer
+    sources together (the last two are the Confluent client's own `ConfigException`, which the
+    fallback lets Flink raise);
   - a missing `streamfusion-avro`/`streamfusion-avro-confluent-registry` JAR (the provider seam
     treats it as an absent native format).
 
@@ -812,9 +820,16 @@ shapes persist their per-key deadlines in a dedicated state table).
   *and* the native source (the source's split reader decodes through the JVM when a format needs
   per-batch JVM work, which the registry lookup does). `avro-confluent` fetches each frame's
   writer schema from the registry by id at runtime — the same lazy per-id lookup Flink's
-  deserializer makes, following mid-stream schema evolution — but falls back when the registry
-  options need more than a plain URL: an explicit reader `schema`, basic/bearer auth, SSL stores,
-  or pass-through client `properties`. Falling back:
+  deserializer makes, following mid-stream schema evolution. A secured registry is native for the
+  two header-only auth schemes: `basic-auth.credentials-source = 'USER_INFO'` (with
+  `basic-auth.user-info`) and `bearer-auth.credentials-source = 'STATIC_TOKEN'` (with
+  `bearer-auth.token`) send the Confluent client's exact Authorization header on every fetch.
+  Registry options still falling back: an explicit reader `schema`, SSL stores, pass-through
+  client `properties`, a credentials source beyond that pair (`URL`, `SASL_INHERIT`, and the
+  OAuth/`CUSTOM` bearer sources need the registry URL's userinfo, the Kafka JAAS login, or a token
+  flow — not a header from the format options), a translated source missing its credential, or
+  basic and bearer sources together (the last two are the Confluent client's own
+  `ConfigException`, which the fallback lets Flink raise). Falling back:
   - a row type Flink's own avro factory rejects at job submission — RAW and the other unmapped
     types, TIMESTAMP_LTZ under the legacy mapping, TIMESTAMP/TIME precision beyond the mapping's
     limit, a non-string map key. These are declined at plan time (the provider runs the same
@@ -873,10 +888,12 @@ shapes persist their per-key deadlines in a dedicated state table).
   reconciled like plain `avro-confluent` columns (parity-pinned against Flink's own deserializer —
   `DebeziumAvroDecodeParityTest`). Null and empty messages are tombstones, skipped; corrupt
   messages (unknown op, a null pre-image on update/delete) fail the job as Flink does — the format
-  defines no `ignore-parse-errors`. It shares `avro-confluent`'s fallback causes: the registry
-  options beyond a plain `url` (an explicit `schema`, auth, SSL, client `properties`) and the
-  avro type gates (run over the envelope, so TIMESTAMP_LTZ / TIME(0) / BINARY(n) and the other
-  legacy-mapping exclusions apply to the physical columns). Still falling
+  defines no `ignore-parse-errors`. It shares `avro-confluent`'s registry-option coverage and
+  fallback causes: `USER_INFO` basic auth and `STATIC_TOKEN` bearer auth are native (the Confluent
+  client's exact Authorization header); an explicit `schema`, SSL stores, client `properties`, and
+  the other credential sources fall back — and the avro type gates run over the envelope, so
+  TIMESTAMP_LTZ / TIME(0) / BINARY(n) and the other
+  legacy-mapping exclusions apply to the physical columns. Still falling
   back: the `schema-include` envelope wrapper; metadata/computed columns; **nested Maxwell/Canal
   columns** (findValue's recursive search could false-match a column name inside another field —
   flat scalar schemas only, up to 128 columns); and Canal's `database.include`/`table.include`
