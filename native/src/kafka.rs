@@ -724,9 +724,61 @@ impl arrow::json::writer::EncoderFactory for FlinkJsonEncoderFactory {
             DataType::Date32 => Some(Box::new(FlinkDateEncoder {
                 array: array.as_primitive::<arrow::datatypes::Date32Type>(),
             })),
+            // FLOAT/DOUBLE take the JVM's legacy Double.toString spelling (see jdk_double), not
+            // arrow-json's shortest-digits rendering; the plan-time probe guarantees the host JVM
+            // still spells that way. Non-finite values follow Jackson's default
+            // QUOTE_NON_NUMERIC_NUMBERS: "NaN", "Infinity", "-Infinity" as quoted strings.
+            DataType::Float64 => Some(Box::new(FlinkDoubleEncoder {
+                array: array.as_primitive::<arrow::datatypes::Float64Type>(),
+            })),
+            DataType::Float32 => Some(Box::new(FlinkFloatEncoder {
+                array: array.as_primitive::<arrow::datatypes::Float32Type>(),
+            })),
             _ => None,
         };
         Ok(encoder.map(|encoder| NullableEncoder::new(encoder, array.nulls().cloned())))
+    }
+}
+
+/// Flink's DOUBLE spelling: `Double.toString` digits raw when finite, quoted `String.valueOf`
+/// otherwise (Jackson's non-numeric quoting) — none of which ever needs JSON escaping.
+#[cfg(feature = "kafka")]
+struct FlinkDoubleEncoder<'a> {
+    array: &'a arrow::array::Float64Array,
+}
+
+#[cfg(feature = "kafka")]
+impl arrow::json::writer::Encoder for FlinkDoubleEncoder<'_> {
+    fn encode(&mut self, index: usize, output: &mut Vec<u8>) {
+        let value = self.array.value(index);
+        if value.is_finite() {
+            crate::jdk_double::jdk_double_to_string(value, output);
+        } else {
+            output.push(b'"');
+            crate::jdk_double::jdk_double_to_string(value, output);
+            output.push(b'"');
+        }
+    }
+}
+
+/// Flink's FLOAT spelling: `Float.toString` of the single-precision value (Flink's converter
+/// builds a `FloatNode`, never promoting to double).
+#[cfg(feature = "kafka")]
+struct FlinkFloatEncoder<'a> {
+    array: &'a arrow::array::Float32Array,
+}
+
+#[cfg(feature = "kafka")]
+impl arrow::json::writer::Encoder for FlinkFloatEncoder<'_> {
+    fn encode(&mut self, index: usize, output: &mut Vec<u8>) {
+        let value = self.array.value(index);
+        if value.is_finite() {
+            crate::jdk_double::jdk_float_to_string(value, output);
+        } else {
+            output.push(b'"');
+            crate::jdk_double::jdk_float_to_string(value, output);
+            output.push(b'"');
+        }
     }
 }
 
@@ -2214,6 +2266,38 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_en
     format: jint,
 ) -> jboolean {
     crate::bridge::jni_guard(env, move |_env| u8::from(encode_format_compiled(format)))
+}
+
+/// The FLOAT/DOUBLE admission probe's data plane: spells every value with the legacy JDK
+/// algorithm (`jdk_double`), newline-terminated, doubles before floats. The JVM compares the
+/// result against its own `Double.toString`/`Float.toString` over a corpus where the legacy and
+/// shortest-representation algorithms are known to disagree, so a JDK 19+ host fails the probe
+/// and FLOAT/DOUBLE columns fall back instead of silently diverging.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_spellFloatingPoint<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    doubles: JDoubleArray<'local>,
+    floats: JFloatArray<'local>,
+) -> jbyteArray {
+    kafka_jni(&mut env, std::ptr::null_mut(), |env| {
+        let mut out = Vec::new();
+        for value in read_doubles(env, &doubles) {
+            crate::jdk_double::jdk_double_to_string(value, &mut out);
+            out.push(b'\n');
+        }
+        for value in read_floats(env, &floats) {
+            crate::jdk_double::jdk_float_to_string(value, &mut out);
+            out.push(b'\n');
+        }
+        let result = env
+            .byte_array_from_slice(&out)
+            .map_err(|error| format!("failed to materialize float spellings: {error}"))?;
+        Ok(result.into_raw())
+    })
 }
 
 /// Whether this build compiles an encode arm for the format code — capability only, never option

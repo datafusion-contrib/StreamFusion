@@ -2,7 +2,9 @@ package io.github.jordepic.streamfusion.planner;
 
 import io.github.jordepic.streamfusion.format.EncodeFormat;
 import io.github.jordepic.streamfusion.format.FormatCodes;
+import io.github.jordepic.streamfusion.kafka.JdkFloatSpelling;
 import io.github.jordepic.streamfusion.kafka.NativeKafka;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -18,6 +20,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalS
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.LogicalTypeFamily;
+import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.TimeType;
 
@@ -59,6 +62,11 @@ final class KafkaSinkMatcher {
       return new Planned(null, null, null, null, null, null, false, reason);
     }
   }
+
+  /** The precise fallback reason when the JVM's float spelling probe fails (JDK 19+ host). */
+  private static final String FLOAT_SPELLING_MISMATCH =
+      "jdk float spelling mismatch (JDK 19+): this JVM's Double.toString is not the legacy"
+          + " spelling the native text encoders produce";
 
   /** The value formats the native serializer implements, by Flink format identifier. */
   private static final Set<String> NATIVE_VALUE_FORMATS =
@@ -103,6 +111,9 @@ final class KafkaSinkMatcher {
         return Planned.fallback(valueFormatId + " type " + type.asSummaryString());
       }
     }
+    if (!floatSpellingVerified(valueFormatId, rowType.getChildren())) {
+      return Planned.fallback(FLOAT_SPELLING_MISMATCH);
+    }
     EncodeFormat valueFormat =
         EncodeFormat.of(valueFormatId, translated.planned().valueFormatOptions, rowType);
     if (valueFormat == null || !encodedByNativeLibrary(valueFormat)) {
@@ -119,11 +130,16 @@ final class KafkaSinkMatcher {
           table.getResolvedSchema().getPrimaryKey().orElseThrow().getColumns();
       keyFields =
           primaryKey.stream().mapToInt(rowType.getFieldNames()::indexOf).toArray();
+      List<LogicalType> keyTypes = new ArrayList<>();
       for (int keyField : keyFields) {
         LogicalType type = rowType.getTypeAt(keyField);
         if (!supportsType(keyFormatId, type)) {
           return Planned.fallback("key " + keyFormatId + " type " + type.asSummaryString());
         }
+        keyTypes.add(type);
+      }
+      if (!floatSpellingVerified(keyFormatId, keyTypes)) {
+        return Planned.fallback(FLOAT_SPELLING_MISMATCH);
       }
       // The key format serializes its own row: the PK projection, exactly the row type Flink's
       // upsert-kafka factory hands the key format's encoder.
@@ -189,9 +205,7 @@ final class KafkaSinkMatcher {
   /**
    * Flink's CSV serializer covers scalars at the top level plus depth-one ARRAY and ROW (its
    * schema converter rejects deeper nesting, and its runtime converter has no MAP/MULTISET/
-   * interval arm). FLOAT/DOUBLE are additionally declined natively: Flink spells them with the
-   * JVM's JDK-version-dependent {@code Double.toString}, which has no byte-exact native
-   * counterpart — the same reason the float-to-string CAST stays on the host.
+   * interval arm). FLOAT/DOUBLE additionally require the spelling probe (see {@code plan}).
    */
   private static boolean supportsCsvType(LogicalType type, boolean nested) {
     switch (type.getTypeRoot()) {
@@ -199,6 +213,8 @@ final class KafkaSinkMatcher {
       case SMALLINT:
       case INTEGER:
       case BIGINT:
+      case FLOAT:
+      case DOUBLE:
       case BOOLEAN:
       case CHAR:
       case VARCHAR:
@@ -229,6 +245,8 @@ final class KafkaSinkMatcher {
       case SMALLINT:
       case INTEGER:
       case BIGINT:
+      case FLOAT:
+      case DOUBLE:
       case BOOLEAN:
       case CHAR:
       case VARCHAR:
@@ -251,12 +269,28 @@ final class KafkaSinkMatcher {
         return type.getChildren().get(0).is(LogicalTypeFamily.CHARACTER_STRING)
             && type.getChildren().stream().allMatch(KafkaSinkMatcher::supportsJsonType);
       default:
-        // FLOAT/DOUBLE included: Flink spells them with the JVM's JDK-version-dependent
-        // Double.toString, which has no byte-exact native counterpart — the same reason the CSV
-        // sink and the float-to-string CAST stay on the host. (Decode is unaffected: parsing a
-        // JSON number is exact.)
         return false;
     }
+  }
+
+  /**
+   * FLOAT/DOUBLE on a text format serialize through the native port of the legacy (JDK ≤ 18)
+   * {@code Double.toString}; they are admitted only while the runtime probe confirms this JVM
+   * still spells them identically. On a JDK 19+ host (shortest-representation digits) the probe
+   * fails and the column keeps host serialization. Binary formats carry IEEE bytes and are exempt.
+   */
+  private static boolean floatSpellingVerified(String formatIdentifier, List<LogicalType> types) {
+    boolean textual = FormatCodes.isJsonFamily(formatIdentifier) || "csv".equals(formatIdentifier);
+    if (!textual || types.stream().noneMatch(KafkaSinkMatcher::containsFloat)) {
+      return true;
+    }
+    return JdkFloatSpelling.nativeMatchesJvm();
+  }
+
+  private static boolean containsFloat(LogicalType type) {
+    return type.is(LogicalTypeRoot.FLOAT)
+        || type.is(LogicalTypeRoot.DOUBLE)
+        || type.getChildren().stream().anyMatch(KafkaSinkMatcher::containsFloat);
   }
 
   private static Map<String, String> options(StreamPhysicalSink sink) {

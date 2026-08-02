@@ -383,17 +383,17 @@ class NativeKafkaSinkSqlPlanTest {
   }
 
   /**
-   * Flink spells FLOAT/DOUBLE with the JVM's JDK-version-dependent {@code Double.toString}; there
-   * is no byte-exact native counterpart, so a CSV sink carrying one stays on the host.
+   * FLOAT/DOUBLE serialize natively on the text formats: the library ports the legacy (JDK ≤ 18)
+   * {@code Double.toString} and the runtime probe has confirmed this JVM spells identically.
    */
   @Test
-  void csvFloatColumnsKeepHostSerialization() {
+  void csvFloatColumnsSerializeNatively() {
     StreamTableEnvironment table = environment();
     table.executeSql(
-        "CREATE TABLE src (id BIGINT, score DOUBLE) "
+        "CREATE TABLE src (id BIGINT, score DOUBLE, ratio FLOAT) "
             + "WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
     table.executeSql(
-        "CREATE TABLE output (id BIGINT, score DOUBLE) WITH ("
+        "CREATE TABLE output (id BIGINT, score DOUBLE, ratio FLOAT) WITH ("
             + "'connector' = 'kafka', "
             + "'topic' = 'output', "
             + "'properties.bootstrap.servers' = 'broker:9092', "
@@ -404,17 +404,39 @@ class NativeKafkaSinkSqlPlanTest {
         table.explainSql(
             "INSERT INTO output SELECT * FROM src", ExplainDetail.JSON_EXECUTION_PLAN);
 
-    assertFalse(plan.contains("NativeKafkaSink"), plan);
-    assertTrue(
-        scan.fallbackReasons().stream().anyMatch(reason -> reason.contains("csv type DOUBLE")),
-        scan::explainSummary);
+    assertTrue(scan.substitutions() > 0, scan::explainSummary);
+    assertTrue(plan.contains("NativeKafkaSink"), plan);
   }
 
-  /** The JSON sink declines FLOAT/DOUBLE for the same reason CSV does — {@code Double.toString}
-   * has no byte-exact native counterpart, and unlike CSV this used to route (silently spelling
-   * some values differently than Flink). */
   @Test
-  void jsonFloatColumnsKeepHostSerialization() {
+  void jsonFloatColumnsSerializeNatively() {
+    StreamTableEnvironment table = environment();
+    table.executeSql(
+        "CREATE TABLE src (id BIGINT, score DOUBLE, ratio FLOAT) "
+            + "WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
+    table.executeSql(
+        "CREATE TABLE output (id BIGINT, score DOUBLE, ratio FLOAT) WITH ("
+            + "'connector' = 'kafka', "
+            + "'topic' = 'output', "
+            + "'properties.bootstrap.servers' = 'broker:9092', "
+            + "'format' = 'json')");
+
+    PhysicalPlanScan scan = NativePlanner.install(table);
+    String plan =
+        table.explainSql(
+            "INSERT INTO output SELECT * FROM src", ExplainDetail.JSON_EXECUTION_PLAN);
+
+    assertTrue(scan.substitutions() > 0, scan::explainSummary);
+    assertTrue(plan.contains("NativeKafkaSink"), plan);
+  }
+
+  /**
+   * On a JVM whose {@code Double.toString} is not the legacy spelling (JDK 19+), the probe fails
+   * and a FLOAT/DOUBLE column keeps host serialization, with the probe's precise reason. Forced
+   * here through the probe's test hook — the suite itself runs on the parity JDK.
+   */
+  @Test
+  void jsonFloatColumnsKeepHostSerializationWhenJvmSpellingDiverges() {
     StreamTableEnvironment table = environment();
     table.executeSql(
         "CREATE TABLE src (id BIGINT, score DOUBLE) "
@@ -427,14 +449,19 @@ class NativeKafkaSinkSqlPlanTest {
             + "'format' = 'json')");
 
     PhysicalPlanScan scan = NativePlanner.install(table);
-    String plan =
-        table.explainSql(
-            "INSERT INTO output SELECT * FROM src", ExplainDetail.JSON_EXECUTION_PLAN);
-
-    assertFalse(plan.contains("NativeKafkaSink"), plan);
-    assertTrue(
-        scan.fallbackReasons().stream().anyMatch(reason -> reason.contains("json type DOUBLE")),
-        scan::explainSummary);
+    JdkFloatSpelling.probeOverride = false;
+    try {
+      String plan =
+          table.explainSql(
+              "INSERT INTO output SELECT * FROM src", ExplainDetail.JSON_EXECUTION_PLAN);
+      assertFalse(plan.contains("NativeKafkaSink"), plan);
+      assertTrue(
+          scan.fallbackReasons().stream()
+              .anyMatch(reason -> reason.contains("jdk float spelling mismatch (JDK 19+)")),
+          scan::explainSummary);
+    } finally {
+      JdkFloatSpelling.probeOverride = null;
+    }
   }
 
   /**

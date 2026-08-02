@@ -12,6 +12,7 @@ import io.github.jordepic.streamfusion.operator.RowDataArrowConverter;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.apache.arrow.c.ArrowArray;
@@ -36,6 +37,8 @@ import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.BooleanType;
 import org.apache.flink.table.types.logical.DateType;
 import org.apache.flink.table.types.logical.DecimalType;
+import org.apache.flink.table.types.logical.DoubleType;
+import org.apache.flink.table.types.logical.FloatType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.LogicalType;
@@ -293,6 +296,51 @@ class NativeKafkaCsvEncoderTest {
     for (Map<String, String> options : OPTION_MATRIX) {
       assertMatchesFlink(rows, rowType, options);
     }
+  }
+
+  /**
+   * FLOAT/DOUBLE are Jackson numbers: written raw and never quoted — NaN and the infinities
+   * included — spelled with the legacy {@code Double.toString}/{@code Float.toString} digits (the
+   * edge corpus carries values whose legacy spelling is not the shortest representation). Inside
+   * an array they join like any other raw element.
+   */
+  @Test
+  void matchesFlinkFloatAndDoubleSpellings() throws Exception {
+    RowType rowType =
+        RowType.of(
+            new LogicalType[] {new DoubleType(), new FloatType(), new ArrayType(new DoubleType())},
+            new String[] {"d", "f", "ds"});
+    List<RowData> rows = new ArrayList<>();
+    double[] doubles = FloatingPointCorpus.edgeDoubles();
+    float[] floats = FloatingPointCorpus.edgeFloats();
+    for (int i = 0; i < Math.max(doubles.length, floats.length); i++) {
+      rows.add(
+          GenericRowData.of(
+              doubles[i % doubles.length],
+              floats[i % floats.length],
+              new GenericArrayData(
+                  new Object[] {doubles[i % doubles.length], null, Double.NaN})));
+    }
+    rows.add(GenericRowData.of(null, null, null));
+
+    for (Map<String, String> options : OPTION_MATRIX) {
+      assertMatchesFlink(rows, rowType, options);
+    }
+  }
+
+  @Test
+  void matchesFlinkFloatSpellingsOnSeededRandomSweep() throws Exception {
+    RowType rowType =
+        RowType.of(
+            new LogicalType[] {new DoubleType(), new FloatType()}, new String[] {"d", "f"});
+    double[] doubles = FloatingPointCorpus.randomDoubles(10_000, 0x0DDC5BB17EL);
+    float[] floats = FloatingPointCorpus.randomFloats(10_000, 0xF10C5BB17EL);
+    List<RowData> rows = new ArrayList<>();
+    for (int i = 0; i < doubles.length; i++) {
+      rows.add(GenericRowData.of(doubles[i], floats[i]));
+    }
+
+    assertMatchesFlink(rows, rowType, Map.of());
   }
 
   /**

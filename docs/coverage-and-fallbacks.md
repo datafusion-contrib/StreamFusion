@@ -395,8 +395,9 @@ shapes persist their per-key deadlines in a dedicated state table).
   (space-padding), and **→DECIMAL from a float/double**: these run Flink's own `CastExecutor`
   (`CastRuleProvider`), so trailing zeros, scientific-notation thresholds, trim semantics, and
   failure behavior (an unparsable string fails the job, like the host's default cast) are the host's
-  by construction — Java's float/double rendering is even JDK-version-dependent, so no native port
-  could match the running host. The upcall casts decline (fall back) when the deprecated
+  by construction — Java's float/double rendering is even JDK-version-dependent (the Kafka text
+  sinks now carry a probed native port of the legacy spelling; moving the float-to-string CAST
+  onto it is a separate follow-up). The upcall casts decline (fall back) when the deprecated
   `table.exec.legacy-cast-behaviour` is enabled — its null-on-failure semantics differ. Still
   falling back: casts between strings and the non-numeric types (boolean/date/time/timestamp↔string)
   and any other pair not listed above.
@@ -570,8 +571,10 @@ shapes persist their per-key deadlines in a dedicated state table).
   a native Kafka source-to-sink plan with no RowData transpose at either edge, and pin the
   cross-client transaction hand-off itself (commit, duplicate-commit idempotency, fencing, and
   broker timeout reaping). The JSON serializer currently covers BOOLEAN,
-  TINYINT/SMALLINT/INT/BIGINT, CHAR/VARCHAR, BINARY/VARBINARY, DECIMAL, DATE (ISO_LOCAL_DATE with
-  EXCEEDS_PAD years — `+` past 9999, `-` for negative years), TIME,
+  TINYINT/SMALLINT/INT/BIGINT, FLOAT/DOUBLE (the legacy JDK ≤ 18 `Double.toString` spelling,
+  guarded by the runtime spelling probe below; non-finite values render as Jackson's quoted
+  `"NaN"`/`"Infinity"`/`"-Infinity"`), CHAR/VARCHAR, BINARY/VARBINARY, DECIMAL, DATE
+  (ISO_LOCAL_DATE with EXCEEDS_PAD years — `+` past 9999, `-` for negative years), TIME,
   TIMESTAMP, and TIMESTAMP_LTZ (SQL or ISO-8601), plus ROW, ARRAY, MAP, and MULTISET nested
   recursively over that set (a null field inside a nested row follows `encode.ignore-null-fields`
   exactly as Flink's recursive converter does; array elements and map values keep explicit nulls
@@ -607,7 +610,8 @@ shapes persist their per-key deadlines in a dedicated state table).
   `csv.write-bigdecimal-in-scientific-notation`; the deser-only `csv.allow-comments` and
   `csv.ignore-parse-errors` are accepted and ignored, as in Flink's serializer. The CSV type
   family is scalars plus depth-one ARRAY and ROW (Flink's own schema converter refuses deeper
-  nesting), minus FLOAT/DOUBLE and TIME — see the fallback list. Every sink
+  nesting), minus TIME — see the fallback list; FLOAT/DOUBLE spell like the JSON entry above
+  (raw and never quoted, NaN/Infinity included) under the same runtime probe. Every sink
   fallback cause:
   - an upsert-materialized sink — when Flink decides the upsert changelog arrives out of order it
     bakes a stateful `SinkUpsertMaterializer` into its own sink translation, which a substituted
@@ -628,12 +632,16 @@ shapes persist their per-key deadlines in a dedicated state table).
     an out-of-range `json.*` option value (Flink's format factory then raises its own validation
     error), a `json.map-null-key.literal` containing a line break, or an unrecognized
     delivery/transaction option;
-  - a **FLOAT/DOUBLE column on the JSON family or CSV** — Flink spells them with the JVM's
-    JDK-version-dependent `Double.toString` (JDK 17's rendering differs from shortest-digit
-    formatting on 0.16% of random doubles and 11% of random floats), so there is no byte-exact
-    portable native counterpart — the same stance as the float-to-string CAST fallback (decode is
-    unaffected: parsing a JSON/CSV number is exact; the Avro and protobuf sinks are also
-    unaffected: their wire floats are IEEE bytes); CSV-specific: a **TIME
+  - a **FLOAT/DOUBLE column on the JSON family or CSV when the JDK spelling probe fails**, with
+    the reason `jdk float spelling mismatch (JDK 19+)`. The native library ports the legacy
+    (JDK ≤ 18) `Double.toString`/`Float.toString` algorithm — the parity target JDK 17's spelling —
+    but JDK 19 changed `Double.toString` to shortest-representation digits, which differ on
+    ~0.3% of random doubles and ~11% of random floats. At plan time the JVM spells a fixed
+    corpus (deliberately containing values where the two algorithms disagree) and compares it
+    against the native spelling; a mismatch keeps the column on the host instead of silently
+    diverging (decode is unaffected: parsing a JSON/CSV number is exact; the Avro and protobuf
+    sinks are also unaffected: their wire floats are IEEE bytes; the float-to-string CAST still
+    stays on the host — a separate follow-up); CSV-specific: a **TIME
     column** — SQL DDL resolves every TIME precision to TIME(0), whose Arrow boundary is
     second-granular while Flink's CSV converter prints whatever milliseconds the value carries
     (millisecond-preserving precisions ≥ 1 would run, but the SQL planner never produces them);

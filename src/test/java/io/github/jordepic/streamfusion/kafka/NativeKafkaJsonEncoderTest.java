@@ -12,6 +12,7 @@ import io.github.jordepic.streamfusion.operator.RowDataArrowConverter;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.apache.arrow.c.ArrowArray;
@@ -41,6 +42,8 @@ import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.BooleanType;
 import org.apache.flink.table.types.logical.DateType;
 import org.apache.flink.table.types.logical.DecimalType;
+import org.apache.flink.table.types.logical.DoubleType;
+import org.apache.flink.table.types.logical.FloatType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.LogicalType;
@@ -66,8 +69,6 @@ class NativeKafkaJsonEncoderTest {
             new IntType(),
             new VarCharType(VarCharType.MAX_LENGTH),
             new BooleanType(),
-            // No FLOAT/DOUBLE: the sink gate declines them (Double.toString has no byte-exact
-            // native counterpart), so the referee corpus stays inside the plannable family.
             new BigIntType()
           },
           new String[] {"id", "name", "enabled", "score"});
@@ -162,6 +163,66 @@ class NativeKafkaJsonEncoderTest {
               new BigDecimal(values[i]), type.getPrecision(), type.getScale());
     }
     return GenericRowData.of(fields);
+  }
+
+  /**
+   * FLOAT/DOUBLE spell through the legacy {@code Double.toString} port: raw digits for finite
+   * values — including values whose legacy spelling is not the shortest representation — and
+   * quoted {@code "NaN"}/{@code "Infinity"}/{@code "-Infinity"} for non-finite ones (Jackson's
+   * default {@code QUOTE_NON_NUMERIC_NUMBERS}). FLOAT keeps {@code Float.toString}'s
+   * single-precision digits (Flink builds a {@code FloatNode}); a double promotion would spell
+   * 0.1f as 0.10000000149011612.
+   */
+  @Test
+  void matchesFlinkFloatAndDoubleSpellings() throws Exception {
+    RowType rowType =
+        RowType.of(
+            new LogicalType[] {new DoubleType(), new FloatType()}, new String[] {"d", "f"});
+    List<RowData> rows = new ArrayList<>();
+    double[] doubles = FloatingPointCorpus.edgeDoubles();
+    float[] floats = FloatingPointCorpus.edgeFloats();
+    for (int i = 0; i < Math.max(doubles.length, floats.length); i++) {
+      rows.add(GenericRowData.of(doubles[i % doubles.length], floats[i % floats.length]));
+    }
+    rows.add(GenericRowData.of(null, null));
+
+    assertMatchesFlink(rows, rowType, TimestampFormat.SQL, false);
+    assertMatchesFlink(rows, rowType, TimestampFormat.SQL, true);
+  }
+
+  @Test
+  void matchesFlinkFloatSpellingsOnSeededRandomSweep() throws Exception {
+    RowType rowType =
+        RowType.of(
+            new LogicalType[] {new DoubleType(), new FloatType()}, new String[] {"d", "f"});
+    double[] doubles = FloatingPointCorpus.randomDoubles(10_000, 0x0DDB175D0B1EL);
+    float[] floats = FloatingPointCorpus.randomFloats(10_000, 0xF10A7C0DEL);
+    List<RowData> rows = new ArrayList<>();
+    for (int i = 0; i < doubles.length; i++) {
+      rows.add(GenericRowData.of(doubles[i], floats[i]));
+    }
+
+    assertMatchesFlink(rows, rowType, TimestampFormat.SQL, false, false);
+  }
+
+  /** The float encoders apply inside containers too (arrays, nested rows). */
+  @Test
+  void matchesFlinkFloatSpellingsInsideContainers() throws Exception {
+    RowType nested =
+        RowType.of(new LogicalType[] {new FloatType()}, new String[] {"ratio"});
+    RowType rowType =
+        RowType.of(
+            new LogicalType[] {new ArrayType(new DoubleType()), nested},
+            new String[] {"scores", "inner"});
+    List<RowData> rows =
+        List.of(
+            GenericRowData.of(
+                new GenericArrayData(
+                    new Object[] {0.1d, Double.NaN, Double.NEGATIVE_INFINITY, null, 1e8d}),
+                GenericRowData.of(0.1f)),
+            GenericRowData.of(new GenericArrayData(new Object[0]), GenericRowData.of((Object) null)));
+
+    assertMatchesFlink(rows, rowType, TimestampFormat.SQL, false);
   }
 
   @Test

@@ -526,6 +526,15 @@ pub(crate) fn read_doubles(env: &JNIEnv, values: &JDoubleArray) -> Vec<f64> {
     buffer
 }
 
+/// Reads a JVM float[] into a Vec.
+#[allow(dead_code)]
+pub(crate) fn read_floats(env: &JNIEnv, values: &JFloatArray) -> Vec<f32> {
+    let length = env.get_array_length(values).expect("failed to read floats length");
+    let mut buffer = vec![0f32; length as usize];
+    env.get_float_array_region(values, 0, &mut buffer).expect("failed to read floats");
+    buffer
+}
+
 /// Reads a JVM long[] into a Vec.
 pub(crate) fn read_longs(env: &JNIEnv, values: &JLongArray) -> Vec<i64> {
     let length = env.get_array_length(values).expect("failed to read longs length");

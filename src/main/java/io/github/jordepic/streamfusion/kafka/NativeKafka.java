@@ -49,6 +49,14 @@ public final class NativeKafka {
   public static native boolean encodeFormatSupported(int format);
 
   /**
+   * Spells every value with the native library's legacy {@code Double.toString} port,
+   * newline-terminated, doubles before floats — the data plane of the plan-time probe that admits
+   * FLOAT/DOUBLE columns to the native text encoders only while this JVM spells them identically
+   * (see {@link JdkFloatSpelling}).
+   */
+  public static native byte[] spellFloatingPoint(double[] doubles, float[] floats);
+
+  /**
    * Serializes one Arrow batch directly into the final heap byte arrays KafkaProducer requires.
    * {@code format} is the {@code FormatCodes} wire code and {@code formatOptions} the resolved
    * {@code EncodeFormat} option lines — the native side dispatches on the code, so new sink

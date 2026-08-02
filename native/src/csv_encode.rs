@@ -29,18 +29,18 @@
 //!   trailing zeros), TIMESTAMP is the SQL spelling with a value-trimmed nanosecond fraction,
 //!   and TIMESTAMP_LTZ is the same wall-clock digits plus Flink's `'Z'` designator.
 //!
-//! FLOAT/DOUBLE are deliberately absent: Flink renders them through the JVM's
-//! JDK-version-dependent `Double.toString`, which has no portable byte-exact native counterpart
-//! (measured: 0.16% of random doubles and 11% of random floats differ from shortest-digit
-//! formatting on JDK 17). The planner declines those columns — same stance as the CAST
-//! float-to-string fallback.
+//! FLOAT/DOUBLE spell through the legacy `Double.toString`/`Float.toString` port (`jdk_double`),
+//! written raw like every Jackson number — NaN and the infinities included. The planner's
+//! spelling probe only admits these columns while the host JVM (JDK ≤ 18) still spells them the
+//! same way.
 
 use crate::*;
 use arrow::array::cast::AsArray;
 use arrow::array::{Array, ArrayRef};
 use arrow::datatypes::{
-    Decimal128Type, Int16Type, Int32Type, Int64Type, Int8Type, Time32MillisecondType,
-    Time32SecondType, Time64MicrosecondType, Time64NanosecondType, TimestampNanosecondType,
+    Decimal128Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
+    Time32MillisecondType, Time32SecondType, Time64MicrosecondType, Time64NanosecondType,
+    TimestampNanosecondType,
 };
 
 /// One CSV format instance's encode-affecting options, defaults from Flink's `CsvSchema`.
@@ -235,6 +235,20 @@ fn render_csv_scalar(
         }
         DataType::Int64 => {
             write!(out, "{}", column.as_primitive::<Int64Type>().value(row)).expect("int digits");
+            Ok(CsvScalar::Raw)
+        }
+        DataType::Float32 => {
+            crate::jdk_double::jdk_float_to_string(
+                column.as_primitive::<Float32Type>().value(row),
+                out,
+            );
+            Ok(CsvScalar::Raw)
+        }
+        DataType::Float64 => {
+            crate::jdk_double::jdk_double_to_string(
+                column.as_primitive::<Float64Type>().value(row),
+                out,
+            );
             Ok(CsvScalar::Raw)
         }
         DataType::Decimal128(_, scale) => {

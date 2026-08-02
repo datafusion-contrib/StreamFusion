@@ -42,7 +42,7 @@ pub(crate) use datafusion::prelude::{col as logical_col, lit as logical_lit, Ses
 pub(crate) use datafusion::scalar::ScalarValue;
 pub(crate) use futures::StreamExt;
 pub(crate) use jni::objects::{
-    JByteArray, JClass, JDoubleArray, JIntArray, JLongArray, JObjectArray, JString,
+    JByteArray, JClass, JDoubleArray, JFloatArray, JIntArray, JLongArray, JObjectArray, JString,
 };
 pub(crate) use jni::sys::{jboolean, jbyteArray, jint, jlong, jstring};
 pub(crate) use jni::JNIEnv;
@@ -85,6 +85,7 @@ mod formats;
 mod group_agg;
 mod interval_join;
 mod ipc;
+mod jdk_double;
 mod join_common;
 #[cfg(any(feature = "json", feature = "csv", feature = "raw", feature = "avro", feature = "protobuf", test))]
 mod json;
@@ -115,7 +116,7 @@ mod window_join;
 #[allow(unused_imports)]
 pub(crate) use {
     aggregates::*, bridge::*, calc::*, changelog::*, dedup::*, exchange::*, expr::*,
-    flink_key::*, flatten::*, format_abi::*, format_codes::*, group_agg::*, interval_join::*, ipc::*, join_common::*,
+    flink_key::*, flatten::*, format_abi::*, format_codes::*, group_agg::*, interval_join::*, ipc::*, jdk_double::*, join_common::*,
     keys::*, memory::*, mini_batch::*, normalizer::*, over_agg::*, rowtime::*, session_agg::*, sorter::*,
     state::*, temporal_join::*, topn::*, updating_join::*, window_agg::*, window_join::*,
 };

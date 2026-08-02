@@ -34,11 +34,14 @@ envelope cannot be configured into Jackson's — Jackson's "loose" quote decisio
 always quote; anything at or below `max(delimiter, quote)`, the escape char, or a bare backslash
 quotes), raw never-quoted numbers/booleans/null-literals, doubled quote and escape characters,
 and the joined-array single-field form have no arrow-csv counterparts. Pinned byte-for-byte
-against `CsvRowDataSerializationSchema` in `NativeKafkaCsvEncoderTest`. FLOAT/DOUBLE columns are
-declined there outright: Flink renders them through the JVM's `Double.toString`, whose output is
-JDK-version-dependent (JDK 19 changed it; measured on JDK 17, 0.16% of random doubles and 11% of
-random floats differ from shortest-digit formatting), so no portable byte-exact port exists —
-the float-to-string CAST fallback takes the same stance.
+against `CsvRowDataSerializationSchema` in `NativeKafkaCsvEncoderTest`. FLOAT/DOUBLE columns
+spell through a byte-exact port of the legacy (JDK ≤ 18) `Double.toString`/`Float.toString`
+algorithm (`native/src/jdk_double.rs`) on both the CSV and JSON sinks. The spelling is
+JDK-version-dependent — JDK 19 switched to shortest-representation digits, which differ from the
+legacy output on ~0.3% of random doubles and ~11% of random floats — so a runtime probe spells a
+fixed corpus (seeded with values where the two algorithms disagree) on both sides at plan time
+and declines the column on mismatch; the parity target is JDK 17. The float-to-string CAST still
+stays on the host — a separate follow-up.
 
 The envelope — what parses, what fails, and the produced value — is pinned message-by-message
 against Flink's own deserializers (`CsvDecodeParityTest` / `JsonDecodeParityTest`, no containers
