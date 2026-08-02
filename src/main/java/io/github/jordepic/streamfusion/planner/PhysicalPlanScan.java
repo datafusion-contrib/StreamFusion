@@ -42,6 +42,8 @@ import org.apache.flink.table.planner.plan.optimize.program.FlinkOptimizeProgram
 import org.apache.flink.table.planner.plan.optimize.program.StreamOptimizeContext;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Optimizer program appended after the host engine's physical optimization. It rewrites the
@@ -58,6 +60,8 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
  * config gate, changelog-safety and fallback reason rather than encoding them in its position.
  */
 public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimizeContext> {
+
+  private static final Logger LOG = LoggerFactory.getLogger(PhysicalPlanScan.class);
 
   private final List<String> operatorTypes = new ArrayList<>();
   private final List<String> fallbackReasons = new ArrayList<>();
@@ -90,11 +94,27 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
 
   @Override
   public RelNode optimize(RelNode root, StreamOptimizeContext context) {
+    int operatorsBefore = operatorTypes.size();
+    int substitutionsBefore = substitutions;
+    int fallbacksBefore = fallbackReasons.size();
     record(root);
     // Master switch: with native acceleration off, substitute nothing — the query runs on the host.
     if (!NativeConfig.nativeEnabled()) {
+      LOG.info("StreamFusion native acceleration is disabled; the plan runs on Flink");
       return root;
     }
+    RelNode optimized = substitute(root);
+    // The one always-on plan-time summary; -Dstreamfusion.logFallbackReasons=true itemizes the
+    // reasons and explainSummary() carries them into explain output.
+    LOG.info(
+        "StreamFusion substituted {} of {} plan operators natively ({} fallback reason(s) recorded)",
+        Math.max(0, substitutions - substitutionsBefore),
+        operatorTypes.size() - operatorsBefore,
+        fallbackReasons.size() - fallbacksBefore);
+    return optimized;
+  }
+
+  private RelNode substitute(RelNode root) {
     // Pass 1 substitutes native (columnar) operators.
     RelNode substituted = rewrite(root, new PlanContext(this, KAFKA_AVAILABLE));
     // Whole-query all-or-nothing: every native operator but a source/sink is Arrow → Arrow.
@@ -754,7 +774,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   void recordFallback(String reason) {
     fallbackReasons.add(reason);
     if (LOG_FALLBACK_REASONS) {
-      System.err.println("[streamfusion] falls back to host — " + reason);
+      LOG.info("falls back to host — {}", reason);
+    } else {
+      LOG.debug("falls back to host — {}", reason);
     }
   }
 
