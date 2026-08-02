@@ -1354,6 +1354,26 @@ mod timestamp_encoder_tests {
     }
 }
 
+/// Folds the drain's partition-EOF offsets into the post-drain consumer positions. The consumer
+/// queue is FIFO, so one drain can deliver a partition's EOF op (queued when the fetcher caught up)
+/// *followed by* records that arrived within the same poll window — the EOF's offset is stale by
+/// the drain's end. It must therefore never move a position backwards (regressing the split offset
+/// re-emits the tail records after a checkpoint restore); it only establishes a position for
+/// partitions the consumer has consumed nothing from, so empty assignments can still finish bounded
+/// splits.
+#[cfg(feature = "kafka")]
+fn fold_partition_eofs(
+    positions: &mut HashMap<(String, i32), i64>,
+    partition_eofs: Vec<(String, i32, i64)>,
+) {
+    for (topic, partition, offset) in partition_eofs {
+        positions
+            .entry((topic, partition))
+            .and_modify(|position| *position = (*position).max(offset))
+            .or_insert(offset);
+    }
+}
+
 /// The production native Kafka consumer for one Flink subtask: a single rdkafka `BaseConsumer` that
 /// multiplexes all of the subtask's assigned partitions (Flink-parity — one consumer, not one per
 /// split). Each `poll` buckets the drained payloads by partition directly into Arrow binary body
@@ -1714,9 +1734,7 @@ impl KafkaSplitReader {
                 _ => None,
             })
             .collect::<HashMap<_, _>>();
-        for (topic, partition, offset) in context.partition_eofs {
-            positions.insert((topic, partition), offset);
-        }
+        fold_partition_eofs(&mut positions, context.partition_eofs);
         let mut reported = HashSet::default();
         for (_rkt, partition, topic, mut builder, payload_next_offset, stop, bytes) in context.buckets {
             let key = (topic.clone(), partition);
@@ -1833,13 +1851,43 @@ impl KafkaSplitReader {
 #[cfg(all(test, feature = "kafka"))]
 mod kafka_error_tests {
     use super::{
-        encode_java_big_decimal, encode_json_batch, transient_consumer_error, JsonEncodeOptions,
+        encode_java_big_decimal, encode_json_batch, fold_partition_eofs, transient_consumer_error,
+        JsonEncodeOptions,
     };
     use arrow::array::{ArrayRef, BooleanArray, Int64Array, StringArray};
     use arrow::datatypes::{DataType, Field, Schema};
     use arrow::record_batch::RecordBatch;
     use rdkafka::bindings::rd_kafka_resp_err_t::*;
     use std::sync::Arc;
+
+    /// A live-tailing drain can deliver a partition's EOF op ahead of records that arrived in the
+    /// same poll window (the consumer queue is FIFO). Letting that stale EOF offset overwrite the
+    /// post-drain consumer position regressed the split offset below rows already emitted, so a
+    /// checkpoint restore — or a live reassign after another split finished — re-read them:
+    /// duplicates under exactly-once. The fold must keep the consumed position, while an EOF for a
+    /// partition with no consumed position (an empty assignment) must still establish one so
+    /// bounded splits can finish.
+    #[test]
+    fn stale_partition_eof_never_regresses_a_consumed_position() {
+        let key = ("topic".to_owned(), 0);
+        let mut positions = super::HashMap::default();
+        positions.insert(key.clone(), 108); // records 100..=107 consumed in this drain
+
+        fold_partition_eofs(
+            &mut positions,
+            vec![
+                ("topic".to_owned(), 0, 100), // EOF queued before those records arrived
+                ("empty".to_owned(), 3, 42),  // nothing consumed: EOF establishes the position
+            ],
+        );
+
+        assert_eq!(positions.get(&key), Some(&108));
+        assert_eq!(positions.get(&("empty".to_owned(), 3)), Some(&42));
+
+        // Records consumed up to the true tail: the EOF at the same offset changes nothing.
+        fold_partition_eofs(&mut positions, vec![("topic".to_owned(), 0, 108)]);
+        assert_eq!(positions.get(&key), Some(&108));
+    }
 
     #[test]
     fn retries_transport_but_surfaces_semantic_and_security_failures() {
