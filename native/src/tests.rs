@@ -2004,7 +2004,7 @@ fn json_decode_rejects_off_mode_and_numeric_temporals() {
         true,
     )]));
     let sql = crate::json::JsonEnv::default();
-    let iso = crate::json::JsonEnv { mode: flink_text::TimestampMode::Iso8601, lenient: false };
+    let iso = crate::json::JsonEnv { mode: flink_text::TimestampMode::Iso8601, ..Default::default() };
     let decode = |schema: &SchemaRef, env, body: &'static [u8]| {
         let schema = schema.clone();
         let batch = bodies(vec![Some(body)]);

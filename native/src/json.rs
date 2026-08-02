@@ -31,6 +31,12 @@ pub(crate) trait JsonAppend {
 pub(crate) struct JsonEnv {
     pub(crate) mode: flink_text::TimestampMode,
     pub(crate) lenient: bool,
+    /// How duplicate keys inside one row object bind to fields. Plain `json` runs Flink's
+    /// parser-path row converter, whose field counter saturates at the arity and skips the
+    /// remaining keys (the default, `false`); the CDC dialects run Flink's tree-based
+    /// deserializer (`readTree` + `JsonToRowDataConverters`), where the object is rebuilt as a
+    /// map first — the last occurrence simply wins and no counter exists (`true`).
+    pub(crate) tree_duplicates: bool,
 }
 
 /// Integer columns: number tokens convert through `NumCast` (a float truncates toward zero, out of
@@ -607,11 +613,12 @@ impl StructJsonAppender {
     }
 
     /// Collects the last value per field first, then appends one value per child so every column
-    /// stays row-aligned. Key matching follows Flink's row converter exactly
-    /// (`JsonParserToRowDataConverters.createRowConverter`): every matched key occurrence — a
-    /// duplicate included — advances a field counter, and once it reaches the arity the remaining
-    /// keys are SKIPPED, so a late duplicate no longer overwrites the earlier value. Unknown keys
-    /// are ignored and never advance the counter.
+    /// stays row-aligned. Key matching follows the env's duplicate-key mode: on the parser path
+    /// (`JsonParserToRowDataConverters.createRowConverter`, plain `json`) every matched key
+    /// occurrence — a duplicate included — advances a field counter, and once it reaches the
+    /// arity the remaining keys are SKIPPED, so a late duplicate never overwrites the earlier
+    /// value; on the tree path (the CDC dialects) the last occurrence wins unconditionally.
+    /// Unknown keys are ignored and never advance the counter.
     fn append_object(&mut self, object: &simd_json::tape::Object<'_, '_>) {
         let appended = self.try_append_object(object, false);
         debug_assert!(appended, "cursor drift is cleared at the message root");
@@ -644,7 +651,9 @@ impl StructJsonAppender {
             }
             if let Some(i) = self.field_index(key) {
                 slots[i] = Some(value);
-                matched += 1;
+                if !self.env.tree_duplicates {
+                    matched += 1;
+                }
             }
         }
         if check_drift

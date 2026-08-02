@@ -109,6 +109,19 @@ class CdcDecodeParityTest {
     }
   }
 
+  /**
+   * The CDC dialects decode through Flink's TREE deserializer, so duplicate keys inside an image
+   * collapse last-wins with no field-counter saturation — unlike plain json's parser path, where
+   * the counter would exhaust the arity on the duplicate pair and skip the remaining fields.
+   */
+  @Test
+  void maxwellImageDuplicateKeysCollapseLastWinsWithoutSaturation() throws Exception {
+    String scenario =
+        "{\"data\":{\"id\":1,\"id\":2,\"name\":\"a\",\"score\":1.5},\"type\":\"insert\"}";
+    assertParity(MAXWELL, scenario, false);
+    assertParity(MAXWELL, scenario, true);
+  }
+
   @Test
   void canalOldPresenceIsRecursiveLikeFindValue() throws Exception {
     String[] scenarios = {

@@ -665,7 +665,11 @@ impl CdcJsonDecoder {
         CdcJsonDecoder {
             envelope: JsonDecoder::single_object(
                 envelope,
-                crate::json::JsonEnv { mode: env.mode, lenient: skip_errors },
+                crate::json::JsonEnv {
+                    mode: env.mode,
+                    lenient: skip_errors,
+                    tree_duplicates: env.tree_duplicates,
+                },
                 array_roots,
             ),
             output,
@@ -1322,7 +1326,14 @@ impl MessageDecoder {
         // Every JSON-decoded format handles its own skip granularity (CdcJsonDecoder /
         // JsonDecoder's lenient appenders / CsvDecoder), so the generic per-message retry below
         // only serves a CDC batch whose ENVELOPE decode fails structurally.
-        let cdc_env = crate::json::JsonEnv { mode: options.timestamp_mode, lenient: false };
+        // The CDC dialects decode through Flink's TREE deserializer (readTree), whose duplicate
+        // keys collapse last-wins with no field-counter saturation — unlike plain `json`'s
+        // parser path.
+        let cdc_env = crate::json::JsonEnv {
+            mode: options.timestamp_mode,
+            lenient: false,
+            tree_duplicates: true,
+        };
         let decoder = match format {
             FORMAT_AVRO_CONFLUENT => FormatDecoder::Avro(crate::avro::AvroDecoder::confluent(
                 avro_schema,
@@ -1364,7 +1375,11 @@ impl MessageDecoder {
                 return MessageDecoder {
                     decoder: FormatDecoder::Json(JsonDecoder::new(
                         output_schema,
-                        crate::json::JsonEnv { mode: options.timestamp_mode, lenient: skip_errors },
+                        crate::json::JsonEnv {
+                            mode: options.timestamp_mode,
+                            lenient: skip_errors,
+                            tree_duplicates: false,
+                        },
                     )),
                     skip_errors: false,
                 }
