@@ -242,6 +242,10 @@ do); profiling showed ~1/3 of the transpose CPU was per-accessor bounds/refcount
   operator-scope share of the slot's managed memory from Flink's `MemoryManager` and bound their
   state by it, failing with a `NativeMemoryLimitException` naming the remedy rather than an
   unattributed OOM ([divergences/16](divergences/16-upfront-managed-memory-reservation.md)).
+- `-Dstreamfusion.kafka.prefetch-mb=256` — the native Kafka source's off-heap prefetch budget per
+  source subtask. This (and the other native buffers) lives outside every Flink memory figure, so
+  size `taskmanager.memory.task.off-heap.size` for it —
+  [docs/native-memory-profiling.md](docs/native-memory-profiling.md) has the formula.
 
 **Seeing why a query fell back** — substitution is silent by default.
 `-Dstreamfusion.logFallbackReasons=true` logs each node that stayed on Flink and why as the plan is

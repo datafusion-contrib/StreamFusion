@@ -1,5 +1,43 @@
 # Profiling the native side's memory
 
+## Sizing the off-heap budgets
+
+The native side holds real memory that appears in **no Flink memory figure** — it is not heap, not
+managed memory, and not network buffers. In a container sized by Flink's process model, budget it
+under `taskmanager.memory.task.off-heap.size` (or equivalent container headroom), or a
+backpressured job gets OOM-killed with no attribution. Per TaskManager:
+
+- **Kafka consumer prefetch** — each native Kafka source subtask's librdkafka consumer prefetches
+  message bytes into its native queue ahead of the reader. The budget is
+  `streamfusion.kafka.prefetch-mb` (default 256 MiB, rendered into librdkafka's
+  `queued.max.messages.kbytes`, whose ceiling clamps the knob at 2 GiB) **per source subtask**: our
+  reader drains the single consumer queue all of its partitions forward into, so librdkafka's
+  per-partition fetch decisions all back off against that one queue's size (the documented
+  per-partition semantics apply only to separate partition queues, which we don't use). A
+  TaskManager therefore holds up to `Kafka source subtasks × prefetch-mb` — and under backpressure
+  on a deep topic the queues really do fill to the cap. Two footnotes: fetching also stops at
+  1,000,000 queued messages (`queued.min.messages`), so small-message topics can plateau below the
+  byte cap; and each fetch can overshoot by up to one `fetch.message.max.bytes` (1 MiB default).
+  The knob is the only control — `properties.queued.*` on a table is refused (librdkafka-only keys
+  make the source fall back to Flink's client), so raising throughput headroom means raising the
+  property and the off-heap budget together.
+- **Kafka producer buffer** — the native sink translates the Java client's `buffer.memory`
+  (default 32 MiB) into `queue.buffering.max.kbytes` **per sink subtask**, with the message-count
+  cap disabled so the byte budget governs. A stalled broker fills it before the sink blocks.
+- **Arrow FFI allocator** — the process-wide allocator for buffers crossing the native↔JVM
+  boundary, visible as the `nativeArrowAllocatorBytes` metric. It is uncapped by default (like
+  comet's): its traffic is transient per-batch crossings, refcount-freed as each batch is consumed
+  and bounded by the pipeline's in-flight batches, so steady state is small (the soak's median is
+  megabytes).
+- **Native operator state** is the exception: with accounting on (the default) it is reserved from
+  Flink's *managed memory*, so it is already inside Flink's process model and needs no extra
+  off-heap allowance.
+
+Worked example: 4 Kafka source subtasks and 2 sink subtasks on one TaskManager at the defaults need
+`4 × 256 MiB + 2 × 32 MiB ≈ 1.1 GiB` of task off-heap before Arrow's in-flight batches.
+
+## Profiling
+
 The standing checks catch most leaks automatically: every test asserts at close that all native
 handles were freed and the shared Arrow FFI allocator drained to zero (`SharedFlinkCluster`), the
 managed-memory budget fails a job whose *accounted* state exceeds its reservation

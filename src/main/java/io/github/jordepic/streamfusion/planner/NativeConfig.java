@@ -157,6 +157,19 @@ public final class NativeConfig {
   }
 
   /**
+   * The native Kafka source's prefetch budget per source subtask, in mebibytes
+   * ({@code streamfusion.kafka.prefetch-mb}, default 256) — rendered into librdkafka's
+   * {@code queued.max.messages.kbytes}, whose 2 GiB ceiling clamps larger values. This is off-heap
+   * memory outside every Flink memory figure: a backpressured subtask on a deep topic fills its
+   * consumer queue to this cap, and a TaskManager running several Kafka source subtasks holds one
+   * budget per subtask. Size {@code taskmanager.memory.task.off-heap.size} accordingly
+   * (docs/native-memory-profiling.md).
+   */
+  public static int kafkaPrefetchMb() {
+    return Integer.getInteger("streamfusion.kafka.prefetch-mb", 256);
+  }
+
+  /**
    * The operator-scope managed-memory weight, in mebibytes, a native stateful operator declares
    * ({@code streamfusion.memory.operator-weight-mb}, default 64). Flink splits the slot's
    * managed-memory OPERATOR share across declaring operators proportionally to these weights, so the

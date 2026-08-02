@@ -73,6 +73,13 @@ class NativeKafkaSourceBenchmark {
       System.getenv("SF_KAFKA_MESSAGES") != null
           ? Integer.parseInt(System.getenv("SF_KAFKA_MESSAGES"))
           : 1_000_000;
+  // Pads the JSON value's name field to roughly this many bytes per message (0 = the compact
+  // default). The prefetch byte cap only binds when message bytes outrun the 1M-message queue
+  // floor, so cap experiments need a large-message corpus.
+  private static final int MESSAGE_BYTES =
+      System.getenv("SF_KAFKA_MSG_BYTES") != null
+          ? Integer.parseInt(System.getenv("SF_KAFKA_MSG_BYTES"))
+          : 0;
   private static final AtomicLong COUNTER = new AtomicLong();
 
   // Non-nullable at the row level so AvroSchemaConverter yields a bare record (not a ["null", record]
@@ -258,19 +265,18 @@ class NativeKafkaSourceBenchmark {
   private long runNativeSource(String brokers, String topic, int format, String avroSchema, int schemaId)
       throws Exception {
     Map<String, String> config = new java.util.HashMap<>(KafkaConfigTranslator.translate(sharedConsumerProperties(brokers)).config());
-    // Parity, not cherry-picking: the Java consumer prefetches continuously, but librdkafka defaults
-    // fetch.queue.backoff.ms to 1000ms — it idles up to a second before refetching a drained queue,
-    // which has no Java analog and would otherwise handicap the native side for no real reason. Match
-    // the Java client's eager prefetch. (librdkafka has no max.poll.records analog either; the native
-    // batch cap below is the equivalent of the shared max.poll.records.)
-    config.put("fetch.queue.backoff.ms", "2");
+    // The production prefetch tuning (eager refetch, deep queue bounded by streamfusion.kafka.prefetch-mb)
+    // so this measures what a real SQL Kafka table runs. (librdkafka has no max.poll.records analog;
+    // the native batch cap below is the equivalent of the shared max.poll.records.)
+    ConsumerPrefetch.tune(config);
     // On ARM Macs librdkafka falls back to software crc32c; on x86 it uses SSE4.2 hardware CRC (~free,
     // like the JVM's CRC intrinsic the Java client uses). Toggle to estimate the x86-representative cost.
     if ("1".equals(System.getenv("SF_KAFKA_NOCRC"))) {
       config.put("check.crcs", "false");
     }
-    // Ceiling experiment: max the prefetch buffers so librdkafka's background fetcher stays far ahead
-    // of consumption (absorbs scheduling jitter under Flink's thread contention).
+    // Ceiling experiment: max the prefetch buffers past the production tuning so librdkafka's
+    // background fetcher stays far ahead of consumption (absorbs scheduling jitter under Flink's
+    // thread contention).
     if ("1".equals(System.getenv("SF_KAFKA_TUNE"))) {
       config.put("queued.min.messages", "10000000");
       config.put("queued.max.messages.kbytes", "2097151");
@@ -368,10 +374,12 @@ class NativeKafkaSourceBenchmark {
     props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
     props.put(ProducerConfig.LINGER_MS_CONFIG, 50);
     props.put(ProducerConfig.BATCH_SIZE_CONFIG, 1 << 20);
+    String pad = MESSAGE_BYTES > 0 ? "x".repeat(MESSAGE_BYTES) : "";
     try (KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(props)) {
       for (int i = 0; i < messages; i++) {
         byte[] value =
-            String.format("{\"id\": %d, \"name\": \"row-%d\", \"score\": %d.5}", i, i, i % 100)
+            String.format(
+                    "{\"id\": %d, \"name\": \"row-%d%s\", \"score\": %d.5}", i, i, pad, i % 100)
                 .getBytes(StandardCharsets.UTF_8);
         producer.send(new ProducerRecord<>(TOPIC, value));
       }

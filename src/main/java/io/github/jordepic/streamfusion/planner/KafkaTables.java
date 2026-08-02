@@ -1,5 +1,6 @@
 package io.github.jordepic.streamfusion.planner;
 
+import io.github.jordepic.streamfusion.kafka.ConsumerPrefetch;
 import io.github.jordepic.streamfusion.kafka.KafkaConfigTranslator;
 import io.github.jordepic.streamfusion.kafka.KeyedKafkaBytesDeserialization;
 import io.github.jordepic.streamfusion.kafka.NativeKafka;
@@ -121,12 +122,7 @@ final class KafkaTables {
         "group.id", "streamfusion-native-" + UUID.randomUUID());
     Map<String, String> librdkafka =
         new HashMap<>(KafkaConfigTranslator.translate(nativeProps).config());
-    // librdkafka-specific throughput tuning with no Java analog (so not produced by the translator):
-    // prefetch eagerly instead of idling 1s before refetching, and keep a deep queue so the background
-    // fetcher stays ahead of the reader. Measured to lift native consume throughput meaningfully.
-    librdkafka.putIfAbsent("fetch.queue.backoff.ms", "2");
-    librdkafka.putIfAbsent("queued.min.messages", "1000000");
-    librdkafka.putIfAbsent("queued.max.messages.kbytes", "2097151");
+    ConsumerPrefetch.tune(librdkafka);
     String[] keys = librdkafka.keySet().toArray(new String[0]);
     String[] values = new String[keys.length];
     for (int i = 0; i < keys.length; i++) {

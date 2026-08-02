@@ -1,6 +1,8 @@
 package io.github.jordepic.streamfusion;
 
 import io.github.jordepic.streamfusion.format.FormatCodes;
+import io.github.jordepic.streamfusion.kafka.ConsumerPrefetch;
+import io.github.jordepic.streamfusion.kafka.KafkaConfigTranslator;
 import io.github.jordepic.streamfusion.kafka.NativeKafka;
 import java.time.Duration;
 import java.util.List;
@@ -517,11 +519,8 @@ class KafkaIngestBenchmark {
     props.setProperty("max.partition.fetch.bytes", String.valueOf(16 << 20));
     props.setProperty("fetch.max.wait.ms", "500");
     java.util.Map<String, String> config =
-        new java.util.HashMap<>(
-            io.github.jordepic.streamfusion.kafka.KafkaConfigTranslator.translate(props).config());
-    config.putIfAbsent("fetch.queue.backoff.ms", "2");
-    config.putIfAbsent("queued.min.messages", "1000000");
-    config.putIfAbsent("queued.max.messages.kbytes", "2097151");
+        new java.util.HashMap<>(KafkaConfigTranslator.translate(props).config());
+    ConsumerPrefetch.tune(config);
     // A/B knob: the translator leaves check.crcs at librdkafka's default (false — see the
     // translator's note; librdkafka has no hardware CRC32C on ARM, so verification costs real
     // delivery-thread CPU). SF_KAFKA_CHECK_CRCS=true re-enables it to measure that tax.
