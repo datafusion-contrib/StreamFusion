@@ -157,6 +157,19 @@ public final class NativeConfig {
   }
 
   /**
+   * An optional cap on the process-wide Arrow FFI allocator, in mebibytes
+   * ({@code streamfusion.memory.arrow.max-mb}; 0 or less, the default, runs uncapped — Comet's
+   * choice for the same allocator). Uncapped is defensible because this allocator carries only the
+   * transient buffers crossing the native↔JVM boundary, promptly refcount-freed and bounded by the
+   * pipeline's in-flight batches, not by state — and it is observable via the
+   * {@code nativeArrowAllocatorBytes} metric. The cap exists for deployments that prefer a fail-fast
+   * attribution over container-OOM if that assumption is ever violated.
+   */
+  public static long arrowAllocatorMaxMb() {
+    return Long.getLong("streamfusion.memory.arrow.max-mb", 0L);
+  }
+
+  /**
    * The native Kafka source's prefetch budget per source subtask, in mebibytes
    * ({@code streamfusion.kafka.prefetch-mb}, default 256) — rendered into librdkafka's
    * {@code queued.max.messages.kbytes}, whose 2 GiB ceiling clamps larger values. This is off-heap

@@ -1,6 +1,10 @@
 package io.github.jordepic.streamfusion.operator;
 
+import io.github.jordepic.streamfusion.NativeMemoryLimitException;
+import io.github.jordepic.streamfusion.planner.NativeConfig;
 import org.apache.arrow.c.CDataDictionaryProvider;
+import org.apache.arrow.memory.AllocationListener;
+import org.apache.arrow.memory.AllocationOutcome;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 
@@ -20,11 +24,42 @@ import org.apache.arrow.memory.RootAllocator;
  *
  * <p>This is independent of memory accounting: limiting/attributing execution memory per operator is a
  * DataFusion memory-pool concern bridged to the framework's memory manager, not the allocator's scope.
+ * Like comet's, the allocator runs uncapped by default — its traffic is transient per-batch crossings,
+ * not state — but {@link NativeConfig#arrowAllocatorMaxMb()} can bound it for deployments that want a
+ * fail-fast, attributed error instead of unaccounted process growth.
  */
 public final class NativeAllocator {
 
-  public static final BufferAllocator SHARED = new RootAllocator();
+  public static final BufferAllocator SHARED =
+      newAllocator(NativeConfig.arrowAllocatorMaxMb());
   public static final CDataDictionaryProvider DICTIONARIES = new CDataDictionaryProvider();
 
   private NativeAllocator() {}
+
+  static BufferAllocator newAllocator(long maxMb) {
+    if (maxMb <= 0) {
+      return new RootAllocator();
+    }
+    return new RootAllocator(new BudgetListener(maxMb), maxMb << 20);
+  }
+
+  private static final class BudgetListener implements AllocationListener {
+    private final long maxMb;
+
+    BudgetListener(long maxMb) {
+      this.maxMb = maxMb;
+    }
+
+    @Override
+    public boolean onFailedAllocation(long size, AllocationOutcome outcome) {
+      throw new NativeMemoryLimitException(
+          "Arrow FFI buffer of "
+              + size
+              + " bytes would exceed the "
+              + maxMb
+              + " MiB cap set by -Dstreamfusion.memory.arrow.max-mb; raise the cap (and the task"
+              + " manager's off-heap sizing, see docs/native-memory-profiling.md) or unset it to"
+              + " run uncapped");
+    }
+  }
 }

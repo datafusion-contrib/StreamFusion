@@ -28,7 +28,8 @@ backpressured job gets OOM-killed with no attribution. Per TaskManager:
   boundary, visible as the `nativeArrowAllocatorBytes` metric. It is uncapped by default (like
   comet's): its traffic is transient per-batch crossings, refcount-freed as each batch is consumed
   and bounded by the pipeline's in-flight batches, so steady state is small (the soak's median is
-  megabytes).
+  megabytes). `streamfusion.memory.arrow.max-mb` optionally caps it; an allocation past the cap
+  fails with the knob named instead of growing the process.
 - **Native operator state** is the exception: with accounting on (the default) it is reserved from
   Flink's *managed memory*, so it is already inside Flink's process model and needs no extra
   off-heap allowance.
