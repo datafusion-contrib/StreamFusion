@@ -1,29 +1,66 @@
 use crate::*;
 
-/// Errors the Java Kafka consumer absorbs while its metadata/network layer reconnects. librdkafka
+/// Errors the Kafka clients absorb while librdkafka's metadata/network layer reconnects. librdkafka
 /// can surface these as queue events even though the same consumer remains usable; permanent data,
 /// offset, authentication, and authorization errors deliberately are not on this list.
 #[cfg(feature = "kafka")]
-fn transient_consumer_error(error: rdkafka::bindings::rd_kafka_resp_err_t) -> bool {
-    use rdkafka::bindings::rd_kafka_resp_err_t::*;
+fn transient_client_error(error: rdkafka::types::RDKafkaErrorCode) -> bool {
+    use rdkafka::types::RDKafkaErrorCode::*;
 
     matches!(
         error,
-        RD_KAFKA_RESP_ERR__TRANSPORT
-            | RD_KAFKA_RESP_ERR__RESOLVE
-            | RD_KAFKA_RESP_ERR__ALL_BROKERS_DOWN
-            | RD_KAFKA_RESP_ERR__TIMED_OUT
-            | RD_KAFKA_RESP_ERR__TIMED_OUT_QUEUE
-            | RD_KAFKA_RESP_ERR__WAIT_COORD
-            | RD_KAFKA_RESP_ERR__IN_PROGRESS
-            | RD_KAFKA_RESP_ERR__PREV_IN_PROGRESS
-            | RD_KAFKA_RESP_ERR__WAIT_CACHE
-            | RD_KAFKA_RESP_ERR__INTR
-            | RD_KAFKA_RESP_ERR__RETRY
-            | RD_KAFKA_RESP_ERR__NODE_UPDATE
-            | RD_KAFKA_RESP_ERR__DESTROY_BROKER
+        BrokerTransportFailure
+            | Resolve
+            | AllBrokersDown
+            | OperationTimedOut
+            | TimedOutQueue
+            | WaitingForCoordinator
+            | InProgress
+            | PreviousInProgress
+            | WaitCache
+            | Interrupted
+            | Retry
+            | NodeUpdate
+            | DestroyBroker
     )
 }
+
+#[cfg(feature = "kafka")]
+fn transient_consumer_error(error: rdkafka::bindings::rd_kafka_resp_err_t) -> bool {
+    transient_client_error(rdkafka::types::RDKafkaErrorCode::from(error))
+}
+
+/// Routes librdkafka's global error callback into the log facade under the stable `librdkafka`
+/// logger: WARN for the transient reconnect errors the clients absorb, ERROR otherwise. The log
+/// callback keeps rust-rdkafka's default forwarding (same logger, librdkafka's own rate
+/// characteristics), so no per-message logging is added to any hot path.
+#[cfg(feature = "kafka")]
+fn forward_client_error(error: &rdkafka::error::KafkaError, reason: &str) {
+    log::log!(target: "librdkafka", client_error_level(error), "librdkafka: {error}: {reason}");
+}
+
+#[cfg(feature = "kafka")]
+fn client_error_level(error: &rdkafka::error::KafkaError) -> log::Level {
+    match error.rdkafka_error_code() {
+        Some(code) if transient_client_error(code) => log::Level::Warn,
+        _ => log::Level::Error,
+    }
+}
+
+/// The consumer's client context, so librdkafka's error stream reaches the installed logger with
+/// transient-aware levels.
+#[cfg(feature = "kafka")]
+struct SourceClientContext;
+
+#[cfg(feature = "kafka")]
+impl rdkafka::ClientContext for SourceClientContext {
+    fn error(&self, error: rdkafka::error::KafkaError, reason: &str) {
+        forward_client_error(&error, reason);
+    }
+}
+
+#[cfg(feature = "kafka")]
+impl rdkafka::consumer::ConsumerContext for SourceClientContext {}
 
 /// One encoded record per row, all in a single encode buffer: producing and JNI materialization
 /// read the per-row slices in place, so no per-record allocation or copy happens on this side
@@ -1419,7 +1456,7 @@ fn fold_partition_eofs(
 /// `assign()`+seek, never `subscribe()`/rebalance.
 #[cfg(feature = "kafka")]
 pub(crate) struct KafkaSplitReader {
-    consumer: rdkafka::consumer::BaseConsumer,
+    consumer: rdkafka::consumer::BaseConsumer<SourceClientContext>,
     /// The consumer's message queue, drained via the callback API (see `poll`).
     consumer_queue: *mut rdkafka::bindings::rd_kafka_queue_t,
     body_schema: SchemaRef,
@@ -1436,6 +1473,12 @@ pub(crate) struct KafkaSplitReader {
     /// time, in arrival (offset) order so a split's offset never goes backwards when several of its
     /// batches are drained in one cycle. Fields: (topic, partition, next offset, batch).
     pending: std::collections::VecDeque<(String, i32, i64, RecordBatch, i64, i64, i64)>,
+    /// Transient consumer errors absorbed over the reader's lifetime (see `transient_client_error`),
+    /// surfaced to the JVM for the source's metric group.
+    transient_errors: i64,
+    /// Errors absorbed since the last rate-limited WARN, and when that WARN fired.
+    transient_errors_unreported: i64,
+    last_transient_warn: Option<std::time::Instant>,
 }
 
 #[cfg(feature = "kafka")]
@@ -1459,8 +1502,8 @@ impl KafkaSplitReader {
         client.set("enable.partition.eof", "true");
         // Surface librdkafka's own message (bad mechanism, missing trust material, unsupported
         // protocol) instead of a panic — misconfigured auth is an expected failure here.
-        let consumer: rdkafka::consumer::BaseConsumer = client
-            .create()
+        let consumer: rdkafka::consumer::BaseConsumer<SourceClientContext> = client
+            .create_with_context(SourceClientContext)
             .map_err(|e| format!("failed to create kafka consumer: {e}"))?;
         // The consumer's queue, for draining. (assign/seek still go through the BaseConsumer.)
         let consumer_queue = unsafe {
@@ -1477,6 +1520,9 @@ impl KafkaSplitReader {
             stopping_offsets: HashMap::default(),
             warmed_topics: std::collections::HashSet::default(),
             pending: std::collections::VecDeque::new(),
+            transient_errors: 0,
+            transient_errors_unreported: 0,
+            last_transient_warn: None,
         })
     }
 
@@ -1649,6 +1695,8 @@ impl KafkaSplitReader {
             stopping_offsets: *const HashMap<(String, i32), i64>,
             partition_eofs: Vec<(String, i32, i64)>,
             error: Option<String>,
+            transient_errors: i64,
+            last_transient: rdsys::rd_kafka_resp_err_t,
         }
         unsafe extern "C" fn bucket_message(
             message: *mut rdsys::rd_kafka_message_t,
@@ -1716,7 +1764,10 @@ impl KafkaSplitReader {
                 context
                     .partition_eofs
                     .push((topic, message.partition, message.offset));
-            } else if !transient_consumer_error(message.err) && context.error.is_none() {
+            } else if transient_consumer_error(message.err) {
+                context.transient_errors += 1;
+                context.last_transient = message.err;
+            } else if context.error.is_none() {
                 let name = std::ffi::CStr::from_ptr(rdsys::rd_kafka_err2name(message.err))
                     .to_string_lossy();
                 let description = std::ffi::CStr::from_ptr(rdsys::rd_kafka_err2str(message.err))
@@ -1737,6 +1788,8 @@ impl KafkaSplitReader {
             stopping_offsets: &self.stopping_offsets,
             partition_eofs: Vec::new(),
             error: None,
+            transient_errors: 0,
+            last_transient: rdsys::rd_kafka_resp_err_t::RD_KAFKA_RESP_ERR_NO_ERROR,
         };
         unsafe {
             rdsys::rd_kafka_consume_callback_queue(
@@ -1746,6 +1799,9 @@ impl KafkaSplitReader {
                 &mut context as *mut PollContext as *mut std::os::raw::c_void,
             )
         };
+        if context.transient_errors > 0 {
+            self.note_transient_errors(context.transient_errors, context.last_transient);
+        }
         if let Some(error) = context.error {
             return Err(error);
         }
@@ -1830,6 +1886,36 @@ impl KafkaSplitReader {
         Ok(self.pending.len())
     }
 
+    /// Counts absorbed transient errors and reports them at WARN, rate-limited to the first
+    /// occurrence plus once per interval, so hours of `_TRANSPORT` flapping stay visible without
+    /// one line per event. The cumulative count feeds the source's Flink metric group.
+    fn note_transient_errors(&mut self, count: i64, last: rdkafka::bindings::rd_kafka_resp_err_t) {
+        const WARN_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
+        self.transient_errors += count;
+        self.transient_errors_unreported += count;
+        if self.last_transient_warn.is_some_and(|at| at.elapsed() < WARN_INTERVAL) {
+            return;
+        }
+        let name = unsafe {
+            std::ffi::CStr::from_ptr(rdkafka::bindings::rd_kafka_err2name(last))
+        }
+        .to_string_lossy();
+        let description = unsafe {
+            std::ffi::CStr::from_ptr(rdkafka::bindings::rd_kafka_err2str(last))
+        }
+        .to_string_lossy();
+        log::warn!(
+            "Kafka consumer absorbed {} transient error(s) since the last report \
+             (most recent {name}: {description}; {} over the reader's lifetime); \
+             polling continues while librdkafka reconnects",
+            self.transient_errors_unreported,
+            self.transient_errors,
+        );
+        self.transient_errors_unreported = 0;
+        self.last_transient_warn = Some(std::time::Instant::now());
+    }
+
     /// Returns librdkafka's locally cached high watermark without a broker round trip.
     fn cached_high_watermark(&self, topic: &str, partition: i32) -> i64 {
         use rdkafka::consumer::Consumer;
@@ -1886,7 +1972,8 @@ impl KafkaSplitReader {
 #[cfg(all(test, feature = "kafka"))]
 mod kafka_error_tests {
     use super::{
-        encode_java_big_decimal, encode_json_batch, fold_partition_eofs, transient_consumer_error,
+        client_error_level, encode_java_big_decimal, encode_json_batch, fold_partition_eofs,
+        transient_consumer_error,
         JsonEncodeOptions,
     };
     use arrow::array::{ArrayRef, BooleanArray, Int64Array, StringArray};
@@ -1954,6 +2041,35 @@ mod kafka_error_tests {
         assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR__AUTHENTICATION));
         assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR_TOPIC_AUTHORIZATION_FAILED));
         assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR__UNKNOWN_TOPIC));
+    }
+
+    /// The error-callback forwarding warns for the reconnect errors the clients absorb and keeps
+    /// ERROR for everything permanent (auth, authorization, client construction).
+    #[test]
+    fn client_error_levels_track_the_transient_list() {
+        use rdkafka::error::KafkaError;
+        use rdkafka::types::RDKafkaErrorCode;
+
+        assert_eq!(
+            client_error_level(&KafkaError::Global(RDKafkaErrorCode::BrokerTransportFailure)),
+            log::Level::Warn
+        );
+        assert_eq!(
+            client_error_level(&KafkaError::Global(RDKafkaErrorCode::AllBrokersDown)),
+            log::Level::Warn
+        );
+        assert_eq!(
+            client_error_level(&KafkaError::Global(RDKafkaErrorCode::Authentication)),
+            log::Level::Error
+        );
+        assert_eq!(
+            client_error_level(&KafkaError::Global(RDKafkaErrorCode::TopicAuthorizationFailed)),
+            log::Level::Error
+        );
+        assert_eq!(
+            client_error_level(&KafkaError::ClientCreation("bad config".to_string())),
+            log::Level::Error
+        );
     }
 
     /// Pins the security surface of the vendored librdkafka build: TLS and SCRAM must be present
@@ -2323,6 +2439,21 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_po
             max_records as usize,
             std::time::Duration::from_millis(timeout_ms as u64),
         )? as jint)
+    })
+}
+
+/// The reader's cumulative absorbed transient error count. Called on the fetcher thread that owns
+/// the handle (like `pollKafkaBatch`); the Java side publishes the value to its metric gauge.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_kafkaConsumerTransientErrors<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let reader = unsafe { &*(handle as *const KafkaSplitReader) };
+        reader.transient_errors
     })
 }
 
@@ -2940,6 +3071,10 @@ struct TxnProducerContext {
 
 #[cfg(feature = "kafka")]
 impl rdkafka::ClientContext for TxnProducerContext {
+    fn error(&self, error: rdkafka::error::KafkaError, reason: &str) {
+        forward_client_error(&error, reason);
+    }
+
     fn stats(&self, statistics: rdkafka::Statistics) {
         if let Some(eos) = statistics.eos {
             if eos.producer_id >= 0 {

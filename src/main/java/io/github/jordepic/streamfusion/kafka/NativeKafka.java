@@ -42,6 +42,13 @@ public final class NativeKafka {
 
   public static native int pollKafkaBatch(long handle, int maxRecords, long timeoutMillis);
 
+  /**
+   * Transient consumer errors (broker transport flaps, reconnects) the native poll absorbed over
+   * the consumer's lifetime. Read on the fetcher thread that owns the handle; the reader publishes
+   * it to the source's metric group.
+   */
+  public static native long kafkaConsumerTransientErrors(long handle);
+
   public static native void wakeKafkaConsumer(long handle);
 
   /**

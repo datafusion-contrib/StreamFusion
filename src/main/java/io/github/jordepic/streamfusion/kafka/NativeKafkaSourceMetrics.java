@@ -18,14 +18,16 @@ final class NativeKafkaSourceMetrics {
   private final ConcurrentMap<TopicPartition, Long> recordsLag = new ConcurrentHashMap<>();
   private final AtomicLong bytesConsumed = new AtomicLong();
   private final AtomicLong recordsConsumed = new AtomicLong();
+  private final AtomicLong transientErrors = new AtomicLong();
 
   NativeKafkaSourceMetrics(SourceReaderMetricGroup sourceMetrics) {
     this.sourceMetrics = sourceMetrics;
     this.kafkaMetrics = new KafkaSourceReaderMetrics(sourceMetrics);
     sourceMetrics.setPendingRecordsGauge(
         () -> recordsLag.values().stream().mapToLong(Long::longValue).sum());
-    MetricGroup consumer =
-        sourceMetrics.addGroup("KafkaSourceReader").addGroup("KafkaConsumer");
+    MetricGroup reader = sourceMetrics.addGroup("KafkaSourceReader");
+    reader.gauge("transientConsumerErrors", transientErrors::get);
+    MetricGroup consumer = reader.addGroup("KafkaConsumer");
     consumer.gauge("bytes-consumed-total", bytesConsumed::get);
     consumer.gauge("records-consumed-total", recordsConsumed::get);
   }
@@ -46,6 +48,11 @@ final class NativeKafkaSourceMetrics {
     if (highWatermark >= 0) {
       recordsLag.put(partition, Math.max(0, highWatermark - nextOffset));
     }
+  }
+
+  /** Publishes the native reader's cumulative absorbed transient error count (sampled per poll). */
+  void recordTransientErrors(long total) {
+    transientErrors.set(total);
   }
 
   void recordCommit(TopicPartition partition, long offset) {

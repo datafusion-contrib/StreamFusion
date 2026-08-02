@@ -113,6 +113,7 @@ final class NativeKafkaSplitReader implements SplitReader<NativeSourceRecord, Ka
       return builder.build();
     }
     int pending = NativeKafka.pollKafkaBatch(handle, maxRecords, pollTimeoutMillis);
+    metrics.recordTransientErrors(NativeKafka.kafkaConsumerTransientErrors(handle));
     RecordsBySplits.Builder<NativeSourceRecord> builder = new RecordsBySplits.Builder<>();
     for (int i = 0; i < pending; i++) {
       try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
