@@ -41,6 +41,15 @@ markdown_extensions:
   - toc:
       permalink: true
 
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/datafusion-contrib/StreamFusion
+      name: GitHub
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/gCKHfb96Q
+      name: Discord
+
 nav:
   - Introduction: index.md
   - Connectors:
