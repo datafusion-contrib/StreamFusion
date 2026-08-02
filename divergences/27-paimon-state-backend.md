@@ -109,7 +109,7 @@ Why Paimon over rust-rocksdb:
   creation rather than running unmaintained.)*
 - Canonical savepoints cannot be expressed; native-format savepoints work.
 - Multiset-state aggregates (retracting MIN/MAX, DISTINCT) stay on memory state until the row
-  codec grows side tables (see `docs/coverage-and-fallbacks.md` §c).
+  codec grows side tables (see the [Paimon backend page](https://datafusion-contrib.github.io/StreamFusion/backends/paimon/)).
 
 ## State shapes mirror Flink's state primitives
 

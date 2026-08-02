@@ -67,11 +67,13 @@ existing Flink results.
 The `readme.md` is a **lean landing page**, not the full spec. Keep it to: what we accelerate (a short prose
 overview, not a per-operator chart), where we take inspiration from, the headline Nexmark benchmark table, how to
 run and configure, related work, and the license. It must NOT enumerate every accelerated operator with its terms,
-and it must NOT carry the full benchmark method / every result table. Those live in the two docs it points to:
-`docs/coverage-and-fallbacks.md` (the source of truth for coverage — what does and doesn't run natively, and every
-fallback cause) and `docs/benchmarks.md` (benchmark method, the Criterion micro-benchmarks, and the full
-end-to-end/Nexmark tables). When an operator or benchmark changes, update those docs; touch the readme only if the
-high-level picture or the headline numbers change.
+and it must NOT carry the full benchmark method / every result table. Those live on the **docs site**
+(`mkdocs.yml` + `docs/`, published to GitHub Pages at https://datafusion-contrib.github.io/StreamFusion/ by
+`.github/workflows/docs.yml` on every push to `main`) — one page per operator under `docs/operators/`, one page
+per connector/format under `docs/connectors/`, and `docs/benchmarks.md`/`docs/optimizations/` for benchmark method
+and performance technique detail. When an operator, connector, or benchmark changes, update the relevant docs
+page(s); touch the readme only if the high-level picture or the headline numbers change. Preview the site locally
+with `pip install mkdocs-material && mkdocs serve`.
 
 Builds: tests run against a debug native build for a fast iteration loop (`mvn test`), but ALL benchmarking
 must use the release build via the `bench` Maven profile (`mvn test -Pbench ...`) — debug Rust is roughly an
@@ -115,11 +117,11 @@ watermark semantics, type mapping, parity testing, and a risk-first build order)
 The backlog lives as **GitHub issues** on the canonical repo
 (https://github.com/datafusion-contrib/StreamFusion/issues); the old `.claude/todos/` board was retired in
 their favor (2026-07-06). **Close an issue the moment its work ships**, referencing it from the shipping
-commit. An issue describes work *to do*; once done its state belongs in `docs/coverage-and-fallbacks.md`
-(the coverage source of truth) and a `divergences/` note if a decision was made — not in a stale open
-issue. A partially-done issue stays open, trimmed to what remains. When a doc or divergence needs to point
-at pending work, link the issue URL so nothing dangles when it closes. As we knock things out, update
-`docs/coverage-and-fallbacks.md` so it reflects exactly what is accelerated and what falls back.
+commit. An issue describes work *to do*; once done its state belongs on the relevant `docs/operators/*.md` or
+`docs/connectors/*.md` page (the coverage source of truth) and a `divergences/` note if a decision was made —
+not in a stale open issue. A partially-done issue stays open, trimmed to what remains. When a doc or divergence
+needs to point at pending work, link the issue URL so nothing dangles when it closes. As we knock things out,
+update the operator/connector page so it reflects exactly what is accelerated and what falls back.
 
 The `.claude/wontdos/` directory holds the work we have **deliberately decided not to do**: rejected
 investigations (kept with the benchmark or reasoning that killed them) and documented exclusions (things outside
@@ -128,19 +130,25 @@ close the issue — in the same commit as the decision — and update every poin
 deleted history; it exists so the dead end isn't re-explored and the reasoning survives. If circumstances change
 (a benchmark result invalidated, an upstream limit lifted), a wontdo can be reopened as an issue — note why.
 
-`docs/coverage-and-fallbacks.md` is the **source of truth for coverage** — everything not excluded there runs
-natively — listing what we do **not** support and **every** specific cause of a fallback to Flink (gate,
-per-operator matcher declines, expression/type/connector limits). Keep it current in the same commit as any change
-to coverage: when an operator/type/expression/connector gains or loses support, or a matcher condition changes,
-update this file so it always answers "why didn't my query accelerate?" precisely.
+`docs/operators/*.md` and `docs/connectors/*.md` (including `docs/connectors/formats/*.md`) are the **source of
+truth for coverage** — one page per operator and one page per connector/format, each marked native, partial (with
+every enumerated gap), or unsupported (`docs/operators/unsupported.md`) — everything not called out as a gap on
+these pages runs natively. Keep them current in the same commit as any change to coverage: when an operator,
+type, expression, or connector/format gains or loses support, or a matcher condition changes, update its page so
+it always answers "why didn't my query accelerate?" precisely. `docs/operators/index.md` documents the shared
+concepts (the all-or-nothing island gate, idle-state TTL, global switches) that individual operator pages build
+on rather than restate.
 
-`docs/optimizations.md` is the **running ledger of performance optimizations** — every deliberate technique we
-use to keep throughput high, from the foundational bets (DataFusion + Rust + Arrow, columnar operators,
-transposes only at the island edges) down to targeted wins (SIMD decode, allocator churn cuts, batched state
-updates). Whenever a commit lands whose purpose is to make us faster — not to add coverage, but to speed up what
-we already run — add an entry to this file in the same commit: what the optimization is, why it works, and the
-measured improvement if we benchmarked one. Coverage work does not belong here unless the *technique* it
-introduced is itself a speed lever.
+`docs/optimizations/` is the **running ledger of performance optimizations** — one page per currently-live
+technique (`docs/optimizations/index.md` explains the ledger's own conventions), from the foundational bets
+(DataFusion + Rust + Arrow, columnar operators, transposes only at the island edges) down to targeted wins (SIMD
+decode, allocator churn cuts, batched state updates). Whenever a commit lands whose purpose is to make us faster
+— not to add coverage, but to speed up what we already run — add or update the relevant technique's page in the
+same commit: what the optimization is, why it works, and the measured improvement if we benchmarked one. Where a
+technique evolves through several steps, update its existing page rather than adding a new one per commit — the
+ledger tracks current techniques, not a commit-by-commit history (`git log` is that history). Coverage work does
+not belong here unless the *technique* it introduced is itself a speed lever. `docs/benchmarks.md` stays sparse —
+methodology plus the current headline Nexmark table — and is not the place for per-technique detail.
 
 The `divergences/` directory (at the repo root) records where we deviate from the datafusion-comet / arroyo
 architectural decisions — this project should start with little divergence from them. If you make such a

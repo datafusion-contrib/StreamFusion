@@ -1,0 +1,133 @@
+site_name: StreamFusion
+site_description: Run Apache Flink SQL faster with a native Rust + Apache Arrow/DataFusion accelerator.
+site_url: https://datafusion-contrib.github.io/StreamFusion/
+repo_url: https://github.com/datafusion-contrib/StreamFusion
+repo_name: datafusion-contrib/StreamFusion
+edit_uri: edit/main/docs/
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+    - search.suggest
+
+markdown_extensions:
+  - tables
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - toc:
+      permalink: true
+
+nav:
+  - Introduction: index.md
+  - Connectors:
+      - connectors/index.md
+      - Kafka: connectors/kafka.md
+      - Parquet: connectors/parquet.md
+      - Fluss: connectors/fluss.md
+      - Formats:
+          - JSON: connectors/formats/json.md
+          - CSV: connectors/formats/csv.md
+          - Avro: connectors/formats/avro.md
+          - Avro Confluent: connectors/formats/avro-confluent.md
+          - Protobuf: connectors/formats/protobuf.md
+          - Raw: connectors/formats/raw.md
+          - CDC JSON: connectors/formats/cdc-json.md
+  - Operators:
+      - operators/index.md
+      - Calc / filter: operators/calc-filter.md
+      - Union: operators/union.md
+      - Expand: operators/expand.md
+      - Changelog normalize: operators/changelog-normalize.md
+      - Unnest / Correlate: operators/unnest-correlate.md
+      - GROUP BY: operators/group-by.md
+      - Window aggregate: operators/window-aggregate.md
+      - OVER: operators/over.md
+      - Deduplication: operators/deduplication.md
+      - Joins:
+          - operators/joins/index.md
+          - Regular join: operators/joins/regular-join.md
+          - Interval join: operators/joins/interval-join.md
+          - Window join: operators/joins/window-join.md
+          - Temporal table join: operators/joins/temporal-join.md
+          - Lookup join: operators/joins/lookup-join.md
+      - Top-N: operators/top-n.md
+      - LIMIT: operators/limit.md
+      - Event-time sort: operators/event-time-sort.md
+      - Watermark assigner: operators/watermark-assigner.md
+      - Unsupported operators: operators/unsupported.md
+  - Backends:
+      - backends/index.md
+      - Memory: backends/memory.md
+      - Paimon (experimental): backends/paimon.md
+  - Deployment: deployment.md
+  - Configuration: configuration.md
+  - Benchmarks: benchmarks.md
+  - Optimizations:
+      - optimizations/index.md
+      - Foundational bets: optimizations/foundational-bets.md
+      - Zero-copy JNI handover: optimizations/zero-copy-jni-handover.md
+      - Columnar flow, transposes at edges: optimizations/columnar-flow-transposes-at-edges.md
+      - Native columnar exchange: optimizations/native-columnar-exchange.md
+      - Zero-copy local shuffle: optimizations/zero-copy-local-shuffle.md
+      - Columnar changelog operators: optimizations/columnar-changelog-operators.md
+      - Expression compile-once: optimizations/expression-compile-once.md
+      - Shared FFI allocator: optimizations/shared-ffi-allocator.md
+      - DataFusion hash joins: optimizations/datafusion-hash-joins.md
+      - Row-major transpose: optimizations/row-major-transpose.md
+      - Arrow unsafe memory checks: optimizations/arrow-unsafe-memory-checks.md
+      - Zero-copy exit transpose: optimizations/zero-copy-exit-transpose.md
+      - String copy reduction: optimizations/string-copy-reduction.md
+      - Projection pruning into the transpose: optimizations/projection-pruning-transpose.md
+      - Batched native decode: optimizations/batched-native-decode.md
+      - Native rdkafka source: optimizations/native-rdkafka-source.md
+      - Decode inside the poll (driver ABI): optimizations/decode-inside-poll-abi.md
+      - Kafka consume fast path: optimizations/kafka-consume-fast-path.md
+      - Decoder projection pushdown: optimizations/decoder-projection-pushdown.md
+      - SIMD JSON decode: optimizations/simd-json-decode.md
+      - DataFusion file scans: optimizations/datafusion-file-scans.md
+      - Arrow-row byte state: optimizations/arrow-row-state.md
+      - Borrowed key probes: optimizations/borrowed-key-probes.md
+      - Mini-batch logical boundary: optimizations/mini-batch-logical-boundary.md
+      - Top-N emit decodes distinct rows: optimizations/topn-emit-decodes-distinct-rows.md
+      - Aggregate specialization fast paths: optimizations/aggregate-specialization-fast-paths.md
+      - Allocation discipline: optimizations/allocation-discipline.md
+      - Memory accounting off the hot path: optimizations/memory-accounting-off-hot-path.md
+      - Checkpoint partitioning in one pass: optimizations/checkpoint-partition-in-one-pass.md
+      - Paimon state backend performance: optimizations/paimon-state-backend-performance.md
+      - Sub-plan reuse digest barriers: optimizations/subplan-reuse-digest-barriers.md
+      - UDFs via columnar upcall: optimizations/udf-columnar-upcall.md
+      - Host-exact builtins via upcall: optimizations/host-exact-builtins-upcall.md
+      - Regex pattern cache: optimizations/regexp-pattern-cache.md
+      - Lookup joins kept in the island: optimizations/lookup-join-in-island.md
+      - Identity expression passthroughs: optimizations/identity-expression-passthroughs.md
+      - Parquet sink file coalescing: optimizations/parquet-sink-file-coalescing.md
+      - Batch-native Kafka JSON serialization: optimizations/batch-native-kafka-json-serialization.md
+      - Native exactly-once Kafka production: optimizations/native-exactly-once-kafka-production.md
+      - DATE_FORMAT pattern cache: optimizations/date-format-pattern-cache.md
+      - Kafka timestamps as fixed JSON syntax: optimizations/kafka-timestamp-fixed-json.md
+      - Post-exchange batch coalescing: optimizations/post-exchange-coalescing.md
+      - Shared native sources: optimizations/shared-native-sources.md

@@ -58,8 +58,8 @@ maximum inside the connector would have re-coupled it to formats), came back onc
 gave the split reader typed batches: it reads the max rowtime off the decoded Arrow batch on the JVM
 side — no format coupling, no ABI addition — and stamps it as the batch's record timestamp, driving
 the same per-split strategy the Fluss source uses (Flink's own one-generator-per-split machinery,
-min combination, idleness). Supported shapes and the remaining fallbacks are listed in
-`docs/coverage-and-fallbacks.md`.
+min combination, idleness). Supported shapes and the remaining fallbacks are listed on the
+[Kafka connector page](https://datafusion-contrib.github.io/StreamFusion/connectors/kafka/).
 
 ## 2026-08-02: ABI revision 2 — an error-message channel for the failure path
 
