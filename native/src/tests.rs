@@ -1800,6 +1800,33 @@ fn json_decode_replicates_flinks_cursor_drift() {
     assert_eq!(values(&out, 0), vec![1]);
 }
 
+// A FLOAT column parses its literal at float width, like Jackson's getFloatValue (2.14+): the
+// tape's f64-then-narrow double rounding is off by one ULP exactly when the f64 lands on an f32
+// rounding midpoint — those messages re-decode through the token walk with the raw literal.
+#[test]
+fn json_decode_float_columns_parse_the_literal_at_float_width() {
+    use arrow::array::Float32Array;
+    let direct: f32 = "7.038531e-26".parse().unwrap();
+    let double_rounded = "7.038531e-26".parse::<f64>().unwrap() as f32;
+    assert_ne!(direct, double_rounded, "the probe literal must be a midpoint case");
+
+    let schema: SchemaRef = Arc::new(Schema::new(vec![
+        Field::new("fl", DataType::Float32, true),
+        Field::new("id", DataType::Int64, true),
+    ]));
+    let batch = bodies(vec![
+        Some(br#"{"fl": 7.038531e-26, "id": 1}"#),
+        Some(br#"{"fl": 1.5, "id": 2}"#), // midpoint-free literals stay on the fast path
+        Some(br#"[{"fl": 7.038531e-26}, {"fl": -7.038531e-26}]"#),
+    ]);
+    let out = JsonDecoder::new(schema, crate::json::JsonEnv::default()).decode(&batch);
+    let floats = out.column(0).as_any().downcast_ref::<Float32Array>().unwrap();
+    assert_eq!(floats.value(0), direct);
+    assert_eq!(floats.value(1), 1.5);
+    assert_eq!((floats.value(2), floats.value(3)), (direct, -direct));
+    assert_eq!(values(&out, 1)[..2], [1, 2]);
+}
+
 // An empty input batch flushes to an empty batch of the target schema, not a panic.
 #[test]
 fn json_decode_empty_batch_yields_empty() {

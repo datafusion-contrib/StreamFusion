@@ -89,7 +89,11 @@ value — a job that runs on both engines produces identical results.
   root document (never read) — re-decode through a token walk that ports Flink's converters
   (`native/src/json_retry.rs`) and rewrite into sanitized rows for the fast-path appenders. The
   CDC envelope dialects keep the spec-strict parse (their `old`-presence pre-scans mirror the
-  skip conditions row for row), so a Jackson-only CDC message still fails/drops as before. Two
+  skip conditions row for row), so a Jackson-only CDC message still fails/drops as before; for
+  the same reason a FLOAT physical column in a CDC envelope (or on the decimal-bearing
+  arrow-json path) keeps the tape's f64-then-narrow rounding, which is one ULP off Jackson's
+  direct-to-float parse exactly when the f64 lands on an f32 rounding midpoint — the plain
+  `json` format re-decodes those messages with the raw literal. Two
   tokenizer residuals, both message-level failures exactly like before the retry existed: an
   unpaired `\u` surrogate escape is rejected (Jackson carries the lone surrogate in its UTF-16
   text, which Rust strings cannot hold), and invalid UTF-8 stays rejected.

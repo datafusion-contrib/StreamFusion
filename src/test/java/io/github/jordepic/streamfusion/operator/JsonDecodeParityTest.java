@@ -159,10 +159,16 @@ class JsonDecodeParityTest {
     "{\"ti\": 1.9}",
     "{\"si\": 1.9}",
     "{\"ti\": \"1.5\"}",
-    // FLOAT: parsed at its own width (one rounding), parseFloat's envelope for strings.
+    // FLOAT: parsed at its own width (one rounding), parseFloat's envelope for strings. The
+    // midpoint literals are exactly where an f64-then-narrow double rounding is one ULP off.
     "{\"fl\": 1.5}",
     "{\"fl\": 0.1}",
     "{\"fl\": 3}",
+    "{\"fl\": 7.038531e-26}",
+    "{\"fl\": -7.038531e-26}",
+    "{\"fl\": 3.4028235677973366e38}", // the f32 overflow boundary: MAX + half a step
+    "{\"fl\": -3.4028235677973366e38}",
+    "{\"fl\": 1.17549435e-38}",
     "{\"fl\": \"1.5f\"}",
     "{\"fl\": \"Infinity\"}",
     "{\"fl\": \"1e50\"}",

@@ -116,7 +116,11 @@ where
 }
 
 /// Float columns: number tokens pass through, strings follow Java's `parseDouble`/`parseFloat`
-/// envelope (`Infinity`/`NaN`, an `f`/`d` suffix, self-trimming).
+/// envelope (`Infinity`/`NaN`, an `f`/`d` suffix, self-trimming). A number token rides the tape's
+/// f64; for FLOAT columns the narrowing equals Jackson's direct-to-float literal parse everywhere
+/// except exactly at an f32 rounding midpoint — the plain `json` format re-decodes those messages
+/// through the token walk, which re-parses the raw literal at float width
+/// ([`f32_parse_ambiguous`]).
 pub(crate) struct FloatJsonAppender<T: ArrowPrimitiveType> {
     builder: PrimitiveBuilder<T>,
     data_type: DataType,
@@ -614,7 +618,7 @@ impl StructJsonAppender {
     }
 
     /// Like [`Self::append_object`], but when `check_drift` is set and a collected slot would make
-    /// Flink's pull-parser cursor drift ([`value_drifts_cursor`]), nothing is appended and `false`
+    /// Flink's pull-parser cursor drift ([`value_needs_token_walk`]), nothing is appended and `false`
     /// returns — the caller re-decodes the whole message through the Jackson-faithful walk. The
     /// check rides the collected slots, so a drift-free scalar row (the common case) pays one
     /// token-type test per slot; only container-valued slots re-walk their subtree.
@@ -645,7 +649,7 @@ impl StructJsonAppender {
         }
         if check_drift
             && self.fields.iter().zip(slots.iter()).any(|(field, slot)| {
-                slot.is_some_and(|value| value_drifts_cursor(field.data_type(), value))
+                slot.is_some_and(|value| value_needs_token_walk(field.data_type(), value))
             })
         {
             return false;
@@ -910,23 +914,33 @@ pub(crate) fn make_json_appender(
     }
 }
 
-/// Whether converting this value would leave Flink's pull-parser cursor somewhere the tree walk
-/// cannot reproduce: a container token under a scalar (non-STRING) column coerces `getText`
-/// ("{" / "[") WITHOUT consuming the container, and a container of the wrong kind throws with the
-/// cursor still on its start token — either way the enclosing walk's `nextToken` then steps INTO
-/// the container and the remaining fields convert from drifted positions. Such messages re-decode
-/// through the Jackson-faithful token walk, which replays the drift deterministically. STRING
-/// columns are safe (`convertToString` consumes a container subtree cleanly), as are scalar
-/// tokens under container columns (the converter throws without having consumed anything).
-fn value_drifts_cursor(data_type: &DataType, value: simd_json::tape::Value<'_, '_>) -> bool {
+/// Whether converting this value faithfully needs the Jackson-faithful token walk. Two causes:
+///
+/// - **Cursor drift.** A container token under a scalar (non-STRING) column coerces `getText`
+///   ("{" / "[") WITHOUT consuming the container, and a container of the wrong kind throws with
+///   the cursor still on its start token — either way the enclosing walk's `nextToken` then steps
+///   INTO the container and the remaining fields convert from drifted positions, which the tree
+///   walk cannot reproduce. STRING columns are safe (`convertToString` consumes a container
+///   subtree cleanly), as are scalar tokens under container columns (the converter throws without
+///   having consumed anything).
+/// - **A FLOAT column needs its raw literal.** The tape parses number tokens f64-first, and
+///   narrowing re-rounds; that equals Jackson's direct-to-float literal parse for every value
+///   EXCEPT an f64 landing exactly on an f32 rounding midpoint, where the literal's true value
+///   decides the side ([`f32_parse_ambiguous`]). The token walk re-parses the literal at float
+///   width.
+fn value_needs_token_walk(data_type: &DataType, value: simd_json::tape::Value<'_, '_>) -> bool {
     use simd_json::prelude::*;
     use simd_json::ValueType;
     let token = value.value_type();
     match data_type {
         DataType::Utf8 => false,
+        DataType::Float32 => match token {
+            ValueType::F64 => f32_parse_ambiguous(value.as_f64().expect("f64 node")),
+            _ => matches!(token, ValueType::Object | ValueType::Array),
+        },
         DataType::Struct(fields) => match token {
             ValueType::Object => {
-                object_drifts_cursor(fields, &value.as_object().expect("object node"))
+                object_needs_token_walk(fields, &value.as_object().expect("object node"))
             }
             ValueType::Array => true,
             _ => false,
@@ -936,7 +950,7 @@ fn value_drifts_cursor(data_type: &DataType, value: simd_json::tape::Value<'_, '
                 .as_array()
                 .expect("array node")
                 .iter()
-                .any(|element| value_drifts_cursor(field.data_type(), element)),
+                .any(|element| value_needs_token_walk(field.data_type(), element)),
             ValueType::Object => true,
             _ => false,
         },
@@ -950,7 +964,7 @@ fn value_drifts_cursor(data_type: &DataType, value: simd_json::tape::Value<'_, '
                     .as_object()
                     .expect("object node")
                     .iter()
-                    .any(|(_, entry)| value_drifts_cursor(value_type, entry))
+                    .any(|(_, entry)| value_needs_token_walk(value_type, entry))
             }
             ValueType::Array => true,
             _ => false,
@@ -959,10 +973,36 @@ fn value_drifts_cursor(data_type: &DataType, value: simd_json::tape::Value<'_, '
     }
 }
 
+/// Whether the correctly-rounded f64 of a number literal cannot decide the literal's f32: exactly
+/// at an f32 rounding midpoint the true decimal may sit on either side within the f64's half-ulp
+/// (and `Float.parseFloat` rounds from the literal, not the f64). Adjacent-f32 midpoints — and the
+/// overflow boundary `f32::MAX + 2^103` — are exactly representable in f64, so ambiguity is a
+/// plain equality; everywhere else the f64 strictly separates from the midpoint and narrowing
+/// rounds identically to the direct parse.
+fn f32_parse_ambiguous(value: f64) -> bool {
+    if !value.is_finite() || (value as f32) as f64 == value {
+        return false;
+    }
+    let overflow_midpoint = f32::MAX as f64 + 2f64.powi(103);
+    let narrowed = value as f32;
+    if narrowed.is_infinite() {
+        return value.abs() == overflow_midpoint;
+    }
+    let (below, above) = if (narrowed as f64) < value {
+        (narrowed, narrowed.next_up())
+    } else {
+        (narrowed.next_down(), narrowed)
+    };
+    if below.is_infinite() || above.is_infinite() {
+        return value.abs() == overflow_midpoint;
+    }
+    value == (below as f64 + above as f64) / 2.0
+}
+
 /// The nested-row drift scan, matching keys with the same saturating field counter as the append:
 /// a value Flink's walk would SKIP (unknown key, or any key after saturation) is consumed cleanly
 /// by `skipToNextField` and never drifts.
-fn object_drifts_cursor(fields: &Fields, object: &simd_json::tape::Object<'_, '_>) -> bool {
+fn object_needs_token_walk(fields: &Fields, object: &simd_json::tape::Object<'_, '_>) -> bool {
     let mut matched = 0;
     for (key, value) in object {
         if matched == fields.len() {
@@ -970,7 +1010,7 @@ fn object_drifts_cursor(fields: &Fields, object: &simd_json::tape::Object<'_, '_
         }
         if let Some(field) = fields.iter().find(|f| f.name() == key) {
             matched += 1;
-            if value_drifts_cursor(field.data_type(), value) {
+            if value_needs_token_walk(field.data_type(), value) {
                 return true;
             }
         }
@@ -1082,7 +1122,7 @@ pub(crate) fn decode_json_bodies_simd(
                 let array = value.as_array().expect("array node");
                 // A drift anywhere re-decodes the MESSAGE: Flink's cursor drift crosses element
                 // boundaries (a nested-array element drifts the element loop itself).
-                if array.iter().any(|element| element_drifts_cursor(schema.fields(), element)) {
+                if array.iter().any(|element| element_needs_token_walk(schema.fields(), element)) {
                     append_rewritten(&mut root, bytes, schema.fields(), env, scan_binary);
                     continue;
                 }
@@ -1169,12 +1209,12 @@ fn append_rewritten(
 
 /// A fanned-out element's cursor-drift check: a nested-array element makes Flink's element loop
 /// itself drift into the array; scalar and null elements are consumed cleanly.
-fn element_drifts_cursor(fields: &Fields, element: simd_json::tape::Value<'_, '_>) -> bool {
+fn element_needs_token_walk(fields: &Fields, element: simd_json::tape::Value<'_, '_>) -> bool {
     use simd_json::prelude::*;
     match element.value_type() {
         simd_json::ValueType::Array => true,
         simd_json::ValueType::Object => {
-            object_drifts_cursor(fields, &element.as_object().expect("object node"))
+            object_needs_token_walk(fields, &element.as_object().expect("object node"))
         }
         _ => false,
     }
