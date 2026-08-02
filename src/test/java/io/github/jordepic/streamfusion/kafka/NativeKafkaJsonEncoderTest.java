@@ -635,6 +635,67 @@ class NativeKafkaJsonEncoderTest {
     }
   }
 
+  /**
+   * An insert-only stream into an upsert sink carries no hidden row-kind column (the transpose
+   * only adds one on changelog edges). Every row is an INSERT: a key and a value, never a
+   * tombstone — exactly Flink's upsert sink over an append stream.
+   */
+  @Test
+  void serializesInsertOnlyUpsertBatchesWithoutARowKindColumn() throws Exception {
+    RowType rowType =
+        RowType.of(
+            new LogicalType[] {new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH)},
+            new String[] {"id", "name"});
+    List<RowData> rows =
+        List.of(
+            GenericRowData.of(1L, StringData.fromString("one")),
+            GenericRowData.of(2L, null));
+
+    JsonRowDataSerializationSchema flinkKey =
+        new JsonRowDataSerializationSchema(
+            RowType.of(new LogicalType[] {new BigIntType()}, new String[] {"id"}),
+            TimestampFormat.SQL,
+            JsonFormatOptions.MapNullKeyMode.FAIL,
+            "null",
+            false,
+            false);
+    flinkKey.open(initializationContext());
+    JsonRowDataSerializationSchema flinkValue =
+        new JsonRowDataSerializationSchema(
+            rowType, TimestampFormat.SQL, JsonFormatOptions.MapNullKeyMode.FAIL, "null", false,
+            false);
+    flinkValue.open(initializationContext());
+
+    try (BufferAllocator allocator = new RootAllocator();
+        CDataDictionaryProvider dictionaries = new CDataDictionaryProvider();
+        VectorSchemaRoot root = RowDataArrowConverter.write(rows, rowType, allocator);
+        ArrowArray array = ArrowArray.allocateNew(allocator);
+        ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
+      Data.exportVectorSchemaRoot(allocator, root, dictionaries, array, schema);
+      EncodeFormat format = EncodeFormat.json(Map.of());
+      byte[][][] records =
+          NativeKafka.encodeKafkaRecords(
+              array.memoryAddress(),
+              schema.memoryAddress(),
+              format.format,
+              format.options,
+              format.format,
+              format.options,
+              LogicalTypeDescriptors.of(rowType),
+              rowType.getFieldNames().toArray(String[]::new),
+              new int[] {0},
+              new int[] {0, 1},
+              true);
+
+      assertEquals(rows.size(), records[1].length);
+      for (int i = 0; i < rows.size(); i++) {
+        assertArrayEquals(
+            flinkKey.serialize(GenericRowData.of(rows.get(i).getLong(0))), records[0][i]);
+        assertArrayEquals(flinkValue.serialize(rows.get(i)), records[1][i]);
+      }
+    }
+  }
+
   private static void assertMatchesFlink(List<RowData> rows, boolean ignoreNullFields)
       throws Exception {
     assertMatchesFlink(rows, ROW_TYPE, TimestampFormat.SQL, ignoreNullFields, false);

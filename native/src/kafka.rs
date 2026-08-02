@@ -481,12 +481,15 @@ fn encode_records(
         ));
     }
     let tombstones = if upsert {
-        let kinds = row_kind_column(batch).ok_or_else(|| {
-            "upsert Kafka serialization requires the hidden row-kind column".to_string()
-        })?;
-        (0..batch.num_rows())
-            .map(|index| matches!(kinds.value(index), 1 | 3))
-            .collect()
+        match row_kind_column(batch) {
+            Some(kinds) => (0..batch.num_rows())
+                .map(|index| matches!(kinds.value(index), 1 | 3))
+                .collect(),
+            // An insert-only edge carries no hidden row-kind column (the transpose contract in
+            // `changelog.rs`): every row is an INSERT and serializes a value, never a tombstone —
+            // Flink's upsert sink over an append stream behaves the same.
+            None => vec![false; batch.num_rows()],
+        }
     } else {
         Vec::new()
     };
