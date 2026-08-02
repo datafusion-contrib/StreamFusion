@@ -6512,6 +6512,15 @@ fn date_format_fast_plan_matches_chrono() {
     }
 }
 
+// A panic escaping a skip-mode decode must not leave the thread's panics silenced: the marker
+// resets on unwind, so the next unexpected failure still reaches the panic hook.
+#[test]
+fn skip_mode_silencing_resets_after_an_escaping_panic() {
+    let escaped = std::panic::catch_unwind(|| silence_expected_decode_panics(|| panic!("boom")));
+    assert!(escaped.is_err());
+    assert!(!IN_SKIP_DECODE.with(std::cell::Cell::get));
+}
+
 // The driver-init handshake fills the vtable only for an ABI version this library speaks; anything
 // else is refused, which the connector treats as "stay on the JVM-mediated decode".
 #[test]

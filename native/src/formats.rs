@@ -1234,6 +1234,12 @@ impl FormatDecoder {
     }
 }
 
+thread_local! {
+    /// Whether the current thread is inside a skip-mode per-message decode (see
+    /// [`silence_expected_decode_panics`]).
+    pub(crate) static IN_SKIP_DECODE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// Marks the current thread as inside a skip-mode per-message decode, silencing the panic hook for
 /// the expected decode failures (Flink's `ignore-parse-errors` skips silently; a hook line per bad
 /// message would flood the log). The hook replacement happens once, delegating to the previous hook
@@ -1241,9 +1247,6 @@ impl FormatDecoder {
 pub(crate) fn silence_expected_decode_panics<R>(work: impl FnOnce() -> R) -> R {
     use std::cell::Cell;
     use std::sync::Once;
-    thread_local! {
-        static IN_SKIP_DECODE: Cell<bool> = const { Cell::new(false) };
-    }
     static INSTALL_HOOK: Once = Once::new();
     INSTALL_HOOK.call_once(|| {
         let previous = std::panic::take_hook();
@@ -1253,10 +1256,17 @@ pub(crate) fn silence_expected_decode_panics<R>(work: impl FnOnce() -> R) -> R {
             }
         }));
     });
+    // Reset on drop, not fallthrough: a panic escaping `work` (a failure beyond the expected
+    // per-message skips) must not leave the thread's panics permanently silenced.
+    struct Unsilence;
+    impl Drop for Unsilence {
+        fn drop(&mut self) {
+            IN_SKIP_DECODE.with(|flag| flag.set(false));
+        }
+    }
     IN_SKIP_DECODE.with(|flag| flag.set(true));
-    let result = work();
-    IN_SKIP_DECODE.with(|flag| flag.set(false));
-    result
+    let _unsilence = Unsilence;
+    work()
 }
 
 impl MessageDecoder {
