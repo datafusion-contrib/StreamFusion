@@ -134,6 +134,53 @@ class KafkaConfigTranslatorTest {
     assertEquals("s3cret", c.get("sasl.password"));
   }
 
+  /**
+   * JAAS quoted values may hold spaces, semicolons, equals signs, and backslash-escaped quotes —
+   * the grammar is kafka-clients' own parser, so any credential the Java client accepts must
+   * translate byte for byte (a truncated password would fail SASL at runtime on a config stock
+   * Flink accepts).
+   */
+  @Test
+  void parsesQuotedJaasValuesWithSpacesSemicolonsAndEscapes() {
+    Map<String, String> c =
+        translated(
+            props(
+                "security.protocol", "SASL_PLAINTEXT",
+                "sasl.mechanism", "PLAIN",
+                "sasl.jaas.config",
+                "org.apache.kafka.common.security.plain.PlainLoginModule required"
+                    + " username=\"al ice\" password=\"p w;r=d \\\" quote\";"));
+    assertEquals("al ice", c.get("sasl.username"));
+    assertEquals("p w;r=d \" quote", c.get("sasl.password"));
+  }
+
+  /** A config the Java client itself cannot parse falls back — never a guessed credential. */
+  @Test
+  void fallsBackOnJaasTheJavaClientRejects() {
+    // Missing the terminating semicolon.
+    assertTrue(
+        fallback(
+                props(
+                    "security.protocol", "SASL_PLAINTEXT",
+                    "sasl.mechanism", "PLAIN",
+                    "sasl.jaas.config",
+                    "org.apache.kafka.common.security.plain.PlainLoginModule required"
+                        + " username=\"alice\" password=\"s3cret\""))
+            .contains("not parseable"));
+    // Two login modules where the client demands exactly one.
+    assertTrue(
+        fallback(
+                props(
+                    "security.protocol", "SASL_PLAINTEXT",
+                    "sasl.mechanism", "PLAIN",
+                    "sasl.jaas.config",
+                    "org.apache.kafka.common.security.plain.PlainLoginModule required"
+                        + " username=\"a\" password=\"b\";"
+                        + " org.apache.kafka.common.security.plain.PlainLoginModule required"
+                        + " username=\"c\" password=\"d\";"))
+            .contains("not parseable"));
+  }
+
   @Test
   void fallsBackOnKerberos() {
     // Explicit GSSAPI, whatever the login module says.

@@ -6,8 +6,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import javax.security.auth.login.AppConfigurationEntry;
+import org.apache.kafka.common.config.SaslConfigs;
+import org.apache.kafka.common.config.types.Password;
+import org.apache.kafka.common.security.JaasContext;
 
 /**
  * Translates a Flink Kafka consumer's {@code Properties} into an equivalent librdkafka
@@ -18,10 +20,11 @@ import java.util.regex.Pattern;
  * cannot map faithfully rather than guessing — the same conservative stance as the expression
  * layer's opt-in incompatibility.
  *
- * <p>Pure {@code Properties} → {@code Map} (no Kafka-client or connector classes), so it is
- * unit-tested without a broker. SASL/SSL material that needs real conversion (JKS→PEM) or an
- * unrecognized JAAS login module falls back; the recognized cases (PLAIN/SCRAM credentials,
- * Kerberos keytab) are mapped.
+ * <p>Pure {@code Properties} → {@code Map} (no connector or broker-touching classes), so it is
+ * unit-tested without a broker; {@code sasl.jaas.config} is parsed with kafka-clients' own JAAS
+ * parser so the accepted grammar is exactly the Java client's. SASL/SSL material that needs real
+ * conversion (JKS→PEM) or an unrecognized JAAS login module falls back; the recognized cases
+ * (PLAIN/SCRAM credentials, Kerberos keytab) are mapped.
  */
 public final class KafkaConfigTranslator {
 
@@ -337,32 +340,37 @@ public final class KafkaConfigTranslator {
     }
   }
 
-  private static final Pattern JAAS_OPTION =
-      Pattern.compile("(\\w[\\w.]*)\\s*=\\s*\"?([^\"\\s;]+)\"?");
-
   /**
-   * Parses {@code sasl.jaas.config} into librdkafka SASL keys. Recognizes PLAIN/SCRAM (username +
-   * password); returns a fallback reason for Kerberos (no cyrus-sasl in the native build), an
-   * unrecognized login module, or a malformed config, and {@code null} on success (or when SASL
-   * isn't configured).
+   * Parses {@code sasl.jaas.config} into librdkafka SASL keys, delegating to kafka-clients' own
+   * JAAS parser so the accepted grammar — quoting, escapes, the trailing semicolon — is exactly
+   * the Java client's. Recognizes PLAIN/SCRAM (username + password); returns a fallback reason
+   * for Kerberos (no cyrus-sasl in the native build), an unrecognized login module, or a config
+   * the Java client itself cannot parse — never a guessed credential — and {@code null} on
+   * success (or when SASL isn't configured).
    */
   private static String sasl(Properties props, Map<String, String> out) {
     String jaas = props.getProperty("sasl.jaas.config");
     if (jaas == null) {
       return null;
     }
-    String module = jaas.trim().split("\\s+", 2)[0];
-    Map<String, String> options = new LinkedHashMap<>();
-    Matcher matcher = JAAS_OPTION.matcher(jaas);
-    while (matcher.find()) {
-      options.put(matcher.group(1).toLowerCase(), matcher.group(2));
+    AppConfigurationEntry entry;
+    try {
+      entry =
+          JaasContext.loadClientContext(Map.of(SaslConfigs.SASL_JAAS_CONFIG, new Password(jaas)))
+              .configurationEntries()
+              .get(0);
+    } catch (RuntimeException error) {
+      return "sasl.jaas.config is not parseable: " + error.getMessage();
     }
+    String module = entry.getLoginModuleName();
     if (module.endsWith("PlainLoginModule") || module.endsWith("ScramLoginModule")) {
-      if (!options.containsKey("username") || !options.containsKey("password")) {
+      Object username = entry.getOptions().get("username");
+      Object password = entry.getOptions().get("password");
+      if (username == null || password == null) {
         return "sasl.jaas.config missing username/password";
       }
-      out.put("sasl.username", options.get("username"));
-      out.put("sasl.password", options.get("password"));
+      out.put("sasl.username", username.toString());
+      out.put("sasl.password", password.toString());
       return null;
     }
     if (module.endsWith("Krb5LoginModule")) {
