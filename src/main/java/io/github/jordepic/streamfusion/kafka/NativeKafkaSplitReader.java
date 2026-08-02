@@ -100,7 +100,7 @@ final class NativeKafkaSplitReader implements SplitReader<NativeSourceRecord, Ka
   }
 
   @Override
-  public RecordsWithSplitIds<NativeSourceRecord> fetch() {
+  public RecordsWithSplitIds<NativeSourceRecord> fetch() throws IOException {
     Set<String> pendingFinished = tracker.drainPendingFinished();
     if (!pendingFinished.isEmpty()) {
       List<TopicPartition> partitions = pendingFinished.stream().map(tracker::tracked).toList();
@@ -118,7 +118,7 @@ final class NativeKafkaSplitReader implements SplitReader<NativeSourceRecord, Ka
     for (int i = 0; i < pending; i++) {
       try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
           ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-        long[] meta = new long[5];
+        long[] meta = new long[6];
         String[] topic = new String[1];
         NativeKafka.drainKafkaSplit(
             handle, meta, topic, outArray.memoryAddress(), outSchema.memoryAddress());
@@ -129,7 +129,7 @@ final class NativeKafkaSplitReader implements SplitReader<NativeSourceRecord, Ka
         metrics.recordPoll(
             new TopicPartition(topic[0], (int) meta[0]), meta[1], meta[2], meta[3], meta[4]);
         tracker.recordPosition(splitId, meta[1]);
-        VectorSchemaRoot typed = decoded(root);
+        VectorSchemaRoot typed = decoded(root, topic[0], (int) meta[0], meta[5], meta[1]);
         long maxRowtime =
             typed == null || rowtimeIndex < 0
                 ? Long.MIN_VALUE
@@ -200,7 +200,9 @@ final class NativeKafkaSplitReader implements SplitReader<NativeSourceRecord, Ka
   }
 
   /** Body batch → typed root when this reader carries the format decode; null for an empty result. */
-  private VectorSchemaRoot decoded(VectorSchemaRoot root) {
+  private VectorSchemaRoot decoded(
+      VectorSchemaRoot root, String topic, int partition, long firstOffset, long nextOffset)
+      throws IOException {
     if (nativeDecode) {
       // Already decoded inside the poll; empty (every document dropped) still advances the offset.
       if (root.getRowCount() == 0) {
@@ -212,15 +214,36 @@ final class NativeKafkaSplitReader implements SplitReader<NativeSourceRecord, Ka
     if (decoder == null) {
       return root;
     }
+    VectorSchemaRoot out =
+        decodeSplitBodies(decoder, root, topic, partition, firstOffset, nextOffset);
+    if (out.getRowCount() == 0) {
+      out.close();
+      return null;
+    }
+    return out;
+  }
+
+  /**
+   * JVM-mediated decode of one split's body batch. A failure surfaces as the fetch's checked
+   * IOException carrying the batch's topic, partition, and offset range alongside the format's own
+   * error text — the same failure shape the natively attached decode raises from inside the poll.
+   */
+  static VectorSchemaRoot decodeSplitBodies(
+      NativeBodyBatchDecoder decoder,
+      VectorSchemaRoot bodies,
+      String topic,
+      int partition,
+      long firstOffset,
+      long nextOffset)
+      throws IOException {
     try {
-      VectorSchemaRoot out = decoder.decode(root);
-      if (out.getRowCount() == 0) {
-        out.close();
-        return null;
-      }
-      return out;
+      return decoder.decode(bodies);
     } catch (Exception e) {
-      throw new RuntimeException("native format decode failed", e);
+      throw new IOException(
+          String.format(
+              "decode failed on topic-partition %s-%d offsets [%d..%d): %s",
+              topic, partition, firstOffset, nextOffset, e.getMessage()),
+          e);
     }
   }
 

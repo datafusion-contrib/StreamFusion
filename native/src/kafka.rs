@@ -1481,8 +1481,9 @@ pub(crate) struct KafkaSplitReader {
     warmed_topics: std::collections::HashSet<String>,
     /// Body (or decoded, when a decoder is attached) batches ready for the JVM to drain one split at a
     /// time, in arrival (offset) order so a split's offset never goes backwards when several of its
-    /// batches are drained in one cycle. Fields: (topic, partition, next offset, batch).
-    pending: std::collections::VecDeque<(String, i32, i64, RecordBatch, i64, i64, i64)>,
+    /// batches are drained in one cycle. Fields: (topic, partition, next offset, batch, bytes,
+    /// records, high watermark, first offset).
+    pending: std::collections::VecDeque<(String, i32, i64, RecordBatch, i64, i64, i64, i64)>,
     /// Transient consumer errors absorbed over the reader's lifetime (see `transient_client_error`),
     /// surfaced to the JVM for the source's metric group.
     transient_errors: i64,
@@ -1689,7 +1690,8 @@ impl KafkaSplitReader {
             max_records: usize,
             seen: usize,
             buffered: usize,
-            /// Per-partition buckets: a subtask holds a handful of partitions and a fetch response
+            /// Per-partition buckets — (rkt, partition, topic, bodies, next offset, stop, bytes,
+            /// first offset): a subtask holds a handful of partitions and a fetch response
             /// delivers a partition's records contiguously, so a last-bucket cache + linear scan
             /// beats a per-message hash lookup.
             buckets: Vec<(
@@ -1699,6 +1701,7 @@ impl KafkaSplitReader {
                 BinaryBuilder,
                 i64,
                 Option<i64>,
+                i64,
                 i64,
             )>,
             last_bucket: usize,
@@ -1750,6 +1753,7 @@ impl KafkaSplitReader {
                         0,
                         stop,
                         0,
+                        message.offset,
                     ));
                     context.buckets.len() - 1
                 };
@@ -1837,7 +1841,9 @@ impl KafkaSplitReader {
             .collect::<HashMap<_, _>>();
         fold_partition_eofs(&mut positions, context.partition_eofs);
         let mut reported = HashSet::default();
-        for (_rkt, partition, topic, mut builder, payload_next_offset, stop, bytes) in context.buckets {
+        for (_rkt, partition, topic, mut builder, payload_next_offset, stop, bytes, first_offset) in
+            context.buckets
+        {
             let key = (topic.clone(), partition);
             let position = positions.get(&key).copied().unwrap_or(payload_next_offset);
             let next_offset = stop.map_or(position, |stop| position.min(stop));
@@ -1846,7 +1852,12 @@ impl KafkaSplitReader {
             let records = body.num_rows() as i64;
             let batch = match (self.decode, body.num_rows()) {
                 (_, 0) | (None, _) => body,
-                (Some(attached), _) => Self::decode_bucket(attached, body)?,
+                (Some(attached), _) => Self::decode_bucket(attached, body).map_err(|error| {
+                    format!(
+                        "decode failed on topic-partition {topic}-{partition} offsets \
+                         [{first_offset}..{next_offset}): {error}"
+                    )
+                })?,
             };
             self.next_offsets.insert((topic.clone(), partition), next_offset);
             let high_watermark = self.cached_high_watermark(&topic, partition);
@@ -1858,6 +1869,7 @@ impl KafkaSplitReader {
                 bytes,
                 records,
                 high_watermark,
+                first_offset,
             ));
             reported.insert(key);
         }
@@ -1891,6 +1903,7 @@ impl KafkaSplitReader {
                 0,
                 0,
                 high_watermark,
+                next_offset,
             ));
         }
         Ok(self.pending.len())
@@ -2031,6 +2044,54 @@ mod kafka_error_tests {
                 "format code {format}: capability probe and encode dispatch disagree"
             );
         }
+    }
+
+    /// The connector side of the ABI's failure path: a nonzero decode return resolves to the
+    /// format's own panic text through the version-2 error channel, and to the bare return code
+    /// against a version-1 driver that has no channel to ask.
+    #[test]
+    fn decode_bucket_failure_resolves_the_format_error_text() {
+        use super::{AttachedDecode, KafkaSplitReader};
+        use crate::format_abi::{FormatDriver, FORMAT_DRIVER_VERSION_2};
+        use crate::formats::{silence_expected_decode_panics, streamfusion_format_driver_init, MessageDecoder};
+        use arrow::array::BinaryArray;
+        use arrow::datatypes::SchemaRef;
+
+        let mut driver = FormatDriver {
+            decode_body_batch: super::unsupported_decode,
+            decode_last_error: super::unsupported_last_error,
+        };
+        assert_eq!(streamfusion_format_driver_init(FORMAT_DRIVER_VERSION_2, &mut driver), 0);
+        let output: SchemaRef =
+            Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, true)]));
+        let decoder = MessageDecoder::new(crate::format_codes::FORMAT_JSON, output, "", "", 0, false, "");
+        let attached = AttachedDecode {
+            decode: driver.decode_body_batch,
+            last_error: Some(driver.decode_last_error),
+            decoder: &decoder as *const MessageDecoder as i64,
+        };
+        let body = || {
+            let column: ArrayRef = Arc::new(BinaryArray::from(vec![b"not json".as_ref()]));
+            RecordBatch::try_new(
+                Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)])),
+                vec![column],
+            )
+            .unwrap()
+        };
+
+        let error = silence_expected_decode_panics(|| {
+            KafkaSplitReader::decode_bucket(attached, body()).unwrap_err()
+        });
+        assert!(
+            error.contains("failed to decode JSON record"),
+            "v2 failure must carry the format's panic text, got: {error}"
+        );
+
+        let version_1 = AttachedDecode { last_error: None, ..attached };
+        let error = silence_expected_decode_panics(|| {
+            KafkaSplitReader::decode_bucket(version_1, body()).unwrap_err()
+        });
+        assert_eq!(error, "attached format decode failed (rc 1)");
     }
 
     /// A live-tailing drain can deliver a partition's EOF op ahead of records that arrived in the
@@ -2721,8 +2782,10 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_en
     })
 }
 
-/// Drains one pending per-partition body batch, writes `[partition, nextOffset]` into `splitMeta`, and
-/// the topic into `outTopic[0]`, so the JVM can form the split id and advance its checkpoint offset.
+/// Drains one pending per-partition body batch, writes `[partition, nextOffset, bytes, records,
+/// highWatermark, firstOffset]` into `splitMeta` (truncated to the array's length), and the topic
+/// into `outTopic[0]`, so the JVM can form the split id, advance its checkpoint offset, and name
+/// the batch's offset range when its decode fails.
 #[cfg(feature = "kafka")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_drainKafkaSplit<'local>(
@@ -2736,10 +2799,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_dr
 ) -> jint {
     crate::bridge::jni_guard(env, move |env| {
         let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
-        let (topic, partition, next_offset, batch, bytes, records, high_watermark) =
+        let (topic, partition, next_offset, batch, bytes, records, high_watermark, first_offset) =
             reader.pending.pop_front().expect("drainKafkaSplit called with no pending batch");
         let rows = batch.num_rows() as jint;
-        let metadata = [partition as i64, next_offset, bytes, records, high_watermark];
+        let metadata =
+            [partition as i64, next_offset, bytes, records, high_watermark, first_offset];
         let metadata_len = env
             .get_array_length(&split_meta)
             .expect("failed to read split meta length") as usize;
@@ -2816,7 +2880,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_be
                 continue;
             }
             idle = 0;
-            for (_topic, _partition, _next_offset, batch, _bytes, _records, _high) in
+            for (_topic, _partition, _next_offset, batch, _bytes, _records, _high, _first) in
                 reader.pending.drain(..)
             {
                 rows += batch.num_rows() as i64; // consumed in Rust; no JVM export

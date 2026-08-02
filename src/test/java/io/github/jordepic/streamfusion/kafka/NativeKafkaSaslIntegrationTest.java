@@ -3,6 +3,7 @@ package io.github.jordepic.streamfusion.kafka;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
@@ -128,7 +129,7 @@ class NativeKafkaSaslIntegrationTest {
   }
 
   /** Translates the table properties and reads the whole topic through the native reader. */
-  private static int readAll(Properties props) {
+  private static int readAll(Properties props) throws IOException {
     KafkaConfigTranslator.Result config = KafkaConfigTranslator.translate(props);
     assertTrue(
         config.fallbackReason == null, () -> "config should translate: " + config.fallbackReason);

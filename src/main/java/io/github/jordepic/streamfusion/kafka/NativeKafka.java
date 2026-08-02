@@ -40,7 +40,8 @@ public final class NativeKafka {
   public static native void setKafkaSplitsPaused(
       long handle, String[] topics, long[] partitions, boolean paused) throws IOException;
 
-  public static native int pollKafkaBatch(long handle, int maxRecords, long timeoutMillis);
+  public static native int pollKafkaBatch(long handle, int maxRecords, long timeoutMillis)
+      throws IOException;
 
   /**
    * Transient consumer errors (broker transport flaps, reconnects) the native poll absorbed over

@@ -60,3 +60,16 @@ side — no format coupling, no ABI addition — and stamps it as the batch's re
 the same per-split strategy the Fluss source uses (Flink's own one-generator-per-split machinery,
 min combination, idleness). Supported shapes and the remaining fallbacks are listed in
 `docs/coverage-and-fallbacks.md`.
+
+## 2026-08-02: ABI revision 2 — an error-message channel for the failure path
+
+A malformed production message used to kill the job undiagnosably: the format side collapsed its
+decode panic to a bare nonzero return code, so the connector could only report "decode failed
+(rc 1)" with no parse error, topic, partition, or offsets. Revision 2 appends one vtable entry —
+after a nonzero decode the connector reads the failure's UTF-8 text from a thread-local the format
+owns (valid on that thread until its next failed decode, copied out immediately) — and folds it
+into an error naming the bucket's topic, partition, and offset range. The success path is
+untouched, keeping the fused decode's cost identical. Version skew keeps the ADBC contract: init
+fills only the requested version's prefix of the vtable, a connector asks for revision 2 and falls
+back to requesting revision 1, and either mismatch direction decodes as before with rc-only
+failures. The JVM-mediated decode raises the same failure shape from the split reader.

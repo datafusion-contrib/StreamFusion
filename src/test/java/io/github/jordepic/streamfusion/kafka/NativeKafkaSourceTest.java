@@ -515,7 +515,7 @@ class NativeKafkaSourceTest {
       BufferAllocator allocator,
       CDataDictionaryProvider dictionaries,
       List<byte[]> bodies,
-      long[] checkpoint) {
+      long[] checkpoint) throws IOException {
     int pending = NativeKafka.pollKafkaBatch(handle, 1024, 2000);
     for (int p = 0; p < pending; p++) {
       try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
@@ -542,7 +542,7 @@ class NativeKafkaSourceTest {
       BufferAllocator allocator,
       CDataDictionaryProvider dictionaries,
       Set<Long> ids,
-      long[] checkpoint) {
+      long[] checkpoint) throws IOException {
     int pending = NativeKafka.pollKafkaBatch(handle, 1024, 2000);
     for (int p = 0; p < pending; p++) {
       try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
@@ -580,7 +580,7 @@ class NativeKafkaSourceTest {
       BufferAllocator allocator,
       CDataDictionaryProvider dictionaries,
       Map<String, Set<Long>> ids,
-      Map<String, Long> checkpoints) {
+      Map<String, Long> checkpoints) throws IOException {
     int pending = NativeKafka.pollKafkaBatch(handle, 1024, 2000);
     for (int p = 0; p < pending; p++) {
       try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
