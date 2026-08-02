@@ -1820,6 +1820,40 @@ fn json_decode_time_truncates_and_binary_follows_jackson() {
     assert_eq!(b.value(0), [1, 2, 3]);
 }
 
+// A DECIMAL-bearing schema rides arrow-json, whose map decoder keeps every entry of a
+// duplicate-keyed object; Flink builds a java.util.Map — one entry per key, last value. The
+// decode collapses to last-value-first-position, like the simd path.
+#[test]
+fn json_decode_decimal_path_collapses_duplicate_map_keys() {
+    use arrow::array::MapArray;
+    let schema: SchemaRef = Arc::new(Schema::new(vec![
+        Field::new_map(
+            "m",
+            "entries",
+            Field::new("keys", DataType::Utf8, false),
+            Field::new("values", DataType::Decimal128(5, 2), true),
+            false,
+            true,
+        ),
+        Field::new("dec", DataType::Decimal128(5, 2), true),
+    ]));
+    let batch = bodies(vec![
+        Some(br#"{"m": {"k": 1.234, "j": 2, "k": 3.456}, "dec": 1.5}"#),
+        Some(br#"{"m": {"u": 7}}"#),
+    ]);
+    let out = JsonDecoder::new(schema, crate::json::JsonEnv::default()).decode(&batch);
+    let maps = out.column(0).as_any().downcast_ref::<MapArray>().unwrap();
+    let keys = maps.entries().column(0).as_any().downcast_ref::<StringArray>().unwrap();
+    let values = maps.entries().column(1).as_any().downcast_ref::<Decimal128Array>().unwrap();
+    // Row 0: k keeps its first position with the LAST value (HALF_UP of 3.456), j follows.
+    assert_eq!(maps.value_length(0), 2);
+    assert_eq!((keys.value(0), values.value(0)), ("k", 346));
+    assert_eq!((keys.value(1), values.value(1)), ("j", 200));
+    // Row 1 (no duplicates) is untouched.
+    assert_eq!(maps.value_length(1), 1);
+    assert_eq!((keys.value(2), values.value(2)), ("u", 700));
+}
+
 /// The SQL/ISO-8601 timestamp modes reject each other's separator, numbers fail a timestamp/date
 /// column, and a float literal under a STRING column fails loudly (raw literal unrecoverable) —
 /// the Flink envelope, per the JSON decode parity test.

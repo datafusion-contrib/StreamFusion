@@ -96,6 +96,14 @@ class JsonDecodeParityTest {
           new LogicalType[] {new DecimalType(5, 2), new TimeType(3), new VarBinaryType(8)},
           new String[] {"dec", "t", "b"});
 
+  private static final RowType DECIMAL_MAP_TYPE =
+      RowType.of(
+          new LogicalType[] {
+            new MapType(new VarCharType(VarCharType.MAX_LENGTH), new DecimalType(5, 2)),
+            new DecimalType(5, 2)
+          },
+          new String[] {"m", "dec"});
+
   private static final RowType PAIR_TYPE =
       RowType.of(new LogicalType[] {new IntType(), new IntType()}, new String[] {"a", "b"});
 
@@ -429,6 +437,19 @@ class JsonDecodeParityTest {
     // ignore-parse-errors on the decimal path: a bad decimal cell nulls per field, like the host.
     assertParity(DECIMAL_TYPE, "{\"dec\": \"junk\", \"l\": 9}", TimestampFormat.SQL, "", true);
     assertParity(DECIMAL_TYPE, " ", TimestampFormat.SQL, "", true);
+    // Duplicate MAP keys on this path: Flink's converter builds a java.util.Map, so a repeated
+    // key holds one entry with the final value; every entry's decimal still converts (a bad
+    // early duplicate fails strict mode / nulls in skip mode before the collapse).
+    String[] duplicateMapScenarios = {
+      "{\"m\": {\"k\": 1.234, \"j\": 2, \"k\": 3.456}, \"dec\": 1.5}",
+      "{\"m\": {\"k\": \"junk\", \"k\": 1.5}}",
+      "{\"m\": {}}",
+      "{\"m\": {\"k\": 1.005, \"k\": null}}",
+    };
+    for (String scenario : duplicateMapScenarios) {
+      assertParity(DECIMAL_MAP_TYPE, scenario, TimestampFormat.SQL, "", false);
+      assertParity(DECIMAL_MAP_TYPE, scenario, TimestampFormat.SQL, "", true);
+    }
   }
 
   private static void assertParity(

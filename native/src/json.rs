@@ -1233,7 +1233,10 @@ impl JsonDecoder {
             .fields()
             .iter()
             .zip(decoded.columns())
-            .map(|(field, column)| restore_exact_leaves(column, field.data_type(), self.env.lenient))
+            .map(|(field, column)| {
+                let column = restore_exact_leaves(column, field.data_type(), self.env.lenient);
+                collapse_duplicate_map_keys(&column, field.data_type())
+            })
             .collect();
         RecordBatch::try_new(self.schema.clone(), columns).expect("failed to build JSON batch")
     }
@@ -1471,6 +1474,110 @@ fn restore_exact_leaves(column: &ArrayRef, target: &DataType, lenient: bool) -> 
                 MapArray::try_new(
                     entries_field.clone(),
                     source.offsets().clone(),
+                    entries,
+                    source.nulls().cloned(),
+                    *sorted,
+                )
+                .expect("failed to rebuild map column"),
+            )
+        }
+        _ => column.clone(),
+    }
+}
+
+/// Whether a (nested) leaf is a MAP — the raw-literals path must collapse its duplicate keys.
+fn contains_map(data_type: &DataType) -> bool {
+    match data_type {
+        DataType::Map(_, _) => true,
+        DataType::Struct(fields) => fields.iter().any(|f| contains_map(f.data_type())),
+        DataType::List(field) => contains_map(field.data_type()),
+        _ => false,
+    }
+}
+
+/// arrow-json's map decoder keeps every entry of a duplicate-keyed JSON object, but Flink's
+/// converter builds a `java.util.Map` — a repeated key holds ONE entry with the final value. This
+/// collapses the arrow-json-built maps to the simd path's last-value-first-position rule (hash
+/// order is not reproducible either way); a map-free column passes through untouched and an
+/// already-unique column rebuilds nothing.
+fn collapse_duplicate_map_keys(column: &ArrayRef, data_type: &DataType) -> ArrayRef {
+    if !contains_map(data_type) {
+        return column.clone();
+    }
+    match data_type {
+        DataType::Struct(fields) => {
+            let source = column.as_any().downcast_ref::<StructArray>().expect("struct column");
+            let children = fields
+                .iter()
+                .zip(source.columns())
+                .map(|(field, child)| collapse_duplicate_map_keys(child, field.data_type()))
+                .collect();
+            Arc::new(
+                StructArray::try_new(fields.clone(), children, source.nulls().cloned())
+                    .expect("failed to rebuild struct column"),
+            )
+        }
+        DataType::List(field) => {
+            let source = column.as_any().downcast_ref::<ListArray>().expect("list column");
+            let values = collapse_duplicate_map_keys(source.values(), field.data_type());
+            Arc::new(
+                ListArray::try_new(
+                    field.clone(),
+                    source.offsets().clone(),
+                    values,
+                    source.nulls().cloned(),
+                )
+                .expect("failed to rebuild list column"),
+            )
+        }
+        DataType::Map(entries_field, sorted) => {
+            let source = column.as_any().downcast_ref::<MapArray>().expect("map column");
+            let entry_fields = match entries_field.data_type() {
+                DataType::Struct(kv) if kv.len() == 2 => kv.clone(),
+                other => panic!("MAP entries must be a two-field struct, got {other}"),
+            };
+            let keys = source
+                .entries()
+                .column(0)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("string map keys");
+            let values =
+                collapse_duplicate_map_keys(source.entries().column(1), entry_fields[1].data_type());
+            let offsets = source.offsets();
+            let mut surviving: Vec<u32> = Vec::with_capacity(keys.len());
+            let mut new_offsets: Vec<i32> = Vec::with_capacity(offsets.len());
+            new_offsets.push(0);
+            let mut kept: Vec<u32> = Vec::new();
+            for window in offsets.windows(2) {
+                kept.clear();
+                for entry in window[0] as usize..window[1] as usize {
+                    let key = keys.value(entry);
+                    match kept.iter().position(|&k| keys.value(k as usize) == key) {
+                        Some(at) => kept[at] = entry as u32,
+                        None => kept.push(entry as u32),
+                    }
+                }
+                surviving.extend_from_slice(&kept);
+                new_offsets.push(surviving.len() as i32);
+            }
+            if surviving.len() == keys.len() && Arc::ptr_eq(&values, source.entries().column(1)) {
+                return column.clone();
+            }
+            let indices = UInt32Array::from(surviving);
+            let entries = StructArray::try_new(
+                entry_fields,
+                vec![
+                    arrow::compute::take(keys, &indices, None).expect("take map keys"),
+                    arrow::compute::take(&values, &indices, None).expect("take map values"),
+                ],
+                None,
+            )
+            .expect("failed to rebuild map entries");
+            Arc::new(
+                MapArray::try_new(
+                    entries_field.clone(),
+                    OffsetBuffer::new(ScalarBuffer::from(new_offsets)),
                     entries,
                     source.nulls().cloned(),
                     *sorted,
