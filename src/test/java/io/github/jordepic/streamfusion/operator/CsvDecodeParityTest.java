@@ -32,8 +32,9 @@ import org.junit.jupiter.api.Test;
  * decoded by {@link CsvRowDataDeserializationSchema} (the referee) and by the native decode operator,
  * and the outcomes must match — the same rows field for field, or both failing. This is the
  * accept/reject-envelope test the format-option audit called for: trimming, empty fields, null
- * literals, arity, quoting, comments, Flink's lenient DATE, the SQL timestamp shape, HALF_UP decimal
- * rescale with overflow-to-NULL, and ignore-parse-errors' per-field granularity.
+ * literals, arity, quoting, comments, blank-line records, Jackson's UTF-8 decode window, Flink's
+ * lenient DATE, the SQL timestamp shape, HALF_UP decimal rescale with overflow-to-NULL, and
+ * ignore-parse-errors' per-field granularity.
  */
 @Tag("streamfusion-csv")
 class CsvDecodeParityTest {
@@ -107,6 +108,15 @@ class CsvDecodeParityTest {
     "x",
     // No usable record at all.
     "",
+    // Jackson never skips blank lines on its own: a blank first line is a one-empty-field
+    // record (strict: arity failure; lenient: an empty first field padded with nulls), and the
+    // data line after it is never read. Blank lines after the first record are ignored.
+    "\nx,42,2.5,true,2020-01-02,2020-01-02 03:04:05,1.23,9",
+    "\n",
+    "\r\nx,42,2.5,true,2020-01-02,2020-01-02 03:04:05,1.23,9",
+    "\n\nx,42,2.5,true,2020-01-02,2020-01-02 03:04:05,1.23,9",
+    " \nx,42,2.5,true,2020-01-02,2020-01-02 03:04:05,1.23,9",
+    "x,42,2.5,true,2020-01-02,2020-01-02 03:04:05,1.23,9\n\n",
   };
 
   @Test
@@ -126,6 +136,15 @@ class CsvDecodeParityTest {
       "a,b;42;2.5;true;2020-01-02;2020-01-02 03:04:05;1.23;9",
       "|quo;ted|;42;2.5;true;2020-01-02;2020-01-02 03:04:05;1.23;9",
       "#comment,line;42;2.5;true;2020-01-02;2020-01-02 03:04:05;1.23;9",
+      // allow-comments turns on Jackson's line skipping: blank lines, spaces (but not tabs),
+      // and # lines are all consumed before the record starts.
+      "\n#c\na;42;2.5;true;2020-01-02;2020-01-02 03:04:05;1.23;9",
+      "#c\n\na;42;2.5;true;2020-01-02;2020-01-02 03:04:05;1.23;9",
+      " #c\na;42;2.5;true;2020-01-02;2020-01-02 03:04:05;1.23;9",
+      " a;42;2.5;true;2020-01-02;2020-01-02 03:04:05;1.23;9",
+      "\t#c\na;42;2.5;true;2020-01-02;2020-01-02 03:04:05;1.23;9",
+      "\n",
+      "#c",
     };
     Consumer<CsvRowDataDeserializationSchema.Builder> flink =
         b -> b.setFieldDelimiter(';').setQuoteCharacter('|').setAllowComments(true);
@@ -160,6 +179,63 @@ class CsvDecodeParityTest {
     }
   }
 
+  @Test
+  void invalidUtf8FailsTheWholeMessageLikeFlink() {
+    String row = "x,42,2.5,true,2020-01-02,2020-01-02 03:04:05,1.23,9";
+    byte[][] messages = {
+      // Inside the record — anywhere — Jackson's CharConversionException escapes the per-field
+      // handling: strict fails the message, lenient drops the whole row (never a null field).
+      bytes(new byte[] {(byte) 0xFF}, row.getBytes(StandardCharsets.UTF_8)),
+      bytes("x,4".getBytes(StandardCharsets.UTF_8), new byte[] {(byte) 0xFF},
+          "2,2.5,true,2020-01-02,2020-01-02 03:04:05,1.23,9".getBytes(StandardCharsets.UTF_8)),
+      bytes("\"a".getBytes(StandardCharsets.UTF_8), new byte[] {(byte) 0xFF},
+          "b\",42,2.5,true,2020-01-02,2020-01-02 03:04:05,1.23,9"
+              .getBytes(StandardCharsets.UTF_8)),
+      // Truncated multi-byte sequence at end of the (unterminated) record.
+      bytes(row.getBytes(StandardCharsets.UTF_8), new byte[] {(byte) 0xC3}),
+      // Jackson decodes one lookahead character past the record terminator.
+      bytes((row + "\n").getBytes(StandardCharsets.UTF_8), new byte[] {(byte) 0xFF}),
+      bytes((row + "\n").getBytes(StandardCharsets.UTF_8), new byte[] {(byte) 0xC3}),
+      // ... but nothing beyond it: trailing garbage after the lookahead is never decoded.
+      bytes((row + "\nz").getBytes(StandardCharsets.UTF_8), new byte[] {(byte) 0xFF}),
+      bytes((row + "\nzzzz").getBytes(StandardCharsets.UTF_8), new byte[] {(byte) 0xFF, (byte) 0xFE}),
+    };
+    for (byte[] message : messages) {
+      assertParity(message, b -> {}, "", false);
+      assertParity(message, b -> b.setIgnoreParseErrors(true), "", true);
+    }
+    // With allow-comments the decoded window extends across the comment/blank run after (or
+    // before) the record, so garbage inside a comment still fails the message.
+    byte[][] commentMessages = {
+      bytes("#".getBytes(StandardCharsets.UTF_8), new byte[] {(byte) 0xFF},
+          ("\n" + row).getBytes(StandardCharsets.UTF_8)),
+      bytes((row + "\n#").getBytes(StandardCharsets.UTF_8), new byte[] {(byte) 0xFF}),
+      bytes((row + "\n#c\nz").getBytes(StandardCharsets.UTF_8), new byte[] {(byte) 0xFF}),
+    };
+    for (byte[] message : commentMessages) {
+      assertParity(message, b -> b.setAllowComments(true), "csv.allow-comments=true\n", false);
+      assertParity(
+          message,
+          b -> b.setAllowComments(true).setIgnoreParseErrors(true),
+          "csv.allow-comments=true\n",
+          true);
+    }
+  }
+
+  private static byte[] bytes(byte[]... parts) {
+    int length = 0;
+    for (byte[] part : parts) {
+      length += part.length;
+    }
+    byte[] out = new byte[length];
+    int offset = 0;
+    for (byte[] part : parts) {
+      System.arraycopy(part, 0, out, offset, part.length);
+      offset += part.length;
+    }
+    return out;
+  }
+
   /**
    * Decodes one message through both engines and asserts the same outcome: identical rows (field by
    * field, via each type's {@link RowData.FieldGetter}) or both failing.
@@ -169,8 +245,17 @@ class CsvDecodeParityTest {
       Consumer<CsvRowDataDeserializationSchema.Builder> flinkOptions,
       String nativeFormatOptions,
       boolean skipErrors) {
+    assertParity(
+        message.getBytes(StandardCharsets.UTF_8), flinkOptions, nativeFormatOptions, skipErrors);
+  }
+
+  private static void assertParity(
+      byte[] message,
+      Consumer<CsvRowDataDeserializationSchema.Builder> flinkOptions,
+      String nativeFormatOptions,
+      boolean skipErrors) {
     HARNESS.assertParity(
-        message,
+        new String(message, StandardCharsets.ISO_8859_1),
         () -> flinkDecode(message, flinkOptions),
         () ->
             HARNESS.nativeDecode(
@@ -178,7 +263,7 @@ class CsvDecodeParityTest {
   }
 
   private static List<List<Object>> flinkDecode(
-      String message, Consumer<CsvRowDataDeserializationSchema.Builder> customize)
+      byte[] message, Consumer<CsvRowDataDeserializationSchema.Builder> customize)
       throws Exception {
     CsvRowDataDeserializationSchema.Builder builder =
         new CsvRowDataDeserializationSchema.Builder(ROW_TYPE, InternalTypeInfo.of(ROW_TYPE));
@@ -196,7 +281,7 @@ class CsvDecodeParityTest {
             return SimpleUserCodeClassLoader.create(CsvDecodeParityTest.class.getClassLoader());
           }
         });
-    RowData row = schema.deserialize(message.getBytes(StandardCharsets.UTF_8));
+    RowData row = schema.deserialize(message);
     return row == null ? List.of() : List.of(HARNESS.fields(row));
   }
 

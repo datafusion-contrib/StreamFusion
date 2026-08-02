@@ -11,11 +11,22 @@
 //!
 //! Row semantics mirror `CsvRowDataDeserializationSchema.deserialize` + Jackson:
 //! - only the FIRST record of a message is read (Jackson's `readValue`), the rest is ignored;
-//! - a message with no record (empty, or only a comment line) is an error;
+//! - a message with no record (empty, or only comment/blank lines under `allow-comments`) is an
+//!   error;
+//! - Jackson never skips a blank line on its own: a blank first line is a record with a single
+//!   empty field (so it hits the row-arity check like any other short row);
+//! - `allow-comments` skips `#` lines AND blank lines AND spaces (0x20 only) before the record,
+//!   exactly Jackson's `_skipCommentLines`;
+//! - invalid UTF-8 is a message-level error (Jackson's `CharConversionException` escapes the
+//!   per-field handling), but only inside the byte range Jackson actually decodes: through the
+//!   first record's terminator plus one lookahead character — extended, under `allow-comments`,
+//!   across the comment/blank run that follows the record. Its `UTF8Reader` defers an error hit
+//!   mid-buffer and the parser never reads again once the record and lookahead are in hand, so
+//!   garbage beyond that window is invisible to Flink;
 //! - more fields than columns is a record-level error; fewer is a row-arity error by default;
-//! - `ignore-parse-errors` reproduces Flink's granularity: a record-level error drops the row, a
-//!   short row null-pads (`validateArity` goes silent), and a field conversion error nulls just
-//!   that field (`createNullableConverter`'s catch).
+//! - `ignore-parse-errors` reproduces Flink's granularity: a record-level error (including the
+//!   UTF-8 window check) drops the row, a short row null-pads (`validateArity` goes silent), and
+//!   a field conversion error nulls just that field (`createNullableConverter`'s catch).
 
 use crate::flink_text::*;
 use crate::*;
@@ -96,11 +107,28 @@ impl CsvDecoder {
         for row in 0..bodies.num_rows() {
             // A null message (tombstone) produces no row, like Flink's null-message guard.
             let Some(bytes) = binary_body(column, row) else { continue };
-            let Some(count) = self.read_first_record(bytes, &mut fields_buf, &mut ends) else {
-                if self.skip_errors {
-                    continue;
+            let count = match self.read_first_record(bytes, &mut fields_buf, &mut ends) {
+                Err(()) => {
+                    // Invalid UTF-8 escapes Jackson's record handling: the whole row fails (or
+                    // drops under ignore-parse-errors), never a single field.
+                    if self.skip_errors {
+                        continue;
+                    }
+                    panic!(
+                        "CSV message is not valid UTF-8: {:?}",
+                        String::from_utf8_lossy(bytes)
+                    );
                 }
-                panic!("CSV message contains no record: {:?}", String::from_utf8_lossy(bytes));
+                Ok(None) => {
+                    if self.skip_errors {
+                        continue;
+                    }
+                    panic!(
+                        "CSV message contains no record: {:?}",
+                        String::from_utf8_lossy(bytes)
+                    );
+                }
+                Ok(Some(count)) => count,
             };
             if count > arity {
                 // Jackson fails the whole record on extra columns; under ignore-parse-errors the
@@ -122,15 +150,8 @@ impl CsvDecoder {
                     continue;
                 }
                 let end = ends[i];
-                let text = match std::str::from_utf8(&fields_buf[start..end]) {
-                    Ok(text) => text,
-                    Err(_) if self.skip_errors => {
-                        converted.push(Converted::Null);
-                        start = end;
-                        continue;
-                    }
-                    Err(_) => panic!("CSV field is not valid UTF-8"),
-                };
+                let text = std::str::from_utf8(&fields_buf[start..end])
+                    .expect("record bytes were validated by the UTF-8 window check");
                 start = end;
                 if self.options.null_literal.as_deref() == Some(text) {
                     converted.push(Converted::Null);
@@ -156,29 +177,50 @@ impl CsvDecoder {
         RecordBatch::try_new(self.schema.clone(), columns).expect("failed to build CSV batch")
     }
 
-    /// Splits `input` with csv-core (configured like Flink's `CsvSchema`) and captures the FIRST
-    /// record's unquoted fields into `fields_buf`, with `ends[i]` the end offset of field `i`
-    /// (Jackson's `readValue` reads one record; trailing content is ignored). `None` when the
-    /// input holds no record at all.
+    /// Reads the FIRST record of `input` like Jackson's `readValue`: skips the comment/blank
+    /// prefix when `allow-comments` is set, treats a blank first line as a one-empty-field record
+    /// otherwise, and captures the record's unquoted fields into `fields_buf`, with `ends[i]` the
+    /// end offset of field `i`. `Ok(None)` when the input holds no record at all; `Err` when the
+    /// bytes Jackson would decode are not valid UTF-8 (a message-level failure).
     fn read_first_record(
         &self,
         input: &[u8],
         fields_buf: &mut Vec<u8>,
         ends: &mut Vec<usize>,
-    ) -> Option<usize> {
-        use csv_core::{ReadRecordResult, ReaderBuilder};
-        // Jackson's allow-comments skips '#' lines where a record would start. Handled here rather
-        // than by csv-core's comment support, whose EOF flush turns an unterminated trailing
-        // comment into a bogus one-empty-field record.
-        let mut input = input;
-        if self.options.comments {
-            while input.first() == Some(&b'#') {
-                input = match input.iter().position(|&b| b == b'\n') {
-                    Some(i) => &input[i + 1..],
-                    None => &[],
-                };
+    ) -> Result<Option<usize>, ()> {
+        let prefix = if self.options.comments { skip_comment_lines(input, 0) } else { 0 };
+        let body = &input[prefix..];
+        let (count, consumed) = if body.is_empty() {
+            (None, 0)
+        } else if !self.options.comments && (body[0] == b'\n' || body[0] == b'\r') {
+            // Without allow-comments Jackson never skips a blank line: it parses as a record
+            // with a single empty field. csv-core would silently read past it.
+            if ends.is_empty() {
+                ends.push(0);
             }
+            ends[0] = 0;
+            let crlf = body[0] == b'\r' && body.get(1) == Some(&b'\n');
+            (Some(1), if crlf { 2 } else { 1 })
+        } else {
+            let (count, consumed) = self.split_record(body, fields_buf, ends);
+            (count, consumed)
+        };
+        let window = self.decoded_window(input, prefix + consumed);
+        if std::str::from_utf8(&input[..window]).is_err() {
+            return Err(());
         }
+        Ok(count)
+    }
+
+    /// Splits the first record of `body` with csv-core (configured like Flink's `CsvSchema`),
+    /// returning the field count and the bytes consumed through the record terminator.
+    fn split_record(
+        &self,
+        body: &[u8],
+        fields_buf: &mut Vec<u8>,
+        ends: &mut Vec<usize>,
+    ) -> (Option<usize>, usize) {
+        use csv_core::{ReadRecordResult, ReaderBuilder};
         let mut builder = ReaderBuilder::new();
         builder.delimiter(self.options.delimiter);
         match self.options.quote {
@@ -186,7 +228,7 @@ impl CsvDecoder {
             None => builder.quoting(false),
         };
         let mut reader = builder.build();
-        fields_buf.resize(std::cmp::max(input.len(), 64), 0);
+        fields_buf.resize(std::cmp::max(body.len(), 64), 0);
         ends.resize(std::cmp::max(self.schema.fields().len(), 8), 0);
         let mut consumed = 0;
         let mut written = 0;
@@ -195,7 +237,7 @@ impl CsvDecoder {
             // Once the input is drained, the empty slice signals EOF and flushes a final
             // unterminated record.
             let (result, nin, nout, nend) = reader.read_record(
-                &input[consumed..],
+                &body[consumed..],
                 &mut fields_buf[written..],
                 &mut ends[end_count..],
             );
@@ -205,8 +247,8 @@ impl CsvDecoder {
             written += nout;
             end_count += nend;
             match result {
-                ReadRecordResult::Record => return Some(end_count),
-                ReadRecordResult::End => return None,
+                ReadRecordResult::Record => return (Some(end_count), consumed),
+                ReadRecordResult::End => return (None, consumed),
                 ReadRecordResult::InputEmpty => {}
                 ReadRecordResult::OutputFull => {
                     let len = fields_buf.len();
@@ -218,6 +260,51 @@ impl CsvDecoder {
                 }
             }
         }
+    }
+
+    /// End of the byte range Jackson decodes for one message: the first record plus one lookahead
+    /// character (`startNewLine` peeks past the record's terminator) — with `allow-comments`, the
+    /// peek first skips the comment/blank run after the record, decoding all of it. Bytes past
+    /// this window are never decoded, so invalid UTF-8 there does not fail the message.
+    fn decoded_window(&self, input: &[u8], record_end: usize) -> usize {
+        let lookahead = if self.options.comments {
+            skip_comment_lines(input, record_end)
+        } else {
+            record_end
+        };
+        match input.get(lookahead) {
+            Some(&first) => std::cmp::min(lookahead + utf8_char_len(first), input.len()),
+            None => input.len(),
+        }
+    }
+}
+
+/// Jackson's `_skipCommentLines`: from `pos`, consumes spaces (0x20 only), line ends, and whole
+/// `#` comment lines, stopping at the first character that starts real content.
+fn skip_comment_lines(input: &[u8], mut pos: usize) -> usize {
+    while pos < input.len() {
+        match input[pos] {
+            b' ' | b'\r' | b'\n' => pos += 1,
+            b'#' => {
+                while pos < input.len() && input[pos] != b'\r' && input[pos] != b'\n' {
+                    pos += 1;
+                }
+            }
+            _ => break,
+        }
+    }
+    pos
+}
+
+/// Length a UTF-8 sequence claims from its lead byte (1 for an invalid lead, which the window
+/// validation will then reject).
+fn utf8_char_len(lead: u8) -> usize {
+    match lead {
+        b if b < 0x80 => 1,
+        b if b & 0xE0 == 0xC0 => 2,
+        b if b & 0xF0 == 0xE0 => 3,
+        b if b & 0xF8 == 0xF0 => 4,
+        _ => 1,
     }
 }
 
@@ -488,5 +575,97 @@ mod tests {
     #[should_panic(expected = "no record")]
     fn empty_message_fails_by_default() {
         decoder(CsvOptions::default(), false).decode(&bodies(&[Some("")]));
+    }
+
+    #[test]
+    #[should_panic(expected = "Row length mismatch. 3 fields expected but was 1.")]
+    fn blank_first_line_is_a_one_field_record() {
+        decoder(CsvOptions::default(), false).decode(&bodies(&[Some("\n1,alice,2.5")]));
+    }
+
+    #[test]
+    fn blank_first_line_pads_under_skip_errors() {
+        let d = decoder(CsvOptions::default(), true);
+        let out = d.decode(&bodies(&[Some("\n1,alice,2.5"), Some("\r\n"), Some("\r1,x,2.5")]));
+        // Each blank line is the message's record: one empty field (a null INT under
+        // skip-errors) padded out with nulls — the data line after it is never read.
+        assert_eq!(out.num_rows(), 3);
+        for row in 0..3 {
+            assert!(out.column(0).is_null(row));
+            assert!(out.column(1).is_null(row));
+            assert!(out.column(2).is_null(row));
+        }
+    }
+
+    #[test]
+    fn comments_skip_blank_lines_and_spaces_before_the_record() {
+        let options = CsvOptions { comments: true, ..CsvOptions::default() };
+        let d = CsvDecoder::new(schema(), options, false);
+        let out = d.decode(&bodies(&[Some("\n #c\n\n 2,x,3.5")]));
+        assert_eq!(out.num_rows(), 1);
+        let ids = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(ids.value(0), 2);
+        let names = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(names.value(0), "x");
+    }
+
+    #[test]
+    #[should_panic(expected = "Row length mismatch")]
+    fn comments_do_not_skip_tab_prefixed_lines() {
+        let options = CsvOptions { comments: true, ..CsvOptions::default() };
+        CsvDecoder::new(schema(), options, false).decode(&bodies(&[Some("\t#c\n1,x,2.5")]));
+    }
+
+    fn byte_bodies(messages: &[&[u8]]) -> RecordBatch {
+        let column: arrow::array::BinaryArray = messages.iter().copied().map(Some).collect();
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)])),
+            vec![Arc::new(column)],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    #[should_panic(expected = "not valid UTF-8")]
+    fn invalid_utf8_fails_the_message() {
+        decoder(CsvOptions::default(), false).decode(&byte_bodies(&[b"1,a\xFFb,2.5"]));
+    }
+
+    #[test]
+    fn invalid_utf8_drops_the_whole_row_under_skip_errors() {
+        let d = decoder(CsvOptions::default(), true);
+        let out = d.decode(&byte_bodies(&[b"1,a\xFFb,2.5", b"2,y,3.5"]));
+        assert_eq!(out.num_rows(), 1);
+        let ids = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(ids.value(0), 2);
+    }
+
+    #[test]
+    fn utf8_is_checked_only_inside_jacksons_decode_window() {
+        let d = decoder(CsvOptions::default(), false);
+        // Garbage past the record terminator and one lookahead character is never decoded.
+        let out = d.decode(&byte_bodies(&[b"1,x,2.5\nz\xFF", b"2,y,3.5\nzzz\xFF\xFE"]));
+        assert_eq!(out.num_rows(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "not valid UTF-8")]
+    fn invalid_lookahead_right_after_the_terminator_fails() {
+        decoder(CsvOptions::default(), false).decode(&byte_bodies(&[b"1,x,2.5\n\xFF"]));
+    }
+
+    #[test]
+    fn comment_run_after_the_record_extends_the_window() {
+        let options = CsvOptions { comments: true, ..CsvOptions::default() };
+        let d = CsvDecoder::new(schema(), options, false);
+        let out = d.decode(&byte_bodies(&[b"1,x,2.5\n#c\nz\xFF"]));
+        assert_eq!(out.num_rows(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "not valid UTF-8")]
+    fn invalid_byte_in_a_trailing_comment_fails() {
+        let options = CsvOptions { comments: true, ..CsvOptions::default() };
+        CsvDecoder::new(schema(), options, false).decode(&byte_bodies(&[b"1,x,2.5\n#\xFF"]));
     }
 }
