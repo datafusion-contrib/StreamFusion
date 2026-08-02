@@ -1734,6 +1734,72 @@ fn json_decode_retries_documents_only_jackson_tokenizes() {
     assert_eq!(names.value(0), "keep");
 }
 
+// A container token under a scalar (non-STRING) column makes Flink's pull-parser cursor drift:
+// the converter coerces getText ("{") without consuming the container, and the row walk's next
+// step lands INSIDE it. Under (b BOOLEAN, i INT), {"b":{},"i":7} converts b=false
+// (parseBoolean("{")), then mistakes the inner END_OBJECT for the row's end — Flink SUCCEEDS with
+// (false, null), so a native panic here would kill a job Flink runs. The message re-decodes
+// through the token walk, which replays the drift.
+#[test]
+fn json_decode_replicates_flinks_cursor_drift() {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    let lenient = crate::json::JsonEnv { lenient: true, ..Default::default() };
+    let bool_int: SchemaRef = Arc::new(Schema::new(vec![
+        Field::new("b", DataType::Boolean, true),
+        Field::new("i", DataType::Int64, true),
+    ]));
+    for body in [br#"{"b": {}, "i": 7}"#.as_slice(), br#"{"b": {"x": 1}, "i": 7}"#] {
+        let batch = bodies(vec![Some(body)]);
+        for env in [crate::json::JsonEnv::default(), lenient] {
+            let out = JsonDecoder::new(bool_int.clone(), env).decode(&batch);
+            assert_eq!(out.num_rows(), 1);
+            let b = out.column(0).as_any().downcast_ref::<BooleanArray>().unwrap();
+            assert!(!b.value(0)); // parseBoolean("{")
+            assert!(out.column(1).is_null(0)); // `i` was never matched — the drift ate it
+        }
+    }
+
+    // The reverse order: parseInt("{") fails the field, so strict mode dies (like Flink); in skip
+    // mode the drift again ends the row early — (null, null), not (null, true).
+    let int_bool: SchemaRef = Arc::new(Schema::new(vec![
+        Field::new("i", DataType::Int64, true),
+        Field::new("b", DataType::Boolean, true),
+    ]));
+    let batch = bodies(vec![Some(br#"{"i": {}, "b": true}"#.as_slice())]);
+    let strict = JsonDecoder::new(int_bool.clone(), crate::json::JsonEnv::default());
+    assert!(catch_unwind(AssertUnwindSafe(|| strict.decode(&batch))).is_err());
+    let out = JsonDecoder::new(int_bool, lenient).decode(&batch);
+    assert_eq!(out.num_rows(), 1);
+    assert!(out.column(0).is_null(0));
+    assert!(out.column(1).is_null(0));
+
+    // Inside a MAP value the drifted walk exits the map at the inner END_OBJECT and the row walk
+    // then skips the tail keys — one entry {k: null}, never k2.
+    let map: SchemaRef = Arc::new(Schema::new(vec![Field::new_map(
+        "m",
+        "entries",
+        Field::new("keys", DataType::Utf8, false),
+        Field::new("values", DataType::Int64, true),
+        false,
+        true,
+    )]));
+    let batch = bodies(vec![Some(br#"{"m": {"k": {}, "k2": 5}}"#.as_slice())]);
+    let out = JsonDecoder::new(map, lenient).decode(&batch);
+    use arrow::array::MapArray;
+    let maps = out.column(0).as_any().downcast_ref::<MapArray>().unwrap();
+    assert_eq!(maps.value_length(0), 1);
+    let keys = maps.entries().column(0).as_any().downcast_ref::<StringArray>().unwrap();
+    assert_eq!(keys.value(0), "k");
+    assert!(maps.entries().column(1).is_null(0));
+
+    // A nested-array ELEMENT drifts Flink's fan-out loop itself: the walk steps into [2], takes
+    // its ']' for the fan-out's END_ARRAY, and stops — one row, the trailing element never read.
+    let batch = bodies(vec![Some(br#"[{"id": 1}, [2], {"id": 3}]"#.as_slice())]);
+    let out = JsonDecoder::new(json_schema(), lenient).decode(&batch);
+    assert_eq!(out.num_rows(), 1);
+    assert_eq!(values(&out, 0), vec![1]);
+}
+
 // An empty input batch flushes to an empty batch of the target schema, not a panic.
 #[test]
 fn json_decode_empty_batch_yields_empty() {

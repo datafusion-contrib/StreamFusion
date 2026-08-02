@@ -31,6 +31,7 @@ import org.apache.flink.table.types.logical.VarBinaryType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * Pins the native JSON decode to Flink's own default deserializer
@@ -114,6 +115,12 @@ class JsonDecodeParityTest {
 
   private static final RowType SINGLE_TYPE =
       RowType.of(new LogicalType[] {new IntType()}, new String[] {"a"});
+
+  private static final RowType BOOL_INT_TYPE =
+      RowType.of(new LogicalType[] {new BooleanType(), new IntType()}, new String[] {"b", "i"});
+
+  private static final RowType INT_BOOL_TYPE =
+      RowType.of(new LogicalType[] {new IntType(), new BooleanType()}, new String[] {"i", "b"});
 
   private static final String TS = "\"ts\": \"2020-01-02 03:04:05.678\"";
 
@@ -332,6 +339,44 @@ class JsonDecodeParityTest {
       assertParity(LONG_TYPE, scenario, TimestampFormat.SQL, "", false);
       assertParity(LONG_TYPE, scenario, TimestampFormat.SQL, "", true);
     }
+  }
+
+  @Test
+  @Timeout(60) // some drift shapes make Flink's walk spin — corpus cases are traced to terminate
+  void containerTokensUnderScalarsFollowFlinksCursorDrift() throws Exception {
+    // A container token under a scalar (non-STRING) column coerces getText ("{") WITHOUT
+    // consuming the container, and Flink's row walk then steps INSIDE it: under (b BOOLEAN,
+    // i INT), {"b":{},"i":7} succeeds as (false, null) — parseBoolean("{") is false and the
+    // inner END_OBJECT is mistaken for the row's end, so `i` is never matched. The native decode
+    // replays the drift instead of failing where Flink succeeds.
+    String[] boolIntScenarios = {
+      "{\"b\": {}, \"i\": 7}",
+      "{\"b\": {\"x\": 1}, \"i\": 7}",
+      "{\"b\": {\"x\": {\"y\": 1}}, \"i\": 7}",
+    };
+    for (String scenario : boolIntScenarios) {
+      assertParity(BOOL_INT_TYPE, scenario, TimestampFormat.SQL, "", false);
+      assertParity(BOOL_INT_TYPE, scenario, TimestampFormat.SQL, "", true);
+    }
+    // The reverse order: parseInt("{") fails the field — strict kills the message on both
+    // engines; skip mode nulls the field and the drift still ends the row early: (null, null),
+    // never (null, true).
+    String[] intBoolScenarios = {
+      "{\"i\": {}, \"b\": true}",
+      "{\"i\": {\"deep\": {\"a\": 1}}, \"b\": true}",
+    };
+    for (String scenario : intBoolScenarios) {
+      assertParity(INT_BOOL_TYPE, scenario, TimestampFormat.SQL, "", false);
+      assertParity(INT_BOOL_TYPE, scenario, TimestampFormat.SQL, "", true);
+    }
+    // Drift inside a MAP value: the map walk exits at the inner END_OBJECT with one {k: null}
+    // entry and the row walk skips the tail.
+    assertParity(NESTED_TYPE, "{\"m\": {\"k\": {}, \"k2\": 5}}", TimestampFormat.SQL, "", false);
+    assertParity(NESTED_TYPE, "{\"m\": {\"k\": {}, \"k2\": 5}}", TimestampFormat.SQL, "", true);
+    // A nested-array ELEMENT drifts the fan-out loop itself: its ']' is taken for the fan-out's
+    // END_ARRAY, so only the first row survives and the tail is never read.
+    assertParity(SCALAR_TYPE, "[{\"i\": 1}, [2], {\"i\": 3}]", TimestampFormat.SQL, "", false);
+    assertParity(SCALAR_TYPE, "[{\"i\": 1}, [2], {\"i\": 3}]", TimestampFormat.SQL, "", true);
   }
 
   @Test

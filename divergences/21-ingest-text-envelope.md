@@ -108,11 +108,14 @@ value — a job that runs on both engines produces identical results.
   a null row whose fate is pipeline wiring — the standard non-upsert Kafka collector throws, and
   the deserializer's catch then swallows the REST of the message, keeping only the prefix. The
   native decode pins the tree path's deterministic per-element drop (a bad value inside an
-  element stays the usual per-field null). Two parser-path artifacts are deliberately not
+  element stays the usual per-field null). One parser-path artifact is deliberately not
   reproduced: a malformed array document keeps its already-collected prefix elements in Flink
-  (natively the whole message drops, like any structurally bad document), and a NESTED-array
-  element garbles the parser's element loop (Flink misparses the message tail
-  nondeterministically; natively the element drops alone).
+  (natively the whole message drops, like any structurally bad document). A NESTED-array element
+  — which garbles the parser's element loop — now replays through the Jackson-faithful walk like
+  every other cursor drift (a container token under a scalar non-STRING column, or a container
+  of the wrong kind): the drift is deterministic over the token stream, so the walk reproduces
+  Flink's exact outcome, parity-pinned. The exception is a drift that would spin Flink's loop
+  past end-of-input (below).
 - **Skip granularity on a decimal-bearing JSON schema is per message/element for non-decimal
   errors.** arrow-json is all-or-nothing per document, so a bad non-decimal value drops the whole
   message (or the whole fanned-out array element) where Flink nulls the field; the decimal cells
