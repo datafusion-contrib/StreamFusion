@@ -5,6 +5,7 @@ import io.github.jordepic.streamfusion.format.NativeFormatProvider;
 import io.github.jordepic.streamfusion.format.json.CanalJsonFormatProvider;
 import io.github.jordepic.streamfusion.format.json.DebeziumJsonFormatProvider;
 import io.github.jordepic.streamfusion.format.json.MaxwellJsonFormatProvider;
+import io.github.jordepic.streamfusion.format.json.OggJsonFormatProvider;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,10 +15,12 @@ import org.apache.flink.formats.common.TimestampFormat;
 import org.apache.flink.formats.json.canal.CanalJsonDeserializationSchema;
 import org.apache.flink.formats.json.debezium.DebeziumJsonDeserializationSchema;
 import org.apache.flink.formats.json.maxwell.MaxwellJsonDeserializationSchema;
+import org.apache.flink.formats.json.ogg.OggJsonDeserializationSchema;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.BigIntType;
+import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.DoubleType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
@@ -28,7 +31,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pins the native CDC decode to Flink's own Maxwell/Canal/Debezium deserializers, message by
+ * Pins the native CDC decode to Flink's own Maxwell/Canal/Debezium/OGG deserializers, message by
  * message (no containers — the format classes referee directly, like {@link CsvDecodeParityTest}).
  * The heart of it is the partial-{@code old} pre-image rule that used to gate Maxwell/Canal off the
  * native path: Flink reads an UPDATE_BEFORE field from {@code old} when its KEY is present there —
@@ -51,6 +54,7 @@ class CdcDecodeParityTest {
   private static final int MAXWELL = FormatCodes.MAXWELL_JSON;
   private static final int CANAL = FormatCodes.CANAL_JSON;
   private static final int DEBEZIUM = FormatCodes.DEBEZIUM_JSON;
+  private static final int OGG = FormatCodes.OGG_JSON;
 
   @Test
   void maxwellMatchesFlinkPerMessage() throws Exception {
@@ -159,23 +163,62 @@ class CdcDecodeParityTest {
   }
 
   @Test
-  void topLevelArrayMessagesStayCorrupt() throws Exception {
+  void topLevelArrayMessagesMatchFlink() throws Exception {
     // The plain json format fans a top-level array out into one row per element, but a CDC
-    // envelope is never an array: Flink's dialects reject the root (or, for Debezium's
-    // multi-element case, the one-row-per-message contract) — both engines must fail, or both
-    // skip under ignore-parse-errors. (Debezium/OGG unwrap a SINGLE-element array through the
-    // deprecated one-row deserialize — a Flink quirk deliberately not reproduced, so it stays
-    // out of this corpus; see divergences/21.)
-    String debeziumPair =
-        "[{\"before\":null,\"after\":{\"id\":1,\"name\":\"a\",\"score\":1.5},\"op\":\"c\"},"
-            + "{\"before\":null,\"after\":{\"id\":2,\"name\":\"b\",\"score\":2.5},\"op\":\"c\"}]";
+    // envelope never fans out. Maxwell/Canal hand the root to the tree converter, so any array
+    // root is corrupt. Debezium/OGG decode through Flink's deprecated one-row deserialize, which
+    // unwraps an array holding exactly one envelope — and under ignore-parse-errors skips junk
+    // elements inside the fan-out loop first, so [{envelope}, 1] still unwraps there while every
+    // other shape stays corrupt. Both engines must agree scenario by scenario, mode by mode.
+    String envelope = "{\"before\":null,\"after\":{\"id\":1,\"name\":\"a\",\"score\":1.5},\"op\":\"c\"}";
+    String second = "{\"before\":null,\"after\":{\"id\":2,\"name\":\"b\",\"score\":2.5},\"op\":\"c\"}";
+    String oggEnvelope =
+        "{\"before\":null,\"after\":{\"id\":1,\"name\":\"a\",\"score\":1.5},\"op_type\":\"I\"}";
+    String[] debeziumScenarios = {
+      "[" + envelope + "]",
+      " [ " + envelope + " ] ",
+      "[" + envelope + "," + second + "]",
+      "[" + envelope + ",1]",
+      "[" + envelope + ",{}]",
+      "[{}]",
+      "[1]",
+      "[]",
+    };
     String maxwellWrapped = "[{\"data\":{\"id\":1,\"name\":\"a\",\"score\":1.5},\"type\":\"insert\"}]";
     String canalWrapped =
         "[{\"data\":[{\"id\":1,\"name\":\"a\",\"score\":1.5}],\"type\":\"INSERT\"}]";
     for (boolean skipErrors : new boolean[] {false, true}) {
-      assertParity(DEBEZIUM, debeziumPair, skipErrors);
+      for (String scenario : debeziumScenarios) {
+        assertParity(DEBEZIUM, scenario, skipErrors);
+      }
+      assertParity(OGG, "[" + oggEnvelope + "]", skipErrors);
+      assertParity(OGG, "[" + oggEnvelope + ",1]", skipErrors);
       assertParity(MAXWELL, maxwellWrapped, skipErrors);
       assertParity(CANAL, canalWrapped, skipErrors);
+    }
+  }
+
+  @Test
+  void debeziumArrayUnwrapMatchesFlinkOnDecimalSchemas() throws Exception {
+    // DECIMAL-bearing schemas decode via the raw-literals (arrow-json) path, which classifies
+    // array roots before decoding — the unwrap matrix must match the simd path above.
+    RowType decimal =
+        RowType.of(
+            new LogicalType[] {new BigIntType(), new DecimalType(10, 2)},
+            new String[] {"id", "amount"});
+    DecodeParityHarness harness = new DecodeParityHarness(decimal, true);
+    String envelope =
+        "{\"before\":null,\"after\":{\"id\":1,\"amount\":12.345},\"op\":\"c\"}";
+    String[] scenarios = {
+      "[" + envelope + "]",
+      "[" + envelope + "," + envelope + "]",
+      "[" + envelope + ",1]",
+      "[]",
+    };
+    for (boolean skipErrors : new boolean[] {false, true}) {
+      for (String scenario : scenarios) {
+        assertParity(harness, decimal, DEBEZIUM, scenario, skipErrors);
+      }
     }
   }
 
@@ -195,21 +238,27 @@ class CdcDecodeParityTest {
   }
 
   private static void assertParity(int format, String message, boolean skipErrors) {
-    HARNESS.assertParity(
+    assertParity(HARNESS, ROW_TYPE, format, message, skipErrors);
+  }
+
+  private static void assertParity(
+      DecodeParityHarness harness, RowType rowType, int format, String message, boolean skipErrors) {
+    harness.assertParity(
         message,
-        () -> flinkDecode(format, message, skipErrors),
+        () -> flinkDecode(harness, rowType, format, message, skipErrors),
         () ->
-            HARNESS.nativeDecode(
+            harness.nativeDecode(
                 provider(format),
                 message,
                 Map.of("format", provider(format).formatIdentifier()),
                 skipErrors));
   }
 
-  private static List<List<Object>> flinkDecode(int format, String message, boolean ignoreErrors)
+  private static List<List<Object>> flinkDecode(
+      DecodeParityHarness harness, RowType rowType, int format, String message, boolean ignoreErrors)
       throws Exception {
-    DataType physical = TypeConversions.fromLogicalToDataType(ROW_TYPE);
-    InternalTypeInfo<RowData> typeInfo = InternalTypeInfo.of(ROW_TYPE);
+    DataType physical = TypeConversions.fromLogicalToDataType(rowType);
+    InternalTypeInfo<RowData> typeInfo = InternalTypeInfo.of(rowType);
     DeserializationSchema<RowData> schema;
     switch (format) {
       case MAXWELL:
@@ -223,6 +272,11 @@ class CdcDecodeParityTest {
                 .setIgnoreParseErrors(ignoreErrors)
                 .build();
         break;
+      case OGG:
+        schema =
+            new OggJsonDeserializationSchema(
+                physical, List.of(), typeInfo, ignoreErrors, TimestampFormat.SQL);
+        break;
       default:
         schema =
             new DebeziumJsonDeserializationSchema(
@@ -235,7 +289,7 @@ class CdcDecodeParityTest {
         new Collector<>() {
           @Override
           public void collect(RowData row) {
-            rows.add(HARNESS.fields(row));
+            rows.add(harness.fields(row));
           }
 
           @Override
@@ -249,6 +303,7 @@ class CdcDecodeParityTest {
       case MAXWELL -> new MaxwellJsonFormatProvider();
       case CANAL -> new CanalJsonFormatProvider();
       case DEBEZIUM -> new DebeziumJsonFormatProvider();
+      case OGG -> new OggJsonFormatProvider();
       default -> throw new IllegalArgumentException("Unknown CDC format: " + format);
     };
   }

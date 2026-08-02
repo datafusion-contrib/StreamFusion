@@ -93,13 +93,6 @@ value — a job that runs on both engines produces identical results.
   (natively the whole message drops, like any structurally bad document), and a NESTED-array
   element garbles the parser's element loop (Flink misparses the message tail
   nondeterministically; natively the element drops alone).
-- **A single-element array around a CDC envelope is rejected.** Debezium and OGG decode their
-  envelope through the deprecated one-row `deserialize(byte[])`, which fans a top-level array out
-  and then unwraps it when exactly one row came back — so Flink accepts `[{envelope}]` (and only
-  that shape; two elements or an empty array are a corrupt message, and Maxwell/Canal reject any
-  array root). The native envelope decode treats every array-rooted CDC message as corrupt — a
-  reject-where-Flink-rejects match everywhere except the one-element quirk, kept for a uniform
-  "a CDC envelope is never an array" rule.
 - **Skip granularity on a decimal-bearing JSON schema is per message/element for non-decimal
   errors.** arrow-json is all-or-nothing per document, so a bad non-decimal value drops the whole
   message (or the whole fanned-out array element) where Flink nulls the field; the decimal cells

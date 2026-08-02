@@ -629,13 +629,19 @@ impl CdcJsonDecoder {
         if spec.shape == CdcShape::DataOld {
             assert!(nullable.len() <= 128, "the old-key presence bitmask carries up to 128 columns");
         }
+        // A CDC envelope never fans a top-level array out the way the plain `json` format does:
+        // Maxwell/Canal hand the root to the tree converter (any array is corrupt), while
+        // Debezium/OGG decode through Flink's deprecated one-row entry, which unwraps an array
+        // holding exactly one envelope — see `ArrayRootPolicy`.
+        let array_roots = match dialect {
+            CdcDialect::Debezium | CdcDialect::Ogg => ArrayRootPolicy::UnwrapSingle,
+            CdcDialect::Maxwell | CdcDialect::Canal => ArrayRootPolicy::Corrupt,
+        };
         CdcJsonDecoder {
-            // single_object: a CDC message whose root is a top-level array is corrupt in Flink
-            // (the tree converter rejects it), so the envelope decode never fans arrays out the
-            // way the plain `json` format does.
             envelope: JsonDecoder::single_object(
                 envelope,
                 crate::json::JsonEnv { mode: env.mode, lenient: skip_errors },
+                array_roots,
             ),
             output,
             arity: nullable.len(),

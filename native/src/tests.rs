@@ -1935,28 +1935,52 @@ fn json_decimal_path_fans_out_top_level_arrays() {
     assert_eq!(out.num_rows(), 0);
 }
 
-// The CDC dialects never fan out a top-level array: Flink's envelope conversion rejects an array
-// root as a corrupt message, so the native envelope decode fails it (or drops it whole in skip
-// mode) — on the simd path and, with a decimal-bearing physical schema, on the arrow-json path.
+// A CDC envelope never fans out a top-level array. Debezium/OGG decode through Flink's
+// deprecated one-row entry, which unwraps an array holding exactly one envelope — and in skip
+// mode junk elements are dropped from the fan-out first, so a lone envelope among junk still
+// decodes there. Every other shape is corrupt, and Maxwell/Canal (tree-converter entry) reject
+// any array root — on the simd path and, with a decimal-bearing physical schema, on the
+// arrow-json path.
 #[test]
-fn cdc_rejects_top_level_array_messages() {
+fn cdc_array_roots_unwrap_or_reject_like_flink() {
     use std::panic::{catch_unwind, AssertUnwindSafe};
-    let body = br#"[{"before":null,"after":{"id":1,"name":"a","score":1.5},"op":"c"}]"#;
+    let env1 = r#"{"before":null,"after":{"id":1,"name":"a","score":1.5},"op":"c"}"#;
+    let env2 = r#"{"before":null,"after":{"id":2,"name":"b","score":2.5},"op":"c"}"#;
     let decimal_schema: SchemaRef = Arc::new(Schema::new(vec![
         Field::new("id", DataType::Int64, true),
         Field::new("score", DataType::Decimal128(5, 2), true),
     ]));
-    let decimal_body = br#"[{"before":null,"after":{"id":1,"score":1.5},"op":"c"}]"#;
-    for (schema, body) in
-        [(json_schema(), body.as_slice()), (decimal_schema, decimal_body.as_slice())]
-    {
-        let batch = bodies(vec![Some(body)]);
+    let denv1 = r#"{"before":null,"after":{"id":1,"score":1.5},"op":"c"}"#;
+    let denv2 = r#"{"before":null,"after":{"id":2,"score":2.5},"op":"c"}"#;
+    for (schema, env1, env2) in [(json_schema(), env1, env2), (decimal_schema, denv1, denv2)] {
         let strict =
             MessageDecoder::new(FORMAT_DEBEZIUM_JSON, schema.clone(), "", "", 0, false, "");
-        assert!(catch_unwind(AssertUnwindSafe(|| strict.decode(&batch))).is_err());
         let skipping = MessageDecoder::new(FORMAT_DEBEZIUM_JSON, schema, "", "", 0, true, "");
-        assert_eq!(skipping.decode(&batch).num_rows(), 0);
+        let rows = |decoder: &MessageDecoder, body: &str| {
+            decoder.decode(&bodies(vec![Some(body.as_bytes())])).num_rows()
+        };
+        let panics = |decoder: &MessageDecoder, body: &str| {
+            let batch = bodies(vec![Some(body.as_bytes())]);
+            catch_unwind(AssertUnwindSafe(|| decoder.decode(&batch))).is_err()
+        };
+        let single = format!("[{env1}]");
+        assert_eq!(rows(&strict, &single), 1);
+        assert_eq!(rows(&skipping, &single), 1);
+        let pair = format!("[{env1},{env2}]");
+        assert!(panics(&strict, &pair));
+        assert_eq!(rows(&skipping, &pair), 0);
+        let with_junk = format!("[{env1},1]");
+        assert!(panics(&strict, &with_junk));
+        assert_eq!(rows(&skipping, &with_junk), 1);
+        assert!(panics(&strict, "[]"));
+        assert_eq!(rows(&skipping, "[]"), 0);
     }
+    let maxwell = r#"[{"data":{"id":1,"name":"a","score":1.5},"type":"insert"}]"#;
+    let batch = bodies(vec![Some(maxwell.as_bytes())]);
+    let strict = MessageDecoder::new(FORMAT_MAXWELL_JSON, json_schema(), "", "", 0, false, "");
+    assert!(catch_unwind(AssertUnwindSafe(|| strict.decode(&batch))).is_err());
+    let skipping = MessageDecoder::new(FORMAT_MAXWELL_JSON, json_schema(), "", "", 0, true, "");
+    assert_eq!(skipping.decode(&batch).num_rows(), 0);
 }
 
 // OVER (ORDER BY rt RANGE UNBOUNDED PRECEDING) running SUM: ties in rt share the post-fold value,

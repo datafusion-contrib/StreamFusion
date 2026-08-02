@@ -896,20 +896,37 @@ pub(crate) fn json_needs_raw_number_literals(data_type: &DataType) -> bool {
     }
 }
 
+/// How a top-level JSON array root decodes, mirroring which Flink entry point the format funnels
+/// its documents through.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArrayRootPolicy {
+    /// Flink's plain `json` format: one row per element (`processArray`). A non-object element
+    /// fails the whole message in strict mode and drops alone under `ignore-parse-errors` — see
+    /// divergences/21 for how this settles the two Flink decode paths' disagreement.
+    FanOut,
+    /// Maxwell/Canal hand the root node straight to the tree converter: any array root is a
+    /// corrupt message (job failure, or a whole-message drop under `ignore-parse-errors`).
+    Corrupt,
+    /// Debezium/OGG decode their envelope through the deprecated one-row `deserialize(byte[])`,
+    /// which fans a top-level array out and unwraps the result when exactly one row came back. In
+    /// default mode only `[{envelope}]` survives (a non-object element throws before the count is
+    /// checked); under `ignore-parse-errors` failing elements are skipped inside the fan-out loop
+    /// first, so the unwrap happens when exactly one OBJECT element remains — `[{envelope}, 1]`
+    /// decodes, while `[]` and `[{a}, {b}]` drop the message.
+    UnwrapSingle,
+}
+
 /// Decodes one JSON document per body row into `schema` via a simd-json tape walk. A null or
 /// all-whitespace body contributes no row (exactly what feeding it to arrow-json did). A body
-/// whose root is an object decodes as one row; with `fan_out_arrays` a top-level array fans out
-/// into one row per element, as Flink's `json` format does (`processArray`). Element granularity
-/// follows Flink: a non-object element fails the whole message in strict mode, and drops alone
-/// under `ignore-parse-errors` (a bad *value* inside an element stays the appenders' per-field
-/// null, exactly as for a single-object body) — see divergences/21 for how this settles the two
-/// Flink decode paths' disagreement. simd-json parses in place, so each body is copied into a
-/// reused scratch buffer — the copy is part of the measured win over arrow-json.
+/// whose root is an object decodes as one row; a top-level array follows `array_roots`
+/// (a bad *value* inside a decoded object stays the appenders' per-field null, exactly as for a
+/// single-object body). simd-json parses in place, so each body is copied into a reused scratch
+/// buffer — the copy is part of the measured win over arrow-json.
 pub(crate) fn decode_json_bodies_simd(
     schema: &SchemaRef,
     bodies: &RecordBatch,
     env: JsonEnv,
-    fan_out_arrays: bool,
+    array_roots: ArrayRootPolicy,
 ) -> RecordBatch {
     use simd_json::prelude::*;
     let column = bodies.column(0);
@@ -943,7 +960,7 @@ pub(crate) fn decode_json_bodies_simd(
         };
         let value = tape.as_value();
         match value.value_type() {
-            simd_json::ValueType::Array if fan_out_arrays => {
+            simd_json::ValueType::Array if array_roots == ArrayRootPolicy::FanOut => {
                 for element in &value.as_array().expect("array node") {
                     match element.as_object() {
                         Some(object) => append_object(&mut root, &object),
@@ -952,6 +969,22 @@ pub(crate) fn decode_json_bodies_simd(
                             "JSON array element was not an object: {:?}",
                             element.value_type()
                         ),
+                    }
+                }
+            }
+            simd_json::ValueType::Array if array_roots == ArrayRootPolicy::UnwrapSingle => {
+                let array = value.as_array().expect("array node");
+                if env.lenient {
+                    let mut objects = array.iter().filter_map(|element| element.as_object());
+                    if let (Some(object), None) = (objects.next(), objects.next()) {
+                        append_object(&mut root, &object);
+                    }
+                    // else: 0 or 2+ decodable envelopes — the whole message drops.
+                } else {
+                    let mut elements = array.iter();
+                    match (elements.next().and_then(|e| e.as_object()), elements.next()) {
+                        (Some(object), None) => append_object(&mut root, &object),
+                        _ => panic!("CDC message array root did not hold exactly one envelope"),
                     }
                 }
             }
@@ -1033,25 +1066,30 @@ pub(crate) struct JsonDecoder {
     env: JsonEnv,
     /// Flink's plain `json` format fans a top-level array out into one row per element
     /// (`processArray`); the CDC dialects funnel their envelope through the same converters but
-    /// treat an array root as a corrupt message, so the envelope decoder turns this off.
-    fan_out_arrays: bool,
+    /// never fan out — an array root is corrupt outright, or unwrapped when it holds exactly one
+    /// envelope (see [`ArrayRootPolicy`]).
+    array_roots: ArrayRootPolicy,
 }
 
 impl JsonDecoder {
     pub(crate) fn new(schema: SchemaRef, env: JsonEnv) -> JsonDecoder {
-        JsonDecoder::build(schema, env, true)
+        JsonDecoder::build(schema, env, ArrayRootPolicy::FanOut)
     }
 
-    /// The CDC-envelope shape: a top-level array is a corrupt message (job failure, or a whole-
-    /// message drop under `ignore-parse-errors`), never a fan-out.
-    pub(crate) fn single_object(schema: SchemaRef, env: JsonEnv) -> JsonDecoder {
-        JsonDecoder::build(schema, env, false)
+    /// The CDC-envelope shape: a top-level array is never a fan-out — `array_roots` picks the
+    /// dialect's treatment ([`ArrayRootPolicy::Corrupt`] or [`ArrayRootPolicy::UnwrapSingle`]).
+    pub(crate) fn single_object(
+        schema: SchemaRef,
+        env: JsonEnv,
+        array_roots: ArrayRootPolicy,
+    ) -> JsonDecoder {
+        JsonDecoder::build(schema, env, array_roots)
     }
 
-    fn build(schema: SchemaRef, env: JsonEnv, fan_out_arrays: bool) -> JsonDecoder {
+    fn build(schema: SchemaRef, env: JsonEnv, array_roots: ArrayRootPolicy) -> JsonDecoder {
         let raw_literals =
             schema.fields().iter().any(|f| json_needs_raw_number_literals(f.data_type()));
-        JsonDecoder { schema, raw_literals, env, fan_out_arrays }
+        JsonDecoder { schema, raw_literals, env, array_roots }
     }
 
     /// Decodes the single body column of `bodies` into a batch of the target schema. Each row is a
@@ -1061,7 +1099,7 @@ impl JsonDecoder {
         if self.raw_literals {
             return self.decode_raw_literals(bodies);
         }
-        decode_json_bodies_simd(&self.schema, bodies, self.env, self.fan_out_arrays)
+        decode_json_bodies_simd(&self.schema, bodies, self.env, self.array_roots)
     }
 
     /// The arrow-json path for decimal-bearing schemas: its tape keeps each number's raw literal.
@@ -1172,22 +1210,32 @@ impl JsonDecoder {
     }
 
     /// Classifies a body for the raw-literals path: `Not` (the root is not an array — decode it as
-    /// a single document), `Elements` (a fanned-out top-level array's raw element slices, exact
-    /// literals intact), or `Corrupt` (an array root where fan-out is off — the CDC envelope — so
-    /// the message fails whole in strict mode and drops whole in skip mode). A malformed document
-    /// behaves like the simd path: strict fails the job here, skip mode drops the whole message.
+    /// a single document), `Elements` (a fanned-out top-level array's raw element slices — or the
+    /// single unwrapped envelope slice — exact literals intact), or `Corrupt` (an array root the
+    /// policy rejects, so the message fails whole in strict mode and drops whole in skip mode). A
+    /// malformed document behaves like the simd path: strict fails the job here, skip mode drops
+    /// the whole message.
     fn array_body<'a>(&self, bytes: &'a [u8]) -> ArrayBody<'a> {
         if bytes.iter().find(|b| !b.is_ascii_whitespace()) != Some(&&b'[') {
             return ArrayBody::Not;
         }
-        if !self.fan_out_arrays {
+        if self.array_roots == ArrayRootPolicy::Corrupt {
             return ArrayBody::Corrupt;
         }
         // Validate before scanning boundaries: the scanner assumes well-formed JSON, and a
         // malformed document must fail/drop whole, never element by element.
         let mut scratch = bytes.to_vec();
         match simd_json::to_tape(&mut scratch) {
-            Ok(_) => ArrayBody::Elements(top_level_array_elements(bytes)),
+            Ok(_) => {
+                let elements = top_level_array_elements(bytes);
+                match self.array_roots {
+                    ArrayRootPolicy::FanOut => ArrayBody::Elements(elements),
+                    ArrayRootPolicy::UnwrapSingle => {
+                        unwrap_single_element(elements, self.env.lenient)
+                    }
+                    ArrayRootPolicy::Corrupt => unreachable!("returned above"),
+                }
+            }
             Err(_) if self.env.lenient => ArrayBody::Corrupt,
             Err(e) => panic!("failed to decode JSON record: {e}"),
         }
@@ -1198,6 +1246,20 @@ enum ArrayBody<'a> {
     Not,
     Elements(Vec<&'a [u8]>),
     Corrupt,
+}
+
+/// [`ArrayRootPolicy::UnwrapSingle`] on the raw-literals path: the message decodes as its lone
+/// envelope object exactly when the deprecated one-row Flink entry would have unwrapped it (in
+/// default mode any junk element fails the message first; in skip mode junk is skipped and only
+/// the surviving-row count matters).
+fn unwrap_single_element(elements: Vec<&[u8]>, lenient: bool) -> ArrayBody<'_> {
+    let objects: Vec<&[u8]> =
+        elements.iter().copied().filter(|element| starts_with_object(element)).collect();
+    if objects.len() == 1 && (lenient || elements.len() == 1) {
+        ArrayBody::Elements(objects)
+    } else {
+        ArrayBody::Corrupt
+    }
 }
 
 fn starts_with_object(element: &[u8]) -> bool {
