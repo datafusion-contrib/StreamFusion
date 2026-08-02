@@ -180,8 +180,43 @@ class NativeKafkaProtobufEncoderTest {
     return new GenericMapData(entries);
   }
 
+  /**
+   * The plan often feeds the sink generated expression names ({@code EXPR$0}, ...). Columns map
+   * to proto fields by the declared sink names carried across the boundary, so the encode must
+   * rename the batch first instead of failing on a generated name.
+   */
+  @Test
+  void matchesFlinkWhenThePlanRenamesColumns() throws Exception {
+    RowType declared =
+        RowType.of(
+            new LogicalType[] {
+              new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH), new DoubleType()
+            },
+            new String[] {"id", "name", "score"});
+    RowType generated =
+        RowType.of(
+            declared.getChildren().toArray(LogicalType[]::new),
+            new String[] {"EXPR$0", "EXPR$1", "EXPR$2"});
+    List<RowData> rows =
+        List.of(
+            GenericRowData.of(7L, StringData.fromString("renamed"), 1.5),
+            GenericRowData.of(null, null, null));
+
+    assertMatchesFlink(rows, declared, generated, PKG + ".Row", Map.of());
+  }
+
   private static void assertMatchesFlink(
       List<RowData> rows, RowType rowType, String messageClass, Map<String, String> options)
+      throws Exception {
+    assertMatchesFlink(rows, rowType, rowType, messageClass, options);
+  }
+
+  private static void assertMatchesFlink(
+      List<RowData> rows,
+      RowType rowType,
+      RowType batchRowType,
+      String messageClass,
+      Map<String, String> options)
       throws Exception {
     PbFormatConfig config =
         new PbFormatConfig(
@@ -196,7 +231,7 @@ class NativeKafkaProtobufEncoderTest {
 
     try (BufferAllocator allocator = new RootAllocator();
         CDataDictionaryProvider dictionaries = new CDataDictionaryProvider();
-        VectorSchemaRoot root = RowDataArrowConverter.write(rows, rowType, allocator);
+        VectorSchemaRoot root = RowDataArrowConverter.write(rows, batchRowType, allocator);
         ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(allocator, root, dictionaries, array, schema);

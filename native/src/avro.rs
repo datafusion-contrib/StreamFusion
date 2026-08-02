@@ -342,7 +342,10 @@ pub(crate) fn encode_debezium_avro_batch(
     use arrow::array::StructArray;
     use arrow::buffer::NullBuffer;
 
-    let _ = field_names; // the envelope declares its own field names
+    // The envelope declares its own top-level names, but the image structs resolve their fields
+    // by name against the derived envelope schema — the batch must carry the declared sink field
+    // names, not the plan's generated expression names.
+    let batch = &crate::kafka::annotate_flink_types(batch, logical_types, field_names)?;
     let rows = batch.num_rows();
     let mut delete = Vec::with_capacity(rows);
     for row in 0..rows {

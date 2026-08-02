@@ -122,6 +122,62 @@ class NativeKafkaDebeziumAvroEncoderTest {
     }
   }
 
+  /**
+   * The plan often feeds the sink generated expression names ({@code EXPR$0}, ...). The
+   * envelope's image structs resolve their fields by the declared sink names, so the encode must
+   * rename the batch first instead of failing schema resolution on a generated name.
+   */
+  @Test
+  void matchesFlinkWhenThePlanRenamesColumns() throws Exception {
+    String url = stubRegistry();
+    DebeziumAvroSerializationSchema flink =
+        new DebeziumAvroSerializationSchema(ROW_TYPE, url, "t-value", null);
+    flink.open(null);
+
+    RowType generated =
+        RowType.of(
+            ROW_TYPE.getChildren().toArray(LogicalType[]::new),
+            new String[] {"EXPR$0", "EXPR$1", "EXPR$2"});
+    GenericRowData insert = GenericRowData.of(7L, StringData.fromString("renamed"), 2.5);
+    GenericRowData delete = GenericRowData.of(8L, null, null);
+    delete.setRowKind(RowKind.DELETE);
+    List<RowData> rows = List.of(insert, delete);
+
+    EncodeFormat format =
+        EncodeFormat.of(
+            "debezium-avro-confluent",
+            Map.of("url", url, "schema-registry.subject", "t-value"),
+            ROW_TYPE);
+    assertNotNull(format);
+    String options = format.openOptions();
+
+    try (BufferAllocator allocator = new RootAllocator();
+        CDataDictionaryProvider dictionaries = new CDataDictionaryProvider();
+        VectorSchemaRoot root = RowDataArrowConverter.write(rows, generated, allocator, true);
+        ArrowArray array = ArrowArray.allocateNew(allocator);
+        ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
+      Data.exportVectorSchemaRoot(allocator, root, dictionaries, array, schema);
+      byte[][][] records =
+          NativeKafka.encodeKafkaRecords(
+              array.memoryAddress(),
+              schema.memoryAddress(),
+              format.format,
+              options,
+              format.format,
+              options,
+              LogicalTypeDescriptors.of(ROW_TYPE),
+              ROW_TYPE.getFieldNames().toArray(String[]::new),
+              new int[0],
+              IntStream.range(0, ROW_TYPE.getFieldCount()).toArray(),
+              false);
+
+      assertEquals(rows.size(), records[1].length);
+      for (int i = 0; i < rows.size(); i++) {
+        assertArrayEquals(flink.serialize(rows.get(i)), records[1][i], "row " + i);
+      }
+    }
+  }
+
   @Test
   void gatesShapesFlinkRejectsOrTheEnvelopeCannotCarry() throws Exception {
     String url = stubRegistry();

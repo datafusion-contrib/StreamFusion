@@ -68,6 +68,77 @@ class NativeKafkaSinkSqlPlanTest {
     assertFalse(plan.contains("native-kafka-exactly-once-sink"), plan);
   }
 
+  /** The probe must admit every encode arm the connector library was built with. */
+  @Test
+  void plansRawSingleColumnSinksNatively() {
+    StreamTableEnvironment table = environment();
+    table.executeSql(
+        "CREATE TABLE src (name STRING NOT NULL) "
+            + "WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
+    table.executeSql(
+        "CREATE TABLE output (name STRING NOT NULL) WITH ("
+            + "'connector' = 'kafka', "
+            + "'topic' = 'output', "
+            + "'properties.bootstrap.servers' = 'broker:9092', "
+            + "'format' = 'raw')");
+
+    PhysicalPlanScan scan = NativePlanner.install(table);
+    String plan =
+        table.explainSql(
+            "INSERT INTO output SELECT * FROM src", ExplainDetail.JSON_EXECUTION_PLAN);
+
+    assertTrue(scan.substitutions() > 0, scan::explainSummary);
+    assertTrue(plan.contains("NativeKafkaSink"), plan);
+  }
+
+  @Test
+  void plansProtobufSinksNatively() {
+    StreamTableEnvironment table = environment();
+    table.executeSql(
+        "CREATE TABLE src (id BIGINT, name STRING, score DOUBLE) "
+            + "WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
+    table.executeSql(
+        "CREATE TABLE output (id BIGINT, name STRING, score DOUBLE) WITH ("
+            + "'connector' = 'kafka', "
+            + "'topic' = 'output', "
+            + "'properties.bootstrap.servers' = 'broker:9092', "
+            + "'format' = 'protobuf', "
+            + "'protobuf.message-class-name' = 'io.github.jordepic.streamfusion.proto.Row')");
+
+    PhysicalPlanScan scan = NativePlanner.install(table);
+    String plan =
+        table.explainSql(
+            "INSERT INTO output SELECT * FROM src", ExplainDetail.JSON_EXECUTION_PLAN);
+
+    assertTrue(scan.substitutions() > 0, scan::explainSummary);
+    assertTrue(plan.contains("NativeKafkaSink"), plan);
+  }
+
+  /** The CDC Avro envelope admits changelog input; registration happens at open, not plan time. */
+  @Test
+  void plansDebeziumAvroConfluentChangelogSinksNatively() {
+    StreamTableEnvironment table = environment();
+    table.executeSql(
+        "CREATE TABLE src (name STRING) "
+            + "WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
+    table.executeSql(
+        "CREATE TABLE output (name STRING, cnt BIGINT) WITH ("
+            + "'connector' = 'kafka', "
+            + "'topic' = 'output', "
+            + "'properties.bootstrap.servers' = 'broker:9092', "
+            + "'format' = 'debezium-avro-confluent', "
+            + "'debezium-avro-confluent.url' = 'http://registry:8081')");
+
+    PhysicalPlanScan scan = NativePlanner.install(table);
+    String plan =
+        table.explainSql(
+            "INSERT INTO output SELECT name, COUNT(*) FROM src GROUP BY name",
+            ExplainDetail.JSON_EXECUTION_PLAN);
+
+    assertTrue(scan.substitutions() > 0, scan::explainSummary);
+    assertTrue(plan.contains("NativeKafkaSink"), plan);
+  }
+
   @Test
   void plansNestedRowsAndArraysNatively() {
     StreamTableEnvironment table = environment();

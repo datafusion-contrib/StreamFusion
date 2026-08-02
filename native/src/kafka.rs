@@ -307,9 +307,12 @@ fn encode_value_lines(
         ),
         #[cfg(feature = "protobuf")]
         EncodeOptions::Protobuf(options) => {
-            // Columns map to proto fields by name; an all-unset row is a zero-length message
-            // (Flink's serializer produces the same empty byte[], not a tombstone).
-            let (bytes, rows) = options.encoder().encode(batch).into_parts();
+            // Columns map to proto fields by name, so the batch must carry the declared sink
+            // field names, not the plan's generated expression names. An all-unset row is a
+            // zero-length message (Flink's serializer produces the same empty byte[], not a
+            // tombstone).
+            let batch = annotate_flink_types(batch, logical_types, field_names)?;
+            let (bytes, rows) = options.encoder().encode(&batch).into_parts();
             Ok(EncodedLines::new(bytes, rows))
         }
         #[cfg(feature = "raw")]
@@ -1886,6 +1889,27 @@ mod kafka_error_tests {
     use rdkafka::bindings::rd_kafka_resp_err_t::*;
     use std::sync::Arc;
 
+    /// The planner's `encodeFormatSupported` probe and the sink's encode dispatch must agree on
+    /// which format codes this build encodes. A dispatch arm without a probe arm silently keeps a
+    /// fully-implemented format on Flink at plan time (protobuf, raw, and debezium-avro-confluent
+    /// shipped that way); a probe arm without a dispatch arm would plan a sink that fails at
+    /// runtime. The dispatch's unknown-format error text distinguishes "no arm" from "bad
+    /// options", so empty options probe every arm.
+    #[test]
+    fn encode_probe_agrees_with_the_encode_dispatch() {
+        for format in 0..=32 {
+            let dispatched = match super::parse_encode_format(format, "") {
+                Ok(_) => true,
+                Err(error) => !error.contains("is not natively encoded"),
+            };
+            assert_eq!(
+                super::encode_format_compiled(format),
+                dispatched,
+                "format code {format}: capability probe and encode dispatch disagree"
+            );
+        }
+    }
+
     /// A live-tailing drain can deliver a partition's EOF op ahead of records that arrived in the
     /// same poll window (the consumer queue is FIFO). Letting that stale EOF offset overwrite the
     /// post-drain consumer position regressed the split offset below rows already emitted, so a
@@ -2384,7 +2408,11 @@ fn encode_format_compiled(format: i32) -> bool {
         #[cfg(feature = "csv")]
         FORMAT_CSV => true,
         #[cfg(feature = "avro")]
-        FORMAT_AVRO | FORMAT_AVRO_CONFLUENT => true,
+        FORMAT_AVRO | FORMAT_AVRO_CONFLUENT | FORMAT_DEBEZIUM_AVRO_CONFLUENT => true,
+        #[cfg(feature = "protobuf")]
+        FORMAT_PROTOBUF => true,
+        #[cfg(feature = "raw")]
+        FORMAT_RAW => true,
         _ => false,
     }
 }
