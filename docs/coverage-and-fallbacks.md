@@ -1123,3 +1123,65 @@ lance vs vortex, compression on/off) pick a better pairing; both are stamped int
 schema, so the compactor's rewrites honor them too. `vortex` is opt-in and needs a Paimon
 bundle that reads it (the format lands with Paimon 2.0; on older bundles the compactor declines
 the format and backend creation fails closed).
+
+### Restore compatibility, upgrades, and the acceleration toggle
+
+Savepoints and checkpoints taken with StreamFusion in the plan are **not portable across plan
+shape or release changes**, and it is worth being precise about why. A native island replaces a
+run of Flink operators with StreamFusion operators that have **different operator IDs** than the
+stock plan would generate, and their state is a **StreamFusion-private format** (raw keyed-state
+blobs of Arrow-encoded native state, or Paimon state tables) that no stock Flink operator can
+read — and vice versa. Flink matches state to operators by operator ID at restore, so state
+written by one plan shape simply does not attach to the other.
+
+**A restore works** when all of the following hold:
+
+- **Same StreamFusion release** on both sides — same JAR version, same native libraries, same raw
+  keyed-state format version. Both are enforced: the loader refuses a native library whose build
+  stamp differs from the JARs', and a raw keyed-state payload names the state-format version that
+  wrote it, so a snapshot from a newer format fails restore with that version named instead of
+  misparsing (payloads from releases before the header restore as version 0). The format version
+  changes only when the native snapshot layout changes, so patch upgrades that leave state
+  untouched restore cleanly.
+- **Same plan shape** — same query, same acceleration setting, and the same set of StreamFusion
+  JARs in `lib/`, so every operator that was native at snapshot time is native again (and every
+  fallback is again a fallback). Missing optional modules move operators between the two worlds
+  just as surely as the master switch does.
+- **Same state backend selection** — a memory-backend snapshot restores on memory state; there is
+  no silent migration to or from the Paimon backend.
+- Parallelism may change freely within max parallelism: native state is segmented by Flink key
+  group and rescales through Flink's own raw keyed-state redistribution (Paimon tables clip by
+  key-group range at recovery).
+
+**What breaks a restore** — each of these changes the plan's operator IDs or state format, so the
+old snapshot's state no longer matches the new job:
+
+- Flipping `-Dstreamfusion.native.enabled` in either direction.
+- Adding or removing StreamFusion JARs (or a native library build losing a feature), when that
+  flips any operator between native and fallback.
+- Upgrading to a StreamFusion release whose coverage changes flip an operator between native and
+  fallback for your query — check this document's changes between releases.
+- Upgrading across a raw keyed-state format-version change (fails loudly, naming the writer's
+  version).
+
+`--allowNonRestoredState` is **not** an escape hatch for any of these. It drops every state
+handle that finds no matching operator — silently. With a whole native island unmatched that
+includes keyed operator state, and if source operators differ it includes **source offsets**:
+the job "restores" and then re-reads from the connector's default start position (or the
+committed group offsets), which is data loss or duplication, not an upgrade.
+
+**The safe procedures:**
+
+- **Same-version restore** (infrastructure moves, parallelism changes, config changes that do not
+  alter the plan): stop with a savepoint, restore with the identical JARs, native libraries, and
+  acceleration settings. This is the only path that carries operator state across.
+- **Anything that changes the plan shape or the state format** (toggling acceleration,
+  adding/removing StreamFusion modules, a coverage-changing or state-format-changing upgrade):
+  **drain and start fresh** — `stop --drain` so windows/timers fire and downstream results
+  complete, then submit the new configuration as a new job from clean source positions (committed
+  consumer-group offsets, or an explicit start position). Operator state is deliberately left
+  behind; correctness comes from the drain, not from carrying state across incompatible plans.
+
+The raw keyed-state header reserves room for an operator-config fingerprint, the groundwork for
+checking (and eventually migrating) state across such changes explicitly rather than by
+convention — see https://github.com/datafusion-contrib/StreamFusion/issues/22.
