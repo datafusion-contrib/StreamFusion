@@ -1446,6 +1446,17 @@ fn fold_partition_eofs(
     }
 }
 
+/// A format DSO's attached decode: the driver vtable entries the handshake filled plus the opaque
+/// decoder handle they dispatch on. `last_error` is present when the format speaks ABI version 2;
+/// against a version-1 format a failure reports only its return code.
+#[cfg(feature = "kafka")]
+#[derive(Clone, Copy)]
+struct AttachedDecode {
+    decode: DecodeBodyBatch,
+    last_error: Option<DecodeLastError>,
+    decoder: i64,
+}
+
 /// The production native Kafka consumer for one Flink subtask: a single rdkafka `BaseConsumer` that
 /// multiplexes all of the subtask's assigned partitions (Flink-parity — one consumer, not one per
 /// split). Each `poll` buckets the drained payloads by partition directly into Arrow binary body
@@ -1460,9 +1471,8 @@ pub(crate) struct KafkaSplitReader {
     /// The consumer's message queue, drained via the callback API (see `poll`).
     consumer_queue: *mut rdkafka::bindings::rd_kafka_queue_t,
     body_schema: SchemaRef,
-    /// The attached format decode: the format DSO's version-1 driver vtable and its opaque decoder
-    /// handle, obtained through the driver-init handshake (see `format_abi`).
-    decode: Option<(DecodeBodyBatch, i64)>,
+    /// The attached format decode, obtained through the driver-init handshake (see `format_abi`).
+    decode: Option<AttachedDecode>,
     /// Next offset to consume per assigned partition — the split's checkpoint position.
     next_offsets: HashMap<(String, i32), i64>,
     /// Concrete bounded stopping offsets. The poll callback drops records at or beyond this boundary.
@@ -1836,7 +1846,7 @@ impl KafkaSplitReader {
             let records = body.num_rows() as i64;
             let batch = match (self.decode, body.num_rows()) {
                 (_, 0) | (None, _) => body,
-                (Some((entry, decoder)), _) => Self::decode_bucket(entry, decoder, body),
+                (Some(attached), _) => Self::decode_bucket(attached, body)?,
             };
             self.next_offsets.insert((topic.clone(), partition), next_offset);
             let high_watermark = self.cached_high_watermark(&topic, partition);
@@ -1943,7 +1953,9 @@ impl KafkaSplitReader {
 
     /// Runs the attached format's C-ABI decode on one body batch. In and out cross as Arrow C Data on
     /// this stack frame; ownership follows each structure's release callback into its producing DSO.
-    fn decode_bucket(entry: DecodeBodyBatch, decoder: i64, body: RecordBatch) -> RecordBatch {
+    /// A failure carries the format's own error text when the attached driver has the version-2
+    /// error channel, else its bare return code.
+    fn decode_bucket(attached: AttachedDecode, body: RecordBatch) -> Result<RecordBatch, String> {
         use arrow::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
         let mut in_array = FFI_ArrowArray::empty();
         let mut in_schema = FFI_ArrowSchema::empty();
@@ -1954,18 +1966,36 @@ impl KafkaSplitReader {
         );
         let mut out_array = FFI_ArrowArray::empty();
         let mut out_schema = FFI_ArrowSchema::empty();
-        let rc = entry(
-            decoder,
+        let rc = (attached.decode)(
+            attached.decoder,
             &mut in_array as *mut FFI_ArrowArray as i64,
             &mut in_schema as *mut FFI_ArrowSchema as i64,
             &mut out_array as *mut FFI_ArrowArray as i64,
             &mut out_schema as *mut FFI_ArrowSchema as i64,
         );
-        assert_eq!(rc, 0, "attached format decode failed (rc {rc})");
-        import_record_batch(
+        if rc != 0 {
+            return Err(Self::decode_error(attached, rc));
+        }
+        Ok(import_record_batch(
             &mut out_array as *mut FFI_ArrowArray as jlong,
             &mut out_schema as *mut FFI_ArrowSchema as jlong,
-        )
+        ))
+    }
+
+    /// Copies the version-2 error channel's message out immediately — the pointer is into the
+    /// format's thread-local, valid only until this thread's next failed decode.
+    fn decode_error(attached: AttachedDecode, rc: i32) -> String {
+        let mut len = 0i32;
+        let pointer = attached.last_error.map(|last_error| last_error(attached.decoder, &mut len));
+        match pointer {
+            Some(pointer) if !pointer.is_null() && len > 0 => {
+                String::from_utf8_lossy(unsafe {
+                    std::slice::from_raw_parts(pointer, len as usize)
+                })
+                .into_owned()
+            }
+            _ => format!("attached format decode failed (rc {rc})"),
+        }
     }
 }
 
@@ -2317,20 +2347,38 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_at
     crate::bridge::jni_guard(env, move |_env| {
         let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
         let init: FormatDriverInit = unsafe { std::mem::transmute(init_address as usize) };
-        let mut driver = FormatDriver { decode_body_batch: unsupported_decode };
-        if init(FORMAT_DRIVER_VERSION_1, &mut driver) != 0 {
+        let mut driver = FormatDriver {
+            decode_body_batch: unsupported_decode,
+            decode_last_error: unsupported_last_error,
+        };
+        // Ask for the newest ABI first; an older format that refuses it may still speak version 1,
+        // which decodes identically but reports a failure by return code alone.
+        let last_error = if init(FORMAT_DRIVER_VERSION_2, &mut driver) == 0 {
+            Some(driver.decode_last_error)
+        } else if init(FORMAT_DRIVER_VERSION_1, &mut driver) == 0 {
+            None
+        } else {
             return 0;
-        }
-        reader.decode = Some((driver.decode_body_batch, decoder_handle));
+        };
+        reader.decode = Some(AttachedDecode {
+            decode: driver.decode_body_batch,
+            last_error,
+            decoder: decoder_handle,
+        });
         1
     })
 }
 
-/// Placeholder the driver struct is initialized with before the handshake fills it; never invoked
+/// Placeholders the driver struct is initialized with before the handshake fills it; never invoked
 /// (a failed init leaves the consumer unattached).
 #[cfg(feature = "kafka")]
 extern "C" fn unsupported_decode(_: i64, _: i64, _: i64, _: i64, _: i64) -> i32 {
     1
+}
+
+#[cfg(feature = "kafka")]
+extern "C" fn unsupported_last_error(_: i64, _: *mut i32) -> *const u8 {
+    std::ptr::null()
 }
 
 /// Adds splits to the reader and re-assigns: `topics`/`partitions`/`startOffsets` are index-aligned;

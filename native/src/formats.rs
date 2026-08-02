@@ -1607,9 +1607,17 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeDecoder<
     })
 }
 
+thread_local! {
+    /// The panic text of this thread's most recent failed C-ABI decode, served by
+    /// `decode_last_error`. Thread-local rather than per-decoder because the connector reads it
+    /// synchronously on the thread that decoded; the success path never touches it.
+    static LAST_DECODE_ERROR: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
 /// This format library's decode behind the cross-DSO driver ABI (`format_abi`): an opaque decoder
 /// handle and Arrow C Data addresses, nothing language-specific. A panic is contained and reported
-/// as nonzero, and the caller raises the failure on its own JNI surface.
+/// as nonzero — its text stashed for `decode_last_error` — and the caller raises the failure on
+/// its own JNI surface.
 extern "C" fn decode_body_batch(
     handle: i64,
     in_array_address: i64,
@@ -1625,21 +1633,41 @@ extern "C" fn decode_body_batch(
     }));
     match outcome {
         Ok(()) => 0,
-        Err(_) => 1,
+        Err(payload) => {
+            LAST_DECODE_ERROR
+                .with(|slot| *slot.borrow_mut() = crate::bridge::panic_message(payload));
+            1
+        }
     }
+}
+
+/// The version-2 error channel: the text of this thread's most recent failed decode. The returned
+/// pointer is into a thread-local this library owns; it stays valid until the thread's next failed
+/// decode, and the connector copies it out immediately after the nonzero return.
+extern "C" fn decode_last_error(_decoder_handle: i64, len_out: *mut i32) -> *const u8 {
+    LAST_DECODE_ERROR.with(|slot| {
+        let message = slot.borrow();
+        unsafe { *len_out = message.len() as i32 };
+        message.as_ptr()
+    })
 }
 
 /// The exported driver init (ADBC's `AdbcDriverInit` pattern): a connector states the ABI version it
 /// speaks and passes the matching vtable to fill; this library fills it or refuses with nonzero, and
-/// a refusal leaves the caller on the JVM-mediated decode path. The connector obtains this function's
-/// address through the format's Java facade — by handoff, never by symbol linkage (divergences/25).
+/// a refusal leaves the caller on the JVM-mediated decode path. Only the requested version's prefix
+/// of the vtable is written — an older caller's struct ends there. The connector obtains this
+/// function's address through the format's Java facade — by handoff, never by symbol linkage
+/// (divergences/25).
 #[no_mangle]
 pub extern "C" fn streamfusion_format_driver_init(version: i32, driver: *mut FormatDriver) -> i32 {
-    if version != FORMAT_DRIVER_VERSION_1 || driver.is_null() {
+    if !(FORMAT_DRIVER_VERSION_1..=FORMAT_DRIVER_VERSION_2).contains(&version) || driver.is_null() {
         return 1;
     }
     unsafe {
         (*driver).decode_body_batch = decode_body_batch;
+        if version >= FORMAT_DRIVER_VERSION_2 {
+            (*driver).decode_last_error = decode_last_error;
+        }
     }
     0
 }

@@ -6521,19 +6521,76 @@ fn skip_mode_silencing_resets_after_an_escaping_panic() {
     assert!(!IN_SKIP_DECODE.with(std::cell::Cell::get));
 }
 
-// The driver-init handshake fills the vtable only for an ABI version this library speaks; anything
-// else is refused, which the connector treats as "stay on the JVM-mediated decode".
+// The driver-init handshake fills the vtable only for an ABI version this library speaks — anything
+// else is refused, which the connector treats as "stay on the JVM-mediated decode" — and fills only
+// the requested version's prefix: a version-1 caller's struct ends at the version-1 fields.
 #[test]
 fn format_driver_init_gates_on_version() {
     extern "C" fn sentinel(_: i64, _: i64, _: i64, _: i64, _: i64) -> i32 {
         99
     }
-    let mut driver = FormatDriver { decode_body_batch: sentinel };
-    assert_ne!(streamfusion_format_driver_init(FORMAT_DRIVER_VERSION_1 + 1, &mut driver), 0);
+    extern "C" fn error_sentinel(_: i64, _: *mut i32) -> *const u8 {
+        std::ptr::null()
+    }
+    let mut driver =
+        FormatDriver { decode_body_batch: sentinel, decode_last_error: error_sentinel };
+    assert_ne!(streamfusion_format_driver_init(FORMAT_DRIVER_VERSION_2 + 1, &mut driver), 0);
     assert_eq!(driver.decode_body_batch as usize, sentinel as usize);
     assert_eq!(streamfusion_format_driver_init(FORMAT_DRIVER_VERSION_1, &mut driver), 0);
     assert_ne!(driver.decode_body_batch as usize, sentinel as usize);
+    assert_eq!(driver.decode_last_error as usize, error_sentinel as usize);
+    assert_eq!(streamfusion_format_driver_init(FORMAT_DRIVER_VERSION_2, &mut driver), 0);
+    assert_ne!(driver.decode_last_error as usize, error_sentinel as usize);
     assert_ne!(streamfusion_format_driver_init(FORMAT_DRIVER_VERSION_1, std::ptr::null_mut()), 0);
+}
+
+// A decode failure crossing the C ABI keeps its cause: the nonzero return is followed by the
+// version-2 error channel serving the format's real panic text, which the connector folds into
+// the failure it raises with the bucket's topic/partition/offsets.
+#[test]
+fn c_abi_decode_failure_serves_the_panic_text() {
+    use arrow::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
+    extern "C" fn sentinel(_: i64, _: i64, _: i64, _: i64, _: i64) -> i32 {
+        99
+    }
+    extern "C" fn error_sentinel(_: i64, _: *mut i32) -> *const u8 {
+        std::ptr::null()
+    }
+    let mut driver =
+        FormatDriver { decode_body_batch: sentinel, decode_last_error: error_sentinel };
+    assert_eq!(streamfusion_format_driver_init(FORMAT_DRIVER_VERSION_2, &mut driver), 0);
+
+    let decoder = MessageDecoder::new(FORMAT_JSON, json_schema(), "", "", 0, false, "");
+    let body = bodies(vec![Some(b"{\"id\": not json")]);
+    let mut in_array = FFI_ArrowArray::empty();
+    let mut in_schema = FFI_ArrowSchema::empty();
+    export_record_batch(
+        body,
+        &mut in_array as *mut FFI_ArrowArray as i64,
+        &mut in_schema as *mut FFI_ArrowSchema as i64,
+    );
+    let mut out_array = FFI_ArrowArray::empty();
+    let mut out_schema = FFI_ArrowSchema::empty();
+    let rc = silence_expected_decode_panics(|| {
+        (driver.decode_body_batch)(
+            &decoder as *const MessageDecoder as i64,
+            &mut in_array as *mut FFI_ArrowArray as i64,
+            &mut in_schema as *mut FFI_ArrowSchema as i64,
+            &mut out_array as *mut FFI_ArrowArray as i64,
+            &mut out_schema as *mut FFI_ArrowSchema as i64,
+        )
+    });
+    assert_ne!(rc, 0);
+
+    let mut len = 0i32;
+    let pointer = (driver.decode_last_error)(&decoder as *const MessageDecoder as i64, &mut len);
+    assert!(!pointer.is_null());
+    let message =
+        std::str::from_utf8(unsafe { std::slice::from_raw_parts(pointer, len as usize) }).unwrap();
+    assert!(
+        message.contains("failed to decode JSON record"),
+        "error channel must carry the decode's own panic text, got: {message}"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
