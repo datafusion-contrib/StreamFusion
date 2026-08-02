@@ -34,12 +34,13 @@ import org.junit.jupiter.api.Test;
  * Pins the native CDC decode to Flink's own Maxwell/Canal/Debezium/OGG deserializers, message by
  * message (no containers — the format classes referee directly, like {@link CsvDecodeParityTest}).
  * The heart of it is the partial-{@code old} pre-image rule that used to gate Maxwell/Canal off the
- * native path: Flink reads an UPDATE_BEFORE field from {@code old} when its KEY is present there —
- * an explicit null means "was null" and stays null; an absent key means "unchanged" and copies the
- * post-image — and for Canal the presence check spans the WHOLE {@code old} array
- * ({@code findValue} over the array node). The native decode reproduces that with a per-message key
- * scan of the raw {@code old} JSON; every scenario here must produce the same changelog (RowKinds
- * included) from both engines, or fail on both.
+ * native path: Flink reads an UPDATE_BEFORE field from {@code old} when its KEY is present
+ * anywhere under it ({@code findValue}'s recursive search) — an explicit null means "was null" and
+ * stays null; an absent key means "unchanged" and copies the post-image — and for Canal the
+ * presence check spans the WHOLE {@code old} array ({@code findValue} over the array node). The
+ * native decode reproduces that with a per-message key scan of the raw {@code old} JSON; every
+ * scenario here must produce the same changelog (RowKinds included) from both engines, or fail on
+ * both.
  */
 @Tag("streamfusion-json")
 class CdcDecodeParityTest {
@@ -86,6 +87,38 @@ class CdcDecodeParityTest {
         assertParity(format, scenario, false);
         assertParity(format, scenario, true);
       }
+    }
+  }
+
+  @Test
+  void maxwellOldPresenceIsRecursiveLikeFindValue() throws Exception {
+    String[] scenarios = {
+      // findValue descends nested containers: a field name buried under old counts as PRESENT, so
+      // UPDATE_BEFORE keeps the top-level null instead of copying the post-image value.
+      "{\"data\":{\"id\":1,\"name\":\"a2\",\"score\":1.5},\"old\":{\"junk\":{\"score\":9}},\"type\":\"update\"}",
+      "{\"data\":{\"id\":1,\"name\":\"a2\",\"score\":1.5},\"old\":{\"junk\":[{\"name\":\"x\"}]},\"type\":\"update\"}",
+      // Jackson's tree collapses a duplicate key to its LAST occurrence — for the envelope's old
+      // field and for objects inside it — so names reachable only through a discarded earlier
+      // subtree are not found.
+      "{\"data\":{\"id\":1,\"name\":\"a2\",\"score\":1.5},\"old\":{\"name\":\"x\"},\"old\":{\"score\":9},\"type\":\"update\"}",
+      "{\"data\":{\"id\":1,\"name\":\"a2\",\"score\":1.5},\"old\":{\"junk\":{\"score\":9},\"junk\":{\"keep\":1}},\"type\":\"update\"}",
+    };
+    for (String scenario : scenarios) {
+      assertParity(MAXWELL, scenario, false);
+      assertParity(MAXWELL, scenario, true);
+    }
+  }
+
+  @Test
+  void canalOldPresenceIsRecursiveLikeFindValue() throws Exception {
+    String[] scenarios = {
+      "{\"data\":[{\"id\":1,\"name\":\"a2\",\"score\":1.5}],\"old\":[{\"junk\":{\"score\":9}}],\"type\":\"UPDATE\"}",
+      "{\"data\":[{\"id\":1,\"name\":\"a2\",\"score\":1.5}],\"old\":[{\"junk\":[{\"name\":\"x\"}]}],\"type\":\"UPDATE\"}",
+      "{\"data\":[{\"id\":1,\"name\":\"a2\",\"score\":1.5}],\"old\":[{\"name\":\"a\"}],\"old\":[{\"score\":9}],\"type\":\"UPDATE\"}",
+    };
+    for (String scenario : scenarios) {
+      assertParity(CANAL, scenario, false);
+      assertParity(CANAL, scenario, true);
     }
   }
 

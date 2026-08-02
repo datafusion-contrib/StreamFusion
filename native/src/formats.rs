@@ -403,10 +403,12 @@ pub(crate) enum CdcShape {
     BeforeAfter,
     /// Maxwell/Canal: `data` is the full post-image and `old` a *partial* pre-image (only changed
     /// fields). DELETE reads `data` (it holds the deleted row); an update's UPDATE_BEFORE reads a
-    /// field from `old` when its KEY is present there (even as an explicit null — a field changed
-    /// *to* null keeps the null) and copies `data` otherwise — Flink's `findValue` presence check,
-    /// reproduced by a per-message key scan of the raw `old` JSON (the decoded image alone can't
-    /// distinguish present-null from absent).
+    /// field from `old` when its KEY is present there — at ANY depth, since Flink's `findValue`
+    /// searches the whole subtree: an explicit top-level null (a field changed *to* null) keeps
+    /// the null, and so does a key found only inside a nested container (the top-level decode saw
+    /// nothing) — and copies `data` only when the key appears nowhere. Reproduced by a per-message
+    /// key scan of the raw `old` JSON (the decoded image alone can't distinguish present-null from
+    /// absent).
     DataOld,
 }
 
@@ -570,10 +572,11 @@ pub(crate) fn cdc_emit(
 }
 
 /// Which image an output row reads its columns from. `Coalesce` (Maxwell/Canal UPDATE_BEFORE) reads a
-/// field from the pre-image when its key appears under the message's `old` (Flink's `findValue`
-/// presence rule — an explicit null is present, an absent key copies the post-image) — a per-field
-/// choice, so it can't share one gather index across columns. The bitmask holds bit `i` for physical
-/// field `i` present in `old` (the arity is capped at 128, enforced at construction).
+/// field from the pre-image when its key appears anywhere under the message's `old` (Flink's
+/// recursive `findValue` presence rule — an explicit null is present, a key absent from the whole
+/// subtree copies the post-image) — a per-field choice, so it can't share one gather index across
+/// columns. The bitmask holds bit `i` for physical field `i` present in `old` (the arity is capped
+/// at 128, enforced at construction).
 #[derive(Clone, Copy)]
 pub(crate) enum RowSource {
     /// The pre-image (`before` / `old`), envelope column 0.
@@ -775,10 +778,12 @@ impl CdcJsonDecoder {
     }
 
     /// The `DataOld` presence scan: per surviving body (same null/whitespace skips as the envelope
-    /// decode, asserted below), the set of physical field keys present under `old` — for Canal, the
-    /// union across the array's elements, which is exactly what Flink's `findValue` over the array
-    /// node sees. A message without a usable `old` contributes an empty mask (only updates read it,
-    /// and a null `old` on an update already failed in `cdc_emit`).
+    /// decode, asserted below), the set of physical field keys Flink's `oldField.findValue` would
+    /// find under the message's `old` node — a recursive depth-first search of the whole subtree
+    /// (nested objects AND arrays; for Canal the array node's elements fall out of the same
+    /// descent). The envelope's `old` is the LAST top-level occurrence, matching the Jackson tree
+    /// `root.get` reads. A message without a usable `old` contributes an empty mask (only updates
+    /// read it, and a null `old` on an update already failed in `cdc_emit`).
     fn old_key_presence(&self, bodies: &RecordBatch) -> Vec<u128> {
         use simd_json::prelude::*;
         let spec = self.dialect.spec();
@@ -786,15 +791,6 @@ impl CdcJsonDecoder {
         let mut masks = Vec::with_capacity(bodies.num_rows());
         let mut scratch: Vec<u8> = Vec::new();
         let mut buffers = simd_json::Buffers::default();
-        let mask_of = |object: &simd_json::tape::Object<'_, '_>| -> u128 {
-            let mut mask = 0u128;
-            for (key, _) in object {
-                if let Some(i) = self.field_names.iter().position(|name| name == key) {
-                    mask |= 1 << i;
-                }
-            }
-            mask
-        };
         for row in 0..bodies.num_rows() {
             let Some(bytes) = binary_body(column, row) else { continue };
             if bytes.iter().all(u8::is_ascii_whitespace) {
@@ -815,24 +811,41 @@ impl CdcJsonDecoder {
             }
             let old = root
                 .as_object()
-                .and_then(|envelope| envelope.iter().find(|(key, _)| *key == spec.before_field))
+                .and_then(|envelope| {
+                    envelope.iter().filter(|(key, _)| *key == spec.before_field).last()
+                })
                 .map(|(_, value)| value);
-            let mask = match old {
-                Some(value) if spec.arrays => value
-                    .as_array()
-                    .map(|elements| {
-                        elements
-                            .iter()
-                            .filter_map(|e| e.as_object().map(|o| mask_of(&o)))
-                            .fold(0u128, |acc, m| acc | m)
-                    })
-                    .unwrap_or(0),
-                Some(value) => value.as_object().map(|o| mask_of(&o)).unwrap_or(0),
-                None => 0,
-            };
+            let mut mask = 0u128;
+            if let Some(value) = old {
+                self.find_value_mask(value, &mut mask);
+            }
             masks.push(mask);
         }
         masks
+    }
+
+    /// Jackson `findValue` presence over a tape subtree: sets bit `i` when physical field `i`'s
+    /// name appears as an object key anywhere under `value`. A duplicate key within an object
+    /// collapses to its LAST occurrence first (Jackson's tree build overwrites the earlier value,
+    /// so names reachable only through a discarded subtree are not found).
+    fn find_value_mask(&self, value: simd_json::tape::Value<'_, '_>, mask: &mut u128) {
+        use simd_json::prelude::*;
+        if let Some(object) = value.as_object() {
+            let entries: Vec<(&str, simd_json::tape::Value<'_, '_>)> = object.iter().collect();
+            for (i, (key, child)) in entries.iter().enumerate() {
+                if entries[i + 1..].iter().any(|(later, _)| later == key) {
+                    continue;
+                }
+                if let Some(field) = self.field_names.iter().position(|name| name == key) {
+                    *mask |= 1 << field;
+                }
+                self.find_value_mask(*child, mask);
+            }
+        } else if let Some(array) = value.as_array() {
+            for element in &array {
+                self.find_value_mask(element, mask);
+            }
+        }
     }
 
     fn decode(&self, bodies: &RecordBatch) -> RecordBatch {

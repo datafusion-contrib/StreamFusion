@@ -857,9 +857,11 @@ shapes persist their per-key deadlines in a dedicated state table).
   decode-operator path regenerates no watermarks either).
 - **CDC** — all four JSON dialects route natively: Debezium/OGG (full pre/post images, nested
   columns included) and Maxwell/Canal (post-image + partial `old`, whose UPDATE_BEFORE follows
-  Flink's findValue key-presence rule via a native per-message key scan of the raw `old` — an
-  explicit null is kept, an absent key copies the post-image, and Canal's presence spans the whole
-  `old` array; envelope pinned by `CdcDecodeParityTest`). `ignore-parse-errors` is native with
+  Flink's findValue key-presence rule via a native per-message key scan of the raw `old` —
+  recursive like Jackson's findValue, descending nested objects and arrays with duplicate keys
+  collapsing to their last occurrence: an explicit null is kept, a key found only inside a nested
+  container keeps the top-level null, an absent key copies the post-image, and Canal's presence
+  spans the whole `old` array; envelope pinned by `CdcDecodeParityTest`). `ignore-parse-errors` is native with
   Flink's exact granularity: a structurally bad message drops whole, a bad value inside an image
   nulls just that field, and a failure mid-fan-out keeps the rows emitted before it.
   `debezium-avro-confluent` (the Debezium envelope with Confluent-framed Avro bodies) also routes

@@ -1464,6 +1464,57 @@ fn cdc_maxwell_keeps_explicit_null_in_old() {
     assert_eq!(id.values(), &[1, 1]); // absent from `old` → unchanged → copied from `data`
 }
 
+// Flink's findValue is a RECURSIVE depth-first search: a physical field name buried inside a
+// nested container under `old` counts as present, and since the top-level decode of `old` saw
+// nothing there, UPDATE_BEFORE keeps the null — it must NOT copy the post-image value.
+#[test]
+fn cdc_maxwell_old_presence_descends_nested_containers() {
+    use arrow::array::Array;
+    let nested_object =
+        br#"{"data":{"id":1,"name":"a2","score":1.5},"old":{"junk":{"score":9}},"type":"update"}"#;
+    let nested_array =
+        br#"{"data":{"id":2,"name":"b2","score":2.5},"old":{"junk":[{"name":"hidden"}]},"type":"update"}"#;
+    let body = bodies(vec![Some(nested_object.as_slice()), Some(nested_array)]);
+
+    let out = MessageDecoder::new(FORMAT_MAXWELL_JSON, json_schema(), "", "", 0, false, "").decode(&body);
+
+    assert_eq!(out.num_rows(), 4);
+    let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+    let names = out.column(1).as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
+    let scores = out.column(2).as_any().downcast_ref::<arrow::array::Float64Array>().unwrap();
+    // Message 0's UPDATE_BEFORE: id/name absent everywhere in old → copied; score found at
+    // old.junk.score → present, keeps the top-level null (not 9, not data's 1.5).
+    assert_eq!((id.value(0), names.value(0)), (1, "a2"));
+    assert!(scores.is_null(0));
+    // Message 1's UPDATE_BEFORE: name found inside an array element → present, kept null.
+    assert_eq!((id.value(2), scores.value(2)), (2, 2.5));
+    assert!(names.is_null(2));
+}
+
+// Jackson's tree build collapses a duplicate key to its LAST occurrence, both for the envelope's
+// `old` field and inside it — names reachable only through a discarded earlier subtree are not
+// found by findValue.
+#[test]
+fn cdc_maxwell_duplicate_keys_keep_the_last_occurrence() {
+    use arrow::array::Array;
+    let duplicate_old =
+        br#"{"data":{"id":1,"name":"a2","score":1.5},"old":{"name":"x"},"old":{"score":9},"type":"update"}"#;
+    let duplicate_inside =
+        br#"{"data":{"id":2,"name":"b2","score":2.5},"old":{"junk":{"score":9},"junk":{"keep":1}},"type":"update"}"#;
+    let body = bodies(vec![Some(duplicate_old.as_slice()), Some(duplicate_inside)]);
+
+    let out = MessageDecoder::new(FORMAT_MAXWELL_JSON, json_schema(), "", "", 0, false, "").decode(&body);
+
+    assert_eq!(out.num_rows(), 4);
+    let names = out.column(1).as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
+    let scores = out.column(2).as_any().downcast_ref::<arrow::array::Float64Array>().unwrap();
+    // Message 0: the second `old` wins — name is unchanged (copied from data), score kept from old.
+    assert_eq!(names.value(0), "a2");
+    assert_eq!(scores.value(0), 9.0);
+    // Message 1: the second `junk` wins, discarding the subtree holding score → score copied.
+    assert_eq!(scores.value(2), 2.5);
+}
+
 // Flink reads `old` unchecked on an update (row.getRow / old.getRow(i)), so a missing `old` or a
 // Canal `old` array shorter than `data` is a corrupt message that fails the job — never a silent
 // fall-back to the post-image.
