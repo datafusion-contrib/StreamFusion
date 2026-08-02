@@ -77,6 +77,19 @@ class CdcDecodeParityTest {
   }
 
   @Test
+  void whitespaceBodiesAreNotTombstones() throws Exception {
+    // Flink's tombstone check is message.length == 0: an empty message is skipped, but a
+    // whitespace-only body reaches Jackson, yields no envelope, and corrupts — a job failure in
+    // strict mode, a whole-message drop under ignore-parse-errors. Per dialect, per mode.
+    for (int format : new int[] {MAXWELL, CANAL, DEBEZIUM, OGG}) {
+      for (String scenario : new String[] {"", "   ", " \n\t "}) {
+        assertParity(format, scenario, false);
+        assertParity(format, scenario, true);
+      }
+    }
+  }
+
+  @Test
   void canalMatchesFlinkPerMessage() throws Exception {
     String[] scenarios = {
       // Multi-row fan-out.

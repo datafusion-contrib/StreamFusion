@@ -437,6 +437,15 @@ impl CdcDialect {
         }
     }
 
+    fn name(self) -> &'static str {
+        match self {
+            CdcDialect::Debezium => "Debezium",
+            CdcDialect::Ogg => "Ogg",
+            CdcDialect::Maxwell => "Maxwell",
+            CdcDialect::Canal => "Canal",
+        }
+    }
+
     fn spec(self) -> CdcSpec {
         match self {
             CdcDialect::Debezium => CdcSpec {
@@ -732,6 +741,39 @@ impl CdcJsonDecoder {
         }
     }
 
+    /// Enforces Flink's CDC tombstone rule on the body batch before anything decodes it: the CDC
+    /// deserializers skip only a null or ZERO-LENGTH message, so a whitespace-only body is not a
+    /// tombstone — it reaches Jackson, yields no envelope row, and the op read NPEs: a corrupt
+    /// message (job failure in default mode, a whole-message drop under `ignore-parse-errors`).
+    /// The plain JSON decode underneath has its own whitespace rule (it drops such a body without
+    /// error, per its Flink parity), so the CDC granularity is applied here, never inherited.
+    fn strip_tombstones(&self, bodies: &RecordBatch) -> RecordBatch {
+        let column = bodies.column(0);
+        let mut kept: Vec<u32> = Vec::with_capacity(bodies.num_rows());
+        for row in 0..bodies.num_rows() {
+            match binary_body(column, row) {
+                None | Some([]) => {}
+                Some(bytes) if bytes.iter().all(u8::is_ascii_whitespace) => {
+                    if !self.skip_errors {
+                        panic!(
+                            "Corrupt {} JSON message '{}'.",
+                            self.dialect.name(),
+                            String::from_utf8_lossy(bytes)
+                        );
+                    }
+                }
+                Some(_) => kept.push(row as u32),
+            }
+        }
+        if kept.len() == bodies.num_rows() {
+            return bodies.clone();
+        }
+        let indices = arrow::array::UInt32Array::from(kept);
+        let column = take(column, &indices, None).expect("failed to drop CDC tombstones");
+        RecordBatch::try_new(bodies.schema(), vec![column])
+            .expect("failed to rebuild the CDC body batch")
+    }
+
     /// The `DataOld` presence scan: per surviving body (same null/whitespace skips as the envelope
     /// decode, asserted below), the set of physical field keys present under `old` — for Canal, the
     /// union across the array's elements, which is exactly what Flink's `findValue` over the array
@@ -795,6 +837,7 @@ impl CdcJsonDecoder {
 
     fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
         use arrow::array::ListArray;
+        let bodies = &self.strip_tombstones(bodies);
         let envelope = self.envelope.decode(bodies);
         if envelope.num_rows() == 0 {
             return RecordBatch::new_empty(self.output.clone());

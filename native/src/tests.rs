@@ -1274,12 +1274,12 @@ fn cdc_debezium_decode_emits_changelog() {
     assert_eq!(out.schema().field(3).name(), ROW_KIND_COLUMN);
 }
 
-// A tombstone (null body) is dropped, leaving the valid records — matching Flink, which skips
-// empty/null messages regardless of error handling.
+// A tombstone (null or zero-length body) is dropped, leaving the valid records — matching Flink,
+// which skips them regardless of error handling.
 #[test]
 fn cdc_debezium_skips_tombstone() {
     let insert = br#"{"before":null,"after":{"id":1,"name":"a","score":1.5},"op":"r"}"#;
-    let body = bodies(vec![None, Some(insert.as_slice())]);
+    let body = bodies(vec![None, Some(b"".as_slice()), Some(insert.as_slice())]);
 
     let out = MessageDecoder::new(FORMAT_DEBEZIUM_JSON, json_schema(), "", "", 0, false, "").decode(&body);
 
@@ -1288,6 +1288,37 @@ fn cdc_debezium_skips_tombstone() {
     assert_eq!(id.values(), &[1]);
     let kinds = out.column(3).as_any().downcast_ref::<Int8Array>().unwrap();
     assert_eq!(kinds.values(), &[0]); // "r" snapshot read → INSERT
+}
+
+// Flink's tombstone check is `message.length == 0` — a whitespace-only body reaches Jackson,
+// yields no envelope, and the op read NPEs into "Corrupt ... JSON message": a job failure in
+// default mode, never a silent skip.
+#[test]
+#[should_panic(expected = "Corrupt Debezium JSON message ' \n\t '.")]
+fn cdc_whitespace_body_is_not_a_tombstone() {
+    let body = bodies(vec![Some(b" \n\t ".as_slice())]);
+    MessageDecoder::new(FORMAT_DEBEZIUM_JSON, json_schema(), "", "", 0, false, "").decode(&body);
+}
+
+#[test]
+#[should_panic(expected = "Corrupt Maxwell JSON message '   '.")]
+fn cdc_maxwell_whitespace_body_fails_with_its_dialect_name() {
+    let body = bodies(vec![Some(b"   ".as_slice())]);
+    MessageDecoder::new(FORMAT_MAXWELL_JSON, json_schema(), "", "", 0, false, "").decode(&body);
+}
+
+// Under ignore-parse-errors the whitespace-only message drops whole (Flink's per-message catch),
+// keeping its neighbors.
+#[test]
+fn cdc_whitespace_body_drops_in_skip_mode() {
+    let insert = br#"{"before":null,"after":{"id":1,"name":"a","score":1.5},"op":"c"}"#;
+    let body = bodies(vec![Some(b"  ".as_slice()), Some(insert.as_slice())]);
+
+    let out = MessageDecoder::new(FORMAT_DEBEZIUM_JSON, json_schema(), "", "", 0, true, "").decode(&body);
+
+    assert_eq!(out.num_rows(), 1);
+    let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!(id.values(), &[1]);
 }
 
 // An unrecognized op fails the decode rather than silently dropping the row — Flink throws on it by
