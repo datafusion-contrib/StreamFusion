@@ -823,6 +823,14 @@ fn raw_decode_rejects_an_empty_boolean_message_like_flink() {
     raw_decode(DataType::Boolean, vec![Some(&[])], "");
 }
 
+// Invalid UTF-8 under a STRING column fails the decode loudly (the documented divergence: Flink
+// smuggles the bytes through StringData unvalidated, Arrow strings cannot) — never a silent NULL.
+#[test]
+#[should_panic(expected = "raw format STRING message is not valid UTF-8")]
+fn raw_decode_rejects_invalid_utf8_strings() {
+    raw_decode(DataType::Utf8, vec![Some(b"ok"), Some(&[0xff, 0xfe, 0x68, 0x69])], "");
+}
+
 // Binary columns take the message verbatim at any length (including empty), nulls staying null.
 #[test]
 fn raw_decode_passes_binary_bodies_verbatim() {

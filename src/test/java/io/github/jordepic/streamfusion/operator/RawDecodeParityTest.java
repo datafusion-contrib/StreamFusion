@@ -1,5 +1,8 @@
 package io.github.jordepic.streamfusion.operator;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import io.github.jordepic.streamfusion.format.raw.RawFormatProvider;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -86,6 +89,34 @@ class RawDecodeParityTest {
         assertParity(new DoubleType(), ByteBuffer.allocate(8).order(order).putDouble(v).array(), endianness);
       }
     }
+  }
+
+  @Test
+  void invalidUtf8StringFailsTheNativeDecodeLoudly() {
+    // The one documented divergence (docs/coverage-and-fallbacks.md): Flink passes invalid UTF-8
+    // through StringData unvalidated, but Arrow strings cannot hold it, so the native decode must
+    // fail the job with a clear message — never silently NULL the value. No Flink referee here;
+    // this pins the native failure itself.
+    RowType rowType =
+        RowType.of(
+            new LogicalType[] {new VarCharType(VarCharType.MAX_LENGTH)}, new String[] {"payload"});
+    DecodeParityHarness harness = new DecodeParityHarness(rowType, false);
+    Exception failure =
+        assertThrows(
+            Exception.class,
+            () ->
+                harness.nativeDecode(
+                    new RawFormatProvider(),
+                    bytes(0xff, 0xfe, 0x68, 0x69),
+                    Map.of("format", "raw", "raw.endianness", BIG),
+                    false));
+    StringBuilder messages = new StringBuilder();
+    for (Throwable t = failure; t != null; t = t.getCause()) {
+      messages.append(t.getMessage()).append('\n');
+    }
+    assertTrue(
+        messages.toString().contains("raw format STRING message is not valid UTF-8"),
+        "unexpected failure messages: " + messages);
   }
 
   @Test

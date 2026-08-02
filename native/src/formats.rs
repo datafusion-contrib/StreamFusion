@@ -266,6 +266,19 @@ impl RawDecoder {
             DataType::Float64 => {
                 self.fixed::<Float64Type, 8>(body, "DOUBLE", f64::from_be_bytes, f64::from_le_bytes)
             }
+            // Strings must be validated: Flink passes the bytes through unvalidated
+            // (StringData.fromBytes) but Arrow strings cannot hold invalid UTF-8, so the recorded
+            // divergence (docs/coverage-and-fallbacks.md) is a loud decode failure — never the
+            // silent NULL a safe cast would produce.
+            target @ DataType::Utf8 => {
+                let strict = arrow::compute::CastOptions {
+                    safe: false,
+                    ..arrow::compute::CastOptions::default()
+                };
+                arrow::compute::cast_with_options(body, target, &strict).unwrap_or_else(|e| {
+                    panic!("raw format STRING message is not valid UTF-8 ({e})")
+                })
+            }
             target => arrow::compute::cast(body, target).expect("failed to cast raw column"),
         };
         RecordBatch::try_new(self.schema.clone(), vec![column]).expect("failed to build raw batch")
