@@ -14,8 +14,32 @@ import org.apache.flink.runtime.state.StateSnapshotContext;
 /** Raw keyed-state I/O shared by native operators whose hot state stays in Rust. */
 final class RawKeyedState {
 
-  private static final int TIMER_FRAME_MAGIC = 0x5354_4654; // "STFT"
-  private static final int TIMER_FRAME_BYTES = Integer.BYTES + Long.BYTES;
+  static final int TIMER_FRAME_MAGIC = 0x5354_4654; // "STFT"
+  static final int TIMER_FRAME_BYTES = Integer.BYTES + Long.BYTES;
+
+  /**
+   * Every key-group payload is prefixed with a versioned header (Flink's own versioned-snapshot
+   * discipline, {@code TypeSerializerSnapshot#writeVersionedSnapshot}), so a payload written by a
+   * release with a different native snapshot layout fails restore with the writer's version named
+   * instead of misparsing garbage: magic (8 bytes), the state-format version (4), and a reserved
+   * length-prefixed operator-config fingerprint (4 + n, empty at version 1 — room for
+   * https://github.com/datafusion-contrib/StreamFusion/issues/22 to bind a payload to the operator
+   * configuration that wrote it).
+   *
+   * <p>Pre-header payloads carry no stamp, so restore detects the header by magic and treats
+   * anything else as version 0 (the legacy layout, still readable). The magic bytes are
+   * {@code 53 46 53 81 52 4B 53 90} ("SFS"+0x81, "RKS"+0x90), chosen so no version-0 payload can
+   * begin with them: every legacy payload starts with either the "STFT" timer frame (differs in
+   * byte 1), an Arrow IPC stream (first byte 0xFF), a little-endian u32 section length whose
+   * fourth byte is at most 0x7F (lengths never exceed Integer.MAX_VALUE, and byte 3 here is 0x81),
+   * or a little-endian i64 that is a watermark or an arrival counter — read that way the magic is
+   * a large negative number, never a counter (they start at zero and grow) and not a watermark
+   * Flink emits (Long.MIN_VALUE, Long.MAX_VALUE, or a real event time).
+   */
+  static final long STATE_MAGIC = 0x53465381_524B5390L;
+
+  static final int STATE_FORMAT_VERSION = 1;
+  private static final int STATE_HEADER_BYTES = Long.BYTES + Integer.BYTES + Integer.BYTES;
 
   private RawKeyedState() {}
 
@@ -68,7 +92,8 @@ final class RawKeyedState {
       }
       out.startNewKeyGroup(keyGroup);
       byte[] payload = snapshotForKeyGroup.apply(keyGroup);
-      writeLength(out, payload.length);
+      writeLength(out, STATE_HEADER_BYTES + payload.length);
+      writeHeader(out);
       out.write(payload);
     }
     out.close();
@@ -92,7 +117,8 @@ final class RawKeyedState {
       }
       out.startNewKeyGroup(keyGroup);
       int payloadLength = partition.length - Integer.BYTES;
-      writeLength(out, payloadLength);
+      writeLength(out, STATE_HEADER_BYTES + payloadLength);
+      writeHeader(out);
       out.write(partition, Integer.BYTES, payloadLength);
     }
     out.close();
@@ -116,7 +142,8 @@ final class RawKeyedState {
       }
       out.startNewKeyGroup(keyGroup);
       int payloadLength = partition.length - Integer.BYTES;
-      writeLength(out, TIMER_FRAME_BYTES + payloadLength);
+      writeLength(out, STATE_HEADER_BYTES + TIMER_FRAME_BYTES + payloadLength);
+      writeHeader(out);
       ByteBuffer timerFrame = ByteBuffer.allocate(TIMER_FRAME_BYTES);
       timerFrame.putInt(TIMER_FRAME_MAGIC);
       timerFrame.putLong(deadline);
@@ -176,7 +203,47 @@ final class RawKeyedState {
       throw new IllegalStateException(
           "native raw keyed-state payload ended before its declared length");
     }
-    return payload;
+    return stripHeader(payload);
+  }
+
+  /** Peels the versioned header off a payload; a payload without one restores as version 0. */
+  private static byte[] stripHeader(byte[] payload) {
+    if (payload.length < STATE_HEADER_BYTES || ByteBuffer.wrap(payload).getLong() != STATE_MAGIC) {
+      return payload;
+    }
+    ByteBuffer header = ByteBuffer.wrap(payload);
+    header.getLong();
+    int version = header.getInt();
+    if (version <= 0 || version > STATE_FORMAT_VERSION) {
+      throw new IllegalStateException(
+          "native raw keyed-state snapshot was written as state-format version "
+              + version
+              + ", but this StreamFusion build reads versions up to "
+              + STATE_FORMAT_VERSION
+              + ": restore with the StreamFusion release that wrote the snapshot, or drain the job"
+              + " and start fresh (docs/coverage-and-fallbacks.md, state backend section)");
+    }
+    int fingerprintLength = header.getInt();
+    if (fingerprintLength < 0 || fingerprintLength > header.remaining()) {
+      throw new IllegalStateException(
+          "native raw keyed-state header declares fingerprint length "
+              + fingerprintLength
+              + " with only "
+              + header.remaining()
+              + " bytes remaining");
+    }
+    header.position(header.position() + fingerprintLength);
+    byte[] inner = new byte[header.remaining()];
+    header.get(inner);
+    return inner;
+  }
+
+  private static void writeHeader(KeyedStateCheckpointOutputStream out) throws Exception {
+    ByteBuffer header = ByteBuffer.allocate(STATE_HEADER_BYTES);
+    header.putLong(STATE_MAGIC);
+    header.putInt(STATE_FORMAT_VERSION);
+    header.putInt(0);
+    out.write(header.array());
   }
 
   private static void writeLength(KeyedStateCheckpointOutputStream out, int length) throws Exception {
