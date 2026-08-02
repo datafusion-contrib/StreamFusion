@@ -34,6 +34,7 @@ import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.BigIntType;
+import org.apache.flink.table.types.logical.BinaryType;
 import org.apache.flink.table.types.logical.BooleanType;
 import org.apache.flink.table.types.logical.DateType;
 import org.apache.flink.table.types.logical.DecimalType;
@@ -251,6 +252,29 @@ class NativeKafkaCsvEncoderTest {
    * per-element escaping (a delimiter inside an element rides raw), nulls spell the null literal,
    * and only the joined whole goes through the quote decision.
    */
+  /**
+   * BINARY(n) crosses the boundary as Arrow fixed-size bytes; Flink's CSV converter base64-encodes
+   * it exactly like VARBINARY, at the top level and as a depth-one array element.
+   */
+  @Test
+  void matchesFlinkFixedLengthBinary() throws Exception {
+    RowType rowType =
+        RowType.of(
+            new LogicalType[] {new BinaryType(3), new ArrayType(new BinaryType(2))},
+            new String[] {"payload", "chunks"});
+    List<RowData> rows =
+        List.of(
+            GenericRowData.of(
+                new byte[] {-5, -17, 62},
+                new GenericArrayData(new Object[] {new byte[] {0, 1}, null, new byte[] {-1, 127}})),
+            GenericRowData.of(null, new GenericArrayData(new Object[0])),
+            GenericRowData.of(new byte[] {0, 0, 0}, null));
+
+    for (Map<String, String> options : OPTION_MATRIX) {
+      assertMatchesFlink(rows, rowType, options);
+    }
+  }
+
   @Test
   void matchesFlinkForArraysAndNestedRows() throws Exception {
     RowType nested =

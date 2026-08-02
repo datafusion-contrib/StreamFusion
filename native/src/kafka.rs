@@ -692,6 +692,11 @@ impl arrow::json::writer::EncoderFactory for FlinkJsonEncoderFactory {
             DataType::LargeBinary => Some(Box::new(FlinkBinaryEncoder {
                 array: array.as_binary::<i64>(),
             })),
+            // BINARY(n) crosses the boundary as FixedSizeBinary; arrow-json's stock encoder
+            // renders that as hex where Flink base64-encodes every binary flavor alike.
+            DataType::FixedSizeBinary(_) => Some(Box::new(FlinkFixedSizeBinaryEncoder {
+                array: array.as_fixed_size_binary(),
+            })),
             DataType::Decimal128(_, scale) => Some(Box::new(FlinkDecimal128Encoder {
                 array: array.as_primitive::<Decimal128Type>(),
                 scale: *scale,
@@ -1003,6 +1008,27 @@ struct FlinkBinaryEncoder<'a, O: arrow::array::OffsetSizeTrait> {
 
 #[cfg(feature = "kafka")]
 impl<O: arrow::array::OffsetSizeTrait> arrow::json::writer::Encoder for FlinkBinaryEncoder<'_, O> {
+    fn encode(&mut self, index: usize, output: &mut Vec<u8>) {
+        use base64::Engine;
+        output.push(b'"');
+        let input = self.array.value(index);
+        let start = output.len();
+        let encoded_len = base64::encoded_len(input.len(), true).expect("base64 output length");
+        output.resize(start + encoded_len, 0);
+        base64::engine::general_purpose::STANDARD
+            .encode_slice(input, &mut output[start..])
+            .expect("sized base64 output");
+        output.push(b'"');
+    }
+}
+
+#[cfg(feature = "kafka")]
+struct FlinkFixedSizeBinaryEncoder<'a> {
+    array: &'a arrow::array::FixedSizeBinaryArray,
+}
+
+#[cfg(feature = "kafka")]
+impl arrow::json::writer::Encoder for FlinkFixedSizeBinaryEncoder<'_> {
     fn encode(&mut self, index: usize, output: &mut Vec<u8>) {
         use base64::Engine;
         output.push(b'"');

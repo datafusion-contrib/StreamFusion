@@ -276,6 +276,10 @@ fn render_csv_scalar(
             encode_base64(column.as_binary::<i64>().value(row), out);
             Ok(CsvScalar::Text)
         }
+        DataType::FixedSizeBinary(_) => {
+            encode_base64(column.as_fixed_size_binary().value(row), out);
+            Ok(CsvScalar::Text)
+        }
         DataType::Date32 => {
             iso_local_date(i64::from(column.as_primitive::<arrow::datatypes::Date32Type>().value(row)), out);
             Ok(CsvScalar::Text)

@@ -39,6 +39,7 @@ import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.BigIntType;
+import org.apache.flink.table.types.logical.BinaryType;
 import org.apache.flink.table.types.logical.BooleanType;
 import org.apache.flink.table.types.logical.DateType;
 import org.apache.flink.table.types.logical.DecimalType;
@@ -223,6 +224,30 @@ class NativeKafkaJsonEncoderTest {
             GenericRowData.of(new GenericArrayData(new Object[0]), GenericRowData.of((Object) null)));
 
     assertMatchesFlink(rows, rowType, TimestampFormat.SQL, false);
+  }
+
+  /**
+   * BINARY(n) crosses the boundary as Arrow fixed-size bytes, which arrow-json's stock encoder
+   * renders as hex; Flink base64-encodes every binary flavor alike, at any nesting depth.
+   */
+  @Test
+  void matchesFlinkFixedLengthBinary() throws Exception {
+    RowType inner = RowType.of(new LogicalType[] {new BinaryType(2)}, new String[] {"tag"});
+    RowType rowType =
+        RowType.of(
+            new LogicalType[] {new BinaryType(3), new ArrayType(new BinaryType(1)), inner},
+            new String[] {"payload", "chunks", "inner"});
+    List<RowData> rows =
+        List.of(
+            GenericRowData.of(
+                new byte[] {(byte) 0xFB, (byte) 0xEF, 0x3E},
+                new GenericArrayData(new Object[] {new byte[] {0}, null, new byte[] {(byte) 0xFF}}),
+                GenericRowData.of(new byte[] {1, 2})),
+            GenericRowData.of(
+                null, new GenericArrayData(new Object[0]), GenericRowData.of((Object) null)));
+
+    assertMatchesFlink(rows, rowType, TimestampFormat.SQL, false);
+    assertMatchesFlink(rows, rowType, TimestampFormat.SQL, true);
   }
 
   @Test
