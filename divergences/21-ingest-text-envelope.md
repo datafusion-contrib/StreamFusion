@@ -80,7 +80,24 @@ value — a job that runs on both engines produces identical results.
   one. Integer, boolean, and float-free container values echo exactly (containers serialize to
   Jackson's compact form, duplicate keys collapsing last-value-first-position). Under
   `ignore-parse-errors` the field nulls — a null where Flink keeps a value, the one lenient-mode
-  value divergence.
+  value divergence. On the Jackson-faithful retry walk (below) the raw literal IS available, so a
+  float token at a scalar STRING position echoes exactly there; a float inside an echoed
+  *container* keeps this rule on both paths (the tree rendering re-spells it).
+- **The Jackson-faithful retry covers the plain `json` format only.** Messages simd-json rejects
+  but Jackson tokenizes — out-of-range number literals (converted per field from the raw text),
+  raw control characters inside strings (`ALLOW_UNESCAPED_CONTROL_CHARS`), content trailing the
+  root document (never read) — re-decode through a token walk that ports Flink's converters
+  (`native/src/json_retry.rs`) and rewrite into sanitized rows for the fast-path appenders. The
+  CDC envelope dialects keep the spec-strict parse (their `old`-presence pre-scans mirror the
+  skip conditions row for row), so a Jackson-only CDC message still fails/drops as before. Two
+  tokenizer residuals, both message-level failures exactly like before the retry existed: an
+  unpaired `\u` surrogate escape is rejected (Jackson carries the lone surrogate in its UTF-16
+  text, which Rust strings cannot hold), and invalid UTF-8 stays rejected.
+- **A converter walk that runs past end-of-input fails/drops the message instead of hanging.**
+  Certain cursor drifts make Flink's object loop poll a null token forever (`nextToken()` at
+  end-of-input never yields the END_OBJECT the loop exits on) — a hung job. The native walk
+  detects the overrun and fails the message in strict mode / drops it in skip mode; any output
+  at all diverges from a hang, and a loud failure is the sane floor.
 - **Top-level JSON arrays fan out with the tree walk's element granularity.** Flink's `json`
   format turns an array-rooted message into one row per element, and the native decode does the
   same (both subpaths — the simd tape walk fans elements directly, the decimal-bearing arrow-json

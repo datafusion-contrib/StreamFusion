@@ -1690,6 +1690,50 @@ fn json_decode_duplicate_row_keys_saturate_flinks_field_counter() {
     assert_eq!((a.value(0), b.value(0)), (1, 2));
 }
 
+// simd-json rejects documents Jackson tokenizes fine: out-of-range number literals, raw control
+// characters inside strings (Flink enables ALLOW_UNESCAPED_CONTROL_CHARS), and content trailing
+// the root document (which Flink's pull parser never reads). Those messages retry through the
+// Jackson-faithful token walk instead of failing the job / dropping the message.
+#[test]
+fn json_decode_retries_documents_only_jackson_tokenizes() {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    let batch = bodies(vec![
+        // score is DOUBLE: a beyond-u64 int literal converts via parseDouble of the raw text,
+        // and 1e999 overflows to Infinity — per-field successes in Flink, not job failures.
+        Some(br#"{"score": 18446744073709551616}"#),
+        Some(br#"{"score": 1e999}"#),
+        Some(br#"{"id": 1}{"id": 2}"#), // Flink reads ONE document and ignores the rest
+        Some(br#"{"id": 3} trailing garbage is never tokenized"#),
+        Some(b"{\"name\": \"a\tb\"}"), // a raw TAB inside the string
+        Some(br#"[{"score": 1e999}, {"id": 7}]"#), // the retry fans a top-level array out too
+    ]);
+    let out = JsonDecoder::new(json_schema(), crate::json::JsonEnv::default()).decode(&batch);
+    assert_eq!(out.num_rows(), 7);
+    let scores = out.column(2).as_any().downcast_ref::<arrow::array::Float64Array>().unwrap();
+    assert_eq!(scores.value(0), 1.8446744073709552e19);
+    assert_eq!(scores.value(1), f64::INFINITY);
+    let ids = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!((ids.value(2), ids.value(3), ids.value(6)), (1, 3, 7));
+    let names = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+    assert_eq!(names.value(4), "a\tb");
+    assert_eq!(scores.value(5), f64::INFINITY);
+
+    // id is BIGINT: a beyond-long literal fails Long.parseLong PER FIELD — the job dies in strict
+    // mode with the row-converter error, and skip mode nulls just the field, keeping the row.
+    let bad_long = bodies(vec![Some(br#"{"id": 18446744073709551616, "name": "keep"}"#)]);
+    let strict = JsonDecoder::new(json_schema(), crate::json::JsonEnv::default());
+    assert!(catch_unwind(AssertUnwindSafe(|| strict.decode(&bad_long))).is_err());
+    let out = JsonDecoder::new(
+        json_schema(),
+        crate::json::JsonEnv { lenient: true, ..Default::default() },
+    )
+    .decode(&bad_long);
+    assert_eq!(out.num_rows(), 1);
+    assert!(out.column(0).is_null(0));
+    let names = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+    assert_eq!(names.value(0), "keep");
+}
+
 // An empty input batch flushes to an empty batch of the target schema, not a panic.
 #[test]
 fn json_decode_empty_batch_yields_empty() {

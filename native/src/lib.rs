@@ -90,6 +90,8 @@ mod jdk_double;
 mod join_common;
 #[cfg(any(feature = "json", feature = "csv", feature = "raw", feature = "avro", feature = "protobuf", test))]
 mod json;
+#[cfg(any(feature = "json", feature = "csv", feature = "raw", feature = "avro", feature = "protobuf", test))]
+mod json_retry;
 #[cfg(feature = "kafka")]
 mod kafka;
 mod keys;

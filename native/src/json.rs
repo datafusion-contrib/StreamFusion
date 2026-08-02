@@ -544,7 +544,7 @@ fn write_json_value(out: &mut String, value: simd_json::tape::Value<'_, '_>) {
 
 /// JSON string escaping matching Jackson's writer: quote/backslash escaped, the short control
 /// escapes for \b \t \n \f \r, \u00XX for the other control characters, everything else raw.
-fn write_json_string(out: &mut String, s: &str) {
+pub(crate) fn write_json_string(out: &mut String, s: &str) {
     out.push('"');
     for c in s.chars() {
         match c {
@@ -978,6 +978,21 @@ pub(crate) fn decode_json_bodies_simd(
         // nulls).
         let tape = match simd_json::to_tape_with_buffers(&mut scratch, &mut buffers) {
             Ok(tape) => tape,
+            // simd-json is spec-strict where Jackson tokenizes more: out-of-range number
+            // literals, raw control characters inside strings, content trailing the root
+            // document. The plain `json` format retries the single message through the
+            // Jackson-faithful walk, which rewrites it into sanitized rows this fast path
+            // appends. The CDC envelopes keep the spec-strict parse — their `old`-presence
+            // pre-scans mirror these skip conditions row for row.
+            Err(_) if array_roots == ArrayRootPolicy::FanOut => {
+                for row in crate::json_retry::rewrite_message(bytes, schema.fields(), env) {
+                    let mut buf = row.into_bytes();
+                    let tape = simd_json::to_tape(&mut buf).expect("sanitized row reparses");
+                    let value = tape.as_value();
+                    append_object(&mut root, &value.as_object().expect("sanitized row object"));
+                }
+                continue;
+            }
             Err(_) if env.lenient => continue,
             Err(e) => panic!("failed to decode JSON record: {e}"),
         };

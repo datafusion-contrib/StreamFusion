@@ -107,6 +107,11 @@ class JsonDecodeParityTest {
   private static final RowType PAIR_TYPE =
       RowType.of(new LogicalType[] {new IntType(), new IntType()}, new String[] {"a", "b"});
 
+  private static final RowType LONG_TYPE =
+      RowType.of(
+          new LogicalType[] {new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH)},
+          new String[] {"l", "s"});
+
   private static final RowType SINGLE_TYPE =
       RowType.of(new LogicalType[] {new IntType()}, new String[] {"a"});
 
@@ -286,6 +291,46 @@ class JsonDecodeParityTest {
     for (String scenario : scenarios) {
       assertParity(NESTED_TYPE, scenario, TimestampFormat.SQL, "", false);
       assertParity(NESTED_TYPE, scenario, TimestampFormat.SQL, "", true);
+    }
+  }
+
+  @Test
+  void documentsOnlyJacksonTokenizesMatchFlinkPerMessage() throws Exception {
+    // The SIMD fast parse is spec-strict; Jackson tokenizes more. Out-of-range number literals
+    // convert per field (DOUBLE reads the raw text through parseDouble, 1e999 overflows to
+    // Infinity, BIGINT/INT fail just that field), content after the root document is never
+    // read, and raw control characters inside strings are legal (ALLOW_UNESCAPED_CONTROL_CHARS).
+    String[] scalarScenarios = {
+      "{\"f\": 18446744073709551616}",
+      "{\"f\": 1e999}",
+      "{\"f\": -1e999}",
+      "{\"i\": 1e999}",
+      "{\"fl\": 1e999}",
+      "{\"ti\": 18446744073709551616}",
+      "{\"s\": 18446744073709551616}", // STRING echoes the raw literal
+      "{\"b\": 18446744073709551616}", // parseBoolean of the literal: false, never an error
+      "{\"i\": 18446744073709551617, \"s\": \"keep\"}", // per-field: lenient keeps the row
+      "[{\"f\": 1e999}, {\"i\": 7}]", // the retry fans a top-level array out too
+    };
+    for (String scenario : scalarScenarios) {
+      assertParity(SCALAR_TYPE, scenario, TimestampFormat.SQL, "", false);
+      assertParity(SCALAR_TYPE, scenario, TimestampFormat.SQL, "", true);
+    }
+    String[] longScenarios = {
+      "{\"l\": 18446744073709551616, \"s\": \"keep\"}",
+      "{\"l\": 1}{\"l\": 2}", // Flink reads ONE document and ignores the rest
+      "{\"l\": 1} junk that never tokenizes",
+      "{\"l\": 1},",
+      "  {\"l\": 1}  {\"l\": 2}",
+      "[{\"l\": 1}] junk",
+      "{\"s\": \"a\tb\"}", // raw TAB in a string
+      "{\"s\": \"ab\nc\"}", // raw control characters, newline included
+      "{\"a\": 1, \"l\": 5}", // a control character inside an unknown KEY
+      "{\"s\": \"7\", \"l\": 3}", // ... and inside a matched STRING value (echoed exactly)
+    };
+    for (String scenario : longScenarios) {
+      assertParity(LONG_TYPE, scenario, TimestampFormat.SQL, "", false);
+      assertParity(LONG_TYPE, scenario, TimestampFormat.SQL, "", true);
     }
   }
 
