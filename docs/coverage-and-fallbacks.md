@@ -626,12 +626,18 @@ shapes persist their per-key deadlines in a dedicated state table).
     optional format is a fallback rather than a runtime dispatch failure);
   - a non-default partitioner, sink-side buffer flushing, writable metadata, or any other sink
     ability;
+  - **`sink.parallelism` on a changelog input** — stock Flink keys that edge by primary key (or
+    rejects the plan without one) so a key's changes stay ordered across the parallelism change;
+    the native sink would only rebalance whole batches. Insert-only inputs keep `sink.parallelism`
+    native (no per-key ordering to preserve);
   - a changelog input to ordinary `kafka` with a plain (non-CDC) value format, a column outside
     the verified type family above (a
     non-string-keyed MAP/MULTISET — which Flink itself cannot serialize — or the INTERVAL types),
     an out-of-range `json.*` option value (Flink's format factory then raises its own validation
-    error), a `json.map-null-key.literal` containing a line break, or an unrecognized
-    delivery/transaction option;
+    error), a `json.map-null-key.literal` containing a line break, a field name that would need a
+    JSON control-character escape (arrow-json spells field-name escapes lowercase where Jackson's
+    are uppercase — value and map-key strings escape natively in Jackson's exact form), or an
+    unrecognized delivery/transaction option;
   - a **FLOAT/DOUBLE column on the JSON family or CSV when the JDK spelling probe fails**, with
     the reason `jdk float spelling mismatch (JDK 19+)`. The native library ports the legacy
     (JDK ≤ 18) `Double.toString`/`Float.toString` algorithm — the parity target JDK 17's spelling —

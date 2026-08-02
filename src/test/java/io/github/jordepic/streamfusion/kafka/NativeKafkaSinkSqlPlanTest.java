@@ -68,6 +68,60 @@ class NativeKafkaSinkSqlPlanTest {
     assertFalse(plan.contains("native-kafka-exactly-once-sink"), plan);
   }
 
+  /**
+   * On a changelog edge with {@code sink.parallelism}, stock Flink keys the edge by primary key
+   * so a key's changes stay ordered across the parallelism change; the native sink would only
+   * rebalance whole batches, so that shape stays on Flink.
+   */
+  @Test
+  void fallsBackOnSinkParallelismOverAChangelogInput() {
+    StreamTableEnvironment table = environment();
+    table.executeSql(
+        "CREATE TABLE src (name STRING) "
+            + "WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
+    table.executeSql(
+        "CREATE TABLE output (name STRING, cnt BIGINT, PRIMARY KEY (name) NOT ENFORCED) WITH ("
+            + "'connector' = 'upsert-kafka', "
+            + "'topic' = 'output', "
+            + "'properties.bootstrap.servers' = 'broker:9092', "
+            + "'key.format' = 'json', "
+            + "'value.format' = 'json', "
+            + "'sink.parallelism' = '2')");
+
+    PhysicalPlanScan scan = NativePlanner.install(table);
+    String plan =
+        table.explainSql(
+            "INSERT INTO output SELECT name, COUNT(*) FROM src GROUP BY name",
+            ExplainDetail.JSON_EXECUTION_PLAN);
+
+    assertFalse(plan.contains("NativeKafkaSink"), plan);
+    assertTrue(scan.explainSummary().contains("sink.parallelism"), scan::explainSummary);
+  }
+
+  /** An insert-only edge has no per-key ordering to preserve; a rebalance matches Flink's. */
+  @Test
+  void plansSinkParallelismOverAnInsertOnlyInput() {
+    StreamTableEnvironment table = environment();
+    table.executeSql(
+        "CREATE TABLE src (id BIGINT, name STRING) "
+            + "WITH ('connector' = 'datagen', 'number-of-rows' = '1')");
+    table.executeSql(
+        "CREATE TABLE output (id BIGINT, name STRING) WITH ("
+            + "'connector' = 'kafka', "
+            + "'topic' = 'output', "
+            + "'properties.bootstrap.servers' = 'broker:9092', "
+            + "'format' = 'json', "
+            + "'sink.parallelism' = '2')");
+
+    PhysicalPlanScan scan = NativePlanner.install(table);
+    String plan =
+        table.explainSql(
+            "INSERT INTO output SELECT * FROM src", ExplainDetail.JSON_EXECUTION_PLAN);
+
+    assertTrue(scan.substitutions() > 0, scan::explainSummary);
+    assertTrue(plan.contains("NativeKafkaSink"), plan);
+  }
+
   /** The probe must admit every encode arm the connector library was built with. */
   @Test
   void plansRawSingleColumnSinksNatively() {
