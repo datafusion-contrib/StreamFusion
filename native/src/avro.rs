@@ -1,3 +1,4 @@
+use crate::avro_datum::DatumSkipper;
 use crate::*;
 use arrow::array::types::{ArrowTimestampType, TimestampMicrosecondType, TimestampMillisecondType};
 use arrow::array::PrimitiveArray;
@@ -13,6 +14,11 @@ use arrow_avro::schema::{AvroSchema, Fingerprint, FingerprintAlgorithm, SchemaSt
 /// avro-shaped batch.
 pub(crate) struct AvroDecoder {
     store: SchemaStore,
+    /// One frame-measuring skipper per writer schema id, keyed like the store. Flink reads exactly
+    /// one datum per Kafka message and never looks at the bytes after it, so each message's frame
+    /// is measured up front and the streaming decoder — which would otherwise keep consuming
+    /// frames until the buffer runs out — sees exactly one datum's bytes.
+    skippers: HashMap<u32, DatumSkipper>,
     reader: Option<AvroSchema>,
     /// The boundary schema the JVM exported from the table's row type. Empty for the
     /// benchmark-only counting path, which skips reconciliation.
@@ -26,17 +32,25 @@ pub(crate) struct AvroDecoder {
     skip_empty: bool,
 }
 
-/// An arrow-avro writer store keyed by integer id (the Confluent / id-framing layout). An empty
-/// schema string builds an empty store — the Confluent path starts with no writer schemas and feeds
-/// them in by id as the JVM fetches them from the schema registry (`registerAvroSchema`).
-fn store(avro_schema: &str, id: u32) -> SchemaStore {
+/// An arrow-avro writer store keyed by integer id (the Confluent / id-framing layout), plus the
+/// matching frame skippers. An empty schema string builds them empty — the Confluent path starts
+/// with no writer schemas and feeds them in by id as the JVM fetches them from the schema registry
+/// (`registerAvroSchema`).
+fn store(avro_schema: &str, id: u32) -> (SchemaStore, HashMap<u32, DatumSkipper>) {
     let mut store = SchemaStore::new_with_type(FingerprintAlgorithm::Id);
+    let mut skippers = HashMap::default();
     if !avro_schema.is_empty() {
         store
             .set(Fingerprint::Id(id), AvroSchema::new(avro_schema.to_string()))
             .expect("failed to register avro schema");
+        skippers.insert(id, skipper(avro_schema));
     }
-    store
+    (store, skippers)
+}
+
+fn skipper(avro_schema: &str) -> DatumSkipper {
+    DatumSkipper::parse(avro_schema)
+        .unwrap_or_else(|error| panic!("failed to register avro schema: {error}"))
 }
 
 impl AvroDecoder {
@@ -46,13 +60,8 @@ impl AvroDecoder {
         reader: Option<AvroSchema>,
         target: SchemaRef,
     ) -> AvroDecoder {
-        AvroDecoder {
-            store: store(avro_schema, schema_id),
-            reader,
-            target,
-            bare: false,
-            skip_empty: false,
-        }
+        let (store, skippers) = store(avro_schema, schema_id);
+        AvroDecoder { store, skippers, reader, target, bare: false, skip_empty: false }
     }
 
     pub(crate) fn bare(
@@ -60,7 +69,8 @@ impl AvroDecoder {
         reader: Option<AvroSchema>,
         target: SchemaRef,
     ) -> AvroDecoder {
-        AvroDecoder { store: store(avro_schema, 0), reader, target, bare: true, skip_empty: false }
+        let (store, skippers) = store(avro_schema, 0);
+        AvroDecoder { store, skippers, reader, target, bare: true, skip_empty: false }
     }
 
     /// Treats zero-length bodies as tombstones (skipped) — the Debezium envelope contract.
@@ -76,6 +86,19 @@ impl AvroDecoder {
         self.store
             .set(Fingerprint::Id(id), AvroSchema::new(schema.to_string()))
             .expect("failed to register avro schema");
+        self.skippers.insert(id, skipper(schema));
+    }
+
+    /// The message's schema id and datum offset: the 5-byte Confluent header parsed, or the
+    /// synthetic id 0 for bare datums. Fails the job like Flink does on a malformed header.
+    fn frame_id(&self, bytes: &[u8]) -> (u32, usize) {
+        if self.bare {
+            return (0, 0);
+        }
+        if bytes.len() < 5 || bytes[0] != 0 {
+            panic!("avro decode failed: message is not Confluent-framed");
+        }
+        (u32::from_be_bytes(bytes[1..5].try_into().unwrap()), 5)
     }
 
     /// Decodes a binary "body" batch into typed Arrow against the local schema-id store. A null
@@ -101,10 +124,13 @@ impl AvroDecoder {
         let mut framed = Vec::new();
         // A message framed with a different schema id than its predecessor makes the decoder stop
         // consuming until the rows decoded so far are flushed (it can't mix writer schemas in one
-        // build), so decode in a loop, flushing whenever a message is only partially consumed. With
+        // build), so decode in a loop, flushing whenever a frame is only partially consumed. With
         // a reader schema every flushed batch has the same (reader) shape, so the flushes
         // concatenate.
         let mut batches = Vec::new();
+        // The last message's skipper, reused while the schema id repeats (the overwhelmingly
+        // common shape — a per-message map lookup shows up at these per-message costs).
+        let mut cached: Option<(u32, &DatumSkipper)> = None;
         for i in 0..column.len() {
             if !column.is_valid(i) {
                 continue;
@@ -117,13 +143,31 @@ impl AvroDecoder {
                 // fail the job; silently dropping it would diverge.
                 panic!("avro decode failed: empty message body");
             }
+            // Flink reads exactly one datum per message and ignores anything after it, so trim
+            // the message to its first frame before the streaming decoder sees it. A malformed
+            // datum overrunning the message fails the job like Flink's EOF does.
+            let (id, start) = self.frame_id(column.value(i));
+            let skipper = match cached {
+                Some((cached_id, skipper)) if cached_id == id => skipper,
+                _ => {
+                    let found = self
+                        .skippers
+                        .get(&id)
+                        .unwrap_or_else(|| panic!("avro decode failed: unknown schema id {id}"));
+                    cached = Some((id, found));
+                    found
+                }
+            };
+            let end = skipper
+                .datum_end(column.value(i), start)
+                .unwrap_or_else(|error| panic!("avro decode failed: {error}"));
             let bytes = if self.bare {
                 framed.clear();
                 framed.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00]); // id-0 Confluent header
-                framed.extend_from_slice(column.value(i));
+                framed.extend_from_slice(&column.value(i)[..end]);
                 &framed[..]
             } else {
-                column.value(i)
+                &column.value(i)[..end]
             };
             let decoder = decoder.get_or_insert_with(build);
             let mut consumed = 0;
@@ -133,7 +177,9 @@ impl AvroDecoder {
                 if consumed < bytes.len() {
                     match decoder.flush().expect("avro flush failed") {
                         Some(batch) => batches.push(batch),
-                        // No progress and nothing to flush: the message is truncated/malformed.
+                        // No progress and nothing to flush: the frame walk and the decoder
+                        // disagree on the datum's extent — fail loudly rather than emit a
+                        // possibly-diverging row.
                         None if n == 0 => panic!("avro decode stalled on a malformed message"),
                         None => {}
                     }
@@ -797,6 +843,65 @@ mod tests {
     fn empty_body_fails_the_plain_avro_decode() {
         let decoder = AvroDecoder::bare(BOUNDARY_WRITER, None, boundary_schema());
         decoder.decode(&bodies(vec![Some(&[])]));
+    }
+
+    // Flink reads exactly one datum per message and never checks the remaining buffer: trailing
+    // junk after a complete datum is ignored, and a second concatenated datum is dead bytes — one
+    // row per message, from the first datum, never a failure and never an extra row.
+    #[test]
+    fn trailing_bytes_after_the_datum_are_ignored_like_flink() {
+        let target = boundary_schema();
+        let decoder = AvroDecoder::bare(BOUNDARY_WRITER, None, target.clone());
+        let datum = boundary_datum(1, 1_000, &[0x30, 0x39]);
+        let mut with_junk = datum.clone();
+        with_junk.extend_from_slice(&[0xFF, 0x07, 0x00]);
+        let mut concatenated = datum.clone();
+        concatenated.extend(boundary_datum(2, 2_000, &[0x01]));
+
+        let out = decoder.decode(&bodies(vec![Some(&with_junk), Some(&concatenated)]));
+        assert_eq!(out.num_rows(), 2);
+        let ti = out.column(0).as_any().downcast_ref::<Int8Array>().unwrap();
+        assert_eq!(ti.values(), &[1, 1]); // both rows are the FIRST datum's image
+    }
+
+    #[test]
+    fn trailing_bytes_after_the_confluent_frame_are_ignored_like_flink() {
+        let writer = r#"{"type":"record","name":"Row","fields":[
+            {"name":"id","type":"long"},
+            {"name":"s","type":"string"}]}"#;
+        let target = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, true),
+            Field::new("s", DataType::Utf8, true),
+        ]));
+        let mut decoder = AvroDecoder::confluent("", 0, None, target);
+        decoder.register_writer_schema(7, writer);
+        let frame = |id: i64, s: &str| {
+            let mut frame = vec![0x00, 0, 0, 0, 7];
+            frame.extend(zigzag(id));
+            frame.extend(avro_string(s));
+            frame
+        };
+        let mut with_junk = frame(1, "first");
+        with_junk.extend_from_slice(&[0xAB, 0xCD]);
+        let mut concatenated = frame(1, "first");
+        concatenated.extend(frame(2, "second"));
+
+        let out = decoder.decode(&bodies(vec![Some(&with_junk), Some(&concatenated)]));
+        assert_eq!(out.num_rows(), 2);
+        let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(id.values(), &[1, 1]);
+        let s = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!((s.value(0), s.value(1)), ("first", "first"));
+    }
+
+    // A datum cut short fails the job on both engines (Flink's decoder hits EOF).
+    #[test]
+    #[should_panic(expected = "avro decode failed")]
+    fn truncated_datum_fails_the_decode() {
+        let target = boundary_schema();
+        let decoder = AvroDecoder::bare(BOUNDARY_WRITER, None, target);
+        let datum = boundary_datum(1, 1_000, &[0x30, 0x39]);
+        decoder.decode(&bodies(vec![Some(&datum[..datum.len() - 3])]));
     }
 
     // A registry writer schema can declare timestamp-micros while the reader (derived from the

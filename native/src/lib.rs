@@ -57,6 +57,7 @@ pub(crate) use tokio::runtime::Runtime;
 
 mod aggregates;
 mod avro;
+mod avro_datum;
 mod bridge;
 mod calc;
 mod changelog;

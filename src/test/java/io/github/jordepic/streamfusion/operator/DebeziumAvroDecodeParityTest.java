@@ -162,6 +162,24 @@ class DebeziumAvroDecodeParityTest {
   }
 
   @Test
+  void bytesAfterTheFirstFrameAreIgnoredLikeFlink() throws Exception {
+    // Flink reads exactly one envelope per message and never checks the remaining buffer:
+    // trailing junk after a complete frame is ignored, and a second concatenated frame is dead
+    // bytes — the changelog comes from the first envelope alone.
+    byte[] first = message(V1_ID, null, image(1L, "a", 1.5, 1_000L), "c");
+    byte[] second = message(V1_ID, null, image(2L, "b", 2.5, 2_000L), "c");
+    assertParity("frame with trailing junk", concat(first, new byte[] {(byte) 0xFF, 0x01}));
+    assertParity("two concatenated frames", concat(first, second));
+  }
+
+  private static byte[] concat(byte[] head, byte[] tail) {
+    ByteArrayOutputStream whole = new ByteArrayOutputStream();
+    whole.writeBytes(head);
+    whole.writeBytes(tail);
+    return whole.toByteArray();
+  }
+
+  @Test
   void evolvedWriterSchemaResolvesLikeFlink() throws Exception {
     GenericRecord before = new GenericData.Record(VALUE_V2);
     before.put("id", 5L);

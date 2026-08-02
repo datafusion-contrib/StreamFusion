@@ -117,7 +117,8 @@ opendal-service-fs = { version = "0.58.0", optional = true }
 # Checkpoint file manifests cross the JNI boundary as JSON (small, once per checkpoint — not a hot
 # path). Already in the tree transitively via paimon.
 serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1", optional = true }
+# Also parses Avro writer schemas for the decode framing walk; in the tree via arrow-avro anyway.
+serde_json = "1"
 # Persisting the Paimon schema document on table creation. Already in the tree transitively.
 bytes = { version = "1", optional = true }
 # Opt-in mimalloc (see the `mimalloc` feature): librdkafka allocates one op per consumed message
@@ -148,7 +149,7 @@ protobuf = []
 # connector: the toggle is Flink's state-backend selection, and a build without this feature makes
 # the persistent backend unavailable (planner/operator falls back to memory state), never a
 # linkage failure.
-paimon-state = ["dep:paimon", "dep:opendal", "dep:opendal-service-fs", "dep:serde", "dep:serde_json", "dep:bytes"]
+paimon-state = ["dep:paimon", "dep:opendal", "dep:opendal-service-fs", "dep:serde", "dep:bytes"]
 # Rebind the C allocator to mimalloc for everything linked into THIS library (librdkafka included),
 # via link-time symbol aliases emitted by build.rs. Library-scoped: the hosting JVM process keeps
 # its own allocator, so this carries none of the risk of a process-wide malloc override (a zone-swap

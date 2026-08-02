@@ -160,6 +160,33 @@ class AvroDecodeParityTest {
   }
 
   @Test
+  void bytesAfterTheFirstDatumAreIgnoredLikeFlink() throws Exception {
+    // Flink reads exactly one datum per message and never checks the remaining buffer: trailing
+    // junk after a complete datum is ignored, and a second concatenated datum is dead bytes — one
+    // row either way, from the first datum.
+    byte[] first =
+        encode(
+            record -> {
+              record.put("l", 7L);
+              record.put("s", "first");
+            });
+    byte[] second =
+        encode(
+            record -> {
+              record.put("l", 8L);
+              record.put("s", "second");
+            });
+    assertParity("datum with trailing junk", concat(first, new byte[] {(byte) 0xFF, 0x07, 0x00}));
+    assertParity("two concatenated datums", concat(first, second));
+  }
+
+  private static byte[] concat(byte[] head, byte[] tail) {
+    byte[] whole = Arrays.copyOf(head, head.length + tail.length);
+    System.arraycopy(tail, 0, whole, head.length, tail.length);
+    return whole;
+  }
+
+  @Test
   void correctedTimestampMappingMatchesFlink() throws Exception {
     // avro.timestamp_mapping.legacy = false: TIMESTAMP derives local-timestamp-millis/micros and
     // TIMESTAMP_LTZ becomes representable as timestamp-millis/micros. Flink still reads every
