@@ -1,0 +1,5 @@
+tech.streamfusion.format.json.JsonFormatProvider
+tech.streamfusion.format.json.DebeziumJsonFormatProvider
+tech.streamfusion.format.json.OggJsonFormatProvider
+tech.streamfusion.format.json.MaxwellJsonFormatProvider
+tech.streamfusion.format.json.CanalJsonFormatProvider

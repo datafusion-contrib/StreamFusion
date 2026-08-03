@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>io.github.jordepic</groupId>
+    <groupId>tech.streamfusion</groupId>
     <artifactId>streamfusion-loader</artifactId>
     <version>1.0-SNAPSHOT</version>
 
@@ -30,7 +30,7 @@
         <!-- The deployable core intentionally excludes connector-specific code. Optional extensions
              are separate lib-directory JARs, matching Flink's connector packaging model. -->
         <dependency>
-            <groupId>io.github.jordepic</groupId>
+            <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-core</artifactId>
             <version>${project.version}</version>
             <scope>runtime</scope>
@@ -119,7 +119,7 @@
                         <configuration>
                             <artifactItems>
                                 <artifactItem>
-                                    <groupId>io.github.jordepic</groupId>
+                                    <groupId>tech.streamfusion</groupId>
                                     <artifactId>streamfusion-core</artifactId>
                                     <version>${project.version}</version>
                                     <destFileName>streamfusion-planner.jar</destFileName>

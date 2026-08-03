@@ -519,14 +519,14 @@ impl WindowJoiner {
     }
 }
 
-state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_windowJoinerStateBytes, WindowJoiner);
+state_bytes_getter!(Java_tech_streamfusion_Native_windowJoinerStateBytes, WindowJoiner);
 
 /// Creates an event-time INNER window joiner and returns an opaque handle. The key/window column
 /// indices locate the equi-join key and the `window_start`/`window_end` columns within each side's
 /// input batch. The JVM owns the handle across calls and must release it with the matching close.
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createWindowJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createWindowJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     left_keys: JIntArray<'local>,
@@ -579,7 +579,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createWindowJ
 
 /// Buffers a left batch (no output); its rows are joined later when the watermark closes their window.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftWindowJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushLeftWindowJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -599,7 +599,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftWindo
 
 /// Buffers a right batch (no output).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightWindowJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushRightWindowJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -619,7 +619,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightWind
 
 /// Exports the INNER matches of every window the watermark has closed (then evicts those windows).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushWindowJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flushWindowJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -638,7 +638,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushWindowJo
 
 /// Releases the window joiner and its native state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeWindowJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeWindowJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -651,7 +651,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeWindowJo
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotWindowJoinerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotWindowJoinerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -673,7 +673,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotWindo
 
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreWindowJoinerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreWindowJoinerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,

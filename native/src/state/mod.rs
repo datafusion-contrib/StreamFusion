@@ -17,7 +17,7 @@ pub(crate) use paimon_store::*;
 /// Whether this build carries the Paimon persistent state backend. Present in every build so the
 /// host can probe capability without risking an unresolved native symbol.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonStateAvailable<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_paimonStateAvailable<'local>(
     env: jni::JNIEnv<'local>,
     _class: jni::objects::JClass<'local>,
 ) -> jni::sys::jboolean {
@@ -29,7 +29,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonStateAv
 /// Whether the aggregate list can run on the Paimon backend (see `group_kinds_persistable` and the
 /// backend's type map). Always resolvable; answers false in a build without the backend.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonGroupAggregatorSupported<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonGroupAggregatorSupported<
     'local,
 >(
     env: jni::JNIEnv<'local>,
@@ -61,7 +61,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonGroupAg
 /// Consumes the FFI schema at `row_schema_address`. Always resolvable; answers false in a build
 /// without the backend.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonRowStateSupported<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonRowStateSupported<
     'local,
 >(
     env: jni::JNIEnv<'local>,

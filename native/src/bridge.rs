@@ -27,7 +27,7 @@ pub(crate) static FORCE_LINK_MIMALLOC: unsafe extern "C" fn(*mut std::os::raw::c
 /// the process.
 pub(crate) fn throw_memory_limit(env: &mut JNIEnv, message: &str) {
     let _ = env.throw_new(
-        "io/github/jordepic/streamfusion/NativeMemoryLimitException",
+        "tech/streamfusion/NativeMemoryLimitException",
         message,
     );
 }
@@ -88,7 +88,7 @@ where
             // is the real cause and `throw_new` would replace it.
             if !matches!(env.exception_check(), Ok(true)) {
                 let _ = env.throw_new(
-                    "io/github/jordepic/streamfusion/NativeException",
+                    "tech/streamfusion/NativeException",
                     format!("native panic: {}", panic_message(payload)),
                 );
             }
@@ -101,7 +101,7 @@ where
 /// that deliberately fails, the only way to tell a contained panic from a process abort is to crash
 /// a real job.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_panicForTest<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_panicForTest<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) {
@@ -276,7 +276,7 @@ pub(crate) fn build_version() -> &'static str {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_version<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_version<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> jstring {
@@ -291,7 +291,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_version<'loca
 /// handle has been closed. The test harness asserts it drains to empty after each job, so a
 /// missing close call fails the test naming the leaking type instead of slowly growing RSS.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_liveNativeHandles<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_liveNativeHandles<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> jstring {
@@ -331,7 +331,7 @@ pub(crate) use state_bytes_getter;
 /// Drives a trivial asynchronous computation to completion on the shared runtime, proving the
 /// blocking pull bridge a JVM thread will use to await native plan execution.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_blockingAnswer<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_blockingAnswer<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> jlong {
@@ -346,7 +346,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_blockingAnswe
 /// Takes ownership of the producer-allocated C structs by swapping in released placeholders, so the
 /// release callbacks fire exactly once when the imported data and schema drop here.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_sumInt<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_sumInt<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     array_address: jlong,
@@ -378,7 +378,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_sumInt<'local
 /// while the outbound array stays alive until the JVM imports and releases it. This is the shape a
 /// real operator takes: read an input batch, produce a new one.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_roundTrip<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_roundTrip<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     in_array_address: jlong,
@@ -422,7 +422,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_roundTrip<'lo
 /// is that genuine engine logic now executes over JVM-owned columnar data and produces a batch back
 /// across the same boundary.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_doubleColumn<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_doubleColumn<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     in_array_address: jlong,
@@ -470,7 +470,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_doubleColumn<
 /// batch and re-wraps on the way out. This is the columnar shape operators that read several
 /// columns at once need, beyond the single-column path.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_echoBatch<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_echoBatch<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     in_array_address: jlong,

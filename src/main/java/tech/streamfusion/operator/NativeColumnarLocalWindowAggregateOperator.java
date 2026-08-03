@@ -1,0 +1,135 @@
+package tech.streamfusion.operator;
+
+import tech.streamfusion.Native;
+import tech.streamfusion.planner.FlinkKeyGroupUtils;
+import org.apache.arrow.c.ArrowArray;
+import org.apache.arrow.c.ArrowSchema;
+import org.apache.arrow.c.Data;
+import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.api.common.TaskInfo;
+import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
+import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+
+/**
+ * Columnar local half of two-phase window aggregation: the same per-slice pre-aggregate as {@link
+ * NativeLocalWindowAggregateOperator}, but fed Arrow batches directly and emitting each closed
+ * slice's partial state as an Arrow batch ({@code [key?, partial0.., slice_end]}) rather than rows.
+ * That partial batch is exactly what the columnar global half consumes, so the shuffle between them
+ * stays columnar — no row transpose on either side of the exchange.
+ *
+ * <p>The local half runs upstream of the columnar exchange, so its buffered keys are pre-shuffle:
+ * they span every key group and cannot partition into one subtask's raw key-group range. Mirroring
+ * Flink's local slicing window aggregate, it therefore drains every open slice's partial downstream
+ * before each checkpoint barrier and crosses the checkpoint stateless — the global half merges the
+ * extra per-barrier partial like any other upstream partial. Its keyed context (needed only for the
+ * raw-state plumbing it shares with the keyed window operators) is its own subtask's representative
+ * key, set once; the per-record context from the batch's destination tag is meaningless here, since
+ * pre-shuffle batches carry no destination.
+ */
+public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOperatorCore<ArrowBatch>
+    implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+
+  private final int timeColumn;
+  // Window-attached mode (Nexmark q5): the input rows already carry their window in these columns
+  // (an upstream window aggregate's output re-aggregated per window), so there is no rowtime to slice.
+  // Both are -1 in the ordinary time-column (rowtime) mode.
+  private final int windowStartColumn;
+  private final int windowEndColumn;
+  private final int[] valueColumns;
+  private final int[] keyColumns;
+  private final int[] keyTypes;
+
+  public NativeColumnarLocalWindowAggregateOperator(
+      long windowMillis,
+      long slideMillis,
+      int timeColumn,
+      int windowStartColumn,
+      int windowEndColumn,
+      int[] valueColumns,
+      int[] keyColumns,
+      int[] keyTypes,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      String timeZoneId,
+      int[] keyTimestampPrecisions,
+      int maxParallelism) {
+    super(
+        "local window aggregate",
+        windowMillis,
+        slideMillis,
+        valueTypes,
+        aggregateKinds,
+        timeZoneId,
+        keyTimestampPrecisions,
+        maxParallelism);
+    this.timeColumn = timeColumn;
+    this.windowStartColumn = windowStartColumn;
+    this.windowEndColumn = windowEndColumn;
+    this.valueColumns = valueColumns;
+    this.keyColumns = keyColumns;
+    this.keyTypes = keyTypes;
+  }
+
+  @Override
+  public void open() throws Exception {
+    super.open();
+    TaskInfo task = getRuntimeContext().getTaskInfo();
+    setCurrentKey(
+        FlinkKeyGroupUtils.stateKeysForSubtasks(
+            maxParallelism(), task.getNumberOfParallelSubtasks())[task.getIndexOfThisSubtask()]);
+  }
+
+  @Override
+  @SuppressWarnings("rawtypes")
+  public void setKeyContextElement1(StreamRecord record) {
+    // The subtask-local key set in open() is the operator's whole keyed context.
+  }
+
+  @Override
+  public void processElement(StreamRecord<ArrowBatch> element) {
+    ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
+    try (VectorSchemaRoot in = element.getValue().root()) {
+      if (windowEndColumn >= 0) {
+        updateColumnarAttached(
+            in, windowStartColumn, windowEndColumn, valueColumns, keyColumns, keyTypes);
+      } else {
+        updateColumnar(in, timeColumn, valueColumns, keyColumns, keyTypes);
+      }
+    }
+    publishStateBytes();
+  }
+
+  @Override
+  public void prepareSnapshotPreBarrier(long checkpointId) {
+    try (ArrowArray array = ArrowArray.allocateNew(allocator);
+        ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
+      Native.drainPartialTumblingAggregator(
+          handle, array.memoryAddress(), schema.memoryAddress());
+      emitPartial(Data.importVectorSchemaRoot(allocator, array, schema, dictionaries));
+    }
+    publishStateBytes();
+  }
+
+  @Override
+  protected void flushPending() {
+    // Each batch is folded into the aggregator as it arrives; nothing is buffered here.
+  }
+
+  @Override
+  protected void emitClosedWindows(long watermark) {
+    try (ArrowArray array = ArrowArray.allocateNew(allocator);
+        ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
+      Native.flushPartialTumblingAggregator(
+          handle, watermark, array.memoryAddress(), schema.memoryAddress());
+      emitPartial(Data.importVectorSchemaRoot(allocator, array, schema, dictionaries));
+    }
+  }
+
+  private void emitPartial(VectorSchemaRoot partial) {
+    if (partial.getRowCount() > 0) {
+      ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(partial));
+    } else {
+      partial.close(); // nothing to emit; release the empty batch
+    }
+  }
+}

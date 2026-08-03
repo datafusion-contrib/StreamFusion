@@ -49,7 +49,7 @@ pub(crate) struct SplitState {
 /// Splits a batch from the JVM by key into per-partition sub-batches and returns a handle to pull
 /// them with `nextSplit`; released with `closeSplit`.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_splitByKey<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     in_array_address: jlong,
@@ -83,7 +83,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_splitByKey<'l
 /// Exports the next sub-batch into the consumer-allocated C structs and returns its partition, or
 /// -1 once the split is exhausted.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_nextSplit<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_nextSplit<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -104,7 +104,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_nextSplit<'lo
 
 /// Releases a split handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeSplit<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeSplit<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -120,7 +120,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeSplit<'l
 /// schema — into a single batch exported back into the consumer-allocated C structs. The merge
 /// step of the post-exchange coalescer, undoing the fragmentation `splitByKey` introduced.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_concatBatches<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_concatBatches<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     in_array_addresses: JLongArray<'local>,

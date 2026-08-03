@@ -97,7 +97,7 @@ fn install(vm: *mut jni::sys::JavaVM) {
     let Ok(mut env) = vm.get_env() else {
         return;
     };
-    let class = env.find_class("io/github/jordepic/streamfusion/NativeLogging");
+    let class = env.find_class("tech/streamfusion/NativeLogging");
     if matches!(env.exception_check(), Ok(true)) {
         let _ = env.exception_clear();
     }

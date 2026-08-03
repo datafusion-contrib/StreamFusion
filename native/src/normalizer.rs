@@ -649,10 +649,10 @@ impl ChangelogNormalizer {
     }
 }
 
-state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_changelogNormalizerStateBytes, ChangelogNormalizer);
+state_bytes_getter!(Java_tech_streamfusion_Native_changelogNormalizerStateBytes, ChangelogNormalizer);
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_changelogNormalizerStagingBytes<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_changelogNormalizerStagingBytes<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -664,7 +664,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_changelogNorm
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_changelogNormalizerStagedKeys<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_changelogNormalizerStagedKeys<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -677,7 +677,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_changelogNorm
 
 /// Creates a changelog normalizer (keep-last per unique key) and returns an opaque handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createChangelogNormalizer<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createChangelogNormalizer<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     key_columns: JIntArray<'local>,
@@ -700,7 +700,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createChangel
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushChangelogNormalizer<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flushChangelogNormalizer<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -718,7 +718,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushChangelo
 
 /// Folds an input changelog batch into the keep-last state and exports the normalized changelog.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushChangelogNormalizer<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushChangelogNormalizer<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -743,7 +743,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushChangelog
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotChangelogNormalizerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotChangelogNormalizerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -764,7 +764,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotChang
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreChangelogNormalizerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreChangelogNormalizerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -811,7 +811,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreChange
 
 /// Releases a changelog normalizer handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeChangelogNormalizer<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeChangelogNormalizer<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,

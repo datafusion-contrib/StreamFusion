@@ -48,7 +48,7 @@ fn manifest_array<'local>(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonGroupAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonGroupAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -148,7 +148,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonG
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updatePaimonGroupAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_updatePaimonGroupAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -176,7 +176,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updatePaimonG
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonGroupAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_flushPaimonGroupAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -197,7 +197,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonGr
 /// Checkpoint sync phase (task thread, at the barrier): commit and hand back the file manifest —
 /// `["<snapshot id>", "d:<data file>"…, "m:<meta file>"…]`, paths relative to the table root.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonGroupAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointPaimonGroupAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -217,7 +217,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPai
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonGroupAggregatorStateBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonGroupAggregatorStateBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -231,7 +231,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonGroupAg
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonGroupAggregatorStagingBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonGroupAggregatorStagingBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -245,7 +245,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonGroupAg
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonGroupAggregatorStagedKeys<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonGroupAggregatorStagedKeys<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -259,7 +259,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonGroupAg
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonGroupAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_closePaimonGroupAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -276,7 +276,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonGr
 type PaimonKeepLastDeduplicator = KeepLastDeduplicator<PaimonDedupStore>;
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonKeepLastDeduplicator<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonKeepLastDeduplicator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -364,7 +364,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonK
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonKeepLastDeduplicator<
+pub extern "system" fn Java_tech_streamfusion_Native_pushPaimonKeepLastDeduplicator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -392,7 +392,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonKee
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonKeepLastDeduplicator<
+pub extern "system" fn Java_tech_streamfusion_Native_flushPaimonKeepLastDeduplicator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -412,7 +412,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonKe
 
 /// Checkpoint sync phase (task thread, at the barrier); see `checkpointPaimonGroupAggregator`.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonKeepLastDeduplicator<
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointPaimonKeepLastDeduplicator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -432,7 +432,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPai
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonKeepLastDeduplicatorStateBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonKeepLastDeduplicatorStateBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -446,7 +446,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonKeepLas
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonKeepLastDeduplicatorStagingBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonKeepLastDeduplicatorStagingBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -460,7 +460,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonKeepLas
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonKeepLastDeduplicatorStagedKeys<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonKeepLastDeduplicatorStagedKeys<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -474,7 +474,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonKeepLas
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonKeepLastDeduplicator<
+pub extern "system" fn Java_tech_streamfusion_Native_closePaimonKeepLastDeduplicator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -493,7 +493,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonKe
 // ---------------------------------------------------------------------------------------------
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonKeepFirstDeduplicator<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonKeepFirstDeduplicator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -569,7 +569,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonK
 
 /// Buffers an input batch (no output); emission is watermark-driven (`flush`).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonKeepFirstDeduplicator<
+pub extern "system" fn Java_tech_streamfusion_Native_pushPaimonKeepFirstDeduplicator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -595,7 +595,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonKee
 /// Exports each key's first (minimum-rowtime) row whose rowtime the watermark has reached — the
 /// overlay range read over the write buffer and the committed table.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonKeepFirstDeduplicator<
+pub extern "system" fn Java_tech_streamfusion_Native_flushPaimonKeepFirstDeduplicator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -616,7 +616,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonKe
 
 /// Checkpoint sync phase (task thread, at the barrier); see `checkpointPaimonGroupAggregator`.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonKeepFirstDeduplicator<
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointPaimonKeepFirstDeduplicator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -636,7 +636,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPai
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonKeepFirstDeduplicatorStateBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonKeepFirstDeduplicatorStateBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -650,7 +650,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonKeepFir
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonKeepFirstDeduplicator<
+pub extern "system" fn Java_tech_streamfusion_Native_closePaimonKeepFirstDeduplicator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -667,7 +667,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonKe
 type PaimonChangelogNormalizer = ChangelogNormalizer<PaimonNormalizerStore>;
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonChangelogNormalizer<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonChangelogNormalizer<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -742,7 +742,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonC
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonChangelogNormalizer<
+pub extern "system" fn Java_tech_streamfusion_Native_pushPaimonChangelogNormalizer<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -770,7 +770,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonCha
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonChangelogNormalizer<
+pub extern "system" fn Java_tech_streamfusion_Native_flushPaimonChangelogNormalizer<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -790,7 +790,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonCh
 
 /// Checkpoint sync phase (task thread, at the barrier); see `checkpointPaimonGroupAggregator`.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonChangelogNormalizer<
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointPaimonChangelogNormalizer<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -810,7 +810,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPai
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonChangelogNormalizerStateBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonChangelogNormalizerStateBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -824,7 +824,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonChangel
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonChangelogNormalizerStagingBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonChangelogNormalizerStagingBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -838,7 +838,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonChangel
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonChangelogNormalizerStagedKeys<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonChangelogNormalizerStagedKeys<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -852,7 +852,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonChangel
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonChangelogNormalizer<
+pub extern "system" fn Java_tech_streamfusion_Native_closePaimonChangelogNormalizer<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -936,7 +936,7 @@ impl PaimonTopNRanker {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonTopNRanker<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonTopNRanker<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1038,7 +1038,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonT
 /// `PaimonUpdatableTopNStore`), served by the same push/flush/checkpoint/close entry points as
 /// the other Paimon-backed rankers.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonUpdateFastTopNRanker<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonUpdateFastTopNRanker<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1139,7 +1139,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonU
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonTopNRanker<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushPaimonTopNRanker<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1165,7 +1165,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonTop
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonTopNRanker<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flushPaimonTopNRanker<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1181,7 +1181,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonTo
 
 /// Checkpoint sync phase (task thread, at the barrier); see `checkpointPaimonGroupAggregator`.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonTopNRanker<
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointPaimonTopNRanker<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1201,7 +1201,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPai
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonTopNRankerStateBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonTopNRankerStateBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1215,7 +1215,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonTopNRan
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonTopNRankerStagingBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonTopNRankerStagingBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1229,7 +1229,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonTopNRan
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonTopNRankerStagedKeys<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonTopNRankerStagedKeys<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1243,7 +1243,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonTopNRan
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonTopNRanker<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closePaimonTopNRanker<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1269,7 +1269,7 @@ fn parse_join_token(token: &str) -> (i64, i64) {
 
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonUpdatingJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonUpdatingJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1390,7 +1390,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonU
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftPaimonUpdatingJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_pushLeftPaimonUpdatingJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1422,7 +1422,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftPaimo
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightPaimonUpdatingJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_pushRightPaimonUpdatingJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1453,7 +1453,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightPaim
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonUpdatingJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_flushPaimonUpdatingJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1475,7 +1475,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonUp
 /// one merged manifest — token `"<left id>:<right id>"` (empty when neither side ever committed),
 /// file paths prefixed `left/` / `right/` relative to the operator's state directory.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonUpdatingJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointPaimonUpdatingJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1525,7 +1525,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPai
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonUpdatingJoinerStateBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonUpdatingJoinerStateBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1539,7 +1539,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonUpdatin
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonUpdatingJoinerStagingBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonUpdatingJoinerStagingBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1553,7 +1553,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonUpdatin
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonUpdatingJoinerStagedKeys<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonUpdatingJoinerStagedKeys<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1567,7 +1567,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonUpdatin
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonUpdatingJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_closePaimonUpdatingJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1589,7 +1589,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonUp
 // ---------------------------------------------------------------------------------------------
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonWindowRanker<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonWindowRanker<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1689,7 +1689,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonW
 
 /// Buffers an input batch (no output); emission is watermark-driven (`flush`).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonWindowRanker<
+pub extern "system" fn Java_tech_streamfusion_Native_pushPaimonWindowRanker<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1714,7 +1714,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonWin
 /// Exports every closed window's top-N rows — the overlay range read over the write buffer and
 /// the committed table.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonWindowRanker<
+pub extern "system" fn Java_tech_streamfusion_Native_flushPaimonWindowRanker<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1735,7 +1735,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonWi
 
 /// Checkpoint sync phase (task thread, at the barrier); the token line packs the watermark.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonWindowRanker<
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointPaimonWindowRanker<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1777,7 +1777,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPai
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonWindowRankerStateBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonWindowRankerStateBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1791,7 +1791,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonWindowR
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonWindowRanker<
+pub extern "system" fn Java_tech_streamfusion_Native_closePaimonWindowRanker<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1829,7 +1829,7 @@ fn parse_over_token(token: &str) -> (i64, i64, i64, i64) {
 /// (rowtime, unbounded RANGE frame or pure window functions) whose payload row and fold-state
 /// columns all sit in the backend's type map.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonOverStateSupported<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonOverStateSupported<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1862,7 +1862,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonOverSta
 
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonOverAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonOverAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1996,7 +1996,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonO
 
 /// Buffers an input batch into pending state (no output); emission is watermark-driven.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonOverAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_pushPaimonOverAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2022,7 +2022,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushPaimonOve
 /// Exports the rows the watermark completed (input columns + running aggregates) — the overlay
 /// range read over the pending write buffer and the committed table.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonOverAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_flushPaimonOverAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2045,7 +2045,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonOv
 /// Checkpoint sync phase (task thread, at the barrier): commits every table; the token line
 /// packs the snapshot ids and the arrival sequence.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonOverAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointPaimonOverAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2103,7 +2103,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPai
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonOverAggregatorStateBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonOverAggregatorStateBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2117,7 +2117,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonOverAgg
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonOverAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_closePaimonOverAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2152,7 +2152,7 @@ fn parse_window_join_token(token: &str) -> (i64, i64, i64, i64) {
 
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonWindowJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonWindowJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2278,7 +2278,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonW
 
 /// Buffers a left batch into pending state (no output); emission is watermark-driven.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftPaimonWindowJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_pushLeftPaimonWindowJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2302,7 +2302,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftPaimo
 
 /// Buffers a right batch into pending state (no output).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightPaimonWindowJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_pushRightPaimonWindowJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2327,7 +2327,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightPaim
 /// Exports the matches of every window the watermark closed — each side's overlay range read
 /// feeding the join, evicting the fired rows.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonWindowJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_flushPaimonWindowJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2349,7 +2349,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPaimonWi
 /// Checkpoint sync phase (task thread, at the barrier): commits both side tables; the token line
 /// packs both snapshot ids and both arrival sequences.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonWindowJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointPaimonWindowJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2397,7 +2397,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPai
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonWindowJoinerStateBytes<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonWindowJoinerStateBytes<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2411,7 +2411,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonWindowJ
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closePaimonWindowJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_closePaimonWindowJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2449,7 +2449,7 @@ fn window_key_data_type(code: i64) -> DataType {
 /// True when this window aggregate's whole persisted shape — the key columns and every
 /// accumulator's state fields — sits in the backend's type map.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonWindowAggStateSupported<
+pub extern "system" fn Java_tech_streamfusion_Native_paimonWindowAggStateSupported<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2475,7 +2475,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_paimonWindowA
 
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonTumblingAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonTumblingAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2575,7 +2575,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonT
 /// Checkpoint sync phase (task thread, at the barrier): stages the open windows, commits the
 /// table; the token line packs the watermark.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonTumblingAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointPaimonTumblingAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2622,7 +2622,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPai
 
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonSessionAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonSessionAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2705,7 +2705,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonS
 /// Checkpoint sync phase (task thread, at the barrier): stages the open sessions, commits the
 /// table, and hands back the manifest.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonSessionAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointPaimonSessionAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2733,7 +2733,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPai
 
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonIntervalJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonIntervalJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2860,7 +2860,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonI
 /// Checkpoint sync phase (task thread, at the barrier): commits both side tables; the token line
 /// packs both snapshot ids and both arrival sequences.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonIntervalJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointPaimonIntervalJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2928,7 +2928,7 @@ fn parse_temporal_token(token: &str) -> (i64, i64, i64, i64) {
 
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonTemporalJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_createPaimonTemporalJoiner<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -3068,7 +3068,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createPaimonT
 /// Checkpoint sync phase (task thread, at the barrier): commits every table; the token line
 /// packs the snapshot ids and the probe side's arrival sequence.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_checkpointPaimonTemporalJoiner<
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointPaimonTemporalJoiner<
     'local,
 >(
     env: JNIEnv<'local>,

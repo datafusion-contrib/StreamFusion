@@ -1,0 +1,2 @@
+tech.streamfusion.format.avroconfluent.AvroConfluentFormatProvider
+tech.streamfusion.format.avroconfluent.DebeziumAvroConfluentFormatProvider

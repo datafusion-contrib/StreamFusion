@@ -1532,12 +1532,12 @@ impl KeepLastDeduplicator {
     }
 }
 
-state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_keepFirstDeduplicatorStateBytes, KeepFirstDeduplicator);
+state_bytes_getter!(Java_tech_streamfusion_Native_keepFirstDeduplicatorStateBytes, KeepFirstDeduplicator);
 
 /// Rows dropped as late over the handle's lifetime; the counter lives before the backend split,
 /// so one getter serves the memory and Paimon routes alike.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_keepFirstDeduplicatorLateDrops<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_keepFirstDeduplicatorLateDrops<'local>(
     env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
@@ -1546,10 +1546,10 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_keepFirstDedu
     })
 }
 
-state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_keepLastDeduplicatorStateBytes, KeepLastDeduplicator);
+state_bytes_getter!(Java_tech_streamfusion_Native_keepLastDeduplicatorStateBytes, KeepLastDeduplicator);
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_keepLastDeduplicatorStagingBytes<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_keepLastDeduplicatorStagingBytes<'local>(
     env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
@@ -1559,7 +1559,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_keepLastDedup
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_keepLastDeduplicatorStagedKeys<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_keepLastDeduplicatorStagedKeys<'local>(
     env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
@@ -1570,7 +1570,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_keepLastDedup
 
 /// Creates a keep-first deduplicator over the given partition-key columns and rowtime column.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createKeepFirstDeduplicator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createKeepFirstDeduplicator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     partition_columns: JIntArray<'local>,
@@ -1593,7 +1593,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createKeepFir
 /// Buffers an input batch (no output); each key's minimum-rowtime row is emitted later, on the
 /// watermark that reaches its rowtime.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushKeepFirstDeduplicator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushKeepFirstDeduplicator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1616,7 +1616,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushKeepFirst
 
 /// Exports each key's first (minimum-rowtime) row whose rowtime the watermark has reached.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushKeepFirstDeduplicator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flushKeepFirstDeduplicator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1637,7 +1637,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushKeepFirs
 
 /// Releases the deduplicator and its per-key state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeKeepFirstDeduplicator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeKeepFirstDeduplicator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1650,7 +1650,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeKeepFirs
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotKeepFirstDeduplicatorPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotKeepFirstDeduplicatorPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1671,7 +1671,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotKeepF
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepFirstDeduplicatorPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreKeepFirstDeduplicatorPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1717,7 +1717,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepFi
 /// Creates an eager deduplicator (rowtime/proctime keep-last, proctime keep-first, or the
 /// mini-batch rowtime keep-first) and returns an opaque handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createKeepLastDeduplicator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createKeepLastDeduplicator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     partition_columns: JIntArray<'local>,
@@ -1753,7 +1753,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createKeepLas
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushKeepLastDeduplicator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flushKeepLastDeduplicator<'local>(
     env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
     out_array_address: jlong, out_schema_address: jlong,
 ) {
@@ -1768,7 +1768,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushKeepLast
 
 /// Folds an input batch and returns the retract changelog it produces (emitted eagerly per row).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushKeepLastDeduplicator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushKeepLastDeduplicator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1793,7 +1793,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushKeepLastD
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeKeepLastDeduplicator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeKeepLastDeduplicator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1806,7 +1806,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeKeepLast
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotKeepLastDeduplicatorPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotKeepLastDeduplicatorPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1827,7 +1827,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotKeepL
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreKeepLastDeduplicatorPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreKeepLastDeduplicatorPartitions<
     'local,
 >(
     env: JNIEnv<'local>,

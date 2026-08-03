@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>io.github.jordepic</groupId>
+        <groupId>tech.streamfusion</groupId>
         <artifactId>StreamFusion</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
@@ -14,7 +14,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>io.github.jordepic</groupId>
+            <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-runtime</artifactId>
             <version>${project.version}</version>
             <optional>true</optional>
@@ -28,7 +28,7 @@
             </resource>
             <resource>
                 <directory>${project.basedir}/../native/target/universal/fluss</directory>
-                <targetPath>io/github/jordepic/streamfusion/native/fluss</targetPath>
+                <targetPath>tech/streamfusion/native/fluss</targetPath>
                 <includes>
                     <include>**/libstreamfusion_fluss.so</include>
                     <include>**/libstreamfusion_fluss.dylib</include>
@@ -52,17 +52,17 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <artifactSet>
                                 <includes>
-                                    <include>io.github.jordepic:streamfusion-runtime</include>
+                                    <include>tech.streamfusion:streamfusion-runtime</include>
                                 </includes>
                             </artifactSet>
                             <filters>
                                 <filter>
-                                    <artifact>io.github.jordepic:streamfusion-runtime</artifact>
+                                    <artifact>tech.streamfusion:streamfusion-runtime</artifact>
                                     <includes>
-                                        <include>io/github/jordepic/streamfusion/fluss/**</include>
-                                        <include>io/github/jordepic/streamfusion/planner/FlussTables*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/NativeFlussSourceExecNode*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeFlussSource*.class</include>
+                                        <include>tech/streamfusion/fluss/**</include>
+                                        <include>tech/streamfusion/planner/FlussTables*.class</include>
+                                        <include>tech/streamfusion/planner/NativeFlussSourceExecNode*.class</include>
+                                        <include>tech/streamfusion/planner/StreamPhysicalNativeFlussSource*.class</include>
                                     </includes>
                                 </filter>
                             </filters>

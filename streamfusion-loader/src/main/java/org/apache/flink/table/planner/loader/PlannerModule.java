@@ -69,7 +69,7 @@ public class PlannerModule {
     "streamfusion-parquet-"
   };
   private static final String STREAMFUSION_PLANNER_FACTORY =
-      "io.github.jordepic.streamfusion.planner.StreamFusionPlannerFactory";
+      "tech.streamfusion.planner.StreamFusionPlannerFactory";
 
   private static final String[] OWNER_CLASSPATH =
       Stream.concat(
@@ -84,7 +84,7 @@ public class PlannerModule {
           .toArray(String[]::new);
 
   private static final String[] COMPONENT_CLASSPATH = {
-    "org.apache.flink", "io.github.jordepic.streamfusion"
+    "org.apache.flink", "tech.streamfusion"
   };
 
   private static final Map<String, String> KNOWN_MODULE_ASSOCIATIONS = new HashMap<>();

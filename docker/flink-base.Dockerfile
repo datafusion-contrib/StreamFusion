@@ -5,7 +5,7 @@ ARG FLINK_IMAGE
 
 LABEL org.opencontainers.image.title="StreamFusion Flink base image" \
       org.opencontainers.image.description="Flink 2.2 with StreamFusion's native planner and runtime" \
-      io.github.jordepic.streamfusion.flink-base-image="${FLINK_IMAGE}"
+      tech.streamfusion.flink-base-image="${FLINK_IMAGE}"
 
 # The release library links mimalloc inside its own DSO. Reserve enough static TLS before the JVM
 # starts so glibc can load that library safely from Flink task threads without a process-wide

@@ -10,7 +10,7 @@
 
 ## What it is
 
-Selecting `state.backend.type: io.github.jordepic.streamfusion.state.PaimonStateBackendFactory`
+Selecting `state.backend.type: tech.streamfusion.state.PaimonStateBackendFactory`
 moves a supported native operator's state into a **local Apache Paimon primary-key table** instead
 of a raw keyed-state blob. Checkpoints become **incremental**: snapshots travel through the keyed
 state backend as `IncrementalRemoteKeyedStateHandle`s, so a data file already uploaded by a

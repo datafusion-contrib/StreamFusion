@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>io.github.jordepic</groupId>
+        <groupId>tech.streamfusion</groupId>
         <artifactId>StreamFusion</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
@@ -16,7 +16,7 @@
         <!-- The development runtime remains the source artifact for all extension bytecode. This
              deployable variant filters every connector-specific class out before shading the core. -->
         <dependency>
-            <groupId>io.github.jordepic</groupId>
+            <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-runtime</artifactId>
             <version>${project.version}</version>
             <optional>true</optional>
@@ -58,39 +58,39 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <filters>
                                 <filter>
-                                    <artifact>io.github.jordepic:streamfusion-runtime</artifact>
+                                    <artifact>tech.streamfusion:streamfusion-runtime</artifact>
                                     <excludes>
-                                        <exclude>io/github/jordepic/streamfusion/kafka/**</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/fluss/**</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/parquet/**</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/format/avro/**</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/format/avroconfluent/**</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/format/csv/**</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/format/json/**</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/format/protobuf/**</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/format/raw/**</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/operator/NativeFileArrowBulkFormat*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/operator/NativeParquetBulkWriterFactory*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/operator/NativeParquetRollingPolicy*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/operator/ParquetArrowBulkFormat*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/operator/ParquetPartitionSplitOperator*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/operator/ParquetSourceTimestamps*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/KafkaTables*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/ProtobufDescriptors*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/NativeKafkaDecodeExecNode*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/NativeKafkaSourceExecNode*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeKafkaDecode*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeKafkaSource*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/FlussTables*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/NativeFlussSourceExecNode*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeFlussSource*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/NativeParquetSinkExecNode*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/NativeParquetSourceExecNode*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/ParquetSinkMatcher*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/ParquetSinkTranslator*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/ParquetSourceMatcher*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeParquetSink*.class</exclude>
-                                        <exclude>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeParquetSource*.class</exclude>
+                                        <exclude>tech/streamfusion/kafka/**</exclude>
+                                        <exclude>tech/streamfusion/fluss/**</exclude>
+                                        <exclude>tech/streamfusion/parquet/**</exclude>
+                                        <exclude>tech/streamfusion/format/avro/**</exclude>
+                                        <exclude>tech/streamfusion/format/avroconfluent/**</exclude>
+                                        <exclude>tech/streamfusion/format/csv/**</exclude>
+                                        <exclude>tech/streamfusion/format/json/**</exclude>
+                                        <exclude>tech/streamfusion/format/protobuf/**</exclude>
+                                        <exclude>tech/streamfusion/format/raw/**</exclude>
+                                        <exclude>tech/streamfusion/operator/NativeFileArrowBulkFormat*.class</exclude>
+                                        <exclude>tech/streamfusion/operator/NativeParquetBulkWriterFactory*.class</exclude>
+                                        <exclude>tech/streamfusion/operator/NativeParquetRollingPolicy*.class</exclude>
+                                        <exclude>tech/streamfusion/operator/ParquetArrowBulkFormat*.class</exclude>
+                                        <exclude>tech/streamfusion/operator/ParquetPartitionSplitOperator*.class</exclude>
+                                        <exclude>tech/streamfusion/operator/ParquetSourceTimestamps*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/KafkaTables*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/ProtobufDescriptors*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/NativeKafkaDecodeExecNode*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/NativeKafkaSourceExecNode*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaSource*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/FlussTables*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/NativeFlussSourceExecNode*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeFlussSource*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/NativeParquetSinkExecNode*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/NativeParquetSourceExecNode*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/ParquetSinkMatcher*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/ParquetSinkTranslator*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/ParquetSourceMatcher*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeParquetSink*.class</exclude>
+                                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeParquetSource*.class</exclude>
                                     </excludes>
                                 </filter>
                             </filters>

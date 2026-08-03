@@ -8,7 +8,7 @@ use crate::*;
 /// the drive model every stateful operator will use; a filter is the simplest plan that exercises
 /// it because it actually changes the row count.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_filterGreaterThan<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_filterGreaterThan<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     in_array_address: jlong,
@@ -122,7 +122,7 @@ impl FilterExpression {
 /// Compiles a general predicate expression (the JVM's encoded tree) into a reusable handle. The
 /// handle owns the compiled plan and must be released with `closeFilterExpression`.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createFilterExpression<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createFilterExpression<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     kinds: JIntArray<'local>,
@@ -148,7 +148,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createFilterE
 
 /// Filters a batch from the JVM through a compiled predicate handle, exporting the surviving rows.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_filterExpression<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_filterExpression<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -167,7 +167,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_filterExpress
 
 /// Releases a compiled predicate handle and its native state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeFilterExpression<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeFilterExpression<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -274,7 +274,7 @@ impl CalcExpression {
 /// Compiles an encoded Calc (optional condition + projection trees) into a reusable handle, released
 /// with `closeCalcExpression`.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createCalcExpression<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createCalcExpression<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     kinds: JIntArray<'local>,
@@ -310,7 +310,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createCalcExp
 
 /// Runs a batch from the JVM through a compiled Calc handle, exporting the projected output batch.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_calcExpression<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_calcExpression<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -329,7 +329,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_calcExpressio
 
 /// Releases a compiled Calc handle and its native state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeCalcExpression<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeCalcExpression<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,

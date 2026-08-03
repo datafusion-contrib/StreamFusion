@@ -1338,7 +1338,7 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
         let vm = JVM.get().ok_or_else(|| exec("JVM not captured for UDF upcall".to_string()))?;
         let mut env = vm.attach_current_thread().map_err(|e| exec(e.to_string()))?;
         env.call_static_method(
-            "io/github/jordepic/streamfusion/operator/NativeUdf",
+            "tech/streamfusion/operator/NativeUdf",
             "invokeUdf",
             "(IJJJJ)V",
             &[

@@ -1,0 +1,11 @@
+tech.streamfusion.format.json.JsonFormatProvider
+tech.streamfusion.format.json.DebeziumJsonFormatProvider
+tech.streamfusion.format.json.OggJsonFormatProvider
+tech.streamfusion.format.json.MaxwellJsonFormatProvider
+tech.streamfusion.format.json.CanalJsonFormatProvider
+tech.streamfusion.format.csv.CsvFormatProvider
+tech.streamfusion.format.raw.RawFormatProvider
+tech.streamfusion.format.avro.AvroFormatProvider
+tech.streamfusion.format.avroconfluent.AvroConfluentFormatProvider
+tech.streamfusion.format.avroconfluent.DebeziumAvroConfluentFormatProvider
+tech.streamfusion.format.protobuf.ProtobufFormatProvider

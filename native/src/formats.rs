@@ -1453,7 +1453,7 @@ impl MessageDecoder {
 /// with an empty store — the registry-driven path, where the JVM registers each writer schema by id
 /// via `registerAvroSchema` as messages carry it.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createDecoder<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createDecoder<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     format: jint,
@@ -1498,7 +1498,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createDecoder
 /// to decode each body as. The Arrow batch schema is derived from the descriptor by ptars (no schema
 /// C-structs needed, unlike JSON).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createProtobufDecoder<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createProtobufDecoder<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     descriptor: JByteArray<'local>,
@@ -1530,7 +1530,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createProtobu
 /// from the schema registry (as Flink's own `avro-confluent` deserializer does) and feeds it here, so
 /// the store grows with the topic's schema evolution instead of being fixed at plan time.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_registerAvroSchema<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_registerAvroSchema<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1549,7 +1549,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_registerAvroS
 /// fails the way Flink's own deserializer failure does — rather than unwinding across the JNI
 /// boundary, which would abort the whole process.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_decodeInto<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_decodeInto<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1579,7 +1579,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_decodeInto<'l
 /// so the shallow path can terminate with Arrow in Rust (counted in Rust), symmetric with the native
 /// consumer, for an apples-to-apples comparison.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_decodeCount<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_decodeCount<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1595,7 +1595,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_decodeCount<'
 
 /// Releases a message decoder handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeDecoder<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeDecoder<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1715,7 +1715,7 @@ macro_rules! format_jni_facade {
             env: JNIEnv<'local>,
             class: JClass<'local>,
         ) -> jstring {
-            crate::bridge::Java_io_github_jordepic_streamfusion_Native_version(env, class)
+            crate::bridge::Java_tech_streamfusion_Native_version(env, class)
         }
 
         #[cfg(feature = $feature)]
@@ -1724,7 +1724,7 @@ macro_rules! format_jni_facade {
             env: JNIEnv<'local>, class: JClass<'local>, handle: jlong, in_array: jlong,
             in_schema: jlong, out_array: jlong, out_schema: jlong,
         ) {
-            Java_io_github_jordepic_streamfusion_Native_decodeInto(
+            Java_tech_streamfusion_Native_decodeInto(
                 env, class, handle, in_array, in_schema, out_array, out_schema,
             )
         }
@@ -1734,59 +1734,59 @@ macro_rules! format_jni_facade {
         pub extern "system" fn $close_decoder<'local>(
             env: JNIEnv<'local>, class: JClass<'local>, handle: jlong,
         ) {
-            Java_io_github_jordepic_streamfusion_Native_closeDecoder(env, class, handle)
+            Java_tech_streamfusion_Native_closeDecoder(env, class, handle)
         }
     };
 }
 
 format_jni_facade!(
     "json",
-    Java_io_github_jordepic_streamfusion_format_json_NativeJsonFormat_driverInitAddress,
-    Java_io_github_jordepic_streamfusion_format_json_NativeJsonFormat_isLoaded,
-    Java_io_github_jordepic_streamfusion_format_json_NativeJsonFormat_nativeBuildVersion,
-    Java_io_github_jordepic_streamfusion_format_json_NativeJsonFormat_decodeInto,
-    Java_io_github_jordepic_streamfusion_format_json_NativeJsonFormat_closeDecoder
+    Java_tech_streamfusion_format_json_NativeJsonFormat_driverInitAddress,
+    Java_tech_streamfusion_format_json_NativeJsonFormat_isLoaded,
+    Java_tech_streamfusion_format_json_NativeJsonFormat_nativeBuildVersion,
+    Java_tech_streamfusion_format_json_NativeJsonFormat_decodeInto,
+    Java_tech_streamfusion_format_json_NativeJsonFormat_closeDecoder
 );
 
 format_jni_facade!(
     "csv",
-    Java_io_github_jordepic_streamfusion_format_csv_NativeCsvFormat_driverInitAddress,
-    Java_io_github_jordepic_streamfusion_format_csv_NativeCsvFormat_isLoaded,
-    Java_io_github_jordepic_streamfusion_format_csv_NativeCsvFormat_nativeBuildVersion,
-    Java_io_github_jordepic_streamfusion_format_csv_NativeCsvFormat_decodeInto,
-    Java_io_github_jordepic_streamfusion_format_csv_NativeCsvFormat_closeDecoder
+    Java_tech_streamfusion_format_csv_NativeCsvFormat_driverInitAddress,
+    Java_tech_streamfusion_format_csv_NativeCsvFormat_isLoaded,
+    Java_tech_streamfusion_format_csv_NativeCsvFormat_nativeBuildVersion,
+    Java_tech_streamfusion_format_csv_NativeCsvFormat_decodeInto,
+    Java_tech_streamfusion_format_csv_NativeCsvFormat_closeDecoder
 );
 
 format_jni_facade!(
     "raw",
-    Java_io_github_jordepic_streamfusion_format_raw_NativeRawFormat_driverInitAddress,
-    Java_io_github_jordepic_streamfusion_format_raw_NativeRawFormat_isLoaded,
-    Java_io_github_jordepic_streamfusion_format_raw_NativeRawFormat_nativeBuildVersion,
-    Java_io_github_jordepic_streamfusion_format_raw_NativeRawFormat_decodeInto,
-    Java_io_github_jordepic_streamfusion_format_raw_NativeRawFormat_closeDecoder
+    Java_tech_streamfusion_format_raw_NativeRawFormat_driverInitAddress,
+    Java_tech_streamfusion_format_raw_NativeRawFormat_isLoaded,
+    Java_tech_streamfusion_format_raw_NativeRawFormat_nativeBuildVersion,
+    Java_tech_streamfusion_format_raw_NativeRawFormat_decodeInto,
+    Java_tech_streamfusion_format_raw_NativeRawFormat_closeDecoder
 );
 
 format_jni_facade!(
     "avro",
-    Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_driverInitAddress,
-    Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_isLoaded,
-    Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_nativeBuildVersion,
-    Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_decodeInto,
-    Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_closeDecoder
+    Java_tech_streamfusion_format_avro_NativeAvroFormat_driverInitAddress,
+    Java_tech_streamfusion_format_avro_NativeAvroFormat_isLoaded,
+    Java_tech_streamfusion_format_avro_NativeAvroFormat_nativeBuildVersion,
+    Java_tech_streamfusion_format_avro_NativeAvroFormat_decodeInto,
+    Java_tech_streamfusion_format_avro_NativeAvroFormat_closeDecoder
 );
 
 format_jni_facade!(
     "protobuf",
-    Java_io_github_jordepic_streamfusion_format_protobuf_NativeProtobufFormat_driverInitAddress,
-    Java_io_github_jordepic_streamfusion_format_protobuf_NativeProtobufFormat_isLoaded,
-    Java_io_github_jordepic_streamfusion_format_protobuf_NativeProtobufFormat_nativeBuildVersion,
-    Java_io_github_jordepic_streamfusion_format_protobuf_NativeProtobufFormat_decodeInto,
-    Java_io_github_jordepic_streamfusion_format_protobuf_NativeProtobufFormat_closeDecoder
+    Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_driverInitAddress,
+    Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_isLoaded,
+    Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_nativeBuildVersion,
+    Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_decodeInto,
+    Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_closeDecoder
 );
 
 #[cfg(feature = "json")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_format_json_NativeJsonFormat_createDecoder<'local>(
+pub extern "system" fn Java_tech_streamfusion_format_json_NativeJsonFormat_createDecoder<'local>(
     mut env: JNIEnv<'local>,
     class: JClass<'local>,
     format: jint,
@@ -1797,7 +1797,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_format_json_NativeJs
 ) -> jlong {
     let empty_writer = env.new_string("").expect("empty writer schema");
     let empty_reader = env.new_string("").expect("empty reader schema");
-    Java_io_github_jordepic_streamfusion_Native_createDecoder(
+    Java_tech_streamfusion_Native_createDecoder(
         env,
         class,
         format,
@@ -1813,13 +1813,13 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_format_json_NativeJs
 
 #[cfg(feature = "csv")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_format_csv_NativeCsvFormat_createDecoder<'local>(
+pub extern "system" fn Java_tech_streamfusion_format_csv_NativeCsvFormat_createDecoder<'local>(
     mut env: JNIEnv<'local>, class: JClass<'local>, schema_array_address: jlong, schema_address: jlong,
     skip_parse_errors: jboolean, format_options: JString<'local>,
 ) -> jlong {
     let empty_writer = env.new_string("").expect("empty writer schema");
     let empty_reader = env.new_string("").expect("empty reader schema");
-    Java_io_github_jordepic_streamfusion_Native_createDecoder(
+    Java_tech_streamfusion_Native_createDecoder(
         env, class, FORMAT_CSV, schema_array_address, schema_address, empty_writer, empty_reader, 0,
         skip_parse_errors, format_options,
     )
@@ -1827,13 +1827,13 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_format_csv_NativeCsv
 
 #[cfg(feature = "raw")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_format_raw_NativeRawFormat_createDecoder<'local>(
+pub extern "system" fn Java_tech_streamfusion_format_raw_NativeRawFormat_createDecoder<'local>(
     mut env: JNIEnv<'local>, class: JClass<'local>, schema_array_address: jlong, schema_address: jlong,
     format_options: JString<'local>,
 ) -> jlong {
     let empty_writer = env.new_string("").expect("empty writer schema");
     let empty_reader = env.new_string("").expect("empty reader schema");
-    Java_io_github_jordepic_streamfusion_Native_createDecoder(
+    Java_tech_streamfusion_Native_createDecoder(
         env, class, FORMAT_RAW, schema_array_address, schema_address, empty_writer, empty_reader, 0,
         0, format_options,
     )
@@ -1841,12 +1841,12 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_format_raw_NativeRaw
 
 #[cfg(feature = "avro")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_createDecoder<'local>(
+pub extern "system" fn Java_tech_streamfusion_format_avro_NativeAvroFormat_createDecoder<'local>(
     mut env: JNIEnv<'local>, class: JClass<'local>, confluent: jboolean, writer_schema: JString<'local>,
     reader_schema: JString<'local>, schema_array_address: jlong, schema_address: jlong,
 ) -> jlong {
     let empty_options = env.new_string("").expect("empty format options");
-    Java_io_github_jordepic_streamfusion_Native_createDecoder(
+    Java_tech_streamfusion_Native_createDecoder(
         env,
         class,
         if confluent != 0 { FORMAT_AVRO_CONFLUENT } else { FORMAT_AVRO },
@@ -1862,13 +1862,13 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_format_avro_NativeAv
 
 #[cfg(feature = "avro")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_createDebeziumDecoder<'local>(
+pub extern "system" fn Java_tech_streamfusion_format_avro_NativeAvroFormat_createDebeziumDecoder<'local>(
     mut env: JNIEnv<'local>, class: JClass<'local>, reader_schema: JString<'local>,
     schema_array_address: jlong, schema_address: jlong,
 ) -> jlong {
     let empty_writer = env.new_string("").expect("empty writer schema");
     let empty_options = env.new_string("").expect("empty format options");
-    Java_io_github_jordepic_streamfusion_Native_createDecoder(
+    Java_tech_streamfusion_Native_createDecoder(
         env,
         class,
         FORMAT_DEBEZIUM_AVRO_CONFLUENT,
@@ -1884,19 +1884,19 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_format_avro_NativeAv
 
 #[cfg(feature = "avro")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_format_avro_NativeAvroFormat_registerWriterSchema<'local>(
+pub extern "system" fn Java_tech_streamfusion_format_avro_NativeAvroFormat_registerWriterSchema<'local>(
     env: JNIEnv<'local>, class: JClass<'local>, handle: jlong, schema_id: jint, schema: JString<'local>,
 ) {
-    Java_io_github_jordepic_streamfusion_Native_registerAvroSchema(env, class, handle, schema_id, schema)
+    Java_tech_streamfusion_Native_registerAvroSchema(env, class, handle, schema_id, schema)
 }
 
 #[cfg(feature = "protobuf")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_format_protobuf_NativeProtobufFormat_createDecoder<'local>(
+pub extern "system" fn Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_createDecoder<'local>(
     env: JNIEnv<'local>, class: JClass<'local>, descriptor: JByteArray<'local>, message_name: JString<'local>,
     schema_array_address: jlong, schema_address: jlong,
 ) -> jlong {
-    Java_io_github_jordepic_streamfusion_Native_createProtobufDecoder(
+    Java_tech_streamfusion_Native_createProtobufDecoder(
         env, class, descriptor, message_name, schema_array_address, schema_address,
     )
 }

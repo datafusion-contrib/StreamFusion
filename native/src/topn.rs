@@ -2807,11 +2807,11 @@ impl WindowRanker {
     }
 }
 
-state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_windowRankerStateBytes, WindowRanker);
+state_bytes_getter!(Java_tech_streamfusion_Native_windowRankerStateBytes, WindowRanker);
 
 /// [`state_bytes_getter`] for the Top-N handle, which wraps its two ranker variants in an enum.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_topNRankerStateBytes<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_topNRankerStateBytes<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2827,7 +2827,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_topNRankerSta
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_topNRankerStagingBytes<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_topNRankerStagingBytes<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2843,7 +2843,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_topNRankerSta
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_topNRankerStagedPartitions<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_topNRankerStagedPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2861,7 +2861,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_topNRankerSta
 /// Creates a window-rank ranker (window Top-N / window deduplication) over the attached
 /// window_start/window_end columns and returns an opaque handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createWindowRanker<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createWindowRanker<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     window_start_col: jint,
@@ -2893,7 +2893,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createWindowR
 /// Buffers an input batch (no output); each window's top-N rows are emitted when the watermark
 /// closes the window.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushWindowRanker<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushWindowRanker<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2916,7 +2916,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushWindowRan
 /// Exports the top-N rows of every window the watermark has closed (with the rank number appended
 /// when the host projects it).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushWindowRanker<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flushWindowRanker<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2935,7 +2935,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushWindowRa
 
 /// Releases the window-rank ranker and its per-window state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeWindowRanker<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeWindowRanker<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2948,7 +2948,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeWindowRa
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotWindowRankerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotWindowRankerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2969,7 +2969,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotWindo
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreWindowRankerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreWindowRankerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -3041,7 +3041,7 @@ pub(crate) fn read_sort_columns(
 /// Creates an append-only streaming Top-N ranker (`ROW_NUMBER ... <= limit`, no rank-number output)
 /// and returns an opaque handle. The JVM owns it and must release it with the matching close.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTopNRanker<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createTopNRanker<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     partition_columns: JIntArray<'local>,
@@ -3096,7 +3096,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTopNRan
 /// input columns plus `$row_kind$`). `now_millis` is the host's processing-time reading — the
 /// state-TTL clock.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushTopNRanker<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushTopNRanker<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -3122,7 +3122,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushTopNRanke
 
 /// Emits the append-only ranker's net changes at a Flink logical mini-batch boundary.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushTopNRanker<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flushTopNRanker<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -3136,7 +3136,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushTopNRank
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTopNRankerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotTopNRankerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -3156,7 +3156,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTopNR
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTopNRankerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreTopNRankerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -3216,7 +3216,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTopNRa
 /// `FastTop1Function` shape: unique-keyed changelog without retractions, monotonic sort key) and
 /// returns an opaque handle served by the shared Top-N push/flush/snapshot/close entry points.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createUpdateFastTopNRanker<
+pub extern "system" fn Java_tech_streamfusion_Native_createUpdateFastTopNRanker<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -3257,7 +3257,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createUpdateF
 
 /// Rebuilds an update-fast Top-N ranker from raw keyed-state partition blobs.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreUpdateFastTopNRankerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreUpdateFastTopNRankerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -3317,7 +3317,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreUpdate
 
 /// Releases a Top-N ranker handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeTopNRanker<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeTopNRanker<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,

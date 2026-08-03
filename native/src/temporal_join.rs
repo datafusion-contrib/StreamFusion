@@ -1349,7 +1349,7 @@ impl TemporalJoiner {
     }
 }
 
-state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_temporalJoinerStateBytes, TemporalJoiner);
+state_bytes_getter!(Java_tech_streamfusion_Native_temporalJoinerStateBytes, TemporalJoiner);
 
 /// Creates an event-time temporal-table joiner (`FOR SYSTEM_TIME AS OF probe.rowtime`) and returns an
 /// opaque handle. `left_time`/`right_time` locate the rowtime column on each side; the two schema
@@ -1358,7 +1358,7 @@ state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_temporalJoinerSt
 /// with the matching close.
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTemporalJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createTemporalJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     left_keys: JIntArray<'local>,
@@ -1404,7 +1404,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTempora
 
 /// Buffers a probe-side (left) batch (no output until a watermark).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftTemporalJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushLeftTemporalJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1427,7 +1427,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftTempo
 
 /// Folds a build-side (right) changelog batch into the versioned state (no output until a watermark).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightTemporalJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushRightTemporalJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1451,7 +1451,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightTemp
 /// Advances the watermark, emitting the joined rows for buffered probe rows it has passed and dropping
 /// obsolete build versions.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_advanceTemporalJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_advanceTemporalJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1472,7 +1472,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_advanceTempor
 
 /// Releases the temporal joiner and its native state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeTemporalJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeTemporalJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1485,7 +1485,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeTemporal
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTemporalJoinerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotTemporalJoinerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1507,7 +1507,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTempo
 
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTemporalJoinerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreTemporalJoinerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,

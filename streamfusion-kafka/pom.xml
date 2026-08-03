@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>io.github.jordepic</groupId>
+        <groupId>tech.streamfusion</groupId>
         <artifactId>StreamFusion</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
@@ -14,7 +14,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>io.github.jordepic</groupId>
+            <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-runtime</artifactId>
             <version>${project.version}</version>
             <optional>true</optional>
@@ -28,7 +28,7 @@
             </resource>
             <resource>
                 <directory>${project.basedir}/../native/target/universal/kafka</directory>
-                <targetPath>io/github/jordepic/streamfusion/native/kafka</targetPath>
+                <targetPath>tech/streamfusion/native/kafka</targetPath>
                 <includes>
                     <include>**/libstreamfusion_kafka.so</include>
                     <include>**/libstreamfusion_kafka.dylib</include>
@@ -52,27 +52,27 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <artifactSet>
                                 <includes>
-                                    <include>io.github.jordepic:streamfusion-runtime</include>
+                                    <include>tech.streamfusion:streamfusion-runtime</include>
                                 </includes>
                             </artifactSet>
                             <filters>
                                 <filter>
-                                    <artifact>io.github.jordepic:streamfusion-runtime</artifact>
+                                    <artifact>tech.streamfusion:streamfusion-runtime</artifact>
                                     <includes>
-                                        <include>io/github/jordepic/streamfusion/kafka/**</include>
-                                        <include>io/github/jordepic/streamfusion/planner/KafkaTables*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/KeyedDecodeSpec*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/KafkaSinkMatcher*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/KafkaSinkTranslator*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/NativeKafkaDecodeExecNode*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/NativeKafkaSinkExecNode*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/NativeKafkaSourceExecNode*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeKafkaDecode*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeKafkaSink*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeKafkaSource*.class</include>
+                                        <include>tech/streamfusion/kafka/**</include>
+                                        <include>tech/streamfusion/planner/KafkaTables*.class</include>
+                                        <include>tech/streamfusion/planner/KeyedDecodeSpec*.class</include>
+                                        <include>tech/streamfusion/planner/KafkaSinkMatcher*.class</include>
+                                        <include>tech/streamfusion/planner/KafkaSinkTranslator*.class</include>
+                                        <include>tech/streamfusion/planner/NativeKafkaDecodeExecNode*.class</include>
+                                        <include>tech/streamfusion/planner/NativeKafkaSinkExecNode*.class</include>
+                                        <include>tech/streamfusion/planner/NativeKafkaSourceExecNode*.class</include>
+                                        <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode*.class</include>
+                                        <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaSink*.class</include>
+                                        <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaSource*.class</include>
                                     </includes>
                                     <excludes>
-                                        <exclude>io/github/jordepic/streamfusion/kafka/ConfluentSchemaRegistry*.class</exclude>
+                                        <exclude>tech/streamfusion/kafka/ConfluentSchemaRegistry*.class</exclude>
                                     </excludes>
                                 </filter>
                             </filters>

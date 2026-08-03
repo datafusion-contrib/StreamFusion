@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>io.github.jordepic</groupId>
+    <groupId>tech.streamfusion</groupId>
     <artifactId>StreamFusion</artifactId>
     <version>1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
@@ -383,7 +383,7 @@
                  its OS/architecture tree, while Native keeps this location as a development fallback. -->
             <resource>
                 <directory>${native.resource.directory}</directory>
-                <targetPath>io/github/jordepic/streamfusion/native</targetPath>
+                <targetPath>tech/streamfusion/native</targetPath>
                 <includes>
                     <include>libstreamfusion.so</include>
                     <include>libstreamfusion.dylib</include>
@@ -464,7 +464,7 @@
                             <resources>
                                 <resource>
                                     <directory>${native.resource.directory}</directory>
-                                    <targetPath>io/github/jordepic/streamfusion/native</targetPath>
+                                    <targetPath>tech/streamfusion/native</targetPath>
                                     <includes>
                                         <include>libstreamfusion.so</include>
                                         <include>libstreamfusion.dylib</include>
@@ -565,7 +565,7 @@
                 <resources>
                     <resource>
                         <directory>${project.basedir}/../native/target/universal</directory>
-                        <targetPath>io/github/jordepic/streamfusion/native</targetPath>
+                        <targetPath>tech/streamfusion/native</targetPath>
                         <includes>
                             <include>**/libstreamfusion.so</include>
                             <include>**/libstreamfusion.dylib</include>

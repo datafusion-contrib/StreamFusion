@@ -855,7 +855,7 @@ pub(crate) fn flink_key_group(binary_row_hash: i32, max_parallelism: usize) -> u
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flinkBinaryRowHashes<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flinkBinaryRowHashes<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     in_array_address: jlong,

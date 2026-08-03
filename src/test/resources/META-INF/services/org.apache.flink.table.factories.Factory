@@ -1,4 +1,4 @@
-io.github.jordepic.streamfusion.TestLookupTableFactory
-io.github.jordepic.streamfusion.TestAsyncLookupTableFactory
-io.github.jordepic.streamfusion.CountingBlackholeTableFactory
-io.github.jordepic.streamfusion.KindCapturingUpsertTableFactory
+tech.streamfusion.TestLookupTableFactory
+tech.streamfusion.TestAsyncLookupTableFactory
+tech.streamfusion.CountingBlackholeTableFactory
+tech.streamfusion.KindCapturingUpsertTableFactory

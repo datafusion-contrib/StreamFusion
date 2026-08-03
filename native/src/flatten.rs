@@ -223,7 +223,7 @@ pub(crate) fn unnest_array(
 
 /// Stateless GROUPING SETS / CUBE / ROLLUP expansion over an Arrow batch the JVM exported.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_expand<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_expand<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     in_array_address: jlong,
@@ -256,7 +256,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_expand<'local
 
 /// Stateless INNER UNNEST of an ARRAY column over an Arrow batch the JVM exported.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_unnest<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_unnest<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     in_array_address: jlong,

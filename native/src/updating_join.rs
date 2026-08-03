@@ -1329,10 +1329,10 @@ impl UpdatingJoiner {
     }
 }
 
-state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_updatingJoinerStateBytes, UpdatingJoiner);
+state_bytes_getter!(Java_tech_streamfusion_Native_updatingJoinerStateBytes, UpdatingJoiner);
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updatingJoinerStagingBytes<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_updatingJoinerStagingBytes<'local>(
     env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
@@ -1342,7 +1342,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updatingJoine
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updatingJoinerStagedKeys<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_updatingJoinerStagedKeys<'local>(
     env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
@@ -1358,7 +1358,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updatingJoine
 /// residual non-equi predicate. The JVM owns the handle and must release it with the matching close.
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createUpdatingJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createUpdatingJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     left_keys: JIntArray<'local>,
@@ -1410,7 +1410,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createUpdatin
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushUpdatingJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flushUpdatingJoiner<'local>(
     env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
     out_array_address: jlong, out_schema_address: jlong,
 ) {
@@ -1426,7 +1426,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushUpdating
 /// Folds a left batch into state and exports the join changelog it produces (left cols, right cols,
 /// then `$row_kind$`). `now_millis` is the host's processing-time reading — the state-TTL clock.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftUpdatingJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushLeftUpdatingJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1452,7 +1452,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftUpdat
 
 /// Folds a right batch into state and exports the join changelog it produces.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightUpdatingJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushRightUpdatingJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1477,7 +1477,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightUpda
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotUpdatingJoinerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotUpdatingJoinerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1498,7 +1498,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotUpdat
 
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreUpdatingJoinerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreUpdatingJoinerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1571,7 +1571,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreUpdati
 
 /// Releases an updating joiner handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeUpdatingJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeUpdatingJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,

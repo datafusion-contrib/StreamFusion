@@ -129,11 +129,11 @@ pub(crate) fn rt_to_millis(array: &ArrayRef) -> Int64Array {
     }
 }
 
-state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_temporalSorterStateBytes, TemporalSorter);
+state_bytes_getter!(Java_tech_streamfusion_Native_temporalSorterStateBytes, TemporalSorter);
 
 /// Creates an event-time sorter over the given rowtime column and returns an opaque handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTemporalSorter<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createTemporalSorter<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     rt_column: jint,
@@ -148,7 +148,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTempora
 /// Buffers an input batch (no output); the rows are emitted later, in rowtime order, as watermarks
 /// complete them.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushTemporalSorter<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushTemporalSorter<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -168,7 +168,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushTemporalS
 
 /// Exports the rows the watermark has completed, sorted ascending by rowtime.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushTemporalSorter<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flushTemporalSorter<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -185,7 +185,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushTemporal
 
 /// Releases the event-time sorter and its buffered rows.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeTemporalSorter<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeTemporalSorter<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -199,7 +199,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeTemporal
 
 /// Serializes the sorter's buffered rows for a checkpoint.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTemporalSorter<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotTemporalSorter<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -214,7 +214,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTempo
 
 /// Rebuilds an event-time sorter from a snapshot taken by a prior run and returns a fresh handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTemporalSorter<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_restoreTemporalSorter<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     rt_column: jint,

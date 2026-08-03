@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>io.github.jordepic</groupId>
+        <groupId>tech.streamfusion</groupId>
         <artifactId>StreamFusion</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
@@ -14,7 +14,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>io.github.jordepic</groupId>
+            <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-runtime</artifactId>
             <version>${project.version}</version>
             <optional>true</optional>
@@ -28,7 +28,7 @@
             </resource>
             <resource>
                 <directory>${project.basedir}/../native/target/universal/parquet</directory>
-                <targetPath>io/github/jordepic/streamfusion/native/parquet</targetPath>
+                <targetPath>tech/streamfusion/native/parquet</targetPath>
                 <includes>
                     <include>**/libstreamfusion_parquet.so</include>
                     <include>**/libstreamfusion_parquet.dylib</include>
@@ -52,27 +52,27 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <artifactSet>
                                 <includes>
-                                    <include>io.github.jordepic:streamfusion-runtime</include>
+                                    <include>tech.streamfusion:streamfusion-runtime</include>
                                 </includes>
                             </artifactSet>
                             <filters>
                                 <filter>
-                                    <artifact>io.github.jordepic:streamfusion-runtime</artifact>
+                                    <artifact>tech.streamfusion:streamfusion-runtime</artifact>
                                     <includes>
-                                        <include>io/github/jordepic/streamfusion/operator/NativeFileArrowBulkFormat*.class</include>
-                                        <include>io/github/jordepic/streamfusion/operator/NativeParquetBulkWriterFactory*.class</include>
-                                        <include>io/github/jordepic/streamfusion/operator/NativeParquetRollingPolicy*.class</include>
-                                        <include>io/github/jordepic/streamfusion/operator/ParquetArrowBulkFormat*.class</include>
-                                        <include>io/github/jordepic/streamfusion/operator/ParquetPartitionSplitOperator*.class</include>
-                                        <include>io/github/jordepic/streamfusion/operator/ParquetSourceTimestamps*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/NativeParquetSinkExecNode*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/NativeParquetSourceExecNode*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/ParquetSinkMatcher*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/ParquetSinkTranslator*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/ParquetSourceMatcher*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeParquetSink*.class</include>
-                                        <include>io/github/jordepic/streamfusion/planner/StreamPhysicalNativeParquetSource*.class</include>
-                                        <include>io/github/jordepic/streamfusion/parquet/**</include>
+                                        <include>tech/streamfusion/operator/NativeFileArrowBulkFormat*.class</include>
+                                        <include>tech/streamfusion/operator/NativeParquetBulkWriterFactory*.class</include>
+                                        <include>tech/streamfusion/operator/NativeParquetRollingPolicy*.class</include>
+                                        <include>tech/streamfusion/operator/ParquetArrowBulkFormat*.class</include>
+                                        <include>tech/streamfusion/operator/ParquetPartitionSplitOperator*.class</include>
+                                        <include>tech/streamfusion/operator/ParquetSourceTimestamps*.class</include>
+                                        <include>tech/streamfusion/planner/NativeParquetSinkExecNode*.class</include>
+                                        <include>tech/streamfusion/planner/NativeParquetSourceExecNode*.class</include>
+                                        <include>tech/streamfusion/planner/ParquetSinkMatcher*.class</include>
+                                        <include>tech/streamfusion/planner/ParquetSinkTranslator*.class</include>
+                                        <include>tech/streamfusion/planner/ParquetSourceMatcher*.class</include>
+                                        <include>tech/streamfusion/planner/StreamPhysicalNativeParquetSink*.class</include>
+                                        <include>tech/streamfusion/planner/StreamPhysicalNativeParquetSource*.class</include>
+                                        <include>tech/streamfusion/parquet/**</include>
                                     </includes>
                                 </filter>
                             </filters>

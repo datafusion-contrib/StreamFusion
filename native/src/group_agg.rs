@@ -2403,12 +2403,12 @@ impl LocalGroupAggregator {
 }
 
 state_bytes_getter!(
-    Java_io_github_jordepic_streamfusion_Native_groupAggregatorStateBytes,
+    Java_tech_streamfusion_Native_groupAggregatorStateBytes,
     GroupAggregator
 );
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_groupAggregatorStagingBytes<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_groupAggregatorStagingBytes<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2420,7 +2420,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_groupAggregat
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_groupAggregatorStagedKeys<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_groupAggregatorStagedKeys<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2432,7 +2432,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_groupAggregat
 }
 
 state_bytes_getter!(
-    Java_io_github_jordepic_streamfusion_Native_localGroupAggregatorStateBytes,
+    Java_tech_streamfusion_Native_localGroupAggregatorStateBytes,
     LocalGroupAggregator
 );
 
@@ -2440,7 +2440,7 @@ state_bytes_getter!(
 /// accumulates across batches in memory until flushed; the buffer is transient (drained before each
 /// checkpoint on the JVM side), so there is no snapshot/restore.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createLocalGroupAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_createLocalGroupAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2475,7 +2475,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createLocalGr
 
 /// Folds an Arrow batch the JVM exported into the buffered per-key accumulators; emits nothing.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateLocalGroupAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_updateLocalGroupAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2500,7 +2500,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateLocalGr
 
 /// Emits the buffered partials (one row per key) and clears the buffer.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushLocalGroupAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_flushLocalGroupAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2517,7 +2517,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushLocalGro
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeLocalGroupAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_closeLocalGroupAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2535,7 +2535,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeLocalGro
 /// and per-aggregate value-type codes are positional; `generate_update_before` is the host's
 /// per-node changelog flag. Grouping keys travel as `key0..` columns on each input batch.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createGroupAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createGroupAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     aggregate_kinds: JIntArray<'local>,
@@ -2585,7 +2585,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createGroupAg
 /// Folds an input batch into per-key state and exports the changelog rows it produces (the row kinds
 /// ride the `$row_kind$` column of the result).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateGroupAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_updateGroupAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2610,7 +2610,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateGroupAg
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushGroupAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flushGroupAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2628,7 +2628,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushGroupAgg
 
 /// Lists the non-empty Flink key groups represented by this group aggregator's current state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotGroupAggregatorPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotGroupAggregatorPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2650,7 +2650,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotGroup
 
 /// Rebuilds a `GROUP BY` aggregator from all raw keyed-state partitions assigned to this subtask.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupAggregatorPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreGroupAggregatorPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2719,7 +2719,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreGroupA
 
 /// Releases the `GROUP BY` aggregator and its native state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeGroupAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeGroupAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,

@@ -967,12 +967,12 @@ impl TumblingAggregator {
     }
 }
 
-state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_tumblingAggregatorStateBytes, TumblingAggregator);
+state_bytes_getter!(Java_tech_streamfusion_Native_tumblingAggregatorStateBytes, TumblingAggregator);
 
 /// Runs a batch through the stateless windowing table function, exporting the fanned-out batch with
 /// window_start/window_end/window_time appended. Stateless, so there is no handle to create or close.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_assignWindows<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_assignWindows<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     in_array_address: jlong,
@@ -1008,7 +1008,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_assignWindows
 /// and the per-window result batch is exported back. Aggregation across batch boundaries, where the
 /// operator must hold partial windows until a watermark closes them, is a later step.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_tumblingSum<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_tumblingSum<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     in_array_address: jlong,
@@ -1062,7 +1062,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_tumblingSum<'
 /// Creates a stateful tumbling-window aggregator and returns an opaque handle to it. The handle
 /// owns native state that lives across calls; the JVM must release it with the matching close.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTumblingAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createTumblingAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     window_millis: jlong,
@@ -1085,7 +1085,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createTumblin
 /// returns an opaque handle. It shares the aligned-window engine and every other call (update,
 /// flush, snapshot, close) with the tumbling handle; only the window assignment differs.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createCumulativeAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createCumulativeAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     max_size_millis: jlong,
@@ -1106,7 +1106,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createCumulat
 /// Folds a batch from the JVM into the aggregator's open windows. Produces no output; results are
 /// emitted later when a watermark closes windows.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateTumblingAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_updateTumblingAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1130,7 +1130,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateTumblin
 /// Window-attached local half: folds a batch whose rows carry explicit `window_start`/`window_end`
 /// columns (an upstream window aggregate's output being re-aggregated per window — Nexmark q5).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateAttachedTumblingAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_updateAttachedTumblingAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1154,7 +1154,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateAttache
 
 /// Emits the windows the given watermark has closed as a batch and drops them from state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushTumblingAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flushTumblingAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1174,7 +1174,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushTumbling
 
 /// Local two-phase half: merges a batch of partials `[key, partial, slice_end]` into the windows.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updatePartialTumblingAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_updatePartialTumblingAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1198,7 +1198,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updatePartial
 
 /// Local two-phase half: emits the partial state of the windows the watermark has closed.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPartialTumblingAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_flushPartialTumblingAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1217,7 +1217,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushPartialT
 
 /// Local two-phase half: emits every open window's partial state at a barrier, watermark untouched.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_drainPartialTumblingAggregator<
+pub extern "system" fn Java_tech_streamfusion_Native_drainPartialTumblingAggregator<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1235,7 +1235,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_drainPartialT
 
 /// Releases the aggregator and its native state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeTumblingAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeTumblingAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1249,7 +1249,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeTumbling
 
 /// Serializes the aggregator's open windows so the JVM can store them in a checkpoint.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTumblingAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotTumblingAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1264,7 +1264,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTumbl
 
 /// Rebuilds an aggregator from a snapshot taken by a prior run and returns a fresh handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTumblingAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_restoreTumblingAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     window_millis: jlong,
@@ -1287,7 +1287,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTumbli
 
 /// Rebuilds a cumulative-window aggregator from a snapshot taken by a prior run.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreCumulativeAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_restoreCumulativeAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     max_size_millis: jlong,
@@ -1309,7 +1309,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreCumula
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTumblingAggregatorPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotTumblingAggregatorPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1330,7 +1330,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotTumbl
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreTumblingAggregatorPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreTumblingAggregatorPartitions<
     'local,
 >(
     env: JNIEnv<'local>,

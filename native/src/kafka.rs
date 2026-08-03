@@ -2350,7 +2350,7 @@ where
 /// Whether this extension library carries the native Kafka source.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_isLoaded<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_isLoaded<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> jni::sys::jboolean {
@@ -2361,11 +2361,11 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_is
 
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_nativeBuildVersion<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_nativeBuildVersion<'local>(
     env: JNIEnv<'local>,
     class: JClass<'local>,
 ) -> jstring {
-    crate::bridge::Java_io_github_jordepic_streamfusion_Native_version(env, class)
+    crate::bridge::Java_tech_streamfusion_Native_version(env, class)
 }
 
 /// Opens a native Kafka split reader for one subtask and returns an opaque handle, released with
@@ -2374,7 +2374,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_na
 /// owns decoding. Splits are added later via `assignKafkaSplits`.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_openKafkaConsumer<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_openKafkaConsumer<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     config_keys: JObjectArray<'local>,
@@ -2398,7 +2398,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_op
 /// consumer.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_attachKafkaDecoder<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_attachKafkaDecoder<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2447,7 +2447,7 @@ extern "C" fn unsupported_last_error(_: i64, _: *mut i32) -> *const u8 {
 /// `stoppingOffsets` are enforced inside the poll callback; `i64::MIN` means unbounded.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_assignKafkaSplits<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_assignKafkaSplits<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2470,7 +2470,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_as
 /// stops fetching/blocking on them. Index-aligned `topics`/`partitions`.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_unassignKafkaSplits<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_unassignKafkaSplits<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2489,7 +2489,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_un
 /// poll/assign/close access to this handle.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_commitKafkaOffsets<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_commitKafkaOffsets<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2512,7 +2512,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_co
 /// Applies Flink's split-level pause/resume request on the fetcher-owned native consumer.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_setKafkaSplitsPaused<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_setKafkaSplitsPaused<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2535,7 +2535,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_se
 /// per-partition batches now pending; the JVM drains each with `drainKafkaSplit`.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_pollKafkaBatch<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_pollKafkaBatch<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2555,7 +2555,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_po
 /// the handle (like `pollKafkaBatch`); the Java side publishes the value to its metric gauge.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_kafkaConsumerTransientErrors<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_kafkaConsumerTransientErrors<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2571,7 +2571,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_ka
 /// Rust reader while requesting cancellation.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_wakeKafkaConsumer<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_wakeKafkaConsumer<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2588,7 +2588,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_wa
 /// array per record.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_encodeKafkaBatch<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_encodeKafkaBatch<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     array_address: jlong,
@@ -2631,7 +2631,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_en
 /// Flink instead of accepting a query the runtime dispatch would fail.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_encodeFormatSupported<
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_encodeFormatSupported<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2648,7 +2648,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_en
 /// and FLOAT/DOUBLE columns fall back instead of silently diverging.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_spellFloatingPoint<
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_spellFloatingPoint<
     'local,
 >(
     mut env: JNIEnv<'local>,
@@ -2730,7 +2730,7 @@ fn byte_array_array<'slices, 'local>(
 /// are Kafka tombstones for DELETE and UPDATE_BEFORE, matching Flink's upsert-kafka schema.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_encodeKafkaRecords<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_encodeKafkaRecords<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     array_address: jlong,
@@ -2788,7 +2788,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_en
 /// the batch's offset range when its decode fails.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_drainKafkaSplit<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_drainKafkaSplit<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2820,7 +2820,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_dr
 /// Releases a native Kafka split reader, dropping the rdkafka consumer (which closes its connections).
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_closeKafkaConsumer<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_closeKafkaConsumer<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2839,7 +2839,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_cl
 /// excludes the per-batch JVM export that the FLIP-27 DataStream wrapper forces. Returns the row count.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_benchmarkNativeConsume<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_benchmarkNativeConsume<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     config_keys: JObjectArray<'local>,
@@ -2895,7 +2895,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_be
 /// Compared against the Java client's raw poll to answer "is librdkafka delivery actually slower here".
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_benchmarkConsumeOnly<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_benchmarkConsumeOnly<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     config_keys: JObjectArray<'local>,
@@ -2981,7 +2981,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_be
 /// client; format decode is now deliberately owned by a separate format DSO.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_benchmarkNativeConsumeSerial<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_benchmarkNativeConsumeSerial<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     config_keys: JObjectArray<'local>,
@@ -3069,7 +3069,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_be
 /// FLIP-27 source (remaining source tails: https://github.com/datafusion-contrib/StreamFusion/issues/16).
 #[cfg(feature = "kafka-bench")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_benchmarkKafkaConsume<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_benchmarkKafkaConsume<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     brokers: JString<'local>,
@@ -3382,7 +3382,7 @@ fn write_identity(
 /// must include `transactional.id` and `statistics.interval.ms`.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_openTransactionalKafkaProducer<
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_openTransactionalKafkaProducer<
     'local,
 >(
     mut env: JNIEnv<'local>,
@@ -3433,7 +3433,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_op
 /// `outIdentity`.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_initKafkaTransactions<
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_initKafkaTransactions<
     'local,
 >(
     mut env: JNIEnv<'local>,
@@ -3451,7 +3451,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_in
 
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_beginKafkaTransaction<
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_beginKafkaTransaction<
     'local,
 >(
     mut env: JNIEnv<'local>,
@@ -3467,7 +3467,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_be
 /// Produces one record into the open transaction. A null `key` produces an unkeyed record.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_produceKafkaRecord<
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_produceKafkaRecord<
     'local,
 >(
     mut env: JNIEnv<'local>,
@@ -3507,7 +3507,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_pr
 /// objects. Returns the total key+value payload bytes enqueued for producer metrics.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_produceKafkaBatch<
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_produceKafkaBatch<
     'local,
 >(
     mut env: JNIEnv<'local>,
@@ -3568,7 +3568,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_pr
 /// ONGOING) and the producer can be closed without losing it.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_flushKafkaProducer<
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_flushKafkaProducer<
     'local,
 >(
     mut env: JNIEnv<'local>,
@@ -3586,7 +3586,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_fl
 
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_abortKafkaTransaction<
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_abortKafkaTransaction<
     'local,
 >(
     mut env: JNIEnv<'local>,
@@ -3604,7 +3604,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_ab
 /// open flushed transaction stays ONGOING on the broker for the Java committer to finish.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_closeKafkaProducer<
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_closeKafkaProducer<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -3620,7 +3620,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_cl
 /// single JNI call, isolating librdkafka's drain rate from per-record JNI crossing cost.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_kafka_NativeKafka_produceKafkaRecordRepeated<
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_produceKafkaRecordRepeated<
     'local,
 >(
     mut env: JNIEnv<'local>,

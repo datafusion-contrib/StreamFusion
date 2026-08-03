@@ -648,12 +648,12 @@ impl SessionAggregator {
     }
 }
 
-state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_sessionAggregatorStateBytes, SessionAggregator);
+state_bytes_getter!(Java_tech_streamfusion_Native_sessionAggregatorStateBytes, SessionAggregator);
 
 /// Creates a stateful session-window aggregator and returns an opaque handle. As with the tumbling
 /// handle, the JVM owns the native state across calls and must release it with the matching close.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createSessionAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createSessionAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     gap_millis: jlong,
@@ -672,7 +672,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createSession
 
 /// Folds a batch from the JVM into the session aggregator, merging sessions as elements bridge them.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateSessionAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_updateSessionAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -694,7 +694,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_updateSession
 
 /// Emits the sessions the given watermark has closed as a batch and drops them from state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushSessionAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flushSessionAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -714,7 +714,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushSessionA
 
 /// Releases the session aggregator and its native state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeSessionAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeSessionAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -728,7 +728,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeSessionA
 
 /// Serializes the aggregator's open sessions so the JVM can store them in a checkpoint.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotSessionAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotSessionAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -743,7 +743,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotSessi
 
 /// Rebuilds a session aggregator from a snapshot taken by a prior run and returns a fresh handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreSessionAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_restoreSessionAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     gap_millis: jlong,
@@ -763,7 +763,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreSessio
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotSessionAggregatorPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotSessionAggregatorPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -784,7 +784,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotSessi
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreSessionAggregatorPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreSessionAggregatorPartitions<
     'local,
 >(
     env: JNIEnv<'local>,

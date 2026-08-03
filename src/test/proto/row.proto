@@ -4,7 +4,7 @@ syntax = "proto3";
 // java_multiple_files puts Row at the top level so the class name is simply ...proto.Row.
 package streamfusion.test;
 
-option java_package = "io.github.jordepic.streamfusion.proto";
+option java_package = "tech.streamfusion.proto";
 option java_multiple_files = true;
 
 message Row {

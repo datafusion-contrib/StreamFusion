@@ -919,14 +919,14 @@ pub(crate) fn interval_bounds_expr(
     binary(ge, Operator::And, le, intermediate).expect("failed to build interval and")
 }
 
-state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_intervalJoinerStateBytes, IntervalJoiner);
+state_bytes_getter!(Java_tech_streamfusion_Native_intervalJoinerStateBytes, IntervalJoiner);
 
 /// Creates an event-time INNER interval joiner and returns an opaque handle. The key/time column
 /// indices locate the equi-join key and rowtime within each side's input batch; `lower`/`upper` are
 /// the inclusive bounds (millis) on `left.rt - right.rt`. The JVM owns the handle across calls.
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createIntervalJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createIntervalJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     left_keys: JIntArray<'local>,
@@ -979,7 +979,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createInterva
 
 /// Pushes a left batch, probing the buffered right rows and exporting the matched pairs.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftIntervalJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushLeftIntervalJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1005,7 +1005,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushLeftInter
 
 /// Pushes a right batch, probing the buffered left rows and exporting the matched pairs.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightIntervalJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushRightIntervalJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1032,7 +1032,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushRightInte
 /// Advances the combined watermark, evicting rows no future arrival can match, and exporting the
 /// null-padded rows for evicted outer rows that never matched (empty for an INNER join).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_advanceIntervalJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_advanceIntervalJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1052,7 +1052,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_advanceInterv
 
 /// Releases the interval joiner and its native state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeIntervalJoiner<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeIntervalJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1065,7 +1065,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeInterval
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotIntervalJoinerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotIntervalJoinerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -1087,7 +1087,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotInter
 
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreIntervalJoinerPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreIntervalJoinerPartitions<
     'local,
 >(
     env: JNIEnv<'local>,

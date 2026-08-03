@@ -2059,7 +2059,7 @@ impl OverWindowAggregator {
     }
 }
 
-state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_overAggregatorStateBytes, OverWindowAggregator);
+state_bytes_getter!(Java_tech_streamfusion_Native_overAggregatorStateBytes, OverWindowAggregator);
 
 /// Creates a columnar OVER aggregator (event-time RANGE unbounded preceding); it buffers input
 /// batches and flushes completed rows with the running aggregates appended. The rt/value/key column
@@ -2067,7 +2067,7 @@ state_bytes_getter!(Java_io_github_jordepic_streamfusion_Native_overAggregatorSt
 /// idle-state retention — the scheme it drives depends on the shape (see the operator docs).
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createOverAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createOverAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     value_types: JIntArray<'local>,
@@ -2105,7 +2105,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_createOverAgg
 /// Buffers an input batch (no output); the rows are emitted later when a watermark completes them.
 /// `now_millis` is the operator's processing-time reading — the cleanup-deadline clock.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushOverAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushOverAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2129,7 +2129,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushOverAggre
 /// each with the running aggregate / window-function column(s) appended. `now_millis` is the
 /// operator's processing-time reading — the retention clock.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushProctimeOverAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_pushProctimeOverAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2155,7 +2155,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_pushProctimeO
 
 /// Exports the rows the watermark has completed (input columns + running aggregates).
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushOverAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_flushOverAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2176,7 +2176,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_flushOverAggr
 
 /// Releases the OVER aggregator and its native state.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeOverAggregator<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_closeOverAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2189,7 +2189,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_closeOverAggr
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotOverAggregatorPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotOverAggregatorPartitions<
     'local,
 >(
     env: JNIEnv<'local>,
@@ -2211,7 +2211,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_snapshotOverA
 
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_Native_restoreOverAggregatorPartitions<
+pub extern "system" fn Java_tech_streamfusion_Native_restoreOverAggregatorPartitions<
     'local,
 >(
     env: JNIEnv<'local>,

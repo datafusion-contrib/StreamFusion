@@ -418,18 +418,18 @@ impl ParquetEncoder {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParquet_nativeBuildVersion<'local>(
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_nativeBuildVersion<'local>(
     env: JNIEnv<'local>,
     class: JClass<'local>,
 ) -> jstring {
-    crate::bridge::Java_io_github_jordepic_streamfusion_Native_version(env, class)
+    crate::bridge::Java_tech_streamfusion_Native_version(env, class)
 }
 
 /// Creates a Parquet encoder for the sink: `schemaAddress` carries the full row schema through the
 /// C Data Interface, `partitionColumns` the indices written to the path instead of the file, and
 /// the key/value arrays the resolved writer settings. Returns an opaque handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParquet_createParquetEncoder<'local>(
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_createParquetEncoder<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     schema_address: jlong,
@@ -460,7 +460,7 @@ fn required_strings(env: &mut JNIEnv, values: &JObjectArray) -> Vec<String> {
 
 /// Encodes an Arrow batch the JVM exported into the open Parquet stream behind `handle`.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParquet_parquetEncoderWrite<'local>(
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncoderWrite<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -478,7 +478,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParque
 /// pinned critically for the duration of one memcpy — the only copy between the encoder's buffer
 /// and the Flink output stream the JVM writes it to.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParquet_parquetEncoderDrain<'local>(
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncoderDrain<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -499,7 +499,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParque
 /// Writes the Parquet footer into the buffer. The handle stays open so the JVM can drain the
 /// remaining bytes; release it with `closeParquetEncoder`.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParquet_parquetEncoderFinish<'local>(
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncoderFinish<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -512,7 +512,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParque
 
 /// Releases a Parquet encoder handle; also the abort path for a part file that never finished.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParquet_closeParquetEncoder<'local>(
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_closeParquetEncoder<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -588,7 +588,7 @@ pub(crate) fn split_by_partition_columns(
 /// resulting groups, pulled one at a time with `nextPartitionSlice` and released with
 /// `closePartitionSplit`.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParquet_splitByPartitionColumns<'local>(
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_splitByPartitionColumns<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     in_array_address: jlong,
@@ -611,7 +611,7 @@ pub(crate) struct PartitionSplit {
 /// Exports the next partition group into the consumer-allocated C structs, returning false once
 /// every group has been pulled.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParquet_nextPartitionSlice<'local>(
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_nextPartitionSlice<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -632,7 +632,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParque
 
 /// Releases a partition split handle, dropping any groups the JVM did not pull.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParquet_closePartitionSplit<'local>(
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_closePartitionSplit<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -721,7 +721,7 @@ pub(crate) fn parquet_file_schema(path: &str) -> SchemaRef {
 /// Opens one Parquet split — the row groups of `path` within `[range_start, range_start +
 /// range_length)` — and returns an opaque handle, released with `closeSource`.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParquet_openParquet<'local>(
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_openParquet<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     path: JString<'local>,
@@ -749,7 +749,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParque
 /// true if a batch was produced and false once the directory is exhausted. Shared by every native
 /// file source.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParquet_nextBatch<'local>(
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_nextBatch<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -770,7 +770,7 @@ pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParque
 
 /// Releases a native file source handle.
 #[no_mangle]
-pub extern "system" fn Java_io_github_jordepic_streamfusion_parquet_NativeParquet_closeSource<'local>(
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_closeSource<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
