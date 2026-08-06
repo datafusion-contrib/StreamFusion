@@ -2,8 +2,10 @@ package tech.streamfusion.planner;
 
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.ArrowToRowDataOperator;
 import tech.streamfusion.operator.NativeAsyncLookupJoinOperator;
 import tech.streamfusion.operator.NativeLookupJoinOperator;
+import tech.streamfusion.operator.RowDataToArrowOperator;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -20,6 +22,7 @@ import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.streaming.api.functions.async.AsyncFunction;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.table.catalog.DataTypeFactory;
+import org.apache.flink.table.connector.ChangelogMode;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.conversion.DataStructureConverter;
 import org.apache.flink.table.data.conversion.DataStructureConverters;
@@ -55,7 +58,9 @@ import org.apache.flink.table.runtime.operators.join.lookup.LookupJoinRunner;
 import org.apache.flink.table.runtime.operators.join.lookup.LookupJoinWithCalcRunner;
 import org.apache.flink.table.runtime.operators.join.lookup.ResultRetryStrategy;
 import org.apache.flink.table.runtime.typeutils.InternalSerializers;
+import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.types.RowKind;
 
 /**
  * Wraps the native lookup-join operator into the plan. The row-level join core is Flink's own: this
@@ -70,6 +75,9 @@ public class NativeLookupJoinExecNode extends ExecNodeBase<ArrowBatch>
     implements StreamExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch> {
 
   private static final String TRANSFORMATION = "native-lookup-join";
+  private static final String CUSTOM_SHUFFLE_TO_ROW = "native-lookup-custom-shuffle-to-row";
+  private static final String CUSTOM_SHUFFLE = "native-lookup-custom-shuffle";
+  private static final String CUSTOM_SHUFFLE_TO_ARROW = "native-lookup-custom-shuffle-to-arrow";
 
   private final RelOptTable temporalTable;
   private final RowType probeType;
@@ -80,6 +88,9 @@ public class NativeLookupJoinExecNode extends ExecNodeBase<ArrowBatch>
   private final @Nullable RexNode remainingJoinCondition;
   private final boolean leftOuterJoin;
   private final @Nullable FunctionCallUtil.AsyncOptions asyncOptions;
+  private final @Nullable LookupJoinUtil.RetryLookupOptions retryOptions;
+  private final boolean preferCustomShuffle;
+  private final ChangelogMode inputChangelogMode;
 
   public NativeLookupJoinExecNode(
       ReadableConfig tableConfig,
@@ -94,7 +105,10 @@ public class NativeLookupJoinExecNode extends ExecNodeBase<ArrowBatch>
       @Nullable RexNode preFilterCondition,
       @Nullable RexNode remainingJoinCondition,
       boolean leftOuterJoin,
-      @Nullable FunctionCallUtil.AsyncOptions asyncOptions) {
+      @Nullable FunctionCallUtil.AsyncOptions asyncOptions,
+      @Nullable LookupJoinUtil.RetryLookupOptions retryOptions,
+      boolean preferCustomShuffle,
+      ChangelogMode inputChangelogMode) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-lookup-join_1"),
@@ -111,6 +125,9 @@ public class NativeLookupJoinExecNode extends ExecNodeBase<ArrowBatch>
     this.remainingJoinCondition = remainingJoinCondition;
     this.leftOuterJoin = leftOuterJoin;
     this.asyncOptions = asyncOptions;
+    this.retryOptions = retryOptions;
+    this.preferCustomShuffle = preferCustomShuffle;
+    this.inputChangelogMode = inputChangelogMode;
   }
 
   @Override
@@ -132,14 +149,51 @@ public class NativeLookupJoinExecNode extends ExecNodeBase<ArrowBatch>
       orderedKeys.add(lookupKeys.get(key));
     }
     boolean async = asyncOptions != null;
+    ResultRetryStrategy retryStrategy =
+        retryOptions == null ? ResultRetryStrategy.NO_RETRY_STRATEGY : retryOptions.toRetryStrategy();
     UserDefinedFunction lookupFunction =
         LookupJoinUtil.getLookupFunction(
             temporalTable,
             lookupKeys.keySet(),
             classLoader,
             async,
-            ResultRetryStrategy.NO_RETRY_STRATEGY,
-            false);
+            retryStrategy,
+            preferCustomShuffle);
+
+    if (preferCustomShuffle) {
+      // The connector owns this partitioning contract and receives the projected lookup-key
+      // RowData. Keep the lookup itself columnar, but cross the row boundary around this Java SPI so
+      // the exact Flink partitioner (including constant and non-deterministic keys) is preserved.
+      Transformation<RowData> rows =
+          ExecNodeUtil.createOneInputTransformation(
+              input,
+              createTransformationMeta(CUSTOM_SHUFFLE_TO_ROW, config),
+              new ArrowToRowDataOperator(probeType),
+              InternalTypeInfo.of(probeType),
+              input.getParallelism(),
+              false);
+      rows =
+          LookupJoinUtil.tryApplyCustomShufflePartitioner(
+              planner,
+              temporalTable,
+              probeType,
+              lookupKeys,
+              rows,
+              inputChangelogMode,
+              createTransformationMeta(CUSTOM_SHUFFLE, config));
+      input =
+          ExecNodeUtil.createOneInputTransformation(
+              rows,
+              createTransformationMeta(CUSTOM_SHUFFLE_TO_ARROW, config),
+              new RowDataToArrowOperator(
+                  probeType,
+                  1024,
+                  !inputChangelogMode.containsOnly(RowKind.INSERT),
+                  null),
+              ArrowBatchTypeInformation.INSTANCE,
+              rows.getParallelism(),
+              false);
+    }
 
     // The dimension side the join sees: the calc's output when a projection/filter was pushed onto
     // the temporal table, the table's own row type otherwise.

@@ -85,6 +85,9 @@ final class LookupJoinMatcher {
         join.finalPreFilterCondition().isDefined() ? join.finalPreFilterCondition().get() : null,
         join.finalRemainingCondition().isDefined() ? join.finalRemainingCondition().get() : null,
         LookupJoinMatcher.isLeftOuterJoin(join),
-        join.asyncOptions().isDefined() ? join.asyncOptions().get() : null);
+        join.asyncOptions().isDefined() ? join.asyncOptions().get() : null,
+        join.retryOptions().isDefined() ? join.retryOptions().get() : null,
+        join.preferCustomShuffle(),
+        join.inputChangelogMode());
   }
 }
