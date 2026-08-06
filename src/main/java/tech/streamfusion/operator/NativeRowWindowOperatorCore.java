@@ -2,6 +2,8 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.arrow.ArrowConversion;
 import java.time.ZoneOffset;
+import java.time.Instant;
+import java.time.ZoneId;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -13,6 +15,7 @@ import org.apache.arrow.vector.TimeStampNanoVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.logical.LogicalTypeRoot;
 
 /**
  * The final-result layer of the window operator core: adds {@link #emitFinal}, which fetches the
@@ -29,6 +32,9 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
   private static final long NANOS_PER_MILLI = 1_000_000L;
 
   private final RowType outputType;
+  private final boolean inputTimestampLtz;
+  private final String sessionTimeZoneId;
+  private transient ZoneId sessionZone;
 
   protected NativeRowWindowOperatorCore(
       String stateName,
@@ -37,6 +43,8 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
       int[] valueTypes,
       int[] aggregateKinds,
       String timeZoneId,
+      boolean inputTimestampLtz,
+      String sessionTimeZoneId,
       RowType outputType,
       int[] keyTimestampPrecisions,
       int maxParallelism) {
@@ -50,6 +58,14 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
         keyTimestampPrecisions,
         maxParallelism);
     this.outputType = outputType;
+    this.inputTimestampLtz = inputTimestampLtz;
+    this.sessionTimeZoneId = sessionTimeZoneId;
+  }
+
+  @Override
+  public void open() throws Exception {
+    super.open();
+    sessionZone = ZoneId.of(sessionTimeZoneId);
   }
 
   /**
@@ -90,13 +106,13 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
         int base = keyCount + aggregates;
         BigIntVector starts = (BigIntVector) flush.getVector("window_start");
         BigIntVector ends = (BigIntVector) flush.getVector("window_end");
-        fillLocalTimestamps(starts, out.getVector(base), n);
-        fillLocalTimestamps(ends, out.getVector(base + 1), n);
+        fillLocalTimestamps(starts, out.getVector(base), isLtz(base), n);
+        fillLocalTimestamps(ends, out.getVector(base + 1), isLtz(base + 1), n);
         if (properties >= 3) {
-          fillLocalTimestamps(ends, out.getVector(base + 2), n, -1L); // rowtime = window_end - 1 ms
+          fillLocalTimestamps(ends, out.getVector(base + 2), isLtz(base + 2), n, -1L);
         }
         if (properties >= 4) {
-          fillLocalTimestamps(ends, out.getVector(base + 3), n, 0L); // proctime marker (projected away)
+          fillLocalTimestamps(ends, out.getVector(base + 3), isLtz(base + 3), n, 0L);
         }
         out.setRowCount(n);
         ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
@@ -142,19 +158,49 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
   }
 
   /** Renders int64 epoch-millis window bounds as session-local timestamp nanos, as the host does. */
-  private void fillLocalTimestamps(BigIntVector source, FieldVector target, int n) {
-    fillLocalTimestamps(source, target, n, 0L);
+  private boolean isLtz(int field) {
+    return outputType.getTypeAt(field).getTypeRoot()
+        == LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE;
+  }
+
+  private void fillLocalTimestamps(
+      BigIntVector source, FieldVector target, boolean targetLtz, int n) {
+    fillLocalTimestamps(source, target, targetLtz, n, 0L);
   }
 
   /** As above, offsetting the source millis first (e.g. -1 ms for a window's rowtime = end - 1). */
-  private void fillLocalTimestamps(BigIntVector source, FieldVector target, int n, long offsetMillis) {
+  private void fillLocalTimestamps(
+      BigIntVector source, FieldVector target, boolean targetLtz, int n, long offsetMillis) {
     for (int i = 0; i < n; i++) {
       if (source.isNull(i)) {
         setTimestampNull(target, i);
       } else {
-        long localMillis =
-            toLocal(source.get(i) + offsetMillis).toInstant(ZoneOffset.UTC).toEpochMilli();
-        setTimestampNanos(target, i, localMillis * NANOS_PER_MILLI);
+        long boundary = source.get(i) + offsetMillis;
+        long rendered;
+        if (targetLtz) {
+          // A window-time property is an instant. LTZ input boundaries already are epoch millis;
+          // plain TIMESTAMP boundaries are local wall-clock and must be interpreted in the session zone.
+          rendered =
+              inputTimestampLtz
+                  ? boundary
+                  : Instant.ofEpochMilli(boundary)
+                      .atZone(ZoneOffset.UTC)
+                      .toLocalDateTime()
+                      .atZone(sessionZone)
+                      .toInstant()
+                      .toEpochMilli();
+        } else {
+          // Visible window_start/end are plain TIMESTAMP wall-clock values.
+          rendered =
+              inputTimestampLtz
+                  ? Instant.ofEpochMilli(boundary)
+                      .atZone(sessionZone)
+                      .toLocalDateTime()
+                      .toInstant(ZoneOffset.UTC)
+                      .toEpochMilli()
+                  : boundary;
+        }
+        setTimestampNanos(target, i, rendered * NANOS_PER_MILLI);
       }
     }
   }

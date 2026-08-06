@@ -88,6 +88,8 @@ public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<ArrowBat
                 valueTypes,
                 aggregateKinds,
                 timeZoneId,
+                timestampLtz,
+                planner.getTableConfig().getLocalTimeZone().getId(),
                 outputType,
                 keyTimestampPrecisions,
                 maxParallelism),

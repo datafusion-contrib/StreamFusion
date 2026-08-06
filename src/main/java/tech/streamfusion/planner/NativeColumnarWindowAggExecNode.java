@@ -103,6 +103,8 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
                 valueTypes,
                 aggregateKinds,
                 timeZoneId,
+                timestampLtz,
+                planner.getTableConfig().getLocalTimeZone().getId(),
                 outputType,
                 proctime,
                 keyTimestampPrecisions,

@@ -440,6 +440,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
 
   /** Copies row {@code i}'s value from the input row into the value vector. */
   private void setValue(FieldVector value, int i, RowData row, int column, int valueType) {
+    if (row.isNullAt(column)) {
+      value.setNull(i);
+      return;
+    }
     if (isDecimal(valueType)) {
       ((DecimalVector) value)
           .setSafe(i, row.getDecimal(column, decimalPrecision(valueType), decimalScale(valueType)).toBigDecimal());
@@ -468,6 +472,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
 
   /** Copies row {@code i}'s value from a source Arrow vector into the value vector. */
   private void copyValue(FieldVector value, int i, FieldVector source, int valueType) {
+    if (source.isNull(i)) {
+      value.setNull(i);
+      return;
+    }
     if (isDecimal(valueType)) {
       ((DecimalVector) value).setSafe(i, ((DecimalVector) source).getObject(i));
       return;
@@ -495,6 +503,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
 
   /** Copies row {@code i}'s key from a source Arrow vector into the key vector (int widens to int64). */
   private static void setKeyFromVector(FieldVector target, int i, FieldVector source, int keyType) {
+    if (source.isNull(i)) {
+      target.setNull(i);
+      return;
+    }
     if (isTimestamp(keyType)) {
       // Columnar timestamps arrive as nanosecond timestamps; carry the nanos as int64.
       ((BigIntVector) target).setSafe(i, ((TimeStampNanoVector) source).get(i));
@@ -580,6 +592,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
 
   /** Copies row {@code i}'s key from the input row into the key vector (int keys widen to int64). */
   protected static void setKey(FieldVector vector, int i, RowData row, int column, int keyType) {
+    if (row.isNullAt(column)) {
+      vector.setNull(i);
+      return;
+    }
     if (isTimestamp(keyType)) {
       TimestampData t = row.getTimestamp(column, timestampPrecision(keyType));
       ((BigIntVector) vector).setSafe(i, t.getMillisecond() * NANOS_PER_MILLI + t.getNanoOfMillisecond());
@@ -609,6 +625,9 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
 
   /** Boxes a native-produced key cell back to the emitted column's internal type. */
   protected static Object boxKey(FieldVector vector, int i, int keyType) {
+    if (vector.isNull(i)) {
+      return null;
+    }
     if (isTimestamp(keyType)) {
       long nanos = ((BigIntVector) vector).get(i);
       return TimestampData.fromEpochMillis(
@@ -636,6 +655,9 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
 
   /** Reads a result/partial cell, boxing by the vector's type so RowData gets the column's type. */
   protected static Object readScalar(FieldVector vector, int row) {
+    if (vector.isNull(row)) {
+      return null;
+    }
     if (vector instanceof Float8Vector) {
       return ((Float8Vector) vector).get(row);
     }

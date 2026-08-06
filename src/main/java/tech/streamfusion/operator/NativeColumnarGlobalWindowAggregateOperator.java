@@ -36,6 +36,24 @@ public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindow
       RowType outputType,
       int[] keyTimestampPrecisions,
       int maxParallelism) {
+    this(
+        windowMillis, slideMillis, cumulative, keyTypes, valueTypes, aggregateKinds, timeZoneId,
+        !"UTC".equals(timeZoneId), timeZoneId, outputType, keyTimestampPrecisions, maxParallelism);
+  }
+
+  public NativeColumnarGlobalWindowAggregateOperator(
+      long windowMillis,
+      long slideMillis,
+      boolean cumulative,
+      int[] keyTypes,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      String timeZoneId,
+      boolean timestampLtz,
+      String sessionTimeZoneId,
+      RowType outputType,
+      int[] keyTimestampPrecisions,
+      int maxParallelism) {
     super(
         "global window aggregate",
         windowMillis,
@@ -43,6 +61,8 @@ public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindow
         valueTypes,
         aggregateKinds,
         timeZoneId,
+        timestampLtz,
+        sessionTimeZoneId,
         outputType,
         keyTimestampPrecisions,
         maxParallelism);

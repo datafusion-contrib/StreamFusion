@@ -47,8 +47,12 @@ final class WindowAggregateMatcher {
       RelDataType inputType) {
     WindowSpec spec = windowing.getWindow();
     boolean aligned;
-    if (spec instanceof TumblingWindowSpec || spec instanceof HoppingWindowSpec) {
-      aligned = true;
+    if (spec instanceof TumblingWindowSpec) {
+      Duration offset = ((TumblingWindowSpec) spec).getOffset();
+      aligned = offset == null || offset.isZero();
+    } else if (spec instanceof HoppingWindowSpec) {
+      Duration offset = ((HoppingWindowSpec) spec).getOffset();
+      aligned = offset == null || offset.isZero();
     } else if (spec instanceof CumulativeWindowSpec) {
       // The native cumulative assignment buckets on the max size from epoch, so only a zero offset
       // matches the host.
@@ -104,6 +108,16 @@ final class WindowAggregateMatcher {
   static boolean isLtz(WindowingStrategy windowing) {
     return windowing.getTimeAttributeType().getTypeRoot()
         == LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE;
+  }
+
+  /**
+   * Legacy group-window rowtime properties are TIMESTAMP_LTZ values derived from a session-local
+   * boundary. Their host materialization applies a second zone interpretation that the native Arrow
+   * output does not currently model, so keep that narrow projection on Flink.
+   */
+  static boolean supportsOutput(RelDataType outputType) {
+    return outputType.getFieldList().stream()
+        .noneMatch(field -> field.getType().getSqlTypeName() == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE);
   }
 
   static boolean isCumulative(WindowingStrategy windowing) {
@@ -338,6 +352,11 @@ final class WindowAggregateMatcher {
         return 5;
       case FLOAT:
         return 6;
+      case TIMESTAMP:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        return 7;
+      case DATE:
+        return 8;
       case CHAR:
       case VARCHAR:
         return 3; // string value (MIN/MAX over a string); value_data_type maps 3 → Utf8

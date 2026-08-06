@@ -50,6 +50,27 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
       boolean proctime,
       int[] keyTimestampPrecisions,
       int maxParallelism) {
+    this(
+        gapMillis, timeColumn, valueColumns, keyColumns, keyTypes, valueTypes, aggregateKinds,
+        timeZoneId, !"UTC".equals(timeZoneId), timeZoneId, outputType, proctime,
+        keyTimestampPrecisions, maxParallelism);
+  }
+
+  public NativeColumnarSessionWindowAggregateOperator(
+      long gapMillis,
+      int timeColumn,
+      int[] valueColumns,
+      int[] keyColumns,
+      int[] keyTypes,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      String timeZoneId,
+      boolean timestampLtz,
+      String sessionTimeZoneId,
+      RowType outputType,
+      boolean proctime,
+      int[] keyTimestampPrecisions,
+      int maxParallelism) {
     // Sessions have no fixed size or slide; the gap is the only window parameter, carried separately.
     super(
         "session aggregate",
@@ -58,6 +79,8 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
         valueTypes,
         aggregateKinds,
         timeZoneId,
+        timestampLtz,
+        sessionTimeZoneId,
         outputType,
         keyTimestampPrecisions,
         maxParallelism);

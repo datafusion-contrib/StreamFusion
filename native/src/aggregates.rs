@@ -14,6 +14,10 @@ pub(crate) fn value_data_type(code: i64) -> DataType {
         4 => DataType::Int16,
         5 => DataType::Int8,
         6 => DataType::Float32,
+        // Both Flink TIMESTAMP and TIMESTAMP_LTZ cross the Arrow boundary as epoch nanoseconds;
+        // the logical distinction is restored by the JVM output row type.
+        7 => DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None),
+        8 => DataType::Date32,
         // Decimal packs precision/scale into the code (2000 + precision*100 + scale), matching the
         // JVM side, so the per-aggregate value type carries them without a wider signature.
         c if c >= 2000 => {

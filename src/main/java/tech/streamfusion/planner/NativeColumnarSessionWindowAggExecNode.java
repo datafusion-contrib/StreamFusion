@@ -94,6 +94,8 @@ public class NativeColumnarSessionWindowAggExecNode extends ExecNodeBase<ArrowBa
                 valueTypes,
                 aggregateKinds,
                 timeZoneId,
+                timestampLtz,
+                planner.getTableConfig().getLocalTimeZone().getId(),
                 outputType,
                 proctime,
                 keyTimestampPrecisions,
