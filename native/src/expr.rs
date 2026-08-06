@@ -287,6 +287,9 @@ pub(crate) fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> dataf
         // zone id. Converts the instant to the zone's local wall-clock before extracting.
         return datafusion::logical_expr::ScalarUDF::new_from_impl(ExtractFieldLtz::new()).call(args);
     }
+    if op == 92 {
+        return datafusion::logical_expr::ScalarUDF::new_from_impl(IntervalScale::new()).call(args);
+    }
     if op == 87 {
         // TO_TIMESTAMP_LTZ(millis, 3): the single operand is epoch millis (the Java side admits only
         // the precision-3 form). Casting Int64 -> Timestamp(ms) reads the int as millis-since-epoch
@@ -412,6 +415,79 @@ pub(crate) fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> dataf
 pub(crate) struct NarrowingCast {
     target: DataType,
     signature: datafusion::logical_expr::Signature,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub(crate) struct IntervalScale {
+    signature: datafusion::logical_expr::Signature,
+}
+
+impl IntervalScale {
+    fn new() -> Self {
+        Self {
+            signature: datafusion::logical_expr::Signature::variadic_any(
+                datafusion::logical_expr::Volatility::Immutable,
+            ),
+        }
+    }
+}
+
+impl datafusion::logical_expr::ScalarUDFImpl for IntervalScale {
+    fn name(&self) -> &str {
+        "interval_scale"
+    }
+    fn signature(&self) -> &datafusion::logical_expr::Signature {
+        &self.signature
+    }
+    fn return_type(&self, _: &[DataType]) -> datafusion::common::Result<DataType> {
+        // Flink carries day-time intervals as signed millisecond longs. Returning that boundary
+        // representation also lets the result flow directly into ArrowToRowDataOperator.
+        Ok(DataType::Int64)
+    }
+    fn invoke_with_args(
+        &self,
+        args: datafusion::logical_expr::ScalarFunctionArgs,
+    ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
+        use datafusion::logical_expr::ColumnarValue;
+        let arrays = ColumnarValue::values_to_arrays(&args.args)?;
+        let factors = arrow::compute::cast(&arrays[1], &DataType::Int64)?;
+        let factors = factors
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("interval multiplier");
+        let millis: Int64Array = match arrays[0].data_type() {
+            DataType::Int64 => arrays[0]
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("millisecond interval")
+                .clone(),
+            DataType::Interval(arrow::datatypes::IntervalUnit::DayTime) => arrays[0]
+                .as_any()
+                .downcast_ref::<IntervalDayTimeArray>()
+                .expect("day-time interval")
+                .iter()
+                .map(|interval| {
+                    interval.map(|value| {
+                        value.days as i64 * 86_400_000 + value.milliseconds as i64
+                    })
+                })
+                .collect(),
+            other => {
+                return datafusion::common::exec_err!(
+                    "interval_scale expected a day-time interval, got {other}"
+                )
+            }
+        };
+        let values: Int64Array = millis
+            .iter()
+            .zip(factors.iter())
+            .map(|(interval, factor)| match (interval, factor) {
+                (Some(interval), Some(factor)) => Some(interval * factor),
+                _ => None,
+            })
+            .collect();
+        Ok(ColumnarValue::Array(Arc::new(values)))
+    }
 }
 
 impl NarrowingCast {
@@ -1363,7 +1439,7 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
 /// physical expression sees the operand types the host would.
 pub(crate) fn compile_expr(
     schema: &SchemaRef,
-    df_schema: &DFSchema,
+    _df_schema: &DFSchema,
     kinds: &[i64],
     payload: &[i64],
     child_counts: &[i64],
@@ -1372,11 +1448,43 @@ pub(crate) fn compile_expr(
     strings: &[Option<String>],
     root: usize,
 ) -> Arc<dyn PhysicalExpr> {
+    // RexInputRef is positional, while DataFusion's logical Column is name-based. Flink plans can
+    // legitimately carry duplicate names (nested ranks commonly have two hidden `w0$o0` fields),
+    // so compiling against the Arrow names can silently bind an input ref to the first duplicate.
+    // Give every compile-time field a stable positional name; the resulting physical Column keeps
+    // its resolved index and evaluates against the original batch by position.
+    let indexed_schema = Arc::new(Schema::new(
+        schema
+            .fields()
+            .iter()
+            .enumerate()
+            .map(|(index, field)| {
+                Field::new(
+                    format!("__streamfusion_input_{index}"),
+                    field.data_type().clone(),
+                    field.is_nullable(),
+                )
+                .with_metadata(field.metadata().clone())
+            })
+            .collect::<Vec<_>>(),
+    ));
+    let indexed_df_schema =
+        DFSchema::try_from(indexed_schema.as_ref().clone()).expect("indexed expression schema");
     let mut cursor = root;
-    let logical =
-        build_expr(schema, kinds, payload, child_counts, longs, doubles, strings, &mut cursor);
-    let context = SimplifyContext::builder().with_schema(Arc::new(df_schema.clone())).build();
+    let logical = build_expr(
+        &indexed_schema,
+        kinds,
+        payload,
+        child_counts,
+        longs,
+        doubles,
+        strings,
+        &mut cursor,
+    );
+    let context =
+        SimplifyContext::builder().with_schema(Arc::new(indexed_df_schema.clone())).build();
     let coerced =
-        ExprSimplifier::new(context).coerce(logical, df_schema).expect("failed to coerce expr");
-    create_physical_expr(&coerced, df_schema, &ExecutionProps::new()).expect("failed to compile expr")
+        ExprSimplifier::new(context).coerce(logical, &indexed_df_schema).expect("failed to coerce expr");
+    create_physical_expr(&coerced, &indexed_df_schema, &ExecutionProps::new())
+        .expect("failed to compile expr")
 }

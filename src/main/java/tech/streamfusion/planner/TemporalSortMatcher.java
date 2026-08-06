@@ -5,6 +5,7 @@ import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTemporalSort;
+import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 
 /**
  * Recognizes the event-time sort the native sorter implements: a {@link StreamPhysicalTemporalSort}
@@ -28,6 +29,9 @@ final class TemporalSortMatcher {
       return false; // event-time sort is ascending (watermark-driven, forward in time)
     }
     RelDataType rowtime = sort.getInput().getRowType().getFieldList().get(collation.getFieldIndex()).getType();
+    if (!FlinkTypeFactory$.MODULE$.isRowtimeIndicatorType(rowtime)) {
+      return false;
+    }
     switch (rowtime.getSqlTypeName()) {
       case TIMESTAMP:
       case TIMESTAMP_WITH_LOCAL_TIME_ZONE:

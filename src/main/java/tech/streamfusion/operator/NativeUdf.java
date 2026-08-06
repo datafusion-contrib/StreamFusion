@@ -1,6 +1,8 @@
 package tech.streamfusion.operator;
 
 import java.io.Serializable;
+import java.lang.reflect.Array;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -16,6 +18,7 @@ import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
+import org.apache.arrow.vector.NullVector;
 import org.apache.arrow.vector.SmallIntVector;
 import org.apache.arrow.vector.TimeStampMilliVector;
 import org.apache.arrow.vector.TimeStampNanoVector;
@@ -27,6 +30,7 @@ import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.flink.table.data.binary.BinaryStringData;
+import org.apache.flink.table.functions.FunctionContext;
 import org.apache.flink.table.functions.ScalarFunction;
 
 /**
@@ -84,6 +88,8 @@ public final class NativeUdf {
     // no java.lang.String — so byte-level builtins (case folding's ASCII fast path) stay in bytes
     // across the whole upcall. A String parameter keeps the materializing path.
     final boolean[] argAsStringData;
+    final int fixedArity;
+    final Class<?> varArgComponent;
 
     Registered(ScalarFunction function, Method eval, int[] argTypes, int returnType) {
       this.function = function;
@@ -91,15 +97,33 @@ public final class NativeUdf {
       this.argTypes = argTypes;
       this.returnType = returnType;
       Class<?>[] params = eval.getParameterTypes();
+      this.fixedArity = eval.isVarArgs() ? params.length - 1 : params.length;
+      this.varArgComponent = eval.isVarArgs() ? params[params.length - 1].getComponentType() : null;
       this.argAsStringData = new boolean[argTypes.length];
-      for (int a = 0; a < argTypes.length && a < params.length; a++) {
-        argAsStringData[a] = BinaryStringData.class.isAssignableFrom(params[a]);
+      for (int a = 0; a < argTypes.length; a++) {
+        Class<?> parameter =
+            a < fixedArity ? params[a] : varArgComponent;
+        argAsStringData[a] = BinaryStringData.class.isAssignableFrom(parameter);
       }
     }
   }
 
   private static final ConcurrentHashMap<Integer, Registered> REGISTRY = new ConcurrentHashMap<>();
   private static final AtomicInteger NEXT_ID = new AtomicInteger();
+  private static final ThreadLocal<Throwable> UPCALL_FAILURE = new ThreadLocal<>();
+
+  /** Restores the exception thrown by Flink's function after the native frame reports its JNI error. */
+  static RuntimeException propagateUpcallFailure(RuntimeException nativeFailure) {
+    Throwable failure = UPCALL_FAILURE.get();
+    UPCALL_FAILURE.remove();
+    if (failure == null) {
+      return nativeFailure;
+    }
+    if (failure instanceof RuntimeException) {
+      return (RuntimeException) failure;
+    }
+    return new RuntimeException("UDF invocation failed", failure);
+  }
 
   /**
    * Registers a scalar function for native invocation and returns its id (baked into the encoded
@@ -129,7 +153,14 @@ public final class NativeUdf {
 
   /** Removes a registration, freeing its id — called when an operator carrying it closes. */
   public static void unregister(int id) {
-    REGISTRY.remove(id);
+    Registered registered = REGISTRY.remove(id);
+    if (registered != null && registered.function != null) {
+      try {
+        registered.function.close();
+      } catch (Exception e) {
+        throw new IllegalStateException("failed to close UDF " + registered.function.getClass(), e);
+      }
+    }
   }
 
   /**
@@ -184,7 +215,7 @@ public final class NativeUdf {
     }
 
     /** Resolves the method on this JVM and registers it, returning the task-local runtime id. */
-    int registerLocally() {
+    int registerLocally(FunctionContext context) {
       Class<?> owner = function != null ? function.getClass() : methodClass;
       Method method;
       try {
@@ -193,9 +224,15 @@ public final class NativeUdf {
         throw new IllegalStateException(
             "cannot resolve UDF method " + methodName + " on " + owner.getName(), e);
       }
-      return function != null
-          ? register(function, method, argTypes, returnType)
-          : registerBuiltin(method, argTypes, returnType);
+      if (function != null) {
+        try {
+          function.open(context);
+        } catch (Exception e) {
+          throw new IllegalStateException("failed to open UDF " + owner.getName(), e);
+        }
+        return register(function, method, argTypes, returnType);
+      }
+      return registerBuiltin(method, argTypes, returnType);
     }
   }
 
@@ -226,10 +263,10 @@ public final class NativeUdf {
      * its local index to the task-local runtime id (a copy, leaving the encoded array pristine so a
      * re-open rebinds correctly). Returns {@code longs} unchanged when there are no UDFs.
      */
-    public long[] bind(long[] longs) {
+    public long[] bind(long[] longs, FunctionContext context) {
       runtimeIds = new int[descriptors.length];
       for (int i = 0; i < descriptors.length; i++) {
-        runtimeIds[i] = descriptors[i].registerLocally();
+        runtimeIds[i] = descriptors[i].registerLocally(context);
       }
       if (idSlots.length == 0) {
         return longs;
@@ -239,6 +276,11 @@ public final class NativeUdf {
         patched[slot] = runtimeIds[(int) longs[slot]];
       }
       return patched;
+    }
+
+    /** Binds without task runtime information, for local expression/unit-test use. */
+    public long[] bind(long[] longs) {
+      return bind(longs, new FunctionContext(null, null, null));
     }
 
     /** Frees the registrations obtained by {@link #bind}. */
@@ -284,11 +326,26 @@ public final class NativeUdf {
           columns[a] = readColumn(argVectors[a], udf.argTypes[a], udf.argAsStringData[a], rows);
         }
         Object[] args = new Object[arity];
+        Object[] invokeArgs =
+            udf.varArgComponent == null ? args : new Object[udf.fixedArity + 1];
+        Object varArgs =
+            udf.varArgComponent == null
+                ? null
+                : Array.newInstance(udf.varArgComponent, arity - udf.fixedArity);
+        if (varArgs != null) {
+          invokeArgs[udf.fixedArity] = varArgs;
+        }
         for (int row = 0; row < rows; row++) {
           for (int a = 0; a < arity; a++) {
             args[a] = columns[a][row];
           }
-          Object value = udf.eval.invoke(udf.function, args);
+          if (varArgs != null) {
+            System.arraycopy(args, 0, invokeArgs, 0, udf.fixedArity);
+            for (int a = udf.fixedArity; a < arity; a++) {
+              Array.set(varArgs, a - udf.fixedArity, args[a]);
+            }
+          }
+          Object value = udf.eval.invoke(udf.function, invokeArgs);
           writeValue(result, udf.returnType, row, value);
         }
         out.setRowCount(rows);
@@ -298,10 +355,18 @@ public final class NativeUdf {
               NativeAllocator.SHARED, out, NativeAllocator.DICTIONARIES, outArray, outSchema);
         }
       }
+    } catch (InvocationTargetException e) {
+      Throwable cause = e.getCause() == null ? e : e.getCause();
+      UPCALL_FAILURE.set(cause);
+      if (cause instanceof RuntimeException) {
+        throw (RuntimeException) cause;
+      }
+      throw new RuntimeException("UDF invocation failed", cause);
     } catch (ReflectiveOperationException e) {
       throw new RuntimeException("UDF invocation failed", e);
     }
   }
+
 
   private static VectorSchemaRoot resultRoot(int returnType, int rows) {
     Field field = new Field("result", FieldType.nullable(arrowType(returnType)), null);
@@ -344,6 +409,9 @@ public final class NativeUdf {
    */
   private static Object[] readColumn(FieldVector vector, int code, boolean asStringData, int rows) {
     Object[] out = new Object[rows];
+    if (vector instanceof NullVector) {
+      return out;
+    }
     switch (code) {
       case TYPE_STRING:
         {
@@ -402,20 +470,40 @@ public final class NativeUdf {
         }
       case TYPE_DOUBLE:
         {
-          Float8Vector v = (Float8Vector) vector;
-          for (int r = 0; r < rows; r++) {
-            if (!v.isNull(r)) {
-              out[r] = v.get(r);
+          if (vector instanceof Float8Vector) {
+            Float8Vector v = (Float8Vector) vector;
+            for (int r = 0; r < rows; r++) {
+              if (!v.isNull(r)) {
+                out[r] = v.get(r);
+              }
+            }
+          } else {
+            Float4Vector v = (Float4Vector) vector;
+            for (int r = 0; r < rows; r++) {
+              if (!v.isNull(r)) {
+                out[r] = (double) v.get(r);
+              }
             }
           }
           return out;
         }
       case TYPE_FLOAT:
         {
-          Float4Vector v = (Float4Vector) vector;
-          for (int r = 0; r < rows; r++) {
-            if (!v.isNull(r)) {
-              out[r] = v.get(r);
+          if (vector instanceof Float4Vector) {
+            Float4Vector v = (Float4Vector) vector;
+            for (int r = 0; r < rows; r++) {
+              if (!v.isNull(r)) {
+                out[r] = v.get(r);
+              }
+            }
+          } else {
+            // DataFusion can widen a FLOAT literal/expression to Float64 while the resolved Flink
+            // eval overload still declares Float.  Marshal the declared logical argument type.
+            Float8Vector v = (Float8Vector) vector;
+            for (int r = 0; r < rows; r++) {
+              if (!v.isNull(r)) {
+                out[r] = (float) v.get(r);
+              }
             }
           }
           return out;

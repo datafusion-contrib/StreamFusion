@@ -6,6 +6,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.functions.ScalarFunction;
+import org.apache.flink.table.functions.FunctionContext;
 import org.apache.flink.table.data.utils.CastExecutor;
 import org.apache.flink.table.planner.codegen.CodeGeneratorContext;
 import org.apache.flink.table.planner.functions.casting.CastRule;
@@ -42,13 +43,32 @@ public final class HostCastFunction extends ScalarFunction {
     this.targetType = targetType;
   }
 
+  @Override
+  public void open(FunctionContext context) {
+    // The task context loader is Flink's per-job safety wrapper. A generated Janino executor can
+    // lazily inflate a reflective accessor after that wrapper has been closed when test/job class
+    // loaders are recycled. The cast implementation only references Flink and StreamFusion classes,
+    // so anchor it to this function's defining loader, whose lifetime matches the function class.
+    initializeExecutor(ClassLoader.getSystemClassLoader());
+  }
+
   @SuppressWarnings("unchecked")
   public Object eval(Object value) {
     if (value == null) {
       return null;
     }
     if (executor == null) {
-      ClassLoader classLoader = HostCastFunction.class.getClassLoader();
+      initializeExecutor(ClassLoader.getSystemClassLoader());
+    }
+    return fromInternal(executor.cast(toInternal(value)));
+  }
+
+  @SuppressWarnings("unchecked")
+  private void initializeExecutor(ClassLoader classLoader) {
+    if (executor == null) {
+      if (classLoader == null) {
+        classLoader = ClassLoader.getSystemClassLoader();
+      }
       // The admitted casts (number↔string, string length) never consult the zone; UTC is a placeholder.
       executor =
           (CastExecutor<Object, Object>)
@@ -65,8 +85,13 @@ public final class HostCastFunction extends ScalarFunction {
         throw new IllegalStateException(
             "no cast rule for " + inputType + " -> " + targetType);
       }
+      // java.lang.reflect switches from its native accessor to a generated accessor after a small
+      // invocation threshold. Force that transition while Flink's job classloader is open; otherwise
+      // a long-running native batch can cross the threshold after the safety wrapper was retired.
+      for (int i = 0; i < 20; i++) {
+        executor.cast(null);
+      }
     }
-    return fromInternal(executor.cast(toInternal(value)));
   }
 
   /** The upcall marshals external values (String/BigDecimal/boxed numbers); the executor speaks

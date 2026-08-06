@@ -6,6 +6,14 @@ use crate::*;
 /// `JvmUdf` node can attach the (already JVM-owned) task thread and upcall the UDF bridge. Set once.
 pub(crate) static JVM: OnceLock<jni::JavaVM> = OnceLock::new();
 
+pub(crate) fn capture_jvm_raw(vm: *mut jni::sys::JavaVM) {
+    if JVM.get().is_none() {
+        if let Ok(vm) = unsafe { jni::JavaVM::from_raw(vm) } {
+            let _ = JVM.set(vm);
+        }
+    }
+}
+
 pub(crate) fn capture_jvm(env: &JNIEnv) {
     if JVM.get().is_none() {
         if let Ok(vm) = env.get_java_vm() {

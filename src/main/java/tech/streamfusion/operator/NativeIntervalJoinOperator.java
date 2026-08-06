@@ -94,7 +94,7 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
 
   @Override
   protected void beforeHandleCreation() {
-    predicate.bind();
+    predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
   }
 
   @Override

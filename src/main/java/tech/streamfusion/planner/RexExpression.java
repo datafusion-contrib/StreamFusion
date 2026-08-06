@@ -184,6 +184,18 @@ final class RexExpression {
     return encoder.tryEncodeCalc(calc) ? encoder : null;
   }
 
+  static RexExpression encodeProjections(List<RexNode> projections, List<String> names) {
+    RexExpression encoder = new RexExpression();
+    for (RexNode projection : projections) {
+      encoder.projectionRoots.add(encoder.kinds.size());
+      if (!encoder.emit(projection)) {
+        return null;
+      }
+    }
+    encoder.outputNames = names.toArray(new String[0]);
+    return encoder;
+  }
+
   /**
    * Why {@code calc} cannot be encoded for the native engine (the first un-admitted op/operand), or
    * null if it can — for surfacing fallback reasons (ticket 29).
@@ -382,8 +394,12 @@ final class RexExpression {
           // Decimal arithmetic then stays in Decimal128 rather than routing through double.
           int precision = literal.getType().getPrecision();
           int scale = literal.getType().getScale();
-          BigInteger unscaled =
-              value.setScale(scale, RoundingMode.UNNECESSARY).unscaledValue();
+          BigInteger unscaled;
+          try {
+            unscaled = value.setScale(scale, RoundingMode.UNNECESSARY).unscaledValue();
+          } catch (ArithmeticException e) {
+            return reject("decimal literal requires host rounding to scale " + scale);
+          }
           add(KIND_LIT_DECIMAL, strings.size(), 0);
           strings.add(unscaled + "|" + precision + "|" + scale);
           return true;
@@ -427,6 +443,10 @@ final class RexExpression {
   }
 
   private boolean emitCall(RexCall call) {
+    if ((call.getKind() == SqlKind.EQUALS || call.getKind() == SqlKind.NOT_EQUALS)
+        && hasImplicitStringNumericCast(call)) {
+      return reject("Flink rejects implicit VARCHAR/numeric equality during code generation");
+    }
     if (call.getKind() == SqlKind.CAST) {
       return emitCast(call);
     }
@@ -437,6 +457,15 @@ final class RexExpression {
     }
     if (call.getKind() == SqlKind.EXTRACT) {
       return emitExtract(call);
+    }
+    if (call.getKind() == SqlKind.TIMES && isDayTimeIntervalMultiply(call)) {
+      List<RexNode> operands = call.getOperands();
+      int interval =
+          operands.get(0).getType().getSqlTypeName().getFamily() == SqlTypeFamily.INTERVAL_DAY_TIME
+              ? 0
+              : 1;
+      add(KIND_CALL, 92, 2);
+      return emit(operands.get(interval)) && emit(operands.get(1 - interval));
     }
     // Decimal-typed arithmetic, all exact. Add/subtract/multiply: the operands reach the native side
     // as Decimal128 (columns already are; literals emit as exact Decimal128), and Arrow's Decimal128
@@ -627,8 +656,65 @@ final class RexExpression {
         if (operands.size() != 2) {
           return false;
         }
+        int narrowResult = arithmeticNarrowResult(call);
+        if (narrowResult >= 0) {
+          add(KIND_CAST_NARROW, narrowResult, 1);
+        }
         add(KIND_CALL, op, 2);
         return emit(operands.get(0)) && emit(operands.get(1));
+    }
+  }
+
+  private static boolean hasImplicitStringNumericCast(RexCall comparison) {
+    boolean character = false;
+    boolean numeric = false;
+    for (RexNode operand : comparison.getOperands()) {
+      character |=
+          operand.getType().getSqlTypeName().getFamily() == SqlTypeFamily.CHARACTER;
+      numeric |= operand.getType().getSqlTypeName().getFamily() == SqlTypeFamily.NUMERIC;
+      if (operand instanceof RexCall && operand.getKind() == SqlKind.CAST) {
+        RexNode source = ((RexCall) operand).getOperands().get(0);
+        boolean sourceString = source.getType().getSqlTypeName().getFamily() == SqlTypeFamily.CHARACTER;
+        boolean targetNumeric =
+            operand.getType().getSqlTypeName().getFamily() == SqlTypeFamily.NUMERIC;
+        if (sourceString && targetNumeric) {
+          return true;
+        }
+      }
+    }
+    return character && numeric;
+  }
+
+  private static boolean isDayTimeIntervalMultiply(RexCall call) {
+    if (call.getOperands().size() != 2) {
+      return false;
+    }
+    return call.getOperands().get(0).getType().getSqlTypeName().getFamily()
+            == SqlTypeFamily.INTERVAL_DAY_TIME
+        || call.getOperands().get(1).getType().getSqlTypeName().getFamily()
+            == SqlTypeFamily.INTERVAL_DAY_TIME;
+  }
+
+  private static int arithmeticNarrowResult(RexCall call) {
+    switch (call.getKind()) {
+      case PLUS:
+      case MINUS:
+      case TIMES:
+      case DIVIDE:
+      case MOD:
+        break;
+      default:
+        return -1;
+    }
+    switch (call.getType().getSqlTypeName()) {
+      case TINYINT:
+        return CAST_TINYINT;
+      case SMALLINT:
+        return CAST_SMALLINT;
+      case INTEGER:
+        return CAST_INTEGER;
+      default:
+        return -1;
     }
   }
 
@@ -1140,7 +1226,7 @@ final class RexExpression {
         return reject("UDF argument type not native: " + args.get(i).getType().getSqlTypeName());
       }
     }
-    Method eval = resolveEval(scalar, args.size());
+    Method eval = resolveEval(scalar, args);
     if (eval == null) {
       return reject(
           "UDF " + scalar.getClass().getName() + " has no single eval of arity " + args.size());
@@ -1284,18 +1370,89 @@ final class RexExpression {
     }
   }
 
-  /** The single public {@code eval} of the given arity, or null if none or more than one matches. */
-  private static Method resolveEval(Object function, int arity) {
+  /** The best public {@code eval} for the operands, or null when the Java overload is ambiguous. */
+  private static Method resolveEval(Object function, List<RexNode> args) {
     Method match = null;
+    int bestScore = Integer.MIN_VALUE;
     for (Method method : function.getClass().getMethods()) {
-      if (method.getName().equals("eval") && method.getParameterCount() == arity) {
-        if (match != null) {
-          return null; // ambiguous — do not guess which overload the host would pick
+      if (!method.getName().equals("eval")) {
+        continue;
+      }
+      Class<?>[] parameters = method.getParameterTypes();
+      int fixedArity = method.isVarArgs() ? parameters.length - 1 : parameters.length;
+      if ((!method.isVarArgs() && parameters.length != args.size()) || args.size() < fixedArity) {
+        continue;
+      }
+      int score = method.isVarArgs() ? 0 : 1;
+      boolean compatible = true;
+      for (int i = 0; i < args.size(); i++) {
+        Class<?> parameter =
+            i < fixedArity ? parameters[i] : parameters[parameters.length - 1].getComponentType();
+        int argumentScore = udfParameterScore(parameter, args.get(i).getType().getSqlTypeName());
+        if (argumentScore < 0) {
+          compatible = false;
+          break;
         }
+        score += argumentScore;
+      }
+      if (!compatible || score < bestScore) {
+        continue;
+      }
+      if (score == bestScore) {
+        match = null;
+      } else {
         match = method;
+        bestScore = score;
       }
     }
     return match;
+  }
+
+  private static int udfParameterScore(Class<?> parameter, SqlTypeName type) {
+    if (parameter.isPrimitive()) {
+      if (parameter == int.class) parameter = Integer.class;
+      else if (parameter == long.class) parameter = Long.class;
+      else if (parameter == double.class) parameter = Double.class;
+      else if (parameter == float.class) parameter = Float.class;
+      else if (parameter == short.class) parameter = Short.class;
+      else if (parameter == byte.class) parameter = Byte.class;
+      else if (parameter == boolean.class) parameter = Boolean.class;
+    }
+    Class<?> argument;
+    switch (type) {
+      case CHAR:
+      case VARCHAR:
+        argument = String.class;
+        break;
+      case BIGINT:
+        argument = Long.class;
+        break;
+      case INTEGER:
+        argument = Integer.class;
+        break;
+      case DOUBLE:
+        argument = Double.class;
+        break;
+      case FLOAT:
+      case REAL:
+        argument = Float.class;
+        break;
+      case SMALLINT:
+        argument = Short.class;
+        break;
+      case TINYINT:
+        argument = Byte.class;
+        break;
+      case BOOLEAN:
+        argument = Boolean.class;
+        break;
+      default:
+        return -1;
+    }
+    if (parameter == argument) {
+      return 2;
+    }
+    return parameter.isAssignableFrom(argument) ? 1 : -1;
   }
 
   /**

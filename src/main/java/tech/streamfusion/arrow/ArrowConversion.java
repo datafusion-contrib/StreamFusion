@@ -245,8 +245,7 @@ public final class ArrowConversion {
         || vector instanceof TimeMicroVector
         || vector instanceof TimeNanoVector) {
       return new ArrowTimeColumnVector(vector);
-    } else if (vector instanceof TimeStampVector
-        && ((ArrowType.Timestamp) vector.getField().getType()).getTimezone() == null) {
+    } else if (vector instanceof TimeStampVector) {
       return new ArrowTimestampColumnVector(vector);
     } else if (vector instanceof MapVector) {
       MapVector mapVector = (MapVector) vector;
@@ -310,8 +309,7 @@ public final class ArrowConversion {
         || vector instanceof TimeMicroVector
         || vector instanceof TimeNanoVector) {
       return TimeWriter.forRow(vector);
-    } else if (vector instanceof TimeStampVector
-        && ((ArrowType.Timestamp) vector.getField().getType()).getTimezone() == null) {
+    } else if (vector instanceof TimeStampVector) {
       int precision =
           fieldType instanceof LocalZonedTimestampType
               ? ((LocalZonedTimestampType) fieldType).getPrecision()
@@ -379,8 +377,7 @@ public final class ArrowConversion {
         || vector instanceof TimeMicroVector
         || vector instanceof TimeNanoVector) {
       return TimeWriter.forArray(vector);
-    } else if (vector instanceof TimeStampVector
-        && ((ArrowType.Timestamp) vector.getField().getType()).getTimezone() == null) {
+    } else if (vector instanceof TimeStampVector) {
       int precision =
           fieldType instanceof LocalZonedTimestampType
               ? ((LocalZonedTimestampType) fieldType).getPrecision()

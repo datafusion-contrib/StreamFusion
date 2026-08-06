@@ -204,14 +204,19 @@ pub(crate) fn unnest_array(
         fields.push(schema.field(i).as_ref().clone());
         columns.push(take(input.column(i), &rows_idx, None).expect("failed to fan out column"));
     }
-    for (field, child) in &children {
+    for (index, (field, child)) in children.iter().enumerate() {
         // A LEFT/outer null-pad makes every appended column nullable (even a map key or a
         // non-nullable struct field), so relax nullability there.
-        fields.push(if is_left { field.clone().with_nullable(true) } else { field.clone() });
+        let field = field.clone().with_name(format!("unnest_{data_end}_{index}"));
+        fields.push(if is_left { field.with_nullable(true) } else { field });
         columns.push(take(child.as_ref(), &elems_idx, None).expect("failed to take unnest element"));
     }
     if with_ordinality {
-        fields.push(Field::new("ordinality", DataType::Int32, is_left));
+        fields.push(Field::new(
+            format!("unnest_ordinality_{data_end}"),
+            DataType::Int32,
+            is_left,
+        ));
         columns.push(Arc::new(Int32Array::from(ordinals)));
     }
     if let Some(idx) = row_kind_idx {

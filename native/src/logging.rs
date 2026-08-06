@@ -129,6 +129,10 @@ pub extern "system" fn JNI_OnLoad(
     vm: *mut jni::sys::JavaVM,
     _reserved: *mut std::os::raw::c_void,
 ) -> jni::sys::jint {
+    // Capture the VM independently of any particular expression-construction entrypoint. JNI may
+    // resolve native methods from another loaded copy of this library, while every UDF expression
+    // still needs a process-wide handle for its callback into NativeUdf.
+    crate::bridge::capture_jvm_raw(vm);
     let _ = std::panic::catch_unwind(|| install(vm));
     jni::sys::JNI_VERSION_1_8
 }

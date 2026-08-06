@@ -14,6 +14,7 @@ import org.apache.arrow.vector.util.TransferPair;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.flink.table.functions.FunctionContext;
 
 /**
  * Stateless native filter, columnar in and out: applies the encoded predicate to each incoming Arrow
@@ -63,7 +64,7 @@ public class NativeFilterOperator extends AbstractStreamOperator<ArrowBatch>
     dictionaries = NativeAllocator.DICTIONARIES;
     // Register any UDFs the condition references into this JVM's registry and patch their ids before
     // compiling — so a task manager (empty registry) resolves them, not just the planner JVM.
-    long[] boundLongs = udfBinding.bind(longs);
+    long[] boundLongs = udfBinding.bind(longs, new FunctionContext(getRuntimeContext()));
     predicate =
         Native.createFilterExpression(kinds, payload, childCounts, boundLongs, doubles, strings);
   }
@@ -93,12 +94,16 @@ public class NativeFilterOperator extends AbstractStreamOperator<ArrowBatch>
         ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
-      Native.filterExpression(
-          predicate,
-          inArray.memoryAddress(),
-          inSchema.memoryAddress(),
-          outArray.memoryAddress(),
-          outSchema.memoryAddress());
+      try {
+        Native.filterExpression(
+            predicate,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      } catch (tech.streamfusion.NativeException e) {
+        throw NativeUdf.propagateUpcallFailure(e);
+      }
       filtered = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
     } finally {
       in.close(); // the input batch is consumed

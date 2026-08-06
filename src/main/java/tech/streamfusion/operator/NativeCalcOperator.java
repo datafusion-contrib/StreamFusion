@@ -10,6 +10,7 @@ import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.flink.table.functions.FunctionContext;
 
 /**
  * Stateless native Calc, columnar in and out: applies an encoded Calc — an optional condition then
@@ -66,7 +67,7 @@ public class NativeCalcOperator extends AbstractStreamOperator<ArrowBatch>
     dictionaries = NativeAllocator.DICTIONARIES;
     // Register any UDFs this Calc references into this JVM's registry (empty on a task manager) and
     // patch their ids into the encoded pool before compiling — so distributed tasks resolve them.
-    long[] boundLongs = udfBinding.bind(longs);
+    long[] boundLongs = udfBinding.bind(longs, new FunctionContext(getRuntimeContext()));
     calc =
         Native.createCalcExpression(
             kinds, payload, childCounts, boundLongs, doubles, strings, projectionRoots,
@@ -86,6 +87,10 @@ public class NativeCalcOperator extends AbstractStreamOperator<ArrowBatch>
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
     ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
+    // A Calc can sit immediately after a columnar key-group exchange (for example, the planner
+    // appends OVER-frame constants there). The projection does not change the batch's routing, so
+    // retain the destination used by the downstream keyed operator's Flink state-key context.
+    int destination = element.getValue().destination();
     VectorSchemaRoot in = element.getValue().root();
     // The input batch's buffers belong to the upstream operator's allocator; the C Data export must
     // use that allocator (buffers associate only within one allocator root). The operator's own
@@ -98,16 +103,20 @@ public class NativeCalcOperator extends AbstractStreamOperator<ArrowBatch>
         ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
-      Native.calcExpression(
-          calc,
-          inArray.memoryAddress(),
-          inSchema.memoryAddress(),
-          outArray.memoryAddress(),
-          outSchema.memoryAddress());
+      try {
+        Native.calcExpression(
+            calc,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      } catch (tech.streamfusion.NativeException e) {
+        throw NativeUdf.propagateUpcallFailure(e);
+      }
       out = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
     } finally {
       in.close(); // the input batch is consumed
     }
-    ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
+    ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out, destination));
   }
 }

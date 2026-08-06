@@ -102,7 +102,7 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
 
   @Override
   protected void beforeHandleCreation() {
-    predicate.bind();
+    predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
   }
 
   @Override

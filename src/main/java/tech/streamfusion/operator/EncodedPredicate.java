@@ -1,6 +1,7 @@
 package tech.streamfusion.operator;
 
 import java.io.Serializable;
+import org.apache.flink.table.functions.FunctionContext;
 
 /**
  * A residual non-equi join predicate encoded in the pre-order form the native filter engine decodes
@@ -54,8 +55,8 @@ public final class EncodedPredicate implements Serializable {
    * patched to the task-local runtime ids. Call at operator {@code open()} before compiling the
    * predicate; use {@link #boundLongs()} in place of {@link #longs} thereafter.
    */
-  public void bind() {
-    boundLongs = binding.bind(longs);
+  public void bind(FunctionContext context) {
+    boundLongs = binding.bind(longs, context);
   }
 
   /** The {@code longs} to compile with — the patched copy after {@link #bind}, else the raw array. */

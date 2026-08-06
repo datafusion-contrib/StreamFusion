@@ -8,8 +8,9 @@ pub(crate) use arrow::array::types::{
 };
 pub(crate) use arrow::array::{
     make_array, new_empty_array, new_null_array, Array, ArrayRef, BinaryArray, BooleanArray,
-    Decimal128Array, Float32Array, Int16Array, Int32Array, Int64Array, Int8Array, ListArray,
-    MapArray, MutableArrayData, PrimitiveArray, RecordBatch, StringArray, StructArray,
+    Decimal128Array, Float32Array, Int16Array, Int32Array, Int64Array, Int8Array,
+    IntervalDayTimeArray, ListArray, MapArray, MutableArrayData, PrimitiveArray, RecordBatch,
+    StringArray, StructArray,
     TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, UInt32Array,
 };
 pub(crate) use arrow::array::NullBufferBuilder;
