@@ -26,8 +26,7 @@ import org.junit.jupiter.api.Test;
 class KafkaWatermarkRoutingTest {
 
   private static final String QUERY =
-      "SELECT window_start, SUM(price) FROM TABLE(TUMBLE(TABLE events, DESCRIPTOR(ts),"
-          + " INTERVAL '1' MINUTE)) GROUP BY window_start";
+      "SELECT id, price FROM events";
 
   @AfterEach
   void clearFlags() {
@@ -78,10 +77,7 @@ class KafkaWatermarkRoutingTest {
             + " 'properties.bootstrap.servers' = 'localhost:9092',"
             + " 'scan.startup.mode' = 'earliest-offset', 'format' = 'json')");
     String plan =
-        NativePlanner.explain(
-            tEnv,
-            "SELECT window_start, SUM(price) FROM TABLE(TUMBLE(TABLE events, DESCRIPTOR(rowtime),"
-                + " INTERVAL '1' MINUTE)) GROUP BY window_start");
+        NativePlanner.explain(tEnv, "SELECT id, price, `dateTime` FROM events");
     assertTrue(
         plan.contains("NativeKafkaSource(topic="),
         "computed-rowtime table should take the native source:\n" + plan);

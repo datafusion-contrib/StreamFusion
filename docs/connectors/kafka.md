@@ -57,6 +57,14 @@ scan.
 Only `scan.bounded.mode` of unbounded or `latest-offset` runs natively; any other bounded mode
 falls back.
 
+### Startup offsets
+
+All Flink startup modes remain supported. `earliest-offset`, `timestamp`, and `specific-offsets`
+can use the fused native source. `latest-offset` and `group-offsets` retain Flink's source reader
+and use the native decode operator: this preserves Flink's precise job-submission/savepoint
+boundary for latest offsets and its committed-offset, auto-commit, and missing-offset exception
+semantics. The message format is still decoded natively on that shallow path.
+
 ### Consumer properties and security
 
 Consumer property translation is fail-closed: every supplied `properties.*` key is classified
@@ -140,6 +148,9 @@ fallback, never silently dropped or ignored.
 
 Shape and ability fallbacks, independent of wire format:
 
+- a changelog produced by a host-side operator (including the currently disabled native
+  non-windowed `GROUP BY` paths) — the all-or-nothing island gate keeps its downstream Kafka sink
+  on Flink too; a natively decoded CDC source can still feed the supported CDC/upsert sink shapes;
 - an **upsert-materialized sink** — when Flink decides the upsert changelog can arrive out of
   order it bakes a stateful `SinkUpsertMaterializer` into its own sink translation, which a
   substituted native sink would silently drop;

@@ -77,12 +77,25 @@ final class KafkaTables {
     if (!decodeCommon(options)) {
       return false;
     }
+    // Flink's source reader owns the exact group-offset error/auto-commit behavior and the
+    // latest-offset submission/savepoint boundary. Keep those modes on the shallow decode path,
+    // which still accelerates the format while retaining Flink's source implementation.
+    if (!nativeStartupModeSupported(options)) {
+      return false;
+    }
     // The fused source's poll buckets carry only the value bytes; a keyed table stays on the
     // decode-operator path, whose keyed edge carries both.
     if (options.containsKey("key.format")) {
       return false;
     }
     return KafkaConfigTranslator.translate(consumerProperties(options)).fallbackReason == null;
+  }
+
+  private static boolean nativeStartupModeSupported(Map<String, String> options) {
+    String mode = options.getOrDefault("scan.startup.mode", "group-offsets");
+    return "earliest-offset".equals(mode)
+        || "timestamp".equals(mode)
+        || "specific-offsets".equals(mode);
   }
 
   private static boolean nativeKafkaAvailable() {
@@ -439,8 +452,9 @@ final class KafkaTables {
             TimeUtils.parseDuration(
                     options.getOrDefault("scan.topic-partition-discovery.interval", "5 min"))
                 .toMillis()));
-    // Offsets are checkpointed, never auto-committed; the reader assigns+seeks to concrete offsets.
-    props.setProperty("enable.auto.commit", "false");
+    // KafkaSourceBuilder defaults auto commit off but preserves an explicit user value. This is
+    // observable for group-offset startup tests and external consumer-offset monitoring.
+    props.putIfAbsent("enable.auto.commit", "false");
     return props;
   }
 

@@ -36,8 +36,9 @@ VARBINARY.
 | A MAP/MULTISET key type outside CHAR/VARCHAR | Defensive only — Flink's own JSON format rejects a non-string map key at planning, so this can't reach substitution. |
 
 All Kafka startup modes (earliest/latest/group-offsets/timestamp/specific-offsets), `topic` lists,
-and `topic-pattern` are supported regardless of format, since discovery and offset resolution run
-in Flink's own reused enumerator.
+and `topic-pattern` are supported regardless of format. Discovery and offset resolution run in
+Flink's enumerator; latest/group-offset startup retains Flink's reader with native decode, while
+the other supported modes may use the fused native source.
 
 ## Encode (Kafka sink)
 

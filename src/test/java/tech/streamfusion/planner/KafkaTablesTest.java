@@ -63,6 +63,17 @@ class KafkaTablesTest {
             .getAutoOffsetResetStrategy());
   }
 
+  @Test
+  void explicitAutoCommitIsPreservedLikeFlinkSourceBuilder() {
+    Properties properties =
+        KafkaTables.consumerProperties(
+            Map.of(
+                "properties.enable.auto.commit", "true",
+                "properties.auto.commit.interval.ms", "1000"));
+    assertEquals("true", properties.getProperty("enable.auto.commit"));
+    assertEquals("1000", properties.getProperty("auto.commit.interval.ms"));
+  }
+
   private static String discoveryInterval(Map<String, String> options) {
     Properties props = KafkaTables.consumerProperties(options);
     return props.getProperty("partition.discovery.interval.ms");

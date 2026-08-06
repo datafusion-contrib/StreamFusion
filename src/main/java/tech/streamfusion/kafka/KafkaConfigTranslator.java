@@ -63,6 +63,7 @@ public final class KafkaConfigTranslator {
     "client.id",
     "client.rack",
     "enable.auto.commit",
+    "auto.commit.interval.ms",
     "check.crcs",
     "fetch.min.bytes",
     "fetch.max.bytes",
@@ -167,9 +168,7 @@ public final class KafkaConfigTranslator {
           // Java-consumer call scheduling with no data-affecting semantics on the native reader:
           // it batches by its own poll cap, and enumerator-side API calls keep Java behavior.
           "max.poll.records",
-          "default.api.timeout.ms",
-          // enable.auto.commit is forced false on both paths, so the interval never engages.
-          "auto.commit.interval.ms");
+          "default.api.timeout.ms");
 
   // Java keys with no faithful librdkafka analog: their presence forces a fallback.
   private static final Set<String> NO_ANALOG =

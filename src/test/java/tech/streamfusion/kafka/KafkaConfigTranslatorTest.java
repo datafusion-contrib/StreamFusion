@@ -37,10 +37,18 @@ class KafkaConfigTranslatorTest {
   @Test
   void passesThroughSameNameKeys() {
     Map<String, String> c =
-        translated(props("bootstrap.servers", "b:9092", "group.id", "g", "fetch.min.bytes", "1024"));
+        translated(
+            props(
+                "bootstrap.servers", "b:9092",
+                "group.id", "g",
+                "fetch.min.bytes", "1024",
+                "enable.auto.commit", "true",
+                "auto.commit.interval.ms", "1000"));
     assertEquals("b:9092", c.get("bootstrap.servers"));
     assertEquals("g", c.get("group.id"));
     assertEquals("1024", c.get("fetch.min.bytes"));
+    assertEquals("true", c.get("enable.auto.commit"));
+    assertEquals("1000", c.get("auto.commit.interval.ms"));
   }
 
   @Test
