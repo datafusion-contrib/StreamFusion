@@ -36,6 +36,7 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
   // row a record replaces; null for the append-only and retracting rankers.
   private final int[] rowKeyColumns;
   private final int[] rowKeyTimestampPrecisions;
+  private final boolean generateUpdateBefore;
   private final boolean netDiff;
   private final long miniBatchSize;
   private final long stateTtlMillis;
@@ -57,6 +58,7 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
       boolean retracting,
       int[] rowKeyColumns,
       int[] rowKeyTimestampPrecisions,
+      boolean generateUpdateBefore,
       boolean netDiff,
       long miniBatchSize,
       long stateTtlMillis,
@@ -73,6 +75,7 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
     this.retracting = retracting;
     this.rowKeyColumns = rowKeyColumns;
     this.rowKeyTimestampPrecisions = rowKeyTimestampPrecisions;
+    this.generateUpdateBefore = generateUpdateBefore;
     this.netDiff = netDiff;
     this.miniBatchSize = miniBatchSize;
     this.stateTtlMillis = stateTtlMillis;
@@ -122,6 +125,7 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
                   rowSchemaAddress,
                   limit,
                   outputRankNumber,
+                  generateUpdateBefore,
                   stateTtlMillis,
                   getProcessingTimeService().getCurrentProcessingTime(),
                   memoryBudgetBytes(),
@@ -184,6 +188,7 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
           sortNullsFirst,
           limit,
           outputRankNumber,
+          generateUpdateBefore,
           stateTtlMillis,
           memoryBudgetBytes());
     }
@@ -215,6 +220,7 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
           sortNullsFirst,
           limit,
           outputRankNumber,
+          generateUpdateBefore,
           stateTtlMillis,
           getProcessingTimeService().getCurrentProcessingTime(),
           snapshots,

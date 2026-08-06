@@ -65,6 +65,11 @@ public class StreamPhysicalNativeColumnarGroupAggregate extends StreamPhysicalNa
     return false;
   }
 
+  /** Number of output-prefix fields forming this GROUP BY node's upsert key. */
+  int groupingCount() {
+    return keyColumns.length;
+  }
+
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
     return new StreamPhysicalNativeColumnarGroupAggregate(

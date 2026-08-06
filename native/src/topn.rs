@@ -789,6 +789,7 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
             if self.output_rank_number {
                 diff_top(
                     true,
+                    true,
                     0,
                     old,
                     &new,
@@ -1420,7 +1421,7 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> RetractableTopNRanker<S> {
                 .iter()
                 .map(|e| Arc::clone(&e.payload))
                 .collect();
-            diff_top(rank_output, rank_base, &old_top, &new_top, &mut out_rows, &mut out_kinds, &mut out_ranks);
+            diff_top(rank_output, true, rank_base, &old_top, &new_top, &mut out_rows, &mut out_kinds, &mut out_ranks);
         }
         self.groups.end_bundle()?;
         self.memory.record(delta + self.groups.footprint_delta());
@@ -1593,6 +1594,7 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> RetractableTopNRanker<S> {
                 .collect();
             diff_top(
                 self.output_rank_number,
+                true,
                 self.offset,
                 &old_tops[&part],
                 &new_top,
@@ -1738,6 +1740,7 @@ impl RetractableTopNRanker {
 /// the fast path (an unchanged rank is usually the same buffered row).
 fn diff_top(
     output_rank_number: bool,
+    generate_update_before: bool,
     rank_base: i64,
     old_top: &[Arc<OwnedRow>],
     new_top: &[Arc<OwnedRow>],
@@ -1750,9 +1753,11 @@ fn diff_top(
             let rank = rank_base + i as i64 + 1; // window position i is rank offset+i+1
             match (old_top.get(i), new_top.get(i)) {
                 (Some(o), Some(n)) if !Arc::ptr_eq(o, n) && o.row() != n.row() => {
-                    out_rows.push(Arc::clone(o));
-                    out_kinds.push(1); // -U the old occupant of this rank
-                    out_ranks.push(rank);
+                    if generate_update_before {
+                        out_rows.push(Arc::clone(o));
+                        out_kinds.push(1); // -U the old occupant of this rank
+                        out_ranks.push(rank);
+                    }
                     out_rows.push(Arc::clone(n));
                     out_kinds.push(2); // +U the new occupant
                     out_ranks.push(rank);
@@ -1777,15 +1782,15 @@ fn diff_top(
         for r in old_top {
             *old_counts.entry(r.row().data()).or_insert(0) += 1;
         }
+        let mut entered = Vec::new();
         for r in new_top {
             match old_counts.get_mut(r.row().data()) {
                 Some(c) if *c > 0 => *c -= 1, // still present — no change
-                _ => {
-                    out_rows.push(Arc::clone(r));
-                    out_kinds.push(0); // +I a row that entered the top-N
-                }
+                _ => entered.push(Arc::clone(r)),
             }
         }
+        // Flink retracts the row leaving the rank window before inserting its replacement. The
+        // order matters to upsert sinks when both rows have the same downstream key.
         for r in old_top {
             let count = old_counts.get_mut(r.row().data()).expect("counted");
             if *count > 0 {
@@ -1793,6 +1798,10 @@ fn diff_top(
                 out_rows.push(Arc::clone(r));
                 out_kinds.push(3); // -D a row that left the top-N
             }
+        }
+        for row in entered {
+            out_rows.push(row);
+            out_kinds.push(0); // +I a row that entered the top-N
         }
     }
 }
@@ -1865,6 +1874,7 @@ pub(crate) struct UpdatableTopNRanker<
     sort_columns: Vec<SortColumn>,
     limit: i64,
     output_rank_number: bool,
+    generate_update_before: bool,
     // Idle-state retention millis (0 = off); per-row-key entry expiry, like Flink's MapState TTL.
     ttl_ms: i64,
     last_sweep_ms: i64,
@@ -1888,6 +1898,7 @@ impl UpdatableTopNRanker {
         sort_columns: Vec<SortColumn>,
         limit: i64,
         output_rank_number: bool,
+        generate_update_before: bool,
     ) -> Self {
         UpdatableTopNRanker {
             partition_columns,
@@ -1897,6 +1908,7 @@ impl UpdatableTopNRanker {
             sort_columns,
             limit,
             output_rank_number,
+            generate_update_before,
             ttl_ms: 0,
             last_sweep_ms: 0,
             schema: None,
@@ -1922,6 +1934,7 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
             sort_columns: self.sort_columns,
             limit: self.limit,
             output_rank_number: self.output_rank_number,
+            generate_update_before: self.generate_update_before,
             ttl_ms: self.ttl_ms,
             last_sweep_ms: self.last_sweep_ms,
             schema: self.schema,
@@ -2056,6 +2069,10 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
             // The bounded buffer IS the top-N window.
             let old_top: Vec<Arc<OwnedRow>> =
                 buffer.iter().map(|e| Arc::clone(&e.payload)).collect();
+            // UpdatableTopNFunction treats a new version of an already-buffered unique key as an
+            // UPDATE, even when its sort position changes. Preserve that changelog identity instead
+            // of reducing the transition to an anonymous membership delete/insert pair.
+            let mut direct_update: Option<(Arc<OwnedRow>, Arc<OwnedRow>, i64)> = None;
             if top1 {
                 // FastTop1Function: only a strict improvement replaces the buffered row.
                 match buffer.first() {
@@ -2072,6 +2089,7 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
                         buffer.push(entry);
                     }
                     Some(current) if key_row < current.sort.row() => {
+                        let old_payload = Arc::clone(&current.payload);
                         if track {
                             delta -= updatable_entry_bytes(&buffer[0]) as isize;
                         }
@@ -2084,6 +2102,8 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
                         if track {
                             delta += updatable_entry_bytes(&buffer[0]) as isize;
                         }
+                        direct_update =
+                            Some((old_payload, Arc::clone(&buffer[0].payload), 1));
                     }
                     _ => continue, // equal or worse — dropped, state and output untouched
                 }
@@ -2091,6 +2111,7 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
                 let row_key = row_keys.encode(row);
                 match buffer.iter().position(|e| &*e.row_key.0 == row_key) {
                     Some(index) => {
+                        let old_payload = Arc::clone(&buffer[index].payload);
                         if buffer[index].sort.row() == key_row {
                             // Same sort key: replace the payload in place, preserving the row's
                             // position among sort-key ties (Flink's innerRank).
@@ -2120,6 +2141,12 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
                                 delta += updatable_entry_bytes(&buffer[pos]) as isize;
                             }
                         }
+                        let updated = buffer
+                            .iter()
+                            .find(|entry| &*entry.row_key.0 == row_key)
+                            .expect("updated top-n row remains buffered");
+                        direct_update =
+                            Some((old_payload, Arc::clone(&updated.payload), index as i64 + 1));
                     }
                     None => {
                         let pos = buffer.partition_point(|e| e.sort.row() <= key_row);
@@ -2149,7 +2176,65 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
             }
             let new_top: Vec<Arc<OwnedRow>> =
                 buffer.iter().map(|e| Arc::clone(&e.payload)).collect();
-            diff_top(rank_output, 0, &old_top, &new_top, &mut out_rows, &mut out_kinds, &mut out_ranks);
+            if !rank_output {
+                if let Some((old, new, _)) = &direct_update {
+                    if self.generate_update_before {
+                        out_rows.push(Arc::clone(old));
+                        out_kinds.push(1); // -U old version of the same unique key
+                    }
+                    out_rows.push(Arc::clone(new));
+                    out_kinds.push(2); // +U new version
+                    continue;
+                }
+            }
+            let output_start = out_rows.len();
+            diff_top(
+                rank_output,
+                self.generate_update_before,
+                0,
+                &old_top,
+                &new_top,
+                &mut out_rows,
+                &mut out_kinds,
+                &mut out_ranks,
+            );
+            // Flink treats every record for an existing unique key as an update. In particular,
+            // recovery may replay an UPDATE_AFTER whose projected values equal the restored row;
+            // UpdatableTopNFunction still emits the update pair instead of suppressing it as a
+            // value-level no-op.
+            if rank_output && out_rows.len() == output_start {
+                if let Some((old, new, old_rank)) = &direct_update {
+                    if self.generate_update_before {
+                        out_rows.push(Arc::clone(old));
+                        out_kinds.push(1);
+                        out_ranks.push(*old_rank);
+                    }
+                    out_rows.push(Arc::clone(new));
+                    out_kinds.push(2);
+                    out_ranks.push(*old_rank);
+                }
+            }
+            // Flink first retracts the row displaced at the new rank, then retracts the updated
+            // unique key at its old rank, and only then emits the first UPDATE_AFTER. Move that
+            // old-rank preimage immediately behind the first displaced-row preimage.
+            if rank_output {
+                if let Some((old, _, old_rank)) = &direct_update {
+                    if let Some(index) = (output_start..out_rows.len()).find(|&index| {
+                        out_kinds[index] == 1
+                        && out_ranks[index] == *old_rank
+                        && out_rows[index].row() == old.row()
+                    }) {
+                        if index > output_start {
+                            let row = out_rows.remove(index);
+                            let kind = out_kinds.remove(index);
+                            let rank = out_ranks.remove(index);
+                            out_rows.insert(output_start + 1, row);
+                            out_kinds.insert(output_start + 1, kind);
+                            out_ranks.insert(output_start + 1, rank);
+                        }
+                    }
+                }
+            }
         }
         self.groups.end_bundle()?;
         self.memory.record(delta + self.groups.footprint_delta());
@@ -2254,6 +2339,7 @@ impl UpdatableTopNRanker {
         sort_columns: Vec<SortColumn>,
         limit: i64,
         output_rank_number: bool,
+        generate_update_before: bool,
         snapshots: &[Vec<u8>],
         restored_at_ms: i64,
     ) -> Self {
@@ -2265,6 +2351,7 @@ impl UpdatableTopNRanker {
             sort_columns,
             limit,
             output_rank_number,
+            generate_update_before,
         );
         for bytes in snapshots {
             for batch in read_ipc_if_present(bytes) {
@@ -3230,6 +3317,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createUpdateFastTopNRanker<
     sort_nulls_first: JIntArray<'local>,
     limit: jlong,
     output_rank_number: jboolean,
+    generate_update_before: jboolean,
     state_ttl_millis: jlong,
     memory_budget_bytes: jlong,
 ) -> jlong {
@@ -3248,6 +3336,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createUpdateFastTopNRanker<
                 sort,
                 limit,
                 output_rank_number != 0,
+                generate_update_before != 0,
             )
             .with_state_ttl(state_ttl_millis),
         );
@@ -3271,6 +3360,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreUpdateFastTopNRanker
     sort_nulls_first: JIntArray<'local>,
     limit: jlong,
     output_rank_number: jboolean,
+    generate_update_before: jboolean,
     state_ttl_millis: jlong,
     now_millis: jlong,
     snapshots: JObjectArray<'local>,
@@ -3305,6 +3395,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreUpdateFastTopNRanker
                 sort,
                 limit,
                 output_rank_number != 0,
+                generate_update_before != 0,
                 &restored,
                 now_millis,
             )
@@ -3369,8 +3460,8 @@ mod tests {
         let out = ranker.flush_net_diff();
         let values = out.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
         let kinds = out.column(2).as_any().downcast_ref::<Int8Array>().unwrap();
-        assert_eq!(values.values(), &[5, 10]);
-        assert_eq!(kinds.values(), &[0, 3]);
+        assert_eq!(values.values(), &[10, 5]);
+        assert_eq!(kinds.values(), &[3, 0]);
         assert_eq!(ranker.staged_partitions(), 0);
     }
 }

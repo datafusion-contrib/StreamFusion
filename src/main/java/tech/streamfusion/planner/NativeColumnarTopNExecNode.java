@@ -33,6 +33,7 @@ public class NativeColumnarTopNExecNode extends ExecNodeBase<ArrowBatch>
   private final boolean retracting;
   // Update-fast mode: the unique-key columns identifying the row a record replaces (null otherwise).
   private final int[] rowKeyColumns;
+  private final boolean generateUpdateBefore;
   private final int[] rowKeyTimestampPrecisions;
   private final int[] keyTimestampPrecisions;
 
@@ -50,6 +51,7 @@ public class NativeColumnarTopNExecNode extends ExecNodeBase<ArrowBatch>
       boolean outputRankNumber,
       boolean retracting,
       int[] rowKeyColumns,
+      boolean generateUpdateBefore,
       int[] rowKeyTimestampPrecisions,
       int[] keyTimestampPrecisions) {
     super(
@@ -68,6 +70,7 @@ public class NativeColumnarTopNExecNode extends ExecNodeBase<ArrowBatch>
     this.outputRankNumber = outputRankNumber;
     this.retracting = retracting;
     this.rowKeyColumns = rowKeyColumns;
+    this.generateUpdateBefore = generateUpdateBefore;
     this.rowKeyTimestampPrecisions = rowKeyTimestampPrecisions;
     this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
@@ -105,6 +108,7 @@ public class NativeColumnarTopNExecNode extends ExecNodeBase<ArrowBatch>
                 retracting,
                 rowKeyColumns,
                 rowKeyTimestampPrecisions,
+                generateUpdateBefore,
                 netDiff,
                 miniBatchSize,
                 stateTtlMillis,

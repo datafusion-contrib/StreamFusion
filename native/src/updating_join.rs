@@ -14,6 +14,8 @@ pub(crate) struct UpdatingJoiner<S: KeyedStateStore<JoinBucket> = MemoryJoinStor
     /// both sides' key types are equal, so equal keys encode to equal bytes and match).
     left_payload: RowConverter,
     right_payload: RowConverter,
+    left_join_key_unique: bool,
+    right_join_key_unique: bool,
     /// A value-encoded all-null row per side, used to null-pad the absent side of an outer join.
     left_null: ByteKey,
     right_null: ByteKey,
@@ -105,6 +107,8 @@ impl UpdatingJoiner {
             predicate,
             left_payload,
             right_payload,
+            left_join_key_unique: false,
+            right_join_key_unique: false,
             left_null,
             right_null,
             left_state: MemoryJoinStore::default(),
@@ -148,6 +152,8 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             predicate: self.predicate,
             left_payload: self.left_payload,
             right_payload: self.right_payload,
+            left_join_key_unique: self.left_join_key_unique,
+            right_join_key_unique: self.right_join_key_unique,
             left_null: self.left_null,
             right_null: self.right_null,
             left_state,
@@ -189,6 +195,37 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
     pub(crate) fn with_mini_batch(mut self, mini_batch: bool) -> Self {
         self.mini_batch = mini_batch;
         self
+    }
+
+    pub(crate) fn with_unique_join_keys(mut self, left: bool, right: bool) -> Self {
+        self.left_join_key_unique = left;
+        self.right_join_key_unique = right;
+        self
+    }
+
+    fn side_join_key_unique(&self, is_left: bool) -> bool {
+        if is_left { self.left_join_key_unique } else { self.right_join_key_unique }
+    }
+
+    fn prepare_unique_accumulate(
+        state: &mut S,
+        key: &[u8],
+        unique: bool,
+        track: bool,
+        delta: &mut isize,
+    ) {
+        if !unique {
+            return;
+        }
+        if let Some(bucket) = state.get_mut(key) {
+            if track {
+                *delta -= bucket
+                    .keys()
+                    .map(|row| join_row_entry_bytes(&row.0))
+                    .sum::<usize>() as isize;
+            }
+            bucket.clear();
+        }
     }
 
     /// Sets each side's idle-state retention in millis; 0 (Flink's default) disables that side's
@@ -797,6 +834,13 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                 }
             }
             if kind == 0 || kind == 2 {
+                Self::prepare_unique_accumulate(
+                    input_state,
+                    key,
+                    if is_left { self.left_join_key_unique } else { self.right_join_key_unique },
+                    track,
+                    &mut delta,
+                );
                 let bucket = Self::bucket_mut(input_state, key, track, &mut delta);
                 Self::bump_row(
                     bucket,
@@ -929,6 +973,10 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         self.filter_associated(full, is_left, &mut associated);
 
         if accumulate {
+            let unique = self.side_join_key_unique(is_left);
+            Self::prepare_unique_accumulate(
+                self.input_state(is_left), key, unique, track, delta,
+            );
             if input_is_outer {
                 if associated.is_empty() {
                     let (l, r) = input_padded;
@@ -1373,6 +1421,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_createUpdatingJoiner<'local
     pred_longs: JLongArray<'local>,
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
+    left_join_key_unique: jboolean,
+    right_join_key_unique: jboolean,
     mini_batch: jboolean,
     left_state_ttl_millis: jlong,
     right_state_ttl_millis: jlong,
@@ -1402,6 +1452,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createUpdatingJoiner<'local
             predicate,
         )
         .with_key_timestamp_precisions(timestamp_precisions)
+        .with_unique_join_keys(left_join_key_unique != 0, right_join_key_unique != 0)
         .with_mini_batch(mini_batch != 0)
         .with_state_ttl(left_state_ttl_millis, right_state_ttl_millis)
         .with_memory_budget(memory_budget_bytes);
@@ -1515,6 +1566,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreUpdatingJoinerPartit
     pred_longs: JLongArray<'local>,
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
+    left_join_key_unique: jboolean,
+    right_join_key_unique: jboolean,
     mini_batch: jboolean,
     left_state_ttl_millis: jlong,
     right_state_ttl_millis: jlong,
@@ -1562,6 +1615,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreUpdatingJoinerPartit
             &restored,
             now_millis,
         )
+        .with_unique_join_keys(left_join_key_unique != 0, right_join_key_unique != 0)
         .with_mini_batch(mini_batch != 0)
         .with_state_ttl(left_state_ttl_millis, right_state_ttl_millis)
         .with_memory_budget(memory_budget_bytes);

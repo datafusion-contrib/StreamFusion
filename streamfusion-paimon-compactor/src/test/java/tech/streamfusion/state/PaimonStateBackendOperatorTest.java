@@ -581,7 +581,7 @@ class PaimonStateBackendOperatorTest {
                   RowDataArrowConverter.write(
                       List.of(rowOfKind(RowKind.DELETE, 9, 1)), TOPN_ROW, allocator, true))));
       assertEquals(
-          List.of(List.of(RowKind.INSERT, 9L, 3L), List.of(RowKind.DELETE, 9L, 1L)),
+          List.of(List.of(RowKind.DELETE, 9L, 1L), List.of(RowKind.INSERT, 9L, 3L)),
           collectDedupless(harness));
     }
   }
@@ -630,16 +630,15 @@ class PaimonStateBackendOperatorTest {
       harness.initializeState(snapshot);
       harness.open();
 
-      // Row key (9, 7)'s next version improves its sort key: the hydrated entry moves, retracting
-      // the old payload — a fresh insert would instead have evicted the (9, 8) tie row.
+      // Row key (9, 7)'s next version improves its sort key. The hydrated entry is recognized as
+      // an in-place keyed update rather than a fresh insert that would evict the (9, 8) tie row.
       harness.processElement(
           new StreamRecord<>(
               new ArrowBatch(
                   RowDataArrowConverter.write(
                       List.of(GenericRowData.of(9L, 7L, 1L)), UPDATE_FAST_ROW, allocator))));
       assertEquals(
-          List.of(
-              List.of(RowKind.INSERT, 9L, 7L, 1L), List.of(RowKind.DELETE, 9L, 7L, 5L)),
+          List.of(List.of(RowKind.UPDATE_AFTER, 9L, 7L, 1L)),
           collectUpdateFast(harness));
     }
   }
@@ -660,6 +659,7 @@ class PaimonStateBackendOperatorTest {
             false,
             new int[] {0, 1},
             new int[] {-1, -1},
+            false,
             false,
             -1,
             0,
@@ -754,6 +754,8 @@ class PaimonStateBackendOperatorTest {
             tech.streamfusion.operator.NativeUdf.Binding.EMPTY,
             new int[] {-1},
             false,
+            false,
+            false,
             0,
             0,
             0,
@@ -807,6 +809,7 @@ class PaimonStateBackendOperatorTest {
             null,
             null,
             false,
+            false,
             -1,
             0,
             MAX_PARALLELISM);
@@ -830,6 +833,7 @@ class PaimonStateBackendOperatorTest {
             true,
             null,
             null,
+            false,
             false,
             -1,
             0,

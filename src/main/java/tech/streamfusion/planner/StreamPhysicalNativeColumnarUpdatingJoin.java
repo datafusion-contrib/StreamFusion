@@ -23,7 +23,8 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends StreamPhysicalNati
   private final int[] rightKeys;
   private final int joinType;
   private final RexExpression predicate;
-  private final boolean bothJoinKeysUnique;
+  private final boolean leftJoinKeyUnique;
+  private final boolean rightJoinKeyUnique;
   // Per-side TTLs from a STATE_TTL hint on the host join (-1 = no hint for that side); the exec
   // node resolves each against table.exec.state.ttl at translate time, hint winning.
   private final long leftStateTtlHintMillis;
@@ -39,7 +40,8 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends StreamPhysicalNati
       int[] rightKeys,
       int joinType,
       RexExpression predicate,
-      boolean bothJoinKeysUnique,
+      boolean leftJoinKeyUnique,
+      boolean rightJoinKeyUnique,
       long leftStateTtlHintMillis,
       long rightStateTtlHintMillis) {
     super(cluster, traitSet, left, right, outputRowType);
@@ -47,7 +49,8 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends StreamPhysicalNati
     this.rightKeys = rightKeys;
     this.joinType = joinType;
     this.predicate = predicate;
-    this.bothJoinKeysUnique = bothJoinKeysUnique;
+    this.leftJoinKeyUnique = leftJoinKeyUnique;
+    this.rightJoinKeyUnique = rightJoinKeyUnique;
     this.leftStateTtlHintMillis = leftStateTtlHintMillis;
     this.rightStateTtlHintMillis = rightStateTtlHintMillis;
   }
@@ -69,7 +72,8 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends StreamPhysicalNati
         rightKeys,
         joinType,
         predicate,
-        bothJoinKeysUnique,
+        leftJoinKeyUnique,
+        rightJoinKeyUnique,
         leftStateTtlHintMillis,
         rightStateTtlHintMillis);
   }
@@ -89,7 +93,8 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends StreamPhysicalNati
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getRight().getRowType()),
         predicate,
         FlinkKeyGroupUtils.timestampPrecisions(getLeft().getRowType(), leftKeys),
-        bothJoinKeysUnique,
+        leftJoinKeyUnique,
+        rightJoinKeyUnique,
         leftStateTtlHintMillis,
         rightStateTtlHintMillis);
   }

@@ -3,6 +3,7 @@ package tech.streamfusion.planner;
 import tech.streamfusion.operator.RowDataArrowConverter;
 import java.util.Map;
 import java.util.Optional;
+import org.apache.calcite.rel.core.Exchange;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
@@ -11,6 +12,7 @@ import org.apache.flink.table.planner.hint.StateTtlHint;
 import org.apache.flink.table.planner.plan.nodes.exec.spec.JoinSpec;
 import org.apache.flink.table.planner.plan.nodes.physical.common.CommonPhysicalJoin;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalJoin;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGroupAggregateBase;
 import org.apache.flink.table.runtime.operators.join.FlinkJoinType;
 
 /**
@@ -125,12 +127,42 @@ final class RegularJoinMatcher {
         return true;
       }
     }
+    // Changelog inference can consume this metadata before the physical keyed Exchange is fixed,
+    // while a later query through getUpsertKeysInKeyGroupRange may be empty. Preserve the exact
+    // structural invariant for GROUP BY: its output grouping prefix is an upsert key, and an
+    // Exchange does not change it. This is the same key Flink's GroupAggFunction uses for its
+    // update-after-only changelog.
+    RelNode producer = input instanceof Exchange ? ((Exchange) input).getInput() : input;
+    int groupCount =
+        producer instanceof StreamPhysicalGroupAggregateBase
+            ? ((StreamPhysicalGroupAggregateBase) producer).grouping().length
+            : producer instanceof StreamPhysicalNativeColumnarGroupAggregate
+                ? ((StreamPhysicalNativeColumnarGroupAggregate) producer).groupingCount()
+                : 0;
+    if (groupCount > 0) {
+      for (int groupColumn = 0; groupColumn < groupCount; groupColumn++) {
+        boolean found = false;
+        for (int joinKey : joinKeys) {
+          found |= joinKey == groupColumn;
+        }
+        if (!found) {
+          return false;
+        }
+      }
+      return true;
+    }
     return false;
   }
 
   static RelNode substitute(StreamPhysicalJoin join, PlanContext ctx) {
     int[] leftKeys = RegularJoinMatcher.leftKeys(join);
     int[] rightKeys = RegularJoinMatcher.rightKeys(join);
+    // Resolve Flink's upsert-key metadata before columnarInput substitutes either child. The
+    // metadata query is keyed by the original physical tree; asking after child substitution can
+    // return no key and incorrectly turn update-after-only inputs (notably GROUP BY outputs) into
+    // multiset join state. A join key containing the proven upsert key is replacement state.
+    boolean leftJoinKeyUnique = RegularJoinMatcher.joinKeyIsUnique(join, 0);
+    boolean rightJoinKeyUnique = RegularJoinMatcher.joinKeyIsUnique(join, 1);
     // A STATE_TTL hint sets each side's retention independently (0 = left, 1 = right —
     // Flink's FlinkHints.LEFT_INPUT convention), overriding the job-wide retention for that
     // side alone; -1 means no hint, resolved at translate time.
@@ -147,7 +179,8 @@ final class RegularJoinMatcher {
         rightKeys,
         RegularJoinMatcher.joinTypeCode(join),
         RegularJoinMatcher.nonEquiPredicate(join),
-        RegularJoinMatcher.joinKeyIsUnique(join, 0) && RegularJoinMatcher.joinKeyIsUnique(join, 1),
+        leftJoinKeyUnique,
+        rightJoinKeyUnique,
         hintTtls.getOrDefault(0, -1L),
         hintTtls.getOrDefault(1, -1L));
   }

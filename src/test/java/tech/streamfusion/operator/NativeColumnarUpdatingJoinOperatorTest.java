@@ -69,6 +69,8 @@ class NativeColumnarUpdatingJoinOperatorTest {
         new String[0],
         NativeUdf.Binding.EMPTY,
         new int[] {-1},
+        false,
+        false,
         miniBatch,
         miniBatchSize,
         leftStateTtlMillis,

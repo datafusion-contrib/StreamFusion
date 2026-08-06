@@ -103,7 +103,8 @@ final class LimitMatcher {
           LimitMatcher.limit(sort),
           false, // a global LIMIT never projects a rank column
           offset > 0, // an OFFSET uses the retracting ranker; no-offset the append-only one
-          null);
+          null,
+          false);
     }
     // A retracting input is the one reason not in unsupportedReason.
     ctx.decline(

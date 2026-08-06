@@ -53,6 +53,7 @@ class NativeColumnarTopNOperatorTest {
         null,
         null,
         false,
+        false,
         -1,
         stateTtlMillis,
         MAX_PARALLELISM);
@@ -72,6 +73,7 @@ class NativeColumnarTopNOperatorTest {
         false,
         null,
         null,
+        false,
         true,
         miniBatchSize,
         0,
@@ -92,6 +94,7 @@ class NativeColumnarTopNOperatorTest {
         true,
         null,
         null,
+        false,
         true,
         miniBatchSize,
         0,
@@ -184,7 +187,7 @@ class NativeColumnarTopNOperatorTest {
               changelogBatch(
                   allocator, row(RowKind.INSERT, 1, 100), row(RowKind.DELETE, 1, 100))));
       assertEquals(
-          List.of(change(RowKind.INSERT, 1, 5), change(RowKind.DELETE, 1, 10)),
+          List.of(change(RowKind.DELETE, 1, 10), change(RowKind.INSERT, 1, 5)),
           collect(harness));
     }
   }
@@ -411,6 +414,7 @@ class NativeColumnarTopNOperatorTest {
         new int[] {0, 1},
         new int[] {-1, -1},
         false,
+        false,
         -1,
         stateTtlMillis,
         MAX_PARALLELISM);
@@ -441,9 +445,7 @@ class NativeColumnarTopNOperatorTest {
       restored.initializeState(snapshot);
       restored.open();
       restored.processElement(new StreamRecord<>(updateFastBatch(allocator, row3(1, 2, 2))));
-      assertEquals(
-          List.of(change3(RowKind.INSERT, 1, 2, 2), change3(RowKind.DELETE, 1, 2, 3)),
-          collect3(restored));
+      assertEquals(List.of(change3(RowKind.UPDATE_AFTER, 1, 2, 2)), collect3(restored));
     }
   }
 

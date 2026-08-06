@@ -4606,8 +4606,9 @@ fn retracting_topn_ttl_retraction_refreshes_the_buffer_clock() {
     // At 6300 the 5000 writes are past their ttl, but the retraction at 5800 kept the buffer:
     // the 5 displaces 20 out of the top-2 instead of seeding an empty one.
     let out = ranker.push(&topn_changelog(vec![1], vec![5], vec![0]), 6300).unwrap();
-    assert_eq!(row_kinds(&out), vec![0, 3]);
-    assert_eq!(values(&out, 1), vec![5, 20]);
+    // Flink retracts the row leaving the rank window before inserting its replacement.
+    assert_eq!(row_kinds(&out), vec![3, 0]);
+    assert_eq!(values(&out, 1), vec![20, 5]);
 }
 
 // The head clock rides the snapshot (buffer order is preserved), with the inclusive boundary.
@@ -4622,7 +4623,7 @@ fn retracting_topn_ttl_head_clock_survives_snapshot_restore() {
         RetractableTopNRanker::restore(vec![0], vec![-1], vec![asc(1)], 0, 2, false, &snapshot, 5500)
             .with_state_ttl(1000);
     let out = alive.push(&topn_changelog(vec![1], vec![5], vec![0]), 5999).unwrap();
-    assert_eq!(row_kinds(&out), vec![0, 3]);
+    assert_eq!(row_kinds(&out), vec![3, 0]);
     // Expired exactly at the boundary: the whole buffer clears and the accumulate re-seeds.
     let mut expired =
         RetractableTopNRanker::restore(vec![0], vec![-1], vec![asc(1)], 0, 2, false, &snapshot, 5500)
@@ -4676,7 +4677,87 @@ fn uf_ranker(limit: i64) -> UpdatableTopNRanker {
         vec![asc(2)],
         limit,
         false,
+        false,
     )
+}
+
+#[test]
+fn update_fast_global_topn_ranks_across_composite_row_keys() {
+    let mut ranker = UpdatableTopNRanker::new(
+        vec![],
+        vec![],
+        vec![0, 1],
+        vec![-1, -1],
+        vec![SortColumn { index: 2, ascending: false, nulls_first: true }],
+        4,
+        true,
+        false,
+    );
+    ranker.push(&uf_batch(vec![1, 1, 1], vec![1, 2, 3], vec![1, 1, 1]), 0).unwrap();
+    let out = ranker.push(&uf_batch(vec![2], vec![1], vec![2]), 0).unwrap();
+    assert_eq!(values(&out, 3), vec![1, 2, 3, 4]);
+}
+
+#[test]
+fn update_fast_ranked_topn_reemits_value_identical_updates() {
+    let mut ranker = UpdatableTopNRanker::new(
+        vec![0],
+        vec![-1],
+        vec![0, 1],
+        vec![-1, -1],
+        vec![asc(2)],
+        4,
+        true,
+        true,
+    );
+    ranker.push(&uf_batch(vec![1], vec![7], vec![5]), 0).unwrap();
+    let out = ranker.push(&uf_batch(vec![1], vec![7], vec![5]), 0).unwrap();
+    assert_eq!(row_kinds(&out), vec![1, 2]);
+    assert_eq!(values(&out, 3), vec![1, 1]);
+}
+
+#[test]
+fn update_fast_ranked_topn_matches_flink_move_changelog_order() {
+    let mut ranker = UpdatableTopNRanker::new(
+        vec![0],
+        vec![-1],
+        vec![0, 1],
+        vec![-1, -1],
+        vec![SortColumn { index: 2, ascending: false, nulls_first: true }],
+        4,
+        true,
+        true,
+    );
+    ranker.push(&uf_batch(vec![1, 1, 1], vec![1, 2, 3], vec![1, 1, 1]), 0).unwrap();
+    let out = ranker.push(&uf_batch(vec![1], vec![2], vec![3]), 0).unwrap();
+    assert_eq!(row_kinds(&out), vec![1, 1, 2, 2]);
+    assert_eq!(values(&out, 1), vec![1, 2, 2, 1]);
+    assert_eq!(values(&out, 3), vec![1, 2, 1, 2]);
+}
+
+#[test]
+fn nested_update_fast_topn_uses_outer_rank() {
+    let mut inner = UpdatableTopNRanker::new(
+        vec![0], vec![-1], vec![0, 1], vec![-1, -1],
+        vec![SortColumn { index: 2, ascending: false, nulls_first: true }],
+        4, true, false,
+    );
+    let mut outer = UpdatableTopNRanker::new(
+        vec![], vec![], vec![0, 1], vec![-1, -1],
+        vec![SortColumn { index: 2, ascending: false, nulls_first: true }],
+        4, true, false,
+    );
+    for input in [
+        uf_batch(vec![1], vec![1], vec![1]),
+        uf_batch(vec![1], vec![2], vec![1]),
+        uf_batch(vec![1], vec![3], vec![1]),
+    ] {
+        let inner_out = inner.push(&input, 0).unwrap();
+        outer.push(&inner_out, 0).unwrap();
+    }
+    let inner_out = inner.push(&uf_batch(vec![2], vec![1], vec![2]), 0).unwrap();
+    let out = outer.push(&inner_out, 0).unwrap();
+    assert_eq!(values(&out, 4), vec![1, 2, 3, 4]);
 }
 
 // Update-fast TTL granularity is the row-key entry: an expired entry reads as absent, so the row
@@ -4704,18 +4785,19 @@ fn update_fast_topn_ttl_expired_top1_admits_a_strictly_worse_row() {
     assert_eq!(values(&out, 2), vec![9]);
 }
 
-// An in-place replace (same row key, same sort key) emits nothing but is a state write, so it
-// refreshes the entry.
+// An in-place replace (same row key, same sort key) is a state write and Flink emits it as an
+// update-after even when every projected value is identical, so it also refreshes the entry.
 #[test]
 fn update_fast_topn_ttl_in_place_replace_refreshes_the_entry() {
     let mut ranker = uf_ranker(2).with_state_ttl(1000);
     ranker.push(&uf_batch(vec![1], vec![7], vec![5]), 5000).unwrap();
-    assert_eq!(ranker.push(&uf_batch(vec![1], vec![7], vec![5]), 5900).unwrap().num_rows(), 0);
+    let out = ranker.push(&uf_batch(vec![1], vec![7], vec![5]), 5900).unwrap();
+    assert_eq!(row_kinds(&out), vec![2]);
     // At 6300 the entry is alive only through the 5900 refresh: key 7's next version is a move
-    // that retracts the old payload rather than a fresh insert.
+    // that updates the old payload rather than a fresh insert.
     let out = ranker.push(&uf_batch(vec![1], vec![7], vec![4]), 6300).unwrap();
-    assert_eq!(row_kinds(&out), vec![0, 3]);
-    assert_eq!(values(&out, 2), vec![4, 5]);
+    assert_eq!(row_kinds(&out), vec![2]);
+    assert_eq!(values(&out, 2), vec![4]);
 }
 
 // Per-entry timestamps ride the raw snapshot, with the inclusive expiry boundary.
@@ -4732,6 +4814,7 @@ fn update_fast_topn_ttl_timestamps_survive_snapshot_restore() {
         vec![asc(2)],
         1,
         false,
+        false,
         &[snapshot.clone()],
         5500,
     )
@@ -4744,6 +4827,7 @@ fn update_fast_topn_ttl_timestamps_survive_snapshot_restore() {
         vec![-1, -1],
         vec![asc(2)],
         1,
+        false,
         false,
         &[snapshot],
         5500,
@@ -4771,6 +4855,7 @@ fn update_fast_topn_ttl_sweep_reclaims_idle_entries_silently() {
         vec![-1, -1],
         vec![asc(2)],
         1,
+        false,
         false,
         &[snapshot],
         7000,
@@ -4857,6 +4942,23 @@ fn unique_updating_join_replays_only_each_sides_final_bundle_change() {
     assert_eq!(row_kinds(&out), vec![0]);
     assert_eq!(values(&out, 1), vec![20]);
     assert_eq!(values(&out, 3), vec![100]);
+}
+
+#[test]
+fn updating_join_unique_join_key_update_replaces_the_prior_row() {
+    let mut joiner = inner_joiner().with_unique_join_keys(true, true);
+    joiner
+        .push(&changelog_join_batch(vec![1], vec![100], vec![0]), false, 0)
+        .unwrap();
+    joiner
+        .push(&changelog_join_batch(vec![1], vec![200], vec![2]), false, 0)
+        .unwrap();
+
+    let out = joiner
+        .push(&changelog_join_batch(vec![1], vec![10], vec![0]), true, 0)
+        .unwrap();
+    assert_eq!(out.num_rows(), 1);
+    assert_eq!(values(&out, 3), vec![200]);
 }
 
 // A left row matches every buffered right row of its key (cartesian per key); different keys
@@ -9593,6 +9695,7 @@ mod paimon_state {
             vec![-1, -1],
             vec![asc(2)],
             limit,
+            false,
             false,
         )
     }

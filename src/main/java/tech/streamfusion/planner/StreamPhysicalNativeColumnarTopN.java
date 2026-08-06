@@ -30,6 +30,7 @@ public class StreamPhysicalNativeColumnarTopN extends StreamPhysicalNativeSingle
   private final boolean retracting;
   // Update-fast mode: the unique-key columns identifying the row a record replaces (null otherwise).
   private final int[] rowKeyColumns;
+  private final boolean generateUpdateBefore;
 
   public StreamPhysicalNativeColumnarTopN(
       RelOptCluster cluster,
@@ -44,7 +45,8 @@ public class StreamPhysicalNativeColumnarTopN extends StreamPhysicalNativeSingle
       long limit,
       boolean outputRankNumber,
       boolean retracting,
-      int[] rowKeyColumns) {
+      int[] rowKeyColumns,
+      boolean generateUpdateBefore) {
     super(cluster, traitSet, input, outputRowType);
     this.partitionColumns = partitionColumns;
     this.sortIndices = sortIndices;
@@ -55,6 +57,7 @@ public class StreamPhysicalNativeColumnarTopN extends StreamPhysicalNativeSingle
     this.outputRankNumber = outputRankNumber;
     this.retracting = retracting;
     this.rowKeyColumns = rowKeyColumns;
+    this.generateUpdateBefore = generateUpdateBefore;
   }
 
   @Override
@@ -77,7 +80,8 @@ public class StreamPhysicalNativeColumnarTopN extends StreamPhysicalNativeSingle
         limit,
         outputRankNumber,
         retracting,
-        rowKeyColumns);
+        rowKeyColumns,
+        generateUpdateBefore);
   }
 
   @Override
@@ -96,6 +100,7 @@ public class StreamPhysicalNativeColumnarTopN extends StreamPhysicalNativeSingle
         outputRankNumber,
         retracting,
         rowKeyColumns,
+        generateUpdateBefore,
         rowKeyColumns == null
             ? null
             : FlinkKeyGroupUtils.timestampPrecisions(getInput().getRowType(), rowKeyColumns),

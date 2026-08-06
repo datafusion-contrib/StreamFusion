@@ -38,7 +38,8 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
   private final RowType rightType;
   private final RexExpression predicate;
   private final int[] keyTimestampPrecisions;
-  private final boolean bothJoinKeysUnique;
+  private final boolean leftJoinKeyUnique;
+  private final boolean rightJoinKeyUnique;
   // Per-side TTLs from a STATE_TTL hint on the join (-1 = no hint for that side); each resolves
   // against the job-wide table.exec.state.ttl at translate time, hint winning — Flink's
   // StateMetadata rule, which carries the join's retention per input.
@@ -58,7 +59,8 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
       RowType rightType,
       RexExpression predicate,
       int[] keyTimestampPrecisions,
-      boolean bothJoinKeysUnique,
+      boolean leftJoinKeyUnique,
+      boolean rightJoinKeyUnique,
       long leftStateTtlHintMillis,
       long rightStateTtlHintMillis) {
     super(
@@ -75,7 +77,8 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
     this.rightType = rightType;
     this.predicate = predicate;
     this.keyTimestampPrecisions = keyTimestampPrecisions;
-    this.bothJoinKeysUnique = bothJoinKeysUnique;
+    this.leftJoinKeyUnique = leftJoinKeyUnique;
+    this.rightJoinKeyUnique = rightJoinKeyUnique;
     this.leftStateTtlHintMillis = leftStateTtlHintMillis;
     this.rightStateTtlHintMillis = rightStateTtlHintMillis;
   }
@@ -90,7 +93,7 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
         (Transformation<ArrowBatch>) getInputEdges().get(1).translateToPlan(planner);
     int maxParallelism = FlinkKeyGroupUtils.defaultMaxParallelism(left.getParallelism());
     boolean miniBatch =
-        bothJoinKeysUnique
+        leftJoinKeyUnique && rightJoinKeyUnique
             && config.get(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED);
     long miniBatchSize = config.get(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE);
     long leftStateTtlMillis =
@@ -116,6 +119,8 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
                 predicate == null ? EMPTY_STRING : predicate.strings(),
                 predicate == null ? NativeUdf.Binding.EMPTY : predicate.udfBinding(),
                 keyTimestampPrecisions,
+                leftJoinKeyUnique,
+                rightJoinKeyUnique,
                 miniBatch,
                 miniBatchSize,
                 leftStateTtlMillis,

@@ -170,7 +170,7 @@ class NativeKafkaSinkSqlPlanTest {
 
   /** The CDC Avro envelope admits changelog input; registration happens at open, not plan time. */
   @Test
-  void plansDebeziumAvroConfluentChangelogSinksNatively() {
+  void changelogAvroSinkRoutesNativelyWithItsAggregate() {
     StreamTableEnvironment table = environment();
     table.executeSql(
         "CREATE TABLE src (name STRING) "
@@ -189,8 +189,8 @@ class NativeKafkaSinkSqlPlanTest {
             "INSERT INTO output SELECT name, COUNT(*) FROM src GROUP BY name",
             ExplainDetail.JSON_EXECUTION_PLAN);
 
-    assertTrue(scan.substitutions() > 0, scan::explainSummary);
     assertTrue(plan.contains("NativeKafkaSink"), plan);
+    assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
   }
 
   @Test
@@ -274,7 +274,7 @@ class NativeKafkaSinkSqlPlanTest {
   }
 
   @Test
-  void plansUpdatingResultsThroughNativeUpsertSerialization() {
+  void updatingUpsertSinkRoutesNativelyWithItsAggregate() {
     StreamTableEnvironment table = environment();
     table.executeSql(
         "CREATE TABLE src (id BIGINT) "
@@ -295,9 +295,8 @@ class NativeKafkaSinkSqlPlanTest {
             "INSERT INTO output SELECT id, COUNT(*) FROM src GROUP BY id",
             ExplainDetail.JSON_EXECUTION_PLAN);
 
-    assertTrue(scan.substitutions() > 0, scan::explainSummary);
     assertTrue(plan.contains("NativeKafkaSink"), plan);
-    assertTrue(plan.contains("native-kafka-exactly-once-sink"), plan);
+    assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
   }
 
   /**
@@ -306,7 +305,7 @@ class NativeKafkaSinkSqlPlanTest {
    * the native sink directly — the one non-upsert case where changelog input is admitted.
    */
   @Test
-  void plansChangelogThroughCdcEnvelopeFormats() {
+  void cdcEnvelopeSinksRouteNativelyWithTheirAggregate() {
     for (String format : List.of("debezium-json", "canal-json", "maxwell-json", "ogg-json")) {
       StreamTableEnvironment table = environment();
       table.executeSql(
@@ -328,8 +327,8 @@ class NativeKafkaSinkSqlPlanTest {
               ExplainDetail.JSON_EXECUTION_PLAN,
               ExplainDetail.CHANGELOG_MODE);
 
-      assertTrue(scan.substitutions() > 0, format + ": " + scan.explainSummary());
       assertTrue(plan.contains("NativeKafkaSink"), format + ": " + plan);
+      assertTrue(plan.contains("NativeColumnarGroupAggregate"), format + ": " + plan);
       // The CDC sink requests the full changelog, so the planner must not strip the aggregate's
       // UPDATE_BEFORE rows (an upsert-mode consumer would show I,UA only).
       assertTrue(plan.contains("I,UB,UA"), format + ": " + plan);
@@ -341,7 +340,7 @@ class NativeKafkaSinkSqlPlanTest {
    * key.format the records still have no key output — the PK must not disturb the native plan.
    */
   @Test
-  void plansPrimaryKeyedCdcTableWithoutKeyOutput() {
+  void primaryKeyedCdcSinkRoutesNativelyWithItsAggregate() {
     StreamTableEnvironment table = environment();
     table.executeSql(
         "CREATE TABLE src (id BIGINT) "
@@ -359,8 +358,8 @@ class NativeKafkaSinkSqlPlanTest {
             "INSERT INTO output SELECT id, COUNT(*) FROM src GROUP BY id",
             ExplainDetail.JSON_EXECUTION_PLAN);
 
-    assertTrue(scan.substitutions() > 0, scan::explainSummary);
     assertTrue(plan.contains("NativeKafkaSink"), plan);
+    assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
   }
 
   /** Flink rejects schema-include on a debezium-json sink; the native path must not swallow it. */
@@ -483,7 +482,7 @@ class NativeKafkaSinkSqlPlanTest {
   }
 
   @Test
-  void plansUpsertCsvSerializationNatively() {
+  void upsertCsvSinkRoutesNativelyWithItsAggregate() {
     StreamTableEnvironment table = environment();
     table.executeSql(
         "CREATE TABLE src (id BIGINT) "
@@ -503,8 +502,8 @@ class NativeKafkaSinkSqlPlanTest {
             "INSERT INTO output SELECT id, COUNT(*) FROM src GROUP BY id",
             ExplainDetail.JSON_EXECUTION_PLAN);
 
-    assertTrue(scan.substitutions() > 0, scan::explainSummary);
     assertTrue(plan.contains("NativeKafkaSink"), plan);
+    assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
   }
 
   /**
@@ -711,7 +710,7 @@ class NativeKafkaSinkSqlPlanTest {
   /** Avro is insert-only, so it is a legal upsert key and value format; the key format serializes
    * the PK projection under its own auto-completed {@code <topic>-key} subject. */
   @Test
-  void plansUpsertAvroConfluentKeyAndValueFormats() {
+  void upsertAvroSinkRoutesNativelyWithItsAggregate() {
     StreamTableEnvironment table = environment();
     table.executeSql(
         "CREATE TABLE src (id BIGINT) "
@@ -732,8 +731,8 @@ class NativeKafkaSinkSqlPlanTest {
             "INSERT INTO output SELECT id, COUNT(*) FROM src GROUP BY id",
             ExplainDetail.JSON_EXECUTION_PLAN);
 
-    assertTrue(scan.substitutions() > 0, scan::explainSummary);
     assertTrue(plan.contains("NativeKafkaSink"), plan);
+    assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
   }
 
   /**

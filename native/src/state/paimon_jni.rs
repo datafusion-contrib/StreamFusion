@@ -1053,6 +1053,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createPaimonUpdateFastTopNR
     row_schema_address: jlong,
     limit: jlong,
     output_rank_number: jboolean,
+    generate_update_before: jboolean,
     state_ttl_millis: jlong,
     now_millis: jlong,
     memory_budget_bytes: jlong,
@@ -1127,6 +1128,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createPaimonUpdateFastTopNR
                 sort,
                 limit,
                 output_rank_number != 0,
+                generate_update_before != 0,
             )
             .with_state_ttl(state_ttl_millis)
             .with_converters(converters)
@@ -1286,6 +1288,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_createPaimonUpdatingJoiner<
     pred_longs: JLongArray<'local>,
     pred_doubles: JDoubleArray<'local>,
     pred_strings: JObjectArray<'local>,
+    left_join_key_unique: jboolean,
+    right_join_key_unique: jboolean,
     mini_batch: jboolean,
     left_state_ttl_millis: jlong,
     right_state_ttl_millis: jlong,
@@ -1379,6 +1383,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createPaimonUpdatingJoiner<
                 right_schema,
                 predicate,
             )
+            .with_unique_join_keys(left_join_key_unique != 0, right_join_key_unique != 0)
             .with_mini_batch(mini_batch != 0)
             .with_key_timestamp_precisions(timestamp_precisions)
             .with_state_ttl(left_state_ttl_millis, right_state_ttl_millis)

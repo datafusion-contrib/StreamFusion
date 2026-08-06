@@ -119,7 +119,8 @@ final class TopNMatcher {
           TopNMatcher.limit(rank),
           TopNMatcher.outputRankNumber(rank),
           false,
-          ((RankProcessStrategy.UpdateFastStrategy) rank.rankStrategy()).getPrimaryKeys());
+          ((RankProcessStrategy.UpdateFastStrategy) rank.rankStrategy()).getPrimaryKeys(),
+          ChangelogPlanUtils.generateUpdateBefore(rank));
     }
     int[] partitionColumns = TopNMatcher.partitionColumns(rank);
     long offset = TopNMatcher.offset(rank);
@@ -142,6 +143,7 @@ final class TopNMatcher {
         TopNMatcher.limit(rank),
         TopNMatcher.outputRankNumber(rank),
         retracting,
-        null);
+        null,
+        false);
   }
 }

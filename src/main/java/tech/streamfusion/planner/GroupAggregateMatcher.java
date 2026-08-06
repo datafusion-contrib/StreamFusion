@@ -12,16 +12,16 @@ import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import scala.collection.Seq;
 
 /**
- * Decides whether a non-windowed {@code GROUP BY} aggregate can run natively, and pulls out the
- * aggregate kinds, value columns/types, and grouping keys the operator needs.
+ * Describes the native single-phase non-windowed {@code GROUP BY} shape.
  *
  * <p>Scope: SUM/MIN/MAX/COUNT over bigint/int/double value columns (SUM/MIN/MAX also decimal), plus
  * AVG over bigint/int/smallint/tinyint/float/double (a running sum + non-null count, result cast back
  * to the input type — decimal AVG falls back), with any grouping keys and pass-through columns the
  * row/Arrow conversion supports. DISTINCT is native for COUNT (a per-key value set), SUM (the set plus
  * a running sum folded as values enter/leave), and MIN/MAX (semantically their plain forms); only
- * AVG(DISTINCT) falls back. The input may be append-only or a changelog; SUM/COUNT/AVG retract a
- * running value and MIN/MAX retract via a per-key value multiset, so all work over either input.
+ * AVG(DISTINCT) falls back. The single-phase operator is not currently selected: unlike the
+ * mini-batch local/global path, its immediate changelog emission does not yet reproduce Flink's
+ * accumulator/output contract across every state-backend and async-state plan variant.
  */
 final class GroupAggregateMatcher {
 

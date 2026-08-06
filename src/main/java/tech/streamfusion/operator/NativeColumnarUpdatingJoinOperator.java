@@ -46,6 +46,8 @@ public class NativeColumnarUpdatingJoinOperator
   private final double[] predDoubles;
   private final String[] predStrings;
   private final NativeUdf.Binding predBinding;
+  private final boolean leftJoinKeyUnique;
+  private final boolean rightJoinKeyUnique;
   private final boolean miniBatch;
   private final long miniBatchSize;
   private final long leftStateTtlMillis;
@@ -71,6 +73,8 @@ public class NativeColumnarUpdatingJoinOperator
       String[] predStrings,
       NativeUdf.Binding predBinding,
       int[] keyTimestampPrecisions,
+      boolean leftJoinKeyUnique,
+      boolean rightJoinKeyUnique,
       boolean miniBatch,
       long miniBatchSize,
       long leftStateTtlMillis,
@@ -89,6 +93,8 @@ public class NativeColumnarUpdatingJoinOperator
     this.predDoubles = predDoubles;
     this.predStrings = predStrings;
     this.predBinding = predBinding;
+    this.leftJoinKeyUnique = leftJoinKeyUnique;
+    this.rightJoinKeyUnique = rightJoinKeyUnique;
     this.miniBatch = miniBatch;
     this.miniBatchSize = miniBatchSize;
     this.leftStateTtlMillis = leftStateTtlMillis;
@@ -98,7 +104,10 @@ public class NativeColumnarUpdatingJoinOperator
   // The residual predicate's bound longs must exist before any create/restore call reads them.
   @Override
   protected void beforeHandleCreation() {
-    boundPredLongs = predBinding.bind(predLongs);
+    boundPredLongs =
+        predBinding.bind(
+            predLongs,
+            new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
   }
 
   @Override
@@ -143,6 +152,8 @@ public class NativeColumnarUpdatingJoinOperator
                 boundPredLongs,
                 predDoubles,
                 predStrings,
+                leftJoinKeyUnique,
+                rightJoinKeyUnique,
                 miniBatch,
                 leftStateTtlMillis,
                 rightStateTtlMillis,
@@ -184,6 +195,8 @@ public class NativeColumnarUpdatingJoinOperator
                 boundPredLongs,
                 predDoubles,
                 predStrings,
+                leftJoinKeyUnique,
+                rightJoinKeyUnique,
                 miniBatch,
                 leftStateTtlMillis,
                 rightStateTtlMillis,
@@ -209,6 +222,8 @@ public class NativeColumnarUpdatingJoinOperator
                 boundPredLongs,
                 predDoubles,
                 predStrings,
+                leftJoinKeyUnique,
+                rightJoinKeyUnique,
                 miniBatch,
                 leftStateTtlMillis,
                 rightStateTtlMillis,
