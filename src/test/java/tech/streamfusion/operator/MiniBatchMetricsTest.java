@@ -48,6 +48,22 @@ class MiniBatchMetricsTest {
     assertThat(group.counterValue("miniBatchWatermarkFlushes")).isZero();
   }
 
+  @Test
+  void exposesFlinkMapBundleGaugesWhenRequested() {
+    TestingMetricGroup group = new TestingMetricGroup();
+    MiniBatchMetrics metrics = new MiniBatchMetrics(group, true);
+
+    metrics.onSlice(9, true);
+    metrics.onCurrentKeys(3);
+
+    assertThat(group.gaugeValue("bundleSize")).isEqualTo(9);
+    assertThat(group.gaugeValue("bundleRatio")).isEqualTo(3.0);
+
+    metrics.onFlush(FlushReason.WATERMARK, 3, 3, 0);
+    assertThat(group.gaugeValue("bundleSize")).isEqualTo(0);
+    assertThat(group.gaugeValue("bundleRatio")).isEqualTo(0.0);
+  }
+
   private static final class TestingMetricGroup extends UnregisteredMetricsGroup {
     private final Map<String, Counter> counters = new HashMap<>();
     private final Map<String, Gauge<?>> gauges = new HashMap<>();

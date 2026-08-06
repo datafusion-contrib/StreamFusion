@@ -1121,6 +1121,8 @@ pub(crate) struct OverWindowAggregator {
     proctime: bool,
     next_seq: i64,
     watermark: i64,
+    /// Cumulative rowtime records rejected because their timestamp is behind the watermark.
+    pub(crate) late_drops: u64,
     /// Idle-state min retention millis (`table.exec.state.ttl`). Flink retention-bounds OVER
     /// three ways by shape ({@link RetentionScheme}); the deadline schemes enable iff this is
     /// `> 1` (Flink's literal `minRetentionTime > 1`), the per-value TTL iff `> 0`.
@@ -1178,6 +1180,7 @@ impl OverWindowAggregator {
             proctime,
             next_seq: 0,
             watermark: i64::MIN,
+            late_drops: 0,
             min_retention_ms: 0,
             max_retention_ms: 0,
             cleanup_state: HashMap::default(),
@@ -1583,9 +1586,11 @@ impl OverWindowAggregator {
         let rowtimes = rt_to_millis(batch.column(self.rt_column));
         let on_time: BooleanArray = rowtimes
             .iter()
-            .map(|value| Some(value.is_some_and(|value| value >= self.watermark)))
+            .map(|value| Some(value.is_some_and(|value| value > self.watermark)))
             .collect();
+        let input_rows = batch.num_rows();
         let batch = filter_record_batch(&batch, &on_time)?;
+        self.late_drops += (input_rows - batch.num_rows()) as u64;
         #[cfg(feature = "paimon-state")]
         if self.backend.is_some() {
             return self.push_backend(batch, now_ms);
@@ -2046,6 +2051,7 @@ impl OverWindowAggregator {
             proctime,
             next_seq,
             watermark: i64::MIN,
+            late_drops: 0,
             min_retention_ms: 0,
             max_retention_ms: 0,
             cleanup_state: HashMap::default(),
@@ -2172,6 +2178,18 @@ impl OverWindowAggregator {
 }
 
 state_bytes_getter!(Java_tech_streamfusion_Native_overAggregatorStateBytes, OverWindowAggregator);
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_overAggregatorLateDrops<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let aggregator = unsafe { &*(handle as *const OverWindowAggregator) };
+        aggregator.late_drops as jlong
+    })
+}
 
 /// Creates a columnar OVER aggregator (event-time RANGE unbounded preceding); it buffers input
 /// batches and flushes completed rows with the running aggregates appended. The rt/value/key column

@@ -95,6 +95,7 @@ nav:
   - Deployment: deployment.md
   - Configuration: configuration.md
   - Memory management: memory-management.md
+  - Native metric parity: metrics-parity.md
   - Upstream Flink suite: upstream-flink-suite.md
   - Benchmarks: benchmarks.md
   - Optimizations:

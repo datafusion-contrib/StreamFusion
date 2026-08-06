@@ -29,6 +29,7 @@ public class NativeColumnarMiniBatchAssignerOperator extends AbstractStreamOpera
   public void open() throws Exception {
     super.open();
     currentWatermark = 0;
+    getMetricGroup().gauge("currentBatch", () -> currentWatermark);
     long now = getProcessingTimeService().getCurrentProcessingTime();
     getProcessingTimeService().registerTimer(now + intervalMs, this);
   }
@@ -42,7 +43,8 @@ public class NativeColumnarMiniBatchAssignerOperator extends AbstractStreamOpera
       currentWatermark = currentBatch;
       output.emitWatermark(new Watermark(currentBatch));
     }
-    output.collect(element);
+    ColumnarRecordMetrics.forward(
+        output, getMetricGroup(), element, element.getValue().rowCount());
   }
 
   @Override

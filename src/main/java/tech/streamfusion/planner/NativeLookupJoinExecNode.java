@@ -265,7 +265,9 @@ public class NativeLookupJoinExecNode extends ExecNodeBase<ArrowBatch>
                   InternalSerializers.create(rightRowType),
                   leftOuterJoin,
                   asyncOptions.asyncBufferCapacity);
-      operator = new NativeAsyncLookupJoinOperator(runner, probeType, resultRowType);
+      operator =
+          new NativeAsyncLookupJoinOperator(
+              runner, probeType, resultRowType, asyncOptions.keyOrdered);
     } else {
       GeneratedFunction<FlatMapFunction<RowData, RowData>> generatedFetcher =
           LookupJoinCodeGenerator.generateSyncLookupFunction(

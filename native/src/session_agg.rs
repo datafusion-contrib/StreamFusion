@@ -29,6 +29,8 @@ pub(crate) struct SessionAggregator {
     sessions: HashMap<OwnedRow, BTreeMap<i64, Session>>,
     key_converter: Option<RowConverter>,
     key_types: Vec<DataType>,
+    pub(crate) current_watermark: i64,
+    pub(crate) late_drops: u64,
     memory: OperatorMemory,
     /// Persistent-state mode: committed sessions live in the Paimon store; the decoded map holds
     /// only this interval's touched keys (seeded on first touch, staged wholesale at the barrier).
@@ -50,6 +52,8 @@ impl SessionAggregator {
             sessions: HashMap::default(),
             key_converter: None,
             key_types: Vec::new(),
+            current_watermark: i64::MIN,
+            late_drops: 0,
             memory: OperatorMemory::unaccounted(),
             #[cfg(feature = "paimon-state")]
             backend: None,
@@ -288,14 +292,47 @@ impl SessionAggregator {
             by_key.entry(keys_encoded.row(row)).or_default().push(row as u32);
         }
         let track = self.memory.tracking();
-        for (key, mut rows) in by_key {
-            rows.sort_by_key(|&row| ts.value(row as usize));
+        for (key, rows) in by_key {
             let key = key.owned();
             let mut delta = 0isize;
             if track && !self.sessions.contains_key(&key) {
                 delta += owned_row_bytes(&key) as isize;
             }
             let map = self.sessions.entry(key).or_default();
+
+            // Flink tests lateness after adding the candidate to its MergingWindowSet. A row whose
+            // own [ts, ts + gap] window is behind the watermark can therefore remain live when it
+            // intersects an open session. Replay only interval bounds in arrival order to make the
+            // accept/drop decision, then retain the batch-oriented accumulator path below.
+            let mut logical_sessions: BTreeMap<i64, i64> =
+                map.iter().map(|(start, session)| (*start, session.end)).collect();
+            let mut accepted = Vec::with_capacity(rows.len());
+            for row in rows {
+                let candidate_start = ts.value(row as usize);
+                let candidate_end = candidate_start.saturating_add(self.gap_millis);
+                let mut overlapping: Vec<i64> = logical_sessions
+                    .range(..=candidate_end)
+                    .rev()
+                    .take_while(|(_, end)| **end >= candidate_start)
+                    .map(|(start, _)| *start)
+                    .collect();
+                overlapping.reverse();
+                let mut start = candidate_start;
+                let mut end = candidate_end;
+                for overlap in overlapping {
+                    let overlap_end = logical_sessions.remove(&overlap).expect("session present");
+                    start = start.min(overlap);
+                    end = end.max(overlap_end);
+                }
+                if end <= self.current_watermark {
+                    self.late_drops += 1;
+                } else {
+                    logical_sessions.insert(start, end);
+                    accepted.push(row);
+                }
+            }
+            let mut rows = accepted;
+            rows.sort_by_key(|&row| ts.value(row as usize));
             let mut run_start = 0;
             while run_start < rows.len() {
                 let mut run_end = run_start + 1;
@@ -366,6 +403,7 @@ impl SessionAggregator {
     /// `[key, window_start, window_end, result0..resultN-1]`. The end is the session's own bound,
     /// not a fixed offset, so it travels as its own column.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        self.current_watermark = self.current_watermark.max(watermark);
         // Persistent state: sessions committed at earlier barriers whose keys were untouched
         // this interval still close now — hydrate them into the decoded map first.
         #[cfg(feature = "paimon-state")]
@@ -649,6 +687,18 @@ impl SessionAggregator {
 }
 
 state_bytes_getter!(Java_tech_streamfusion_Native_sessionAggregatorStateBytes, SessionAggregator);
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_sessionAggregatorLateDrops<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let aggregator = unsafe { &*(handle as *const SessionAggregator) };
+        aggregator.late_drops as jlong
+    })
+}
 
 /// Creates a stateful session-window aggregator and returns an opaque handle. As with the tumbling
 /// handle, the JVM owns the native state across calls and must release it with the matching close.

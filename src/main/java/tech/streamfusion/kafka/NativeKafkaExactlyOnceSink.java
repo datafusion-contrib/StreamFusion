@@ -48,6 +48,7 @@ import org.apache.flink.connector.kafka.sink.internal.TransactionOwnership;
 import org.apache.flink.connector.kafka.sink.internal.TransactionalIdFactory;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 import org.apache.flink.metrics.Counter;
+import org.apache.flink.metrics.groups.SinkWriterMetricGroup;
 import org.apache.flink.streaming.api.operators.StreamingRuntimeContext;
 import org.apache.flink.streaming.runtime.operators.sink.InitContextBase;
 import org.apache.kafka.clients.admin.Admin;
@@ -162,6 +163,9 @@ public final class NativeKafkaExactlyOnceSink
     private final Counter recordsOut;
     private final Counter bytesOut;
     private final Counter flushNanos;
+    private final Counter flinkRecordsOut;
+    private final Counter flinkBytesOut;
+    private final Counter flinkRecordErrors;
     private final String[] configKeys;
     private final String[] configValues;
     private final String valueFormatOptions;
@@ -178,6 +182,7 @@ public final class NativeKafkaExactlyOnceSink
     private String currentTransactionalId;
     private long currentRecords;
     private long[] flushedIdentity;
+    private volatile long currentSendTime;
 
     private Writer(WriterInitContext context, Collection<KafkaWriterState> recoveredState)
         throws IOException {
@@ -213,6 +218,11 @@ public final class NativeKafkaExactlyOnceSink
       this.recordsOut = context.metricGroup().counter("nativeKafkaProducerRecords");
       this.bytesOut = context.metricGroup().counter("nativeKafkaProducerBytes");
       this.flushNanos = context.metricGroup().counter("nativeKafkaProducerFlushNanos");
+      SinkWriterMetricGroup sinkMetrics = context.metricGroup();
+      this.flinkRecordsOut = sinkMetrics.getIOMetricGroup().getNumRecordsOutCounter();
+      this.flinkBytesOut = sinkMetrics.getIOMetricGroup().getNumBytesOutCounter();
+      this.flinkRecordErrors = sinkMetrics.getNumRecordsOutErrorsCounter();
+      sinkMetrics.setCurrentSendTimeGauge(() -> currentSendTime);
       this.configKeys = nativeProducerConfig.keySet().toArray(new String[0]);
       this.configValues = nativeProducerConfig.values().toArray(new String[0]);
       this.valueFormatOptions = valueFormat.openOptions();
@@ -244,8 +254,9 @@ public final class NativeKafkaExactlyOnceSink
     @Override
     public void write(ArrowBatch element, Context context) throws IOException {
       ensureProducerStarted();
+      int rows = element.rowCount();
+      long started = System.nanoTime();
       try (VectorSchemaRoot root = element.root()) {
-        int rows = root.getRowCount();
         BufferAllocator allocator =
             root.getFieldVectors().isEmpty()
                 ? NativeAllocator.SHARED
@@ -272,9 +283,15 @@ public final class NativeKafkaExactlyOnceSink
           batchesOut.inc();
           recordsOut.inc(rows);
           bytesOut.inc(bytes);
+          flinkRecordsOut.inc(rows);
+          flinkBytesOut.inc(bytes);
         }
       } catch (RuntimeException failure) {
+        // KafkaWriter increments once when it observes one-or-more asynchronous send failures.
+        flinkRecordErrors.inc();
         throw new IOException("Native Kafka batch production failed", failure);
+      } finally {
+        currentSendTime = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
       }
     }
 
@@ -303,9 +320,12 @@ public final class NativeKafkaExactlyOnceSink
         }
         flushedIdentity = new long[] {warmedProducerId, warmedEpoch};
       } catch (RuntimeException failure) {
+        flinkRecordErrors.inc();
         throw new IOException("Native Kafka transaction flush failed", failure);
       } finally {
-        flushNanos.inc(System.nanoTime() - started);
+        long elapsed = System.nanoTime() - started;
+        flushNanos.inc(elapsed);
+        currentSendTime = TimeUnit.NANOSECONDS.toMillis(elapsed);
       }
     }
 

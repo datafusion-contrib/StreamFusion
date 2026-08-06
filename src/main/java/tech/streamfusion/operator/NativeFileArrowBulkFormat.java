@@ -76,9 +76,13 @@ abstract class NativeFileArrowBulkFormat implements BulkFormat<ArrowBatch, FileS
     private long handle;
     // Number of batches already emitted; also the records-to-skip position carried in checkpoints.
     private long emitted;
+    private long openingNanos;
+    private boolean firstBatch = true;
 
     Reader(FileSourceSplit split, long recordsToSkip) {
+      long openingStarted = System.nanoTime();
       this.handle = open(split.path().getPath(), projection, split.offset(), split.length());
+      this.openingNanos = System.nanoTime() - openingStarted;
       for (long i = 0; i < recordsToSkip; i++) {
         if (readNext() == null) {
           break;
@@ -102,6 +106,7 @@ abstract class NativeFileArrowBulkFormat implements BulkFormat<ArrowBatch, FileS
     }
 
     private ArrowBatch readNext() {
+      long scanningStarted = System.nanoTime();
       BufferAllocator allocator = NativeAllocator.SHARED;
       try (ArrowArray array = ArrowArray.allocateNew(allocator);
           ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
@@ -110,7 +115,16 @@ abstract class NativeFileArrowBulkFormat implements BulkFormat<ArrowBatch, FileS
         }
         VectorSchemaRoot root =
             Data.importVectorSchemaRoot(allocator, array, schema, NativeAllocator.DICTIONARIES);
-        return new ArrowBatch(adapt(root, allocator));
+        root = adapt(root, allocator);
+        long processingNanos = System.nanoTime() - scanningStarted;
+        ArrowBatch.NativeScanMetrics metrics =
+            new ArrowBatch.NativeScanMetrics(
+                firstBatch ? openingNanos : 0,
+                firstBatch ? processingNanos : 0,
+                processingNanos,
+                processingNanos);
+        firstBatch = false;
+        return new ArrowBatch(root, metrics);
       }
     }
 

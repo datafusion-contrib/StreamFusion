@@ -78,7 +78,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
             distinctViewSources,
             memoryBudget.nativeHandle());
     boundary = new MiniBatchBoundary(miniBatchSize);
-    miniBatchMetrics = new MiniBatchMetrics(getMetricGroup());
+    miniBatchMetrics = new MiniBatchMetrics(getMetricGroup(), true);
   }
 
   @Override
@@ -106,6 +106,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
             }
           }
           miniBatchMetrics.onSlice(length, firstContribution);
+          miniBatchMetrics.onCurrentKeys(Native.localGroupAggregatorStagedKeys(handle));
           offset += length;
           if (boundary.onSlice(length)) {
             flushBundle(FlushReason.COUNT);

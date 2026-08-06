@@ -3,6 +3,7 @@ package tech.streamfusion.planner;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
 import tech.streamfusion.operator.ParquetArrowBulkFormat;
+import tech.streamfusion.operator.NativeParquetMetricSource;
 import java.util.Collections;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.dag.Transformation;
@@ -61,7 +62,7 @@ public class NativeParquetSourceExecNode extends ExecNodeBase<ArrowBatch>
             .build();
     DataStreamSource<ArrowBatch> stream =
         env.fromSource(
-            source,
+            new NativeParquetMetricSource(source),
             WatermarkStrategy.noWatermarks(),
             TRANSFORMATION,
             ArrowBatchTypeInformation.INSTANCE);

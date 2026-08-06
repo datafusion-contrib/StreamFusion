@@ -162,7 +162,12 @@ public final class Native {
   // thread after each batch and publish the value to their metric gauges (NativeMemoryBudget).
   public static native long tumblingAggregatorStateBytes(long handle);
 
+  /** Cumulative fixed-window rows rejected behind the aggregator watermark. */
+  public static native long tumblingAggregatorLateDrops(long handle);
+
   public static native long sessionAggregatorStateBytes(long handle);
+
+  public static native long sessionAggregatorLateDrops(long handle);
 
   public static native long groupAggregatorStateBytes(long handle);
 
@@ -173,6 +178,9 @@ public final class Native {
   public static native long localGroupAggregatorStateBytes(long handle);
 
   public static native long overAggregatorStateBytes(long handle);
+
+  /** Cumulative rowtime rows rejected behind the OVER operator's watermark. */
+  public static native long overAggregatorLateDrops(long handle);
 
   public static native long temporalSorterStateBytes(long handle);
 
@@ -188,7 +196,11 @@ public final class Native {
 
   public static native long updatingJoinerStagedKeys(long handle);
 
+  public static native long updatingJoinerStagedRecords(long handle, boolean left);
+
   public static native long windowRankerStateBytes(long handle);
+
+  public static native long windowRankerLateDrops(long handle);
 
   public static native long intervalJoinerStateBytes(long handle);
 
@@ -197,6 +209,8 @@ public final class Native {
   public static native long updatingJoinerStateBytes(long handle);
 
   public static native long topNRankerStateBytes(long handle);
+
+  public static native long topNRankerCacheSize(long handle);
 
   public static native long topNRankerStagingBytes(long handle);
 
@@ -209,6 +223,8 @@ public final class Native {
   public static native long changelogNormalizerStagedKeys(long handle);
 
   public static native long windowJoinerStateBytes(long handle);
+
+  public static native long windowJoinerLateDrops(long handle, boolean left);
 
   /**
    * Awaits a trivial async computation on the native runtime, proving the blocking bridge a JVM
@@ -418,6 +434,9 @@ public final class Native {
   /** Emits the buffered partials (one row per key) and clears the buffer. */
   public static native void flushLocalGroupAggregator(
       long handle, long outArrayAddress, long outSchemaAddress);
+
+  /** Number of distinct keys in the current local aggregate bundle. */
+  public static native long localGroupAggregatorStagedKeys(long handle);
 
   public static native void closeLocalGroupAggregator(long handle);
 
@@ -1272,6 +1291,8 @@ public final class Native {
   /** Estimated bytes of a Paimon-backed window ranker's resident working set. */
   public static native long paimonWindowRankerStateBytes(long handle);
 
+  public static native long paimonWindowRankerLateDrops(long handle);
+
   /** Releases a Paimon-backed window ranker handle. */
   public static native void closePaimonWindowRanker(long handle);
 
@@ -1393,6 +1414,8 @@ public final class Native {
 
   /** Estimated bytes of a Paimon-backed window joiner's resident working set. */
   public static native long paimonWindowJoinerStateBytes(long handle);
+
+  public static native long paimonWindowJoinerLateDrops(long handle, boolean left);
 
   /** Releases a Paimon-backed window joiner handle. */
   public static native void closePaimonWindowJoiner(long handle);
@@ -1712,6 +1735,8 @@ public final class Native {
   /** Estimated bytes of a Paimon-backed Top-N ranker's resident working set. */
   public static native long paimonTopNRankerStateBytes(long handle);
 
+  public static native long paimonTopNRankerCacheSize(long handle);
+
   /** {@code topNRankerStagingBytes} for a Paimon-backed handle. */
   public static native long paimonTopNRankerStagingBytes(long handle);
 
@@ -1798,6 +1823,8 @@ public final class Native {
 
   /** {@code updatingJoinerStagedKeys} for a Paimon-backed handle. */
   public static native long paimonUpdatingJoinerStagedKeys(long handle);
+
+  public static native long paimonUpdatingJoinerStagedRecords(long handle, boolean left);
 
   /** Releases a Paimon-backed updating joiner handle. */
   public static native void closePaimonUpdatingJoiner(long handle);

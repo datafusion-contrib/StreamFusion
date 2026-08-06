@@ -63,6 +63,10 @@ public final class NativeKafkaSerializationOperator
 
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
+    int inputRows = element.getValue().rowCount();
+    if (inputRows > 1) {
+      getMetricGroup().getIOMetricGroup().getNumRecordsInCounter().inc(inputRows - 1L);
+    }
     long started = System.nanoTime();
     try (VectorSchemaRoot root = element.getValue().root()) {
       BufferAllocator allocator =

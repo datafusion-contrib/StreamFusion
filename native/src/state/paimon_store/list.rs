@@ -168,6 +168,16 @@ impl<C: PaimonListCodec> KeyedStateStore<Vec<C::Entry>> for PaimonListStore<C> {
 }
 
 impl<C: PaimonListCodec> PaimonListStore<C> {
+    pub(crate) fn metric_entry_count(&self) -> usize {
+        self.working
+            .values()
+            .map(|slot| match slot {
+                ListSlot::Present { entries, .. } => entries.len(),
+                ListSlot::Absent { .. } => 0,
+            })
+            .sum()
+    }
+
     const SLOT_OVERHEAD: usize =
         std::mem::size_of::<ListSlot<C::Entry>>() + GROUP_ENTRY_OVERHEAD;
 

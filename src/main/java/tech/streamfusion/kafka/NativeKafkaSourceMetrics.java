@@ -43,6 +43,10 @@ final class NativeKafkaSourceMetrics {
     register(partition);
     kafkaMetrics.recordCurrentOffset(partition, Math.max(-1, nextOffset - 1));
     sourceMetrics.getIOMetricGroup().getNumBytesInCounter().inc(bytes);
+    if (records > 1) {
+      // SourceReaderBase accounts the NativeSourceRecord batch wrapper itself.
+      sourceMetrics.getIOMetricGroup().getNumRecordsInCounter().inc(records - 1);
+    }
     bytesConsumed.addAndGet(bytes);
     recordsConsumed.addAndGet(records);
     if (highWatermark >= 0) {

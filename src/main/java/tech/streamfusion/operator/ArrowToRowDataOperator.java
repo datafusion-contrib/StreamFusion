@@ -11,6 +11,7 @@ import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
+import org.apache.flink.metrics.Counter;
 
 /**
  * Transpose leaving a columnar region: reads each {@link ArrowBatch} back into rows. Sits where a
@@ -26,6 +27,9 @@ public class ArrowToRowDataOperator extends AbstractStreamOperator<RowData>
 
   private final RowType rowType;
   private transient RowDataSerializer outputSerializer;
+  private transient Counter numInputBatches;
+  private transient Counter numOutputRows;
+  private transient Counter convertTime;
 
   public ArrowToRowDataOperator(RowType rowType) {
     this.rowType = rowType;
@@ -35,15 +39,21 @@ public class ArrowToRowDataOperator extends AbstractStreamOperator<RowData>
   public void open() throws Exception {
     super.open();
     outputSerializer = new RowDataSerializer(rowType);
+    numInputBatches = getMetricGroup().counter("numInputBatches");
+    numOutputRows = getMetricGroup().counter("numOutputRows");
+    convertTime = getMetricGroup().counter("convertTime");
   }
 
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
     ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
+    numInputBatches.inc();
+    long started = System.nanoTime();
     try (VectorSchemaRoot root = element.getValue().root()) {
       ArrowReader reader = ArrowConversion.createArrowReader(root, rowType);
       TinyIntVector kinds = (TinyIntVector) root.getVector(RowDataArrowConverter.ROW_KIND_COLUMN);
       int rowCount = root.getRowCount();
+      numOutputRows.inc(rowCount);
       for (int i = 0; i < rowCount; i++) {
         RowData row = reader.read(i);
         if (kinds != null) {
@@ -52,5 +62,6 @@ public class ArrowToRowDataOperator extends AbstractStreamOperator<RowData>
         output.collect(new StreamRecord<>(outputSerializer.copy(row)));
       }
     }
+    convertTime.inc(System.nanoTime() - started);
   }
 }

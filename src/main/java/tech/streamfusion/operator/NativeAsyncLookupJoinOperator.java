@@ -7,6 +7,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.functions.DefaultOpenContext;
@@ -52,15 +53,19 @@ public class NativeAsyncLookupJoinOperator extends AbstractStreamOperator<ArrowB
   private final AsyncLookupJoinRunner runner;
   private final RowType probeType;
   private final RowType outputType;
+  private final boolean keyOrdered;
 
   private transient BufferAllocator allocator;
   private transient RowDataSerializer probeSerializer;
+  private transient AtomicInteger inflight;
+  private transient AtomicInteger finished;
 
   public NativeAsyncLookupJoinOperator(
-      AsyncLookupJoinRunner runner, RowType probeType, RowType outputType) {
+      AsyncLookupJoinRunner runner, RowType probeType, RowType outputType, boolean keyOrdered) {
     this.runner = runner;
     this.probeType = probeType;
     this.outputType = outputType;
+    this.keyOrdered = keyOrdered;
   }
 
   @Override
@@ -69,6 +74,15 @@ public class NativeAsyncLookupJoinOperator extends AbstractStreamOperator<ArrowB
     NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     probeSerializer = new RowDataSerializer(probeType);
+    if (keyOrdered) {
+      inflight = new AtomicInteger();
+      finished = new AtomicInteger();
+      getMetricGroup().gauge("aec_inflight_size", inflight::get);
+      // This batch-scoped implementation never admits a later same-key record while an earlier
+      // batch is pending, so the key-blocking queue is always empty.
+      getMetricGroup().gauge("aec_blocking_size", () -> 0);
+      getMetricGroup().gauge("aec_finish_size", finished::get);
+    }
     FunctionUtils.setFunctionRuntimeContext(runner, getRuntimeContext());
     FunctionUtils.openFunction(runner, DefaultOpenContext.INSTANCE);
   }
@@ -100,12 +114,23 @@ public class NativeAsyncLookupJoinOperator extends AbstractStreamOperator<ArrowB
     for (RowData probe : probes) {
       CompletableFuture<Collection<RowData>> future = new CompletableFuture<>();
       futures.add(future);
+      if (keyOrdered) {
+        inflight.incrementAndGet();
+        future.whenComplete(
+            (ignored, error) -> {
+              inflight.decrementAndGet();
+              finished.incrementAndGet();
+            });
+      }
       runner.asyncInvoke(probe, adapt(future));
     }
     List<RowData> outRows = new ArrayList<>();
     try {
       for (CompletableFuture<Collection<RowData>> future : futures) {
         outRows.addAll(future.get());
+        if (keyOrdered) {
+          finished.decrementAndGet();
+        }
       }
     } catch (ExecutionException e) {
       throw e.getCause() instanceof Exception ? (Exception) e.getCause() : e;

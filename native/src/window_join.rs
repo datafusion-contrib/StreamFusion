@@ -27,6 +27,9 @@ pub(crate) struct WindowJoiner {
     right_schema: Option<SchemaRef>,
     left_buffered: Vec<RecordBatch>,
     right_buffered: Vec<RecordBatch>,
+    pub(crate) current_watermark: i64,
+    pub(crate) left_late_drops: u64,
+    pub(crate) right_late_drops: u64,
     pub(crate) memory: OperatorMemory,
     /// Persistent-state mode: both sides' buffered rows live in the Paimon store (write buffers
     /// + disk tables); the in-memory `*_buffered` vectors stay empty between calls.
@@ -65,6 +68,9 @@ impl WindowJoiner {
             right_schema: None,
             left_buffered: Vec::new(),
             right_buffered: Vec::new(),
+            current_watermark: i64::MIN,
+            left_late_drops: 0,
+            right_late_drops: 0,
             memory: OperatorMemory::unaccounted(),
             #[cfg(feature = "paimon-state")]
             backend: None,
@@ -127,6 +133,8 @@ impl WindowJoiner {
 
     pub(crate) fn push_left(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
         self.left_schema = Some(batch.schema());
+        let (batch, dropped) = Self::filter_late(batch, self.left_wend, self.current_watermark)?;
+        self.left_late_drops += dropped as u64;
         #[cfg(feature = "paimon-state")]
         if self.backend.is_some() {
             return self.push_backend(batch, true);
@@ -137,12 +145,30 @@ impl WindowJoiner {
 
     pub(crate) fn push_right(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
         self.right_schema = Some(batch.schema());
+        let (batch, dropped) = Self::filter_late(batch, self.right_wend, self.current_watermark)?;
+        self.right_late_drops += dropped as u64;
         #[cfg(feature = "paimon-state")]
         if self.backend.is_some() {
             return self.push_backend(batch, false);
         }
         self.right_buffered.push(batch);
         self.account()
+    }
+
+    fn filter_late(
+        batch: RecordBatch,
+        window_end_column: usize,
+        watermark: i64,
+    ) -> Result<(RecordBatch, usize), DataFusionError> {
+        let input_rows = batch.num_rows();
+        let ends = rt_to_millis(batch.column(window_end_column));
+        let live: BooleanArray = ends
+            .iter()
+            .map(|end| Some(end.is_some_and(|end| end > watermark)))
+            .collect();
+        let batch = filter_record_batch(&batch, &live)?;
+        let late_rows = input_rows - batch.num_rows();
+        Ok((batch, late_rows))
     }
 
     /// Persistent-state arrival path: every input row stages into its side's write buffer under
@@ -231,6 +257,7 @@ impl WindowJoiner {
     /// does not appear in it never matched. Empty batch when nothing is emitted. Fallible because
     /// the join's working memory draws on the operator's budget.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        self.current_watermark = self.current_watermark.max(watermark);
         #[cfg(feature = "paimon-state")]
         if self.backend.is_some() {
             return self.flush_backend(watermark);
@@ -520,6 +547,23 @@ impl WindowJoiner {
 }
 
 state_bytes_getter!(Java_tech_streamfusion_Native_windowJoinerStateBytes, WindowJoiner);
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_windowJoinerLateDrops<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    left: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let joiner = unsafe { &*(handle as *const WindowJoiner) };
+        (if left != 0 {
+            joiner.left_late_drops
+        } else {
+            joiner.right_late_drops
+        }) as jlong
+    })
+}
 
 /// Creates an event-time INNER window joiner and returns an opaque handle. The key/window column
 /// indices locate the equi-join key and the `window_start`/`window_end` columns within each side's

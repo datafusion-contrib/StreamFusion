@@ -877,6 +877,14 @@ enum PaimonTopNRanker {
 }
 
 impl PaimonTopNRanker {
+    fn cache_size(&mut self) -> usize {
+        match self {
+            PaimonTopNRanker::Append(r) => r.store_mut().metric_entry_count(),
+            PaimonTopNRanker::Retract(_) => 0,
+            PaimonTopNRanker::UpdateFast(r) => r.store_mut().metric_entry_count(),
+        }
+    }
+
     fn set_clock(&mut self, now_ms: i64) {
         match self {
             PaimonTopNRanker::Append(r) => r.store_mut().set_clock(now_ms),
@@ -1217,9 +1225,19 @@ pub extern "system" fn Java_tech_streamfusion_Native_paimonTopNRankerStateBytes<
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_paimonTopNRankerStagingBytes<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_paimonTopNRankerCacheSize<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let ranker = unsafe { &mut *(handle as *mut PaimonTopNRanker) };
+        ranker.cache_size() as jlong
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_paimonTopNRankerStagingBytes<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1572,9 +1590,20 @@ pub extern "system" fn Java_tech_streamfusion_Native_paimonUpdatingJoinerStagedK
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_closePaimonUpdatingJoiner<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_paimonUpdatingJoinerStagedRecords<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    left: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let joiner = unsafe { &*(handle as *const crate::updating_join::UpdatingJoiner) };
+        joiner.staged_records(left != 0) as jlong
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closePaimonUpdatingJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1713,6 +1742,18 @@ pub extern "system" fn Java_tech_streamfusion_Native_pushPaimonWindowRanker<
         if let Err(e) = result {
             throw_memory_limit(&mut env, &e.to_string());
         }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_paimonWindowRankerLateDrops<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let ranker = unsafe { &*(handle as *const crate::topn::WindowRanker) };
+        ranker.late_drops as jlong
     })
 }
 
@@ -2416,9 +2457,24 @@ pub extern "system" fn Java_tech_streamfusion_Native_paimonWindowJoinerStateByte
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_closePaimonWindowJoiner<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_paimonWindowJoinerLateDrops<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    left: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let joiner = unsafe { &*(handle as *const crate::window_join::WindowJoiner) };
+        (if left != 0 {
+            joiner.left_late_drops
+        } else {
+            joiner.right_late_drops
+        }) as jlong
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closePaimonWindowJoiner<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,

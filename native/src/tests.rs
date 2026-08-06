@@ -2400,6 +2400,16 @@ fn over_window_buffers_and_passes_through() {
 }
 
 #[test]
+fn over_window_counts_rows_dropped_behind_the_watermark() {
+    let mut over =
+        OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 0, 0, false);
+    over.flush(1000, 0).unwrap();
+    over.push(join_batch(vec![1, 2], vec![10, 20], vec![999, 1000]), 0)
+        .unwrap();
+    assert_eq!(over.late_drops, 2);
+}
+
+#[test]
 fn over_state_partitions_and_restores_by_flink_key_group() {
     let batch = RecordBatch::try_new(
         Arc::new(Schema::new(vec![
@@ -2983,6 +2993,14 @@ fn window_state_over_budget_fails_clearly() {
     assert!(err.to_string().contains("task off-heap"), "{err}");
 }
 
+#[test]
+fn window_aggregate_counts_assigned_windows_dropped_as_late() {
+    let mut agg = TumblingAggregator::new(1000, 1000, false, vec![0], vec![0]);
+    agg.flush(1000).unwrap();
+    agg.update(&keyed_window_batch(0, vec![1, 2])).unwrap();
+    assert_eq!(agg.late_drops, 2);
+}
+
 // Every rolled-out state shape enforces its budget: exceeding it is an error, not an overrun.
 // One test per shape (accumulator maps, byte-row maps, buffered batches, bounded buffers).
 #[test]
@@ -2992,6 +3010,25 @@ fn session_state_over_budget_fails_clearly() {
         .unwrap();
     let err = agg.update(&keyed_window_batch(0, (0..100).collect())).unwrap_err();
     assert!(err.to_string().contains("task off-heap"), "{err}");
+}
+
+#[test]
+fn session_aggregate_counts_rows_whose_session_already_closed() {
+    let mut agg = SessionAggregator::new(1000, vec![0], vec![0]);
+    agg.flush(1000).unwrap();
+    agg.update(&keyed_window_batch(0, vec![1, 2])).unwrap();
+    assert_eq!(agg.late_drops, 2);
+}
+
+#[test]
+fn session_aggregate_accepts_late_candidate_that_merges_into_open_session() {
+    let mut agg = SessionAggregator::new(1000, vec![0], vec![0]);
+    agg.update(&keyed_window_batch(600, vec![1])).unwrap();
+    agg.flush(1000).unwrap();
+    agg.update(&keyed_window_batch(0, vec![1])).unwrap();
+    assert_eq!(agg.late_drops, 0);
+    let out = agg.flush(1600).unwrap();
+    assert_eq!(values(&out, 3), vec![2]);
 }
 
 #[test]
@@ -4938,10 +4975,28 @@ fn unique_updating_join_replays_only_each_sides_final_bundle_change() {
         0
     );
     assert_eq!(joiner.staged_keys(), 1);
+    assert_eq!(joiner.staged_records(true), 1);
     let out = joiner.flush_mini_batch().unwrap();
     assert_eq!(row_kinds(&out), vec![0]);
     assert_eq!(values(&out, 1), vec![20]);
     assert_eq!(values(&out, 3), vec![100]);
+}
+
+#[test]
+fn updating_join_bundle_metric_retains_both_records_of_an_update() {
+    let mut joiner = inner_joiner().with_mini_batch(true);
+    joiner
+        .push(&changelog_join_batch(vec![1], vec![10], vec![0]), true, 0)
+        .unwrap();
+    joiner.flush_mini_batch().unwrap();
+    joiner
+        .push(
+            &changelog_join_batch(vec![1, 1], vec![10, 20], vec![3, 0]),
+            true,
+            0,
+        )
+        .unwrap();
+    assert_eq!(joiner.staged_records(true), 2);
 }
 
 #[test]
@@ -5832,6 +5887,20 @@ fn window_join_emits_matches_when_window_closes() {
     // Watermark 2000 closes [1000,2000): k=1 matches once.
     let rest = joiner.flush(2000).expect("window join flush");
     assert_eq!(left_right_values(&rest), vec![(40, 400)]);
+}
+
+#[test]
+fn window_join_counts_late_rows_per_input() {
+    let mut joiner = window_joiner(JoinKind::Inner);
+    joiner.flush(1000).unwrap();
+    joiner
+        .push_left(window_batch(vec![1], vec![10], vec![0], vec![1000]))
+        .unwrap();
+    joiner
+        .push_right(window_batch(vec![1], vec![100], vec![0], vec![1000]))
+        .unwrap();
+    assert_eq!(joiner.left_late_drops, 1);
+    assert_eq!(joiner.right_late_drops, 1);
 }
 
 // Buffered window-join rows survive a snapshot/restore round trip.

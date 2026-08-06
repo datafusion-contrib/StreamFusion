@@ -10,6 +10,7 @@ import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.flink.metrics.Counter;
 
 /**
  * Stateless windowing table function, columnar in and out: the Arrow-batch analog of Flink's {@link
@@ -36,6 +37,7 @@ public class NativeWindowTableFunctionOperator extends AbstractStreamOperator<Ar
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
+  private transient Counter numNullRowTimeRecordsDropped;
 
   public NativeWindowTableFunctionOperator(
       int timeColumn, long windowMillis, long slideMillis, boolean cumulative, boolean proctime) {
@@ -52,12 +54,17 @@ public class NativeWindowTableFunctionOperator extends AbstractStreamOperator<Ar
     NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
+    numNullRowTimeRecordsDropped =
+        getMetricGroup().counter("numNullRowTimeRecordsDropped");
   }
 
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
     ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
     VectorSchemaRoot in = element.getValue().root();
+    if (!proctime) {
+      numNullRowTimeRecordsDropped.inc(in.getVector(timeColumn).getNullCount());
+    }
     // The input batch's buffers belong to the upstream operator's allocator; the C Data export must
     // use that same allocator. The operator's own allocator owns only the imported result.
     BufferAllocator inAllocator =

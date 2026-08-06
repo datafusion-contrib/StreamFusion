@@ -26,12 +26,17 @@ final class MiniBatchMetrics {
   private final Counter physicalBatchSplits;
 
   private volatile long currentRows;
+  private volatile long currentKeys;
   private volatile long currentPhysicalBatches;
   private volatile long lastRows;
   private volatile long lastPhysicalBatches;
   private volatile long peakTransientBytes;
 
   MiniBatchMetrics(MetricGroup metrics) {
+    this(metrics, false);
+  }
+
+  MiniBatchMetrics(MetricGroup metrics, boolean flinkMapBundleSurface) {
     inputRows = metrics.counter("miniBatchInputRows");
     inputBatches = metrics.counter("miniBatchInputBatches");
     bundles = metrics.counter("miniBatchBundles");
@@ -47,6 +52,13 @@ final class MiniBatchMetrics {
     metrics.gauge("miniBatchLastRows", () -> lastRows);
     metrics.gauge("miniBatchLastPhysicalBatches", () -> lastPhysicalBatches);
     metrics.gauge("miniBatchPeakTransientBytes", () -> peakTransientBytes);
+    if (flinkMapBundleSurface) {
+      // Match AbstractMapBundleOperator's names and value types exactly. These are current-bundle
+      // gauges, unlike the diagnostic last/touched counters above.
+      metrics.gauge("bundleSize", () -> (int) Math.min(Integer.MAX_VALUE, currentRows));
+      metrics.gauge(
+          "bundleRatio", () -> currentKeys == 0 ? 0.0 : (double) currentRows / currentKeys);
+    }
   }
 
   void onPhysicalBatch() {
@@ -63,6 +75,10 @@ final class MiniBatchMetrics {
 
   void onPhysicalBatchSplit() {
     physicalBatchSplits.inc();
+  }
+
+  void onCurrentKeys(long keys) {
+    currentKeys = keys;
   }
 
   void onFlush(FlushReason reason, long emittedRows, long changedKeys, long transientBytes) {
@@ -82,6 +98,7 @@ final class MiniBatchMetrics {
     lastPhysicalBatches = currentPhysicalBatches;
     peakTransientBytes = Math.max(peakTransientBytes, transientBytes);
     currentRows = 0;
+    currentKeys = 0;
     currentPhysicalBatches = 0;
   }
 

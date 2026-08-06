@@ -608,6 +608,14 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         self.left_staged.touched_keys() + self.right_staged.touched_keys()
     }
 
+    pub(crate) fn staged_records(&self, left: bool) -> usize {
+        if left {
+            self.left_staged.effective_records()
+        } else {
+            self.right_staged.effective_records()
+        }
+    }
+
     /// Folds a unique-key side to its first durable row and final bundle row. Durable join state is
     /// unchanged until flush, so repeated replacements avoid all intermediate probes and output.
     fn push_mini_batch(
@@ -1396,6 +1404,19 @@ pub extern "system" fn Java_tech_streamfusion_Native_updatingJoinerStagedKeys<'l
     crate::bridge::jni_guard(env, move |_env| {
         let joiner = unsafe { &*(handle as *const UpdatingJoiner) };
         joiner.staged_keys() as jlong
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_updatingJoinerStagedRecords<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    left: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let joiner = unsafe { &*(handle as *const UpdatingJoiner) };
+        joiner.staged_records(left != 0) as jlong
     })
 }
 

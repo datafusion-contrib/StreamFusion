@@ -37,6 +37,11 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   /** The latest cleanup boundary already scheduled, so each {@code now + gap} timer registers once. */
   private transient long registeredTimer;
 
+  @Override
+  protected boolean isEventTimeWindow() {
+    return !proctime;
+  }
+
   public NativeColumnarSessionWindowAggregateOperator(
       long gapMillis,
       int timeColumn,
@@ -212,6 +217,7 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
         }
       } else {
         updateColumnar(in, timeColumn, valueColumns, keyColumns, keyTypes);
+        reportLateRecords(Native.sessionAggregatorLateDrops(handle));
       }
     }
     publishStateBytes();

@@ -14,6 +14,7 @@ import org.apache.arrow.vector.TimeStampNanoTZVector;
 import org.apache.arrow.vector.TimeStampNanoVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 
@@ -35,6 +36,7 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
   private final boolean inputTimestampLtz;
   private final String sessionTimeZoneId;
   private transient ZoneId sessionZone;
+  private transient FlinkWindowMetrics flinkWindowMetrics;
 
   protected NativeRowWindowOperatorCore(
       String stateName,
@@ -66,6 +68,26 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
   public void open() throws Exception {
     super.open();
     sessionZone = ZoneId.of(sessionTimeZoneId);
+    flinkWindowMetrics =
+        new FlinkWindowMetrics(getMetricGroup(), getProcessingTimeService());
+  }
+
+  @Override
+  public void processWatermark(Watermark mark) throws Exception {
+    if (isEventTimeWindow()) {
+      flinkWindowMetrics.onWatermark(mark.getTimestamp());
+    }
+    super.processWatermark(mark);
+  }
+
+  /** Whether watermarks, rather than processing-time timers, drive this window. */
+  protected boolean isEventTimeWindow() {
+    return true;
+  }
+
+  /** Samples the native late-row total into Flink's counter and meter. */
+  protected final void reportLateRecords(long cumulativeLateRecords) {
+    flinkWindowMetrics.reportLateRecords(cumulativeLateRecords);
   }
 
   /**

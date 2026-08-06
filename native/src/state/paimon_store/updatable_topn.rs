@@ -168,6 +168,16 @@ impl KeyedStateStore<Vec<UpdatableRow>> for PaimonUpdatableTopNStore {
 }
 
 impl PaimonUpdatableTopNStore {
+    pub(crate) fn metric_entry_count(&self) -> usize {
+        self.working
+            .values()
+            .map(|slot| match slot {
+                UpdatableSlot::Present { entries, .. } => entries.len(),
+                UpdatableSlot::Absent { .. } => 0,
+            })
+            .sum()
+    }
+
     const SLOT_OVERHEAD: usize =
         std::mem::size_of::<UpdatableSlot>() + GROUP_ENTRY_OVERHEAD;
     /// One persisted-image entry: an owned row-key copy plus the image (the payload row is

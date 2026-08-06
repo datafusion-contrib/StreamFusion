@@ -2409,6 +2409,14 @@ pub(crate) enum TopNHandle {
 }
 
 impl TopNHandle {
+    fn cache_size(&self) -> usize {
+        match self {
+            TopNHandle::Append(r) => r.groups.iter().map(|(_, rows)| rows.len()).sum(),
+            TopNHandle::Retract(_) => 0,
+            TopNHandle::UpdateFast(r) => r.groups.iter().map(|(_, rows)| rows.len()).sum(),
+        }
+    }
+
     fn push(&mut self, batch: &RecordBatch, now_ms: i64) -> Result<RecordBatch, DataFusionError> {
         match self {
             TopNHandle::Append(r) => r.push(batch, now_ms),
@@ -2506,6 +2514,7 @@ pub(crate) struct WindowRanker {
     limit: i64,
     output_rank_number: bool,
     pub(crate) current_watermark: i64,
+    pub(crate) late_drops: u64,
     /// Bounded, sorted top-N buffer per (window_end, window_start, partition key).
     groups: HashMap<(i64, i64, GroupKey), Vec<JoinRow>>,
     schema: Option<SchemaRef>,
@@ -2538,6 +2547,7 @@ impl WindowRanker {
             limit,
             output_rank_number,
             current_watermark: i64::MIN,
+            late_drops: 0,
             groups: HashMap::default(),
             schema: None,
             memory: OperatorMemory::unaccounted(),
@@ -2611,6 +2621,7 @@ impl WindowRanker {
         for row in 0..batch.num_rows() {
             let window_end = we.value(row);
             if window_end <= self.current_watermark {
+                self.late_drops += 1;
                 row_windows.push(None); // late: the window already closed and emitted
                 continue;
             }
@@ -2675,6 +2686,7 @@ impl WindowRanker {
         for row in 0..batch.num_rows() {
             let window_end = we.value(row);
             if window_end <= self.current_watermark {
+                self.late_drops += 1;
                 continue; // late: the window already closed and emitted
             }
             let window_start = ws.value(row);
@@ -2896,6 +2908,18 @@ impl WindowRanker {
 
 state_bytes_getter!(Java_tech_streamfusion_Native_windowRankerStateBytes, WindowRanker);
 
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_windowRankerLateDrops<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let ranker = unsafe { &*(handle as *const WindowRanker) };
+        ranker.late_drops as jlong
+    })
+}
+
 /// [`state_bytes_getter`] for the Top-N handle, which wraps its two ranker variants in an enum.
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_topNRankerStateBytes<'local>(
@@ -2910,6 +2934,18 @@ pub extern "system" fn Java_tech_streamfusion_Native_topNRankerStateBytes<'local
             TopNHandle::Retract(r) => r.memory.state_bytes,
             TopNHandle::UpdateFast(r) => r.memory.state_bytes,
         }) as jlong
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_topNRankerCacheSize<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let ranker = unsafe { &*(handle as *const TopNHandle) };
+        ranker.cache_size() as jlong
     })
 }
 

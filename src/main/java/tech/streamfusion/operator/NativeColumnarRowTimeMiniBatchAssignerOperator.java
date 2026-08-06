@@ -34,7 +34,8 @@ public class NativeColumnarRowTimeMiniBatchAssignerOperator extends AbstractStre
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
     ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
-    output.collect(element);
+    ColumnarRecordMetrics.forward(
+        output, getMetricGroup(), element, element.getValue().rowCount());
   }
 
   @Override

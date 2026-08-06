@@ -40,6 +40,11 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
   /** The latest end of any window that has received a row, so the timer stops chaining once drained. */
   private transient long maxOpenEnd;
 
+  @Override
+  protected boolean isEventTimeWindow() {
+    return !proctime;
+  }
+
   public NativeColumnarWindowAggregateOperator(
       boolean cumulative,
       long windowMillis,
@@ -194,6 +199,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
         scheduleNextTimer(now);
       } else {
         updateColumnar(in, timeColumn, valueColumns, keyColumns, keyTypes);
+        reportLateRecords(Native.tumblingAggregatorLateDrops(handle));
       }
     }
     publishStateBytes();

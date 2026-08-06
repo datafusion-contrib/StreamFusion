@@ -3,6 +3,7 @@ package tech.streamfusion.operator;
 import java.lang.ref.Cleaner;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.LongConsumer;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.util.TransferPair;
@@ -46,19 +47,41 @@ public final class ArrowBatch {
   private final Backstop backstop;
   // How many consumers have yet to take the batch; 1 for the normal single-consumer hand-off.
   private int pendingConsumers = 1;
+  private final LongConsumer encodeTiming;
+  private final NativeScanMetrics nativeScanMetrics;
 
   public ArrowBatch(VectorSchemaRoot root) {
-    this(root, -1, NO_HANDLE_OWNER);
+    this(root, -1, NO_HANDLE_OWNER, null, null);
   }
 
   public ArrowBatch(VectorSchemaRoot root, int destination) {
-    this(root, destination, NO_HANDLE_OWNER);
+    this(root, destination, NO_HANDLE_OWNER, null, null);
   }
 
   ArrowBatch(VectorSchemaRoot root, int destination, long handleOwner) {
+    this(root, destination, handleOwner, null, null);
+  }
+
+  ArrowBatch(
+      VectorSchemaRoot root, int destination, long handleOwner, LongConsumer encodeTiming) {
+    this(root, destination, handleOwner, encodeTiming, null);
+  }
+
+  ArrowBatch(VectorSchemaRoot root, NativeScanMetrics nativeScanMetrics) {
+    this(root, -1, NO_HANDLE_OWNER, null, nativeScanMetrics);
+  }
+
+  private ArrowBatch(
+      VectorSchemaRoot root,
+      int destination,
+      long handleOwner,
+      LongConsumer encodeTiming,
+      NativeScanMetrics nativeScanMetrics) {
     this.root = root;
     this.destination = destination;
     this.handleOwner = handleOwner;
+    this.encodeTiming = encodeTiming;
+    this.nativeScanMetrics = nativeScanMetrics;
     this.backstop = new Backstop(root);
     ABANDONED.register(this, backstop);
   }
@@ -102,6 +125,36 @@ public final class ArrowBatch {
 
   long handleOwner() {
     return handleOwner;
+  }
+
+  void recordEncodeNanos(long nanos) {
+    if (encodeTiming != null) {
+      encodeTiming.accept(nanos);
+    }
+  }
+
+  NativeScanMetrics nativeScanMetrics() {
+    return nativeScanMetrics;
+  }
+
+  /** Per-batch measurements produced inside the native file {@code BulkFormat}. */
+  static final class NativeScanMetrics {
+
+    final long openingNanos;
+    final long scanningUntilDataNanos;
+    final long scanningNanos;
+    final long processingNanos;
+
+    NativeScanMetrics(
+        long openingNanos,
+        long scanningUntilDataNanos,
+        long scanningNanos,
+        long processingNanos) {
+      this.openingNanos = openingNanos;
+      this.scanningUntilDataNanos = scanningUntilDataNanos;
+      this.scanningNanos = scanningNanos;
+      this.processingNanos = processingNanos;
+    }
   }
 
   /** Frees a batch removed from the zero-copy table before any deserializer claimed it. */

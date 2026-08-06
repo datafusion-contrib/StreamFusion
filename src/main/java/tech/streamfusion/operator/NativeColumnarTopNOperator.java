@@ -44,6 +44,7 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
   private transient MiniBatchBoundary boundary;
   private transient MiniBatchMetrics miniBatchMetrics;
   private transient BatchCoalescer coalescer;
+  private transient long cacheSize;
 
   public NativeColumnarTopNOperator(
       int[] partitionColumns,
@@ -267,6 +268,14 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
   @Override
   public void open() throws Exception {
     super.open();
+    // Native matching accepts only ConstantRankRange, so this counter remains zero; Flink still
+    // registers it for every Top-N strategy and dashboards rely on the identifier being present.
+    getMetricGroup().counter("topn.invalidTopSize");
+    if (!retracting) {
+      getMetricGroup().gauge("topn.cache.hitRate", () -> 1.0);
+      getMetricGroup().gauge("topn.cache.size", () -> cacheSize);
+      publishCacheSize();
+    }
     if (netDiff) {
       boundary = new MiniBatchBoundary(miniBatchSize);
       miniBatchMetrics = new MiniBatchMetrics(getMetricGroup());
@@ -293,6 +302,7 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
         in.close();
       }
       publishStateBytes();
+      publishCacheSize();
       return;
     }
 
@@ -327,6 +337,16 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
       in.close();
     }
     publishStateBytes();
+    publishCacheSize();
+  }
+
+  private void publishCacheSize() {
+    if (!retracting && handle != 0) {
+      cacheSize =
+          paimonState()
+              ? Native.paimonTopNRankerCacheSize(handle)
+              : Native.topNRankerCacheSize(handle);
+    }
   }
 
   private void push(VectorSchemaRoot in) {

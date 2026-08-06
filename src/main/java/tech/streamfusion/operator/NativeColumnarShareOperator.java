@@ -26,6 +26,7 @@ public class NativeColumnarShareOperator extends AbstractStreamOperator<ArrowBat
   public void processElement(StreamRecord<ArrowBatch> element) {
     ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
     element.getValue().shareAcross(consumers);
-    output.collect(element);
+    ColumnarRecordMetrics.forward(
+        output, getMetricGroup(), element, element.getValue().rowCount());
   }
 }

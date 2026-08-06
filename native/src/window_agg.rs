@@ -92,6 +92,11 @@ pub(crate) fn assign_windows(
     let mut ends: Vec<i64> = Vec::new();
     let mut windows: Vec<(i64, i64)> = Vec::new();
     for row in 0..input.num_rows() {
+        if times.is_some_and(|values| values.is_null(row)) {
+            // AlignedWindowTableFunctionOperator drops null rowtime records and increments
+            // numNullRowTimeRecordsDropped on the JVM side.
+            continue;
+        }
         let time_millis = match proctime_now_millis {
             Some(now) => now,
             None => times.unwrap().value(row) / 1_000_000,
@@ -181,6 +186,8 @@ pub(crate) struct TumblingAggregator {
     // The highest watermark flushed so far; a row whose window ends at or before it is late (its
     // window already closed) and is dropped, matching the host's per-row late-data handling.
     current_watermark: i64,
+    /// Cumulative input rows discarded because all of their assigned windows already fired.
+    pub(crate) late_drops: u64,
     snapshot_cache: Option<WindowSnapshotCache>,
     // Managed-memory accounting: open-window footprint tracked per touched group (not by
     // rescanning all state) and resized against the reservation after every state change.
@@ -210,6 +217,7 @@ impl TumblingAggregator {
             key_converter: None,
             key_types: Vec::new(),
             current_watermark: i64::MIN,
+            late_drops: 0,
             snapshot_cache: None,
             memory: OperatorMemory::unaccounted(),
             #[cfg(feature = "paimon-state")]
@@ -433,6 +441,9 @@ impl TumblingAggregator {
             // per-row assigner drops such rows; the columnar assigner slices batches so a closing
             // watermark precedes any row it makes late, and this is where that row is discarded.
             windows.retain(|(_, end)| *end > self.current_watermark);
+            if windows.is_empty() {
+                self.late_drops += 1;
+            }
             for &(start, end) in windows.iter() {
                 grouped.entry((start, end, key)).or_default().push(row as u32);
             }
@@ -968,6 +979,18 @@ impl TumblingAggregator {
 }
 
 state_bytes_getter!(Java_tech_streamfusion_Native_tumblingAggregatorStateBytes, TumblingAggregator);
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_tumblingAggregatorLateDrops<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let aggregator = unsafe { &*(handle as *const TumblingAggregator) };
+        aggregator.late_drops as jlong
+    })
+}
 
 /// Runs a batch through the stateless windowing table function, exporting the fanned-out batch with
 /// window_start/window_end/window_time appended. Stateless, so there is no handle to create or close.

@@ -54,6 +54,7 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   private transient ZoneId zone;
   private transient long registeredTimer;
   private transient long maxOpenEnd;
+  private transient FlinkWindowMetrics flinkWindowMetrics;
 
   public NativeColumnarWindowRankOperator(
       int windowStartColumn,
@@ -201,6 +202,8 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   @Override
   public void open() throws Exception {
     super.open();
+    flinkWindowMetrics =
+        new FlinkWindowMetrics(getMetricGroup(), getProcessingTimeService());
     zone = ZoneId.of(timeZoneId);
     registeredTimer = Long.MIN_VALUE;
     maxOpenEnd = restoredProcessingTimeTimerDeadline();
@@ -231,6 +234,10 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
     } finally {
       in.close();
     }
+    flinkWindowMetrics.reportLateRecords(
+        paimonState()
+            ? Native.paimonWindowRankerLateDrops(handle)
+            : Native.windowRankerLateDrops(handle));
     if (proctime) {
       long now = getProcessingTimeService().getCurrentProcessingTime();
       flush(now);
@@ -242,6 +249,9 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
 
   @Override
   public void processWatermark(Watermark mark) throws Exception {
+    if (!proctime) {
+      flinkWindowMetrics.onWatermark(mark.getTimestamp());
+    }
     // Proctime ranks close on the processing-time clock, not the watermark; just forward it.
     if (!proctime) {
       flush(mark.getTimestamp());

@@ -53,6 +53,7 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
 
   private transient long registeredTimer;
   private transient long maxOpenEnd;
+  private transient FlinkWindowJoinMetrics flinkWindowMetrics;
 
   public NativeWindowJoinOperator(
       int[] leftKeys,
@@ -239,6 +240,8 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
   @Override
   public void open() throws Exception {
     super.open();
+    flinkWindowMetrics =
+        new FlinkWindowJoinMetrics(getMetricGroup(), getProcessingTimeService());
     registeredTimer = Long.MIN_VALUE;
     maxOpenEnd = restoredProcessingTimeTimerDeadline();
     if (proctime && maxOpenEnd != Long.MIN_VALUE) {
@@ -334,10 +337,20 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
     } finally {
       in.close();
     }
+    flinkWindowMetrics.reportLateRecords(
+        paimonState()
+            ? Native.paimonWindowJoinerLateDrops(handle, true)
+            : Native.windowJoinerLateDrops(handle, true),
+        paimonState()
+            ? Native.paimonWindowJoinerLateDrops(handle, false)
+            : Native.windowJoinerLateDrops(handle, false));
   }
 
   @Override
   public void processWatermark(Watermark mark) throws Exception {
+    if (!proctime) {
+      flinkWindowMetrics.onWatermark(mark.getTimestamp());
+    }
     // Proctime joins close on the processing-time clock, not the watermark; just forward it.
     if (!proctime) {
       flush(mark.getTimestamp());

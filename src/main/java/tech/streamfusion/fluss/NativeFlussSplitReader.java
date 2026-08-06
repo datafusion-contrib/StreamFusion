@@ -38,6 +38,7 @@ final class NativeFlussSplitReader implements SplitReader<NativeSourceRecord, So
   private final long pollTimeoutMillis;
   private final BufferAllocator allocator = NativeAllocator.SHARED;
   private final BoundedSplitTracker<NativeFlussLogSplit> tracker = new BoundedSplitTracker<>();
+  private final NativeFlussSourceMetrics metrics;
 
   NativeFlussSplitReader(
       String[] configKeys,
@@ -47,7 +48,28 @@ final class NativeFlussSplitReader implements SplitReader<NativeSourceRecord, So
       int[] projectedFields,
       int rowtimeIndex,
       long pollTimeoutMillis) {
+    this(
+        configKeys,
+        configValues,
+        databaseName,
+        tableName,
+        projectedFields,
+        rowtimeIndex,
+        pollTimeoutMillis,
+        null);
+  }
+
+  NativeFlussSplitReader(
+      String[] configKeys,
+      String[] configValues,
+      String databaseName,
+      String tableName,
+      int[] projectedFields,
+      int rowtimeIndex,
+      long pollTimeoutMillis,
+      NativeFlussSourceMetrics metrics) {
     this.pollTimeoutMillis = pollTimeoutMillis;
+    this.metrics = metrics;
     this.handle =
         NativeFluss.openFlussReader(
             configKeys, configValues, databaseName, tableName, projectedFields, rowtimeIndex);
@@ -73,6 +95,9 @@ final class NativeFlussSplitReader implements SplitReader<NativeSourceRecord, So
         VectorSchemaRoot root =
             Data.importVectorSchemaRoot(allocator, outArray, outSchema, NativeAllocator.DICTIONARIES);
         tracker.recordPosition(splitId[0], meta[0]);
+        if (metrics != null) {
+          metrics.recordBatch(splitId[0], meta[0], root.getRowCount(), meta[1]);
+        }
         builder.add(splitId[0], new NativeSourceRecord(new ArrowBatch(root), meta[0], meta[1]));
       }
     }
@@ -100,6 +125,9 @@ final class NativeFlussSplitReader implements SplitReader<NativeSourceRecord, So
         continue;
       }
       nativeSplits.add(nativeSplit);
+      if (metrics != null) {
+        metrics.register(nativeSplit);
+      }
       tracker.track(
           nativeSplit.splitId(), nativeSplit, nativeSplit.startingOffset(), stoppingOffset);
     }

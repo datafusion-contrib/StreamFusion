@@ -58,6 +58,10 @@ public class NativeColumnarUpdatingJoinOperator
   private transient MiniBatchMetrics miniBatchMetrics;
   private transient BatchCoalescer leftCoalescer;
   private transient BatchCoalescer rightCoalescer;
+  private transient long leftBundleRows;
+  private transient long rightBundleRows;
+  private transient int leftBundleReducedSize;
+  private transient int rightBundleReducedSize;
 
   public NativeColumnarUpdatingJoinOperator(
       int[] leftKeys,
@@ -260,6 +264,8 @@ public class NativeColumnarUpdatingJoinOperator
     if (miniBatch) {
       boundary = new MiniBatchBoundary(miniBatchSize);
       miniBatchMetrics = new MiniBatchMetrics(getMetricGroup());
+      getMetricGroup().gauge("leftBundleReducedSize", () -> leftBundleReducedSize);
+      getMetricGroup().gauge("rightBundleReducedSize", () -> rightBundleReducedSize);
     }
     leftCoalescer = BatchCoalescer.create(getProcessingTimeService(), in -> ingest(in, true));
     rightCoalescer = BatchCoalescer.create(getProcessingTimeService(), in -> ingest(in, false));
@@ -317,6 +323,11 @@ public class NativeColumnarUpdatingJoinOperator
           }
         }
         miniBatchMetrics.onSlice(length, firstContribution);
+        if (left) {
+          leftBundleRows += length;
+        } else {
+          rightBundleRows += length;
+        }
         offset += length;
         if (boundary.onSlice(length)) {
           flushBundle(FlushReason.COUNT);
@@ -419,6 +430,16 @@ public class NativeColumnarUpdatingJoinOperator
         paimonState()
             ? Native.paimonUpdatingJoinerStagedKeys(handle)
             : Native.updatingJoinerStagedKeys(handle);
+    long leftRecords =
+        paimonState()
+            ? Native.paimonUpdatingJoinerStagedRecords(handle, true)
+            : Native.updatingJoinerStagedRecords(handle, true);
+    long rightRecords =
+        paimonState()
+            ? Native.paimonUpdatingJoinerStagedRecords(handle, false)
+            : Native.updatingJoinerStagedRecords(handle, false);
+    leftBundleReducedSize = saturatedInt(Math.max(0, leftBundleRows - leftRecords));
+    rightBundleReducedSize = saturatedInt(Math.max(0, rightBundleRows - rightRecords));
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
       if (paimonState()) {
@@ -438,6 +459,12 @@ public class NativeColumnarUpdatingJoinOperator
       }
     }
     boundary.reset();
+    leftBundleRows = 0;
+    rightBundleRows = 0;
+  }
+
+  private static int saturatedInt(long value) {
+    return (int) Math.min(Integer.MAX_VALUE, value);
   }
 
   @Override

@@ -10,6 +10,7 @@ import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.flink.metrics.Counter;
 
 /**
  * Splits each incoming Arrow batch by key into per-channel sub-batches, emitting each tagged with
@@ -29,6 +30,11 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long handleOwner;
+  private transient Counter elapsedCompute;
+  private transient Counter repartTime;
+  private transient Counter encodeTime;
+  private transient Counter decodeTime;
+  private transient Counter inputBatches;
 
   public SplitByKeyGroupOperator(
       int[] keyColumns, int[] timestampPrecisions, int maxParallelism, int numChannels) {
@@ -45,6 +51,13 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
     handleOwner = ArrowBatchHandles.newOwner();
+    elapsedCompute = getMetricGroup().counter("elapsed_compute");
+    repartTime = getMetricGroup().counter("repart_time");
+    encodeTime = getMetricGroup().counter("encode_time");
+    decodeTime = getMetricGroup().counter("decode_time");
+    getMetricGroup().counter("spill_count");
+    getMetricGroup().counter("spilled_bytes");
+    inputBatches = getMetricGroup().counter("input_batches");
   }
 
   @Override
@@ -57,6 +70,8 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
 
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
+    long computeStarted = System.nanoTime();
+    inputBatches.inc();
     ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
     VectorSchemaRoot in = element.getValue().root();
     BufferAllocator inAllocator =
@@ -65,6 +80,7 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
     try (ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
         ArrowSchema inSchema = ArrowSchema.allocateNew(inAllocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
+      long repartStarted = System.nanoTime();
       handle =
           Native.splitByKey(
               inArray.memoryAddress(),
@@ -73,6 +89,7 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
               timestampPrecisions,
               maxParallelism,
               numChannels);
+      repartTime.inc(System.nanoTime() - repartStarted);
     } finally {
       in.close(); // the input batch is consumed by the split
     }
@@ -85,14 +102,19 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
           if (channel < 0) {
             break;
           }
+          long decodeStarted = System.nanoTime();
           VectorSchemaRoot sub =
               Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
+          decodeTime.inc(System.nanoTime() - decodeStarted);
           ColumnarRecordMetrics.emit(
-              output, getMetricGroup(), new ArrowBatch(sub, channel, handleOwner));
+              output,
+              getMetricGroup(),
+              new ArrowBatch(sub, channel, handleOwner, encodeTime::inc));
         }
       }
     } finally {
       Native.closeSplit(handle);
+      elapsedCompute.inc(System.nanoTime() - computeStarted);
     }
   }
 }

@@ -12,6 +12,7 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.metrics.Counter;
 
 /**
  * Columnar event-time {@code OVER (… ORDER BY rt RANGE UNBOUNDED PRECEDING)} aggregation: Arrow in,
@@ -37,6 +38,8 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   private final boolean proctime;
   private final long stateTtlMillis;
   private final RowType rowType;
+  private transient Counter numLateRecordsDropped;
+  private transient long reportedLateRecords;
 
   public NativeOverAggregateOperator(
       int timeColumn,
@@ -167,6 +170,9 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   @Override
   public void open() throws Exception {
     super.open();
+    if (!proctime) {
+      numLateRecordsDropped = getMetricGroup().counter("numLateRecordsDropped");
+    }
   }
 
   @Override
@@ -213,6 +219,13 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
       in.close();
     }
     publishStateBytes();
+    if (!proctime) {
+      long lateRecords = Native.overAggregatorLateDrops(handle);
+      if (lateRecords > reportedLateRecords) {
+        numLateRecordsDropped.inc(lateRecords - reportedLateRecords);
+        reportedLateRecords = lateRecords;
+      }
+    }
   }
 
   @Override

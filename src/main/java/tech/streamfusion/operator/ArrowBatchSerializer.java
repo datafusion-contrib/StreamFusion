@@ -92,6 +92,7 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
       target.writeLong(ArrowBatchHandles.register(batch));
       return;
     }
+    long started = System.nanoTime();
     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
     // One root() take per serialization: under a shared batch each take is a distinct retained
     // view, so taking once and closing that same root keeps the reference counts balanced.
@@ -110,6 +111,7 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
     target.writeInt(batch.destination());
     target.writeInt(encoded.length);
     target.write(encoded);
+    batch.recordEncodeNanos(System.nanoTime() - started);
   }
 
   @Override

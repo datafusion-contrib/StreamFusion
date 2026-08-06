@@ -27,6 +27,16 @@ final class ColumnarRecordMetrics {
     countRows(metrics.getIOMetricGroup().getNumRecordsOutCounter(), rows);
   }
 
+  /** Forwards an existing record while charging the logical rows carried by it. */
+  static <T> void forward(
+      Output<StreamRecord<T>> output,
+      OperatorMetricGroup metrics,
+      StreamRecord<T> record,
+      int rows) {
+    output.collect(record);
+    countRows(metrics.getIOMetricGroup().getNumRecordsOutCounter(), rows);
+  }
+
   /** Charges an ingested batch's rows; call once per record the operator is handed. */
   static void countIngested(OperatorMetricGroup metrics, int rows) {
     countRows(metrics.getIOMetricGroup().getNumRecordsInCounter(), rows);

@@ -188,7 +188,7 @@ public class NativeColumnarKeepLastDeduplicateOperator
     super.open();
     if (miniBatch) {
       boundary = new MiniBatchBoundary(miniBatchSize);
-      miniBatchMetrics = new MiniBatchMetrics(getMetricGroup());
+      miniBatchMetrics = new MiniBatchMetrics(getMetricGroup(), true);
     }
     coalescer = BatchCoalescer.create(getProcessingTimeService(), this::ingest);
   }
@@ -232,6 +232,10 @@ public class NativeColumnarKeepLastDeduplicateOperator
           }
         }
         miniBatchMetrics.onSlice(length, firstContribution);
+        miniBatchMetrics.onCurrentKeys(
+            paimonState()
+                ? Native.paimonKeepLastDeduplicatorStagedKeys(handle)
+                : Native.keepLastDeduplicatorStagedKeys(handle));
         offset += length;
         if (boundary.onSlice(length)) {
           flushBundle(FlushReason.COUNT);

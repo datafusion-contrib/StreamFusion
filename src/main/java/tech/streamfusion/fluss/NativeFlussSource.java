@@ -92,6 +92,7 @@ public final class NativeFlussSource
 
   @Override
   public SourceReader<ArrowBatch, SourceSplitBase> createReader(SourceReaderContext context) {
+    NativeFlussSourceMetrics metrics = new NativeFlussSourceMetrics(context.metricGroup());
     Supplier<SplitReader<NativeSourceRecord, SourceSplitBase>> splitReaderSupplier =
         () ->
             new NativeFlussSplitReader(
@@ -101,7 +102,8 @@ public final class NativeFlussSource
                 tablePath.getTableName(),
                 projectedFields,
                 rowtimeIndex,
-                POLL_TIMEOUT_MILLIS);
+                POLL_TIMEOUT_MILLIS,
+                metrics);
     return new NativeFlussSourceReader(
         splitReaderSupplier, new NativeFlussRecordEmitter(), context.getConfiguration(), context);
   }

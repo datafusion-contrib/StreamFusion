@@ -13,6 +13,7 @@ import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.connector.file.table.RowDataPartitionComputer;
+import org.apache.flink.metrics.Counter;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.RowType;
@@ -38,6 +39,7 @@ public class ParquetPartitionSplitOperator extends AbstractStreamOperator<Partit
   private transient CDataDictionaryProvider dictionaries;
   private transient RowDataPartitionComputer partitionComputer;
   private transient int[] partitionColumns;
+  private transient Counter rowsWritten;
 
   public ParquetPartitionSplitOperator(
       RowType rowType, List<String> partitionKeys, String defaultPartitionName) {
@@ -63,14 +65,25 @@ public class ParquetPartitionSplitOperator extends AbstractStreamOperator<Partit
             partitionKeys.toArray(new String[0]));
     partitionColumns =
         partitionKeys.stream().mapToInt(rowType.getFieldNames()::indexOf).toArray();
+    // Comet's native-write surface. The legacy StreamingFileSink writer owns part-file creation and
+    // byte output, so those two counters remain zero until that writer exposes a metric context.
+    getMetricGroup().counter("files_written");
+    getMetricGroup().counter("bytes_written");
+    rowsWritten = getMetricGroup().counter("rows_written");
   }
 
   @Override
   public void processElement(StreamRecord<ArrowBatch> element) throws Exception {
-    ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
+    int inputRows = element.getValue().rowCount();
+    ColumnarRecordMetrics.countIngested(getMetricGroup(), inputRows);
+    rowsWritten.inc(inputRows);
     if (partitionKeys.isEmpty()) {
-      output.collect(
-          new StreamRecord<>(new PartitionedArrowBatch(element.getValue().root(), "")));
+      int rows = element.getValue().rowCount();
+      ColumnarRecordMetrics.forward(
+          output,
+          getMetricGroup(),
+          new StreamRecord<>(new PartitionedArrowBatch(element.getValue().root(), "")),
+          rows);
       return;
     }
 
@@ -104,7 +117,11 @@ public class ParquetPartitionSplitOperator extends AbstractStreamOperator<Partit
         String bucketId =
             PartitionPathUtils.generatePartitionPath(
                 partitionComputer.generatePartValues(firstRow));
-        output.collect(new StreamRecord<>(new PartitionedArrowBatch(group, bucketId)));
+        ColumnarRecordMetrics.forward(
+            output,
+            getMetricGroup(),
+            new StreamRecord<>(new PartitionedArrowBatch(group, bucketId)),
+            group.getRowCount());
       }
     } finally {
       NativeParquet.closePartitionSplit(split);

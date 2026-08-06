@@ -14,6 +14,7 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.metrics.Counter;
 
 /**
  * Transpose entering a columnar region: buffers rows and emits them as {@link ArrowBatch}es. Sits
@@ -37,6 +38,9 @@ public class RowDataToArrowOperator extends AbstractStreamOperator<ArrowBatch>
   private transient RowDataSerializer inputSerializer;
   private transient long flushLatencyMs;
   private transient long flushDeadline;
+  private transient Counter numInputRows;
+  private transient Counter numOutputBatches;
+  private transient Counter conversionTime;
 
   public RowDataToArrowOperator(
       RowType rowType, int batchSize, boolean carryRowKind, RowType sourceType) {
@@ -58,6 +62,9 @@ public class RowDataToArrowOperator extends AbstractStreamOperator<ArrowBatch>
     // When the planner pruned the transpose, present each wide source row as the narrowed schema so
     // the converter builds and fills only the read columns/sub-fields.
     projector = sourceType == null ? null : PrunedRowData.of(sourceType, rowType);
+    numInputRows = getMetricGroup().counter("numInputRows");
+    numOutputBatches = getMetricGroup().counter("numOutputBatches");
+    conversionTime = getMetricGroup().counter("conversionTime");
   }
 
   @Override
@@ -66,6 +73,7 @@ public class RowDataToArrowOperator extends AbstractStreamOperator<ArrowBatch>
     // boundary retains rows until a complete Arrow batch is ready, so it must take ownership with
     // a deep copy rather than retaining the caller's mutable view.
     boolean wasEmpty = buffer.isEmpty();
+    numInputRows.inc();
     buffer.add(inputSerializer.copy(element.getValue()));
     if (buffer.size() >= batchSize) {
       flush();
@@ -119,7 +127,10 @@ public class RowDataToArrowOperator extends AbstractStreamOperator<ArrowBatch>
       return;
     }
     List<RowData> rows = projector == null ? buffer : projected();
+    long started = System.nanoTime();
     VectorSchemaRoot root = RowDataArrowConverter.write(rows, rowType, allocator, carryRowKind);
+    conversionTime.inc(System.nanoTime() - started);
+    numOutputBatches.inc();
     ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(root));
     buffer.clear();
   }

@@ -81,6 +81,20 @@ where
         self.order.len()
     }
 
+    /// Number of changelog records that survive bundle folding. An update retains its before and
+    /// after records, while an insert/delete retains one and a cancelled transition retains zero.
+    pub(crate) fn effective_records(&self) -> usize {
+        self.changes
+            .values()
+            .map(|(before, after)| match (before, after) {
+                (None, None) => 0,
+                (Some(before), Some(after)) if before == after => 0,
+                (Some(_), Some(_)) => 2,
+                _ => 1,
+            })
+            .sum()
+    }
+
     pub(crate) fn contains_key<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
