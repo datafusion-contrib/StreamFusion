@@ -2,6 +2,9 @@ use crate::*;
 
 /// Downcasts a projected OVER value column (`value{a}`) to its typed per-row reader.
 pub(crate) fn over_value_column<'a>(column: &'a ArrayRef, value_type: &DataType) -> ValueColumn<'a> {
+    if matches!(column.data_type(), DataType::Null) {
+        return ValueColumn::NullOnly(column);
+    }
     match value_type {
         DataType::Int64 => ValueColumn::I64(column.as_any().downcast_ref().expect("int64 value")),
         DataType::Int32 => ValueColumn::I32(column.as_any().downcast_ref().expect("int32 value")),
@@ -13,13 +16,58 @@ pub(crate) fn over_value_column<'a>(column: &'a ArrayRef, value_type: &DataType)
     }
 }
 
+pub(crate) struct OverAggState {
+    agg: RunningAgg,
+    distinct: Option<DistinctSet>,
+    value_type: DataType,
+}
+
+impl OverAggState {
+    fn new(kind: i64, value_type: &DataType) -> Self {
+        let distinct = kind >= 100;
+        Self {
+            agg: RunningAgg::new(if distinct { kind - 100 } else { kind }, value_type),
+            distinct: distinct.then(|| DistinctSet::new(value_type)),
+            value_type: value_type.clone(),
+        }
+    }
+
+    fn fold(&mut self, value: Num) {
+        if let Some(seen) = &mut self.distinct {
+            if !seen.add_scalar(num_to_scalar(&self.value_type, Some(value))) {
+                return;
+            }
+        }
+        self.agg.fold(value);
+    }
+
+    fn emit(&self) -> ScalarValue {
+        self.agg.emit()
+    }
+
+    fn result_type(&self) -> DataType {
+        self.agg.result_type()
+    }
+
+    fn restore_value(&mut self, scalar: &ScalarValue) {
+        self.agg.restore_value(scalar);
+    }
+
+    fn distinct_values(&self) -> Vec<ScalarValue> {
+        self.distinct
+            .as_ref()
+            .map(|seen| seen.scalar_entries().into_iter().map(|(value, _)| value).collect())
+            .unwrap_or_default()
+    }
+}
+
 pub(crate) struct OverAggregator {
     kinds: Vec<i64>,
     /// One value type per aggregate (aggregates may read different value columns of different types).
     value_types: Vec<DataType>,
     // Keyed by arrow-row bytes, probed borrowed (see the group aggregate): a row whose partition
     // already exists — the steady state — allocates nothing; the key is copied on first touch only.
-    keys: HashMap<ByteKey, Vec<RunningAgg>>,
+    keys: HashMap<ByteKey, Vec<OverAggState>>,
     key_converter: Option<RowConverter>,
     key_types: Vec<DataType>,
     // Managed-memory accounting (driven by the owning OVER operator): per-key state is fixed-size,
@@ -43,7 +91,7 @@ impl OverAggregator {
 
     /// One key's fixed state footprint (the running aggregates plus the map entry).
     fn key_state_bytes(&self, key: &[u8]) -> usize {
-        byte_key_bytes(key) + self.kinds.len() * std::mem::size_of::<RunningAgg>()
+        byte_key_bytes(key) + self.kinds.len() * std::mem::size_of::<OverAggState>()
     }
 
     fn recompute_bytes(&mut self) {
@@ -51,13 +99,13 @@ impl OverAggregator {
     }
 
     /// The running aggregate state for a key, created (copying the key bytes) on first touch.
-    fn states(&mut self, key: &[u8]) -> &mut Vec<RunningAgg> {
+    fn states(&mut self, key: &[u8]) -> &mut Vec<OverAggState> {
         if !self.keys.contains_key(key) {
-            let fresh: Vec<RunningAgg> = self
+            let fresh: Vec<OverAggState> = self
                 .kinds
                 .iter()
                 .zip(&self.value_types)
-                .map(|(&kind, vt)| RunningAgg::new(kind, vt))
+                .map(|(&kind, vt)| OverAggState::new(kind, vt))
                 .collect();
             self.keys.insert(ByteKey::from(key), fresh);
         }
@@ -119,7 +167,7 @@ impl OverAggregator {
         let mut fields = Vec::with_capacity(num_agg);
         let mut columns: Vec<ArrayRef> = Vec::with_capacity(num_agg);
         for a in 0..num_agg {
-            let result_type = RunningAgg::new(self.kinds[a], &self.value_types[a]).result_type();
+            let result_type = OverAggState::new(self.kinds[a], &self.value_types[a]).result_type();
             fields.push(Field::new(format!("result{a}"), result_type.clone(), true));
             columns.push(scalars_to_array(std::mem::take(&mut results[a]), &result_type));
         }
@@ -135,15 +183,24 @@ impl OverAggregator {
             .kinds
             .iter()
             .zip(&self.value_types)
-            .map(|(&k, vt)| RunningAgg::new(k, vt).result_type())
+            .map(|(&k, vt)| OverAggState::new(k, vt).result_type())
             .collect();
         let mut keys: Vec<&[u8]> = Vec::new();
         let mut state_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); self.kinds.len()];
+        let mut distinct_columns: Vec<Option<(Vec<i32>, Vec<ScalarValue>)>> = self
+            .kinds
+            .iter()
+            .map(|kind| (kind >= &100).then(|| (vec![0], Vec::new())))
+            .collect();
         let mut stamps: Vec<i64> = Vec::new();
         for (key, states) in self.keys.iter() {
             keys.push(&key.0);
             for (i, state) in states.iter().enumerate() {
                 state_columns[i].push(state.emit());
+                if let Some((offsets, values)) = &mut distinct_columns[i] {
+                    values.extend(state.distinct_values());
+                    offsets.push(values.len() as i32);
+                }
             }
             if let Some((_, per_key)) = retention {
                 stamps.push(per_key.get(key).copied().expect("over retention stamp"));
@@ -156,6 +213,22 @@ impl OverAggregator {
         }
         for (index, scalars) in state_columns.into_iter().enumerate() {
             columns.push(scalars_to_array(scalars, &result_types[index]));
+        }
+        for (index, distinct) in distinct_columns.into_iter().enumerate() {
+            if let Some((offsets, values)) = distinct {
+                let item = Arc::new(Field::new("item", self.value_types[index].clone(), true));
+                fields.push(Field::new(
+                    format!("distinct{index}"),
+                    DataType::List(item.clone()),
+                    false,
+                ));
+                columns.push(Arc::new(ListArray::new(
+                    item,
+                    OffsetBuffer::new(ScalarBuffer::from(offsets)),
+                    scalars_to_array(values, &self.value_types[index]),
+                    None,
+                )));
+            }
         }
         if let Some((name, _)) = retention {
             fields.push(Field::new(name, DataType::Int64, false));
@@ -215,9 +288,11 @@ impl OverAggregator {
     ) -> Self {
         let mut aggregator = OverAggregator::new(value_types, kinds);
         let num_agg = aggregator.kinds.len();
+        let distinct_count = aggregator.kinds.iter().filter(|&&kind| kind >= 100).count();
         for batch in read_ipc(bytes) {
             let retention = retention_stamps(&batch);
-            let arity = batch.num_columns() - num_agg - retention.is_some() as usize;
+            let arity =
+                batch.num_columns() - num_agg - distinct_count - retention.is_some() as usize;
             let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
             aggregator.key_types = key_types(&key_arrays);
             let keys_encoded =
@@ -228,6 +303,27 @@ impl OverAggregator {
                     let scalar = ScalarValue::try_from_array(batch.column(arity + i), row)
                         .expect("over state scalar");
                     state.restore_value(&scalar);
+                }
+                let mut distinct_column = arity + num_agg;
+                for i in 0..num_agg {
+                    if aggregator.kinds[i] < 100 {
+                        continue;
+                    }
+                    let list = batch
+                        .column(distinct_column)
+                        .as_any()
+                        .downcast_ref::<ListArray>()
+                        .expect("over distinct list");
+                    let values = list.value(row);
+                    let state = &mut aggregator.states(key)[i];
+                    let seen = state.distinct.as_mut().expect("distinct state");
+                    for value in 0..values.len() {
+                        seen.add_scalar(
+                            ScalarValue::try_from_array(&values, value)
+                                .expect("over distinct scalar"),
+                        );
+                    }
+                    distinct_column += 1;
                 }
                 if let Some(column) = retention {
                     stamps.insert(ByteKey::from(key), column.value(row));
@@ -362,8 +458,12 @@ impl BoundedOverAggregator {
                 let hi = buffer.partition_point(|r| r.rt <= cur_rt) - 1;
                 (lo, hi)
             };
-            let mut aggs: Vec<RunningAgg> =
-                self.kinds.iter().zip(&self.value_types).map(|(&k, vt)| RunningAgg::new(k, vt)).collect();
+            let mut aggs: Vec<OverAggState> = self
+                .kinds
+                .iter()
+                .zip(&self.value_types)
+                .map(|(&k, vt)| OverAggState::new(k, vt))
+                .collect();
             for r in &buffer[lower..=upper] {
                 for (a, agg) in aggs.iter_mut().enumerate() {
                     if let Some(v) = r.values[a] {
@@ -381,7 +481,7 @@ impl BoundedOverAggregator {
         let mut fields = Vec::with_capacity(num_agg);
         let mut columns: Vec<ArrayRef> = Vec::with_capacity(num_agg);
         for a in 0..num_agg {
-            let result_type = RunningAgg::new(self.kinds[a], &self.value_types[a]).result_type();
+            let result_type = OverAggState::new(self.kinds[a], &self.value_types[a]).result_type();
             fields.push(Field::new(format!("result{a}"), result_type.clone(), true));
             columns.push(scalars_to_array(std::mem::take(&mut results[a]), &result_type));
         }
@@ -499,7 +599,7 @@ impl BoundedOverAggregator {
 
 /// Window-function code: a SQL `OVER` analytic function that is *not* a mergeable aggregate.
 pub(crate) fn is_window_function_kind(kind: i64) -> bool {
-    kind >= 10
+    (10..=12).contains(&kind)
 }
 
 /// Per-key running state for one OVER window function. Unlike the aggregate path these are not
@@ -959,7 +1059,9 @@ impl OverInner {
     /// Number of trailing snapshot columns that are state rather than the partition key.
     fn snapshot_state_columns(&self) -> usize {
         match self {
-            OverInner::Aggregates(inner) => inner.kinds.len(),
+            OverInner::Aggregates(inner) => {
+                inner.kinds.len() + inner.kinds.iter().filter(|&&kind| kind >= 100).count()
+            }
             OverInner::Bounded(inner) => 1 + inner.kinds.len(), // rt plus one value per aggregate
             OverInner::WindowFunctions(inner) => inner
                 .kinds
@@ -981,7 +1083,7 @@ pub(crate) fn paimon_over_state_types(
     frame_kind: i64,
     proctime: bool,
 ) -> Option<Vec<DataType>> {
-    if proctime {
+    if proctime || kinds.iter().any(|&kind| kind >= 100) {
         return None;
     }
     if kinds.iter().all(|&k| is_window_function_kind(k)) {
@@ -994,7 +1096,7 @@ pub(crate) fn paimon_over_state_types(
         kinds
             .iter()
             .zip(value_types)
-            .map(|(&kind, &vt)| RunningAgg::new(kind, &value_data_type(vt)).result_type())
+            .map(|(&kind, &vt)| OverAggState::new(kind, &value_data_type(vt)).result_type())
             .collect(),
     )
 }
@@ -1018,6 +1120,7 @@ pub(crate) struct OverWindowAggregator {
     /// existing rowtime fold/frames apply unchanged; `next_seq` is the running counter.
     proctime: bool,
     next_seq: i64,
+    watermark: i64,
     /// Idle-state min retention millis (`table.exec.state.ttl`). Flink retention-bounds OVER
     /// three ways by shape ({@link RetentionScheme}); the deadline schemes enable iff this is
     /// `> 1` (Flink's literal `minRetentionTime > 1`), the per-value TTL iff `> 0`.
@@ -1074,6 +1177,7 @@ impl OverWindowAggregator {
             input_schema: None,
             proctime,
             next_seq: 0,
+            watermark: i64::MIN,
             min_retention_ms: 0,
             max_retention_ms: 0,
             cleanup_state: HashMap::default(),
@@ -1476,6 +1580,12 @@ impl OverWindowAggregator {
     /// processing-time reading — the cleanup-deadline clock.
     pub(crate) fn push(&mut self, batch: RecordBatch, now_ms: i64) -> Result<(), DataFusionError> {
         self.input_schema = Some(batch.schema());
+        let rowtimes = rt_to_millis(batch.column(self.rt_column));
+        let on_time: BooleanArray = rowtimes
+            .iter()
+            .map(|value| Some(value.is_some_and(|value| value >= self.watermark)))
+            .collect();
+        let batch = filter_record_batch(&batch, &on_time)?;
         #[cfg(feature = "paimon-state")]
         if self.backend.is_some() {
             return self.push_backend(batch, now_ms);
@@ -1649,6 +1759,7 @@ impl OverWindowAggregator {
         watermark: i64,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        self.watermark = self.watermark.max(watermark);
         #[cfg(feature = "paimon-state")]
         if self.backend.is_some() {
             return self.flush_backend(watermark, now_ms);
@@ -1934,6 +2045,7 @@ impl OverWindowAggregator {
             input_schema: None,
             proctime,
             next_seq,
+            watermark: i64::MIN,
             min_retention_ms: 0,
             max_retention_ms: 0,
             cleanup_state: HashMap::default(),

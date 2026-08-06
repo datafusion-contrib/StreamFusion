@@ -441,10 +441,15 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             .matching(agg -> WindowAggregateMatcher.localWindowVariant(agg) != null)
             .reason(agg -> WindowAggregateMatcher.unsupportedReason()));
 
+    // OVER preserves an append-only input, but Flink's packaged planner reports bounded OVER nodes
+    // as updating even though their input and emitted rows are append-only. Gate on the input
+    // explicitly and offer the node before the output-changelog guard so source and packaged
+    // planners route the same physical shape.
     entries.add(
         Substitution.of(StreamPhysicalOverAggregate.class, "over", OverAggregateMatcher::substitute)
             .matching(OverAggregateMatcher::matches)
-            .reason(OverAggregateMatcher::unsupportedReason));
+            .reason(OverAggregateMatcher::unsupportedReason)
+            .changelogSafe());
 
     entries.add(
         Substitution.of(

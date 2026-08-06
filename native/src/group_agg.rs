@@ -91,7 +91,7 @@ pub(crate) enum DistinctSet {
 }
 
 impl DistinctSet {
-    fn new(value_type: &DataType) -> Self {
+    pub(crate) fn new(value_type: &DataType) -> Self {
         match value_type {
             DataType::Int64 => DistinctSet::I64(ahash::HashMap::default()),
             _ => DistinctSet::Scalar(ahash::HashMap::default()),
@@ -107,6 +107,35 @@ impl DistinctSet {
 
     fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Promotes the BIGINT-specialized representation when the planner's compact type code could
+    /// not describe the actual Arrow value type. COUNT(DISTINCT) admits every row type Flink can
+    /// carry, while the aggregate JNI type codes deliberately cover only the numeric/string types
+    /// needed by value-folding aggregates. In particular, TIME used to arrive with the default
+    /// BIGINT code even though its scalar is Time32/Time64. Promotion preserves any restored/live
+    /// entries and keeps the primitive fast path for genuine BIGINT columns.
+    fn scalar_map(&mut self) -> &mut ahash::HashMap<ScalarValue, i64> {
+        if matches!(self, DistinctSet::I64(_)) {
+            let old = std::mem::replace(
+                self,
+                DistinctSet::Scalar(ahash::HashMap::default()),
+            );
+            let DistinctSet::I64(old) = old else {
+                unreachable!()
+            };
+            let DistinctSet::Scalar(scalars) = self else {
+                unreachable!()
+            };
+            scalars.extend(
+                old.into_iter()
+                    .map(|(value, count)| (ScalarValue::Int64(Some(value)), count)),
+            );
+        }
+        let DistinctSet::Scalar(scalars) = self else {
+            unreachable!()
+        };
+        scalars
     }
 
     /// Adds one occurrence; returns true when the value enters the set (first occurrence).
@@ -138,11 +167,15 @@ impl DistinctSet {
         }
     }
 
-    fn add_scalar(&mut self, value: ScalarValue) -> bool {
+    pub(crate) fn add_scalar(&mut self, value: ScalarValue) -> bool {
         match self {
             DistinctSet::I64(_) => match value {
                 ScalarValue::Int64(Some(v)) => self.add_i64(v),
-                other => unreachable!("i64 distinct set fed a non-int64 scalar: {other:?}"),
+                other => {
+                    let count = self.scalar_map().entry(other).or_insert(0);
+                    *count += 1;
+                    *count == 1
+                }
             },
             DistinctSet::Scalar(m) => {
                 let count = m.entry(value).or_insert(0);
@@ -156,7 +189,17 @@ impl DistinctSet {
         match self {
             DistinctSet::I64(_) => match value {
                 ScalarValue::Int64(Some(v)) => self.remove_i64(*v),
-                other => unreachable!("i64 distinct set retracting a non-int64 scalar: {other:?}"),
+                other => {
+                    let scalars = self.scalar_map();
+                    if let Some(count) = scalars.get_mut(other) {
+                        *count -= 1;
+                        if *count <= 0 {
+                            scalars.remove(other);
+                            return true;
+                        }
+                    }
+                    false
+                }
             },
             DistinctSet::Scalar(m) => {
                 if let Some(count) = m.get_mut(value) {
@@ -189,7 +232,11 @@ impl DistinctSet {
         match self {
             DistinctSet::I64(_) => match value {
                 ScalarValue::Int64(Some(v)) => self.add_i64_n(v, n),
-                other => unreachable!("i64 distinct set fed a non-int64 scalar: {other:?}"),
+                other => {
+                    let count = self.scalar_map().entry(other).or_insert(0);
+                    *count += n;
+                    *count == n
+                }
             },
             DistinctSet::Scalar(m) => {
                 let count = m.entry(value).or_insert(0);
@@ -201,7 +248,7 @@ impl DistinctSet {
 
     /// The live (value, multiplicity) pairs as scalars — the snapshot wire format, unchanged by the
     /// typed specialization.
-    fn scalar_entries(&self) -> Vec<(ScalarValue, i64)> {
+    pub(crate) fn scalar_entries(&self) -> Vec<(ScalarValue, i64)> {
         match self {
             DistinctSet::I64(m) => m
                 .iter()
@@ -218,12 +265,38 @@ impl DistinctSet {
                 ScalarValue::Int64(Some(v)) => {
                     m.insert(v, count);
                 }
-                other => unreachable!("i64 distinct set restoring a non-int64 scalar: {other:?}"),
+                other => {
+                    self.scalar_map().insert(other, count);
+                }
             },
             DistinctSet::Scalar(m) => {
                 m.insert(value, count);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod distinct_set_tests {
+    use super::*;
+
+    #[test]
+    fn planner_default_i64_set_promotes_for_time_values() {
+        let one = ScalarValue::Time32Second(Some(1));
+        let two = ScalarValue::Time32Second(Some(2));
+        let mut set = DistinctSet::new(&DataType::Int64);
+
+        assert!(set.add_scalar(one.clone()));
+        assert!(!set.add_scalar(one.clone()));
+        assert!(set.add_scalar(two));
+        assert_eq!(set.len(), 2);
+        assert!(!set.remove_scalar(&one));
+        assert!(set.remove_scalar(&one));
+        assert_eq!(set.len(), 1);
+
+        let mut restored = DistinctSet::new(&DataType::Int64);
+        restored.insert_restored(ScalarValue::Time32Second(Some(3)), 2);
+        assert_eq!(restored.len(), 1);
     }
 }
 
@@ -2397,8 +2470,16 @@ impl LocalGroupAggregator {
             ));
             columns.push(Arc::new(list));
         }
-        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build local group-by partial batch")
+        // A keyless local aggregate may legitimately have no physical columns (for example a
+        // count-only partial represented entirely by the downstream record-count contract). Arrow
+        // cannot infer its row count from an empty column list, so preserve the number of groups
+        // explicitly instead of rejecting the batch.
+        RecordBatch::try_new_with_options(
+            Arc::new(Schema::new(fields)),
+            columns,
+            &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(order.len())),
+        )
+        .expect("failed to build local group-by partial batch")
     }
 }
 
