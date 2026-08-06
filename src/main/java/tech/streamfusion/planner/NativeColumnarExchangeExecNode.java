@@ -57,7 +57,18 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
-    int numChannels = Math.max(1, input.getParallelism());
+    // An exchange with no key columns is Flink's SINGLETON distribution (global aggregate/rank):
+    // it must collapse all upstream subtasks onto one downstream state instance.  Inheriting the
+    // producer parallelism here creates N independent "global" native accumulators.
+    // Flink's HASH exchange deliberately uses PARALLELISM_DEFAULT rather than inheriting the
+    // producer's parallelism.  The target therefore runs at the execution environment's default
+    // parallelism (for example, a parallelism-one collection source can still feed a four-way
+    // keyed aggregate).  The splitter must know that concrete target count up front, so resolve the
+    // default here instead of using the producer count.  Inheriting the producer count can also put
+    // a parallelism-one aggregate in front of a parallel sink, whose rescale edge separates an
+    // UPDATE_BEFORE from its earlier INSERT/UPDATE_AFTER.
+    int numChannels =
+        keyColumns.length == 0 ? 1 : Math.max(1, planner.getExecEnv().getParallelism());
     int maxParallelism = FlinkKeyGroupUtils.defaultMaxParallelism(numChannels);
     // Split each batch into per-channel sub-batches (homogeneous in destination)...
     Transformation<ArrowBatch> split =
@@ -72,7 +83,10 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
             input.getParallelism(),
             false);
     // ...then route each whole sub-batch to its channel. Pipelined so watermarks flow downstream.
-    return new PartitionTransformation<>(
-        split, new ColumnarKeyGroupPartitioner(), StreamExchangeMode.PIPELINED);
+    PartitionTransformation<ArrowBatch> partition =
+        new PartitionTransformation<>(
+            split, new ColumnarKeyGroupPartitioner(), StreamExchangeMode.PIPELINED);
+    partition.setParallelism(numChannels);
+    return partition;
   }
 }

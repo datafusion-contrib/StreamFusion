@@ -47,9 +47,10 @@ final class RawKeyedState {
   static List<byte[]> restore(StateInitializationContext context) throws Exception {
     List<byte[]> snapshots = new ArrayList<>();
     for (KeyGroupStatePartitionStreamProvider provider : context.getRawKeyedStateInputs()) {
-      try (InputStream in = provider.getStream()) {
-        snapshots.add(readPartition(in));
-      }
+      // Flink's iterator reuses one seekable stream for every key-group provider in a state handle.
+      // The initialization context owns and closes it after initializeState; closing an individual
+      // provider here truncates the remaining providers in that same handle.
+      snapshots.add(readPartition(provider.getStream()));
     }
     return snapshots;
   }
@@ -59,19 +60,17 @@ final class RawKeyedState {
     List<byte[]> snapshots = new ArrayList<>();
     long deadline = Long.MIN_VALUE;
     for (KeyGroupStatePartitionStreamProvider provider : context.getRawKeyedStateInputs()) {
-      try (InputStream in = provider.getStream()) {
-        byte[] partition = readPartition(in);
-        if (partition.length >= TIMER_FRAME_BYTES
-            && ByteBuffer.wrap(partition).getInt() == TIMER_FRAME_MAGIC) {
-          ByteBuffer frame = ByteBuffer.wrap(partition);
-          frame.getInt();
-          deadline = Math.max(deadline, frame.getLong());
-          byte[] payload = new byte[frame.remaining()];
-          frame.get(payload);
-          snapshots.add(payload);
-        } else {
-          snapshots.add(partition);
-        }
+      byte[] partition = readPartition(provider.getStream());
+      if (partition.length >= TIMER_FRAME_BYTES
+          && ByteBuffer.wrap(partition).getInt() == TIMER_FRAME_MAGIC) {
+        ByteBuffer frame = ByteBuffer.wrap(partition);
+        frame.getInt();
+        deadline = Math.max(deadline, frame.getLong());
+        byte[] payload = new byte[frame.remaining()];
+        frame.get(payload);
+        snapshots.add(payload);
+      } else {
+        snapshots.add(partition);
       }
     }
     return new TimedRestore(snapshots, deadline);
@@ -90,13 +89,12 @@ final class RawKeyedState {
         throw new IllegalStateException(
             "native state for key group " + keyGroup + " is outside this subtask's Flink range");
       }
-      out.startNewKeyGroup(keyGroup);
+      startKeyGroup(out, keyGroup);
       byte[] payload = snapshotForKeyGroup.apply(keyGroup);
       writeLength(out, STATE_HEADER_BYTES + payload.length);
       writeHeader(out);
       out.write(payload);
     }
-    out.close();
   }
 
   /** Writes key-group payloads framed by native code as a big-endian id followed by state bytes. */
@@ -115,13 +113,12 @@ final class RawKeyedState {
         throw new IllegalStateException(
             "native state for key group " + keyGroup + " is outside this subtask's Flink range");
       }
-      out.startNewKeyGroup(keyGroup);
+      startKeyGroup(out, keyGroup);
       int payloadLength = partition.length - Integer.BYTES;
       writeLength(out, STATE_HEADER_BYTES + payloadLength);
       writeHeader(out);
       out.write(partition, Integer.BYTES, payloadLength);
     }
-    out.close();
   }
 
   /** Writes one-pass native partitions plus a cleanup deadline into each rescale-safe payload. */
@@ -140,7 +137,7 @@ final class RawKeyedState {
         throw new IllegalStateException(
             "native state for key group " + keyGroup + " is outside this subtask's Flink range");
       }
-      out.startNewKeyGroup(keyGroup);
+      startKeyGroup(out, keyGroup);
       int payloadLength = partition.length - Integer.BYTES;
       writeLength(out, STATE_HEADER_BYTES + TIMER_FRAME_BYTES + payloadLength);
       writeHeader(out);
@@ -150,7 +147,6 @@ final class RawKeyedState {
       out.write(timerFrame.array());
       out.write(partition, Integer.BYTES, payloadLength);
     }
-    out.close();
   }
 
   /** Writes a cleanup deadline into every native key-group payload, keeping it rescale-safe. */
@@ -198,11 +194,11 @@ final class RawKeyedState {
     if (length < 0) {
       throw new IllegalStateException("native raw keyed-state payload has a negative length");
     }
-    byte[] payload = data.readNBytes(length);
-    if (payload.length != length) {
-      throw new IllegalStateException(
-          "native raw keyed-state payload ended before its declared length");
-    }
+    byte[] payload = new byte[length];
+    // Some seekable checkpoint streams may transiently return zero after one 8 KiB read.
+    // InputStream.readNBytes treats that as completion; DataInputStream.readFully keeps reading
+    // the declared frame and still fails with EOFException for a genuinely truncated snapshot.
+    data.readFully(payload);
     return stripHeader(payload);
   }
 
@@ -244,6 +240,17 @@ final class RawKeyedState {
     header.putInt(STATE_FORMAT_VERSION);
     header.putInt(0);
     out.write(header.array());
+  }
+
+  private static void startKeyGroup(KeyedStateCheckpointOutputStream out, int keyGroup)
+      throws Exception {
+    // File-backed checkpoint streams buffer writes. KeyedStateCheckpointOutputStream records the
+    // next partition offset from delegate.getPos(), so flush the preceding payload first or every
+    // offset after a large partition can lag by one 8 KiB buffer and truncate restore.
+    if (out.getCurrentKeyGroup() != KeyedStateCheckpointOutputStream.NO_CURRENT_KEY_GROUP) {
+      out.flush();
+    }
+    out.startNewKeyGroup(keyGroup);
   }
 
   private static void writeLength(KeyedStateCheckpointOutputStream out, int length) throws Exception {

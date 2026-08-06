@@ -133,6 +133,29 @@ class FlinkGroupAggregateSqlHarnessTest {
   }
 
   @Test
+  void aggregateOverAggregateAtParallelismFourMatchesHost() throws Exception {
+    NativeParity.assertChangelogParity(
+        FlinkGroupAggregateSqlHarnessTest::parallelEnvironment,
+        "SELECT total, COUNT(*) AS n FROM "
+            + "(SELECT k, SUM(`value`) AS total FROM src GROUP BY k) GROUP BY total");
+  }
+
+  @Test
+  void intAggregateKeyAtParallelismFourMatchesHost() throws Exception {
+    NativeParity.assertChangelogParity(
+        FlinkGroupAggregateSqlHarnessTest::parallelEnvironment,
+        "SELECT total, COUNT(*) AS n FROM "
+            + "(SELECT k, SUM(qty) AS total FROM src GROUP BY k) GROUP BY total");
+  }
+
+  @Test
+  void twoPhaseAggregateAtParallelismFourMatchesHost() throws Exception {
+    NativeParity.assertChangelogParity(
+        FlinkGroupAggregateSqlHarnessTest::parallelTwoPhaseEnvironment,
+        "SELECT k, SUM(qty) AS total, COUNT(*) AS n FROM src GROUP BY k");
+  }
+
+  @Test
   void minMaxOverRetractingInputMatchesHost() throws Exception {
     // MIN/MAX over a changelog: each retracts via a per-key value multiset, so the outer aggregate
     // routes natively too (recovering the next extreme when the current one is retracted).
@@ -200,8 +223,25 @@ class FlinkGroupAggregateSqlHarnessTest {
   }
 
   private static TableEnvironment environment() {
+    return environment(1);
+  }
+
+  private static TableEnvironment parallelEnvironment() {
+    return environment(4);
+  }
+
+  private static TableEnvironment parallelTwoPhaseEnvironment() {
+    TableEnvironment tEnv = environment(4);
+    tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
+    tEnv.getConfig().set("table.exec.mini-batch.enabled", "true");
+    tEnv.getConfig().set("table.exec.mini-batch.allow-latency", "10 ms");
+    tEnv.getConfig().set("table.exec.mini-batch.size", "2");
+    return tEnv;
+  }
+
+  private static TableEnvironment environment(int parallelism) {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-    env.setParallelism(1);
+    env.setParallelism(parallelism);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
     // One-phase so the plan is a single GROUP BY aggregate (not a local/global split).
     tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
