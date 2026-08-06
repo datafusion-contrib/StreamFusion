@@ -2,6 +2,10 @@
 
 **Applies to:** the columnar exchange at parallelism > 1
 
+This remains an optional single-TaskManager deployment optimization. The `bench` Maven profile
+disables it so headline Nexmark results measure Arrow IPC on every shuffle edge, matching the
+cross-TaskManager serialization path.
+
 Flink serializes every record crossing a network edge, even when producer and consumer subtasks
 share a JVM — so at parallelism > 1 the columnar exchange used to pay a full Arrow IPC round trip
 per batch (schema re-encoded every batch, buffers copied out and rebuilt on the far side).

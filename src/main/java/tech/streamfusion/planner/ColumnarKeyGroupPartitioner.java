@@ -14,6 +14,15 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
  */
 public class ColumnarKeyGroupPartitioner extends StreamPartitioner<ArrowBatch> {
 
+  public ColumnarKeyGroupPartitioner() {
+    // An Arrow record is a batch that was split for the topology that produced it. An unaligned
+    // checkpoint can retain that record in channel state, but after a rescale one old batch may
+    // span several new key-group ranges and Flink's recovery filter can only keep or drop the whole
+    // record. Force this edge aligned so recovery always replays rows through a splitter configured
+    // for the restored topology.
+    disableUnalignedCheckpoints();
+  }
+
   @Override
   public int selectChannel(SerializationDelegate<StreamRecord<ArrowBatch>> record) {
     int destination = record.getInstance().getValue().destination();
@@ -28,7 +37,7 @@ public class ColumnarKeyGroupPartitioner extends StreamPartitioner<ArrowBatch> {
 
   @Override
   public SubtaskStateMapper getDownstreamSubtaskStateMapper() {
-    return SubtaskStateMapper.FULL;
+    return SubtaskStateMapper.RANGE;
   }
 
   @Override

@@ -10,15 +10,16 @@
   primary key. Each timed run includes source consumption, query execution, the keyed shuffle,
   serialization, Kafka writes, checkpoints, and the bounded job's final transaction commit. q6 is
   omitted because Flink SQL itself cannot run it.
+- **Local shuffle handles are disabled.** The `bench` Maven profile sets
+  `streamfusion.exchange.zeroCopyLocal=false`, so StreamFusion serializes columnar shuffle records
+  with Arrow IPC just as it would across TaskManagers. Stock Flink likewise serializes records on
+  same-JVM network edges; neither side receives a process-local object-handoff advantage.
 - **Both perimeter transposes stay in the measured path.** Nexmark's own source emits Flink
   `RowData` (not a columnar source) and sinks to a rowwise consumer, so a native island pays a
   RowData→Arrow transpose at the source and an Arrow→RowData transpose at the sink — the same cost
   a real rowwise-fed deployment pays. The benchmark harness is never modified to dodge this; an
   operator StreamFusion can't run natively shows up as an honest fallback or a slower number, which
   is the signal to fix the engine, not the harness.
-  Between co-located subtasks StreamFusion's shuffle moves Arrow batches by ownership transfer
-  (zero serialization); a multi-TaskManager deployment's cross-process edges pay Arrow IPC instead
-  — measured at ~11% on the shuffle-heaviest cells and nothing elsewhere.
 - **Every cell asserts the plan shape.** The native plan — including Kafka poll/decode, every
   supported operator, and sink key/value/tombstone serialization — is asserted for every cell, so a
   silent fallback can't masquerade as a native number.
@@ -33,6 +34,10 @@
   cite for a specific technique's speedup.
 
 ## Nexmark, parallelism 4
+
+!!! warning
+    This table predates the local-handle exclusion and will be refreshed by the next benchmark
+    run. Do not compare new results against it as if the methodology were identical.
 
 Apple M1 Max, release + `mimalloc`, best of two measured runs, across all four backend/mode
 combinations (memory columns measured 2026-08-02, disk columns 2026-07-28). The memory columns

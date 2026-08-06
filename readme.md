@@ -85,11 +85,9 @@ four-partition topic (one split per source subtask), and publish each query resu
 Kafka topic with a one-second checkpoint interval. Append-only queries use `kafka`; updating
 queries use `upsert-kafka` with the result's actual primary key. Each timed run includes source
 consumption, query execution, the keyed shuffle, serialization, Kafka writes, checkpoints, and
-the bounded job's final transaction commit. Between co-located subtasks StreamFusion's shuffle
-moves Arrow batches by ownership transfer (zero serialization; stock Flink always serializes
-across a shuffle, even in one JVM); a multi-TaskManager deployment's cross-process edges pay
-Arrow IPC instead, measured at ~11% on the shuffle-heaviest mini-batch-off cells and nothing
-elsewhere ([Optimizations](https://datafusion-contrib.github.io/StreamFusion/optimizations/)).
+the bounded job's final transaction commit. The benchmark profile disables StreamFusion's optional
+same-JVM handle-table shuffle, so both engines pay their normal record serialization costs and
+StreamFusion uses the same Arrow IPC format it uses across TaskManagers.
 
 On StreamFusion, Kafka poll/decode, every supported operator, sink key/value/tombstone
 serialization, and record production all stay native: librdkafka produces each query result inside
@@ -98,7 +96,9 @@ checkpoint completes, preserving the host connector's exactly-once recovery exac
 plan — including the native-producer sink shape — is asserted for every cell. q6 is omitted because
 Flink SQL itself cannot run it ([analysis](.claude/wontdos/39-nexmark-q6-exclusion.md)).
 
-These are Apple M1 Max release+`mimalloc` results at parallelism 4, best of two measured runs,
+The table below predates the handle-table exclusion and will be refreshed by the next benchmark
+run; do not compare new results against it as if the methodology were identical. These are Apple
+M1 Max release+`mimalloc` results at parallelism 4, best of two measured runs,
 across all four backend/mode combinations (memory columns measured 2026-08-02, disk columns
 2026-07-28). The memory columns compare Flink's
 default heap state against StreamFusion's memory state; the disk columns compare the production

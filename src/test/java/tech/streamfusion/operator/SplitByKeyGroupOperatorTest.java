@@ -1,6 +1,7 @@
 package tech.streamfusion.operator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import tech.streamfusion.planner.ColumnarKeyGroupPartitioner;
@@ -12,11 +13,18 @@ import java.util.Map;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.runtime.io.network.api.writer.SubtaskStateMapper;
 import org.apache.flink.runtime.plugable.SerializationDelegate;
 import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.sink.v2.DiscardingSink;
+import org.apache.flink.streaming.api.graph.StreamEdge;
 import org.apache.flink.streaming.runtime.partitioner.StreamPartitioner;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
+import org.apache.flink.streaming.api.transformations.PartitionTransformation;
+import org.apache.flink.streaming.api.transformations.StreamExchangeMode;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.GenericArrayData;
 import org.apache.flink.table.data.GenericMapData;
@@ -121,6 +129,40 @@ class SplitByKeyGroupOperatorTest {
     assertEquals(2, p.selectChannel(delegate));
     delegate.setInstance(new StreamRecord<>(new ArrowBatch(null, -1)));
     assertEquals(0, p.selectChannel(delegate), "an unrouted batch goes to channel 0");
+  }
+
+  @Test
+  void partitionerUsesKeyGroupRangeRecoveryAndForcesAlignedChannelState() {
+    ColumnarKeyGroupPartitioner partitioner = new ColumnarKeyGroupPartitioner();
+    assertEquals(SubtaskStateMapper.RANGE, partitioner.getDownstreamSubtaskStateMapper());
+    assertFalse(
+        partitioner.isSupportsUnalignedCheckpoint(),
+        "an old-topology Arrow batch cannot be filtered row by row after rescaling");
+  }
+
+  @Test
+  void streamGraphForcesTheColumnarExchangeAlignedWhenUnalignedCheckpointsAreEnabled() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.enableCheckpointing(10);
+    env.getCheckpointConfig().enableUnalignedCheckpoints();
+    DataStream<ArrowBatch> input =
+        env.fromData(1)
+            .map(ignored -> (ArrowBatch) null)
+            .returns(ArrowBatchTypeInformation.INSTANCE);
+    PartitionTransformation<ArrowBatch> partition =
+        new PartitionTransformation<>(
+            input.getTransformation(),
+            new ColumnarKeyGroupPartitioner(),
+            StreamExchangeMode.PIPELINED);
+    new DataStream<>(env, partition).sinkTo(new DiscardingSink<>());
+
+    List<StreamEdge> columnarEdges =
+        env.getStreamGraph().getStreamNodes().stream()
+            .flatMap(node -> node.getOutEdges().stream())
+            .filter(edge -> edge.getPartitioner() instanceof ColumnarKeyGroupPartitioner)
+            .toList();
+    assertEquals(1, columnarEdges.size());
+    assertFalse(columnarEdges.get(0).supportsUnalignedCheckpoints());
   }
 
   @Test

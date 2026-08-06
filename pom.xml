@@ -68,6 +68,7 @@
         <!-- Extra JVM args appended to the Surefire fork's argLine; empty by default. Used to attach a
              sampler to a profile-loop test, e.g. -Dsf.extraJvmArgs=-agentpath:.../libasyncProfiler.dylib=... -->
         <sf.extraJvmArgs></sf.extraJvmArgs>
+        <sf.benchmarkJvmArgs></sf.benchmarkJvmArgs>
         <!-- Test JVM forks per core fraction: the suite is ~140 independent test classes run
              sequentially by default; class-level fork parallelism cuts wall time ~linearly.
              MiniClusters bind random ports, temp dirs come from JUnit/Files.createTempDirectory,
@@ -492,7 +493,7 @@
                          checks (ArrowBuf.checkIndex/ensureAccessible/refCnt on every setSafe). -->
                     <forkCount>${sf.testForks}</forkCount>
                     <reuseForks>true</reuseForks>
-                    <argLine>-Xmx8g -Djava.library.path=${project.basedir}/../native/target/${native.profile} -Dstreamfusion.native.development=true -Darrow.enable_unsafe_memory_access=true -Darrow.enable_null_check_for_get=false --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED ${sf.extraJvmArgs}</argLine>
+                    <argLine>-Xmx8g -Djava.library.path=${project.basedir}/../native/target/${native.profile} -Dstreamfusion.native.development=true -Darrow.enable_unsafe_memory_access=true -Darrow.enable_null_check_for_get=false --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED ${sf.extraJvmArgs} ${sf.benchmarkJvmArgs}</argLine>
                 </configuration>
             </plugin>
             <!-- The thin artifact remains useful to applications that manage dependencies themselves.
@@ -574,6 +575,10 @@
             <id>bench</id>
             <properties>
                 <sf.testForks>1</sf.testForks>
+                <!-- Model a deployable shuffle: Flink serializes records even across a local
+                     network edge, so StreamFusion must pay Arrow IPC rather than replacing the
+                     record with a same-JVM process-global handle. -->
+                <sf.benchmarkJvmArgs>-Dstreamfusion.exchange.zeroCopyLocal=false</sf.benchmarkJvmArgs>
                 <native.profile>release</native.profile>
                 <native.cargo.args>build --release --features mimalloc,kafka,parquet,json,csv,raw,avro,protobuf,paimon-state</native.cargo.args>
             </properties>
