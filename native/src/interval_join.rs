@@ -97,7 +97,7 @@ impl IntervalJoiner {
         self
     }
 
-    /// Attaches the managed-memory budget for a backend that starts with nothing resident.
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident.
     #[cfg(feature = "paimon-state")]
     pub(crate) fn with_read_through_budget(
         mut self,
@@ -299,7 +299,7 @@ impl IntervalJoiner {
         })
     }
 
-    /// Bounds the buffered rows (plus the outer-join match flags) by the operator's managed-memory
+    /// Bounds the buffered rows (plus the outer-join match flags) by the operator's task off-heap
     /// budget (negative = unaccounted), accounting any restored state immediately.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         if budget_bytes >= 0 {

@@ -109,7 +109,7 @@ class StatefulTumblingTest {
     }
   }
 
-  // Exceeding the operator's managed-memory budget must surface as the dedicated exception across
+  // Exceeding the operator's task off-heap budget must surface as the dedicated exception across
   // the JNI boundary (which the task fails with), not a silent overrun the container OOM-kills.
   @Test
   void exceedingMemoryBudgetThrowsAcrossJni() {
@@ -128,7 +128,7 @@ class StatefulTumblingTest {
             assertThrows(
                 NativeMemoryLimitException.class,
                 () -> update(allocator, provider, handle, timestamps, values));
-        assertTrue(e.getMessage().contains("managed-memory budget"), e.getMessage());
+        assertTrue(e.getMessage().contains("task off-heap"), e.getMessage());
       } finally {
         Native.closeTumblingAggregator(handle);
       }

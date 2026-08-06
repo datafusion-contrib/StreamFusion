@@ -3,6 +3,7 @@ package tech.streamfusion.kafka;
 import tech.streamfusion.format.EncodeFormat;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.NativeAllocator;
+import tech.streamfusion.operator.TaskOffHeapMemory;
 import java.io.IOException;
 import java.io.Serializable;
 import java.time.Duration;
@@ -47,6 +48,8 @@ import org.apache.flink.connector.kafka.sink.internal.TransactionOwnership;
 import org.apache.flink.connector.kafka.sink.internal.TransactionalIdFactory;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 import org.apache.flink.metrics.Counter;
+import org.apache.flink.streaming.api.operators.StreamingRuntimeContext;
+import org.apache.flink.streaming.runtime.operators.sink.InitContextBase;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.TransactionDescription;
 
@@ -75,7 +78,11 @@ public final class NativeKafkaExactlyOnceSink
   private final KafkaSink<PreSerializedKafkaRecord> commitDelegate;
 
   /** A pre-warmed native producer and its coordinator-authoritative transaction identity. */
-  private record WarmedProducer(long handle, long producerId, short epoch) {}
+  private record WarmedProducer(
+      long handle,
+      long producerId,
+      short epoch,
+      TaskOffHeapMemory.Reservation queueReservation) {}
 
   public NativeKafkaExactlyOnceSink(
       String topic,
@@ -164,6 +171,7 @@ public final class NativeKafkaExactlyOnceSink
     private CompletableFuture<WarmedProducer> warmingProducer;
     private boolean inputEnded;
     private long handle;
+    private TaskOffHeapMemory.Reservation producerQueueReservation;
     private long warmedProducerId;
     private short warmedEpoch;
     private long currentCheckpointId;
@@ -173,6 +181,12 @@ public final class NativeKafkaExactlyOnceSink
 
     private Writer(WriterInitContext context, Collection<KafkaWriterState> recoveredState)
         throws IOException {
+      if (!(context instanceof InitContextBase internal)
+          || !(internal.getRuntimeContext() instanceof StreamingRuntimeContext runtimeContext)) {
+        throw new IOException("Flink runtime context does not expose TaskManager memory configuration");
+      }
+      TaskOffHeapMemory.initialize(runtimeContext.getTaskManagerRuntimeInfo().getConfiguration());
+      TaskOffHeapMemory.registerMetrics(context.metricGroup());
       this.taskInfo = context.getTaskInfo();
       TransactionOwnership ownership = TransactionOwnership.IMPLICIT_BY_SUBTASK_ID;
       this.ownedSubtaskIds =
@@ -303,7 +317,7 @@ public final class NativeKafkaExactlyOnceSink
         // and a producer destroyed before its first record leaves nothing on the broker, so
         // consuming the warm-up is enough; the Java probe stays as the fallback when it failed.
         try {
-          NativeKafka.closeKafkaProducer(takeWarmedProducer().handle());
+          closeProducer(takeWarmedProducer());
         } catch (RuntimeException warmFailure) {
           try {
             probeTransaction(currentTransactionalId);
@@ -387,7 +401,7 @@ public final class NativeKafkaExactlyOnceSink
         try {
           // Drain the in-flight warm-up synchronously so no native producer outlives the writer;
           // a never-begun transaction leaves nothing behind on the broker.
-          NativeKafka.closeKafkaProducer(warmed.get(maxBlockMs, TimeUnit.MILLISECONDS).handle());
+          closeProducer(warmed.get(maxBlockMs, TimeUnit.MILLISECONDS));
         } catch (InterruptedException interrupted) {
           Thread.currentThread().interrupt();
           releaseWhenWarmed(warmed);
@@ -432,14 +446,26 @@ public final class NativeKafkaExactlyOnceSink
     }
 
     private WarmedProducer openProducer(String transactionalId) {
-      long opened =
-          NativeKafka.openTransactionalKafkaProducer(
-              KafkaProducerConfigTranslator.ABI_VERSION,
-              configKeys,
-              configValues,
-              transactionalId,
-              maxBlockMs,
-              maxRequestSize);
+      long queueBytes =
+          Math.multiplyExact(
+              Long.parseLong(nativeProducerConfig.get("queue.buffering.max.kbytes")), 1024L);
+      TaskOffHeapMemory.Reservation reservation =
+          TaskOffHeapMemory.reserve(
+              "kafka-producer", "native Kafka producer queue " + transactionalId, queueBytes);
+      long opened;
+      try {
+        opened =
+            NativeKafka.openTransactionalKafkaProducer(
+                KafkaProducerConfigTranslator.ABI_VERSION,
+                configKeys,
+                configValues,
+                transactionalId,
+                maxBlockMs,
+                maxRequestSize);
+      } catch (RuntimeException failure) {
+        reservation.close();
+        throw failure;
+      }
       try {
         // kafka-clients bounds initTransactions with max.block.ms, not the transaction timeout.
         NativeKafka.initKafkaTransactions(opened, maxBlockMs, new long[2]);
@@ -451,9 +477,15 @@ public final class NativeKafkaExactlyOnceSink
                 .description(transactionalId)
                 .get(maxBlockMs, TimeUnit.MILLISECONDS);
         return new WarmedProducer(
-            opened, description.producerId(), (short) description.producerEpoch());
+            opened, description.producerId(), (short) description.producerEpoch(), reservation);
       } catch (Exception failure) {
-        NativeKafka.closeKafkaProducer(opened);
+        try {
+          NativeKafka.closeKafkaProducer(opened);
+        } catch (RuntimeException closeFailure) {
+          failure.addSuppressed(closeFailure);
+        } finally {
+          reservation.close();
+        }
         if (failure instanceof InterruptedException) {
           Thread.currentThread().interrupt();
         }
@@ -487,6 +519,7 @@ public final class NativeKafkaExactlyOnceSink
       try {
         WarmedProducer warmed = takeWarmedProducer();
         handle = warmed.handle();
+        producerQueueReservation = warmed.queueReservation();
         warmedProducerId = warmed.producerId();
         warmedEpoch = warmed.epoch();
         NativeKafka.beginKafkaTransaction(handle);
@@ -551,8 +584,23 @@ public final class NativeKafkaExactlyOnceSink
 
     private void closeCurrentProducer() {
       if (handle != 0) {
-        NativeKafka.closeKafkaProducer(handle);
-        handle = 0;
+        try {
+          NativeKafka.closeKafkaProducer(handle);
+        } finally {
+          handle = 0;
+          if (producerQueueReservation != null) {
+            producerQueueReservation.close();
+            producerQueueReservation = null;
+          }
+        }
+      }
+    }
+
+    private static void closeProducer(WarmedProducer producer) {
+      try {
+        NativeKafka.closeKafkaProducer(producer.handle());
+      } finally {
+        producer.queueReservation().close();
       }
     }
 
@@ -560,7 +608,7 @@ public final class NativeKafkaExactlyOnceSink
       warmed.whenComplete(
           (opened, failure) -> {
             if (opened != null) {
-              NativeKafka.closeKafkaProducer(opened.handle());
+              closeProducer(opened);
             }
           });
     }

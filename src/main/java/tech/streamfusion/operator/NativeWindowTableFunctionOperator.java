@@ -49,6 +49,7 @@ public class NativeWindowTableFunctionOperator extends AbstractStreamOperator<Ar
   @Override
   public void open() throws Exception {
     super.open();
+    NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
   }

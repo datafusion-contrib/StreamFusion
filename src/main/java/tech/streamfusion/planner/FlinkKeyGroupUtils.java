@@ -93,7 +93,6 @@ public final class FlinkKeyGroupUtils {
     transformation.setStateKeySelector(
         subtaskStateKeySelector(maxParallelism, transformation.getParallelism()));
     transformation.setStateKeyType(Types.INT);
-    NativeManagedMemory.declareOperatorWeight(transformation);
   }
 
   static void applyColumnarKeying(
@@ -104,7 +103,6 @@ public final class FlinkKeyGroupUtils {
     transformation.setMaxParallelism(maxParallelism);
     transformation.setStateKeySelectors(stateKeySelector, stateKeySelector);
     transformation.setStateKeyType(Types.INT);
-    NativeManagedMemory.declareOperatorWeight(transformation);
   }
 
   private static KeySelector<ArrowBatch, Integer> subtaskStateKeySelector(

@@ -103,7 +103,7 @@ pub(crate) fn rename_positional(batch: &RecordBatch) -> RecordBatch {
 /// columns, fields renamed `c0..`). Empty when nothing matches. We own the buffering, keying, and
 /// eviction of join state; the match itself is delegated to DataFusion's `HashJoinExec` — the same
 /// split Arroyo's joins use (it runs a DataFusion join plan over the batches it has buffered).
-/// The join runs under the caller's `TaskContext`, so with a managed-memory budget attached its
+/// The join runs under the caller's `TaskContext`, so with a task off-heap budget attached its
 /// transient working memory (the build side `HashJoinExec` reserves) draws on the operator's pool;
 /// a denial fails the join with the budget remedy rather than growing unaccounted.
 pub(crate) fn hash_join_inner(
@@ -144,8 +144,8 @@ pub(crate) fn hash_join_inner(
     let batches = runtime().block_on(collect(Arc::new(join), ctx)).map_err(|e| {
         match e.find_root() {
             DataFusionError::ResourcesExhausted(_) => DataFusionError::ResourcesExhausted(format!(
-                "native join working memory exceeded the operator's managed-memory budget; raise \
-                 taskmanager.memory.managed.size or the operator's managed-memory weight ({e})"
+                "native join working memory exceeded TaskManager task off-heap memory; raise \
+                 taskmanager.memory.task.off-heap.size ({e})"
             )),
             _ => e,
         }

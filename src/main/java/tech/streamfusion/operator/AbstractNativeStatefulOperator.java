@@ -2,6 +2,7 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.state.PaimonNativeStateSupport;
+import tech.streamfusion.planner.NativeConfig;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongBinaryOperator;
@@ -17,7 +18,7 @@ import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Lifecycle shared by every native operator whose hot state lives in Rust: the handle, its
- * managed-memory reservation, and the two ways that state can be checkpointed.
+ * task off-heap reservation, and the two ways that state can be checkpointed.
  *
  * <p>State travels one of two routes, decided once at {@link #initializeState}. On the Paimon
  * backend the operator's state lives in a Paimon table and checkpoints incrementally through the
@@ -41,7 +42,8 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
   protected transient long handle;
 
   private transient boolean paimonState;
-  private transient ManagedMemoryBudget memoryBudget;
+  private transient PaimonNativeStateSupport paimonSupport;
+  private transient NativeMemoryBudget memoryBudget;
   private transient long restoredProcessingTimeTimerDeadline;
 
   /**
@@ -164,11 +166,13 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
       snapshots = RawKeyedState.restore(context);
       restoredProcessingTimeTimerDeadline = Long.MIN_VALUE;
     }
-    memoryBudget = ManagedMemoryBudget.reserveFor(this);
+    memoryBudget = NativeMemoryBudget.registerFor(this);
+    memoryBudget.registerStateMetric(getMetricGroup());
     beforeHandleCreation();
     PaimonNativeStateSupport paimon = resolvePaimonState(!snapshots.isEmpty());
     paimonState = paimon != null;
     if (paimonState) {
+      paimonSupport = paimon;
       handle = createPaimonHandle(paimon);
       paimon.register(this::checkpointPaimonHandle);
       return;
@@ -221,9 +225,9 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
     return paimonState;
   }
 
-  /** The managed-memory budget bounding the native state (see {@link ManagedMemoryBudget}). */
+  /** Encoded owner of this operator's reservation in the TaskManager-wide off-heap pool. */
   protected final long memoryBudgetBytes() {
-    return memoryBudget == null ? ManagedMemoryBudget.UNBOUNDED : memoryBudget.bytes();
+    return memoryBudget == null ? NativeMemoryBudget.UNACCOUNTED : memoryBudget.nativeHandle();
   }
 
   /** The Flink max parallelism used to map native BinaryRow hashes to raw state key groups. */
@@ -242,8 +246,20 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
    * side only tracks its footprint when accounted.
    */
   protected final void publishStateBytes() {
-    if (memoryBudget.bounded()) {
-      memoryBudget.publishStateBytes(stateBytesHandle());
+    if (memoryBudget != null) {
+      long stateBytes = stateBytesHandle();
+      memoryBudget.publishStateBytes(stateBytes);
+      long configuredFlush = NativeConfig.paimonWriteBufferBytes();
+      long sharedPressureFlush =
+          Math.max(1L << 20, TaskOffHeapMemory.capacityBytes() / 16);
+      long flushThreshold = Math.min(configuredFlush, sharedPressureFlush);
+      if (paimonState
+          && paimonSupport != null
+          && stateBytes > 0
+          && (stateBytes >= flushThreshold
+              || TaskOffHeapMemory.availableBytes() < flushThreshold)) {
+        paimonSupport.flushForMemoryPressure();
+      }
     }
   }
 

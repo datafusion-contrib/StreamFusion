@@ -66,6 +66,7 @@ public class NativeAsyncLookupJoinOperator extends AbstractStreamOperator<ArrowB
   @Override
   public void open() throws Exception {
     super.open();
+    NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     probeSerializer = new RowDataSerializer(probeType);
     FunctionUtils.setFunctionRuntimeContext(runner, getRuntimeContext());

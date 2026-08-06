@@ -73,7 +73,6 @@ public class NativeColumnarLocalGroupAggExecNode extends ExecNodeBase<ArrowBatch
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);
-    NativeManagedMemory.declareOperatorWeight(transformation);
     return transformation;
   }
 }

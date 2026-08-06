@@ -125,7 +125,7 @@ pub(crate) trait KeyedStateStore<V> {
     }
 
     /// The store's untracked footprint change since the last call (hydration, eviction) — folded
-    /// into the operator's managed-memory accounting alongside the per-row deltas it tracks itself.
+    /// into the operator's task off-heap accounting alongside the per-row deltas it tracks itself.
     fn footprint_delta(&mut self) -> isize {
         0
     }

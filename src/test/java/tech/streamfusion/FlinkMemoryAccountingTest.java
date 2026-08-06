@@ -19,10 +19,9 @@ import org.apache.flink.util.ExceptionUtils;
 import org.junit.jupiter.api.Test;
 
 /**
- * End-to-end managed-memory accounting: the native window aggregate's transformation declares an
- * operator-scope managed-memory weight, the operator reserves the resulting budget from the slot's
- * memory manager, and the native side bounds its window state by it. With the task manager's managed
- * memory squeezed far below the state a high-cardinality window accumulates, the job must fail with
+ * End-to-end task-off-heap accounting: native state draws from the TaskManager-wide StreamFusion
+ * pool configured by Flink's task off-heap size. With that pool squeezed far below the state a
+ * high-cardinality window accumulates, the job must fail with
  * the budget exception naming the remedy — the accounted alternative to the container OOM the same
  * state growth would otherwise cause. The release half (reservation back to zero when windows close
  * and at operator close) is pinned natively in the Rust tests; every columnar window parity test
@@ -33,24 +32,24 @@ class FlinkMemoryAccountingTest {
   private static final int ROWS = 200_000;
 
   @Test
-  void windowStateBeyondManagedMemoryBudgetFailsWithBudgetError() throws Exception {
+  void windowStateBeyondTaskOffHeapBudgetFailsWithBudgetError() throws Exception {
     Path input = Files.createTempDirectory("mem-budget-in");
     writeHighCardinalityInput(input);
 
     // A private local environment, NOT getExecutionEnvironment(): the auto-registered
     // SharedFlinkCluster redirects the latter to the shared mini-cluster, whose deployment-sized
-    // managed memory would swallow this test's squeezed budget. Constructed directly (with an
+    // task off-heap would swallow this test's squeezed budget. Constructed directly (with an
     // explicit local target) because LocalStreamEnvironment refuses to exist inside the
     // extension's TestEnvironment context.
     Configuration conf = new Configuration();
-    conf.set(TaskManagerOptions.MANAGED_MEMORY_SIZE, MemorySize.parse("1m"));
+    conf.set(TaskManagerOptions.TASK_OFF_HEAP_MEMORY, MemorySize.parse("1m"));
     conf.set(DeploymentOptions.TARGET, "local");
     conf.set(DeploymentOptions.ATTACHED, true);
     StreamExecutionEnvironment env = new StreamExecutionEnvironment(conf);
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
     // Every row is a distinct group key, and the far-off watermark delay keeps the window open, so
-    // the native state must grow well past the 1 MB managed budget before anything could close it.
+    // the native state must grow well past the 1 MB task off-heap budget before anything closes it.
     tEnv.executeSql(
         "CREATE TABLE t (k BIGINT, v BIGINT, rt TIMESTAMP_LTZ(3), "
             + "WATERMARK FOR rt AS rt - INTERVAL '1' HOUR) WITH ('connector' = 'filesystem', "
@@ -71,7 +70,7 @@ class FlinkMemoryAccountingTest {
     assertTrue(scan.substitutions() > 0, "query did not route to native");
     assertTrue(
         ExceptionUtils.findThrowable(failure, NativeMemoryLimitException.class).isPresent(),
-        () -> "expected the managed-memory budget failure, got: " + failure);
+        () -> "expected the task-off-heap budget failure, got: " + failure);
   }
 
   /** One row per distinct key, all inside the same one-second window. */

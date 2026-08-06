@@ -53,18 +53,6 @@ public final class NativeConfig {
   }
 
   /**
-   * The master switch for managed-memory accounting ({@code streamfusion.memory.accounting.enabled},
-   * default true). When on, a native stateful operator's transformation declares an operator-scope
-   * managed-memory weight; the operator reserves the resulting budget from Flink's memory manager and
-   * the native side bounds its state by it, failing with a clear budget message instead of a
-   * container OOM. When off, no weight is declared and the native side runs unaccounted.
-   */
-  public static boolean memoryAccountingEnabled() {
-    return Boolean.parseBoolean(
-        System.getProperty("streamfusion.memory.accounting.enabled", "true"));
-  }
-
-  /**
    * The Paimon data file format for native state tables ({@code streamfusion.state.paimon.file-format},
    * default {@code parquet}). Table maintenance belongs exclusively to the Java Paimon compactor
    * module, which must be able to read this format — released Paimon has no vortex format (it
@@ -167,38 +155,25 @@ public final class NativeConfig {
   }
 
   /**
-   * An optional cap on the process-wide Arrow FFI allocator, in mebibytes
-   * ({@code streamfusion.memory.arrow.max-mb}; 0 or less, the default, runs uncapped — Comet's
-   * choice for the same allocator). Uncapped is defensible because this allocator carries only the
-   * transient buffers crossing the native↔JVM boundary, promptly refcount-freed and bounded by the
-   * pipeline's in-flight batches, not by state — and it is observable via the
-   * {@code nativeArrowAllocatorBytes} metric. The cap exists for deployments that prefer a fail-fast
-   * attribution over container-OOM if that assumption is ever violated.
-   */
-  public static long arrowAllocatorMaxMb() {
-    return Long.getLong("streamfusion.memory.arrow.max-mb", 0L);
-  }
-
-  /**
    * The native Kafka source's prefetch budget per source subtask, in mebibytes
    * ({@code streamfusion.kafka.prefetch-mb}, default 256) — rendered into librdkafka's
-   * {@code queued.max.messages.kbytes}, whose 2 GiB ceiling clamps larger values. This is off-heap
-   * memory outside every Flink memory figure: a backpressured subtask on a deep topic fills its
-   * consumer queue to this cap, and a TaskManager running several Kafka source subtasks holds one
-   * budget per subtask. Size {@code taskmanager.memory.task.off-heap.size} accordingly
-   * (docs/native-memory-profiling.md).
+   * {@code queued.max.messages.kbytes}, whose 2 GiB ceiling clamps larger values. The native source
+   * reserves this maximum from Flink task off-heap memory: a backpressured subtask on a deep topic
+   * can fill its consumer queue to this cap, and a TaskManager running several Kafka source
+   * subtasks holds one budget per subtask.
    */
   public static int kafkaPrefetchMb() {
     return Integer.getInteger("streamfusion.kafka.prefetch-mb", 256);
   }
 
   /**
-   * The operator-scope managed-memory weight, in mebibytes, a native stateful operator declares
-   * ({@code streamfusion.memory.operator-weight-mb}, default 64). Flink splits the slot's
-   * managed-memory OPERATOR share across declaring operators proportionally to these weights, so the
-   * absolute value only matters relative to other declaring operators in the same slot.
+   * Maximum resident Paimon write-buffer target per native operator, in mebibytes
+   * ({@code streamfusion.state.paimon.write-buffer-mb}, default 64). Crossing it commits an
+   * immutable local snapshot and clears the buffer; Flink checkpoints independently pin and upload
+   * those local files.
    */
-  public static int operatorMemoryWeightMb() {
-    return Integer.getInteger("streamfusion.memory.operator-weight-mb", 64);
+  public static long paimonWriteBufferBytes() {
+    return Math.max(1L, Long.getLong("streamfusion.state.paimon.write-buffer-mb", 64L)) << 20;
   }
+
 }

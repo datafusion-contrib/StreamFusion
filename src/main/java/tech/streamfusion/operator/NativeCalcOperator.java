@@ -63,6 +63,7 @@ public class NativeCalcOperator extends AbstractStreamOperator<ArrowBatch>
   @Override
   public void open() throws Exception {
     super.open();
+    NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
     // Register any UDFs this Calc references into this JVM's registry (empty on a task manager) and

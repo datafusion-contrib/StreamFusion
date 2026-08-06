@@ -963,7 +963,7 @@ impl GroupAggregator {
         }
     }
 
-    /// Bounds this aggregator's state by the operator's managed-memory budget (negative =
+    /// Bounds this aggregator's state by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored groups immediately.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state: usize = self
@@ -1024,7 +1024,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         &mut self.store
     }
 
-    /// Attaches the managed-memory budget for a backend that starts with nothing resident (a
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident (a
     /// read-through store hydrates on demand; there is no restored map to pre-account).
     pub(crate) fn with_read_through_budget(
         mut self,
@@ -2116,7 +2116,7 @@ impl LocalGroupAggregator {
         }
     }
 
-    /// Bounds the buffered partials by a managed-memory budget (negative = unaccounted). The buffer
+    /// Bounds the buffered partials by a task off-heap budget (negative = unaccounted). The buffer
     /// drains at every mini-batch flush, but a high-cardinality interval can still spike.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let current = self

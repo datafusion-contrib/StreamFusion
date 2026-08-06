@@ -46,7 +46,7 @@ Criterion measures **20.79 M** input rows/s versus **15.10 M** for immediate mat
 while cutting output 127x. A second profile reduces transition-map work to a handful of samples;
 payload allocation, `BinaryRow` key encoding, and the durable hash probe are the remaining push-path
 costs. Logical bundling is independent of Arrow chunking, and transient preimages are included in
-[managed-memory accounting](memory-accounting-off-hot-path.md).
+[task off-heap accounting](memory-accounting-off-hot-path.md).
 
 ## Keep-last dedup: finalize only the winning row per key
 
@@ -58,7 +58,7 @@ no replacement churn to remove.
 On the same 4,096-row, 64-key replacement workload, Criterion measures **27.30 M** input rows/s for
 the logical bundle versus **17.83 M** immediate and **14.17 M** with 256-row physical flushes —
 **1.53x** and **1.93x** faster. The dirty frontier and retained preimages are included in
-managed-memory accounting.
+task off-heap accounting.
 
 ## GROUP BY: finalize only the dirty-key frontier
 
@@ -72,7 +72,7 @@ than flushing a diff after every 256-row physical batch (**23.41 vs. 7.21 and 9.
 respectively). Equal pre/post tuples and groups created then deleted within the bundle emit
 nothing; immediate mode remains byte-for-byte unchanged. The Flink operator uses the shared exact
 row-count splitter and drains before watermarks, checkpoints, and finish. Retained Arrow key buffers
-and first preimages are included in managed-memory accounting and the common bundle metrics.
+and first preimages are included in task off-heap accounting and the common bundle metrics.
 
 A post-integration release profile attributes roughly **91%** of samples to state update and **6%**
 to finalization; key gathering itself is negligible. The push path therefore skips constructing
@@ -92,7 +92,7 @@ bundle versus **8.98 M** immediate and **7.57 M** with 256-row physical flushes 
 **3.66x** faster. Release profiling initially found owned-key allocation/free on every staged
 replacement; probing the transition frontier by borrowed encoded key — the same discipline as
 [borrowed key probes](borrowed-key-probes.md) — improved the logical path from 15.03 to
-27.69 M rows/s. Staged keys and rows are charged to managed memory, and count, aligned-watermark,
+27.69 M rows/s. Staged keys and rows are charged to task off-heap memory, and count, aligned-watermark,
 checkpoint, and finish boundaries drain both sides.
 
 Retracting [Top-N](../operators/top-n.md) applies the same first-preimage/final-postimage algebra

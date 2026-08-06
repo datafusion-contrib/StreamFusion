@@ -53,6 +53,7 @@ public class NativeLookupJoinOperator extends AbstractStreamOperator<ArrowBatch>
   @Override
   public void open() throws Exception {
     super.open();
+    NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     FunctionUtils.setFunctionRuntimeContext(runner, getRuntimeContext());
     FunctionUtils.openFunction(runner, DefaultOpenContext.INSTANCE);

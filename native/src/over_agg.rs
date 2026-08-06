@@ -1430,7 +1430,7 @@ impl OverWindowAggregator {
         self
     }
 
-    /// Attaches the managed-memory budget for a backend that starts with nothing resident.
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident.
     #[cfg(feature = "paimon-state")]
     pub(crate) fn with_read_through_budget(
         mut self,
@@ -1548,7 +1548,7 @@ impl OverWindowAggregator {
     }
 
     /// Bounds this operator's state (buffered batches plus the inner per-key fold state) by the
-    /// operator's managed-memory budget (negative = unaccounted), accounting restored state
+    /// operator's task off-heap budget (negative = unaccounted), accounting restored state
     /// immediately.
     fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         if budget_bytes < 0 {

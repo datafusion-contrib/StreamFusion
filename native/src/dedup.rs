@@ -92,7 +92,7 @@ impl KeepFirstDeduplicator {
     }
 
     /// Bounds this deduplicator's state (the pending batch plus the emitted-key set) by the
-    /// operator's managed-memory budget (negative = unaccounted).
+    /// operator's task off-heap budget (negative = unaccounted).
     fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state = self.pending.as_ref().map_or(0, |b| b.get_array_memory_size())
             + self.emitted.keys().map(|k| byte_key_bytes(&k.0)).sum::<usize>();
@@ -805,7 +805,7 @@ impl KeepLastDeduplicator {
         }
     }
 
-    /// Bounds this deduplicator's stored rows by the operator's managed-memory budget (negative =
+    /// Bounds this deduplicator's stored rows by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored rows immediately.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state: usize =
@@ -845,7 +845,7 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
         }
     }
 
-    /// Attaches the managed-memory budget for a backend that starts with nothing resident (a
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident (a
     /// read-through store hydrates on demand; there is no restored map to pre-account).
     pub(crate) fn with_read_through_budget(
         mut self,

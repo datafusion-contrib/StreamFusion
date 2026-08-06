@@ -1,4 +1,118 @@
 use crate::*;
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+
+/// DataFusion memory pool backed by the TaskManager-wide JVM reservation authority.
+struct FlinkTaskOffHeapPool {
+    owner_id: i64,
+    used: AtomicUsize,
+}
+
+impl FlinkTaskOffHeapPool {
+    fn new(owner_id: i64) -> Self {
+        Self {
+            owner_id,
+            used: AtomicUsize::new(0),
+        }
+    }
+
+    fn reserve(&self, bytes: usize) -> Result<bool, DataFusionError> {
+        let vm = crate::bridge::JVM.get().ok_or_else(|| {
+            DataFusionError::Execution("JVM memory authority is unavailable".into())
+        })?;
+        let mut env = vm
+            .attach_current_thread()
+            .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+        env.call_static_method(
+            "tech/streamfusion/operator/TaskOffHeapMemory",
+            "tryReserve",
+            "(JJ)Z",
+            &[
+                jni::objects::JValue::Long(self.owner_id),
+                jni::objects::JValue::Long(bytes as i64),
+            ],
+        )
+        .and_then(|value| value.z())
+        .map_err(|e| DataFusionError::Execution(format!("reserve task off-heap memory: {e}")))
+    }
+
+    fn release(&self, bytes: usize) -> Result<(), DataFusionError> {
+        let vm = crate::bridge::JVM.get().ok_or_else(|| {
+            DataFusionError::Execution("JVM memory authority is unavailable".into())
+        })?;
+        let mut env = vm
+            .attach_current_thread()
+            .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+        env.call_static_method(
+            "tech/streamfusion/operator/TaskOffHeapMemory",
+            "release",
+            "(JJ)V",
+            &[
+                jni::objects::JValue::Long(self.owner_id),
+                jni::objects::JValue::Long(bytes as i64),
+            ],
+        )
+        .map(|_| ())
+        .map_err(|e| DataFusionError::Execution(format!("release task off-heap memory: {e}")))
+    }
+}
+
+impl Debug for FlinkTaskOffHeapPool {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("FlinkTaskOffHeapPool")
+            .field("owner_id", &self.owner_id)
+            .field("used", &self.used.load(Relaxed))
+            .finish()
+    }
+}
+
+impl Display for FlinkTaskOffHeapPool {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(
+            f,
+            "FlinkTaskOffHeapPool(owner={}, used={})",
+            self.owner_id,
+            self.used.load(Relaxed)
+        )
+    }
+}
+
+impl MemoryPool for FlinkTaskOffHeapPool {
+    fn name(&self) -> &str {
+        "FlinkTaskOffHeapPool"
+    }
+
+    fn grow(&self, reservation: &MemoryReservation, additional: usize) {
+        self.try_grow(reservation, additional).unwrap();
+    }
+
+    fn shrink(&self, _reservation: &MemoryReservation, size: usize) {
+        self.release(size).expect("return task off-heap memory");
+        self.used.fetch_sub(size, Relaxed);
+    }
+
+    fn try_grow(
+        &self,
+        _reservation: &MemoryReservation,
+        additional: usize,
+    ) -> Result<(), DataFusionError> {
+        if additional == 0 {
+            return Ok(());
+        }
+        if !self.reserve(additional)? {
+            return Err(DataFusionError::ResourcesExhausted(format!(
+                "TaskManager task off-heap pool denied {additional} bytes for owner {}",
+                self.owner_id
+            )));
+        }
+        self.used.fetch_add(additional, Relaxed);
+        Ok(())
+    }
+
+    fn reserved(&self) -> usize {
+        self.used.load(Relaxed)
+    }
+}
 
 /// Managed-memory accounting for one native operator handle: a reservation against a bounded pool
 /// sized by the budget the host reserved for the operator, plus the incrementally tracked estimate
@@ -17,21 +131,29 @@ pub(crate) struct OperatorMemory {
 
 impl OperatorMemory {
     pub(crate) fn unaccounted() -> Self {
-        OperatorMemory { reservation: None, state_bytes: 0, task_ctx: None }
+        OperatorMemory {
+            reservation: None,
+            state_bytes: 0,
+            task_ctx: None,
+        }
     }
 
-    /// Attaches a budget (negative = unaccounted), accounting `current_state_bytes` immediately —
-    /// the restore path, where state rebuilt from a snapshot must fit the budget up front.
+    /// Attaches either a standalone byte cap (non-negative, used by native tests) or an encoded JVM
+    /// owner (below -1, production), accounting restored state immediately. -1 is unaccounted.
     pub(crate) fn attach(
         &mut self,
         consumer: &str,
         budget_bytes: i64,
         current_state_bytes: usize,
     ) -> Result<(), DataFusionError> {
-        if budget_bytes < 0 {
+        if budget_bytes == -1 {
             return Ok(());
         }
-        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(budget_bytes as usize));
+        let pool: Arc<dyn MemoryPool> = if budget_bytes < -1 {
+            Arc::new(FlinkTaskOffHeapPool::new(-budget_bytes - 1))
+        } else {
+            Arc::new(GreedyMemoryPool::new(budget_bytes as usize))
+        };
         self.attach_pool(consumer, &pool, current_state_bytes)
     }
 
@@ -44,7 +166,9 @@ impl OperatorMemory {
         current_state_bytes: usize,
     ) -> Result<(), DataFusionError> {
         self.reservation = Some(MemoryConsumer::new(consumer.to_string()).register(pool));
-        let runtime = RuntimeEnvBuilder::new().with_memory_pool(Arc::clone(pool)).build_arc()?;
+        let runtime = RuntimeEnvBuilder::new()
+            .with_memory_pool(Arc::clone(pool))
+            .build_arc()?;
         self.task_ctx = Some(Arc::new(TaskContext::default().with_runtime(runtime)));
         self.state_bytes = current_state_bytes;
         self.account()
@@ -83,8 +207,8 @@ impl OperatorMemory {
         };
         reservation.try_resize(self.state_bytes).map_err(|e| {
             DataFusionError::ResourcesExhausted(format!(
-                "native operator state exceeded its managed-memory budget; raise \
-                 taskmanager.memory.managed.size or the operator's managed-memory weight ({e})"
+                "native operator state exceeded TaskManager task off-heap memory; raise \
+                 taskmanager.memory.task.off-heap.size ({e})"
             ))
         })
     }

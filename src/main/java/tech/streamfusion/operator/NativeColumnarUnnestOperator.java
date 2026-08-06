@@ -40,6 +40,7 @@ public class NativeColumnarUnnestOperator extends AbstractStreamOperator<ArrowBa
   @Override
   public void open() throws Exception {
     super.open();
+    NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
   }

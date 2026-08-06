@@ -17,6 +17,9 @@ each to exactly one channel, a batch has exactly one consumer, and a same-proces
 by ownership transfer: the serializer parks the batch in a process-global handle table and writes a
 28-byte token-guarded handle; the deserializer claims it back, buffers untouched.
 
+Each producing split subtask owns its parked handles. Failed or canceled task teardown closes that
+owner's unclaimed batches, while normal completion leaves records available for downstream drain.
+
 ## When it's planned
 
 Planned per edge only when it is provably sound:

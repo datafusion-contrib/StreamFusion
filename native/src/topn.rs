@@ -391,7 +391,7 @@ impl TopNRanker {
         }
     }
 
-    /// Bounds the per-partition buffers by the operator's managed-memory budget (negative =
+    /// Bounds the per-partition buffers by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored buffers immediately.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state: usize = self
@@ -432,7 +432,7 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
         }
     }
 
-    /// Attaches the managed-memory budget for a backend that starts with nothing resident (a
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident (a
     /// read-through store hydrates on demand; there is no restored map to pre-account).
     pub(crate) fn with_read_through_budget(
         mut self,
@@ -1180,7 +1180,7 @@ impl RetractableTopNRanker {
         }
     }
 
-    /// Bounds the full per-partition buffers by the operator's managed-memory budget (negative =
+    /// Bounds the full per-partition buffers by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored buffers immediately.
     fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state: usize = self
@@ -1226,7 +1226,7 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> RetractableTopNRanker<S> {
         }
     }
 
-    /// Attaches the managed-memory budget for a backend that starts with nothing resident.
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident.
     pub(crate) fn with_read_through_budget(
         mut self,
         budget_bytes: i64,
@@ -1944,7 +1944,7 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
         }
     }
 
-    /// Attaches the managed-memory budget for a backend that starts with nothing resident.
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident.
     pub(crate) fn with_read_through_budget(
         mut self,
         budget_bytes: i64,
@@ -2253,7 +2253,7 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
 /// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
 /// store checkpoints through its own commit path instead of materializing the key space.
 impl UpdatableTopNRanker {
-    /// Bounds the per-partition buffers by the operator's managed-memory budget (negative =
+    /// Bounds the per-partition buffers by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored buffers immediately.
     fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state: usize = self
@@ -2426,7 +2426,7 @@ impl TopNHandle {
         }
     }
 
-    /// Bounds the ranker's buffers by the operator's managed-memory budget (negative = unaccounted).
+    /// Bounds the ranker's buffers by the operator's task off-heap budget (negative = unaccounted).
     fn with_memory_budget(self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         Ok(match self {
             TopNHandle::Append(r) => TopNHandle::Append(r.with_memory_budget(budget_bytes)?),
@@ -2574,7 +2574,7 @@ impl WindowRanker {
         self.backend.as_mut().expect("window-rank paimon backend")
     }
 
-    /// Bounds the per-window buffers by the operator's managed-memory budget (negative =
+    /// Bounds the per-window buffers by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored buffers immediately.
     fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state: usize = self

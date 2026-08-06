@@ -2,6 +2,7 @@ package tech.streamfusion.kafka;
 
 import tech.streamfusion.format.NativeMessageDecoderFactory;
 import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.TaskOffHeapMemory;
 import tech.streamfusion.operator.NativeSourceRecord;
 import java.io.IOException;
 import java.util.Arrays;
@@ -90,6 +91,8 @@ public final class NativeKafkaSource
 
   @Override
   public SourceReader<ArrowBatch, KafkaPartitionSplit> createReader(SourceReaderContext context) {
+    TaskOffHeapMemory.initialize(context.getConfiguration());
+    TaskOffHeapMemory.registerMetrics(context.metricGroup());
     NativeKafkaSourceMetrics metrics = new NativeKafkaSourceMetrics(context.metricGroup());
     LinkedHashMap<String, String> readerConfig = new LinkedHashMap<>();
     for (int i = 0; i < configKeys.length; i++) {

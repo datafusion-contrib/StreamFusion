@@ -67,7 +67,6 @@ public class NativeTemporalSortExecNode extends ExecNodeBase<ArrowBatch>
     transformation.setMaxParallelism(1);
     transformation.setStateKeySelector(emptyKeySelector);
     transformation.setStateKeyType(Types.INT);
-    NativeManagedMemory.declareOperatorWeight(transformation);
     return transformation;
   }
 }

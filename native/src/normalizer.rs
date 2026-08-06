@@ -126,7 +126,7 @@ impl ChangelogNormalizer {
         }
     }
 
-    /// Bounds the stored last-row-per-key state by the operator's managed-memory budget (negative =
+    /// Bounds the stored last-row-per-key state by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored rows immediately.
     fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state: usize = self
@@ -164,7 +164,7 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         }
     }
 
-    /// Attaches the managed-memory budget for a backend that starts with nothing resident (a
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident (a
     /// read-through store hydrates on demand; there is no restored map to pre-account).
     pub(crate) fn with_read_through_budget(
         mut self,

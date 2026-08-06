@@ -227,7 +227,7 @@ impl TemporalJoiner {
         self
     }
 
-    /// Attaches the managed-memory budget for a backend that starts with nothing resident.
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident.
     #[cfg(feature = "paimon-state")]
     pub(crate) fn with_read_through_budget(
         mut self,
@@ -744,7 +744,7 @@ impl TemporalJoiner {
             .expect("failed to build temporal-join output batch"))
     }
 
-    /// Bounds both sides' state by the operator's managed-memory budget (negative = unaccounted),
+    /// Bounds both sides' state by the operator's task off-heap budget (negative = unaccounted),
     /// accounting any restored state immediately.
     fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let left: usize = self

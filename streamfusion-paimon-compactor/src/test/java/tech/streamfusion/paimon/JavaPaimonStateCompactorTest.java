@@ -7,6 +7,7 @@ import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchSerializer;
 import tech.streamfusion.operator.NativeColumnarGroupAggregateOperator;
 import tech.streamfusion.operator.RowDataArrowConverter;
+import tech.streamfusion.operator.TaskOffHeapMemory;
 import tech.streamfusion.state.PaimonStateBackend;
 import java.io.File;
 import java.nio.file.Files;
@@ -18,6 +19,9 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.MemorySize;
+import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
 import org.apache.flink.table.data.GenericRowData;
@@ -35,6 +39,7 @@ import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.table.source.Split;
 import tech.streamfusion.operator.CoalescingOff;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -48,6 +53,13 @@ import org.junit.jupiter.api.Test;
 class JavaPaimonStateCompactorTest {
 
   private static final int MAX_PARALLELISM = 128;
+
+  @BeforeAll
+  static void initializeTaskOffHeapAuthority() {
+    Configuration configuration = new Configuration();
+    configuration.set(TaskManagerOptions.TASK_OFF_HEAP_MEMORY, MemorySize.parse("1g"));
+    TaskOffHeapMemory.initialize(configuration);
+  }
   private static final RowType INPUT =
       RowType.of(
           new LogicalType[] {new BigIntType(), new BigIntType()}, new String[] {"k", "v"});
@@ -137,6 +149,63 @@ class JavaPaimonStateCompactorTest {
               List.of((RowData) GenericRowData.of(2L, 7L)), INPUT, allocator);
       harness.processElement(new StreamRecord<>(new ArrowBatch(fresh)));
       assertEquals(List.of(List.of(RowKind.INSERT, 2L, 7L)), collect(harness));
+    }
+  }
+
+  @Test
+  void writeBufferFlushesToLocalFilesBeforeAnyCheckpoint() throws Exception {
+    String property = "streamfusion.state.paimon.write-buffer-mb";
+    String previous = System.getProperty(property);
+    System.setProperty(property, "1");
+    try {
+      NativeColumnarGroupAggregateOperator operator =
+          new NativeColumnarGroupAggregateOperator(
+              new int[] {0},
+              new int[] {0},
+              new int[] {1},
+              new int[] {0},
+              new int[] {-1},
+              new int[] {-1},
+              new int[] {-1},
+              -1,
+              true,
+              false,
+              0,
+              0,
+              new int[] {-1},
+              MAX_PARALLELISM);
+      try (BufferAllocator allocator = new RootAllocator();
+          KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+              new KeyedOneInputStreamOperatorTestHarness<>(
+                  operator, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0)) {
+        harness.setStateBackend(new PaimonStateBackend());
+        harness.setup(new ArrowBatchSerializer());
+        harness.open();
+
+        List<RowData> rows = new ArrayList<>(25_000);
+        for (long key = 0; key < 25_000; key++) {
+          rows.add(GenericRowData.of(key, 1L));
+        }
+        harness.processElement(
+            new StreamRecord<>(
+                new ArrowBatch(RowDataArrowConverter.write(rows, INPUT, allocator))));
+        assertEquals(25_000, collect(harness).size());
+
+        File tableDir =
+            findTableDirectory(harness.getEnvironment().getTaskManagerInfo().getTmpWorkingDirectory());
+        try (Stream<java.nio.file.Path> snapshots =
+            Files.list(new File(tableDir, "snapshot").toPath())) {
+          assertTrue(
+              snapshots.anyMatch(path -> path.getFileName().toString().startsWith("snapshot-")),
+              "the size threshold did not commit a local snapshot before a Flink checkpoint");
+        }
+      }
+    } finally {
+      if (previous == null) {
+        System.clearProperty(property);
+      } else {
+        System.setProperty(property, previous);
+      }
     }
   }
 

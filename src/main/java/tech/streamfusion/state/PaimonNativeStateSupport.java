@@ -117,4 +117,13 @@ public final class PaimonNativeStateSupport {
   public void register(PaimonNativeState nativeState) {
     backend.registerNativeState(nativeState, stateTtlMillis);
   }
+
+  /** Flushes the write buffer locally; checkpoint publication remains barrier-driven. */
+  public void flushForMemoryPressure() {
+    try {
+      backend.flushForMemoryPressure();
+    } catch (Exception failure) {
+      throw new IllegalStateException("Paimon state memory-pressure flush failed", failure);
+    }
+  }
 }

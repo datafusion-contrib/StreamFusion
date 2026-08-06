@@ -159,7 +159,7 @@ public final class Native {
 
   // A stateful operator's tracked native state footprint in bytes (zero when unaccounted), one
   // getter per handle type. Handles are not thread-safe, so operators sample these on the task
-  // thread after each batch and publish the value to their metric gauges (ManagedMemoryBudget).
+  // thread after each batch and publish the value to their metric gauges (NativeMemoryBudget).
   public static native long tumblingAggregatorStateBytes(long handle);
 
   public static native long sessionAggregatorStateBytes(long handle);
@@ -539,7 +539,7 @@ public final class Native {
    *     5=tinyint, 6=float), positionally matching {@code aggregateKinds} so each aggregate reads its
    *     own value column
    * @param aggregateKinds one code per aggregate: 0=SUM, 1=MIN, 2=MAX, 3=COUNT, 4=AVG
-   * @param memoryBudgetBytes managed-memory budget bounding the open-window state (negative for
+   * @param memoryBudgetBytes task off-heap budget bounding the open-window state (negative for
    *     unaccounted); exceeding it throws {@link NativeMemoryLimitException} from the violating call
    */
   public static native long createTumblingAggregator(
@@ -607,7 +607,7 @@ public final class Native {
    * @param valueTypes value-column type per aggregate (see {@link #createTumblingAggregator})
    * @param aggregateKinds aggregate codes (see {@link #createTumblingAggregator})
    * @param snapshot bytes produced by {@link #snapshotTumblingAggregator(long)}
-   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator}); the
+   * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator}); the
    *     restored state is accounted immediately, so a snapshot that no longer fits fails here
    */
   public static native long restoreTumblingAggregator(
@@ -654,7 +654,7 @@ public final class Native {
    *     ({@code <= 1} disables it — Flink's literal {@code minRetentionTime > 1}); the proctime
    *     unbounded fold puts a per-value TTL on its accumulator ({@code > 0} enables); and the
    *     bounded-RANGE rowtime frame takes no retention at all
-   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
+   * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long createOverAggregator(
       int[] valueTypes,
@@ -960,7 +960,7 @@ public final class Native {
    * @param stateTtlMillis idle-state retention ({@code table.exec.state.ttl}); {@code 0} disables
    *     expiry. A group expires {@code stateTtlMillis} after its last write and then reads as
    *     absent, and the unchanged-result suppression is disabled — Flink's TTL'd emission
-   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
+   * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long createGroupAggregator(
       int[] aggregateKinds,
@@ -1813,7 +1813,7 @@ public final class Native {
    * @param stateTtlMillis idle-state retention ({@code table.exec.state.ttl}); {@code 0} disables
    *     expiry. A key expires {@code stateTtlMillis} after its last write and then reads as absent,
    *     and the unchanged-row suppression is disabled — Flink's TTL'd emission
-   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
+   * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long createChangelogNormalizer(
       int[] keyColumns,
@@ -1922,7 +1922,7 @@ public final class Native {
    * @param rightSchemaAddress C Data Interface address of the right input's (data-only) Arrow schema
    * @param predKinds residual non-equi predicate over the joined {@code [left.., right..]} row (empty
    *     ⇒ none), ANDed with the interval bounds; same encoding {@link #createFilterExpression} takes
-   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
+   * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long createIntervalJoiner(
       int[] leftKeys,
@@ -2020,7 +2020,7 @@ public final class Native {
    *     keeps ONE per-key processing-time cleanup deadline at 1.5x the retention (the planner's
    *     max idle retention, derived natively) and clears the key's entire state — both sides —
    *     when it fires
-   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
+   * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long createTemporalJoiner(
       int[] leftKeys,
@@ -2113,7 +2113,7 @@ public final class Native {
    *     Each stored row expires independently {@code ttl} millis after its last write and then
    *     reads as absent — Flink's per-entry MapState TTL on the join state views
    * @param rightStateTtlMillis {@code leftStateTtlMillis} for the right side (the sides may differ)
-   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
+   * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long createUpdatingJoiner(
       int[] leftKeys,
@@ -2216,7 +2216,7 @@ public final class Native {
    *     expiry. Expired rank state reads as absent and expiry emits nothing — the append-only
    *     ranker expires per sort-key list, the retracting one per whole buffer (Flink's treemap
    *     clock)
-   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
+   * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long createTopNRanker(
       int[] partitionColumns,
@@ -2335,7 +2335,7 @@ public final class Native {
    * @param leftWindowEnd window-end column index in the left input batch
    * @param rightWindowStart window-start column index in the right input batch
    * @param rightWindowEnd window-end column index in the right input batch
-   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
+   * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long createWindowJoiner(
       int[] leftKeys,
@@ -2408,7 +2408,7 @@ public final class Native {
    * @param stepMillis the step between successive cumulative window ends
    * @param valueTypes value-column type per aggregate (see {@link #createTumblingAggregator})
    * @param aggregateKinds one code per aggregate: 0=SUM, 1=MIN, 2=MAX, 3=COUNT, 4=AVG
-   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
+   * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long createCumulativeAggregator(
       long maxSizeMillis,
@@ -2434,7 +2434,7 @@ public final class Native {
    * @param gapMillis the inactivity gap in milliseconds that separates sessions
    * @param valueTypes value-column type per aggregate (see {@link #createTumblingAggregator})
    * @param aggregateKinds one code per aggregate: 0=SUM, 1=MIN, 2=MAX, 3=COUNT, 4=AVG
-   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
+   * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long createSessionAggregator(
       long gapMillis, int[] valueTypes, int[] aggregateKinds, long memoryBudgetBytes);
@@ -2467,7 +2467,7 @@ public final class Native {
    * @param valueTypes value-column type per aggregate (see {@link #createSessionAggregator})
    * @param aggregateKinds aggregate codes (see {@link #createSessionAggregator})
    * @param snapshot bytes produced by {@link #snapshotSessionAggregator(long)}
-   * @param memoryBudgetBytes managed-memory budget (see {@link #createTumblingAggregator})
+   * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long restoreSessionAggregator(
       long gapMillis, int[] valueTypes, int[] aggregateKinds, byte[] snapshot, long memoryBudgetBytes);

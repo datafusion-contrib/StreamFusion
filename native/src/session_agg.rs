@@ -71,7 +71,7 @@ impl SessionAggregator {
         self
     }
 
-    /// Attaches the managed-memory budget for a backend that starts with nothing resident.
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident.
     #[cfg(feature = "paimon-state")]
     pub(crate) fn with_read_through_budget(
         mut self,
@@ -251,7 +251,7 @@ impl SessionAggregator {
         Ok(manifest)
     }
 
-    /// Bounds this aggregator's state by the operator's managed-memory budget (negative =
+    /// Bounds this aggregator's state by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored sessions immediately.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state: usize = self

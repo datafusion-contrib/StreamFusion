@@ -94,6 +94,7 @@ nav:
       - Paimon (experimental): backends/paimon.md
   - Deployment: deployment.md
   - Configuration: configuration.md
+  - Memory management: memory-management.md
   - Upstream Flink suite: upstream-flink-suite.md
   - Benchmarks: benchmarks.md
   - Optimizations:

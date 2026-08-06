@@ -32,7 +32,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
  * only here. The per-test harness check already asserts everything drains to zero at the end; this
  * test asserts boundedness <em>during</em> steady state.
  *
- * <p>The managed-memory budget (divergences/16) would also catch runaway <em>accounted</em> state
+ * <p>The task off-heap budget (divergences/16) would also catch runaway <em>accounted</em> state
  * as a loud failure; the soak exists for what accounting does not measure.
  */
 @EnabledIfEnvironmentVariable(named = "SF_SOAK", matches = "true")

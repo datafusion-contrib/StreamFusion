@@ -1,11 +1,10 @@
 package tech.streamfusion;
 
 /**
- * Thrown by a native call when an operator's state would exceed the managed-memory budget the host
- * reserved for it. This is the accounted replacement for the failure it prevents: without a budget
- * the native side allocates invisibly to Flink and the container is OOM-killed with no attribution;
- * with one, the task fails with the operator and the remedy (raise the task manager's managed memory
- * or the operator's managed-memory weight) in the message.
+ * Thrown when a StreamFusion consumer cannot reserve from the TaskManager-wide task off-heap pool.
+ * This is deliberately distinct from a generic {@link RuntimeException}: callers and tests can
+ * identify a configured resource limit rather than an allocator leak. The message names the
+ * consumer and Flink's {@code taskmanager.memory.task.off-heap.size} remedy.
  */
 public class NativeMemoryLimitException extends RuntimeException {
 

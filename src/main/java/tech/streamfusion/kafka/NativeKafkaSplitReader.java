@@ -8,6 +8,7 @@ import tech.streamfusion.operator.BoundedSplitTracker;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.NativeSourceRecord;
 import tech.streamfusion.operator.NativeSourceWatermarks;
+import tech.streamfusion.operator.TaskOffHeapMemory;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
@@ -56,6 +57,7 @@ final class NativeKafkaSplitReader implements SplitReader<NativeSourceRecord, Ka
   private final int rowtimeIndex;
   private final NativeBodyBatchDecoder decoder;
   private final NativeKafkaSourceMetrics metrics;
+  private final TaskOffHeapMemory.Reservation queueReservation;
   /** Whether the format's decode is attached natively — polls then emit typed batches directly. */
   private final boolean nativeDecode;
   private final BufferAllocator allocator = NativeAllocator.SHARED;
@@ -75,21 +77,57 @@ final class NativeKafkaSplitReader implements SplitReader<NativeSourceRecord, Ka
     this.pollTimeoutMillis = pollTimeoutMillis;
     this.rowtimeIndex = rowtimeIndex;
     this.metrics = metrics;
-    this.handle = NativeKafka.openKafkaConsumer(configKeys, configValues);
+    this.queueReservation =
+        TaskOffHeapMemory.reserve(
+            "kafka-consumer",
+            "native Kafka consumer prefetch queue",
+            queueBytes(configKeys, configValues));
+    long opened;
     try {
-      this.decoder =
+      opened = NativeKafka.openKafkaConsumer(configKeys, configValues);
+    } catch (RuntimeException failure) {
+      queueReservation.close();
+      throw failure;
+    }
+    this.handle = opened;
+    NativeBodyBatchDecoder openedDecoder = null;
+    boolean attached;
+    try {
+      openedDecoder =
           decoderFactory == null
               ? null
               : new NativeBodyBatchDecoder(decoderFactory, decodedType, allocator);
+      attached = openedDecoder != null && attach(openedDecoder.decoder());
     } catch (Exception e) {
-      NativeKafka.closeKafkaConsumer(handle);
+      if (openedDecoder != null) {
+        try {
+          openedDecoder.close();
+        } catch (Exception closeFailure) {
+          e.addSuppressed(closeFailure);
+        }
+      }
+      try {
+        NativeKafka.closeKafkaConsumer(handle);
+      } finally {
+        queueReservation.close();
+      }
       throw new RuntimeException("failed to open native format decoder", e);
     }
+    this.decoder = openedDecoder;
     // A decoder that exposes its library's driver init is attached through the version handshake and
     // decodes inside the poll itself, while the payload bytes are cache-hot. Anything else — including
     // a format artifact whose init refuses this connector's ABI version — keeps the JVM-mediated
     // decode below, so version skew degrades in speed, never in correctness.
-    this.nativeDecode = decoder != null && attach(decoder.decoder());
+    this.nativeDecode = attached;
+  }
+
+  private static long queueBytes(String[] keys, String[] values) {
+    for (int i = 0; i < keys.length; i++) {
+      if ("queued.max.messages.kbytes".equals(keys[i])) {
+        return Math.multiplyExact(Long.parseLong(values[i]), 1024L);
+      }
+    }
+    throw new IllegalArgumentException("native Kafka consumer queue byte cap is missing");
   }
 
   private boolean attach(NativeMessageDecoder decoder) {
@@ -296,9 +334,16 @@ final class NativeKafkaSplitReader implements SplitReader<NativeSourceRecord, Ka
 
   @Override
   public void close() throws Exception {
-    NativeKafka.closeKafkaConsumer(handle);
-    if (decoder != null) {
-      decoder.close();
+    try {
+      NativeKafka.closeKafkaConsumer(handle);
+    } finally {
+      try {
+        if (decoder != null) {
+          decoder.close();
+        }
+      } finally {
+        queueReservation.close();
+      }
     }
   }
 }

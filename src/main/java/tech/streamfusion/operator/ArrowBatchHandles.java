@@ -14,9 +14,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * deployment) fails loudly on the reader instead of dereferencing foreign memory.
  *
  * <p>Ownership: {@link #register} transfers the batch to the table; {@link #claim} transfers it
- * out, exactly once. A record dropped between the two (job cancellation with records still in
- * network buffers) strands its batch until process exit — bounded by the in-flight buffer volume,
- * and only on failure paths, since aligned checkpoints and bounded jobs drain in-flight records.
+ * out, exactly once. Each producing split subtask has an owner token, so its failure/cancellation
+ * cleanup can close only its own records dropped between those two operations.
  */
 public final class ArrowBatchHandles {
 
@@ -30,13 +29,18 @@ public final class ArrowBatchHandles {
   }
 
   private static final AtomicLong NEXT = new AtomicLong();
-  private static final Map<Long, ArrowBatch> IN_FLIGHT = new ConcurrentHashMap<>();
+  private static final AtomicLong NEXT_OWNER = new AtomicLong();
+  private static final Map<Long, OwnedBatch> IN_FLIGHT = new ConcurrentHashMap<>();
 
   private ArrowBatchHandles() {}
 
+  public static long newOwner() {
+    return NEXT_OWNER.incrementAndGet();
+  }
+
   public static long register(ArrowBatch batch) {
     long handle = NEXT.incrementAndGet();
-    IN_FLIGHT.put(handle, batch);
+    IN_FLIGHT.put(handle, new OwnedBatch(batch.handleOwner(), batch));
     return handle;
   }
 
@@ -47,12 +51,28 @@ public final class ArrowBatchHandles {
               + " for a single-process deployment but producer and consumer run in different JVMs."
               + " Set streamfusion.exchange.zeroCopyLocal=false for multi-TaskManager deployments.");
     }
-    ArrowBatch batch = IN_FLIGHT.remove(handle);
-    if (batch == null) {
+    OwnedBatch owned = IN_FLIGHT.remove(handle);
+    if (owned == null) {
       throw new IllegalStateException(
           "zero-copy exchange handle " + handle + " was already claimed or never registered");
     }
-    return batch;
+    return owned.batch;
+  }
+
+  /** Closes every still-unclaimed batch emitted by one canceled or failed split subtask. */
+  public static int releaseOwner(long owner) {
+    if (owner == ArrowBatch.NO_HANDLE_OWNER) {
+      return 0;
+    }
+    int released = 0;
+    for (Map.Entry<Long, OwnedBatch> entry : IN_FLIGHT.entrySet()) {
+      OwnedBatch owned = entry.getValue();
+      if (owned.owner == owner && IN_FLIGHT.remove(entry.getKey(), owned)) {
+        owned.batch.closeUnclaimed();
+        released++;
+      }
+    }
+    return released;
   }
 
   /** In-flight handle count, for leak assertions in tests. */
@@ -64,4 +84,6 @@ public final class ArrowBatchHandles {
   public static long registered() {
     return NEXT.get();
   }
+
+  private record OwnedBatch(long owner, ArrowBatch batch) {}
 }

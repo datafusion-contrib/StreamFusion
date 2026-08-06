@@ -15,6 +15,7 @@ import tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator;
 import tech.streamfusion.operator.NativeOverAggregateOperator;
 import tech.streamfusion.operator.NativeTemporalJoinOperator;
 import tech.streamfusion.operator.RowDataArrowConverter;
+import tech.streamfusion.operator.TaskOffHeapMemory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,9 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.MemorySize;
+import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
 import org.apache.flink.runtime.state.IncrementalKeyedStateHandle.HandleAndLocalPath;
 import org.apache.flink.runtime.state.IncrementalRemoteKeyedStateHandle;
@@ -38,6 +42,7 @@ import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import tech.streamfusion.operator.CoalescingOff;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -56,6 +61,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 class PaimonStateBackendOperatorTest {
 
   private static final int MAX_PARALLELISM = 128;
+
+  @BeforeAll
+  static void initializeTaskOffHeapAuthority() {
+    Configuration configuration = new Configuration();
+    configuration.set(TaskManagerOptions.TASK_OFF_HEAP_MEMORY, MemorySize.parse("1g"));
+    TaskOffHeapMemory.initialize(configuration);
+  }
 
   private static final RowType INPUT =
       RowType.of(

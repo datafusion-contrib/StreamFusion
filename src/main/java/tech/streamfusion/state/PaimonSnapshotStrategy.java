@@ -149,6 +149,20 @@ final class PaimonSnapshotStrategy
     return nativeState != null;
   }
 
+  /**
+   * Commits the native write buffer to the local table without creating Flink checkpoint state.
+   * Maintenance makes the new run readable through the deletion-vector raw-scan path; a second
+   * native call re-pins that maintained snapshot. A later barrier uploads these immutable files.
+   */
+  void flushForMemoryPressure() throws Exception {
+    String[] manifest = nativeState.checkpoint();
+    if (!manifest[0].isEmpty()) {
+      compactTables();
+      nativeState.checkpoint();
+      shaping.kick();
+    }
+  }
+
   /** Seeds the reuse base from a restored checkpoint (single-handle, claim-style restore). */
   void seedRestored(long checkpointId, List<HandleAndLocalPath> sharedState) {
     synchronized (uploadedFiles) {

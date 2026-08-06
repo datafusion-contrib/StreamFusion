@@ -23,7 +23,7 @@ impl TemporalSorter {
         }
     }
 
-    /// Bounds the sort buffer by the operator's managed-memory budget (negative = unaccounted),
+    /// Bounds the sort buffer by the operator's task off-heap budget (negative = unaccounted),
     /// accounting any restored buffer immediately.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state = buffered_batches_bytes(&self.buffered);

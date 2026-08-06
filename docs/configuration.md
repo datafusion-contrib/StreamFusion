@@ -1,6 +1,7 @@
 # Configuration
 
-Every runtime flag is a JVM system property, mirroring DataFusion Comet's config surface.
+StreamFusion-specific runtime flags are JVM system properties. Flink-owned settings continue to use
+Flink's normal configuration surface.
 
 ## Acceleration control
 
@@ -28,40 +29,52 @@ Every runtime flag is a JVM system property, mirroring DataFusion Comet's config
 
 ## Memory
 
-- **`-Dstreamfusion.memory.accounting.enabled`** (default on) — native stateful operators reserve an
-  operator-scope share of the slot's managed memory from Flink's `MemoryManager` and bound their
-  state by it, failing with a `NativeMemoryLimitException` naming the remedy rather than an
-  unattributed OOM.
-- **`-Dstreamfusion.memory.arrow.max-mb`** — optional cap on the shared Arrow FFI allocator (the
-  buffers crossing the native↔JVM boundary). Uncapped by default; an allocation past the cap fails
-  naming the knob instead of growing the process.
+See [Memory management](memory-management.md) for the authoritative pool, covered consumers,
+exhaustion behavior, Paimon flushing, sizing, and metrics.
+
+- **`taskmanager.memory.task.off-heap.size`** — the single TaskManager-wide authority for
+  StreamFusion memory. It must be greater than zero. Native operator state and DataFusion working
+  memory, Arrow FFI buffers, native Kafka consumer queues, and native exactly-once producer queues
+  all reserve from this shared cap. A denied reservation fails with a
+  `NativeMemoryLimitException` naming this normal Flink setting.
+- **`-Dstreamfusion.state.paimon.write-buffer-mb`** (default 64) — flush a Paimon backend's native
+  in-memory write buffer into immutable local files once it reaches this size. StreamFusion may
+  lower the effective threshold under TaskManager-wide memory pressure. This local flush is
+  independent of Flink checkpoint timing; a later checkpoint snapshots and uploads the already
+  materialized local files.
 
 ### Off-heap sizing
 
-Some native memory appears in **no Flink memory figure** — not heap, not managed memory, not
-network buffers — and must be budgeted under `taskmanager.memory.task.off-heap.size` (or equivalent
-container headroom), or a backpressured job gets OOM-killed with no attribution:
+Size `taskmanager.memory.task.off-heap.size` for the peak aggregate of all StreamFusion consumers in
+one TaskManager, not per operator:
 
 - **`-Dstreamfusion.kafka.prefetch-mb`** (default 256, capped at 2 GiB) — the native Kafka source's
   off-heap prefetch budget, **per source subtask**.
-- The native Kafka **sink** mirrors the Java client's `buffer.memory` (default 32 MiB) **per sink
-  subtask**.
-- The Arrow FFI allocator above is process-wide and, absent a cap, transient and small at steady
-  state — bounded by in-flight batches, not held state.
+- The native Kafka **sink** mirrors the Java client's `buffer.memory` (default 32 MiB) **per live
+  producer**. Allow for an active producer and the next checkpoint's warming producer during
+  handover.
+- Arrow FFI buffers are process-wide and bounded by in-flight batches.
+- Native operator state and DataFusion working reservations vary with the query. The in-memory state
+  backend fails when it cannot reserve more. The Paimon backend proactively flushes its write buffer
+  to local files at its threshold or when shared headroom is low; an allocation that still cannot
+  reserve from the shared cap fails normally.
 
 Worked example: 4 Kafka source subtasks and 2 sink subtasks on one TaskManager at the defaults need
-`4 × 256 MiB + 2 × 32 MiB ≈ 1.1 GiB` of task off-heap before Arrow's in-flight batches. Native
-*operator state* is the one exception — with accounting on (the default) it draws on Flink's managed
-memory, already inside Flink's process model, and needs no extra off-heap allowance.
+at least `4 × 256 MiB + 2 × 32 MiB ≈ 1.1 GiB` of task off-heap before Arrow's in-flight batches and
+native operator state, and temporarily another 64 MiB if both sinks have a warming producer. The
+Java Kafka producer's own heap allocations remain under Flink/JVM heap sizing; only the native
+exactly-once producer path is charged here.
 
 ### Live metrics
 
-Every accounted native operator exports three metrics to the Flink UI/metrics reporter, alongside
-its ordinary JVM numbers:
+StreamFusion exports the shared pool and operator state to the Flink UI/metrics reporter:
 
-- `nativeStateBudgetBytes` — the operator's reserved managed-memory budget.
+- `nativeOffHeapCapacityBytes` — configured TaskManager task off-heap capacity.
+- `nativeOffHeapReservedBytes` / `nativeOffHeapAvailableBytes` — current aggregate usage/headroom.
+- `nativeOffHeapPeakBytes` — process-wide reservation high-water mark.
+- `nativeOffHeapDeniedReservations` — number of rejected growth requests.
+- `nativeArrowAllocatorBytes` — the process-wide Arrow FFI allocator's current footprint.
 - `nativeStateBytes` — tracked state drawing on that budget, sampled per batch.
-- `nativeArrowAllocatorBytes` — the process-wide Arrow FFI allocator, sampled per batch.
 
 ## Diagnostics
 

@@ -112,7 +112,6 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
     transformation.setMaxParallelism(maxParallelism);
     transformation.setStateKeySelector(stateKeySelector);
     transformation.setStateKeyType(Types.INT);
-    NativeManagedMemory.declareOperatorWeight(transformation);
     return transformation;
   }
 }

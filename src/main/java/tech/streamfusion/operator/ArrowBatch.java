@@ -36,21 +36,29 @@ import org.apache.arrow.vector.util.TransferPair;
 public final class ArrowBatch {
 
   private static final Cleaner ABANDONED = Cleaner.create();
+  static final long NO_HANDLE_OWNER = 0;
 
   private final VectorSchemaRoot root;
   // The destination channel for a key-partitioned batch (the columnar shuffle); -1 when unrouted.
   private final int destination;
+  // The producing split subtask whose failure cleanup owns a parked zero-copy handle.
+  private final long handleOwner;
   private final Backstop backstop;
   // How many consumers have yet to take the batch; 1 for the normal single-consumer hand-off.
   private int pendingConsumers = 1;
 
   public ArrowBatch(VectorSchemaRoot root) {
-    this(root, -1);
+    this(root, -1, NO_HANDLE_OWNER);
   }
 
   public ArrowBatch(VectorSchemaRoot root, int destination) {
+    this(root, destination, NO_HANDLE_OWNER);
+  }
+
+  ArrowBatch(VectorSchemaRoot root, int destination, long handleOwner) {
     this.root = root;
     this.destination = destination;
+    this.handleOwner = handleOwner;
     this.backstop = new Backstop(root);
     ABANDONED.register(this, backstop);
   }
@@ -92,6 +100,15 @@ public final class ArrowBatch {
     return destination;
   }
 
+  long handleOwner() {
+    return handleOwner;
+  }
+
+  /** Frees a batch removed from the zero-copy table before any deserializer claimed it. */
+  synchronized void closeUnclaimed() {
+    backstop.closeUnclaimed();
+  }
+
   /**
    * How many rows the batch carries, without taking it.
    *
@@ -120,6 +137,13 @@ public final class ArrowBatch {
     @Override
     public void run() {
       if (!handedOver) {
+        root.close();
+      }
+    }
+
+    private synchronized void closeUnclaimed() {
+      if (!handedOver) {
+        handedOver = true;
         root.close();
       }
     }

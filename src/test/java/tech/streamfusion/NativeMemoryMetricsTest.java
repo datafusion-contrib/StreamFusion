@@ -8,6 +8,8 @@ import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.MemorySize;
+import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.metrics.Gauge;
 import org.apache.flink.runtime.testutils.InMemoryReporter;
 import org.apache.flink.runtime.testutils.MiniClusterResource;
@@ -24,9 +26,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The native footprint must surface as Flink operator metrics: an accounted native operator
- * registers gauges for its reserved budget, its tracked state bytes (sampled per batch on the task
- * thread), and the process-wide Arrow FFI allocator, so a running job's native memory is visible in
- * the Flink UI/metrics reporter next to its JVM numbers.
+ * registers gauges for the TaskManager-wide capacity and peak, its tracked state bytes (sampled per
+ * batch on the task thread), and the process-wide Arrow FFI allocator, so a running job's native
+ * memory is visible in the Flink UI/metrics reporter next to its JVM numbers.
  *
  * <p>A private cluster (not the shared one) so the in-memory metrics reporter can be wired into the
  * cluster configuration — and one whose lifetime the test controls, torn down only after the
@@ -40,10 +42,12 @@ class NativeMemoryMetricsTest {
   @Test
   void nativeFootprintIsExportedAsOperatorMetrics() throws Exception {
     InMemoryReporter reporter = InMemoryReporter.createWithRetainedMetrics();
+    Configuration configuration = reporter.addToConfiguration(new Configuration());
+    configuration.set(TaskManagerOptions.TASK_OFF_HEAP_MEMORY, MemorySize.ofMebiBytes(256));
     MiniClusterResource cluster =
         new MiniClusterResource(
             new MiniClusterResourceConfiguration.Builder()
-                .setConfiguration(reporter.addToConfiguration(new Configuration()))
+                .setConfiguration(configuration)
                 .setNumberTaskManagers(1)
                 .setNumberSlotsPerTaskManager(1)
                 .build());
@@ -85,8 +89,11 @@ class NativeMemoryMetricsTest {
 
       JobID job = result.getJobClient().orElseThrow().getJobID();
       assertTrue(
-          gaugeValue(reporter, job, "nativeStateBudgetBytes") > 0,
-          "no positive nativeStateBudgetBytes gauge — the operator reserved no budget");
+          gaugeValue(reporter, job, "nativeOffHeapCapacityBytes") > 0,
+          "no positive nativeOffHeapCapacityBytes gauge");
+      assertTrue(
+          gaugeValue(reporter, job, "nativeOffHeapPeakBytes") > 0,
+          "no positive nativeOffHeapPeakBytes gauge — nothing was reserved");
       // The job has finished and flushed, so the last sample is small — the assertion is that the
       // gauge exists and was published, not a live value.
       assertTrue(

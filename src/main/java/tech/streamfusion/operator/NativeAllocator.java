@@ -1,12 +1,11 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.NativeMemoryLimitException;
-import tech.streamfusion.planner.NativeConfig;
 import org.apache.arrow.c.CDataDictionaryProvider;
 import org.apache.arrow.memory.AllocationListener;
 import org.apache.arrow.memory.AllocationOutcome;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
+import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 
 /**
  * One Arrow allocator shared by every native operator in this JVM for the buffers that cross the
@@ -22,44 +21,43 @@ import org.apache.arrow.memory.RootAllocator;
  * comet does for the same reason. Buffers are still reclaimed promptly by refcount as each batch's
  * vectors are closed downstream.
  *
- * <p>This is independent of memory accounting: limiting/attributing execution memory per operator is a
- * DataFusion memory-pool concern bridged to the framework's memory manager, not the allocator's scope.
- * Like comet's, the allocator runs uncapped by default — its traffic is transient per-batch crossings,
- * not state — but {@link NativeConfig#arrowAllocatorMaxMb()} can bound it for deployments that want a
- * fail-fast, attributed error instead of unaccounted process growth.
+ * <p>Every allocation is charged to the TaskManager-wide StreamFusion task-off-heap pool. The allocator
+ * remains process-wide because batches can outlive their producing operator, while the listener makes
+ * their reference-counted lifetime visible to the same authority as native state and connector queues.
  */
 public final class NativeAllocator {
 
   public static final BufferAllocator SHARED =
-      newAllocator(NativeConfig.arrowAllocatorMaxMb());
+      new RootAllocator(new TaskBudgetListener(), Long.MAX_VALUE);
   public static final CDataDictionaryProvider DICTIONARIES = new CDataDictionaryProvider();
 
   private NativeAllocator() {}
 
-  static BufferAllocator newAllocator(long maxMb) {
-    if (maxMb <= 0) {
-      return new RootAllocator();
-    }
-    return new RootAllocator(new BudgetListener(maxMb), maxMb << 20);
+  public static void initializeFor(AbstractStreamOperator<?> operator) {
+    TaskOffHeapMemory.initialize(
+        operator.getRuntimeContext().getTaskManagerRuntimeInfo().getConfiguration());
+    TaskOffHeapMemory.registerMetrics(operator.getMetricGroup());
   }
 
-  private static final class BudgetListener implements AllocationListener {
-    private final long maxMb;
+  static BufferAllocator newAllocatorForTests() {
+    return new RootAllocator(new TaskBudgetListener(), Long.MAX_VALUE);
+  }
 
-    BudgetListener(long maxMb) {
-      this.maxMb = maxMb;
+  private static final class TaskBudgetListener implements AllocationListener {
+    @Override
+    public void onPreAllocation(long size) {
+      TaskOffHeapMemory.reserveArrow(size);
+    }
+
+    @Override
+    public void onRelease(long size) {
+      TaskOffHeapMemory.releaseArrow(size);
     }
 
     @Override
     public boolean onFailedAllocation(long size, AllocationOutcome outcome) {
-      throw new NativeMemoryLimitException(
-          "Arrow FFI buffer of "
-              + size
-              + " bytes would exceed the "
-              + maxMb
-              + " MiB cap set by -Dstreamfusion.memory.arrow.max-mb; raise the cap (and the task"
-              + " manager's off-heap sizing, see docs/native-memory-profiling.md) or unset it to"
-              + " run uncapped");
+      TaskOffHeapMemory.releaseArrow(size);
+      return false;
     }
   }
 }

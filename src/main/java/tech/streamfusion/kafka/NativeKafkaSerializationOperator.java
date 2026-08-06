@@ -52,6 +52,7 @@ public final class NativeKafkaSerializationOperator
   @Override
   public void open() throws Exception {
     super.open();
+    NativeAllocator.initializeFor(this);
     valueFormatOptions = valueFormat.openOptions();
     keyFormatOptions = keyFormat == valueFormat ? valueFormatOptions : keyFormat.openOptions();
     serializationBatches = getMetricGroup().counter("nativeKafkaSerializationBatches");

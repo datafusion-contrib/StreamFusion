@@ -2,7 +2,7 @@
 //! nothing else.
 //!
 //! The store holds exactly two components. The **write buffer** is the in-memory map of every
-//! entry written since the last checkpoint barrier (upserts and removals); it answers reads for
+//! entry written since the last local flush (upserts and removals); it answers reads for
 //! those keys directly and is the only state that survives across batches. The **disk table** is
 //! the committed Paimon snapshot, immutable between barriers. Each processed batch resolves its
 //! reads with one point-read join: the batch's keys not already in the write buffer are pushed
@@ -11,11 +11,10 @@
 //! of the batch's bundle — there is no retained cache of clean rows between bundles; re-reads
 //! are served by the OS page cache plus decode, not by a second copy of the state in memory.
 //!
-//! At a checkpoint barrier the write buffer is encoded as one Arrow batch (`_VALUE_KIND` carries
-//! upsert vs delete per row), committed, and cleared — a Paimon snapshot is a manifest-pinned
-//! immutable file set, so durability lands exactly at checkpoints and "new files since the last
-//! checkpoint" is a manifest diff, which is what makes Flink incremental checkpoints possible
-//! upstream of this module.
+//! A size-triggered flush or checkpoint barrier encodes the write buffer as one Arrow batch
+//! (`_VALUE_KIND` carries upsert vs delete per row), commits a local snapshot, and clears it. Local
+//! commits are runtime state only; Flink durability still lands exactly at checkpoints, which pin
+//! one snapshot's immutable files for incremental upload.
 //!
 //! The table carries a computed `kg` INT column (`flink_key_group` of the BinaryRow key bytes) as
 //! the leading primary-key column, so files' row groups are key-group-clustered, but the bucket
@@ -1532,8 +1531,9 @@ impl<C: PaimonStateCodec> PaimonStore<C> {
     }
 
     /// Checkpoint sync phase, called at the barrier: commit the dirty write buffer as the
-    /// checkpoint's snapshot and run the checkpoint file phase (see
-    /// `PaimonTableCore::checkpoint_manifest`).
+    /// latest local snapshot and run the checkpoint file phase (see
+    /// `PaimonTableCore::checkpoint_manifest`). The same operation may run between barriers for
+    /// memory pressure; ignoring the returned manifest leaves checkpoint publication unchanged.
     pub(crate) fn checkpoint(&mut self) -> Result<PaimonCheckpointManifest, DataFusionError> {
         // An external compactor (the Java Paimon glue) may have committed a maintenance snapshot
         // just before this call: adopt the latest snapshot so the flush lands on top of it, the

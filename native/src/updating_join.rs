@@ -124,7 +124,7 @@ impl UpdatingJoiner {
         }
     }
 
-    /// Bounds both sides' row state by the operator's managed-memory budget (negative =
+    /// Bounds both sides' row state by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored rows immediately.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state = join_state_bytes(&self.left_state) + join_state_bytes(&self.right_state);
@@ -169,7 +169,7 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         }
     }
 
-    /// Attaches the managed-memory budget for a backend that starts with nothing resident (a
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident (a
     /// read-through store hydrates on demand; there is no restored map to pre-account).
     pub(crate) fn with_read_through_budget(
         mut self,

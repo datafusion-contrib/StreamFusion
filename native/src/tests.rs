@@ -2980,7 +2980,7 @@ fn window_state_over_budget_fails_clearly() {
         .with_memory_budget(256)
         .unwrap();
     let err = agg.update(&keyed_window_batch(0, (0..100).collect())).unwrap_err();
-    assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    assert!(err.to_string().contains("task off-heap"), "{err}");
 }
 
 // Every rolled-out state shape enforces its budget: exceeding it is an error, not an overrun.
@@ -2991,7 +2991,7 @@ fn session_state_over_budget_fails_clearly() {
         .with_memory_budget(256)
         .unwrap();
     let err = agg.update(&keyed_window_batch(0, (0..100).collect())).unwrap_err();
-    assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    assert!(err.to_string().contains("task off-heap"), "{err}");
 }
 
 #[test]
@@ -3030,7 +3030,7 @@ fn group_state_over_budget_fails_and_deletes_release() {
     let err = tight
         .update(&group_changelog(keys, values, vec![0; 100]), 0)
         .unwrap_err();
-    assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    assert!(err.to_string().contains("task off-heap"), "{err}");
 }
 
 #[test]
@@ -3043,7 +3043,7 @@ fn dedup_state_over_budget_fails_clearly() {
     let values: Vec<i64> = (0..100).collect();
     let rts: Vec<i64> = vec![0; 100];
     let err = dedup.push(&join_batch(keys, values, rts), 0).unwrap_err();
-    assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    assert!(err.to_string().contains("task off-heap"), "{err}");
 }
 
 // Proctime only: Flink's proctime mini-batch buffers just the last row per key (addInput
@@ -3780,14 +3780,14 @@ fn sort_buffer_over_budget_fails_and_flush_releases() {
 
     let mut tight = TemporalSorter::new(2).with_memory_budget(16).unwrap();
     let err = tight.push(join_batch(vec![1], vec![10], vec![0])).unwrap_err();
-    assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    assert!(err.to_string().contains("task off-heap"), "{err}");
 }
 
 #[test]
 fn interval_join_buffers_over_budget_fail_clearly() {
     let mut joiner = inner_interval_joiner(-1000, 1000).with_memory_budget(16).unwrap();
     let err = joiner.push_left(join_batch(vec![1], vec![10], vec![0]), None).unwrap_err();
-    assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    assert!(err.to_string().contains("task off-heap"), "{err}");
 }
 
 // The hash join the operator delegates to DataFusion runs under the operator's pool, so its
@@ -3825,7 +3825,7 @@ fn local_group_state_over_budget_fails_and_flush_releases() {
     let keys: Vec<i64> = (0..100).collect();
     let values: Vec<i64> = (0..100).collect();
     let err = tight.update(&join_batch(keys, values, vec![0; 100])).unwrap_err();
-    assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    assert!(err.to_string().contains("task off-heap"), "{err}");
 }
 
 #[test]
@@ -3842,7 +3842,7 @@ fn updating_join_state_over_budget_fails_and_retract_releases() {
     let err = tight
         .push(&changelog_join_batch(keys, values, vec![0; 100]), true, 0)
         .unwrap_err();
-    assert!(err.to_string().contains("managed-memory budget"), "{err}");
+    assert!(err.to_string().contains("task off-heap"), "{err}");
 }
 
 #[test]

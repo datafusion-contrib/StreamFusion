@@ -49,6 +49,7 @@ public class RowDataToArrowOperator extends AbstractStreamOperator<ArrowBatch>
   @Override
   public void open() throws Exception {
     super.open();
+    NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     buffer = new ArrayList<>(batchSize);
     inputSerializer = new RowDataSerializer(sourceType == null ? rowType : sourceType);

@@ -47,9 +47,11 @@ rewriting survivors into the fresh table.
 ### Store shape and access pattern
 
 The store holds exactly **two components**: a write buffer and the disk table. Writes land as dirty
-working-set entries in the buffer and commit as one typed Arrow batch per checkpoint barrier —
-durability lands exactly at checkpoints, with the write buffer playing the role RocksDB's
-memtable+WAL play (except the "WAL" is the checkpoint itself).
+working-set entries in the buffer. Once it reaches the configured size or shared off-heap headroom
+becomes low, StreamFusion may commit it as one typed Arrow batch to immutable local files before a
+checkpoint barrier. Flink durability still lands exactly at checkpoints: the barrier pins and
+uploads the current local files through the incremental state handle, much as a RocksDB checkpoint
+references files produced by background flushes.
 
 Reads resolve per input batch with one **point-read join**: the batch's keys not already covered by
 the write buffer are pushed into the table reader as an exact `IN` predicate (file/page stats prune,

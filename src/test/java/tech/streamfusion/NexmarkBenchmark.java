@@ -192,7 +192,7 @@ class NexmarkBenchmark {
 
   static TableEnvironment environment(long rows, org.apache.flink.configuration.Configuration configuration) {
     // Runs on SharedFlinkCluster (the auto-registered extension redirects
-    // getExecutionEnvironment() there); its managed-memory size is what bounds the accounted
+    // getExecutionEnvironment() there); its task-off-heap size is what bounds the accounted
     // stateful operators — sized there for multi-million-event runs (the tuned mini-batch column
     // uses 5M events so flush latency amortizes). Per-test cluster Configurations are ignored;
     // the passed configuration carries job-level options only (state backend, checkpointing).

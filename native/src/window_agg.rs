@@ -232,7 +232,7 @@ impl TumblingAggregator {
         self
     }
 
-    /// Attaches the managed-memory budget for a backend that starts with nothing resident.
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident.
     #[cfg(feature = "paimon-state")]
     pub(crate) fn with_read_through_budget(
         mut self,
@@ -265,7 +265,7 @@ impl TumblingAggregator {
         }
     }
 
-    /// Bounds this aggregator's state by a managed-memory budget the host reserved for the operator
+    /// Bounds this aggregator's state by a task off-heap budget the host reserved for the operator
     /// (a negative budget means unaccounted). Registers a reservation against a pool of that size and
     /// accounts any state already present (the restore path), so a restored snapshot that no longer
     /// fits fails here rather than as a container OOM.

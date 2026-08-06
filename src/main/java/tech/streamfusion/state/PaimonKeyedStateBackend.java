@@ -105,6 +105,14 @@ public final class PaimonKeyedStateBackend<K>
     }
   }
 
+  /** Flushes native state to local immutable files without publishing a Flink checkpoint. */
+  public void flushForMemoryPressure() throws Exception {
+    if (!snapshotStrategy.hasNativeState()) {
+      throw new IllegalStateException("no native Paimon state is registered");
+    }
+    snapshotStrategy.flushForMemoryPressure();
+  }
+
   // ---- Snapshot ---------------------------------------------------------------------------------
 
   @Nonnull

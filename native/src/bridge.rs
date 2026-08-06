@@ -30,7 +30,7 @@ pub(crate) fn capture_jvm(env: &JNIEnv) {
 pub(crate) static FORCE_LINK_MIMALLOC: unsafe extern "C" fn(*mut std::os::raw::c_void) =
     libmimalloc_sys::mi_free;
 
-/// Raises the managed-memory-limit exception on the calling JVM thread; the native call returns
+/// Raises the task-off-heap-limit exception on the calling JVM thread; the native call returns
 /// immediately after, so the task fails with the budget message instead of the container OOM-killing
 /// the process.
 pub(crate) fn throw_memory_limit(env: &mut JNIEnv, message: &str) {
@@ -89,6 +89,7 @@ where
     T: JniDefault,
     F: FnOnce(&mut JNIEnv<'local>) -> T,
 {
+    capture_jvm(&env);
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&mut env))) {
         Ok(value) => value,
         Err(payload) => {
@@ -138,6 +139,7 @@ pub(crate) fn connector_jni<T, F>(env: &mut JNIEnv, default: T, prefix: &str, f:
 where
     F: FnOnce(&mut JNIEnv) -> Result<T, String>,
 {
+    capture_jvm(env);
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(env))) {
         Ok(Ok(value)) => value,
         Ok(Err(message)) => {

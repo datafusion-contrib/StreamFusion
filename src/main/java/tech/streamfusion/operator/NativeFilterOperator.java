@@ -60,6 +60,7 @@ public class NativeFilterOperator extends AbstractStreamOperator<ArrowBatch>
   @Override
   public void open() throws Exception {
     super.open();
+    NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
     // Register any UDFs the condition references into this JVM's registry and patch their ids before

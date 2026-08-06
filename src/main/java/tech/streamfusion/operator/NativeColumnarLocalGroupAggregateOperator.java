@@ -42,7 +42,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
   private transient long handle;
   private transient MiniBatchBoundary boundary;
   private transient MiniBatchMetrics miniBatchMetrics;
-  private transient ManagedMemoryBudget memoryBudget;
+  private transient NativeMemoryBudget memoryBudget;
 
   public NativeColumnarLocalGroupAggregateOperator(
       int[] aggregateKinds,
@@ -66,7 +66,8 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
     super.open();
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
-    memoryBudget = ManagedMemoryBudget.reserveFor(this);
+    memoryBudget = NativeMemoryBudget.registerFor(this);
+    memoryBudget.registerStateMetric(getMetricGroup());
     handle =
         Native.createLocalGroupAggregator(
             aggregateKinds,
@@ -75,7 +76,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
             filterColumns,
             keyColumns,
             distinctViewSources,
-            memoryBudget.bytes());
+            memoryBudget.nativeHandle());
     boundary = new MiniBatchBoundary(miniBatchSize);
     miniBatchMetrics = new MiniBatchMetrics(getMetricGroup());
   }
@@ -136,7 +137,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends AbstractStreamOpe
 
   /** Samples the native state size for the operator's gauges; task-thread only. */
   private void publishStateBytes() {
-    if (memoryBudget.bounded()) {
+    if (memoryBudget != null) {
       memoryBudget.publishStateBytes(Native.localGroupAggregatorStateBytes(handle));
     }
   }

@@ -106,7 +106,7 @@ fn bench_tumbling_keyed(c: &mut Criterion) {
             BatchSize::SmallInput,
         )
     });
-    // The same keyed path with managed-memory accounting on: the delta is the per-touched-group
+    // The same keyed path with task off-heap accounting on: the delta is the per-touched-group
     // footprint tracking the operator pays when the host hands it a memory budget.
     group.bench_function("sum_keyed_update_flush_accounted", |b| {
         b.iter_batched(

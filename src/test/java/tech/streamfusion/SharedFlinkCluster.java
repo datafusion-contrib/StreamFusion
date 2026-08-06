@@ -1,5 +1,6 @@
 package tech.streamfusion;
 
+import tech.streamfusion.operator.TaskOffHeapMemory;
 import tech.streamfusion.operator.NativeAllocator;
 import java.util.concurrent.TimeUnit;
 import org.apache.flink.configuration.Configuration;
@@ -34,19 +35,21 @@ public final class SharedFlinkCluster
   private final MiniClusterExtension cluster;
 
   public SharedFlinkCluster() {
-    // Managed memory sized like a tuned deployment rather than the test-utils 80m default: the
-    // native stateful operators reserve their slot's managed share and enforce it as a hard state
-    // budget, so under the default the Nexmark changelog queries (updating joins, Top-N) fail on
-    // state a real TaskManager (40% of process memory) holds easily. Sized for the benchmark
+    // Task off-heap sized like a tuned deployment: the TaskManager-wide StreamFusion pool accounts
+    // native state, Arrow buffers, and connector queues against this normal Flink process budget.
+    // Sized for the benchmark
     // suite's multi-million-event runs (the tuned mini-batch column runs 5M events; q4's regular
     // join keeps BOTH sides' full 5M-event state, and its share of one slot must hold all of it).
-    // Reserving managed memory is
+    // Reserving task off-heap is
     // bookkeeping, not allocation — the larger size costs nothing when unused. Note the extension
     // redirects getExecutionEnvironment() here, so per-test cluster Configurations are ignored; a
     // test that needs a different memory setup must build its own local environment
     // (FlinkMemoryAccountingTest does).
     Configuration config = new Configuration();
-    config.set(TaskManagerOptions.MANAGED_MEMORY_SIZE, MemorySize.parse("48g"));
+    config.set(TaskManagerOptions.TASK_OFF_HEAP_MEMORY, MemorySize.parse("48g"));
+    // Direct operator test harnesses expose an empty mock TaskManager configuration. Initialize
+    // the same process-wide authority here before either a harness or the shared MiniCluster opens.
+    TaskOffHeapMemory.initialize(config);
     // Fail fast, never loop: checkpointing enables Flink's default infinite fixed-delay restarts,
     // under which a deterministically failing job restarts forever while collect() polls — a
     // silent multi-hour hang where a test failure should be. A real deployment tunes its own

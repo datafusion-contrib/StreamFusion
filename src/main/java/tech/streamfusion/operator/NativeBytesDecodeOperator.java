@@ -94,6 +94,7 @@ public class NativeBytesDecodeOperator extends AbstractStreamOperator<ArrowBatch
   @Override
   public void open() throws Exception {
     super.open();
+    NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     decoder = decoderFactory.create();
     decoder.open(allocator, outputType);

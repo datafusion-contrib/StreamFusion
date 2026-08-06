@@ -99,6 +99,32 @@ class ArrowBatchSerializerTest {
   }
 
   @Test
+  void failedOwnerReleasesOnlyItsUnclaimedBatches() throws Exception {
+    long failedOwner = ArrowBatchHandles.newOwner();
+    long liveOwner = ArrowBatchHandles.newOwner();
+    try (BufferAllocator allocator = new RootAllocator()) {
+      VectorSchemaRoot failedRoot =
+          RowDataArrowConverter.write(List.of(row(1L, 10)), SCHEMA, allocator);
+      VectorSchemaRoot liveRoot =
+          RowDataArrowConverter.write(List.of(row(2L, 20)), SCHEMA, allocator);
+      long failedHandle =
+          ArrowBatchHandles.register(new ArrowBatch(failedRoot, 0, failedOwner));
+      long liveHandle = ArrowBatchHandles.register(new ArrowBatch(liveRoot, 1, liveOwner));
+
+      assertEquals(1, ArrowBatchHandles.releaseOwner(failedOwner));
+      assertThrows(
+          IllegalStateException.class,
+          () ->
+              ArrowBatchHandles.claim(
+                  ArrowBatchHandles.TOKEN_HI, ArrowBatchHandles.TOKEN_LO, failedHandle));
+      ArrowBatch live =
+          ArrowBatchHandles.claim(
+              ArrowBatchHandles.TOKEN_HI, ArrowBatchHandles.TOKEN_LO, liveHandle);
+      live.root().close();
+    }
+  }
+
+  @Test
   void copyIsIdentity() {
     ArrowBatchSerializer serializer = new ArrowBatchSerializer();
     try (BufferAllocator allocator = new RootAllocator();

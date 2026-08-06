@@ -28,6 +28,7 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
+  private transient long handleOwner;
 
   public SplitByKeyGroupOperator(
       int[] keyColumns, int[] timestampPrecisions, int maxParallelism, int numChannels) {
@@ -40,12 +41,17 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
   @Override
   public void open() throws Exception {
     super.open();
+    NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
+    handleOwner = ArrowBatchHandles.newOwner();
   }
 
   @Override
   public void close() throws Exception {
+    if (getContainingTask().isCanceled() || getContainingTask().isFailing()) {
+      ArrowBatchHandles.releaseOwner(handleOwner);
+    }
     super.close();
   }
 
@@ -81,7 +87,8 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
           }
           VectorSchemaRoot sub =
               Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
-          ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(sub, channel));
+          ColumnarRecordMetrics.emit(
+              output, getMetricGroup(), new ArrowBatch(sub, channel, handleOwner));
         }
       }
     } finally {

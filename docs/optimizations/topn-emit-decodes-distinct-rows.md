@@ -34,7 +34,7 @@ It also beats the immediate per-input cascade by **1.40×** and **3.41×** respe
 A five-second release profile puts most samples in Top-N mutation and `arrow_row::Row::owned`
 allocation after coalescing; eliminating that ownership traffic is the next optimization frontier,
 not further changelog materialization. The first-touch key/preimage staging is charged to the
-operator's managed-memory reservation and released at flush; the shared metrics report its peak
+operator's task off-heap reservation and released at flush; the shared metrics report its peak
 bytes and the actual touched-partition count, not emitted rows as a proxy — see
 [Memory accounting designed off the hot path](memory-accounting-off-hot-path.md).
 

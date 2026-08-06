@@ -8,10 +8,10 @@ import java.util.Map;
  * prefetch eagerly instead of idling 1s before refetching, and keep a deep queue so the background
  * fetcher stays ahead of the reader. The queue's byte ceiling is real native memory no Flink budget
  * sees — each source subtask's consumer holds up to that many prefetched bytes off-heap — so it is
- * bounded by {@link NativeConfig#kafkaPrefetchMb()} instead of pinned open; the sizing formula lives
- * in docs/native-memory-profiling.md. {@code KafkaConfigTranslator} deliberately does not produce
- * these keys (they have no Java-client analog), and it refuses them as {@code properties.*} input,
- * so the system property is the one control.
+ * bounded by {@link NativeConfig#kafkaPrefetchMb()} instead of pinned open. {@code
+ * KafkaConfigTranslator} deliberately does not produce these keys (they have no Java-client
+ * analog), and it refuses them as {@code properties.*} input, so the system property is the one
+ * control.
  */
 public final class ConsumerPrefetch {
 
