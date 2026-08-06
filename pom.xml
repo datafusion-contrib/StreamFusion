@@ -531,6 +531,42 @@
     </build>
 
     <profiles>
+        <!--
+          Flink's source tree compiles the table planner against unshaded Calcite, while the
+          published planner artifact bundles Calcite under relocated package names. The upstream
+          suite harness replaces only that planner artifact in an isolated Maven repository and
+          activates this profile so StreamFusion is compiled against the same source-tree ABI.
+        -->
+        <profile>
+            <id>flink-source-suite</id>
+            <activation>
+                <property>
+                    <name>streamfusion.flink-source-suite</name>
+                </property>
+            </activation>
+            <dependencies>
+                <!-- Flink's parser carries its patched Calcite classes (for example VARIANT).
+                     Keep it before vanilla calcite-core on the source-suite classpath. -->
+                <dependency>
+                    <groupId>org.apache.flink</groupId>
+                    <artifactId>flink-sql-parser</artifactId>
+                    <version>${flink.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.flink</groupId>
+                    <artifactId>flink-table-calcite-bridge</artifactId>
+                    <version>${flink.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.calcite</groupId>
+                    <artifactId>calcite-core</artifactId>
+                    <version>1.36.0</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+        </profile>
         <!-- Build and load the production native library. The allocator feature is part of the
              measured default: it removes the cross-thread allocation bottleneck in the native
              Kafka path and also reduces native state churn. -->

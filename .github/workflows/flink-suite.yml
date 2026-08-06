@@ -1,0 +1,45 @@
+name: Upstream Flink suite
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "17 7 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-flink-suite
+  cancel-in-progress: false
+
+jobs:
+  upstream-suite:
+    name: ${{ matrix.suite }} suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [runtime, formats, kafka]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+          df -h /
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+
+      - name: Run unchanged upstream suite with StreamFusion
+        run: bin/flink-suite.sh "${{ matrix.suite }}"

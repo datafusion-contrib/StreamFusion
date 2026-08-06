@@ -61,7 +61,9 @@ public final class NativeExtensionLoader {
       // A source-tree test build carries all enabled JNI entry points in the development core
       // library. Release extension JARs never use this fallback: they include their own DSO.
       try {
-        System.loadLibrary("streamfusion");
+        // Go through Native rather than System.loadLibrary directly so a packaged development
+        // core JAR gets the same bundled-resource extraction as a normal deployment.
+        Native.version();
         return;
       } catch (UnsatisfiedLinkError developmentLibraryFailure) {
         developmentLibraryFailure.addSuppressed(libraryPathFailure);
