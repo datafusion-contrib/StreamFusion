@@ -1,5 +1,6 @@
 package tech.streamfusion.operator;
 
+import tech.streamfusion.planner.NativeConfig;
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,6 +12,7 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.RowType;
 
 /**
@@ -32,6 +34,9 @@ public class RowDataToArrowOperator extends AbstractStreamOperator<ArrowBatch>
   private transient BufferAllocator allocator;
   private transient List<RowData> buffer;
   private transient PrunedRowData projector;
+  private transient RowDataSerializer inputSerializer;
+  private transient long flushLatencyMs;
+  private transient long flushDeadline;
 
   public RowDataToArrowOperator(
       RowType rowType, int batchSize, boolean carryRowKind, RowType sourceType) {
@@ -46,6 +51,9 @@ public class RowDataToArrowOperator extends AbstractStreamOperator<ArrowBatch>
     super.open();
     allocator = NativeAllocator.SHARED;
     buffer = new ArrayList<>(batchSize);
+    inputSerializer = new RowDataSerializer(sourceType == null ? rowType : sourceType);
+    flushLatencyMs = NativeConfig.transposeFlushLatencyMs();
+    flushDeadline = Long.MIN_VALUE;
     // When the planner pruned the transpose, present each wide source row as the narrowed schema so
     // the converter builds and fills only the read columns/sub-fields.
     projector = sourceType == null ? null : PrunedRowData.of(sourceType, rowType);
@@ -53,10 +61,29 @@ public class RowDataToArrowOperator extends AbstractStreamOperator<ArrowBatch>
 
   @Override
   public void processElement(StreamRecord<RowData> element) {
-    buffer.add(element.getValue());
+    // Chained Flink operators may reuse their RowData object immediately after collect(). This
+    // boundary retains rows until a complete Arrow batch is ready, so it must take ownership with
+    // a deep copy rather than retaining the caller's mutable view.
+    boolean wasEmpty = buffer.isEmpty();
+    buffer.add(inputSerializer.copy(element.getValue()));
     if (buffer.size() >= batchSize) {
       flush();
+    } else if (wasEmpty && flushLatencyMs > 0) {
+      armFlushTimer();
     }
+  }
+
+  private void armFlushTimer() {
+    long deadline = getProcessingTimeService().getCurrentProcessingTime() + flushLatencyMs;
+    flushDeadline = deadline;
+    getProcessingTimeService()
+        .registerTimer(
+            deadline,
+            timestamp -> {
+              if (flushDeadline == timestamp) {
+                flush();
+              }
+            });
   }
 
   @Override
@@ -86,6 +113,7 @@ public class RowDataToArrowOperator extends AbstractStreamOperator<ArrowBatch>
   }
 
   private void flush() {
+    flushDeadline = Long.MIN_VALUE;
     if (buffer.isEmpty()) {
       return;
     }

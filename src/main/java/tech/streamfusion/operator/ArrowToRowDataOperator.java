@@ -8,6 +8,7 @@ import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
 
@@ -16,20 +17,24 @@ import org.apache.flink.types.RowKind;
  * native columnar operator feeds a rowwise (host) one, so the Arrow→row conversion happens once at
  * the boundary. It consumes (and closes) each batch it receives.
  *
- * <p>Rather than deep-copy every row off the buffers, it emits the reader's reusable {@code
- * ColumnarRowData} — a zero-copy view over the Arrow vectors that reads each field on demand (the
- * columnar→row model Spark/Comet use). The batch stays open for the whole emit loop, and the chaining
- * output consumes each row inline before the next {@code read} repoints the reused row (the host
- * copies it first when object reuse is off), so the view is always valid. This drops the per-row
- * {@code GenericRowData} allocation and field boxing the deep copy paid — most of the exit transpose.
+ * <p>The Arrow reader exposes a reusable view backed by the input batch. Chained Flink operators are
+ * allowed to retain a collected {@code RowData}, and closing this batch invalidates every such view,
+ * so the boundary deep-copies each row before handing it back to the rowwise runtime.
  */
 public class ArrowToRowDataOperator extends AbstractStreamOperator<RowData>
     implements OneInputStreamOperator<ArrowBatch, RowData> {
 
   private final RowType rowType;
+  private transient RowDataSerializer outputSerializer;
 
   public ArrowToRowDataOperator(RowType rowType) {
     this.rowType = rowType;
+  }
+
+  @Override
+  public void open() throws Exception {
+    super.open();
+    outputSerializer = new RowDataSerializer(rowType);
   }
 
   @Override
@@ -44,7 +49,7 @@ public class ArrowToRowDataOperator extends AbstractStreamOperator<RowData>
         if (kinds != null) {
           row.setRowKind(RowKind.fromByteValue(kinds.get(i)));
         }
-        output.collect(new StreamRecord<>(row));
+        output.collect(new StreamRecord<>(outputSerializer.copy(row)));
       }
     }
   }

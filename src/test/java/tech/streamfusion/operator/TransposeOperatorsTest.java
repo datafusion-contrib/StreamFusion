@@ -51,9 +51,9 @@ class TransposeOperatorsTest {
       // The harness copies records by serializer; tell it to use the batch serializer (identity copy)
       // for the ArrowBatch edges rather than falling back to Kryo, which cannot copy an Arrow batch.
       toArrow.setup(new ArrowBatchSerializer());
-      // ArrowToRowData emits a reused, lazy ColumnarRowData valid only until the batch closes; like a
-      // real downstream, the harness must copy each emitted row on arrival — give it a RowData
-      // serializer so getOutput() holds independent rows rather than aliases of freed buffers.
+      // Exercise the chained-runtime contract: with object reuse enabled the harness retains the
+      // exact RowData objects emitted by the boundary, so the operator itself must own each row.
+      toRows.getExecutionConfig().enableObjectReuse();
       toRows.setup(new RowDataSerializer(SCHEMA));
       toArrow.open();
       toRows.open();
@@ -81,6 +81,33 @@ class TransposeOperatorsTest {
   }
 
   @Test
+  void rowToArrowOwnsBufferedRowsFromReusingUpstream() throws Exception {
+    try (OneInputStreamOperatorTestHarness<RowData, ArrowBatch> harness =
+        new OneInputStreamOperatorTestHarness<>(new RowDataToArrowOperator(SCHEMA, 2, false, null))) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+
+      GenericRowData reused = new GenericRowData(2);
+      reused.setField(0, 1L);
+      reused.setField(1, 10);
+      harness.processElement(new StreamRecord<>(reused));
+      reused.setField(0, 2L);
+      reused.setField(1, 20);
+      harness.processElement(new StreamRecord<>(reused));
+
+      List<ArrowBatch> batches = values(harness);
+      assertEquals(1, batches.size());
+      try (var root = batches.get(0).root()) {
+        List<RowData> rows = RowDataArrowConverter.read(root, SCHEMA);
+        assertEquals(1L, rows.get(0).getLong(0));
+        assertEquals(10, rows.get(0).getInt(1));
+        assertEquals(2L, rows.get(1).getLong(0));
+        assertEquals(20, rows.get(1).getInt(1));
+      }
+    }
+  }
+
+  @Test
   void checkpointBarrierDrainsPartialRowToArrowBatch() throws Exception {
     try (OneInputStreamOperatorTestHarness<RowData, ArrowBatch> harness =
         new OneInputStreamOperatorTestHarness<>(new RowDataToArrowOperator(SCHEMA, 3, false, null))) {
@@ -95,6 +122,36 @@ class TransposeOperatorsTest {
       assertEquals(1, batches.size());
       try (var root = batches.get(0).root()) {
         assertEquals(2, root.getRowCount());
+      }
+    }
+  }
+
+  @Test
+  void processingTimeDrainsPartialRowToArrowBatchWithoutWatermarks() throws Exception {
+    String property = "streamfusion.transpose.flushLatencyMs";
+    String previous = System.getProperty(property);
+    System.setProperty(property, "10");
+    try (OneInputStreamOperatorTestHarness<RowData, ArrowBatch> harness =
+        new OneInputStreamOperatorTestHarness<>(new RowDataToArrowOperator(SCHEMA, 3, false, null))) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.setProcessingTime(100L);
+      harness.processElement(new StreamRecord<>(row(1L, 10)));
+      assertEquals(List.of(), values(harness));
+
+      harness.setProcessingTime(109L);
+      assertEquals(List.of(), values(harness));
+      harness.setProcessingTime(110L);
+      List<ArrowBatch> batches = values(harness);
+      assertEquals(1, batches.size());
+      try (var root = batches.get(0).root()) {
+        assertEquals(1, root.getRowCount());
+      }
+    } finally {
+      if (previous == null) {
+        System.clearProperty(property);
+      } else {
+        System.setProperty(property, previous);
       }
     }
   }

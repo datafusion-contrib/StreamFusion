@@ -147,6 +147,16 @@ public final class NativeConfig {
   }
 
   /**
+   * The latency backstop for a partial row-to-Arrow batch, in milliseconds
+   * ({@code streamfusion.transpose.flushLatencyMs}, default 50; 0 or less disables the timer).
+   * Unbounded sources are not required to emit watermarks or participate in checkpoints, so size,
+   * watermark, and barrier flushes alone can otherwise retain a trickle stream indefinitely.
+   */
+  public static long transposeFlushLatencyMs() {
+    return Long.getLong("streamfusion.transpose.flushLatencyMs", 50L);
+  }
+
+  /**
    * Whether identical native sources within one query dedup into a single shared source whose
    * batches fan out to every branch as retained views ({@code streamfusion.plan.shareSources},
    * default {@code true}) — the columnar counterpart of Flink's sub-plan reuse. Disabling leaves

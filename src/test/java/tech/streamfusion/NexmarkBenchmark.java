@@ -198,10 +198,9 @@ class NexmarkBenchmark {
     // the passed configuration carries job-level options only (state backend, checkpointing).
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(configuration);
     env.setParallelism(1);
-    // Object reuse (a standard tuned-prod setting, enabled for both the Flink baseline and the native
-    // run) drops Flink's per-handoff defensive record copy, so the transpose's reused ColumnarRowData
-    // flows to the sink without being materialized + boxed into a GenericRowData. The Flink SQL runtime
-    // stays correct under it (the planner copies only where an operator retains references).
+    // Object reuse is a standard tuned-production setting and is enabled for both the Flink baseline
+    // and native run. StreamFusion's transpose boundaries still take ownership when they buffer or
+    // leave Arrow, because chained operators may retain the exact object passed to collect().
     env.getConfig().enableObjectReuse();
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
     DataStream<Row> source =
