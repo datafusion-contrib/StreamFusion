@@ -5,6 +5,10 @@ pub(crate) use ttl::*;
 
 #[cfg(feature = "rocksdb-state")]
 pub(crate) mod rocks_config;
+#[cfg(feature = "rocksdb-state")]
+pub(crate) mod rocks_store;
+#[cfg(feature = "rocksdb-state")]
+pub(crate) use rocks_store::*;
 
 #[cfg(feature = "paimon-state")]
 pub(crate) mod dirty_region;
