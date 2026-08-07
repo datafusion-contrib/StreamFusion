@@ -2,11 +2,11 @@ package tech.streamfusion.planner;
 
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.ConstantArrowBatchKeySelector;
 import tech.streamfusion.operator.NativeColumnarTemporalSortOperator;
 import java.util.Collections;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.dag.Transformation;
-import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.streaming.api.transformations.OneInputTransformation;
 import org.apache.flink.table.planner.delegation.PlannerBase;
@@ -52,7 +52,7 @@ public class NativeTemporalSortExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
-    KeySelector<ArrowBatch, Integer> emptyKeySelector = batch -> 0;
+    ConstantArrowBatchKeySelector emptyKeySelector = new ConstantArrowBatchKeySelector(0);
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,

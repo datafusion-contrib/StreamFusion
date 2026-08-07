@@ -1,7 +1,8 @@
 FROM rust:1.94-bookworm
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends build-essential pkg-config protobuf-compiler perl \
+    && apt-get install --yes --no-install-recommends \
+        build-essential clang libclang-dev pkg-config protobuf-compiler perl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
@@ -9,7 +10,7 @@ COPY . /workspace/native
 
 WORKDIR /workspace/native
 RUN set -eux; \
-    cargo build --release --no-default-features --features mimalloc; \
+    cargo build --release --no-default-features --features mimalloc,rocksdb-state; \
     mkdir -p /workspace/out/core; \
     cp target/release/libstreamfusion.so /workspace/out/core/libstreamfusion.so; \
     cargo build --release --no-default-features --features mimalloc,kafka,csv,avro,protobuf,raw; \

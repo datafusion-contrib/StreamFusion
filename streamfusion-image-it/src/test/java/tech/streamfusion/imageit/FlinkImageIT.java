@@ -25,7 +25,9 @@ class FlinkImageIT {
   private static final String FLINK_PROPERTIES =
       "jobmanager.rpc.address: jobmanager\n"
           + "jobmanager.memory.process.size: 1024m\n"
-          + "taskmanager.memory.process.size: 1024m\n"
+          + "taskmanager.memory.process.size: 2048m\n"
+          + "taskmanager.memory.task.off-heap.size: 256m\n"
+          + "state.backend.type: tech.streamfusion.state.RocksDBNativeStateBackendFactory\n"
           + "taskmanager.numberOfTaskSlots: 1";
 
   @Test

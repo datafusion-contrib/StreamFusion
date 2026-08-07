@@ -2,12 +2,12 @@ package tech.streamfusion.planner;
 
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.ConstantArrowBatchKeySelector;
 import tech.streamfusion.operator.NativeColumnarLocalWindowAggregateOperator;
 import tech.streamfusion.operator.NativeWindowOperatorCore;
 import java.util.Collections;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.dag.Transformation;
-import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.streaming.api.transformations.OneInputTransformation;
 import org.apache.flink.table.planner.delegation.PlannerBase;
@@ -87,7 +87,7 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
     // The local half sits upstream of the exchange, so its batches carry no destination tag; the
     // operator sets its own subtask-local key context in open(). This selector exists only so
     // Flink creates the keyed backend for the raw-state plumbing and is never consulted.
-    KeySelector<ArrowBatch, Integer> stateKeySelector = batch -> 0;
+    ConstantArrowBatchKeySelector stateKeySelector = new ConstantArrowBatchKeySelector(0);
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,

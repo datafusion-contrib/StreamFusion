@@ -1,6 +1,7 @@
 package tech.streamfusion.planner;
 
 import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchSubtaskKeySelector;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.calcite.rel.type.RelDataType;
@@ -65,21 +66,7 @@ public final class FlinkKeyGroupUtils {
    * context for a columnar batch. Native state itself is partitioned by every row's BinaryRow key.
    */
   public static int[] stateKeysForSubtasks(int maxParallelism, int parallelism) {
-    int[] keys = new int[parallelism];
-    boolean[] found = new boolean[parallelism];
-    int remaining = parallelism;
-    for (int candidate = 0; remaining > 0; candidate++) {
-      int keyGroup = KeyGroupRangeAssignment.computeKeyGroupForKeyHash(candidate, maxParallelism);
-      int subtask =
-          KeyGroupRangeAssignment.computeOperatorIndexForKeyGroup(
-              maxParallelism, parallelism, keyGroup);
-      if (!found[subtask]) {
-        keys[subtask] = candidate;
-        found[subtask] = true;
-        remaining--;
-      }
-    }
-    return keys;
+    return ArrowBatchSubtaskKeySelector.stateKeysForSubtasks(maxParallelism, parallelism);
   }
 
   /**
@@ -107,7 +94,6 @@ public final class FlinkKeyGroupUtils {
 
   private static KeySelector<ArrowBatch, Integer> subtaskStateKeySelector(
       int maxParallelism, int parallelism) {
-    int[] stateKeys = stateKeysForSubtasks(maxParallelism, parallelism);
-    return batch -> stateKeys[batch.destination() >= 0 ? batch.destination() : 0];
+    return new ArrowBatchSubtaskKeySelector(maxParallelism, parallelism);
   }
 }
