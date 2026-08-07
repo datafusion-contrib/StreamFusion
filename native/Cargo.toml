@@ -113,6 +113,11 @@ base64 = "0.22"
 # checkpoint listing incrementally from delta manifests); drop back to the apache repo once all
 # are merged upstream.
 paimon = { git = "https://github.com/jordepic/paimon-rust.git", rev = "f005828e9474c1c36cce736cc0b9917ad12ed078", default-features = false, features = ["storage-fs", "vortex"], optional = true }
+# StreamFusion state is owned by Rust and talks to RocksDB through its native C API. Version 0.22
+# builds RocksDB 8.10.0, matching the RocksDB release used by Flink 2.2.1. Keep the dependency
+# statically linked into the StreamFusion DSO; the production link uses hidden visibility so it can
+# coexist with Flink's frocksdbjni in jobs containing host-side fallback operators.
+rocksdb = { version = "0.22.0", default-features = false, features = ["snappy", "lz4", "zstd"], optional = true }
 # The custom local-fs backend for state tables (skips the stock fs service's per-write
 # create_dir_all — the top cost in the backend CPU profile). Version-matched to paimon's own
 # split opendal crates so the two share one build of each.
@@ -154,6 +159,7 @@ protobuf = []
 # the persistent backend unavailable (planner/operator falls back to memory state), never a
 # linkage failure.
 paimon-state = ["dep:paimon", "dep:opendal", "dep:opendal-service-fs", "dep:serde", "dep:bytes"]
+rocksdb-state = ["dep:rocksdb", "dep:serde", "dep:bytes"]
 # Rebind the C allocator to mimalloc for everything linked into THIS library (librdkafka included),
 # via link-time symbol aliases emitted by build.rs. Library-scoped: the hosting JVM process keeps
 # its own allocator, so this carries none of the risk of a process-wide malloc override (a zone-swap

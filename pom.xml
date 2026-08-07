@@ -139,14 +139,13 @@
             <version>${flink.version}</version>
             <scope>test</scope>
         </dependency>
-        <!-- Flink's production disk backend, the baseline the Nexmark state-backend comparison
-             runs stock Flink on (the Paimon backend is StreamFusion's own). Test-only: a real
-             deployment picks its backend in the Flink distribution. -->
+        <!-- StreamFusion consumes Flink's public RocksDB configuration keys and delegates JVM
+             fallback state to Flink's backend. The distribution provides this artifact. -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-statebackend-rocksdb</artifactId>
             <version>${flink.version}</version>
-            <scope>test</scope>
+            <scope>provided</scope>
         </dependency>
         <!-- Provides the JUnit5 MiniClusterExtension: the SQL harness tests share one Flink mini-cluster
              per test class (redirecting getExecutionEnvironment to it) instead of booting and tearing

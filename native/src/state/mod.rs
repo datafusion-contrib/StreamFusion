@@ -3,6 +3,9 @@ use crate::*;
 pub(crate) mod ttl;
 pub(crate) use ttl::*;
 
+#[cfg(feature = "rocksdb-state")]
+pub(crate) mod rocks_config;
+
 #[cfg(feature = "paimon-state")]
 pub(crate) mod dirty_region;
 #[cfg(feature = "paimon-state")]
