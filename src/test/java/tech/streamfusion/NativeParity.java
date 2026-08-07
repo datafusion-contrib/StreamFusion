@@ -144,14 +144,14 @@ final class NativeParity {
    */
   static void assertFallbackReasonContains(
       Supplier<TableEnvironment> environment, String sql, String expectedReason) throws Exception {
-    List<List<Object>> host = collect(environment.get(), sql);
+    Map<List<Object>, Long> host = collapsedChangelog(environment.get(), sql);
 
     TableEnvironment nativeEnvironment = environment.get();
     PhysicalPlanScan scan = NativePlanner.install(nativeEnvironment);
-    List<List<Object>> nativeRows = collect(nativeEnvironment, sql);
+    Map<List<Object>, Long> nativeRows = collapsedChangelog(nativeEnvironment, sql);
 
     assertEquals(0, scan.substitutions(), "query unexpectedly routed to native");
-    assertEquals(sorted(host), sorted(nativeRows), "fallback result differs from host");
+    assertEquals(host, nativeRows, "fallback result differs from host");
     if (expectedReason != null) {
       assertTrue(
           scan.fallbackReasons().stream().anyMatch(r -> r.contains(expectedReason)),
