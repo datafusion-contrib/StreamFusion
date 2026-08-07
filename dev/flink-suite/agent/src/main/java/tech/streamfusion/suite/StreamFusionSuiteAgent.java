@@ -23,7 +23,12 @@ public final class StreamFusionSuiteAgent {
       "org.apache.flink.table.planner.utils.JsonPlanTestBase";
   private static final String STREAM_EXECUTION_ENVIRONMENT =
       "org.apache.flink.streaming.api.environment.StreamExecutionEnvironment";
+  private static final String NATIVE_STATEFUL_OPERATOR =
+      "tech.streamfusion.operator.AbstractNativeStatefulOperator";
   private static final AtomicBoolean ACTIVATION_REPORTED = new AtomicBoolean();
+  private static final AtomicBoolean HEAP_STATE_REPORTED = new AtomicBoolean();
+  private static final AtomicBoolean NATIVE_MEMORY_STATE_REPORTED = new AtomicBoolean();
+  private static final AtomicBoolean ROCKSDB_STATE_REPORTED = new AtomicBoolean();
   private static final Set<Object> INSTALLED_CONFIGS =
       Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
   private static final ThreadLocal<Boolean> UNMODIFIED_PLAN_SETUP = new ThreadLocal<>();
@@ -59,11 +64,29 @@ public final class StreamFusionSuiteAgent {
                 builder.visit(
                     Advice.to(InstallNativeRocksDB.class)
                         .on(named("configure").and(takesArguments(2)))))
+        .type(named(NATIVE_STATEFUL_OPERATOR))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(
+                    Advice.to(ReportNativeMemoryState.class)
+                        .on(named("initializeState").and(takesArguments(1)))))
         .installOn(instrumentation);
   }
 
   public static boolean reportActivation() {
     return ACTIVATION_REPORTED.compareAndSet(false, true);
+  }
+
+  public static boolean reportHeapState() {
+    return HEAP_STATE_REPORTED.compareAndSet(false, true);
+  }
+
+  public static boolean reportRocksDBState() {
+    return ROCKSDB_STATE_REPORTED.compareAndSet(false, true);
+  }
+
+  public static boolean reportNativeMemoryState() {
+    return NATIVE_MEMORY_STATE_REPORTED.compareAndSet(false, true);
   }
 
   public static boolean markConfigForInstallation(Object tableConfig) {
@@ -189,6 +212,12 @@ public final class StreamFusionSuiteAgent {
                 .get(null);
         Object selected =
             configuration.getClass().getMethod("get", configOption).invoke(configuration, backendOption);
+        if ("hashmap".equalsIgnoreCase(String.valueOf(selected))) {
+          if (StreamFusionSuiteAgent.reportHeapState()) {
+            System.err.println("StreamFusion upstream state suite exercised Flink heap backend");
+          }
+          return;
+        }
         if (!"rocksdb".equalsIgnoreCase(String.valueOf(selected))) {
           return;
         }
@@ -199,8 +228,25 @@ public final class StreamFusionSuiteAgent {
                 configuration,
                 backendOption,
                 "tech.streamfusion.state.RocksDBNativeStateBackendFactory");
+        if (StreamFusionSuiteAgent.reportRocksDBState()) {
+          System.err.println("StreamFusion upstream state suite installed native RocksDB backend");
+        }
       } catch (ReflectiveOperationException e) {
         throw new IllegalStateException("native RocksDB suite backend installation failed", e);
+      }
+    }
+  }
+
+  /** Proves that an upstream heap-backend case initialized StreamFusion's Rust hot-map state. */
+  public static final class ReportNativeMemoryState {
+
+    private ReportNativeMemoryState() {}
+
+    @Advice.OnMethodExit
+    static void exit(@Advice.FieldValue("rocksdbState") boolean rocksdbState) {
+      if (!rocksdbState && StreamFusionSuiteAgent.reportNativeMemoryState()) {
+        System.err.println(
+            "StreamFusion upstream state suite initialized native memory backend");
       }
     }
   }

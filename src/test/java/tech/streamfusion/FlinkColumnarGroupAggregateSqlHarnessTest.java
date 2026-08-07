@@ -10,8 +10,9 @@ import org.junit.jupiter.api.Test;
 /**
  * A non-windowed {@code GROUP BY} fed by a native Parquet source keeps the keyed shuffle columnar (a
  * native exchange splits the Arrow batch by the grouping key) and runs the columnar aggregate, so the
- * input never transposes to rows — the changelog flows Arrow until the host edge. Results must match
- * the host. Single-input, so the emitted changelog is deterministic (unlike a two-input join).
+ * input never transposes to rows — the changelog flows Arrow until the host edge. The materialized
+ * result must match the host; the filesystem source may enumerate its Parquet records differently
+ * across the two independent executions, so intermediate aggregate updates are not order-stable.
  */
 class FlinkColumnarGroupAggregateSqlHarnessTest {
 
@@ -19,7 +20,7 @@ class FlinkColumnarGroupAggregateSqlHarnessTest {
   void keyedGroupByOverColumnarSourceMatchesHost() throws Exception {
     Path input = Files.createTempDirectory("cgrp-keyed-in");
     writeInput(input);
-    NativeParity.assertParity(
+    NativeParity.assertChangelogParity(
         () -> readEnvironment(input), "SELECT k, SUM(v) AS total FROM t GROUP BY k");
   }
 
@@ -27,7 +28,7 @@ class FlinkColumnarGroupAggregateSqlHarnessTest {
   void countAndExtremaOverColumnarSourceMatchesHost() throws Exception {
     Path input = Files.createTempDirectory("cgrp-cme-in");
     writeInput(input);
-    NativeParity.assertParity(
+    NativeParity.assertChangelogParity(
         () -> readEnvironment(input),
         "SELECT k, COUNT(*) AS c, MIN(v) AS mn, MAX(v) AS mx, SUM(v) AS s FROM t GROUP BY k");
   }
@@ -36,7 +37,7 @@ class FlinkColumnarGroupAggregateSqlHarnessTest {
   void globalAggregateOverColumnarSourceMatchesHost() throws Exception {
     Path input = Files.createTempDirectory("cgrp-global-in");
     writeInput(input);
-    NativeParity.assertParity(
+    NativeParity.assertChangelogParity(
         () -> readEnvironment(input), "SELECT SUM(v) AS s, COUNT(*) AS c FROM t");
   }
 

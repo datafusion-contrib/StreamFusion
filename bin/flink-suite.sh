@@ -241,6 +241,19 @@ else
 fi
 readonly TEST_STATUS=$?
 
+if [[ "${SUITE_MODE}" == "state" && ${TEST_STATUS} -eq 0 ]]; then
+  for required_marker in \
+    "StreamFusion enabled for upstream Flink streaming planner tests" \
+    "StreamFusion upstream state suite exercised Flink heap backend" \
+    "StreamFusion upstream state suite initialized native memory backend" \
+    "StreamFusion upstream state suite installed native RocksDB backend"; do
+    if ! grep -RqsF "${required_marker}" "${REPORT_ROOT}"; then
+      echo "The upstream state suite did not prove: ${required_marker}" >&2
+      exit 1
+    fi
+  done
+fi
+
 SUMMARY_ARGS=("${REPORT_ROOT}")
 if [[ "${SUITE_MODE}" == "runtime" || "${SUITE_MODE}" == "diagnostic" ]]; then
   SUMMARY_ARGS+=(--xfail "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testCurrentDate")
