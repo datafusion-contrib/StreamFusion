@@ -26,9 +26,7 @@ pub(crate) struct KeepFirstDeduplicator {
     /// write, Flink's `alreadyEmittedState.update(true)` in `onTimer`: probes never refresh it, so
     /// an emitted key expires a fixed retention after it fired and can then fire a second `+I`.
     emitted: HashMap<ByteKey, i64>,
-    /// Idle-state retention millis (0 = off — Flink's default), applied to the emitted markers
-    /// only. Memory route only: the Paimon keep-first backend carries no marker timestamps, so a
-    /// TTL'd deduplicator keeps the memory route.
+    /// Idle-state retention millis (0 = off — Flink's default), applied to emitted markers only.
     ttl_ms: i64,
     /// When the last full marker sweep ran; the sweep reclaims markers never probed again, once
     /// per TTL period (expiry itself is enforced lazily at each probe).
@@ -42,10 +40,6 @@ pub(crate) struct KeepFirstDeduplicator {
     schema: Option<SchemaRef>,
     snapshot_cache: Option<DedupSnapshotCache>,
     pub(crate) memory: OperatorMemory,
-    /// Paimon persistent state: pending candidates and fired markers live in the store's write
-    /// buffer + disk table instead of `pending`/`emitted`; those memory fields then stay unused.
-    #[cfg(feature = "paimon-state")]
-    backend: Option<crate::state::PaimonKeepFirstStore>,
 }
 
 impl KeepFirstDeduplicator {
@@ -66,37 +60,23 @@ impl KeepFirstDeduplicator {
             schema: None,
             snapshot_cache: None,
             memory: OperatorMemory::unaccounted(),
-            #[cfg(feature = "paimon-state")]
-            backend: None,
         }
-    }
-
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn with_backend(mut self, store: crate::state::PaimonKeepFirstStore) -> Self {
-        self.backend = Some(store);
-        self
-    }
-
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn with_read_through_budget(
-        mut self,
-        budget_bytes: i64,
-    ) -> Result<Self, DataFusionError> {
-        self.memory.attach("keep-first-deduplicate", budget_bytes, 0)?;
-        Ok(self)
-    }
-
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn store_mut(&mut self) -> &mut crate::state::PaimonKeepFirstStore {
-        self.backend.as_mut().expect("keep-first paimon backend")
     }
 
     /// Bounds this deduplicator's state (the pending batch plus the emitted-key set) by the
     /// operator's task off-heap budget (negative = unaccounted).
     fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
-        let state = self.pending.as_ref().map_or(0, |b| b.get_array_memory_size())
-            + self.emitted.keys().map(|k| byte_key_bytes(&k.0)).sum::<usize>();
-        self.memory.attach("keep-first-deduplicate", budget_bytes, state)?;
+        let state = self
+            .pending
+            .as_ref()
+            .map_or(0, |b| b.get_array_memory_size())
+            + self
+                .emitted
+                .keys()
+                .map(|k| byte_key_bytes(&k.0))
+                .sum::<usize>();
+        self.memory
+            .attach("keep-first-deduplicate", budget_bytes, state)?;
         Ok(self)
     }
 
@@ -145,14 +125,12 @@ impl KeepFirstDeduplicator {
         // Drop late rows (rowtime already below the watermark) with a columnar filter, counting
         // them as Flink's processElement does before any per-key state is consulted.
         let rt = rt_to_millis(batch.column(self.rt_column));
-        let live_mask: BooleanArray =
-            rt.iter().map(|v| Some(v.unwrap() >= self.current_watermark)).collect();
+        let live_mask: BooleanArray = rt
+            .iter()
+            .map(|v| Some(v.unwrap() >= self.current_watermark))
+            .collect();
         let live = filter_record_batch(batch, &live_mask).expect("dedup late filter");
         self.late_drops += (batch.num_rows() - live.num_rows()) as u64;
-        #[cfg(feature = "paimon-state")]
-        if self.backend.is_some() {
-            return self.push_backend(live);
-        }
         let ttl = StateTtl::new(self.ttl_ms, now_ms);
         // The sweep reclaims markers no later row ever probes. Once per TTL period bounds its
         // amortized cost at one map walk per period.
@@ -186,8 +164,11 @@ impl KeepFirstDeduplicator {
     /// Flink's keep-first rule of replacing only on a strictly smaller rowtime). The winning rows are
     /// gathered with `take`; the row data is never materialized into scalars.
     fn min_per_key(&mut self, batch: &RecordBatch, ttl: StateTtl) -> RecordBatch {
-        let key_arrays: Vec<&ArrayRef> =
-            self.partition_columns.iter().map(|&i| batch.column(i)).collect();
+        let key_arrays: Vec<&ArrayRef> = self
+            .partition_columns
+            .iter()
+            .map(|&i| batch.column(i))
+            .collect();
         self.key_types = key_types(&key_arrays);
         let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
         let rt = rt_to_millis(batch.column(self.rt_column));
@@ -226,8 +207,11 @@ impl KeepFirstDeduplicator {
         let mut indices: Vec<u32> = best.into_values().map(|(_, idx)| idx).collect();
         indices.sort_unstable();
         let idx = UInt32Array::from(indices);
-        let columns: Vec<ArrayRef> =
-            batch.columns().iter().map(|c| take(c, &idx, None).expect("dedup take")).collect();
+        let columns: Vec<ArrayRef> = batch
+            .columns()
+            .iter()
+            .map(|c| take(c, &idx, None).expect("dedup take"))
+            .collect();
         RecordBatch::try_new(batch.schema(), columns).expect("dedup compacted batch")
     }
 
@@ -235,92 +219,10 @@ impl KeepFirstDeduplicator {
     /// the store answers each winner's status in one batched committed probe, and only fresh keys
     /// and strict improvements stage into the write buffer. Nothing is emitted here — emission is
     /// watermark-driven (`flush`).
-    #[cfg(feature = "paimon-state")]
-    fn push_backend(&mut self, live: RecordBatch) -> Result<(), DataFusionError> {
-        if live.num_rows() > 0 {
-            // The backend keeps its own fired markers; the resident map is empty, so the TTL
-            // probe has nothing to expire (a TTL'd deduplicator never takes the Paimon route).
-            let winners = self.min_per_key(&live, StateTtl::disabled());
-            let mut encoder = BinaryRowBatchEncoder::new(
-                &winners,
-                &self.partition_columns,
-                &self.key_timestamp_precisions,
-            );
-            let keys: Vec<ByteKey> =
-                (0..winners.num_rows()).map(|row| ByteKey::from(encoder.encode(row))).collect();
-            let store = self.backend.as_mut().expect("keep-first paimon backend");
-            store.ensure_probed(&keys)?;
-            let rts = rt_to_millis(winners.column(self.rt_column));
-            let mut staged_rows: Vec<u32> = Vec::new();
-            let mut staged_keys: Vec<&[u8]> = Vec::new();
-            let mut staged_rts: Vec<i64> = Vec::new();
-            for (row, key) in keys.iter().enumerate() {
-                let rowtime = rts.value(row);
-                match store.status(&key.0) {
-                    crate::state::KeepFirstStatus::Fired => {}
-                    // Flink's keep-first replaces only on a strictly smaller rowtime.
-                    crate::state::KeepFirstStatus::Pending(prev) if prev <= rowtime => {}
-                    _ => {
-                        staged_rows.push(row as u32);
-                        staged_keys.push(&key.0);
-                        staged_rts.push(rowtime);
-                    }
-                }
-            }
-            if !staged_rows.is_empty() {
-                let idx = UInt32Array::from(staged_rows);
-                let payload: Vec<ArrayRef> = winners
-                    .columns()
-                    .iter()
-                    .map(|c| take(c, &idx, None).expect("dedup stage take"))
-                    .collect();
-                store.stage(&staged_keys, staged_rts, payload)?;
-            }
-            store.end_bundle();
-        }
-        let store = self.backend.as_mut().expect("keep-first paimon backend");
-        let delta = store.footprint_delta();
-        self.memory.record(delta);
-        self.memory.account()
-    }
 
     /// Persistent-state firing path: the store's overlay range read returns every candidate the
     /// watermark released — committed and buffered — and stages their fired markers; the output
     /// is those rows' payload columns.
-    #[cfg(feature = "paimon-state")]
-    fn flush_backend(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
-        let ctx = self.memory.task_ctx();
-        let store = self.backend.as_mut().expect("keep-first paimon backend");
-        let fired = store.fire(watermark, ctx)?;
-        store.end_bundle();
-        let delta = store.footprint_delta();
-        self.memory.record(delta);
-        self.memory.account()?;
-        if fired.is_empty() {
-            return Ok(self.empty());
-        }
-        // Emit under the operator's input schema when a push established it (the store's payload
-        // field names are positional); the types are identical either way.
-        let schema = match &self.schema {
-            Some(schema) => schema.clone(),
-            None => Arc::new(Schema::new(
-                fired[0].schema().fields()[4..]
-                    .iter()
-                    .map(|f| f.as_ref().clone())
-                    .collect::<Vec<_>>(),
-            )),
-        };
-        let payload_batches: Vec<RecordBatch> = fired
-            .iter()
-            .map(|batch| {
-                RecordBatch::try_new(schema.clone(), batch.columns()[4..].to_vec())
-                    .expect("keep-first payload projection")
-            })
-            .collect();
-        let out = concat_batches(&schema, &payload_batches)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
-        Ok(out)
-    }
 
     /// Emits each pending key's candidate whose rowtime the watermark has now reached (insert-only),
     /// records those keys as emitted, and keeps the rest. Both partitions are columnar filters.
@@ -333,10 +235,6 @@ impl KeepFirstDeduplicator {
     ) -> Result<RecordBatch, DataFusionError> {
         self.snapshot_cache = None;
         self.current_watermark = watermark;
-        #[cfg(feature = "paimon-state")]
-        if self.backend.is_some() {
-            return self.flush_backend(watermark);
-        }
         let Some(pending) = self.pending.take() else {
             return Ok(self.empty());
         };
@@ -348,16 +246,21 @@ impl KeepFirstDeduplicator {
         let rt = rt_to_millis(pending.column(self.rt_column));
         let ready_mask: BooleanArray = rt.iter().map(|v| Some(v.unwrap() <= watermark)).collect();
         let ready = filter_record_batch(&pending, &ready_mask).expect("dedup ready filter");
-        let not_ready =
-            filter_record_batch(&pending, &arrow::compute::not(&ready_mask).expect("dedup not"))
-                .expect("dedup keep filter");
+        let not_ready = filter_record_batch(
+            &pending,
+            &arrow::compute::not(&ready_mask).expect("dedup not"),
+        )
+        .expect("dedup keep filter");
         if track && not_ready.num_rows() > 0 {
             delta += not_ready.get_array_memory_size() as isize;
         }
         self.pending = (not_ready.num_rows() > 0).then_some(not_ready);
         if ready.num_rows() > 0 {
-            let key_arrays: Vec<&ArrayRef> =
-                self.partition_columns.iter().map(|&i| ready.column(i)).collect();
+            let key_arrays: Vec<&ArrayRef> = self
+                .partition_columns
+                .iter()
+                .map(|&i| ready.column(i))
+                .collect();
             self.key_types = key_types(&key_arrays);
             let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, ready.num_rows());
             let ttl = StateTtl::new(self.ttl_ms, now_ms);
@@ -401,11 +304,15 @@ impl KeepFirstDeduplicator {
         emitted_batch: Option<RecordBatch>,
     ) -> Vec<u8> {
         let mut out = self.current_watermark.to_le_bytes().to_vec();
-        let pending = pending_batch.map(|batch| write_ipc(&batch)).unwrap_or_default();
+        let pending = pending_batch
+            .map(|batch| write_ipc(&batch))
+            .unwrap_or_default();
         out.extend_from_slice(&(pending.len() as u32).to_le_bytes());
         out.extend_from_slice(&pending);
         out.extend_from_slice(
-            &emitted_batch.map(|batch| write_ipc(&batch)).unwrap_or_default(),
+            &emitted_batch
+                .map(|batch| write_ipc(&batch))
+                .unwrap_or_default(),
         );
         out
     }
@@ -463,15 +370,13 @@ impl KeepFirstDeduplicator {
         if let Some(batch) = &pending {
             for row in 0..batch.num_rows() {
                 let key_group = flink_key_group(
-                    binary_row_hash(
-                        batch,
-                        &self.partition_columns,
-                        row,
-                        timestamp_precisions,
-                    ),
+                    binary_row_hash(batch, &self.partition_columns, row, timestamp_precisions),
                     max_parallelism,
                 ) as i32;
-                pending_by_group.entry(key_group).or_default().push(row as u32);
+                pending_by_group
+                    .entry(key_group)
+                    .or_default()
+                    .push(row as u32);
             }
         }
         if let Some(batch) = &emitted {
@@ -482,7 +387,10 @@ impl KeepFirstDeduplicator {
                     binary_row_hash(batch, &key_columns, row, timestamp_precisions),
                     max_parallelism,
                 ) as i32;
-                emitted_by_group.entry(key_group).or_default().push(row as u32);
+                emitted_by_group
+                    .entry(key_group)
+                    .or_default()
+                    .push(row as u32);
             }
         }
         let mut groups: Vec<i32> = pending_by_group
@@ -533,7 +441,8 @@ impl KeepFirstDeduplicator {
             return dedup;
         }
         dedup.current_watermark = i64::from_le_bytes(bytes[0..8].try_into().expect("watermark"));
-        let pending_len = u32::from_le_bytes(bytes[8..12].try_into().expect("pending len")) as usize;
+        let pending_len =
+            u32::from_le_bytes(bytes[8..12].try_into().expect("pending len")) as usize;
         for batch in read_ipc_if_present(&bytes[12..12 + pending_len]) {
             dedup.schema = Some(batch.schema());
             dedup.pending = Some(batch);
@@ -570,10 +479,15 @@ impl KeepFirstDeduplicator {
             if bytes.len() < 12 {
                 continue;
             }
-            watermark = watermark.max(i64::from_le_bytes(bytes[0..8].try_into().expect("dedup watermark")));
+            watermark = watermark.max(i64::from_le_bytes(
+                bytes[0..8].try_into().expect("dedup watermark"),
+            ));
             let pending_len =
                 u32::from_le_bytes(bytes[8..12].try_into().expect("dedup pending len")) as usize;
-            assert!(12 + pending_len <= bytes.len(), "truncated dedup raw key-group snapshot");
+            assert!(
+                12 + pending_len <= bytes.len(),
+                "truncated dedup raw key-group snapshot"
+            );
             pending.extend(read_ipc_if_present(&bytes[12..12 + pending_len]));
             emitted.extend(read_ipc_if_present(&bytes[12 + pending_len..]));
         }
@@ -705,74 +619,10 @@ pub(crate) fn dedup_entry_bytes(key: &[u8], payload: &[u8]) -> usize {
     key.len() + payload.len() + GROUP_ENTRY_OVERHEAD
 }
 
-/// The dedup persistent backend: the generic Paimon store under the dedup row codec.
-#[cfg(feature = "paimon-state")]
-pub(crate) type PaimonDedupStore = crate::state::PaimonStore<DedupStateCodec>;
+/// The dedup persistent backend: the generic persistent store under the dedup row codec.
 
-/// The dedup value codec for the Paimon store: a row-payload codec (see `RowPayloadCodec`), with
+/// The dedup value codec for the persistent store: a row-payload codec (see `RowPayloadCodec`), with
 /// the rowtime re-derived from the row's own rowtime column on hydration, exactly as restore does.
-#[cfg(feature = "paimon-state")]
-pub(crate) struct DedupStateCodec {
-    row: crate::state::RowPayloadCodec,
-    rt_column: usize,
-    rowtime_ordered: bool,
-}
-
-#[cfg(feature = "paimon-state")]
-impl DedupStateCodec {
-    pub(crate) fn new(row_types: Vec<DataType>, rt_column: usize, rowtime_ordered: bool) -> Self {
-        DedupStateCodec {
-            row: crate::state::RowPayloadCodec::new(row_types),
-            rt_column,
-            rowtime_ordered,
-        }
-    }
-}
-
-#[cfg(feature = "paimon-state")]
-impl crate::state::PaimonStateCodec for DedupStateCodec {
-    type Value = DedupRow;
-
-    fn supported(&self) -> bool {
-        self.row.supported()
-    }
-
-    fn value_fields(&self) -> Vec<(String, DataType)> {
-        self.row.fields()
-    }
-
-    fn encode(&self, row: &DedupRow) -> Vec<ScalarValue> {
-        self.row.encode_payload(&row.payload)
-    }
-
-    fn decode(&self, scalars: &[ScalarValue]) -> DedupRow {
-        let (payload, columns) = self.row.decode_payload(scalars);
-        let rowtime = if self.rowtime_ordered {
-            rt_to_millis(&columns[self.rt_column]).value(0)
-        } else {
-            0
-        };
-        // The Paimon shape does not carry the stored row kind. With TTL off, a hydrated key
-        // reads as INSERT-stored, so a proctime keep-last identical row arriving right after
-        // hydration can suppress where the heap-backed host would emit — the same divergence
-        // window as any hydration boundary. With TTL on the kind flag is irrelevant: the
-        // suppression is disabled outright (Flink always re-emits -U/+U under retention), and
-        // the TTL timestamp rides the store's ts column via `stamp_write_ms`.
-        DedupRow { rowtime, payload, staged: None, update_kind: false, last_write_ms: 0 }
-    }
-
-    fn value_bytes(&self, row: &DedupRow) -> usize {
-        row.payload.len()
-    }
-
-    fn write_ms(&self, row: &DedupRow) -> i64 {
-        row.last_write_ms
-    }
-
-    fn stamp_write_ms(&self, row: &mut DedupRow, ts_ms: i64) {
-        row.last_write_ms = ts_ms;
-    }
-}
 
 impl KeepLastDeduplicator {
     pub(crate) fn new(
@@ -808,8 +658,11 @@ impl KeepLastDeduplicator {
     /// Bounds this deduplicator's stored rows by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored rows immediately.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
-        let state: usize =
-            self.rows.iter().map(|(key, row)| dedup_entry_bytes(&key.0, &row.payload)).sum();
+        let state: usize = self
+            .rows
+            .iter()
+            .map(|(key, row)| dedup_entry_bytes(&key.0, &row.payload))
+            .sum();
         self.memory.attach("deduplicate", budget_bytes, state)?;
         Ok(self)
     }
@@ -940,7 +793,9 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
         }
         self.payload_converter = Some(
             RowConverter::new(
-                (0..arity).map(|i| SortField::new(batch.column(i).data_type().clone())).collect(),
+                (0..arity)
+                    .map(|i| SortField::new(batch.column(i).data_type().clone()))
+                    .collect(),
             )
             .expect("dedup payload converter"),
         );
@@ -966,15 +821,27 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         self.ensure_converters(batch, arity);
-        self.rows
-            .begin_batch(batch, &self.partition_columns, &self.key_timestamp_precisions)?;
-        let mut parts =
-            BinaryRowBatchEncoder::new(batch, &self.partition_columns, &self.key_timestamp_precisions);
+        self.rows.begin_batch(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
+        let mut parts = BinaryRowBatchEncoder::new(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        );
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
-        let payloads =
-            self.payload_converter.as_ref().unwrap().convert_columns(&data_arrays).expect("encode dedup payload");
+        let payloads = self
+            .payload_converter
+            .as_ref()
+            .unwrap()
+            .convert_columns(&data_arrays)
+            .expect("encode dedup payload");
         // The rowtime is read only for a rowtime order; proctime dedup uses arrival order.
-        let rt = self.rowtime_ordered.then(|| rt_to_millis(batch.column(self.rt_column)));
+        let rt = self
+            .rowtime_ordered
+            .then(|| rt_to_millis(batch.column(self.rt_column)));
 
         let keep_first = self.keep_first;
         let rowtime_ordered = self.rowtime_ordered;
@@ -995,8 +862,13 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
             // was written this bundle and is exempt until the flush ends the bundle — removing it
             // would strand its staged preimage and double-stage the key (the same rule that skips
             // the sweep mid-bundle); its expiry just delays to the first touch after the flush.
-            let ttl_ts =
-                |row: &DedupRow| if row.staged.is_some() { i64::MAX } else { row.last_write_ms };
+            let ttl_ts = |row: &DedupRow| {
+                if row.staged.is_some() {
+                    i64::MAX
+                } else {
+                    row.last_write_ms
+                }
+            };
             let on_expired = |row: &DedupRow| {
                 if track {
                     delta -= dedup_entry_bytes(key, &row.payload) as isize;
@@ -1043,8 +915,11 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
                     let owned = ByteKey::from(key);
                     if staged.is_some() {
                         let retained = byte_key_bytes(key);
-                        let kept =
-                            if rowtime_ordered { vec![payload.clone()] } else { Vec::new() };
+                        let kept = if rowtime_ordered {
+                            vec![payload.clone()]
+                        } else {
+                            Vec::new()
+                        };
                         self.staged.push(DedupStagedChange {
                             key: owned.clone(),
                             before: None,
@@ -1059,7 +934,13 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
                     let last_write_ms = if ttl.enabled() { ttl.now() } else { 0 };
                     rows.insert(
                         owned,
-                        DedupRow { rowtime, payload, staged, update_kind: false, last_write_ms },
+                        DedupRow {
+                            rowtime,
+                            payload,
+                            staged,
+                            update_kind: false,
+                            last_write_ms,
+                        },
                     );
                 }
                 // A rowtime order ignores a non-improving row — Flink's shouldKeepCurrentRow:
@@ -1112,8 +993,11 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
                             None => {
                                 let before = stored.payload.clone();
                                 let retained = byte_key_bytes(key) + before.len();
-                                let kept =
-                                    if rowtime_ordered { vec![payload.clone()] } else { Vec::new() };
+                                let kept = if rowtime_ordered {
+                                    vec![payload.clone()]
+                                } else {
+                                    Vec::new()
+                                };
                                 stored.staged = Some(self.staged.len() as u32);
                                 self.staged.push(DedupStagedChange {
                                     key: ByteKey::from(key),
@@ -1141,7 +1025,7 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
                         }
                         out_rows.push(payload.clone());
                         out_kinds.push(2); // +U the new (later) row
-                        // Emitting the update mutates Flink's stored row to UPDATE_AFTER.
+                                           // Emitting the update mutates Flink's stored row to UPDATE_AFTER.
                         stored.update_kind = true;
                     }
                     stored.rowtime = rowtime;
@@ -1172,14 +1056,20 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
         let mut out_rows = Vec::with_capacity(changes.len() * 2);
         let mut out_kinds = Vec::with_capacity(changes.len() * 2);
         for DedupStagedChange { key, before, kept } in changes {
-            let row = self.rows.get_mut(&key.0).expect("staged dedup key remains in state");
+            let row = self
+                .rows
+                .get_mut(&key.0)
+                .expect("staged dedup key remains in state");
             row.staged = None;
             if self.rowtime_ordered {
                 if self.compact_changes {
                     // Compact-changes nets the bundle to its endpoint: one transition per key,
                     // stored preimage to the bundle's final kept row, with no equality check
                     // anywhere (an identical displacing row still emits its -U/+U pair).
-                    let after = kept.into_iter().next_back().expect("compacted chain keeps a row");
+                    let after = kept
+                        .into_iter()
+                        .next_back()
+                        .expect("compacted chain keeps a row");
                     match before {
                         None => {
                             out_rows.push(after);
@@ -1260,12 +1150,16 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
         if out_rows.is_empty() {
             return RecordBatch::new_empty(Arc::new(Schema::empty()));
         }
-        let schema = self.schema.as_ref().expect("schema set once a row was processed");
+        let schema = self
+            .schema
+            .as_ref()
+            .expect("schema set once a row was processed");
         let conv = self.payload_converter.as_ref().expect("converter set");
         // One vectorized row->columnar pass rebuilds every data column (cf. the per-cell scalar build).
         let parser = conv.parser();
-        let mut columns: Vec<ArrayRef> =
-            conv.convert_rows(out_rows.iter().map(|r| parser.parse(r))).expect("decode dedup payloads");
+        let mut columns: Vec<ArrayRef> = conv
+            .convert_rows(out_rows.iter().map(|r| parser.parse(r)))
+            .expect("decode dedup payloads");
         let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
         // Proctime keep-first is insert-only (every emitted row is a +I), so it carries no
         // $row_kind$ column; keep-last — and rowtime keep-first, its mini-batch retracting twin —
@@ -1297,7 +1191,9 @@ impl KeepLastDeduplicator {
     /// bytes per entry (that encoding's hash IS Flink's key-group input). The schema's metadata
     /// carries the typed payload schema so converters can be rebuilt before any input arrives.
     fn raw_snapshot_groups(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
-        let Some(schema) = &self.schema else { return BTreeMap::new() };
+        let Some(schema) = &self.schema else {
+            return BTreeMap::new();
+        };
         // The optional columns ride only where they mean something — the stored kind for the
         // proctime keep-last shape (the only suppression that consults it) and the TTL timestamps
         // only while TTL is on — so every other snapshot stays byte-identical to its prior format.
@@ -1305,7 +1201,13 @@ impl KeepLastDeduplicator {
         let ttl_on = self.ttl_ms > 0;
         let mut builders: BTreeMap<
             i32,
-            (BinaryBuilder, BinaryBuilder, Int64Builder, BooleanBuilder, Int64Builder),
+            (
+                BinaryBuilder,
+                BinaryBuilder,
+                Int64Builder,
+                BooleanBuilder,
+                Int64Builder,
+            ),
         > = BTreeMap::new();
         for (key, row) in self.rows.iter() {
             let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
@@ -1323,7 +1225,11 @@ impl KeepLastDeduplicator {
             Field::new(RAW_SNAPSHOT_ROWTIME, DataType::Int64, false),
         ];
         if kind_on {
-            fields.push(Field::new(RAW_SNAPSHOT_UPDATE_KIND, DataType::Boolean, false));
+            fields.push(Field::new(
+                RAW_SNAPSHOT_UPDATE_KIND,
+                DataType::Boolean,
+                false,
+            ));
         }
         if ttl_on {
             fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
@@ -1439,12 +1345,14 @@ impl KeepLastDeduplicator {
         let keys = column_binary(batch, RAW_SNAPSHOT_KEY);
         let payloads = column_binary(batch, RAW_SNAPSHOT_ROW);
         let rowtimes = column_i64(batch, RAW_SNAPSHOT_ROWTIME);
-        let update_kinds = batch.column_by_name(RAW_SNAPSHOT_UPDATE_KIND).map(|column| {
-            column
-                .as_any()
-                .downcast_ref::<BooleanArray>()
-                .expect("dedup snapshot update-kind column must be boolean")
-        });
+        let update_kinds = batch
+            .column_by_name(RAW_SNAPSHOT_UPDATE_KIND)
+            .map(|column| {
+                column
+                    .as_any()
+                    .downcast_ref::<BooleanArray>()
+                    .expect("dedup snapshot update-kind column must be boolean")
+            });
         let write_timestamps = batch
             .column_by_name(TTL_TS_COLUMN)
             .is_some()
@@ -1473,7 +1381,9 @@ impl KeepLastDeduplicator {
         self.schema = Some(batch.schema());
         self.ensure_converters(batch, arity);
         // The stored rowtime matters only to the rowtime-ordered comparison; proctime stores 0.
-        let rt = self.rowtime_ordered.then(|| rt_to_millis(batch.column(self.rt_column)));
+        let rt = self
+            .rowtime_ordered
+            .then(|| rt_to_millis(batch.column(self.rt_column)));
         let mut parts = BinaryRowBatchEncoder::new(
             batch,
             &self.partition_columns,
@@ -1532,13 +1442,18 @@ impl KeepLastDeduplicator {
     }
 }
 
-state_bytes_getter!(Java_tech_streamfusion_Native_keepFirstDeduplicatorStateBytes, KeepFirstDeduplicator);
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_keepFirstDeduplicatorStateBytes,
+    KeepFirstDeduplicator
+);
 
 /// Rows dropped as late over the handle's lifetime; the counter lives before the backend split,
-/// so one getter serves the memory and Paimon routes alike.
+/// so one getter serves the memory and persistent routes alike.
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_keepFirstDeduplicatorLateDrops<'local>(
-    env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
         let dedup = unsafe { &*(handle as *const KeepFirstDeduplicator) };
@@ -1546,11 +1461,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_keepFirstDeduplicatorLateDr
     })
 }
 
-state_bytes_getter!(Java_tech_streamfusion_Native_keepLastDeduplicatorStateBytes, KeepLastDeduplicator);
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_keepLastDeduplicatorStateBytes,
+    KeepLastDeduplicator
+);
 
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_keepLastDeduplicatorStagingBytes<'local>(
-    env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
         let dedup = unsafe { &*(handle as *const KeepLastDeduplicator) };
@@ -1560,7 +1480,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_keepLastDeduplicatorStaging
 
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_keepLastDeduplicatorStagedKeys<'local>(
-    env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
         let dedup = unsafe { &*(handle as *const KeepLastDeduplicator) };
@@ -1642,10 +1564,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeKeepFirstDeduplicator<
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<KeepFirstDeduplicator>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<KeepFirstDeduplicator>(handle));
     })
 }
 
@@ -1754,8 +1674,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_createKeepLastDeduplicator<
 
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_flushKeepLastDeduplicator<'local>(
-    env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
-    out_array_address: jlong, out_schema_address: jlong,
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
         let dedup = unsafe { &mut *(handle as *mut KeepLastDeduplicator) };
@@ -1798,10 +1721,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeKeepLastDeduplicator<'
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<KeepLastDeduplicator>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<KeepLastDeduplicator>(handle));
     })
 }
 

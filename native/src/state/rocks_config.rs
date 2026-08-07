@@ -1,6 +1,4 @@
-use rocksdb::{
-    BlockBasedOptions, Cache, DBCompactionStyle, DBCompressionType, Options,
-};
+use rocksdb::{BlockBasedOptions, Cache, DBCompactionStyle, DBCompressionType, LogLevel, Options};
 use serde::{Deserialize, Serialize};
 
 /// The resolved subset of Flink's public RocksDB configuration. Java resolves Flink defaults and
@@ -11,6 +9,10 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct FlinkRocksOptions {
     pub max_background_threads: i32,
     pub max_open_files: i32,
+    pub log_max_file_size: usize,
+    pub log_file_num: usize,
+    pub log_directory: Option<String>,
+    pub log_level: String,
     pub compaction_style: String,
     pub compression_per_level: Vec<String>,
     pub use_dynamic_level_size: bool,
@@ -19,6 +21,8 @@ pub(crate) struct FlinkRocksOptions {
     pub write_buffer_size: usize,
     pub max_write_buffer_number: i32,
     pub min_write_buffer_number_to_merge: i32,
+    pub write_batch_size: usize,
+    pub compaction_filter_query_time_after_num_entries: u64,
     pub periodic_compaction_seconds: u64,
     pub block_size: usize,
     pub metadata_block_size: usize,
@@ -30,7 +34,8 @@ pub(crate) struct FlinkRocksOptions {
 
 impl FlinkRocksOptions {
     pub(crate) fn from_json(json: &str) -> Result<Self, String> {
-        serde_json::from_str(json).map_err(|error| format!("invalid Flink RocksDB options: {error}"))
+        serde_json::from_str(json)
+            .map_err(|error| format!("invalid Flink RocksDB options: {error}"))
     }
 
     pub(crate) fn build(&self) -> Result<(Options, Option<Cache>), String> {
@@ -38,6 +43,16 @@ impl FlinkRocksOptions {
         options.create_if_missing(true);
         options.set_max_background_jobs(self.max_background_threads);
         options.set_max_open_files(self.max_open_files);
+        options.set_max_log_file_size(self.log_max_file_size);
+        options.set_keep_log_file_num(self.log_file_num);
+        if let Some(directory) = self
+            .log_directory
+            .as_deref()
+            .filter(|path| !path.is_empty())
+        {
+            options.set_db_log_dir(directory);
+        }
+        options.set_log_level(log_level(&self.log_level)?);
         if self.compaction_style.eq_ignore_ascii_case("NONE") {
             // rust-rocksdb omits RocksDB's kCompactionStyleNone enum value. Disabling automatic
             // compactions is its documented equivalent and preserves Flink's public setting.
@@ -77,6 +92,18 @@ impl FlinkRocksOptions {
         }
         options.set_block_based_table_factory(&table);
         Ok((options, cache))
+    }
+}
+
+fn log_level(name: &str) -> Result<LogLevel, String> {
+    match name.to_ascii_uppercase().as_str() {
+        "DEBUG_LEVEL" | "DEBUG" => Ok(LogLevel::Debug),
+        "INFO_LEVEL" | "INFO" => Ok(LogLevel::Info),
+        "WARN_LEVEL" | "WARN" => Ok(LogLevel::Warn),
+        "ERROR_LEVEL" | "ERROR" => Ok(LogLevel::Error),
+        "FATAL_LEVEL" | "FATAL" => Ok(LogLevel::Fatal),
+        "HEADER_LEVEL" | "HEADER" => Ok(LogLevel::Header),
+        other => Err(format!("unsupported RocksDB log level {other}")),
     }
 }
 

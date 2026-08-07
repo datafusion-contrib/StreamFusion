@@ -39,8 +39,9 @@ pub(crate) fn unmatched_null_pad(
     right_types: &[DataType],
     is_left: bool,
 ) -> Option<RecordBatch> {
-    let mask: BooleanArray =
-        (0..rows.num_rows()).map(|i| Some(!matched.contains(&(i as i64)))).collect();
+    let mask: BooleanArray = (0..rows.num_rows())
+        .map(|i| Some(!matched.contains(&(i as i64))))
+        .collect();
     let unmatched = filter_record_batch(rows, &mask).expect("filter unmatched window rows");
     if unmatched.num_rows() == 0 {
         None
@@ -59,16 +60,26 @@ pub(crate) fn build_null_pad(
     is_left: bool,
 ) -> RecordBatch {
     let n = rows.num_rows();
-    let data_arity = if is_left { left_types.len() } else { right_types.len() };
+    let data_arity = if is_left {
+        left_types.len()
+    } else {
+        right_types.len()
+    };
     let data: Vec<ArrayRef> = (0..data_arity).map(|i| rows.column(i).clone()).collect();
     let columns: Vec<ArrayRef> = if is_left {
-        data.into_iter().chain(null_columns(right_types, n)).collect()
+        data.into_iter()
+            .chain(null_columns(right_types, n))
+            .collect()
     } else {
-        null_columns(left_types, n).into_iter().chain(data).collect()
+        null_columns(left_types, n)
+            .into_iter()
+            .chain(data)
+            .collect()
     };
     let types: Vec<DataType> = left_types.iter().chain(right_types).cloned().collect();
-    let fields: Vec<Field> =
-        (0..types.len()).map(|j| Field::new(format!("c{j}"), types[j].clone(), true)).collect();
+    let fields: Vec<Field> = (0..types.len())
+        .map(|j| Field::new(format!("c{j}"), types[j].clone(), true))
+        .collect();
     RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("build null-pad")
 }
 
@@ -77,7 +88,11 @@ pub(crate) fn max_rowid(buffered: &[RecordBatch]) -> i64 {
     buffered
         .iter()
         .flat_map(|b| {
-            let rid = b.column(b.num_columns() - 1).as_any().downcast_ref::<Int64Array>().expect("rid");
+            let rid = b
+                .column(b.num_columns() - 1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("rid");
             (0..rid.len()).map(|i| rid.value(i)).collect::<Vec<_>>()
         })
         .max()
@@ -118,7 +133,8 @@ pub(crate) fn hash_join_inner(
     let on: JoinOn = key_pairs
         .iter()
         .map(|&(l, r)| {
-            let left_key: Arc<dyn PhysicalExpr> = Arc::new(Column::new(left_schema.field(l).name(), l));
+            let left_key: Arc<dyn PhysicalExpr> =
+                Arc::new(Column::new(left_schema.field(l).name(), l));
             let right_key: Arc<dyn PhysicalExpr> =
                 Arc::new(Column::new(right_schema.field(r).name(), r));
             (left_key, right_key)
@@ -141,15 +157,15 @@ pub(crate) fn hash_join_inner(
         false,
     )
     .expect("failed to build hash join");
-    let batches = runtime().block_on(collect(Arc::new(join), ctx)).map_err(|e| {
-        match e.find_root() {
+    let batches = runtime()
+        .block_on(collect(Arc::new(join), ctx))
+        .map_err(|e| match e.find_root() {
             DataFusionError::ResourcesExhausted(_) => DataFusionError::ResourcesExhausted(format!(
                 "native join working memory exceeded TaskManager task off-heap memory; raise \
                  taskmanager.memory.task.off-heap.size ({e})"
             )),
             _ => e,
-        }
-    })?;
+        })?;
     if batches.iter().all(|batch| batch.num_rows() == 0) {
         return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
     }
@@ -225,7 +241,14 @@ pub(crate) fn residual_filter(
     let mut conjuncts: Vec<Arc<dyn PhysicalExpr>> = Vec::new();
     if let Some((left_rt, right_rt, lower, upper)) = interval {
         let right_type = right_schema.field(right_rt).data_type();
-        conjuncts.push(interval_bounds_expr(&intermediate, left_rt, left_n + right_rt, right_type, lower, upper));
+        conjuncts.push(interval_bounds_expr(
+            &intermediate,
+            left_rt,
+            left_n + right_rt,
+            right_type,
+            lower,
+            upper,
+        ));
     }
     if let Some(predicate) = predicate {
         conjuncts.push(predicate.compiled(&intermediate));
@@ -235,11 +258,19 @@ pub(crate) fn residual_filter(
     }
     let expression = conjuncts
         .into_iter()
-        .reduce(|a, b| binary(a, Operator::And, b, &intermediate).expect("failed to AND residual filter"))
+        .reduce(|a, b| {
+            binary(a, Operator::And, b, &intermediate).expect("failed to AND residual filter")
+        })
         .expect("at least one conjunct");
     let column_indices = (0..left_n)
-        .map(|i| ColumnIndex { index: i, side: JoinSide::Left })
-        .chain((0..right_n).map(|i| ColumnIndex { index: i, side: JoinSide::Right }))
+        .map(|i| ColumnIndex {
+            index: i,
+            side: JoinSide::Left,
+        })
+        .chain((0..right_n).map(|i| ColumnIndex {
+            index: i,
+            side: JoinSide::Right,
+        }))
         .collect();
     Some(JoinFilter::new(expression, column_indices, intermediate))
 }
@@ -251,7 +282,13 @@ pub(crate) type JoinRow = Vec<ScalarValue>;
 pub(crate) fn data_schema(batch: &RecordBatch) -> SchemaRef {
     let arity = data_arity(batch);
     Arc::new(Schema::new(
-        batch.schema().fields().iter().take(arity).map(|f| f.as_ref().clone()).collect::<Vec<_>>(),
+        batch
+            .schema()
+            .fields()
+            .iter()
+            .take(arity)
+            .map(|f| f.as_ref().clone())
+            .collect::<Vec<_>>(),
     ))
 }
 
@@ -264,7 +301,7 @@ pub(crate) fn data_schema(batch: &RecordBatch) -> SchemaRef {
 ///
 /// `last_write_ms` is the wall-clock millis of this entry's last write (Flink state TTL,
 /// `OnCreateAndWrite` per MapState entry); stays 0 while the side's TTL is off. It participates
-/// in the derived equality on purpose: the Paimon flush diff compares live entries against the
+/// in the derived equality on purpose: the persistent flush diff compares live entries against the
 /// hydrated image, so a refreshed timestamp re-persists an otherwise-unchanged row — the ts the
 /// store's trailing column carries must track the latest write.
 #[derive(Clone, Copy, PartialEq)]
@@ -346,7 +383,8 @@ impl JoinPredicate {
             return expr.clone();
         }
         let df_schema = Arc::new(
-            DFSchema::try_from(schema.as_ref().clone()).expect("failed to build join-predicate schema"),
+            DFSchema::try_from(schema.as_ref().clone())
+                .expect("failed to build join-predicate schema"),
         );
         let physical = compile_expr(
             schema,
@@ -368,7 +406,11 @@ impl JoinPredicate {
     /// {@link evaluate_batch}. The updating join, whose state is arrow-row bytes, assembles the batch
     /// itself and calls `evaluate_batch` directly — no scalar round-trip.
     pub(crate) fn evaluate(&mut self, schema: &SchemaRef, rows: &[JoinRow]) -> Vec<bool> {
-        let types: Vec<DataType> = schema.fields().iter().map(|f| f.data_type().clone()).collect();
+        let types: Vec<DataType> = schema
+            .fields()
+            .iter()
+            .map(|f| f.data_type().clone())
+            .collect();
         let columns: Vec<ArrayRef> = (0..types.len())
             .map(|j| scalars_to_array(rows.iter().map(|r| r[j].clone()).collect(), &types[j]))
             .collect();
@@ -387,9 +429,13 @@ impl JoinPredicate {
             .expect("failed to evaluate join predicate")
             .into_array(batch.num_rows())
             .expect("failed to materialize join predicate");
-        let mask =
-            evaluated.as_any().downcast_ref::<BooleanArray>().expect("join predicate must be boolean");
-        (0..mask.len()).map(|i| mask.is_valid(i) && mask.value(i)).collect()
+        let mask = evaluated
+            .as_any()
+            .downcast_ref::<BooleanArray>()
+            .expect("join predicate must be boolean");
+        (0..mask.len())
+            .map(|i| mask.is_valid(i) && mask.value(i))
+            .collect()
     }
 }
 
@@ -411,15 +457,27 @@ impl JoinPredicate {
 /// An arrow-row codec over every column of a schema (value encoding, default order — used to store and
 /// rebuild full rows, not to compare them).
 pub(crate) fn payload_converter(schema: &SchemaRef) -> RowConverter {
-    RowConverter::new(schema.fields().iter().map(|f| SortField::new(f.data_type().clone())).collect())
-        .expect("payload converter")
+    RowConverter::new(
+        schema
+            .fields()
+            .iter()
+            .map(|f| SortField::new(f.data_type().clone()))
+            .collect(),
+    )
+    .expect("payload converter")
 }
 
 /// Value-encodes a single all-null row for `schema` (the outer-join null pad), as arrow-row bytes.
 pub(crate) fn encode_null_row(conv: &RowConverter, schema: &SchemaRef) -> OwnedRow {
-    let columns: Vec<ArrayRef> =
-        schema.fields().iter().map(|f| arrow::array::new_null_array(f.data_type(), 1)).collect();
-    conv.convert_columns(&columns).expect("encode null row").row(0).owned()
+    let columns: Vec<ArrayRef> = schema
+        .fields()
+        .iter()
+        .map(|f| arrow::array::new_null_array(f.data_type(), 1))
+        .collect();
+    conv.convert_columns(&columns)
+        .expect("encode null row")
+        .row(0)
+        .owned()
 }
 
 /// Reads the encoded residual non-equi join predicate (empty `kinds` ⇒ no predicate). It compiles

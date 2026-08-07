@@ -3,7 +3,6 @@ package tech.streamfusion.operator;
 import tech.streamfusion.Native;
 import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.PaimonNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -82,52 +81,6 @@ public class NativeColumnarKeepLastDeduplicateOperator
   }
 
   @Override
-  protected PaimonNativeStateSupport resolvePaimonState(boolean rawStateRestored) {
-    return resolvePaimon(
-        rawStateRestored,
-        () ->
-            withRowSchema(rowType, address -> Native.paimonRowStateSupported(address) ? 1L : 0L)
-                != 0,
-        stateTtlMillis);
-  }
-
-  @Override
-  protected long createPaimonHandle(PaimonNativeStateSupport paimon) {
-    return withRowSchema(
-        rowType,
-        rowSchemaAddress ->
-            Native.createPaimonKeepLastDeduplicator(
-                partitionColumns,
-                keyTimestampPrecisions(),
-                rowtimeColumn,
-                rowSchemaAddress,
-                generateUpdateBefore,
-                generateInsert,
-                rowtimeOrdered,
-                keepFirst,
-                miniBatch,
-                compactChanges,
-                stateTtlMillis,
-                getProcessingTimeService().getCurrentProcessingTime(),
-                memoryBudgetBytes(),
-                paimon.tableDirectory(),
-                maxParallelism(),
-                NativeConfig.paimonBuckets(),
-                NativeConfig.paimonFileFormat(),
-                NativeConfig.paimonFileCompression(),
-                paimon.sourceDirectories(),
-                paimon.sourceSnapshotTokens(),
-                paimon.keyGroupStart(),
-                paimon.keyGroupEnd(),
-                paimon.aligned()));
-  }
-
-  @Override
-  protected String[] checkpointPaimonHandle() {
-    return Native.checkpointPaimonKeepLastDeduplicator(handle);
-  }
-
-  @Override
   protected long createHandle() {
     return Native.createKeepLastDeduplicator(
         partitionColumns,
@@ -169,18 +122,12 @@ public class NativeColumnarKeepLastDeduplicateOperator
 
   @Override
   protected void closeHandle() {
-    if (paimonState()) {
-      Native.closePaimonKeepLastDeduplicator(handle);
-    } else {
-      Native.closeKeepLastDeduplicator(handle);
-    }
+    Native.closeKeepLastDeduplicator(handle);
   }
 
   @Override
   protected long stateBytesHandle() {
-    return paimonState()
-        ? Native.paimonKeepLastDeduplicatorStateBytes(handle)
-        : Native.keepLastDeduplicatorStateBytes(handle);
+    return Native.keepLastDeduplicatorStateBytes(handle);
   }
 
   @Override
@@ -232,10 +179,7 @@ public class NativeColumnarKeepLastDeduplicateOperator
           }
         }
         miniBatchMetrics.onSlice(length, firstContribution);
-        miniBatchMetrics.onCurrentKeys(
-            paimonState()
-                ? Native.paimonKeepLastDeduplicatorStagedKeys(handle)
-                : Native.keepLastDeduplicatorStagedKeys(handle));
+        miniBatchMetrics.onCurrentKeys(Native.keepLastDeduplicatorStagedKeys(handle));
         offset += length;
         if (boundary.onSlice(length)) {
           flushBundle(FlushReason.COUNT);
@@ -258,23 +202,13 @@ public class NativeColumnarKeepLastDeduplicateOperator
       // Flink's TtlTimeProvider clock: the processing-time service is System.currentTimeMillis in
       // production and harness-controlled in tests, so expiry is deterministic to test.
       long now = getProcessingTimeService().getCurrentProcessingTime();
-      if (paimonState()) {
-        Native.pushPaimonKeepLastDeduplicator(
-            handle,
-            inArray.memoryAddress(),
-            inSchema.memoryAddress(),
-            now,
-            outArray.memoryAddress(),
-            outSchema.memoryAddress());
-      } else {
-        Native.pushKeepLastDeduplicator(
-            handle,
-            inArray.memoryAddress(),
-            inSchema.memoryAddress(),
-            now,
-            outArray.memoryAddress(),
-            outSchema.memoryAddress());
-      }
+      Native.pushKeepLastDeduplicator(
+          handle,
+          inArray.memoryAddress(),
+          inSchema.memoryAddress(),
+          now,
+          outArray.memoryAddress(),
+          outSchema.memoryAddress());
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       if (out.getRowCount() > 0) {
@@ -320,23 +254,12 @@ public class NativeColumnarKeepLastDeduplicateOperator
   }
 
   private void flushBundle(FlushReason reason) {
-    long transientBytes =
-        paimonState()
-            ? Native.paimonKeepLastDeduplicatorStagingBytes(handle)
-            : Native.keepLastDeduplicatorStagingBytes(handle);
-    long touchedKeys =
-        paimonState()
-            ? Native.paimonKeepLastDeduplicatorStagedKeys(handle)
-            : Native.keepLastDeduplicatorStagedKeys(handle);
+    long transientBytes = Native.keepLastDeduplicatorStagingBytes(handle);
+    long touchedKeys = Native.keepLastDeduplicatorStagedKeys(handle);
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      if (paimonState()) {
-        Native.flushPaimonKeepLastDeduplicator(
-            handle, outArray.memoryAddress(), outSchema.memoryAddress());
-      } else {
-        Native.flushKeepLastDeduplicator(
-            handle, outArray.memoryAddress(), outSchema.memoryAddress());
-      }
+      Native.flushKeepLastDeduplicator(
+          handle, outArray.memoryAddress(), outSchema.memoryAddress());
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       int outputRows = out.getRowCount();

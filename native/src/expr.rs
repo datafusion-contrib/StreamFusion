@@ -19,9 +19,9 @@ pub(crate) fn build_expr(
         // Reference the column by its exact field name, not via `col()`, which parses its argument as
         // a SQL identifier and lower-cases an unquoted name — breaking a mixed-case column like the
         // Nexmark `dateTime` rowtime.
-        0 => datafusion::prelude::Expr::Column(
-            datafusion::common::Column::new_unqualified(schema.field(arg).name()),
-        ),
+        0 => datafusion::prelude::Expr::Column(datafusion::common::Column::new_unqualified(
+            schema.field(arg).name(),
+        )),
         1 => logical_lit(longs[arg]),
         2 => logical_lit(doubles[arg]),
         3 => logical_lit(strings[arg].clone().expect("string literal")),
@@ -36,7 +36,14 @@ pub(crate) fn build_expr(
         11 => {
             // A widening numeric cast: build the single child, then wrap it. `arg` is the target code.
             let child = build_expr(
-                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
             );
             datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
                 Box::new(child),
@@ -49,9 +56,17 @@ pub(crate) fn build_expr(
         18 => {
             let target = cast_data_type(arg);
             let child = build_expr(
-                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
             );
-            datafusion::logical_expr::ScalarUDF::new_from_impl(NarrowingCast::new(target)).call(vec![child])
+            datafusion::logical_expr::ScalarUDF::new_from_impl(NarrowingCast::new(target))
+                .call(vec![child])
         }
         6 => {
             let op = payload[node];
@@ -80,7 +95,14 @@ pub(crate) fn build_expr(
             let mut children = Vec::with_capacity(count);
             for _ in 0..count {
                 children.push(build_expr(
-                    schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                    schema,
+                    kinds,
+                    payload,
+                    child_counts,
+                    longs,
+                    doubles,
+                    strings,
+                    cursor,
                 ));
             }
             datafusion::logical_expr::ScalarUDF::new_from_impl(JvmUdf::new(id, return_type))
@@ -106,8 +128,16 @@ pub(crate) fn build_expr(
         16 => {
             let encoded = strings[arg].as_deref().expect("decimal literal");
             let mut parts = encoded.split('|');
-            let unscaled: i128 = parts.next().expect("unscaled").parse().expect("i128 unscaled");
-            let precision: u8 = parts.next().expect("precision").parse().expect("u8 precision");
+            let unscaled: i128 = parts
+                .next()
+                .expect("unscaled")
+                .parse()
+                .expect("i128 unscaled");
+            let precision: u8 = parts
+                .next()
+                .expect("precision")
+                .parse()
+                .expect("u8 precision");
             let scale: i8 = parts.next().expect("scale").parse().expect("i8 scale");
             datafusion::prelude::Expr::Literal(
                 ScalarValue::Decimal128(Some(unscaled), precision, scale),
@@ -122,10 +152,24 @@ pub(crate) fn build_expr(
             let precision = (arg / 100) as u8;
             let scale = (arg % 100) as i8;
             let left = build_expr(
-                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
             );
             let right = build_expr(
-                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
             );
             datafusion::logical_expr::ScalarUDF::new_from_impl(DecimalDivide::new(
                 precision,
@@ -142,7 +186,14 @@ pub(crate) fn build_expr(
             let precision = (arg / 100) as u8;
             let scale = (arg % 100) as i8;
             let child = build_expr(
-                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
             );
             datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
                 Box::new(child),
@@ -155,7 +206,14 @@ pub(crate) fn build_expr(
         13 => {
             let name = strings[arg].clone().expect("field name");
             let child = build_expr(
-                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
             );
             datafusion::functions::core::expr_fn::get_field(child, name)
         }
@@ -168,19 +226,33 @@ pub(crate) fn build_expr(
         19 => {
             use datafusion::logical_expr::ExprSchemable;
             let collection = build_expr(
-                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
             );
             let subscript = build_expr(
-                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
             );
-            let df_schema =
-                DFSchema::try_from(Arc::clone(schema)).expect("calc input schema");
-            let collection_type =
-                collection.get_type(&df_schema).expect("subscripted collection type");
+            let df_schema = DFSchema::try_from(Arc::clone(schema)).expect("calc input schema");
+            let collection_type = collection
+                .get_type(&df_schema)
+                .expect("subscripted collection type");
             match collection_type {
-                DataType::List(_) => datafusion::functions_nested::expr_fn::array_element(
-                    collection, subscript,
-                ),
+                DataType::List(_) => {
+                    datafusion::functions_nested::expr_fn::array_element(collection, subscript)
+                }
                 DataType::Map(_, _) => {
                     let datafusion::prelude::Expr::Literal(key, _) = subscript else {
                         panic!("map subscript must be a literal")
@@ -222,7 +294,10 @@ pub(crate) fn cast_data_type(code: usize) -> DataType {
 
 /// Combines decoded operands by op code: arithmetic, the six comparisons, AND/OR/NOT, the null
 /// predicates, and searched CASE.
-pub(crate) fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> datafusion::prelude::Expr {
+pub(crate) fn build_call(
+    op: i64,
+    args: Vec<datafusion::prelude::Expr>,
+) -> datafusion::prelude::Expr {
     if op == 40 {
         // Searched CASE: [when1, then1, …, else]. The trailing else is the odd operand out.
         let mut args = args;
@@ -285,7 +360,8 @@ pub(crate) fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> dataf
     if op == 91 {
         // EXTRACT(unit FROM ltz) with a session zone (opt-in) — see ExtractFieldLtz. Args: ts, field,
         // zone id. Converts the instant to the zone's local wall-clock before extracting.
-        return datafusion::logical_expr::ScalarUDF::new_from_impl(ExtractFieldLtz::new()).call(args);
+        return datafusion::logical_expr::ScalarUDF::new_from_impl(ExtractFieldLtz::new())
+            .call(args);
     }
     if op == 92 {
         return datafusion::logical_expr::ScalarUDF::new_from_impl(IntervalScale::new()).call(args);
@@ -382,11 +458,17 @@ pub(crate) fn build_call(op: i64, args: Vec<datafusion::prelude::Expr>) -> dataf
         80 => datafusion::functions::math::expr_fn::log10(next()),
         // LEFT/RIGHT yield a Utf8View; cast back to Utf8 for the JVM converter.
         69 => datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
-            Box::new(datafusion::functions::unicode::expr_fn::left(next(), next())),
+            Box::new(datafusion::functions::unicode::expr_fn::left(
+                next(),
+                next(),
+            )),
             DataType::Utf8,
         )),
         70 => datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
-            Box::new(datafusion::functions::unicode::expr_fn::right(next(), next())),
+            Box::new(datafusion::functions::unicode::expr_fn::right(
+                next(),
+                next(),
+            )),
             DataType::Utf8,
         )),
         56 => datafusion::prelude::Expr::Like(datafusion::logical_expr::Like::new(
@@ -467,9 +549,7 @@ impl datafusion::logical_expr::ScalarUDFImpl for IntervalScale {
                 .expect("day-time interval")
                 .iter()
                 .map(|interval| {
-                    interval.map(|value| {
-                        value.days as i64 * 86_400_000 + value.milliseconds as i64
-                    })
+                    interval.map(|value| value.days as i64 * 86_400_000 + value.milliseconds as i64)
                 })
                 .collect(),
             other => {
@@ -528,10 +608,26 @@ impl datafusion::logical_expr::ScalarUDFImpl for NarrowingCast {
                     .downcast_ref::<Int64Array>()
                     .expect("i64 narrowing source");
                 match &self.target {
-                    DataType::Int8 => Arc::new(vals.iter().map(|o| o.map(|v| v as i8)).collect::<Int8Array>()),
-                    DataType::Int16 => Arc::new(vals.iter().map(|o| o.map(|v| v as i16)).collect::<Int16Array>()),
-                    DataType::Int32 => Arc::new(vals.iter().map(|o| o.map(|v| v as i32)).collect::<Int32Array>()),
-                    _ => Arc::new(vals.iter().map(|o| o.map(|v| v as i64)).collect::<Int64Array>()),
+                    DataType::Int8 => Arc::new(
+                        vals.iter()
+                            .map(|o| o.map(|v| v as i8))
+                            .collect::<Int8Array>(),
+                    ),
+                    DataType::Int16 => Arc::new(
+                        vals.iter()
+                            .map(|o| o.map(|v| v as i16))
+                            .collect::<Int16Array>(),
+                    ),
+                    DataType::Int32 => Arc::new(
+                        vals.iter()
+                            .map(|o| o.map(|v| v as i32))
+                            .collect::<Int32Array>(),
+                    ),
+                    _ => Arc::new(
+                        vals.iter()
+                            .map(|o| o.map(|v| v as i64))
+                            .collect::<Int64Array>(),
+                    ),
                 }
             }
             // Float source: widen to f64, then `as` the target, which rounds toward zero and saturates
@@ -543,10 +639,26 @@ impl datafusion::logical_expr::ScalarUDFImpl for NarrowingCast {
                     .downcast_ref::<arrow::array::Float64Array>()
                     .expect("f64 narrowing source");
                 match &self.target {
-                    DataType::Int8 => Arc::new(vals.iter().map(|o| o.map(|v| v as i8)).collect::<Int8Array>()),
-                    DataType::Int16 => Arc::new(vals.iter().map(|o| o.map(|v| v as i16)).collect::<Int16Array>()),
-                    DataType::Int32 => Arc::new(vals.iter().map(|o| o.map(|v| v as i32)).collect::<Int32Array>()),
-                    _ => Arc::new(vals.iter().map(|o| o.map(|v| v as i64)).collect::<Int64Array>()),
+                    DataType::Int8 => Arc::new(
+                        vals.iter()
+                            .map(|o| o.map(|v| v as i8))
+                            .collect::<Int8Array>(),
+                    ),
+                    DataType::Int16 => Arc::new(
+                        vals.iter()
+                            .map(|o| o.map(|v| v as i16))
+                            .collect::<Int16Array>(),
+                    ),
+                    DataType::Int32 => Arc::new(
+                        vals.iter()
+                            .map(|o| o.map(|v| v as i32))
+                            .collect::<Int32Array>(),
+                    ),
+                    _ => Arc::new(
+                        vals.iter()
+                            .map(|o| o.map(|v| v as i64))
+                            .collect::<Int64Array>(),
+                    ),
                 }
             }
             other => {
@@ -596,24 +708,42 @@ pub(crate) fn decimal_cell(array: &ArrayRef, row: usize) -> Option<(i128, i8)> {
     }
     match array.data_type() {
         DataType::Decimal128(_, s) => {
-            let a = array.as_any().downcast_ref::<Decimal128Array>().expect("decimal128");
+            let a = array
+                .as_any()
+                .downcast_ref::<Decimal128Array>()
+                .expect("decimal128");
             Some((a.value(row), *s))
         }
         DataType::Int64 => Some((
-            array.as_any().downcast_ref::<Int64Array>().expect("int64").value(row) as i128,
+            array
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("int64")
+                .value(row) as i128,
             0,
         )),
         DataType::Int32 => Some((
-            array.as_any().downcast_ref::<Int32Array>().expect("int32").value(row) as i128,
+            array
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .expect("int32")
+                .value(row) as i128,
             0,
         )),
         DataType::Int16 => Some((
-            array.as_any().downcast_ref::<arrow::array::Int16Array>().expect("int16").value(row)
-                as i128,
+            array
+                .as_any()
+                .downcast_ref::<arrow::array::Int16Array>()
+                .expect("int16")
+                .value(row) as i128,
             0,
         )),
         DataType::Int8 => Some((
-            array.as_any().downcast_ref::<Int8Array>().expect("int8").value(row) as i128,
+            array
+                .as_any()
+                .downcast_ref::<Int8Array>()
+                .expect("int8")
+                .value(row) as i128,
             0,
         )),
         other => panic!("decimal divide over unsupported operand type {other:?}"),
@@ -661,18 +791,13 @@ pub(crate) fn rescale_half_up(
 /// The exact quotient of two (unscaled, scale) decimals, rounded to 38 significant digits with
 /// HALF_UP — the value `BigDecimal.divide(divisor, MathContext(38, HALF_UP))` produces — returned as
 /// an (unscaled, scale) big pair. The divisor must be non-zero.
-pub(crate) fn quotient_38_digits(
-    a: i128,
-    s1: i8,
-    b: i128,
-    s2: i8,
-) -> (num_bigint::BigInt, i64) {
+pub(crate) fn quotient_38_digits(a: i128, s1: i8, b: i128, s2: i8) -> (num_bigint::BigInt, i64) {
     use num_bigint::{BigInt, Sign};
     // v1 / v2 = (a·10^s2) / (b·10^s1).
     let n = BigInt::from(a) * BigInt::from(10u8).pow(s2.max(0) as u32);
     let d = BigInt::from(b) * BigInt::from(10u8).pow(s1.max(0) as u32);
-    let negative = (n.sign() == Sign::Minus) != (d.sign() == Sign::Minus)
-        && n.sign() != Sign::NoSign;
+    let negative =
+        (n.sign() == Sign::Minus) != (d.sign() == Sign::Minus) && n.sign() != Sign::NoSign;
     let (n, d) = (n.magnitude().clone(), d.magnitude().clone());
     if n == num_bigint::BigUint::from(0u8) {
         return (BigInt::from(0), 0);
@@ -685,9 +810,15 @@ pub(crate) fn quotient_38_digits(
         // For a negative g, scale the denominator instead of truncating the numerator, so the
         // division (and its remainder, which drives the rounding) stays exact.
         let (num, den) = if g >= 0 {
-            (&n * num_bigint::BigUint::from(10u8).pow(g as u32), d.clone())
+            (
+                &n * num_bigint::BigUint::from(10u8).pow(g as u32),
+                d.clone(),
+            )
         } else {
-            (n.clone(), &d * num_bigint::BigUint::from(10u8).pow((-g) as u32))
+            (
+                n.clone(),
+                &d * num_bigint::BigUint::from(10u8).pow((-g) as u32),
+            )
         };
         let q = &num / &den;
         let digits = q.to_string().len() as i64;
@@ -701,10 +832,7 @@ pub(crate) fn quotient_38_digits(
         }
         let r = &num % &den;
         let rounded = if &r * 2u8 >= den { q + 1u8 } else { q };
-        let signed = BigInt::from_biguint(
-            if negative { Sign::Minus } else { Sign::Plus },
-            rounded,
-        );
+        let signed = BigInt::from_biguint(if negative { Sign::Minus } else { Sign::Plus }, rounded);
         return (signed, g);
     }
 }
@@ -746,7 +874,8 @@ impl datafusion::logical_expr::ScalarUDFImpl for DecimalDivide {
         let (left, right) = (&arrays[0], &arrays[1]);
         let mut out = Vec::with_capacity(left.len());
         for row in 0..left.len() {
-            let (Some((a, s1)), Some((b, s2))) = (decimal_cell(left, row), decimal_cell(right, row))
+            let (Some((a, s1)), Some((b, s2))) =
+                (decimal_cell(left, row), decimal_cell(right, row))
             else {
                 out.push(None);
                 continue;
@@ -811,9 +940,18 @@ impl datafusion::logical_expr::ScalarUDFImpl for SplitIndex {
         let strs = arrow::compute::cast(&arrays[0], &DataType::Utf8)?;
         let seps = arrow::compute::cast(&arrays[1], &DataType::Utf8)?;
         let idxs = arrow::compute::cast(&arrays[2], &DataType::Int32)?;
-        let strs = strs.as_any().downcast_ref::<StringArray>().expect("utf8 str");
-        let seps = seps.as_any().downcast_ref::<StringArray>().expect("utf8 sep");
-        let idxs = idxs.as_any().downcast_ref::<Int32Array>().expect("i32 index");
+        let strs = strs
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("utf8 str");
+        let seps = seps
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("utf8 sep");
+        let idxs = idxs
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .expect("i32 index");
         let mut builder = arrow::array::StringBuilder::new();
         for row in 0..rows {
             if strs.is_null(row) || seps.is_null(row) || idxs.is_null(row) {
@@ -895,7 +1033,11 @@ fn push2(buf: &mut String, value: u32) {
 
 impl CompiledFormat {
     pub(crate) fn new() -> Self {
-        Self { pattern: String::new(), items: Vec::new(), fast: None }
+        Self {
+            pattern: String::new(),
+            items: Vec::new(),
+            fast: None,
+        }
     }
 
     pub(crate) fn format_into(
@@ -906,8 +1048,9 @@ impl CompiledFormat {
     ) -> datafusion::common::Result<()> {
         use std::fmt::Write as _;
         if self.pattern != pattern || self.items.is_empty() {
-            self.items =
-                chrono::format::StrftimeItems::new(pattern).parse_to_owned().map_err(|e| {
+            self.items = chrono::format::StrftimeItems::new(pattern)
+                .parse_to_owned()
+                .map_err(|e| {
                     datafusion::common::DataFusionError::Execution(format!(
                         "invalid DATE_FORMAT pattern {pattern}: {e}"
                     ))
@@ -998,10 +1141,15 @@ impl datafusion::logical_expr::ScalarUDFImpl for DateFormat {
             &arrays[0],
             &DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
         )?;
-        let times =
-            times.as_any().downcast_ref::<TimestampMillisecondArray>().expect("timestamp ms");
+        let times = times
+            .as_any()
+            .downcast_ref::<TimestampMillisecondArray>()
+            .expect("timestamp ms");
         let formats = arrow::compute::cast(&arrays[1], &DataType::Utf8)?;
-        let formats = formats.as_any().downcast_ref::<StringArray>().expect("utf8 format");
+        let formats = formats
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("utf8 format");
         let mut builder = arrow::array::StringBuilder::new();
         let mut compiled = CompiledFormat::new();
         let mut buf = String::new();
@@ -1064,10 +1212,15 @@ impl datafusion::logical_expr::ScalarUDFImpl for ExtractField {
             &arrays[0],
             &DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
         )?;
-        let times =
-            times.as_any().downcast_ref::<TimestampMillisecondArray>().expect("timestamp ms");
+        let times = times
+            .as_any()
+            .downcast_ref::<TimestampMillisecondArray>()
+            .expect("timestamp ms");
         let units = arrow::compute::cast(&arrays[1], &DataType::Utf8)?;
-        let units = units.as_any().downcast_ref::<StringArray>().expect("utf8 unit");
+        let units = units
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("utf8 unit");
         let mut builder = Int64Array::builder(rows);
         for row in 0..rows {
             if times.is_null(row) || units.is_null(row) {
@@ -1158,12 +1311,20 @@ impl datafusion::logical_expr::ScalarUDFImpl for DateFormatLtz {
             &arrays[0],
             &DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
         )?;
-        let times =
-            times.as_any().downcast_ref::<TimestampMillisecondArray>().expect("timestamp ms");
+        let times = times
+            .as_any()
+            .downcast_ref::<TimestampMillisecondArray>()
+            .expect("timestamp ms");
         let formats = arrow::compute::cast(&arrays[1], &DataType::Utf8)?;
-        let formats = formats.as_any().downcast_ref::<StringArray>().expect("utf8 format");
+        let formats = formats
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("utf8 format");
         let zones = arrow::compute::cast(&arrays[2], &DataType::Utf8)?;
-        let zones = zones.as_any().downcast_ref::<StringArray>().expect("utf8 zone");
+        let zones = zones
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("utf8 zone");
         let mut builder = arrow::array::StringBuilder::new();
         let mut compiled = CompiledFormat::new();
         let mut buf = String::new();
@@ -1224,12 +1385,20 @@ impl datafusion::logical_expr::ScalarUDFImpl for ExtractFieldLtz {
             &arrays[0],
             &DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
         )?;
-        let times =
-            times.as_any().downcast_ref::<TimestampMillisecondArray>().expect("timestamp ms");
+        let times = times
+            .as_any()
+            .downcast_ref::<TimestampMillisecondArray>()
+            .expect("timestamp ms");
         let units = arrow::compute::cast(&arrays[1], &DataType::Utf8)?;
-        let units = units.as_any().downcast_ref::<StringArray>().expect("utf8 unit");
+        let units = units
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("utf8 unit");
         let zones = arrow::compute::cast(&arrays[2], &DataType::Utf8)?;
-        let zones = zones.as_any().downcast_ref::<StringArray>().expect("utf8 zone");
+        let zones = zones
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("utf8 zone");
         let mut builder = Int64Array::builder(rows);
         for row in 0..rows {
             if times.is_null(row) || units.is_null(row) || zones.is_null(row) {
@@ -1300,9 +1469,18 @@ impl datafusion::logical_expr::ScalarUDFImpl for RegexpExtract {
         let strs = arrow::compute::cast(&arrays[0], &DataType::Utf8)?;
         let pats = arrow::compute::cast(&arrays[1], &DataType::Utf8)?;
         let idxs = arrow::compute::cast(&arrays[2], &DataType::Int64)?;
-        let strs = strs.as_any().downcast_ref::<StringArray>().expect("utf8 str");
-        let pats = pats.as_any().downcast_ref::<StringArray>().expect("utf8 pattern");
-        let idxs = idxs.as_any().downcast_ref::<Int64Array>().expect("i64 index");
+        let strs = strs
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("utf8 str");
+        let pats = pats
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("utf8 pattern");
+        let idxs = idxs
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("i64 index");
         // The pattern is a literal (encoder-enforced), so compile it once and reuse. An invalid pattern
         // compiles to None, which — like Flink's catch — yields NULL for every row.
         let compiled: Option<regex::Regex> = (rows > 0 && !pats.is_null(0))
@@ -1411,8 +1589,12 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
         let mut out_array = FFI_ArrowArray::empty();
         let mut out_schema = FFI_ArrowSchema::empty();
 
-        let vm = JVM.get().ok_or_else(|| exec("JVM not captured for UDF upcall".to_string()))?;
-        let mut env = vm.attach_current_thread().map_err(|e| exec(e.to_string()))?;
+        let vm = JVM
+            .get()
+            .ok_or_else(|| exec("JVM not captured for UDF upcall".to_string()))?;
+        let mut env = vm
+            .attach_current_thread()
+            .map_err(|e| exec(e.to_string()))?;
         env.call_static_method(
             "tech/streamfusion/operator/NativeUdf",
             "invokeUdf",
@@ -1428,7 +1610,8 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
         .map_err(|e| exec(format!("UDF upcall failed: {e}")))?;
 
         // The JVM exports the result as a one-field root, i.e. a struct{result}; take that one column.
-        let mut data = unsafe { from_ffi(out_array, &out_schema) }.map_err(|e| exec(e.to_string()))?;
+        let mut data =
+            unsafe { from_ffi(out_array, &out_schema) }.map_err(|e| exec(e.to_string()))?;
         data.align_buffers();
         let result = StructArray::from(data);
         Ok(ColumnarValue::Array(result.column(0).clone()))
@@ -1481,10 +1664,12 @@ pub(crate) fn compile_expr(
         strings,
         &mut cursor,
     );
-    let context =
-        SimplifyContext::builder().with_schema(Arc::new(indexed_df_schema.clone())).build();
-    let coerced =
-        ExprSimplifier::new(context).coerce(logical, &indexed_df_schema).expect("failed to coerce expr");
+    let context = SimplifyContext::builder()
+        .with_schema(Arc::new(indexed_df_schema.clone()))
+        .build();
+    let coerced = ExprSimplifier::new(context)
+        .coerce(logical, &indexed_df_schema)
+        .expect("failed to coerce expr");
     create_physical_expr(&coerced, &indexed_df_schema, &ExecutionProps::new())
         .expect("failed to compile expr")
 }

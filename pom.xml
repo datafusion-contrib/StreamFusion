@@ -21,7 +21,6 @@
         <module>streamfusion-protobuf</module>
         <module>streamfusion-fluss</module>
         <module>streamfusion-parquet</module>
-        <module>streamfusion-paimon-compactor</module>
         <module>streamfusion-loader</module>
     </modules>
 
@@ -62,7 +61,7 @@
              Deployment packaging builds a
              connector-free core and feature-specific extension DSOs separately in
              bin/build-release.sh. -->
-        <native.cargo.args>build --features kafka,parquet,json,csv,raw,avro,protobuf,paimon-state</native.cargo.args>
+        <native.cargo.args>build --features kafka,parquet,json,csv,raw,avro,protobuf,rocksdb-state</native.cargo.args>
         <native.build.skip>false</native.build.skip>
         <native.resource.directory>${project.basedir}/../native/target/${native.profile}</native.resource.directory>
         <!-- Extra JVM args appended to the Surefire fork's argLine; empty by default. Used to attach a
@@ -356,15 +355,6 @@
             <id>confluent</id>
             <url>https://packages.confluent.io/maven/</url>
         </repository>
-        <!-- Hosts the timestamped Paimon 2.0 snapshot bundle the state compactor pins (the first
-             Paimon carrying the binary-primary-key lookup comparator fix, which deletion-vector
-             state tables require); drop once a Paimon release includes it. -->
-        <repository>
-            <id>apache-snapshots</id>
-            <url>https://repository.apache.org/content/groups/snapshots/</url>
-            <releases><enabled>false</enabled></releases>
-            <snapshots><enabled>true</enabled></snapshots>
-        </repository>
     </repositories>
 
     <build>
@@ -579,7 +569,7 @@
                      record with a same-JVM process-global handle. -->
                 <sf.benchmarkJvmArgs>-Dstreamfusion.exchange.zeroCopyLocal=false</sf.benchmarkJvmArgs>
                 <native.profile>release</native.profile>
-                <native.cargo.args>build --release --features mimalloc,kafka,parquet,json,csv,raw,avro,protobuf,paimon-state</native.cargo.args>
+                <native.cargo.args>build --release --features mimalloc,kafka,parquet,json,csv,raw,avro,protobuf,rocksdb-state</native.cargo.args>
             </properties>
         </profile>
         <!-- Produces the deployable, performance-oriented runtime payload. Callers may override
@@ -588,9 +578,7 @@
             <id>dist</id>
             <properties>
                 <native.profile>release</native.profile>
-                <!-- paimon-state is core-engine infrastructure (the persistent state backend),
-                     not a connector: it ships in the core DSO. -->
-                <native.cargo.args>build --release --no-default-features --features mimalloc,paimon-state</native.cargo.args>
+                <native.cargo.args>build --release --no-default-features --features mimalloc,rocksdb-state</native.cargo.args>
             </properties>
         </profile>
         <!-- Packages the resource tree staged by bin/build-release.sh. It deliberately does not

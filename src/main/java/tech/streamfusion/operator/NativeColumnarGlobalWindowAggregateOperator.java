@@ -2,7 +2,6 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.PaimonNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -70,45 +69,6 @@ public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindow
     this.keyTypes = keyTypes;
   }
 
-  @Override
-  protected PaimonNativeStateSupport resolvePaimonState(
-      boolean rawStateRestored) {
-    return resolvePaimon(
-        rawStateRestored,
-        () -> Native.paimonWindowAggStateSupported(valueTypes, aggregateKinds, keyTypes));
-  }
-
-  @Override
-  protected long createPaimonHandle(
-      PaimonNativeStateSupport paimon) {
-    return Native.createPaimonTumblingAggregator(
-        windowMillis,
-        slideMillis,
-        cumulative,
-        valueTypes,
-        aggregateKinds,
-        keyTypes,
-        keyTimestampPrecisions(),
-        memoryBudgetBytes(),
-        paimon.tableDirectory(),
-        maxParallelism(),
-        NativeConfig.paimonBuckets(),
-        NativeConfig.paimonFileFormat(),
-        NativeConfig.paimonFileCompression(),
-        paimon.sourceDirectories(),
-        paimon.sourceSnapshotTokens(),
-        paimon.keyGroupStart(),
-        paimon.keyGroupEnd(),
-        paimon.aligned());
-  }
-
-  @Override
-  protected String[] checkpointPaimonHandle() {
-    return Native.checkpointPaimonTumblingAggregator(handle);
-  }
-
-  // Cumulative globals merge each slice into the nested windows of its bucket; see the row-fed
-  // operator. The native side switches fan-out on the cumulative flag set here.
   @Override
   protected long createHandle() {
     return cumulative

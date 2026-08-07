@@ -34,10 +34,7 @@ pub(crate) static FORCE_LINK_MIMALLOC: unsafe extern "C" fn(*mut std::os::raw::c
 /// immediately after, so the task fails with the budget message instead of the container OOM-killing
 /// the process.
 pub(crate) fn throw_memory_limit(env: &mut JNIEnv, message: &str) {
-    let _ = env.throw_new(
-        "tech/streamfusion/NativeMemoryLimitException",
-        message,
-    );
+    let _ = env.throw_new("tech/streamfusion/NativeMemoryLimitException", message);
 }
 
 /// The value a guarded entrypoint returns after a panic has been converted into a pending Java
@@ -147,8 +144,10 @@ where
             default
         }
         Err(payload) => {
-            let _ = env
-                .throw_new("java/io/IOException", format!("{prefix}: {}", panic_message(payload)));
+            let _ = env.throw_new(
+                "java/io/IOException",
+                format!("{prefix}: {}", panic_message(payload)),
+            );
             default
         }
     }
@@ -163,11 +162,7 @@ pub(crate) fn keyed_state_partition_array(
     operator: &str,
 ) -> jni::sys::jobjectArray {
     let output = env
-        .new_object_array(
-            partitions.len() as i32,
-            "[B",
-            jni::objects::JObject::null(),
-        )
+        .new_object_array(partitions.len() as i32, "[B", jni::objects::JObject::null())
         .unwrap_or_else(|_| panic!("allocate {operator} raw keyed-state partitions"));
     for (index, (key_group, payload)) in partitions.into_iter().enumerate() {
         let mut framed = Vec::with_capacity(std::mem::size_of::<i32>() + payload.len());
@@ -184,12 +179,19 @@ pub(crate) fn keyed_state_partition_array(
 
 pub(crate) fn import_record_batch(array_address: jlong, schema_address: jlong) -> RecordBatch {
     let ffi_array = unsafe {
-        std::ptr::replace(array_address as *mut FFI_ArrowArray, FFI_ArrowArray::empty())
+        std::ptr::replace(
+            array_address as *mut FFI_ArrowArray,
+            FFI_ArrowArray::empty(),
+        )
     };
     let ffi_schema = unsafe {
-        std::ptr::replace(schema_address as *mut FFI_ArrowSchema, FFI_ArrowSchema::empty())
+        std::ptr::replace(
+            schema_address as *mut FFI_ArrowSchema,
+            FFI_ArrowSchema::empty(),
+        )
     };
-    let mut data = unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow batch");
+    let mut data =
+        unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow batch");
     data.align_buffers();
     RecordBatch::from(StructArray::from(data))
 }
@@ -198,7 +200,10 @@ pub(crate) fn import_record_batch(array_address: jlong, schema_address: jlong) -
 /// swapping in a released placeholder so the producer's release callback fires once.
 pub(crate) fn import_schema(schema_address: jlong) -> SchemaRef {
     let ffi_schema = unsafe {
-        std::ptr::replace(schema_address as *mut FFI_ArrowSchema, FFI_ArrowSchema::empty())
+        std::ptr::replace(
+            schema_address as *mut FFI_ArrowSchema,
+            FFI_ArrowSchema::empty(),
+        )
     };
     Arc::new(Schema::try_from(&ffi_schema).expect("failed to import Arrow schema"))
 }
@@ -227,7 +232,11 @@ pub(crate) fn live_handles() -> &'static Mutex<BTreeMap<&'static str, i64>> {
 
 /// Boxes a value into an opaque JVM handle, counting it in the live-handle registry.
 pub(crate) fn into_handle<T>(value: T) -> jlong {
-    *live_handles().lock().unwrap().entry(std::any::type_name::<T>()).or_insert(0) += 1;
+    *live_handles()
+        .lock()
+        .unwrap()
+        .entry(std::any::type_name::<T>())
+        .or_insert(0) += 1;
     Box::into_raw(Box::new(value)) as jlong
 }
 
@@ -345,9 +354,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_blockingAnswer<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> jlong {
-    crate::bridge::jni_guard(env, move |_env| {
-        runtime().block_on(async { 42 })
-    })
+    crate::bridge::jni_guard(env, move |_env| runtime().block_on(async { 42 }))
 }
 
 /// Imports a single Arrow array exported by the JVM through the C Data Interface and returns the
@@ -363,13 +370,21 @@ pub extern "system" fn Java_tech_streamfusion_Native_sumInt<'local>(
     schema_address: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
-        let ffi_array =
-            unsafe { std::ptr::replace(array_address as *mut FFI_ArrowArray, FFI_ArrowArray::empty()) };
+        let ffi_array = unsafe {
+            std::ptr::replace(
+                array_address as *mut FFI_ArrowArray,
+                FFI_ArrowArray::empty(),
+            )
+        };
         let ffi_schema = unsafe {
-            std::ptr::replace(schema_address as *mut FFI_ArrowSchema, FFI_ArrowSchema::empty())
+            std::ptr::replace(
+                schema_address as *mut FFI_ArrowSchema,
+                FFI_ArrowSchema::empty(),
+            )
         };
 
-        let mut data = unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
+        let mut data =
+            unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
         data.align_buffers();
 
         let array = make_array(data);
@@ -398,13 +413,20 @@ pub extern "system" fn Java_tech_streamfusion_Native_roundTrip<'local>(
 ) {
     crate::bridge::jni_guard(env, move |_env| {
         let ffi_array = unsafe {
-            std::ptr::replace(in_array_address as *mut FFI_ArrowArray, FFI_ArrowArray::empty())
+            std::ptr::replace(
+                in_array_address as *mut FFI_ArrowArray,
+                FFI_ArrowArray::empty(),
+            )
         };
         let ffi_schema = unsafe {
-            std::ptr::replace(in_schema_address as *mut FFI_ArrowSchema, FFI_ArrowSchema::empty())
+            std::ptr::replace(
+                in_schema_address as *mut FFI_ArrowSchema,
+                FFI_ArrowSchema::empty(),
+            )
         };
 
-        let mut data = unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
+        let mut data =
+            unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
         data.align_buffers();
 
         let array = make_array(data);
@@ -442,22 +464,30 @@ pub extern "system" fn Java_tech_streamfusion_Native_doubleColumn<'local>(
 ) {
     crate::bridge::jni_guard(env, move |_env| {
         let ffi_array = unsafe {
-            std::ptr::replace(in_array_address as *mut FFI_ArrowArray, FFI_ArrowArray::empty())
+            std::ptr::replace(
+                in_array_address as *mut FFI_ArrowArray,
+                FFI_ArrowArray::empty(),
+            )
         };
         let ffi_schema = unsafe {
-            std::ptr::replace(in_schema_address as *mut FFI_ArrowSchema, FFI_ArrowSchema::empty())
+            std::ptr::replace(
+                in_schema_address as *mut FFI_ArrowSchema,
+                FFI_ArrowSchema::empty(),
+            )
         };
 
         let field = Field::try_from(&ffi_schema).expect("failed to import Arrow field");
         let schema = Arc::new(Schema::new(vec![field]));
 
-        let mut data = unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
+        let mut data =
+            unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
         data.align_buffers();
-        let batch =
-            RecordBatch::try_new(schema.clone(), vec![make_array(data)]).expect("failed to build batch");
+        let batch = RecordBatch::try_new(schema.clone(), vec![make_array(data)])
+            .expect("failed to build batch");
 
         let column = col(schema.field(0).name(), &schema).expect("failed to resolve column");
-        let expr = binary(column, Operator::Multiply, lit(2i32), &schema).expect("failed to build expr");
+        let expr =
+            binary(column, Operator::Multiply, lit(2i32), &schema).expect("failed to build expr");
         let projected = expr
             .evaluate(&batch)
             .expect("failed to evaluate projection")
@@ -490,13 +520,20 @@ pub extern "system" fn Java_tech_streamfusion_Native_echoBatch<'local>(
 ) {
     crate::bridge::jni_guard(env, move |_env| {
         let ffi_array = unsafe {
-            std::ptr::replace(in_array_address as *mut FFI_ArrowArray, FFI_ArrowArray::empty())
+            std::ptr::replace(
+                in_array_address as *mut FFI_ArrowArray,
+                FFI_ArrowArray::empty(),
+            )
         };
         let ffi_schema = unsafe {
-            std::ptr::replace(in_schema_address as *mut FFI_ArrowSchema, FFI_ArrowSchema::empty())
+            std::ptr::replace(
+                in_schema_address as *mut FFI_ArrowSchema,
+                FFI_ArrowSchema::empty(),
+            )
         };
 
-        let mut data = unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow batch");
+        let mut data =
+            unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow batch");
         data.align_buffers();
         let batch = RecordBatch::from(StructArray::from(data));
 
@@ -525,53 +562,74 @@ pub(crate) fn boxed_or_throw<T>(env: &mut JNIEnv, operator: Result<T, DataFusion
 
 /// Reads a JVM int[] into a Vec.
 pub(crate) fn read_i32_array(env: &JNIEnv, array: &JIntArray) -> Vec<i32> {
-    let length = env.get_array_length(array).expect("failed to read int array length");
+    let length = env
+        .get_array_length(array)
+        .expect("failed to read int array length");
     let mut buffer = vec![0i32; length as usize];
-    env.get_int_array_region(array, 0, &mut buffer).expect("failed to read int array");
+    env.get_int_array_region(array, 0, &mut buffer)
+        .expect("failed to read int array");
     buffer
 }
 
 /// Reads a JVM int[] (aggregate kinds or per-aggregate value-type codes) widened into a Vec<i64>.
 pub(crate) fn read_int_array(env: &JNIEnv, array: &JIntArray) -> Vec<i64> {
-    read_i32_array(env, array).into_iter().map(i64::from).collect()
+    read_i32_array(env, array)
+        .into_iter()
+        .map(i64::from)
+        .collect()
 }
 
 /// Reads a JVM double[] into a Vec.
 pub(crate) fn read_doubles(env: &JNIEnv, values: &JDoubleArray) -> Vec<f64> {
-    let length = env.get_array_length(values).expect("failed to read doubles length");
+    let length = env
+        .get_array_length(values)
+        .expect("failed to read doubles length");
     let mut buffer = vec![0f64; length as usize];
-    env.get_double_array_region(values, 0, &mut buffer).expect("failed to read doubles");
+    env.get_double_array_region(values, 0, &mut buffer)
+        .expect("failed to read doubles");
     buffer
 }
 
 /// Reads a JVM float[] into a Vec.
 #[allow(dead_code)]
 pub(crate) fn read_floats(env: &JNIEnv, values: &JFloatArray) -> Vec<f32> {
-    let length = env.get_array_length(values).expect("failed to read floats length");
+    let length = env
+        .get_array_length(values)
+        .expect("failed to read floats length");
     let mut buffer = vec![0f32; length as usize];
-    env.get_float_array_region(values, 0, &mut buffer).expect("failed to read floats");
+    env.get_float_array_region(values, 0, &mut buffer)
+        .expect("failed to read floats");
     buffer
 }
 
 /// Reads a JVM long[] into a Vec.
 pub(crate) fn read_longs(env: &JNIEnv, values: &JLongArray) -> Vec<i64> {
-    let length = env.get_array_length(values).expect("failed to read longs length");
+    let length = env
+        .get_array_length(values)
+        .expect("failed to read longs length");
     let mut buffer = vec![0i64; length as usize];
-    env.get_long_array_region(values, 0, &mut buffer).expect("failed to read longs");
+    env.get_long_array_region(values, 0, &mut buffer)
+        .expect("failed to read longs");
     buffer
 }
 
 /// Reads a JVM String[] into a Vec, mapping a Java null element to None (a numeric comparison).
 pub(crate) fn read_strings(env: &mut JNIEnv, values: &JObjectArray) -> Vec<Option<String>> {
-    let length = env.get_array_length(values).expect("failed to read strings length");
+    let length = env
+        .get_array_length(values)
+        .expect("failed to read strings length");
     let mut out = Vec::with_capacity(length as usize);
     for index in 0..length {
-        let element = env.get_object_array_element(values, index).expect("failed to read string");
+        let element = env
+            .get_object_array_element(values, index)
+            .expect("failed to read string");
         if element.is_null() {
             out.push(None);
         } else {
-            let text: String =
-                env.get_string(&JString::from(element)).expect("failed to decode string").into();
+            let text: String = env
+                .get_string(&JString::from(element))
+                .expect("failed to decode string")
+                .into();
             out.push(Some(text));
         }
     }
@@ -580,17 +638,27 @@ pub(crate) fn read_strings(env: &mut JNIEnv, values: &JObjectArray) -> Vec<Optio
 
 /// Reads a JVM int[] of column indices into a Vec.
 pub(crate) fn read_columns(env: &JNIEnv, columns: &JIntArray) -> Vec<usize> {
-    read_i32_array(env, columns).into_iter().map(|c| c as usize).collect()
+    read_i32_array(env, columns)
+        .into_iter()
+        .map(|c| c as usize)
+        .collect()
 }
 
 /// Reads a JVM String[] into a Vec<String>.
 #[cfg(any(feature = "kafka", feature = "fluss"))]
 pub(crate) fn read_string_array(env: &mut JNIEnv, array: &JObjectArray) -> Vec<String> {
-    let length = env.get_array_length(array).expect("failed to read string[] length");
+    let length = env
+        .get_array_length(array)
+        .expect("failed to read string[] length");
     let mut out = Vec::with_capacity(length as usize);
     for i in 0..length {
-        let element = env.get_object_array_element(array, i).expect("failed to read string[] element");
-        let string: String = env.get_string(&JString::from(element)).expect("failed to read string").into();
+        let element = env
+            .get_object_array_element(array, i)
+            .expect("failed to read string[] element");
+        let string: String = env
+            .get_string(&JString::from(element))
+            .expect("failed to read string")
+            .into();
         out.push(string);
     }
     out

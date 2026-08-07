@@ -217,7 +217,11 @@ fn render_csv_scalar(
 
     match column.data_type() {
         DataType::Boolean => {
-            let value: &[u8] = if column.as_boolean().value(row) { b"true" } else { b"false" };
+            let value: &[u8] = if column.as_boolean().value(row) {
+                b"true"
+            } else {
+                b"false"
+            };
             out.extend_from_slice(value);
             Ok(CsvScalar::Raw)
         }
@@ -281,23 +285,42 @@ fn render_csv_scalar(
             Ok(CsvScalar::Text)
         }
         DataType::Date32 => {
-            iso_local_date(i64::from(column.as_primitive::<arrow::datatypes::Date32Type>().value(row)), out);
+            iso_local_date(
+                i64::from(
+                    column
+                        .as_primitive::<arrow::datatypes::Date32Type>()
+                        .value(row),
+                ),
+                out,
+            );
             Ok(CsvScalar::Text)
         }
         DataType::Time32(arrow::datatypes::TimeUnit::Second) => {
-            iso_local_time(i64::from(column.as_primitive::<Time32SecondType>().value(row)) * 1_000, out);
+            iso_local_time(
+                i64::from(column.as_primitive::<Time32SecondType>().value(row)) * 1_000,
+                out,
+            );
             Ok(CsvScalar::Text)
         }
         DataType::Time32(arrow::datatypes::TimeUnit::Millisecond) => {
-            iso_local_time(i64::from(column.as_primitive::<Time32MillisecondType>().value(row)), out);
+            iso_local_time(
+                i64::from(column.as_primitive::<Time32MillisecondType>().value(row)),
+                out,
+            );
             Ok(CsvScalar::Text)
         }
         DataType::Time64(arrow::datatypes::TimeUnit::Microsecond) => {
-            iso_local_time(column.as_primitive::<Time64MicrosecondType>().value(row) / 1_000, out);
+            iso_local_time(
+                column.as_primitive::<Time64MicrosecondType>().value(row) / 1_000,
+                out,
+            );
             Ok(CsvScalar::Text)
         }
         DataType::Time64(arrow::datatypes::TimeUnit::Nanosecond) => {
-            iso_local_time(column.as_primitive::<Time64NanosecondType>().value(row) / 1_000_000, out);
+            iso_local_time(
+                column.as_primitive::<Time64NanosecondType>().value(row) / 1_000_000,
+                out,
+            );
             Ok(CsvScalar::Text)
         }
         DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, timezone) => {
@@ -446,7 +469,10 @@ mod tests {
             vec![
                 ("id", Arc::new(Int32Array::from(vec![1, 2])) as ArrayRef),
                 ("name", strings(&[Some("alice"), Some("bob")])),
-                ("ok", Arc::new(BooleanArray::from(vec![true, false])) as ArrayRef),
+                (
+                    "ok",
+                    Arc::new(BooleanArray::from(vec![true, false])) as ArrayRef,
+                ),
             ],
             &CsvEncodeOptions::default(),
         );
@@ -494,7 +520,10 @@ mod tests {
 
     #[test]
     fn escape_character_replaces_the_backslash_rule_and_doubles_itself() {
-        let options = CsvEncodeOptions { escape: Some(b'|'), ..CsvEncodeOptions::default() };
+        let options = CsvEncodeOptions {
+            escape: Some(b'|'),
+            ..CsvEncodeOptions::default()
+        };
         let rows = encode(
             vec![(
                 "value",
@@ -507,9 +536,15 @@ mod tests {
 
     #[test]
     fn disabled_quote_character_writes_everything_raw() {
-        let options = CsvEncodeOptions { quote: None, ..CsvEncodeOptions::default() };
+        let options = CsvEncodeOptions {
+            quote: None,
+            ..CsvEncodeOptions::default()
+        };
         let rows = encode(
-            vec![("value", strings(&[Some("with,comma"), Some("q\"uote\nline")]))],
+            vec![(
+                "value",
+                strings(&[Some("with,comma"), Some("q\"uote\nline")]),
+            )],
             &options,
         );
         assert_eq!(rows, vec!["with,comma", "q\"uote\nline"]);
@@ -524,7 +559,10 @@ mod tests {
         let rows = encode(
             vec![
                 ("a", strings(&[None])),
-                ("b", Arc::new(Int32Array::from(vec![None::<i32>])) as ArrayRef),
+                (
+                    "b",
+                    Arc::new(Int32Array::from(vec![None::<i32>])) as ArrayRef,
+                ),
             ],
             &options,
         );
@@ -553,8 +591,9 @@ mod tests {
     #[test]
     fn temporal_spellings_follow_flinks_formatters() {
         let date: ArrayRef = Arc::new(Date32Array::from(vec![18321, -1, 2_932_897]));
-        let time: ArrayRef =
-            Arc::new(Time32MillisecondArray::from(vec![45_240_000, 45_296_789, 500]));
+        let time: ArrayRef = Arc::new(Time32MillisecondArray::from(vec![
+            45_240_000, 45_296_789, 500,
+        ]));
         let ts = TimestampNanosecondArray::from(vec![
             1_577_934_245_000_000_000,
             1_577_934_245_120_000_000,
@@ -618,7 +657,10 @@ mod tests {
     fn custom_delimiter_raises_the_quote_threshold() {
         // Jackson's loose check quotes anything at or below max(delimiter, quote): with a '|'
         // delimiter almost every letter falls below it.
-        let options = CsvEncodeOptions { delimiter: b'|', ..CsvEncodeOptions::default() };
+        let options = CsvEncodeOptions {
+            delimiter: b'|',
+            ..CsvEncodeOptions::default()
+        };
         let rows = encode(
             vec![
                 ("a", strings(&[Some("abc")])),

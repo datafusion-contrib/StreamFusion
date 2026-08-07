@@ -3,7 +3,7 @@ package tech.streamfusion.operator;
 import tech.streamfusion.Native;
 import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.PaimonNativeStateSupport;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -72,29 +72,35 @@ public class NativeColumnarGroupAggregateOperator
   }
 
   @Override
-  protected PaimonNativeStateSupport resolvePaimonState(boolean rawStateRestored) {
-    return resolvePaimon(
+  protected boolean usesDirectRocksDBState() {
+    return Native.rocksdbGroupAggregatorSupported(aggregateKinds, valueTypes);
+  }
+
+  @Override
+  protected RocksDBNativeStateSupport resolveRocksDBState(boolean rawStateRestored) {
+    return resolveRocksDB(
         rawStateRestored,
-        () -> Native.paimonGroupAggregatorSupported(aggregateKinds, valueTypes),
+        () -> true,
         stateTtlMillis);
   }
 
   @Override
-  protected long createPaimonHandle(PaimonNativeStateSupport paimon) {
-    return Native.createPaimonGroupAggregator(
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    return Native.createRocksDBGroupAggregator(
         aggregateKinds, valueTypes, valueColumns, keyColumns, keyTimestampPrecisions(),
         filterColumns, countColumns, distinctViewColumns, recordCountColumn,
         generateUpdateBefore, miniBatch, stateTtlMillis,
         getProcessingTimeService().getCurrentProcessingTime(), memoryBudgetBytes(),
-        paimon.tableDirectory(), maxParallelism(), NativeConfig.paimonBuckets(),
-        NativeConfig.paimonFileFormat(), NativeConfig.paimonFileCompression(),
-        paimon.sourceDirectories(), paimon.sourceSnapshotTokens(),
-        paimon.keyGroupStart(), paimon.keyGroupEnd(), paimon.aligned());
+        rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
+        rocksdb.sourceDirectories(), rocksdb.sourceSnapshotTokens(),
+        rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(), rocksdb.aligned());
   }
 
   @Override
-  protected String[] checkpointPaimonHandle() {
-    return Native.checkpointPaimonGroupAggregator(handle);
+  protected String[] checkpointRocksDBHandle() {
+    return directRocksDBState()
+        ? Native.checkpointRocksDBGroupAggregator(handle)
+        : super.checkpointRocksDBHandle();
   }
 
   @Override
@@ -122,8 +128,8 @@ public class NativeColumnarGroupAggregateOperator
 
   @Override
   protected void closeHandle() {
-    if (paimonState()) {
-      Native.closePaimonGroupAggregator(handle);
+    if (directRocksDBState()) {
+      Native.closeRocksDBGroupAggregator(handle);
     } else {
       Native.closeGroupAggregator(handle);
     }
@@ -131,8 +137,8 @@ public class NativeColumnarGroupAggregateOperator
 
   @Override
   protected long stateBytesHandle() {
-    return paimonState()
-        ? Native.paimonGroupAggregatorStateBytes(handle)
+    return directRocksDBState()
+        ? Native.rocksdbGroupAggregatorStateBytes(handle)
         : Native.groupAggregatorStateBytes(handle);
   }
 
@@ -190,8 +196,8 @@ public class NativeColumnarGroupAggregateOperator
           }
           miniBatchMetrics.onSlice(length, firstContribution);
           miniBatchMetrics.onCurrentKeys(
-              paimonState()
-                  ? Native.paimonGroupAggregatorStagedKeys(handle)
+              directRocksDBState()
+                  ? Native.rocksdbGroupAggregatorStagedKeys(handle)
                   : Native.groupAggregatorStagedKeys(handle));
           offset += length;
           if (boundary.onSlice(length)) {
@@ -216,8 +222,8 @@ public class NativeColumnarGroupAggregateOperator
       // Flink's TtlTimeProvider clock: the processing-time service is System.currentTimeMillis in
       // production and harness-controlled in tests, so expiry is deterministic to test.
       long now = getProcessingTimeService().getCurrentProcessingTime();
-      if (paimonState()) {
-        Native.updatePaimonGroupAggregator(
+      if (directRocksDBState()) {
+        Native.updateRocksDBGroupAggregator(
             handle,
             inArray.memoryAddress(),
             inSchema.memoryAddress(),
@@ -279,17 +285,18 @@ public class NativeColumnarGroupAggregateOperator
 
   private void flushBundle(FlushReason reason) {
     long transientBytes =
-        paimonState()
-            ? Native.paimonGroupAggregatorStagingBytes(handle)
+        directRocksDBState()
+            ? Native.rocksdbGroupAggregatorStagingBytes(handle)
             : Native.groupAggregatorStagingBytes(handle);
     long touchedKeys =
-        paimonState()
-            ? Native.paimonGroupAggregatorStagedKeys(handle)
+        directRocksDBState()
+            ? Native.rocksdbGroupAggregatorStagedKeys(handle)
             : Native.groupAggregatorStagedKeys(handle);
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      if (paimonState()) {
-        Native.flushPaimonGroupAggregator(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.flushRocksDBGroupAggregator(
+            handle, outArray.memoryAddress(), outSchema.memoryAddress());
       } else {
         Native.flushGroupAggregator(handle, outArray.memoryAddress(), outSchema.memoryAddress());
       }

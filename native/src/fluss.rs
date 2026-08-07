@@ -244,7 +244,8 @@ impl FlussSplitReader {
             } else {
                 i64::MIN
             };
-            self.pending.push_back((split_id, next_offset, max_rowtime, batch));
+            self.pending
+                .push_back((split_id, next_offset, max_rowtime, batch));
         }
         Ok(())
     }

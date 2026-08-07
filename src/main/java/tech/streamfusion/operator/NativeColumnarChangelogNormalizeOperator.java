@@ -3,7 +3,6 @@ package tech.streamfusion.operator;
 import tech.streamfusion.Native;
 import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.PaimonNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -57,47 +56,6 @@ public class NativeColumnarChangelogNormalizeOperator
   }
 
   @Override
-  protected PaimonNativeStateSupport resolvePaimonState(boolean rawStateRestored) {
-    return resolvePaimon(
-        rawStateRestored,
-        () ->
-            withRowSchema(rowType, address -> Native.paimonRowStateSupported(address) ? 1L : 0L)
-                != 0,
-        stateTtlMillis);
-  }
-
-  @Override
-  protected long createPaimonHandle(PaimonNativeStateSupport paimon) {
-    return withRowSchema(
-        rowType,
-        rowSchemaAddress ->
-            Native.createPaimonChangelogNormalizer(
-                keyColumns,
-                keyTimestampPrecisions(),
-                rowSchemaAddress,
-                generateUpdateBefore,
-                miniBatch,
-                stateTtlMillis,
-                getProcessingTimeService().getCurrentProcessingTime(),
-                memoryBudgetBytes(),
-                paimon.tableDirectory(),
-                maxParallelism(),
-                NativeConfig.paimonBuckets(),
-                NativeConfig.paimonFileFormat(),
-                NativeConfig.paimonFileCompression(),
-                paimon.sourceDirectories(),
-                paimon.sourceSnapshotTokens(),
-                paimon.keyGroupStart(),
-                paimon.keyGroupEnd(),
-                paimon.aligned()));
-  }
-
-  @Override
-  protected String[] checkpointPaimonHandle() {
-    return Native.checkpointPaimonChangelogNormalizer(handle);
-  }
-
-  @Override
   protected long createHandle() {
     return Native.createChangelogNormalizer(
         keyColumns,
@@ -129,18 +87,12 @@ public class NativeColumnarChangelogNormalizeOperator
 
   @Override
   protected void closeHandle() {
-    if (paimonState()) {
-      Native.closePaimonChangelogNormalizer(handle);
-    } else {
-      Native.closeChangelogNormalizer(handle);
-    }
+    Native.closeChangelogNormalizer(handle);
   }
 
   @Override
   protected long stateBytesHandle() {
-    return paimonState()
-        ? Native.paimonChangelogNormalizerStateBytes(handle)
-        : Native.changelogNormalizerStateBytes(handle);
+    return Native.changelogNormalizerStateBytes(handle);
   }
 
   @Override
@@ -196,10 +148,7 @@ public class NativeColumnarChangelogNormalizeOperator
             }
           }
           miniBatchMetrics.onSlice(length, firstContribution);
-          miniBatchMetrics.onCurrentKeys(
-              paimonState()
-                  ? Native.paimonChangelogNormalizerStagedKeys(handle)
-                  : Native.changelogNormalizerStagedKeys(handle));
+          miniBatchMetrics.onCurrentKeys(Native.changelogNormalizerStagedKeys(handle));
           offset += length;
           if (boundary.onSlice(length)) {
             flushBundle(FlushReason.COUNT);
@@ -223,23 +172,13 @@ public class NativeColumnarChangelogNormalizeOperator
       // Flink's TtlTimeProvider clock: the processing-time service is System.currentTimeMillis in
       // production and harness-controlled in tests, so expiry is deterministic to test.
       long now = getProcessingTimeService().getCurrentProcessingTime();
-      if (paimonState()) {
-        Native.pushPaimonChangelogNormalizer(
-            handle,
-            inArray.memoryAddress(),
-            inSchema.memoryAddress(),
-            now,
-            outArray.memoryAddress(),
-            outSchema.memoryAddress());
-      } else {
-        Native.pushChangelogNormalizer(
-            handle,
-            inArray.memoryAddress(),
-            inSchema.memoryAddress(),
-            now,
-            outArray.memoryAddress(),
-            outSchema.memoryAddress());
-      }
+      Native.pushChangelogNormalizer(
+          handle,
+          inArray.memoryAddress(),
+          inSchema.memoryAddress(),
+          now,
+          outArray.memoryAddress(),
+          outSchema.memoryAddress());
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       if (out.getRowCount() > 0) {
@@ -285,23 +224,12 @@ public class NativeColumnarChangelogNormalizeOperator
   }
 
   private void flushBundle(FlushReason reason) {
-    long transientBytes =
-        paimonState()
-            ? Native.paimonChangelogNormalizerStagingBytes(handle)
-            : Native.changelogNormalizerStagingBytes(handle);
-    long touchedKeys =
-        paimonState()
-            ? Native.paimonChangelogNormalizerStagedKeys(handle)
-            : Native.changelogNormalizerStagedKeys(handle);
+    long transientBytes = Native.changelogNormalizerStagingBytes(handle);
+    long touchedKeys = Native.changelogNormalizerStagedKeys(handle);
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      if (paimonState()) {
-        Native.flushPaimonChangelogNormalizer(
-            handle, outArray.memoryAddress(), outSchema.memoryAddress());
-      } else {
-        Native.flushChangelogNormalizer(
-            handle, outArray.memoryAddress(), outSchema.memoryAddress());
-      }
+      Native.flushChangelogNormalizer(
+          handle, outArray.memoryAddress(), outSchema.memoryAddress());
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       int outputRows = out.getRowCount();

@@ -95,7 +95,11 @@ impl CsvDecoder {
                 other => panic!("CSV decode does not support column type {other}"),
             }
         }
-        CsvDecoder { schema, options, skip_errors }
+        CsvDecoder {
+            schema,
+            options,
+            skip_errors,
+        }
     }
 
     pub(crate) fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
@@ -106,7 +110,9 @@ impl CsvDecoder {
         let mut ends: Vec<usize> = Vec::new();
         for row in 0..bodies.num_rows() {
             // A null message (tombstone) produces no row, like Flink's null-message guard.
-            let Some(bytes) = binary_body(column, row) else { continue };
+            let Some(bytes) = binary_body(column, row) else {
+                continue;
+            };
             let count = match self.read_first_record(bytes, &mut fields_buf, &mut ends) {
                 Err(()) => {
                     // Invalid UTF-8 escapes Jackson's record handling: the whole row fails (or
@@ -161,7 +167,10 @@ impl CsvDecoder {
                     Some(value) => converted.push(value),
                     None if self.skip_errors => converted.push(Converted::Null),
                     None => {
-                        panic!("Fail to deserialize at field: {} from \"{text}\".", field.name())
+                        panic!(
+                            "Fail to deserialize at field: {} from \"{text}\".",
+                            field.name()
+                        )
                     }
                 }
             }
@@ -188,7 +197,11 @@ impl CsvDecoder {
         fields_buf: &mut Vec<u8>,
         ends: &mut Vec<usize>,
     ) -> Result<Option<usize>, ()> {
-        let prefix = if self.options.comments { skip_comment_lines(input, 0) } else { 0 };
+        let prefix = if self.options.comments {
+            skip_comment_lines(input, 0)
+        } else {
+            0
+        };
         let body = &input[prefix..];
         let (count, consumed) = if body.is_empty() {
             (None, 0)
@@ -384,8 +397,11 @@ fn build_column(data_type: &DataType, rows: &[Vec<Converted>], i: usize) -> Arra
                     _ => None,
                 })
                 .collect();
-            Arc::new(values.with_precision_and_scale(*p, *s).expect("declared decimal type"))
-                as ArrayRef
+            Arc::new(
+                values
+                    .with_precision_and_scale(*p, *s)
+                    .expect("declared decimal type"),
+            ) as ArrayRef
         }
         other => panic!("CSV decode does not support column type {other}"),
     }
@@ -435,8 +451,16 @@ mod tests {
         let d = decoder(CsvOptions::default(), false);
         let out = d.decode(&bodies(&[Some(" 7 , padded ,  1.5 ")]));
         let ids = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
-        let names = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
-        let scores = out.column(2).as_any().downcast_ref::<Float64Array>().unwrap();
+        let names = out
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        let scores = out
+            .column(2)
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .unwrap();
         assert_eq!(ids.value(0), 7);
         assert_eq!(names.value(0), " padded ");
         assert_eq!(scores.value(0), 1.5);
@@ -446,7 +470,11 @@ mod tests {
     fn empty_string_field_stays_empty_not_null() {
         let d = decoder(CsvOptions::default(), false);
         let out = d.decode(&bodies(&[Some("1,,2.5")]));
-        let names = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+        let names = out
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert!(names.is_valid(0));
         assert_eq!(names.value(0), "");
     }
@@ -482,7 +510,12 @@ mod tests {
         let ids = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
         assert!(ids.is_null(0));
         assert_eq!(ids.value(1), 1);
-        assert!(out.column(1).as_any().downcast_ref::<StringArray>().unwrap().is_null(1));
+        assert!(out
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap()
+            .is_null(1));
         assert_eq!(ids.value(2), 2);
     }
 
@@ -490,7 +523,11 @@ mod tests {
     fn quoting_and_embedded_newlines() {
         let d = decoder(CsvOptions::default(), false);
         let out = d.decode(&bodies(&[Some("1,\"a,b\nc\"\"d\",2.5")]));
-        let names = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+        let names = out
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!(names.value(0), "a,b\nc\"d");
     }
 
@@ -505,32 +542,51 @@ mod tests {
         let d = decoder(options, true);
         let out = d.decode(&bodies(&[
             Some("1;'a;''b';2.5"),
-            Some("#comment only"),        // comment-only message → no record → dropped (skip mode)
+            Some("#comment only"), // comment-only message → no record → dropped (skip mode)
             Some("#lead\n2;x;3.5"), // comment line skipped, the next line is the record
         ]));
         assert_eq!(out.num_rows(), 2);
-        let names = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+        let names = out
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!(names.value(0), "a;'b");
         assert_eq!(names.value(1), "x");
     }
 
     #[test]
     fn disabled_quote_character_is_literal() {
-        let options = CsvOptions { quote: None, ..CsvOptions::default() };
+        let options = CsvOptions {
+            quote: None,
+            ..CsvOptions::default()
+        };
         let out = decoder(options, false).decode(&bodies(&[Some("1,\"abc,2.5")]));
-        let names = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+        let names = out
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!(names.value(0), "\"abc");
     }
 
     #[test]
     fn null_literal_applies_to_every_type_pre_trim() {
-        let options = CsvOptions { null_literal: Some("N/A".to_string()), ..CsvOptions::default() };
-        let out = decoder(options, false).decode(&bodies(&[Some("N/A,N/A,2.5"), Some("1, N/A ,N/A")]));
+        let options = CsvOptions {
+            null_literal: Some("N/A".to_string()),
+            ..CsvOptions::default()
+        };
+        let out =
+            decoder(options, false).decode(&bodies(&[Some("N/A,N/A,2.5"), Some("1, N/A ,N/A")]));
         assert!(out.column(0).is_null(0));
         assert!(out.column(1).is_null(0));
         // Pre-trim comparison: a padded " N/A " is NOT the literal — it stays a string, and for
         // numbers it would be a parse failure.
-        let names = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+        let names = out
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!(names.value(1), " N/A ");
         assert!(out.column(2).is_null(1));
     }
@@ -548,11 +604,26 @@ mod tests {
         ]));
         let d = CsvDecoder::new(schema, CsvOptions::default(), false);
         let out = d.decode(&bodies(&[Some("2020-2-31,1970-01-02 00:00:00.5,1.235")]));
-        let days = out.column(0).as_any().downcast_ref::<Date32Array>().unwrap();
-        assert_eq!(days.value(0), crate::flink_text::parse_iso_local_date("2020-03-02").unwrap());
-        let ts = out.column(1).as_any().downcast_ref::<TimestampNanosecondArray>().unwrap();
+        let days = out
+            .column(0)
+            .as_any()
+            .downcast_ref::<Date32Array>()
+            .unwrap();
+        assert_eq!(
+            days.value(0),
+            crate::flink_text::parse_iso_local_date("2020-03-02").unwrap()
+        );
+        let ts = out
+            .column(1)
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
         assert_eq!(ts.value(0), 86_400_000_000_000 + 500_000_000);
-        let dec = out.column(2).as_any().downcast_ref::<Decimal128Array>().unwrap();
+        let dec = out
+            .column(2)
+            .as_any()
+            .downcast_ref::<Decimal128Array>()
+            .unwrap();
         assert_eq!(dec.value(0), 124); // HALF_UP, not arrow-csv's truncation
 
         let overflow = d.decode(&bodies(&[Some("2020-01-01,1970-01-01 00:00:00,12345.6")]));
@@ -586,7 +657,11 @@ mod tests {
     #[test]
     fn blank_first_line_pads_under_skip_errors() {
         let d = decoder(CsvOptions::default(), true);
-        let out = d.decode(&bodies(&[Some("\n1,alice,2.5"), Some("\r\n"), Some("\r1,x,2.5")]));
+        let out = d.decode(&bodies(&[
+            Some("\n1,alice,2.5"),
+            Some("\r\n"),
+            Some("\r1,x,2.5"),
+        ]));
         // Each blank line is the message's record: one empty field (a null INT under
         // skip-errors) padded out with nulls — the data line after it is never read.
         assert_eq!(out.num_rows(), 3);
@@ -599,27 +674,41 @@ mod tests {
 
     #[test]
     fn comments_skip_blank_lines_and_spaces_before_the_record() {
-        let options = CsvOptions { comments: true, ..CsvOptions::default() };
+        let options = CsvOptions {
+            comments: true,
+            ..CsvOptions::default()
+        };
         let d = CsvDecoder::new(schema(), options, false);
         let out = d.decode(&bodies(&[Some("\n #c\n\n 2,x,3.5")]));
         assert_eq!(out.num_rows(), 1);
         let ids = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
         assert_eq!(ids.value(0), 2);
-        let names = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+        let names = out
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!(names.value(0), "x");
     }
 
     #[test]
     #[should_panic(expected = "Row length mismatch")]
     fn comments_do_not_skip_tab_prefixed_lines() {
-        let options = CsvOptions { comments: true, ..CsvOptions::default() };
+        let options = CsvOptions {
+            comments: true,
+            ..CsvOptions::default()
+        };
         CsvDecoder::new(schema(), options, false).decode(&bodies(&[Some("\t#c\n1,x,2.5")]));
     }
 
     fn byte_bodies(messages: &[&[u8]]) -> RecordBatch {
         let column: arrow::array::BinaryArray = messages.iter().copied().map(Some).collect();
         RecordBatch::try_new(
-            Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)])),
+            Arc::new(Schema::new(vec![Field::new(
+                "body",
+                DataType::Binary,
+                true,
+            )])),
             vec![Arc::new(column)],
         )
         .unwrap()
@@ -656,7 +745,10 @@ mod tests {
 
     #[test]
     fn comment_run_after_the_record_extends_the_window() {
-        let options = CsvOptions { comments: true, ..CsvOptions::default() };
+        let options = CsvOptions {
+            comments: true,
+            ..CsvOptions::default()
+        };
         let d = CsvDecoder::new(schema(), options, false);
         let out = d.decode(&byte_bodies(&[b"1,x,2.5\n#c\nz\xFF"]));
         assert_eq!(out.num_rows(), 1);
@@ -665,7 +757,10 @@ mod tests {
     #[test]
     #[should_panic(expected = "not valid UTF-8")]
     fn invalid_byte_in_a_trailing_comment_fails() {
-        let options = CsvOptions { comments: true, ..CsvOptions::default() };
+        let options = CsvOptions {
+            comments: true,
+            ..CsvOptions::default()
+        };
         CsvDecoder::new(schema(), options, false).decode(&byte_bodies(&[b"1,x,2.5\n#\xFF"]));
     }
 }

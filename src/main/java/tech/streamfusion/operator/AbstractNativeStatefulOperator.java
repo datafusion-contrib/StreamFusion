@@ -1,7 +1,8 @@
 package tech.streamfusion.operator;
 
+import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
-import tech.streamfusion.state.PaimonNativeStateSupport;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import tech.streamfusion.planner.NativeConfig;
 import java.util.List;
 import java.util.function.BooleanSupplier;
@@ -20,14 +21,13 @@ import org.apache.flink.table.types.logical.RowType;
  * Lifecycle shared by every native operator whose hot state lives in Rust: the handle, its
  * task off-heap reservation, and the two ways that state can be checkpointed.
  *
- * <p>State travels one of two routes, decided once at {@link #initializeState}. On the Paimon
- * backend the operator's state lives in a Paimon table and checkpoints incrementally through the
- * keyed state backend, so this class only registers the barrier hook. Otherwise state stays a Rust
- * hot map and travels as Flink <em>raw keyed state</em>, one payload per non-empty key group, which
- * is what lets Flink's own protocol redistribute it on rescale.
+ * <p>State travels one of two routes, decided once at {@link #initializeState}. On the native
+ * RocksDB backend it checkpoints incrementally through the keyed state backend. Otherwise state
+ * stays a Rust hot map and travels as Flink <em>raw keyed state</em>, one payload per non-empty key
+ * group, which lets Flink's own protocol redistribute it on rescale.
  *
  * <p>Subclasses supply only the native calls that differ — create, restore, snapshot, close, and
- * the state-size probe — plus optional Paimon and processing-time-timer hooks. Everything else
+ * the state-size probe — plus optional direct-RocksDB and processing-time-timer hooks. Everything else
  * (budget reservation, restore/snapshot plumbing, handle release) is identical across operators and
  * lives here.
  */
@@ -41,13 +41,15 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
   protected transient CDataDictionaryProvider dictionaries;
   protected transient long handle;
 
-  private transient boolean paimonState;
-  private transient PaimonNativeStateSupport paimonSupport;
+  private transient boolean rocksdbState;
+  private transient boolean directRocksDBState;
+  private transient RocksDBNativeStateSupport rocksdbSupport;
+  private transient long rocksdbSnapshotStoreHandle;
   private transient NativeMemoryBudget memoryBudget;
   private transient long restoredProcessingTimeTimerDeadline;
 
   /**
-   * @param stateLabel human-readable operator name, used in Paimon fallback logs and errors
+   * @param stateLabel human-readable operator name, used in backend logs and errors
    * @param keyTimestampPrecisions recursive timestamp descriptors for the grouping key's BinaryRow
    *     layout, in field order — the native side needs them to reproduce Flink's key-group hash
    * @param maxParallelism Flink's max parallelism, mapping native key hashes onto raw key groups
@@ -80,41 +82,34 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
   /** The native state's tracked footprint in bytes (zero when unaccounted). */
   protected abstract long stateBytesHandle();
 
-  // ------------------------------------------------------------------------ Paimon backend hooks
+  // --------------------------------------------------------------------- direct RocksDB hooks
 
-  /**
-   * Resolves the Paimon backend for this operator, or null to keep memory state. Override with
-   * {@link #resolvePaimon} and the operator's own native supported-probe; a mode that cannot
-   * persist (anything driven by processing-time timers) returns null unconditionally.
-   */
-  protected PaimonNativeStateSupport resolvePaimonState(boolean rawStateRestored) {
-    return null;
+  protected RocksDBNativeStateSupport resolveRocksDBState(boolean rawStateRestored) {
+    return resolveRocksDB(rawStateRestored, () -> true, 0);
   }
 
-  /** Creates the native handle on the Paimon backend; only reached when the hook resolved. */
-  protected long createPaimonHandle(PaimonNativeStateSupport paimon) {
-    throw new UnsupportedOperationException("operator resolved Paimon state without a create");
+  /** True for an operator with a typed RocksDB data plane instead of key-group snapshot blobs. */
+  protected boolean usesDirectRocksDBState() {
+    return false;
   }
 
-  /** The barrier checkpoint call for a Paimon-backed handle. */
-  protected String[] checkpointPaimonHandle() {
-    throw new UnsupportedOperationException("operator resolved Paimon state without a checkpoint");
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    throw new UnsupportedOperationException("operator resolved RocksDB state without a create");
   }
 
-  /** Fills in this operator's backend and label around its own native supported-probe. */
-  protected final PaimonNativeStateSupport resolvePaimon(
-      boolean rawStateRestored, BooleanSupplier operatorSupported) {
-    return resolvePaimon(rawStateRestored, operatorSupported, 0);
+  protected String[] checkpointRocksDBHandle() {
+    byte[][] partitions = snapshotRawPartitions();
+    long deadline =
+        carriesProcessingTimeTimer()
+            ? processingTimeTimerDeadlineForSnapshot()
+            : Long.MIN_VALUE;
+    return Native.checkpointRocksDBSnapshotStore(
+        rocksdbSnapshotStoreHandle, partitions, deadline);
   }
 
-  /**
-   * {@link #resolvePaimon(boolean, BooleanSupplier)} for an operator whose persistent shape
-   * carries state-TTL timestamps; the retention is exposed on the support object so the barrier
-   * maintenance (the compactor) can learn it.
-   */
-  protected final PaimonNativeStateSupport resolvePaimon(
+  protected final RocksDBNativeStateSupport resolveRocksDB(
       boolean rawStateRestored, BooleanSupplier operatorSupported, long stateTtlMillis) {
-    return PaimonNativeStateSupport.resolve(
+    return RocksDBNativeStateSupport.resolve(
         getKeyedStateBackend(), stateLabel, rawStateRestored, operatorSupported, stateTtlMillis);
   }
 
@@ -169,12 +164,33 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
     memoryBudget = NativeMemoryBudget.registerFor(this);
     memoryBudget.registerStateMetric(getMetricGroup());
     beforeHandleCreation();
-    PaimonNativeStateSupport paimon = resolvePaimonState(!snapshots.isEmpty());
-    paimonState = paimon != null;
-    if (paimonState) {
-      paimonSupport = paimon;
-      handle = createPaimonHandle(paimon);
-      paimon.register(this::checkpointPaimonHandle);
+    RocksDBNativeStateSupport rocksdb = resolveRocksDBState(!snapshots.isEmpty());
+    rocksdbState = rocksdb != null;
+    if (rocksdbState) {
+      rocksdbSupport = rocksdb;
+      directRocksDBState = usesDirectRocksDBState();
+      if (directRocksDBState) {
+        handle = createRocksDBHandle(rocksdb);
+      } else {
+        rocksdbSnapshotStoreHandle =
+            Native.createRocksDBSnapshotStore(
+                rocksdb.tableDirectory(),
+                maxParallelism(),
+                rocksdb.optionsJson(),
+                rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(),
+                rocksdb.keyGroupStart(),
+                rocksdb.keyGroupEnd(),
+                rocksdb.aligned());
+        byte[][] restored =
+            Native.restoreRocksDBSnapshotStorePartitions(rocksdbSnapshotStoreHandle);
+        if (carriesProcessingTimeTimer()) {
+          restoredProcessingTimeTimerDeadline =
+              Native.rocksdbSnapshotStoreTimerDeadline(rocksdbSnapshotStoreHandle);
+        }
+        handle = restored.length == 0 ? createHandle() : restoreRawHandle(restored);
+      }
+      rocksdb.register(this::checkpointRocksDBHandle);
       return;
     }
     handle =
@@ -192,9 +208,9 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
     beforeSnapshotState();
-    // Paimon state checkpoints through the keyed state backend's snapshot (an incremental Paimon
-    // commit); only memory state travels as raw keyed-state blobs.
-    if (paimonState) {
+    // Native RocksDB state checkpoints through the keyed backend. Only standalone memory state
+    // travels as raw keyed-state blobs.
+    if (rocksdbState) {
       return;
     }
     if (carriesProcessingTimeTimer()) {
@@ -211,6 +227,10 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
       closeHandle();
       handle = 0;
     }
+    if (rocksdbSnapshotStoreHandle != 0) {
+      Native.closeRocksDBSnapshotStore(rocksdbSnapshotStoreHandle);
+      rocksdbSnapshotStoreHandle = 0;
+    }
     if (memoryBudget != null) {
       memoryBudget.close();
       memoryBudget = null;
@@ -220,9 +240,13 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
 
   // ---------------------------------------------------------------------------------- accessors
 
-  /** Whether this operator's state lives in a Paimon table this run. */
-  protected final boolean paimonState() {
-    return paimonState;
+  protected final boolean rocksdbState() {
+    return rocksdbState;
+  }
+
+  /** Whether this operator uses its typed RocksDB handle rather than the generic snapshot store. */
+  protected final boolean directRocksDBState() {
+    return directRocksDBState;
   }
 
   /** Encoded owner of this operator's reservation in the TaskManager-wide off-heap pool. */
@@ -249,16 +273,16 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
     if (memoryBudget != null) {
       long stateBytes = stateBytesHandle();
       memoryBudget.publishStateBytes(stateBytes);
-      long configuredFlush = NativeConfig.paimonWriteBufferBytes();
+      long configuredFlush = NativeConfig.rocksDBWriteBufferBytes();
       long sharedPressureFlush =
           Math.max(1L << 20, TaskOffHeapMemory.capacityBytes() / 16);
       long flushThreshold = Math.min(configuredFlush, sharedPressureFlush);
-      if (paimonState
-          && paimonSupport != null
+      if (rocksdbState
+          && rocksdbSupport != null
           && stateBytes > 0
           && (stateBytes >= flushThreshold
               || TaskOffHeapMemory.availableBytes() < flushThreshold)) {
-        paimonSupport.flushForMemoryPressure();
+        rocksdbSupport.flushForMemoryPressure();
       }
     }
   }

@@ -2,7 +2,6 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.PaimonNativeStateSupport;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -103,52 +102,6 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   }
 
   @Override
-  protected PaimonNativeStateSupport resolvePaimonState(boolean rawStateRestored) {
-    // A proctime window rank keeps memory state under the Paimon backend too: it closes windows
-    // on processing-time timers whose deadline travels in raw state, not on watermarks.
-    if (proctime) {
-      return null;
-    }
-    return resolvePaimon(
-        rawStateRestored,
-        () -> withRowSchema(rowType, address -> Native.paimonRowStateSupported(address) ? 1L : 0L) != 0);
-  }
-
-  @Override
-  protected long createPaimonHandle(PaimonNativeStateSupport paimon) {
-    return withRowSchema(
-        rowType,
-        rowSchemaAddress ->
-            Native.createPaimonWindowRanker(
-                windowStartColumn,
-                windowEndColumn,
-                partitionColumns,
-                keyTimestampPrecisions(),
-                sortIndices,
-                sortAscending,
-                sortNullsFirst,
-                limit,
-                outputRankNumber,
-                rowSchemaAddress,
-                memoryBudgetBytes(),
-                paimon.tableDirectory(),
-                maxParallelism(),
-                NativeConfig.paimonBuckets(),
-                NativeConfig.paimonFileFormat(),
-                NativeConfig.paimonFileCompression(),
-                paimon.sourceDirectories(),
-                paimon.sourceSnapshotTokens(),
-                paimon.keyGroupStart(),
-                paimon.keyGroupEnd(),
-                paimon.aligned()));
-  }
-
-  @Override
-  protected String[] checkpointPaimonHandle() {
-    return Native.checkpointPaimonWindowRanker(handle);
-  }
-
-  @Override
   protected long createHandle() {
     return Native.createWindowRanker(
         windowStartColumn,
@@ -185,18 +138,12 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
 
   @Override
   protected void closeHandle() {
-    if (paimonState()) {
-      Native.closePaimonWindowRanker(handle);
-    } else {
-      Native.closeWindowRanker(handle);
-    }
+    Native.closeWindowRanker(handle);
   }
 
   @Override
   protected long stateBytesHandle() {
-    return paimonState()
-        ? Native.paimonWindowRankerStateBytes(handle)
-        : Native.windowRankerStateBytes(handle);
+    return Native.windowRankerStateBytes(handle);
   }
 
   @Override
@@ -226,18 +173,11 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
     try (ArrowArray array = ArrowArray.allocateNew(inAllocator);
         ArrowSchema schema = ArrowSchema.allocateNew(inAllocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, array, schema);
-      if (paimonState()) {
-        Native.pushPaimonWindowRanker(handle, array.memoryAddress(), schema.memoryAddress());
-      } else {
-        Native.pushWindowRanker(handle, array.memoryAddress(), schema.memoryAddress());
-      }
+      Native.pushWindowRanker(handle, array.memoryAddress(), schema.memoryAddress());
     } finally {
       in.close();
     }
-    flinkWindowMetrics.reportLateRecords(
-        paimonState()
-            ? Native.paimonWindowRankerLateDrops(handle)
-            : Native.windowRankerLateDrops(handle));
+    flinkWindowMetrics.reportLateRecords(Native.windowRankerLateDrops(handle));
     if (proctime) {
       long now = getProcessingTimeService().getCurrentProcessingTime();
       flush(now);
@@ -294,13 +234,8 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   private void flush(long threshold) {
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      if (paimonState()) {
-        Native.flushPaimonWindowRanker(
-            handle, threshold, array.memoryAddress(), schema.memoryAddress());
-      } else {
-        Native.flushWindowRanker(
-            handle, threshold, array.memoryAddress(), schema.memoryAddress());
-      }
+      Native.flushWindowRanker(
+          handle, threshold, array.memoryAddress(), schema.memoryAddress());
       VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
       if (out.getRowCount() > 0) {
         // The native side keeps window_start/window_end as UTC epoch (so eviction compares against the

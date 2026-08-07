@@ -102,7 +102,7 @@ M1 Max release+`mimalloc` results at parallelism 4, best of two measured runs,
 across all four backend/mode combinations (memory columns measured 2026-08-02, disk columns
 2026-07-28). The memory columns compare Flink's
 default heap state against StreamFusion's memory state; the disk columns compare the production
-persistent backends — stock Flink on RocksDB against StreamFusion on its Paimon state backend.
+persistent backends — stock Flink on RocksDB against StreamFusion on its retired columnar state backend.
 Mini-batching ("on") uses the same production-style configuration on both engines
 (`allow-latency=2s`, `size=50000`). Each cell is StreamFusion throughput divided by Flink
 throughput within the same backend and mode. Both the source corpus and every exactly-once
@@ -155,7 +155,7 @@ The multi-source/blackhole ladder, raw timings, reproduction commands, and profi
 remain on the docs site's [Benchmarks](https://datafusion-contrib.github.io/StreamFusion/benchmarks/)
 page.
 
-The disk columns' key enabler is **deletion-vector mode**: stock Java Paimon maintains the
+The disk columns' key enabler is **deletion-vector mode**: the retired Java state layer maintains the
 state tables' deletion vectors synchronously at each barrier, so every committed read is a raw
 parquet scan with exact predicate pushdown — no merge reads, no resident index. The disk
 comparison's largest wins are the stateful shapes RocksDB pays per-record for (up to 8.9× on

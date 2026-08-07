@@ -6,7 +6,7 @@ Every native stateful operator — aggregates, joins, dedup, Top-N, window opera
 holds its state as in-process, JVM-heap-resident structures unless `state.backend.type` selects
 something else. There is no separate configuration to opt into this backend; it is what StreamFusion
 runs on out of the box, and what every operator falls back to when a query condition or build
-configuration keeps it off the [Paimon backend](paimon.md).
+configuration keeps it off the [RocksDB backend](rocksdb.md).
 
 ## Checkpointing model
 
@@ -24,14 +24,13 @@ what comfortably re-serializes and uploads every barrier.
 ## Restore
 
 A memory-backend checkpoint or savepoint restores only on memory state — there is no silent
-migration to or from the [Paimon backend](paimon.md). Selecting a different backend at restore time
-is a plan-shape change; see [Paimon backend — Restore compatibility](paimon.md#restore-compatibility)
-for exactly what does and doesn't carry state across a restore.
+migration to or from the [RocksDB backend](rocksdb.md). Selecting a different backend at restore
+time is a plan-shape change.
 
 ## When to reach for the alternative
 
 The memory backend is the right default for most jobs. Consider the
-[Paimon backend](paimon.md) when checkpoint size or duration dominated by large keyed state becomes a
-problem — see [Benchmarks](../benchmarks.md) for measured memory-vs-Paimon throughput across the
+[RocksDB backend](rocksdb.md) when checkpoint size or duration dominated by large keyed state becomes
+a problem — see [Benchmarks](../benchmarks.md) for measured memory-vs-RocksDB throughput across the
 Nexmark queries, and [Configuration](../configuration.md) for how backend selection and other runtime
 flags are set.

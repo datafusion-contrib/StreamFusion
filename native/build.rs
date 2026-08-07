@@ -13,7 +13,9 @@ fn main() {
     if std::env::var_os("CARGO_FEATURE_MIMALLOC").is_some() {
         let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
         println!("cargo:rerun-if-changed=mimalloc_shim.c");
-        cc::Build::new().file("mimalloc_shim.c").compile("mimalloc_shim");
+        cc::Build::new()
+            .file("mimalloc_shim.c")
+            .compile("mimalloc_shim");
         let symbols = [
             ("malloc", "mi_malloc"),
             ("calloc", "mi_calloc"),

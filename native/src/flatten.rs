@@ -19,9 +19,16 @@ pub(crate) fn expand(
     expand_id_values: &[i64],
 ) -> RecordBatch {
     let schema = input.schema();
-    let row_kind_idx = schema.fields().iter().position(|f| f.name() == ROW_KIND_COLUMN);
+    let row_kind_idx = schema
+        .fields()
+        .iter()
+        .position(|f| f.name() == ROW_KIND_COLUMN);
     let n = input.num_rows();
-    let id_type = if expand_id_is_long { DataType::Int64 } else { DataType::Int32 };
+    let id_type = if expand_id_is_long {
+        DataType::Int64
+    } else {
+        DataType::Int32
+    };
 
     // Each non-expand-id output column is an InputRef in at least one expand row (a grouped-out key
     // is NULL elsewhere but InputRef where it is grouped-in); take its type/name from that copy row.
@@ -71,7 +78,11 @@ pub(crate) fn expand(
     for c in 0..num_out_cols {
         let refs: Vec<&dyn Array> = blocks[c].iter().map(|a| a.as_ref()).collect();
         // A grouped-out key carries nulls, so every non-expand-id column is nullable.
-        fields.push(Field::new(&out_names[c], out_types[c].clone(), c != expand_id_index));
+        fields.push(Field::new(
+            &out_names[c],
+            out_types[c].clone(),
+            c != expand_id_index,
+        ));
         columns.push(arrow::compute::concat(&refs).expect("failed to concat expand column"));
     }
     if row_kind_idx.is_some() {
@@ -79,7 +90,8 @@ pub(crate) fn expand(
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
         columns.push(arrow::compute::concat(&refs).expect("failed to concat row kind"));
     }
-    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("failed to build expand batch")
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+        .expect("failed to build expand batch")
 }
 
 /// Stateless INNER UNNEST of an ARRAY or MAP column (Flink's `$UNNEST_ROWS$` / `Correlate`): each
@@ -102,7 +114,10 @@ pub(crate) fn unnest_array(
     is_multiset: bool,
 ) -> RecordBatch {
     let schema = input.schema();
-    let row_kind_idx = schema.fields().iter().position(|f| f.name() == ROW_KIND_COLUMN);
+    let row_kind_idx = schema
+        .fields()
+        .iter()
+        .position(|f| f.name() == ROW_KIND_COLUMN);
     let data_end = row_kind_idx.unwrap_or_else(|| schema.fields().len());
     let column = input.column(array_col);
 
@@ -122,7 +137,10 @@ pub(crate) fn unnest_array(
             let values = list.values().clone();
             match values.data_type() {
                 DataType::Struct(sfields) => {
-                    let sa = values.as_any().downcast_ref::<StructArray>().expect("struct");
+                    let sa = values
+                        .as_any()
+                        .downcast_ref::<StructArray>()
+                        .expect("struct");
                     let children = sfields
                         .iter()
                         .enumerate()
@@ -143,8 +161,16 @@ pub(crate) fn unnest_array(
             let entries = map.entries();
             if is_multiset {
                 // MULTISET<T> is MAP<T, count>: append only the element (column 0), repeated `count`.
-                let element = (entries.fields()[0].as_ref().clone(), entries.column(0).clone());
-                (map.value_offsets(), None, vec![element], Some(entries.column(1).clone()))
+                let element = (
+                    entries.fields()[0].as_ref().clone(),
+                    entries.column(0).clone(),
+                );
+                (
+                    map.value_offsets(),
+                    None,
+                    vec![element],
+                    Some(entries.column(1).clone()),
+                )
             } else {
                 let children = entries
                     .fields()
@@ -157,9 +183,11 @@ pub(crate) fn unnest_array(
         }
         other => panic!("UNNEST column must be a List or Map, got {other:?}"),
     };
-    let counts = repeat
-        .as_ref()
-        .map(|c| c.as_any().downcast_ref::<Int32Array>().expect("multiset count int32"));
+    let counts = repeat.as_ref().map(|c| {
+        c.as_any()
+            .downcast_ref::<Int32Array>()
+            .expect("multiset count int32")
+    });
 
     // One take index per output row: the input row it copies (passthrough) and the child element it
     // carries. A null/empty collection contributes nothing (INNER); a null struct element is dropped;
@@ -207,9 +235,16 @@ pub(crate) fn unnest_array(
     for (index, (field, child)) in children.iter().enumerate() {
         // A LEFT/outer null-pad makes every appended column nullable (even a map key or a
         // non-nullable struct field), so relax nullability there.
-        let field = field.clone().with_name(format!("unnest_{data_end}_{index}"));
-        fields.push(if is_left { field.with_nullable(true) } else { field });
-        columns.push(take(child.as_ref(), &elems_idx, None).expect("failed to take unnest element"));
+        let field = field
+            .clone()
+            .with_name(format!("unnest_{data_end}_{index}"));
+        fields.push(if is_left {
+            field.with_nullable(true)
+        } else {
+            field
+        });
+        columns
+            .push(take(child.as_ref(), &elems_idx, None).expect("failed to take unnest element"));
     }
     if with_ordinality {
         fields.push(Field::new(
@@ -223,7 +258,8 @@ pub(crate) fn unnest_array(
         fields.push(schema.field(idx).as_ref().clone());
         columns.push(take(input.column(idx), &rows_idx, None).expect("failed to fan out row kind"));
     }
-    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("failed to build unnest batch")
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+        .expect("failed to build unnest batch")
 }
 
 /// Stateless GROUPING SETS / CUBE / ROLLUP expansion over an Arrow batch the JVM exported.

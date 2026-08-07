@@ -19,20 +19,27 @@ pub extern "system" fn Java_tech_streamfusion_Native_filterGreaterThan<'local>(
 ) {
     crate::bridge::jni_guard(env, move |_env| {
         let ffi_array = unsafe {
-            std::ptr::replace(in_array_address as *mut FFI_ArrowArray, FFI_ArrowArray::empty())
+            std::ptr::replace(
+                in_array_address as *mut FFI_ArrowArray,
+                FFI_ArrowArray::empty(),
+            )
         };
         let ffi_schema = unsafe {
-            std::ptr::replace(in_schema_address as *mut FFI_ArrowSchema, FFI_ArrowSchema::empty())
+            std::ptr::replace(
+                in_schema_address as *mut FFI_ArrowSchema,
+                FFI_ArrowSchema::empty(),
+            )
         };
 
         let field = Field::try_from(&ffi_schema).expect("failed to import Arrow field");
         let schema = Arc::new(Schema::new(vec![field]));
         let column_name = schema.field(0).name().clone();
 
-        let mut data = unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
+        let mut data =
+            unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
         data.align_buffers();
-        let batch =
-            RecordBatch::try_new(schema.clone(), vec![make_array(data)]).expect("failed to build batch");
+        let batch = RecordBatch::try_new(schema.clone(), vec![make_array(data)])
+            .expect("failed to build batch");
 
         let result = runtime().block_on(async move {
             let ctx = SessionContext::new();
@@ -41,7 +48,10 @@ pub extern "system" fn Java_tech_streamfusion_Native_filterGreaterThan<'local>(
                 .expect("failed to read batch")
                 .filter(logical_col(&column_name).gt(logical_lit(threshold)))
                 .expect("failed to build filter");
-            let mut stream = frame.execute_stream().await.expect("failed to execute plan");
+            let mut stream = frame
+                .execute_stream()
+                .await
+                .expect("failed to execute plan");
             let mut batches = Vec::new();
             while let Some(batch) = stream.next().await {
                 batches.push(batch.expect("failed to pull batch"));
@@ -95,7 +105,9 @@ impl FilterExpression {
             Arc::new(DFSchema::try_from(schema.as_ref().clone()).expect("failed to build schema"));
         // Match the planner's logical pipeline: coerce operand types (e.g. an int column against a
         // bigint literal) before building the physical expression, which assumes coerced types.
-        let context = SimplifyContext::builder().with_schema(df_schema.clone()).build();
+        let context = SimplifyContext::builder()
+            .with_schema(df_schema.clone())
+            .build();
         let coerced = ExprSimplifier::new(context)
             .coerce(logical, df_schema.as_ref())
             .expect("failed to coerce predicate");
@@ -113,8 +125,10 @@ impl FilterExpression {
             .expect("failed to evaluate predicate")
             .into_array(batch.num_rows())
             .expect("failed to materialize predicate");
-        let mask =
-            evaluated.as_any().downcast_ref::<BooleanArray>().expect("predicate must be boolean");
+        let mask = evaluated
+            .as_any()
+            .downcast_ref::<BooleanArray>()
+            .expect("predicate must be boolean");
         filter_record_batch(&batch, mask).expect("failed to filter batch")
     }
 }
@@ -172,10 +186,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeFilterExpression<'loca
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<FilterExpression>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<FilterExpression>(handle));
     })
 }
 
@@ -206,7 +218,8 @@ pub(crate) struct CalcExpression {
 impl CalcExpression {
     fn compiled(&mut self, schema: &SchemaRef) -> &CompiledCalc {
         if self.compiled.is_none() {
-            let df_schema = DFSchema::try_from(schema.as_ref().clone()).expect("failed to build schema");
+            let df_schema =
+                DFSchema::try_from(schema.as_ref().clone()).expect("failed to build schema");
             let compile = |root: usize| {
                 compile_expr(
                     schema,
@@ -220,9 +233,13 @@ impl CalcExpression {
                     root,
                 )
             };
-            let condition = (self.condition_root >= 0).then(|| compile(self.condition_root as usize));
+            let condition =
+                (self.condition_root >= 0).then(|| compile(self.condition_root as usize));
             let projections = self.projection_roots.iter().map(|&r| compile(r)).collect();
-            self.compiled = Some(CompiledCalc { condition, projections });
+            self.compiled = Some(CompiledCalc {
+                condition,
+                projections,
+            });
         }
         self.compiled.as_ref().unwrap()
     }
@@ -256,7 +273,11 @@ impl CalcExpression {
                 .expect("failed to evaluate projection")
                 .into_array(rows)
                 .expect("failed to materialize projection");
-            fields.push(Field::new(&self.output_names[i], array.data_type().clone(), true));
+            fields.push(Field::new(
+                &self.output_names[i],
+                array.data_type().clone(),
+                true,
+            ));
             columns.push(array);
         }
         // Carry the changelog tag through: a Calc transforms each row independently (per-row
@@ -267,7 +288,8 @@ impl CalcExpression {
             fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
             columns.push(kind.clone());
         }
-        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("failed to build output")
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build output")
     }
 }
 
@@ -296,7 +318,10 @@ pub extern "system" fn Java_tech_streamfusion_Native_createCalcExpression<'local
             longs: read_longs(&env, &longs),
             doubles: read_doubles(&env, &doubles),
             strings: read_strings(&mut env, &strings),
-            projection_roots: read_int_array(&env, &projection_roots).into_iter().map(|r| r as usize).collect(),
+            projection_roots: read_int_array(&env, &projection_roots)
+                .into_iter()
+                .map(|r| r as usize)
+                .collect(),
             condition_root: condition_root as i64,
             output_names: read_strings(&mut env, &output_names)
                 .into_iter()
@@ -334,9 +359,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeCalcExpression<'local>
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<CalcExpression>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<CalcExpression>(handle));
     })
 }

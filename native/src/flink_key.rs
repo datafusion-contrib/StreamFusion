@@ -764,7 +764,10 @@ impl<'a> BinaryRowBatchEncoder<'a> {
             "extra Flink key type descriptors"
         );
         Self {
-            columns: key_columns.iter().map(|&column| batch.column(column)).collect(),
+            columns: key_columns
+                .iter()
+                .map(|&column| batch.column(column))
+                .collect(),
             schemas,
             writer: BinaryRowWriter::new(key_columns.len()),
         }

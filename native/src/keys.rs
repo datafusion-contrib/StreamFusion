@@ -13,7 +13,11 @@ pub(crate) fn group_key_bytes(key: &GroupKey) -> usize {
 
 /// Encodes a batch's key columns to memcomparable byte rows, building the converter (shared with
 /// the decode on flush/snapshot) on first touch.
-pub(crate) fn encode_keys(converter: &mut Option<RowConverter>, key_arrays: &[&ArrayRef], n: usize) -> Rows {
+pub(crate) fn encode_keys(
+    converter: &mut Option<RowConverter>,
+    key_arrays: &[&ArrayRef],
+    n: usize,
+) -> Rows {
     let conv = converter.get_or_insert_with(|| key_row_converter(key_arrays));
     let key_owned: Vec<ArrayRef> = key_arrays.iter().map(|a| (*a).clone()).collect();
     encode_group_keys(conv, &key_owned, n)
@@ -28,17 +32,25 @@ pub(crate) fn key_row_converter(arrays: &[&ArrayRef]) -> RowConverter {
     let fields: Vec<SortField> = if arrays.is_empty() {
         vec![SortField::new(DataType::Boolean)]
     } else {
-        arrays.iter().map(|a| SortField::new(a.data_type().clone())).collect()
+        arrays
+            .iter()
+            .map(|a| SortField::new(a.data_type().clone()))
+            .collect()
     };
     RowConverter::new(fields).expect("group key converter")
 }
 
 /// Encodes `n` rows of key columns to memcomparable byte rows. With no key columns (global aggregate),
 /// encodes a constant dummy column so all `n` rows collapse to one shared key (see `key_row_converter`).
-pub(crate) fn encode_group_keys(conv: &RowConverter, key_owned: &[ArrayRef], n: usize) -> arrow::row::Rows {
+pub(crate) fn encode_group_keys(
+    conv: &RowConverter,
+    key_owned: &[ArrayRef],
+    n: usize,
+) -> arrow::row::Rows {
     if key_owned.is_empty() {
         let dummy: ArrayRef = Arc::new(BooleanArray::from(vec![false; n]));
-        conv.convert_columns(std::slice::from_ref(&dummy)).expect("encode global group key")
+        conv.convert_columns(std::slice::from_ref(&dummy))
+            .expect("encode global group key")
     } else {
         conv.convert_columns(key_owned).expect("encode group keys")
     }
@@ -47,14 +59,18 @@ pub(crate) fn encode_group_keys(conv: &RowConverter, key_owned: &[ArrayRef], n: 
 /// Decodes memcomparable group-key byte rows back to their key columns (inverse of `key_row_converter`).
 /// A global aggregate has no key columns, so it yields none; otherwise, with no rows (or no converter
 /// yet) it yields one empty, correctly-typed array per key column.
-pub(crate) fn decode_keys(conv: Option<&RowConverter>, keys: &[OwnedRow], key_types: &[DataType]) -> Vec<ArrayRef> {
+pub(crate) fn decode_keys(
+    conv: Option<&RowConverter>,
+    keys: &[OwnedRow],
+    key_types: &[DataType],
+) -> Vec<ArrayRef> {
     if key_types.is_empty() {
         return Vec::new();
     }
     match conv {
-        Some(c) if !keys.is_empty() => {
-            c.convert_rows(keys.iter().map(|k| k.row())).expect("decode group keys")
-        }
+        Some(c) if !keys.is_empty() => c
+            .convert_rows(keys.iter().map(|k| k.row()))
+            .expect("decode group keys"),
         _ => key_types.iter().map(new_empty_array).collect(),
     }
 }
@@ -72,7 +88,8 @@ pub(crate) fn decode_byte_keys(
     match conv {
         Some(c) if !keys.is_empty() => {
             let parser = c.parser();
-            c.convert_rows(keys.iter().map(|k| parser.parse(k))).expect("decode group keys")
+            c.convert_rows(keys.iter().map(|k| parser.parse(k)))
+                .expect("decode group keys")
         }
         _ => key_types.iter().map(new_empty_array).collect(),
     }
@@ -99,7 +116,10 @@ pub(crate) fn key_arrays<'a>(batch: &'a RecordBatch) -> Vec<&'a ArrayRef> {
 
 /// The Arrow types of the key columns, in order (used to build emitted key columns by position).
 pub(crate) fn key_types(arrays: &[&ArrayRef]) -> Vec<DataType> {
-    arrays.iter().map(|array| array.data_type().clone()).collect()
+    arrays
+        .iter()
+        .map(|array| array.data_type().clone())
+        .collect()
 }
 
 /// Reads one row's composite key from the gathered key columns.
@@ -114,7 +134,11 @@ pub(crate) fn read_key(arrays: &[&ArrayRef], row: usize) -> GroupKey {
 /// group key can be NULL (Flink groups nulls as their own key), and GROUPING SETS/CUBE/ROLLUP makes a
 /// grouped-out key NULL routinely — so the emitted column may carry nulls.
 pub(crate) fn key_fields(types: &[DataType]) -> Vec<Field> {
-    types.iter().enumerate().map(|(j, t)| Field::new(format!("key{j}"), t.clone(), true)).collect()
+    types
+        .iter()
+        .enumerate()
+        .map(|(j, t)| Field::new(format!("key{j}"), t.clone(), true))
+        .collect()
 }
 
 /// Transposes per-row composite keys into one typed column per key position.

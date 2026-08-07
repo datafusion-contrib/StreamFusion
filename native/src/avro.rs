@@ -41,7 +41,10 @@ fn store(avro_schema: &str, id: u32) -> (SchemaStore, HashMap<u32, DatumSkipper>
     let mut skippers = HashMap::default();
     if !avro_schema.is_empty() {
         store
-            .set(Fingerprint::Id(id), AvroSchema::new(avro_schema.to_string()))
+            .set(
+                Fingerprint::Id(id),
+                AvroSchema::new(avro_schema.to_string()),
+            )
             .expect("failed to register avro schema");
         skippers.insert(id, skipper(avro_schema));
     }
@@ -61,7 +64,14 @@ impl AvroDecoder {
         target: SchemaRef,
     ) -> AvroDecoder {
         let (store, skippers) = store(avro_schema, schema_id);
-        AvroDecoder { store, skippers, reader, target, bare: false, skip_empty: false }
+        AvroDecoder {
+            store,
+            skippers,
+            reader,
+            target,
+            bare: false,
+            skip_empty: false,
+        }
     }
 
     pub(crate) fn bare(
@@ -70,7 +80,14 @@ impl AvroDecoder {
         target: SchemaRef,
     ) -> AvroDecoder {
         let (store, skippers) = store(avro_schema, 0);
-        AvroDecoder { store, skippers, reader, target, bare: true, skip_empty: false }
+        AvroDecoder {
+            store,
+            skippers,
+            reader,
+            target,
+            bare: true,
+            skip_empty: false,
+        }
     }
 
     /// Treats zero-length bodies as tombstones (skipped) — the Debezium envelope contract.
@@ -105,7 +122,11 @@ impl AvroDecoder {
     /// body contributes no row — Flink's deserializer returns null for a null Kafka value (a
     /// tombstone), which the collector drops silently.
     pub(crate) fn decode(&self, body: &RecordBatch) -> RecordBatch {
-        let column = body.column(0).as_any().downcast_ref::<BinaryArray>().expect("binary body");
+        let column = body
+            .column(0)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .expect("binary body");
         let build = || {
             let mut builder = arrow_avro::reader::ReaderBuilder::new()
                 .with_writer_schema_store(self.store.clone())
@@ -116,7 +137,9 @@ impl AvroDecoder {
             if let Some(reader_schema) = &self.reader {
                 builder = builder.with_reader_schema(reader_schema.clone());
             }
-            builder.build_decoder().expect("failed to build avro decoder")
+            builder
+                .build_decoder()
+                .expect("failed to build avro decoder")
         };
         // Built on the first surviving body: an all-tombstone batch must decode to zero rows even
         // before any writer schema has been registered (arrow-avro refuses an empty store).
@@ -172,7 +195,9 @@ impl AvroDecoder {
             let decoder = decoder.get_or_insert_with(build);
             let mut consumed = 0;
             while consumed < bytes.len() {
-                let n = decoder.decode(&bytes[consumed..]).expect("avro decode failed");
+                let n = decoder
+                    .decode(&bytes[consumed..])
+                    .expect("avro decode failed");
                 consumed += n;
                 if consumed < bytes.len() {
                     match decoder.flush().expect("avro flush failed") {
@@ -186,7 +211,10 @@ impl AvroDecoder {
                 }
             }
         }
-        if let Some(batch) = decoder.as_mut().and_then(|d| d.flush().expect("avro flush failed")) {
+        if let Some(batch) = decoder
+            .as_mut()
+            .and_then(|d| d.flush().expect("avro flush failed"))
+        {
             batches.push(batch);
         }
         if self.target.fields().is_empty() {
@@ -203,7 +231,9 @@ impl AvroDecoder {
         // Reconcile each flush before concatenating: writer schemas differing mid-batch can flush
         // under reader shapes that differ in field metadata (arrow-avro annotates a defaulted
         // field), and reconciliation lands every flush on the one boundary schema.
-        let mut reconciled = batches.into_iter().map(|batch| reconcile(&self.target, batch));
+        let mut reconciled = batches
+            .into_iter()
+            .map(|batch| reconcile(&self.target, batch));
         match (reconciled.next(), reconciled.next()) {
             (None, _) => RecordBatch::new_empty(self.target.clone()),
             (Some(single), None) => single,
@@ -247,15 +277,24 @@ fn reconcile_array(field: &Field, array: ArrayRef) -> ArrayRef {
     match field.data_type() {
         DataType::Timestamp(TimeUnit::Nanosecond, None) => flink_timestamp_nanos(&array),
         DataType::Int8 => {
-            let ints = array.as_any().downcast_ref::<Int32Array>().expect("avro int for TINYINT");
+            let ints = array
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .expect("avro int for TINYINT");
             Arc::new(unary::<Int32Type, _, Int8Type>(ints, |v| v as i8))
         }
         DataType::Int16 => {
-            let ints = array.as_any().downcast_ref::<Int32Array>().expect("avro int for SMALLINT");
+            let ints = array
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .expect("avro int for SMALLINT");
             Arc::new(unary::<Int32Type, _, Int16Type>(ints, |v| v as i16))
         }
         DataType::List(element) => {
-            let list = array.as_any().downcast_ref::<ListArray>().expect("avro array");
+            let list = array
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .expect("avro array");
             let (_, offsets, values, nulls) = list.clone().into_parts();
             Arc::new(ListArray::new(
                 element.clone(),
@@ -265,13 +304,20 @@ fn reconcile_array(field: &Field, array: ArrayRef) -> ArrayRef {
             ))
         }
         DataType::Struct(children) => {
-            let source = array.as_any().downcast_ref::<StructArray>().expect("avro record");
+            let source = array
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .expect("avro record");
             let columns = children
                 .iter()
                 .zip(source.columns())
                 .map(|(child, column)| reconcile_array(child, column.clone()))
                 .collect();
-            Arc::new(StructArray::new(children.clone(), columns, source.nulls().cloned()))
+            Arc::new(StructArray::new(
+                children.clone(),
+                columns,
+                source.nulls().cloned(),
+            ))
         }
         DataType::Map(entries, sorted) => {
             let source = array.as_any().downcast_ref::<MapArray>().expect("avro map");
@@ -290,7 +336,10 @@ fn reconcile_array(field: &Field, array: ArrayRef) -> ArrayRef {
             ))
         }
         other => arrow::compute::cast(&array, other).unwrap_or_else(|e| {
-            panic!("avro decode produced {} where the boundary needs {other}: {e}", array.data_type())
+            panic!(
+                "avro decode produced {} where the boundary needs {other}: {e}",
+                array.data_type()
+            )
         }),
     }
 }
@@ -299,7 +348,9 @@ fn reconcile_array(field: &Field, array: ArrayRef) -> ArrayRef {
 fn flink_timestamp_nanos(array: &ArrayRef) -> ArrayRef {
     fn scale<T: ArrowTimestampType>(array: &ArrayRef) -> ArrayRef {
         let raw = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
-        Arc::new(unary::<T, _, TimestampNanosecondType>(raw, |v| v.wrapping_mul(1_000_000)))
+        Arc::new(unary::<T, _, TimestampNanosecondType>(raw, |v| {
+            v.wrapping_mul(1_000_000)
+        }))
     }
     match array.data_type() {
         DataType::Timestamp(TimeUnit::Millisecond, _) => scale::<TimestampMillisecondType>(array),
@@ -323,7 +374,10 @@ fn reconcile_decimal(array: ArrayRef, precision: u8, scale: i8) -> ArrayRef {
     if decimals.iter().flatten().all(|v| v.abs() < bound) {
         return array;
     }
-    let bounded: Decimal128Array = decimals.iter().map(|v| v.filter(|v| v.abs() < bound)).collect();
+    let bounded: Decimal128Array = decimals
+        .iter()
+        .map(|v| v.filter(|v| v.abs() < bound))
+        .collect();
     Arc::new(bounded.with_precision_and_scale(precision, scale).unwrap())
 }
 
@@ -367,7 +421,10 @@ impl AvroEncodeOptions {
         if !confluent && schema_id.is_some() {
             return Err("bare avro does not frame a schema id".to_string());
         }
-        Ok(AvroEncodeOptions { schema_json, schema_id })
+        Ok(AvroEncodeOptions {
+            schema_json,
+            schema_id,
+        })
     }
 }
 
@@ -464,7 +521,12 @@ pub(crate) fn encode_avro_batch(
     for (field, column) in batch.schema().fields().iter().zip(batch.columns()) {
         let column = flink_avro_array(column.clone())
             .map_err(|error| format!("failed to serialize Avro field {}: {error}", field.name()))?;
-        fields.push(field.as_ref().clone().with_data_type(column.data_type().clone()));
+        fields.push(
+            field
+                .as_ref()
+                .clone()
+                .with_data_type(column.data_type().clone()),
+        );
         columns.push(column);
     }
     // The derived writer schema rides as schema metadata, so arrow-avro serializes against
@@ -489,7 +551,10 @@ pub(crate) fn encode_avro_batch(
         .encode(&batch)
         .map_err(|error| format!("failed to encode Kafka Avro batch: {error}"))?;
     let rows = encoder.flush();
-    Ok(crate::kafka::EncodedLines::from_offsets(rows.bytes().to_vec(), rows.offsets()))
+    Ok(crate::kafka::EncodedLines::from_offsets(
+        rows.bytes().to_vec(),
+        rows.offsets(),
+    ))
 }
 
 /// Rewrites one boundary column into the exact values Flink's Avro converter hands its datum
@@ -510,9 +575,10 @@ fn flink_avro_array(array: ArrayRef) -> Result<ArrayRef, String> {
     match array.data_type() {
         DataType::Timestamp(TimeUnit::Nanosecond, _) => {
             let nanos = array.as_primitive::<TimestampNanosecondType>();
-            Ok(Arc::new(unary::<_, _, TimestampMillisecondType>(nanos, |value: i64| {
-                value.div_euclid(1_000_000)
-            })))
+            Ok(Arc::new(unary::<_, _, TimestampMillisecondType>(
+                nanos,
+                |value: i64| value.div_euclid(1_000_000),
+            )))
         }
         DataType::FixedSizeBinary(_) => arrow::compute::cast(&array, &DataType::Binary)
             .map_err(|error| format!("BINARY column does not widen to Avro bytes: {error}")),
@@ -523,17 +589,28 @@ fn flink_avro_array(array: ArrayRef) -> Result<ArrayRef, String> {
             for (field, column) in source.fields().iter().zip(source.columns()) {
                 let column = flink_avro_array(column.clone())?;
                 fields.push(Arc::new(
-                    field.as_ref().clone().with_data_type(column.data_type().clone()),
+                    field
+                        .as_ref()
+                        .clone()
+                        .with_data_type(column.data_type().clone()),
                 ));
                 columns.push(column);
             }
-            Ok(Arc::new(StructArray::new(fields.into(), columns, source.nulls().cloned())))
+            Ok(Arc::new(StructArray::new(
+                fields.into(),
+                columns,
+                source.nulls().cloned(),
+            )))
         }
         DataType::List(_) => {
             let (field, offsets, values, nulls) = array.as_list::<i32>().clone().into_parts();
             let values = flink_avro_array(values)?;
-            let field =
-                Arc::new(field.as_ref().clone().with_data_type(values.data_type().clone()));
+            let field = Arc::new(
+                field
+                    .as_ref()
+                    .clone()
+                    .with_data_type(values.data_type().clone()),
+            );
             Ok(Arc::new(ListArray::new(field, offsets, values, nulls)))
         }
         DataType::Map(_, _) => flink_avro_map(array.as_map()),
@@ -577,12 +654,22 @@ fn flink_avro_map(map: &MapArray) -> Result<ArrayRef, String> {
         return Err("map entries are not a struct".to_string());
     };
     let children = Fields::from(vec![
-        children[0].as_ref().clone().with_data_type(taken_keys.data_type().clone()),
-        children[1].as_ref().clone().with_data_type(taken_values.data_type().clone()),
+        children[0]
+            .as_ref()
+            .clone()
+            .with_data_type(taken_keys.data_type().clone()),
+        children[1]
+            .as_ref()
+            .clone()
+            .with_data_type(taken_values.data_type().clone()),
     ]);
     let entries = StructArray::new(children, vec![taken_keys, taken_values], None);
-    let entry_field =
-        Arc::new(entry_field.as_ref().clone().with_data_type(entries.data_type().clone()));
+    let entry_field = Arc::new(
+        entry_field
+            .as_ref()
+            .clone()
+            .with_data_type(entries.data_type().clone()),
+    );
     Ok(Arc::new(MapArray::new(
         entry_field,
         OffsetBuffer::new(new_offsets.into()),
@@ -605,11 +692,7 @@ fn flink_avro_map(map: &MapArray) -> Result<ArrayRef, String> {
 /// Returns the entry indices (into the map's child arrays) in serialization order; the index of a
 /// duplicated key is the last one written, matching `put` overwriting the value.
 #[cfg(all(feature = "kafka", feature = "avro"))]
-fn java_hash_map_order(
-    keys: &StringArray,
-    start: usize,
-    end: usize,
-) -> Result<Vec<usize>, String> {
+fn java_hash_map_order(keys: &StringArray, start: usize, end: usize) -> Result<Vec<usize>, String> {
     struct Entry {
         hash: i32,
         key_index: usize,
@@ -621,8 +704,11 @@ fn java_hash_map_order(
         let new_capacity = old_capacity * 2;
         // Java doubles the threshold only from the default table size up; smaller tables
         // recompute it from the load factor.
-        *threshold =
-            if old_capacity >= 16 { *threshold * 2 } else { (new_capacity as f32 * 0.75) as usize };
+        *threshold = if old_capacity >= 16 {
+            *threshold * 2
+        } else {
+            (new_capacity as f32 * 0.75) as usize
+        };
         let mut new_buckets: Vec<Vec<Entry>> = (0..new_capacity).map(|_| Vec::new()).collect();
         for (index, chain) in buckets.drain(..).enumerate() {
             for entry in chain {
@@ -639,10 +725,14 @@ fn java_hash_map_order(
         return Ok(order);
     }
     // CollectionUtil.newHashMapWithExpectedSize + HashMap.tableSizeFor.
-    let required =
-        if expected <= 2 { expected + 1 } else { (expected as f64 / 0.75).ceil() as usize };
-    let mut buckets: Vec<Vec<Entry>> =
-        (0..required.next_power_of_two()).map(|_| Vec::new()).collect();
+    let required = if expected <= 2 {
+        expected + 1
+    } else {
+        (expected as f64 / 0.75).ceil() as usize
+    };
+    let mut buckets: Vec<Vec<Entry>> = (0..required.next_power_of_two())
+        .map(|_| Vec::new())
+        .collect();
     let mut threshold = (buckets.len() as f32 * 0.75) as usize;
     let mut size = 0;
     for index in start..end {
@@ -659,14 +749,19 @@ fn java_hash_map_order(
         };
         let bucket = (hash as u32 & (buckets.len() as u32 - 1)) as usize;
         let chain = &mut buckets[bucket];
-        if let Some(entry) =
-            chain.iter_mut().find(|entry| entry.hash == hash && keys.value(entry.key_index) == key)
+        if let Some(entry) = chain
+            .iter_mut()
+            .find(|entry| entry.hash == hash && keys.value(entry.key_index) == key)
         {
             entry.value_index = index;
             continue;
         }
         let chain_length = chain.len();
-        chain.push(Entry { hash, key_index: index, value_index: index });
+        chain.push(Entry {
+            hash,
+            key_index: index,
+            value_index: index,
+        });
         if chain_length >= 8 {
             // Java's treeify threshold: a small table resizes instead of treeifying.
             if buckets.len() < 64 {
@@ -727,7 +822,11 @@ mod tests {
     fn bodies(messages: Vec<Option<&[u8]>>) -> RecordBatch {
         let array = BinaryArray::from(messages);
         RecordBatch::try_new(
-            Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)])),
+            Arc::new(Schema::new(vec![Field::new(
+                "body",
+                DataType::Binary,
+                true,
+            )])),
             vec![Arc::new(array)],
         )
         .unwrap()
@@ -806,21 +905,48 @@ mod tests {
         assert_eq!(out.schema(), target);
         let ti = out.column(0).as_any().downcast_ref::<Int8Array>().unwrap();
         assert_eq!(ti.values(), &[44, -1]);
-        let ts = out.column(1).as_any().downcast_ref::<TimestampNanosecondArray>().unwrap();
+        let ts = out
+            .column(1)
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
         assert_eq!(ts.values(), &[1_000_000_000, -1_000_000]);
         // Flink reads the micros long as epoch millis (its converter has no micros path); the
         // reconciliation reproduces that: raw x 1e6, not x 1e3.
-        let tsu = out.column(2).as_any().downcast_ref::<TimestampNanosecondArray>().unwrap();
+        let tsu = out
+            .column(2)
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
         assert_eq!(tsu.values(), &[1_000_000_000_000, -1_000_000_000]);
-        let dec = out.column(3).as_any().downcast_ref::<Decimal128Array>().unwrap();
+        let dec = out
+            .column(3)
+            .as_any()
+            .downcast_ref::<Decimal128Array>()
+            .unwrap();
         assert_eq!((dec.value(0), dec.is_null(1)), (12345, true));
-        let d = out.column(4).as_any().downcast_ref::<Date32Array>().unwrap();
+        let d = out
+            .column(4)
+            .as_any()
+            .downcast_ref::<Date32Array>()
+            .unwrap();
         assert_eq!(d.values(), &[19_000, 19_000]);
-        let t = out.column(5).as_any().downcast_ref::<Time32MillisecondArray>().unwrap();
+        let t = out
+            .column(5)
+            .as_any()
+            .downcast_ref::<Time32MillisecondArray>()
+            .unwrap();
         assert_eq!(t.values(), &[45_296_789, 45_296_789]);
         let arr = out.column(6).as_any().downcast_ref::<ListArray>().unwrap();
         let first = arr.value(0);
-        assert_eq!(first.as_any().downcast_ref::<Int64Array>().unwrap().values(), &[7]);
+        assert_eq!(
+            first
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .values(),
+            &[7]
+        );
         let m = out.column(7).as_any().downcast_ref::<MapArray>().unwrap();
         let keys = m.keys().as_any().downcast_ref::<StringArray>().unwrap();
         assert_eq!((keys.value(0), keys.value(1)), ("a", "a"));
@@ -890,7 +1016,11 @@ mod tests {
         assert_eq!(out.num_rows(), 2);
         let id = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
         assert_eq!(id.values(), &[1, 1]);
-        let s = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+        let s = out
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!((s.value(0), s.value(1)), ("first", "first"));
     }
 
@@ -926,7 +1056,11 @@ mod tests {
         let mut framed = vec![0x00, 0, 0, 0, 7];
         framed.extend(zigzag(5_000)); // 5000 micros on the wire; Flink reads 5000 millis
         let out = decoder.decode(&bodies(vec![Some(&framed)]));
-        let ts = out.column(0).as_any().downcast_ref::<TimestampNanosecondArray>().unwrap();
+        let ts = out
+            .column(0)
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
         assert_eq!(ts.values(), &[5_000_000_000]);
     }
 
@@ -1053,8 +1187,7 @@ mod encode_tests {
     fn frames_confluent_messages_with_the_registered_id() {
         let schema_json = r#"{"type":"record","name":"record","namespace":"org.apache.flink.avro.generated","fields":[
             {"name":"id","type":"long"}]}"#;
-        let schema =
-            Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
         let batch =
             RecordBatch::try_new(schema, vec![Arc::new(Int64Array::from(vec![7]))]).unwrap();
         let encoded = encode(schema_json, Some(258), &batch).unwrap();
@@ -1064,9 +1197,7 @@ mod encode_tests {
     }
 
     fn map_batch(entries: Vec<(Option<&str>, i64)>) -> RecordBatch {
-        let keys = StringArray::from(
-            entries.iter().map(|(key, _)| *key).collect::<Vec<_>>(),
-        );
+        let keys = StringArray::from(entries.iter().map(|(key, _)| *key).collect::<Vec<_>>());
         let values = Int64Array::from(entries.iter().map(|(_, v)| *v).collect::<Vec<_>>());
         // The boundary declares map keys nullable — a null key is data Flink only rejects at
         // serialization time.
@@ -1079,11 +1210,7 @@ mod encode_tests {
             vec![Arc::new(keys), Arc::new(values)],
             None,
         );
-        let entry_field = Arc::new(Field::new(
-            "entries",
-            DataType::Struct(children),
-            false,
-        ));
+        let entry_field = Arc::new(Field::new("entries", DataType::Struct(children), false));
         let offsets = OffsetBuffer::new(vec![0, struct_entries.len() as i32].into());
         let map = MapArray::new(entry_field.clone(), offsets, struct_entries, None, false);
         RecordBatch::try_new(
@@ -1154,8 +1281,7 @@ mod encode_tests {
                 )
             })
             .collect();
-        let array =
-            StringArray::from(colliding.iter().map(String::as_str).collect::<Vec<_>>());
+        let array = StringArray::from(colliding.iter().map(String::as_str).collect::<Vec<_>>());
         let order = java_hash_map_order(&array, 0, 9).unwrap();
         assert_eq!(order, (0..9).collect::<Vec<_>>());
     }
@@ -1165,7 +1291,9 @@ mod encode_tests {
     #[test]
     fn null_map_key_fails_the_batch() {
         let batch = map_batch(vec![(Some("a"), 0), (None, 1)]);
-        let error = encode(MAP_SCHEMA, None, &batch).err().expect("a null key must fail");
+        let error = encode(MAP_SCHEMA, None, &batch)
+            .err()
+            .expect("a null key must fail");
         assert!(error.contains("NULL map key"), "{error}");
     }
 }

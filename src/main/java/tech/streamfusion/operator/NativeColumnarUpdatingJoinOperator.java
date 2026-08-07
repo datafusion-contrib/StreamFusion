@@ -3,7 +3,6 @@ package tech.streamfusion.operator;
 import tech.streamfusion.Native;
 import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.PaimonNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -115,72 +114,6 @@ public class NativeColumnarUpdatingJoinOperator
   }
 
   @Override
-  protected PaimonNativeStateSupport resolvePaimonState(boolean rawStateRestored) {
-    // The support object exposes one retention for the compactor's physical cleanup, but the
-    // sides expire independently: a single bound is only safe when BOTH sides expire, and then
-    // only the larger one (dropping rows older than max(left, right) can never drop a live row
-    // on either side). With either side unbounded, no shared cleanup bound exists.
-    long compactionTtlMillis =
-        leftStateTtlMillis == 0 || rightStateTtlMillis == 0
-            ? 0
-            : Math.max(leftStateTtlMillis, rightStateTtlMillis);
-    return resolvePaimon(
-        rawStateRestored,
-        () -> rowTypeSupported(leftType) && rowTypeSupported(rightType),
-        compactionTtlMillis);
-  }
-
-  /** Whether one side's row type is persistable, probed over a one-call FFI schema export. */
-  private static boolean rowTypeSupported(RowType rowType) {
-    return withRowSchema(rowType, address -> Native.paimonRowStateSupported(address) ? 1L : 0L) != 0;
-  }
-
-  // The joiner needs both sides' Arrow schemas up front (to type outer null-padding); they are
-  // exported through the C Data Interface for the create/restore call to import.
-  @Override
-  protected long createPaimonHandle(PaimonNativeStateSupport paimon) {
-    return withRowSchemas(
-        leftType,
-        rightType,
-        (left, right) ->
-            Native.createPaimonUpdatingJoiner(
-                leftKeys,
-                rightKeys,
-                keyTimestampPrecisions(),
-                joinType,
-                left,
-                right,
-                predKinds,
-                predPayload,
-                predChildCounts,
-                boundPredLongs,
-                predDoubles,
-                predStrings,
-                leftJoinKeyUnique,
-                rightJoinKeyUnique,
-                miniBatch,
-                leftStateTtlMillis,
-                rightStateTtlMillis,
-                getProcessingTimeService().getCurrentProcessingTime(),
-                memoryBudgetBytes(),
-                paimon.tableDirectory(),
-                maxParallelism(),
-                NativeConfig.paimonBuckets(),
-                NativeConfig.paimonFileFormat(),
-                NativeConfig.paimonFileCompression(),
-                paimon.sourceDirectories(),
-                paimon.sourceSnapshotTokens(),
-                paimon.keyGroupStart(),
-                paimon.keyGroupEnd(),
-                paimon.aligned()));
-  }
-
-  @Override
-  protected String[] checkpointPaimonHandle() {
-    return Native.checkpointPaimonUpdatingJoiner(handle);
-  }
-
-  @Override
   protected long createHandle() {
     return withRowSchemas(
         leftType,
@@ -244,18 +177,12 @@ public class NativeColumnarUpdatingJoinOperator
 
   @Override
   protected void closeHandle() {
-    if (paimonState()) {
-      Native.closePaimonUpdatingJoiner(handle);
-    } else {
-      Native.closeUpdatingJoiner(handle);
-    }
+    Native.closeUpdatingJoiner(handle);
   }
 
   @Override
   protected long stateBytesHandle() {
-    return paimonState()
-        ? Native.paimonUpdatingJoinerStateBytes(handle)
-        : Native.updatingJoinerStateBytes(handle);
+    return Native.updatingJoinerStateBytes(handle);
   }
 
   @Override
@@ -357,17 +284,7 @@ public class NativeColumnarUpdatingJoinOperator
       // Flink's TtlTimeProvider clock: the processing-time service is System.currentTimeMillis in
       // production and harness-controlled in tests, so expiry is deterministic to test.
       long now = getProcessingTimeService().getCurrentProcessingTime();
-      if (paimonState()) {
-        if (left) {
-          Native.pushLeftPaimonUpdatingJoiner(
-              handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
-              outArray.memoryAddress(), outSchema.memoryAddress());
-        } else {
-          Native.pushRightPaimonUpdatingJoiner(
-              handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
-              outArray.memoryAddress(), outSchema.memoryAddress());
-        }
-      } else if (left) {
+      if (left) {
         Native.pushLeftUpdatingJoiner(
             handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
             outArray.memoryAddress(), outSchema.memoryAddress());
@@ -422,32 +339,15 @@ public class NativeColumnarUpdatingJoinOperator
   }
 
   private void flushBundle(FlushReason reason) {
-    long transientBytes =
-        paimonState()
-            ? Native.paimonUpdatingJoinerStagingBytes(handle)
-            : Native.updatingJoinerStagingBytes(handle);
-    long touchedKeys =
-        paimonState()
-            ? Native.paimonUpdatingJoinerStagedKeys(handle)
-            : Native.updatingJoinerStagedKeys(handle);
-    long leftRecords =
-        paimonState()
-            ? Native.paimonUpdatingJoinerStagedRecords(handle, true)
-            : Native.updatingJoinerStagedRecords(handle, true);
-    long rightRecords =
-        paimonState()
-            ? Native.paimonUpdatingJoinerStagedRecords(handle, false)
-            : Native.updatingJoinerStagedRecords(handle, false);
+    long transientBytes = Native.updatingJoinerStagingBytes(handle);
+    long touchedKeys = Native.updatingJoinerStagedKeys(handle);
+    long leftRecords = Native.updatingJoinerStagedRecords(handle, true);
+    long rightRecords = Native.updatingJoinerStagedRecords(handle, false);
     leftBundleReducedSize = saturatedInt(Math.max(0, leftBundleRows - leftRecords));
     rightBundleReducedSize = saturatedInt(Math.max(0, rightBundleRows - rightRecords));
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      if (paimonState()) {
-        Native.flushPaimonUpdatingJoiner(
-            handle, outArray.memoryAddress(), outSchema.memoryAddress());
-      } else {
-        Native.flushUpdatingJoiner(handle, outArray.memoryAddress(), outSchema.memoryAddress());
-      }
+      Native.flushUpdatingJoiner(handle, outArray.memoryAddress(), outSchema.memoryAddress());
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       int outputRows = out.getRowCount();

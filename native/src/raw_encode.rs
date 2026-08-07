@@ -68,39 +68,106 @@ fn write_raw_value(
     use arrow::array::{FixedSizeBinaryArray, Float64Array};
     match column.data_type() {
         DataType::Utf8 => out.extend_from_slice(
-            column.as_any().downcast_ref::<StringArray>().unwrap().value(row).as_bytes(),
+            column
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap()
+                .value(row)
+                .as_bytes(),
         ),
         DataType::Binary => out.extend_from_slice(
-            column.as_any().downcast_ref::<BinaryArray>().unwrap().value(row),
+            column
+                .as_any()
+                .downcast_ref::<BinaryArray>()
+                .unwrap()
+                .value(row),
         ),
         DataType::FixedSizeBinary(_) => out.extend_from_slice(
-            column.as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap().value(row),
+            column
+                .as_any()
+                .downcast_ref::<FixedSizeBinaryArray>()
+                .unwrap()
+                .value(row),
         ),
         DataType::Boolean => out.push(u8::from(
-            column.as_any().downcast_ref::<BooleanArray>().unwrap().value(row),
+            column
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .unwrap()
+                .value(row),
         )),
         DataType::Int8 => out.extend_from_slice(
-            &column.as_any().downcast_ref::<Int8Array>().unwrap().value(row).to_be_bytes(),
+            &column
+                .as_any()
+                .downcast_ref::<Int8Array>()
+                .unwrap()
+                .value(row)
+                .to_be_bytes(),
         ),
         DataType::Int16 => {
-            let value = column.as_any().downcast_ref::<Int16Array>().unwrap().value(row);
-            extend_endian(&value.to_be_bytes(), &value.to_le_bytes(), little_endian, out);
+            let value = column
+                .as_any()
+                .downcast_ref::<Int16Array>()
+                .unwrap()
+                .value(row);
+            extend_endian(
+                &value.to_be_bytes(),
+                &value.to_le_bytes(),
+                little_endian,
+                out,
+            );
         }
         DataType::Int32 => {
-            let value = column.as_any().downcast_ref::<Int32Array>().unwrap().value(row);
-            extend_endian(&value.to_be_bytes(), &value.to_le_bytes(), little_endian, out);
+            let value = column
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .unwrap()
+                .value(row);
+            extend_endian(
+                &value.to_be_bytes(),
+                &value.to_le_bytes(),
+                little_endian,
+                out,
+            );
         }
         DataType::Int64 => {
-            let value = column.as_any().downcast_ref::<Int64Array>().unwrap().value(row);
-            extend_endian(&value.to_be_bytes(), &value.to_le_bytes(), little_endian, out);
+            let value = column
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .value(row);
+            extend_endian(
+                &value.to_be_bytes(),
+                &value.to_le_bytes(),
+                little_endian,
+                out,
+            );
         }
         DataType::Float32 => {
-            let value = column.as_any().downcast_ref::<Float32Array>().unwrap().value(row);
-            extend_endian(&value.to_be_bytes(), &value.to_le_bytes(), little_endian, out);
+            let value = column
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .unwrap()
+                .value(row);
+            extend_endian(
+                &value.to_be_bytes(),
+                &value.to_le_bytes(),
+                little_endian,
+                out,
+            );
         }
         DataType::Float64 => {
-            let value = column.as_any().downcast_ref::<Float64Array>().unwrap().value(row);
-            extend_endian(&value.to_be_bytes(), &value.to_le_bytes(), little_endian, out);
+            let value = column
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .unwrap()
+                .value(row);
+            extend_endian(
+                &value.to_be_bytes(),
+                &value.to_le_bytes(),
+                little_endian,
+                out,
+            );
         }
         other => return Err(format!("raw encode does not support Arrow type {other}")),
     }

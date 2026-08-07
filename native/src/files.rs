@@ -488,10 +488,12 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncod
         use jni::objects::ReleaseMode;
 
         let encoder = unsafe { &*(handle as *const ParquetEncoder) };
-        let mut elements = unsafe { env.get_array_elements_critical(&chunk, ReleaseMode::CopyBack) }
-            .expect("failed to pin drain chunk");
-        let out =
-            unsafe { std::slice::from_raw_parts_mut(elements.as_mut_ptr() as *mut u8, elements.len()) };
+        let mut elements =
+            unsafe { env.get_array_elements_critical(&chunk, ReleaseMode::CopyBack) }
+                .expect("failed to pin drain chunk");
+        let out = unsafe {
+            std::slice::from_raw_parts_mut(elements.as_mut_ptr() as *mut u8, elements.len())
+        };
         encoder.drain_into(out) as jint
     })
 }
@@ -517,10 +519,8 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_closeParquet
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<ParquetEncoder>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<ParquetEncoder>(handle));
     })
 }
 
@@ -533,13 +533,20 @@ pub(crate) fn split_by_partition_columns(
     batch: &RecordBatch,
     partition_columns: &[usize],
 ) -> Vec<RecordBatch> {
-    let key_arrays: Vec<ArrayRef> =
-        partition_columns.iter().map(|&index| batch.column(index).clone()).collect();
+    let key_arrays: Vec<ArrayRef> = partition_columns
+        .iter()
+        .map(|&index| batch.column(index).clone())
+        .collect();
     let converter = RowConverter::new(
-        key_arrays.iter().map(|array| SortField::new(array.data_type().clone())).collect(),
+        key_arrays
+            .iter()
+            .map(|array| SortField::new(array.data_type().clone()))
+            .collect(),
     )
     .expect("failed to build partition key converter");
-    let rows = converter.convert_columns(&key_arrays).expect("failed to convert partition keys");
+    let rows = converter
+        .convert_columns(&key_arrays)
+        .expect("failed to convert partition keys");
 
     let mut groups: HashMap<Row, Vec<u32>> = HashMap::default();
     let mut order: Vec<Row> = Vec::new();
@@ -588,7 +595,9 @@ pub(crate) fn split_by_partition_columns(
 /// resulting groups, pulled one at a time with `nextPartitionSlice` and released with
 /// `closePartitionSplit`.
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_splitByPartitionColumns<'local>(
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_splitByPartitionColumns<
+    'local,
+>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     in_array_address: jlong,
@@ -599,7 +608,9 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_splitByParti
         let batch = import_record_batch(in_array_address, in_schema_address);
         let partition_columns = read_columns(&env, &partition_columns);
         let slices = split_by_partition_columns(&batch, &partition_columns);
-        into_handle(PartitionSplit { slices: slices.into_iter().rev().collect() })
+        into_handle(PartitionSplit {
+            slices: slices.into_iter().rev().collect(),
+        })
     })
 }
 
@@ -637,10 +648,8 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_closePartiti
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<PartitionSplit>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<PartitionSplit>(handle));
     })
 }
 
@@ -677,16 +686,26 @@ impl FileScan {
         use datafusion::execution::object_store::ObjectStoreUrl;
         use datafusion::physical_plan::ExecutionPlan;
 
-        let size = std::fs::metadata(path).expect("failed to stat source file").len();
-        let file =
-            PartitionedFile::new_with_range(path.to_string(), size, range_start, range_start + range_length);
+        let size = std::fs::metadata(path)
+            .expect("failed to stat source file")
+            .len();
+        let file = PartitionedFile::new_with_range(
+            path.to_string(),
+            size,
+            range_start,
+            range_start + range_length,
+        );
         // Projection as column indices in plan order; an empty projection reads every column.
         let indices: Vec<usize> = if projection.is_empty() {
             (0..schema.fields().len()).collect()
         } else {
             projection
                 .iter()
-                .map(|name| schema.index_of(name).expect("projected column not in source file"))
+                .map(|name| {
+                    schema
+                        .index_of(name)
+                        .expect("projected column not in source file")
+                })
                 .collect()
         };
         let config = FileScanConfigBuilder::new(ObjectStoreUrl::local_filesystem(), file_source)
@@ -736,11 +755,17 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_openParquet<
             .map(|name| name.expect("projection column name was null"))
             .collect::<Vec<_>>();
         let schema = parquet_file_schema(&path);
-        let file_source = Arc::new(
-            datafusion::datasource::physical_plan::ParquetSource::new(schema.clone()),
-        ) as Arc<dyn datafusion::datasource::physical_plan::FileSource>;
-        let source: Box<dyn BatchSource> =
-            Box::new(FileScan::open(file_source, &path, schema, &projection, range_start, range_length));
+        let file_source = Arc::new(datafusion::datasource::physical_plan::ParquetSource::new(
+            schema.clone(),
+        )) as Arc<dyn datafusion::datasource::physical_plan::FileSource>;
+        let source: Box<dyn BatchSource> = Box::new(FileScan::open(
+            file_source,
+            &path,
+            schema,
+            &projection,
+            range_start,
+            range_length,
+        ));
         into_handle(source)
     })
 }
@@ -775,10 +800,8 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_closeSource<
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<Box<dyn BatchSource>>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<Box<dyn BatchSource>>(handle));
     })
 }
 
@@ -1225,14 +1248,25 @@ mod partition_split_tests {
                 Field::new("k", DataType::Utf8, true),
                 Field::new("v", DataType::Int32, false),
             ])),
-            vec![Arc::new(StringArray::from(keys)), Arc::new(Int32Array::from(values))],
+            vec![
+                Arc::new(StringArray::from(keys)),
+                Arc::new(Int32Array::from(values)),
+            ],
         )
         .unwrap()
     }
 
     fn key_of(slice: &RecordBatch, row: usize) -> Option<String> {
-        let keys = slice.column(0).as_any().downcast_ref::<StringArray>().unwrap();
-        if keys.is_null(row) { None } else { Some(keys.value(row).to_string()) }
+        let keys = slice
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        if keys.is_null(row) {
+            None
+        } else {
+            Some(keys.value(row).to_string())
+        }
     }
 
     #[test]
@@ -1245,15 +1279,27 @@ mod partition_split_tests {
         assert_eq!(slices.len(), 3);
 
         assert_eq!(key_of(&slices[0], 0), Some("b".to_string()));
-        let values = slices[0].column(1).as_any().downcast_ref::<Int32Array>().unwrap();
+        let values = slices[0]
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap();
         assert_eq!(values.values(), &[1, 4, 6]);
 
         assert_eq!(key_of(&slices[1], 0), None);
-        let values = slices[1].column(1).as_any().downcast_ref::<Int32Array>().unwrap();
+        let values = slices[1]
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap();
         assert_eq!(values.values(), &[2, 5]);
 
         assert_eq!(key_of(&slices[2], 0), Some("a".to_string()));
-        let values = slices[2].column(1).as_any().downcast_ref::<Int32Array>().unwrap();
+        let values = slices[2]
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap();
         assert_eq!(values.values(), &[3]);
 
         // Every group is single-keyed: the JVM routes each slice by its row 0.
@@ -1273,7 +1319,12 @@ mod partition_split_tests {
                 Field::new("v", DataType::Int64, false),
             ])),
             vec![
-                Arc::new(StringArray::from(vec![Some("x"), Some("x"), Some("y"), Some("x")])),
+                Arc::new(StringArray::from(vec![
+                    Some("x"),
+                    Some("x"),
+                    Some("y"),
+                    Some("x"),
+                ])),
                 Arc::new(Int32Array::from(vec![1, 2, 1, 1])),
                 Arc::new(Int64Array::from(vec![10i64, 20, 30, 40])),
             ],
@@ -1281,11 +1332,23 @@ mod partition_split_tests {
         .unwrap();
         let slices = split_by_partition_columns(&batch, &[0, 1]);
         assert_eq!(slices.len(), 3);
-        let values = slices[0].column(2).as_any().downcast_ref::<Int64Array>().unwrap();
+        let values = slices[0]
+            .column(2)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
         assert_eq!(values.values(), &[10, 40]); // (x, 1)
-        let values = slices[1].column(2).as_any().downcast_ref::<Int64Array>().unwrap();
+        let values = slices[1]
+            .column(2)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
         assert_eq!(values.values(), &[20]); // (x, 2)
-        let values = slices[2].column(2).as_any().downcast_ref::<Int64Array>().unwrap();
+        let values = slices[2]
+            .column(2)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
         assert_eq!(values.values(), &[30]); // (y, 1)
     }
 
@@ -1328,7 +1391,11 @@ mod partition_split_tests {
         .unwrap();
         let read: Vec<RecordBatch> = reader.collect::<Result<_, _>>().unwrap();
         assert_eq!(read[0].num_columns(), 1);
-        let values = read[0].column(0).as_any().downcast_ref::<Int32Array>().unwrap();
+        let values = read[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap();
         assert_eq!(values.values(), &[2]);
     }
 }

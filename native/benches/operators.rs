@@ -4,15 +4,14 @@
 
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, BooleanArray, Int8Array, Int64Array, RecordBatch, StringArray};
+use arrow::array::{ArrayRef, BooleanArray, Int64Array, Int8Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use criterion::{
     black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,
 };
 use streamfusion::bench::{
-    split_by_key, AppendTopN, Filter, IntervalJoin, KeepFirstDedup, LocalGroupBy, Over, RetractTopN,
-    UniqueUpdatingJoin,
-    KeepLastDedup, Normalize, Session, Tumbling, WindowJoin,
+    split_by_key, AppendTopN, Filter, IntervalJoin, KeepFirstDedup, KeepLastDedup, LocalGroupBy,
+    Normalize, Over, RetractTopN, Session, Tumbling, UniqueUpdatingJoin, WindowJoin,
 };
 
 const ROWS: usize = 4096;
@@ -31,7 +30,14 @@ fn bench_filter(c: &mut Criterion) {
     let values: Vec<i64> = (0..ROWS as i64).map(|i| i - ROWS as i64 / 2).collect();
     let batch = single_i64("v", values);
 
-    let mut filter = Filter::new(vec![6, 0, 1], vec![10, 0, 0], vec![2, 0, 0], vec![0], vec![], vec![]);
+    let mut filter = Filter::new(
+        vec![6, 0, 1],
+        vec![10, 0, 0],
+        vec![2, 0, 0],
+        vec![0],
+        vec![],
+        vec![],
+    );
     // Compile the predicate once (as the operator does at open) so the loop measures evaluation.
     filter.run(batch.clone());
 
@@ -46,7 +52,9 @@ fn bench_filter(c: &mut Criterion) {
 // Tumbling SUM over 16 windows: update one batch, then flush all closed windows.
 fn bench_tumbling(c: &mut Criterion) {
     let window_millis = 1000;
-    let ts: Vec<i64> = (0..ROWS as i64).map(|i| (i % 16) * window_millis + (i % window_millis)).collect();
+    let ts: Vec<i64> = (0..ROWS as i64)
+        .map(|i| (i % 16) * window_millis + (i % window_millis))
+        .collect();
     let value: Vec<i64> = (0..ROWS as i64).collect();
     let ts_col: ArrayRef = Arc::new(Int64Array::from(ts));
     let value_col: ArrayRef = Arc::new(Int64Array::from(value));
@@ -78,7 +86,9 @@ fn bench_tumbling(c: &mut Criterion) {
 // so it measures the keyed hot loop the no-key bench above does not.
 fn bench_tumbling_keyed(c: &mut Criterion) {
     let window_millis = 1000;
-    let ts: Vec<i64> = (0..ROWS as i64).map(|i| (i % 16) * window_millis + (i % window_millis)).collect();
+    let ts: Vec<i64> = (0..ROWS as i64)
+        .map(|i| (i % 16) * window_millis + (i % window_millis))
+        .collect();
     let value: Vec<i64> = (0..ROWS as i64).collect();
     let key: Vec<i64> = (0..ROWS as i64).map(|i| i % 64).collect();
     let ts_col: ArrayRef = Arc::new(Int64Array::from(ts));
@@ -369,14 +379,22 @@ fn bench_json_decode(c: &mut Criterion) {
         .map(|i| {
             // One representative shape, varied by index so the decoder does real work each row.
             Box::leak(
-                format!(r#"{{"id": {i}, "name": "row-{i}", "score": {}.5}}"#, i % 100).into_boxed_str(),
+                format!(
+                    r#"{{"id": {i}, "name": "row-{i}", "score": {}.5}}"#,
+                    i % 100
+                )
+                .into_boxed_str(),
             )
             .as_bytes()
         })
         .collect();
     let body: ArrayRef = Arc::new(arrow::array::BinaryArray::from(docs));
     let batch = RecordBatch::try_new(
-        Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)])),
+        Arc::new(Schema::new(vec![Field::new(
+            "body",
+            DataType::Binary,
+            true,
+        )])),
         vec![body],
     )
     .unwrap();
@@ -408,7 +426,11 @@ fn bench_json_decode(c: &mut Criterion) {
         .collect();
     let body: ArrayRef = Arc::new(arrow::array::BinaryArray::from(docs));
     let wide = RecordBatch::try_new(
-        Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)])),
+        Arc::new(Schema::new(vec![Field::new(
+            "body",
+            DataType::Binary,
+            true,
+        )])),
         vec![body],
     )
     .unwrap();
@@ -482,7 +504,9 @@ fn bench_session_keyed(c: &mut Criterion) {
 // complete/pending split and passthrough, for a running SUM (DataFusion accumulator) and for
 // ROW_NUMBER (per-key counter).
 fn bench_over(c: &mut Criterion) {
-    let k: ArrayRef = Arc::new(Int64Array::from((0..ROWS as i64).map(|i| i % 64).collect::<Vec<_>>()));
+    let k: ArrayRef = Arc::new(Int64Array::from(
+        (0..ROWS as i64).map(|i| i % 64).collect::<Vec<_>>(),
+    ));
     let value: ArrayRef = Arc::new(Int64Array::from((0..ROWS as i64).collect::<Vec<_>>()));
     let rt: ArrayRef = Arc::new(Int64Array::from((0..ROWS as i64).collect::<Vec<_>>()));
     let batch = RecordBatch::try_new(
@@ -536,10 +560,18 @@ fn bench_over(c: &mut Criterion) {
 // descending. Steady state is a batch of inserts into already-populated buffers — every row pays
 // the partition probe, the ordered insert, and the before/after top-N diff.
 fn bench_retract_topn(c: &mut Criterion) {
-    let k: ArrayRef = Arc::new(Int64Array::from((0..ROWS as i64).map(|i| i % 64).collect::<Vec<_>>()));
-    let v: ArrayRef = Arc::new(Int64Array::from((0..ROWS as i64).map(|i| (i * 37) % 8192).collect::<Vec<_>>()));
+    let k: ArrayRef = Arc::new(Int64Array::from(
+        (0..ROWS as i64).map(|i| i % 64).collect::<Vec<_>>(),
+    ));
+    let v: ArrayRef = Arc::new(Int64Array::from(
+        (0..ROWS as i64)
+            .map(|i| (i * 37) % 8192)
+            .collect::<Vec<_>>(),
+    ));
     let s: ArrayRef = Arc::new(StringArray::from(
-        (0..ROWS).map(|i| format!("payload-{i}")).collect::<Vec<_>>(),
+        (0..ROWS)
+            .map(|i| format!("payload-{i}"))
+            .collect::<Vec<_>>(),
     ));
     let batch = RecordBatch::try_new(
         Arc::new(Schema::new(vec![
@@ -620,7 +652,9 @@ fn bench_unique_updating_join_logical_bundle(c: &mut Criterion) {
         changelog_schema.clone(),
         vec![
             Arc::new(Int64Array::from_iter_values(0..64)),
-            Arc::new(Int64Array::from_iter_values((0..64).map(|key| 10_000 + key))),
+            Arc::new(Int64Array::from_iter_values(
+                (0..64).map(|key| 10_000 + key),
+            )),
             Arc::new(Int8Array::from(vec![0; 64])),
         ],
     )
@@ -641,7 +675,11 @@ fn bench_unique_updating_join_logical_bundle(c: &mut Criterion) {
         let key = (pair % 64) as i64;
         let round = pair / 64;
         keys.extend([key, key]);
-        values.push(if round == 0 { key } else { 1_000 + ((round - 1) * 64) as i64 + key });
+        values.push(if round == 0 {
+            key
+        } else {
+            1_000 + ((round - 1) * 64) as i64 + key
+        });
         values.push(1_000 + (round * 64) as i64 + key);
         kinds.extend([3, 0]);
     }
@@ -710,7 +748,9 @@ fn bench_unique_updating_join_logical_bundle(c: &mut Criterion) {
             ])),
             vec![
                 Arc::new(Int64Array::from_iter_values(0..ROWS as i64)),
-                Arc::new(Int64Array::from_iter_values((0..ROWS as i64).map(|key| key * 7))),
+                Arc::new(Int64Array::from_iter_values(
+                    (0..ROWS as i64).map(|key| key * 7),
+                )),
                 Arc::new(Int8Array::from(vec![0; ROWS])),
             ],
         )
@@ -794,7 +834,9 @@ fn bench_append_topn_logical_bundle(c: &mut Criterion) {
 // already fired, so each row is one emitted-set probe and a drop; the push+flush pair measures
 // both the per-batch reduction and the emitted-set growth path.
 fn bench_dedup_keep_first(c: &mut Criterion) {
-    let k: ArrayRef = Arc::new(Int64Array::from((0..ROWS as i64).map(|i| i % 256).collect::<Vec<_>>()));
+    let k: ArrayRef = Arc::new(Int64Array::from(
+        (0..ROWS as i64).map(|i| i % 256).collect::<Vec<_>>(),
+    ));
     let rt: ArrayRef = Arc::new(Int64Array::from((0..ROWS as i64).collect::<Vec<_>>()));
     let batch = RecordBatch::try_new(
         Arc::new(Schema::new(vec![
@@ -887,7 +929,10 @@ fn bench_keep_last_logical_bundle(c: &mut Criterion) {
             Field::new("key", DataType::Int64, false),
             Field::new("value", DataType::Int64, false),
         ])),
-        vec![Arc::new(Int64Array::from(keys)), Arc::new(Int64Array::from(values))],
+        vec![
+            Arc::new(Int64Array::from(keys)),
+            Arc::new(Int64Array::from(values)),
+        ],
     )
     .unwrap();
     let mut group = c.benchmark_group("keep_last_logical_bundle");
@@ -927,7 +972,9 @@ fn bench_keep_last_logical_bundle(c: &mut Criterion) {
 // The columnar exchange's by-key split: hash every row's key to a partition and gather the
 // sub-batches — the whole per-batch cost of the native shuffle's split side.
 fn bench_exchange_split(c: &mut Criterion) {
-    let k: ArrayRef = Arc::new(Int64Array::from((0..ROWS as i64).map(|i| i % 64).collect::<Vec<_>>()));
+    let k: ArrayRef = Arc::new(Int64Array::from(
+        (0..ROWS as i64).map(|i| i % 64).collect::<Vec<_>>(),
+    ));
     let v: ArrayRef = Arc::new(Int64Array::from((0..ROWS as i64).collect::<Vec<_>>()));
     let batch = RecordBatch::try_new(
         Arc::new(Schema::new(vec![
@@ -998,7 +1045,12 @@ fn bench_window_join(c: &mut Criterion) {
             Field::new("window_start", DataType::Int64, false),
             Field::new("window_end", DataType::Int64, false),
         ])),
-        vec![k, v, Arc::new(Int64Array::from(ws)), Arc::new(Int64Array::from(we))],
+        vec![
+            k,
+            v,
+            Arc::new(Int64Array::from(ws)),
+            Arc::new(Int64Array::from(we)),
+        ],
     )
     .unwrap();
 
@@ -1032,7 +1084,9 @@ fn bench_date_format(c: &mut Criterion) {
         b.iter(|| {
             let mut out = Vec::with_capacity(times.len());
             for &t in &times {
-                let wall = chrono::DateTime::from_timestamp_millis(t).unwrap().naive_utc();
+                let wall = chrono::DateTime::from_timestamp_millis(t)
+                    .unwrap()
+                    .naive_utc();
                 out.push(wall.format("%Y-%m-%d").to_string());
             }
             out
@@ -1040,13 +1094,16 @@ fn bench_date_format(c: &mut Criterion) {
     });
     group.bench_function("compiled", |b| {
         use std::fmt::Write as _;
-        let items =
-            chrono::format::StrftimeItems::new("%Y-%m-%d").parse_to_owned().expect("pattern");
+        let items = chrono::format::StrftimeItems::new("%Y-%m-%d")
+            .parse_to_owned()
+            .expect("pattern");
         b.iter(|| {
             let mut builder = arrow::array::StringBuilder::new();
             let mut buf = String::new();
             for &t in &times {
-                let wall = chrono::DateTime::from_timestamp_millis(t).unwrap().naive_utc();
+                let wall = chrono::DateTime::from_timestamp_millis(t)
+                    .unwrap()
+                    .naive_utc();
                 buf.clear();
                 write!(buf, "{}", wall.format_with_items(items.iter())).unwrap();
                 builder.append_value(&buf);
@@ -1066,7 +1123,9 @@ fn bench_date_format(c: &mut Criterion) {
             let mut builder = arrow::array::StringBuilder::new();
             let mut buf = String::new();
             for &t in &times {
-                let wall = chrono::DateTime::from_timestamp_millis(t).unwrap().naive_utc();
+                let wall = chrono::DateTime::from_timestamp_millis(t)
+                    .unwrap()
+                    .naive_utc();
                 buf.clear();
                 let year = wall.year() as u32;
                 push2(&mut buf, year / 100);

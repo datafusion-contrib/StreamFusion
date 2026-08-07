@@ -83,7 +83,7 @@ zero, Flink's `RecordCounter` semantics).
 **Checkpointing.** The durable global state stays as a Rust hot map but checkpoints through
 Flink's raw keyed state: each non-empty key group gets its own snapshot payload, and a rescaled
 task restores exactly the payloads assigned to its new key-group range, using the same BinaryRow
-hash/key-group calculation as the native exchange. See the [Paimon backend](../backends/paimon.md)
+hash/key-group calculation as the native exchange. See the [RocksDB backend](../backends/rocksdb.md)
 for the persistent-state-backend angle on this same raw-keyed-state layout.
 
 Still falling back, specific to the two-phase split: the opt-in `distinct-agg.split.enabled`

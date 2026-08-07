@@ -36,7 +36,11 @@ pub(crate) fn build_builtin(kind: i64, value_type: &DataType) -> AggregateFuncti
         3 => count_udaf(),
         other => panic!("unsupported builtin aggregate kind: {other}"),
     };
-    let schema = Arc::new(Schema::new(vec![Field::new("value", value_type.clone(), true)]));
+    let schema = Arc::new(Schema::new(vec![Field::new(
+        "value",
+        value_type.clone(),
+        true,
+    )]));
     let value = col("value", &schema).expect("value column");
     AggregateExprBuilder::new(function, vec![value])
         .schema(schema)
@@ -59,7 +63,11 @@ pub(crate) struct IntegerAvgAccumulator {
 
 impl IntegerAvgAccumulator {
     fn new(result_type: DataType) -> Self {
-        IntegerAvgAccumulator { sum: 0, count: 0, result_type }
+        IntegerAvgAccumulator {
+            sum: 0,
+            count: 0,
+            result_type,
+        }
     }
 }
 
@@ -68,28 +76,40 @@ impl Accumulator for IntegerAvgAccumulator {
         // The value column is the input integer type; sum widens to int64 regardless (as Flink does).
         match self.result_type {
             DataType::Int32 => {
-                let array = values[0].as_any().downcast_ref::<Int32Array>().expect("value int32");
+                let array = values[0]
+                    .as_any()
+                    .downcast_ref::<Int32Array>()
+                    .expect("value int32");
                 for value in array.iter().flatten() {
                     self.sum += i64::from(value);
                     self.count += 1;
                 }
             }
             DataType::Int16 => {
-                let array = values[0].as_any().downcast_ref::<Int16Array>().expect("value int16");
+                let array = values[0]
+                    .as_any()
+                    .downcast_ref::<Int16Array>()
+                    .expect("value int16");
                 for value in array.iter().flatten() {
                     self.sum += i64::from(value);
                     self.count += 1;
                 }
             }
             DataType::Int8 => {
-                let array = values[0].as_any().downcast_ref::<Int8Array>().expect("value int8");
+                let array = values[0]
+                    .as_any()
+                    .downcast_ref::<Int8Array>()
+                    .expect("value int8");
                 for value in array.iter().flatten() {
                     self.sum += i64::from(value);
                     self.count += 1;
                 }
             }
             _ => {
-                let array = values[0].as_any().downcast_ref::<Int64Array>().expect("value int64");
+                let array = values[0]
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .expect("value int64");
                 for value in array.iter().flatten() {
                     self.sum += value;
                     self.count += 1;
@@ -100,15 +120,24 @@ impl Accumulator for IntegerAvgAccumulator {
     }
 
     fn merge_batch(&mut self, states: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let sums = states[0].as_any().downcast_ref::<Int64Array>().expect("sum state int64");
-        let counts = states[1].as_any().downcast_ref::<Int64Array>().expect("count state int64");
+        let sums = states[0]
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("sum state int64");
+        let counts = states[1]
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("count state int64");
         self.sum += sums.iter().flatten().sum::<i64>();
         self.count += counts.iter().flatten().sum::<i64>();
         Ok(())
     }
 
     fn state(&mut self) -> datafusion::common::Result<Vec<ScalarValue>> {
-        Ok(vec![ScalarValue::Int64(Some(self.sum)), ScalarValue::Int64(Some(self.count))])
+        Ok(vec![
+            ScalarValue::Int64(Some(self.sum)),
+            ScalarValue::Int64(Some(self.count)),
+        ])
     }
 
     fn evaluate(&mut self) -> datafusion::common::Result<ScalarValue> {
@@ -140,7 +169,10 @@ pub(crate) struct WrappingIntSumAccumulator {
 
 impl Accumulator for WrappingIntSumAccumulator {
     fn update_batch(&mut self, values: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let array = values[0].as_any().downcast_ref::<Int32Array>().expect("value must be int32");
+        let array = values[0]
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .expect("value must be int32");
         for value in array.iter().flatten() {
             self.sum = Some(self.sum.unwrap_or(0).wrapping_add(value));
         }
@@ -148,7 +180,10 @@ impl Accumulator for WrappingIntSumAccumulator {
     }
 
     fn merge_batch(&mut self, states: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let sums = states[0].as_any().downcast_ref::<Int32Array>().expect("sum state int32");
+        let sums = states[0]
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .expect("sum state int32");
         for value in sums.iter().flatten() {
             self.sum = Some(self.sum.unwrap_or(0).wrapping_add(value));
         }
@@ -186,16 +221,18 @@ pub(crate) struct DecimalSumAccumulator {
 fn decimal_sum_add(sum: Option<i128>, value: i128) -> Option<i128> {
     match sum {
         None => Some(value),
-        Some(s) => {
-            s.checked_add(value).filter(|t| *t > -DECIMAL128_MAX && *t < DECIMAL128_MAX)
-        }
+        Some(s) => s
+            .checked_add(value)
+            .filter(|t| *t > -DECIMAL128_MAX && *t < DECIMAL128_MAX),
     }
 }
 
 impl Accumulator for DecimalSumAccumulator {
     fn update_batch(&mut self, values: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let array =
-            values[0].as_any().downcast_ref::<Decimal128Array>().expect("value decimal128");
+        let array = values[0]
+            .as_any()
+            .downcast_ref::<Decimal128Array>()
+            .expect("value decimal128");
         for value in array.iter().flatten() {
             self.sum = decimal_sum_add(self.sum, value);
         }
@@ -203,7 +240,10 @@ impl Accumulator for DecimalSumAccumulator {
     }
 
     fn merge_batch(&mut self, states: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let sums = states[0].as_any().downcast_ref::<Decimal128Array>().expect("sum decimal128");
+        let sums = states[0]
+            .as_any()
+            .downcast_ref::<Decimal128Array>()
+            .expect("sum decimal128");
         for value in sums.iter().flatten() {
             self.sum = decimal_sum_add(self.sum, value);
         }
@@ -239,14 +279,21 @@ pub(crate) struct DecimalAvgAccumulator {
 
 impl DecimalAvgAccumulator {
     fn new(scale: i8) -> Self {
-        DecimalAvgAccumulator { sum: 0, count: 0, overflow: false, scale }
+        DecimalAvgAccumulator {
+            sum: 0,
+            count: 0,
+            overflow: false,
+            scale,
+        }
     }
 }
 
 impl Accumulator for DecimalAvgAccumulator {
     fn update_batch(&mut self, values: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let array =
-            values[0].as_any().downcast_ref::<Decimal128Array>().expect("value decimal128");
+        let array = values[0]
+            .as_any()
+            .downcast_ref::<Decimal128Array>()
+            .expect("value decimal128");
         for value in array.iter().flatten() {
             accumulate_decimal(&mut self.sum, &mut self.overflow, value);
             self.count += 1;
@@ -255,10 +302,20 @@ impl Accumulator for DecimalAvgAccumulator {
     }
 
     fn merge_batch(&mut self, states: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let sums = states[0].as_any().downcast_ref::<Decimal128Array>().expect("sum decimal128");
-        let counts = states[1].as_any().downcast_ref::<Int64Array>().expect("count state int64");
+        let sums = states[0]
+            .as_any()
+            .downcast_ref::<Decimal128Array>()
+            .expect("sum decimal128");
+        let counts = states[1]
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("count state int64");
         for row in 0..sums.len() {
-            let count = if counts.is_null(row) { 0 } else { counts.value(row) };
+            let count = if counts.is_null(row) {
+                0
+            } else {
+                counts.value(row)
+            };
             if sums.is_valid(row) {
                 accumulate_decimal(&mut self.sum, &mut self.overflow, sums.value(row));
             } else if count > 0 {
@@ -308,7 +365,10 @@ pub(crate) struct WrappingNarrowSumAccumulator {
 
 impl WrappingNarrowSumAccumulator {
     fn new(data_type: DataType) -> Self {
-        WrappingNarrowSumAccumulator { sum: None, data_type }
+        WrappingNarrowSumAccumulator {
+            sum: None,
+            data_type,
+        }
     }
 
     fn wrap(&self, value: i64) -> i64 {
@@ -321,12 +381,18 @@ impl WrappingNarrowSumAccumulator {
 
     fn fold_narrow(&mut self, array: &ArrayRef) {
         if self.data_type == DataType::Int16 {
-            let array = array.as_any().downcast_ref::<Int16Array>().expect("value int16");
+            let array = array
+                .as_any()
+                .downcast_ref::<Int16Array>()
+                .expect("value int16");
             for value in array.iter().flatten() {
                 self.sum = Some(self.wrap(self.sum.unwrap_or(0) + i64::from(value)));
             }
         } else {
-            let array = array.as_any().downcast_ref::<Int8Array>().expect("value int8");
+            let array = array
+                .as_any()
+                .downcast_ref::<Int8Array>()
+                .expect("value int8");
             for value in array.iter().flatten() {
                 self.sum = Some(self.wrap(self.sum.unwrap_or(0) + i64::from(value)));
             }
@@ -378,7 +444,10 @@ pub(crate) struct FloatSumAccumulator {
 
 impl Accumulator for FloatSumAccumulator {
     fn update_batch(&mut self, values: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let array = values[0].as_any().downcast_ref::<Float32Array>().expect("value float32");
+        let array = values[0]
+            .as_any()
+            .downcast_ref::<Float32Array>()
+            .expect("value float32");
         for value in array.iter().flatten() {
             self.sum = Some(self.sum.unwrap_or(0.0) + value);
         }
@@ -386,7 +455,10 @@ impl Accumulator for FloatSumAccumulator {
     }
 
     fn merge_batch(&mut self, states: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let sums = states[0].as_any().downcast_ref::<Float32Array>().expect("sum state float32");
+        let sums = states[0]
+            .as_any()
+            .downcast_ref::<Float32Array>()
+            .expect("sum state float32");
         for value in sums.iter().flatten() {
             self.sum = Some(self.sum.unwrap_or(0.0) + value);
         }
@@ -417,7 +489,10 @@ pub(crate) struct FloatAvgAccumulator {
 
 impl Accumulator for FloatAvgAccumulator {
     fn update_batch(&mut self, values: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let array = values[0].as_any().downcast_ref::<Float32Array>().expect("value float32");
+        let array = values[0]
+            .as_any()
+            .downcast_ref::<Float32Array>()
+            .expect("value float32");
         for value in array.iter().flatten() {
             self.sum += f64::from(value);
             self.count += 1;
@@ -426,15 +501,24 @@ impl Accumulator for FloatAvgAccumulator {
     }
 
     fn merge_batch(&mut self, states: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let sums = states[0].as_any().downcast_ref::<arrow::array::Float64Array>().expect("sum f64");
-        let counts = states[1].as_any().downcast_ref::<Int64Array>().expect("count state int64");
+        let sums = states[0]
+            .as_any()
+            .downcast_ref::<arrow::array::Float64Array>()
+            .expect("sum f64");
+        let counts = states[1]
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("count state int64");
         self.sum += sums.iter().flatten().sum::<f64>();
         self.count += counts.iter().flatten().sum::<i64>();
         Ok(())
     }
 
     fn state(&mut self) -> datafusion::common::Result<Vec<ScalarValue>> {
-        Ok(vec![ScalarValue::Float64(Some(self.sum)), ScalarValue::Int64(Some(self.count))])
+        Ok(vec![
+            ScalarValue::Float64(Some(self.sum)),
+            ScalarValue::Int64(Some(self.count)),
+        ])
     }
 
     fn evaluate(&mut self) -> datafusion::common::Result<ScalarValue> {
@@ -458,7 +542,10 @@ pub(crate) struct DoubleAvgAccumulator {
 
 impl Accumulator for DoubleAvgAccumulator {
     fn update_batch(&mut self, values: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let array = values[0].as_any().downcast_ref::<arrow::array::Float64Array>().expect("f64");
+        let array = values[0]
+            .as_any()
+            .downcast_ref::<arrow::array::Float64Array>()
+            .expect("f64");
         for value in array.iter().flatten() {
             self.sum += value;
             self.count += 1;
@@ -467,19 +554,30 @@ impl Accumulator for DoubleAvgAccumulator {
     }
 
     fn merge_batch(&mut self, states: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let sums = states[0].as_any().downcast_ref::<arrow::array::Float64Array>().expect("sum f64");
-        let counts = states[1].as_any().downcast_ref::<Int64Array>().expect("count state int64");
+        let sums = states[0]
+            .as_any()
+            .downcast_ref::<arrow::array::Float64Array>()
+            .expect("sum f64");
+        let counts = states[1]
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("count state int64");
         self.sum += sums.iter().flatten().sum::<f64>();
         self.count += counts.iter().flatten().sum::<i64>();
         Ok(())
     }
 
     fn state(&mut self) -> datafusion::common::Result<Vec<ScalarValue>> {
-        Ok(vec![ScalarValue::Float64(Some(self.sum)), ScalarValue::Int64(Some(self.count))])
+        Ok(vec![
+            ScalarValue::Float64(Some(self.sum)),
+            ScalarValue::Int64(Some(self.count)),
+        ])
     }
 
     fn evaluate(&mut self) -> datafusion::common::Result<ScalarValue> {
-        Ok(ScalarValue::Float64((self.count != 0).then(|| self.sum / self.count as f64)))
+        Ok(ScalarValue::Float64(
+            (self.count != 0).then(|| self.sum / self.count as f64),
+        ))
     }
 
     fn size(&self) -> usize {
@@ -531,9 +629,9 @@ impl WindowAggregate {
 
     pub(crate) fn create_accumulator(&self) -> Box<dyn Accumulator> {
         match self {
-            WindowAggregate::Builtin(aggregate) => {
-                aggregate.create_accumulator().expect("failed to create accumulator")
-            }
+            WindowAggregate::Builtin(aggregate) => aggregate
+                .create_accumulator()
+                .expect("failed to create accumulator"),
             WindowAggregate::IntegerAvg(result_type) => {
                 Box::new(IntegerAvgAccumulator::new(result_type.clone()))
             }
@@ -544,12 +642,11 @@ impl WindowAggregate {
             WindowAggregate::FloatSum => Box::<FloatSumAccumulator>::default(),
             WindowAggregate::FloatAvg => Box::<FloatAvgAccumulator>::default(),
             WindowAggregate::DoubleAvg => Box::<DoubleAvgAccumulator>::default(),
-            WindowAggregate::DecimalSum { scale } => {
-                Box::new(DecimalSumAccumulator { sum: None, scale: *scale })
-            }
-            WindowAggregate::DecimalAvg { scale } => {
-                Box::new(DecimalAvgAccumulator::new(*scale))
-            }
+            WindowAggregate::DecimalSum { scale } => Box::new(DecimalSumAccumulator {
+                sum: None,
+                scale: *scale,
+            }),
+            WindowAggregate::DecimalAvg { scale } => Box::new(DecimalAvgAccumulator::new(*scale)),
         }
     }
 
@@ -712,15 +809,26 @@ pub(crate) enum RunningAgg {
     // SUM over DECIMAL(p, s): accumulate the unscaled i128 at the input scale; the result is
     // DECIMAL(38, s) (Flink's findSumAggType). `overflow` latches once the running sum no longer
     // fits DECIMAL(38, s) (|value| >= 10^38), at which point Flink reports NULL.
-    SumDecimal { sum: i128, scale: i8, overflow: bool },
+    SumDecimal {
+        sum: i128,
+        scale: i8,
+        overflow: bool,
+    },
     // AVG over DECIMAL(p, s): the running sum is SUM's DECIMAL(38, s) accumulator (overflow latches
     // NULL, like SUM); the count lives in GroupAggState's `non_null`. The emit divides sum by count
     // with Flink's exact decimal division and reports DECIMAL(38, max(6, s)) — findAvgAggType's
     // derivation, the type the planner declares for the call.
-    AvgDecimal { sum: i128, scale: i8, overflow: bool },
+    AvgDecimal {
+        sum: i128,
+        scale: i8,
+        overflow: bool,
+    },
     // MIN/MAX over DECIMAL(p, s): the value lives in the Extremes multiset (this variant is never
     // folded), so this carries only the precision/scale to report the result type DECIMAL(p, s).
-    MinMaxDecimal { precision: u8, scale: i8 },
+    MinMaxDecimal {
+        precision: u8,
+        scale: i8,
+    },
     // MIN/MAX over a string: likewise lives in the Extremes multiset; this only reports the result
     // type (the converter's Utf8). Never folded.
     MinMaxStr,
@@ -755,8 +863,14 @@ pub(crate) enum RunningAgg {
     // the sum widens to BIGINT for any integer input and DOUBLE for float/double, the result casts back
     // to the input type, and the value is `count == 0 ? NULL : sum / count` (integer division truncates
     // toward zero). Decimal AVG is not modelled (the matcher leaves it on the host).
-    AvgInt { sum: i64, result: DataType },
-    AvgFloat { sum: f64, result: DataType },
+    AvgInt {
+        sum: i64,
+        result: DataType,
+    },
+    AvgFloat {
+        sum: f64,
+        result: DataType,
+    },
     // The LOCAL half of a two-phase AVG (kind 8): the widened running sum alone — the count rides a
     // separate COUNT partial state. Folds like AvgInt/AvgFloat (any integer / float input widens),
     // but emits the raw sum, not a quotient; the global half divides after merging. Matching Flink's
@@ -765,7 +879,11 @@ pub(crate) enum RunningAgg {
     // bundle's sum overflows DECIMAL(38, s).
     AvgPartialSumInt(i64),
     AvgPartialSumFloat(f64),
-    AvgPartialSumDecimal { sum: i128, scale: i8, overflow: bool },
+    AvgPartialSumDecimal {
+        sum: i128,
+        scale: i8,
+        overflow: bool,
+    },
 }
 
 impl RunningAgg {
@@ -810,26 +928,41 @@ impl RunningAgg {
             (5, DataType::Float32) => FirstF32(None),
             (6, DataType::Float32) => LastF32(None),
             // AVG(integer) — sum widens to BIGINT, result casts back to the input type on emit.
-            (4, DataType::Int64 | DataType::Int32 | DataType::Int16 | DataType::Int8) => {
-                AvgInt { sum: 0, result: value_type.clone() }
-            }
+            (4, DataType::Int64 | DataType::Int32 | DataType::Int16 | DataType::Int8) => AvgInt {
+                sum: 0,
+                result: value_type.clone(),
+            },
             // Two-phase AVG's local sum partial: the declared type is the WIDENED partial type
             // (BIGINT for integer inputs, DOUBLE for float/double — Flink's AvgAggFunction).
             (8, DataType::Int64) => AvgPartialSumInt(0),
             (8, DataType::Float64) => AvgPartialSumFloat(0.0),
-            (8, DataType::Decimal128(_, s)) => {
-                AvgPartialSumDecimal { sum: 0, scale: *s, overflow: false }
-            }
+            (8, DataType::Decimal128(_, s)) => AvgPartialSumDecimal {
+                sum: 0,
+                scale: *s,
+                overflow: false,
+            },
             // AVG(float/double) — sum in DOUBLE, result casts back to the input type on emit.
-            (4, DataType::Float64 | DataType::Float32) => {
-                AvgFloat { sum: 0.0, result: value_type.clone() }
-            }
+            (4, DataType::Float64 | DataType::Float32) => AvgFloat {
+                sum: 0.0,
+                result: value_type.clone(),
+            },
             // SUM(DECIMAL(_, s)) — accumulate the unscaled i128 at scale s; result is DECIMAL(38, s).
-            (0, DataType::Decimal128(_, s)) => SumDecimal { sum: 0, scale: *s, overflow: false },
+            (0, DataType::Decimal128(_, s)) => SumDecimal {
+                sum: 0,
+                scale: *s,
+                overflow: false,
+            },
             // AVG(DECIMAL(_, s)) — SUM's accumulator plus the exact divide on emit.
-            (4, DataType::Decimal128(_, s)) => AvgDecimal { sum: 0, scale: *s, overflow: false },
+            (4, DataType::Decimal128(_, s)) => AvgDecimal {
+                sum: 0,
+                scale: *s,
+                overflow: false,
+            },
             // MIN/MAX(DECIMAL(p, s)) — the extreme lives in the multiset; result is DECIMAL(p, s).
-            (1 | 2, DataType::Decimal128(p, s)) => MinMaxDecimal { precision: *p, scale: *s },
+            (1 | 2, DataType::Decimal128(p, s)) => MinMaxDecimal {
+                precision: *p,
+                scale: *s,
+            },
             // MIN/MAX(string) — the extreme lives in the multiset; result is the converter's Utf8.
             (1 | 2, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) => MinMaxStr,
             (k, other) => panic!("unsupported OVER aggregate kind {k} for value type {other:?}"),
@@ -850,8 +983,12 @@ impl RunningAgg {
             (MinF64(m), Num::F64(v)) => *m = Some(m.map_or(v, |x| x.min(v))),
             (MaxF64(m), Num::F64(v)) => *m = Some(m.map_or(v, |x| x.max(v))),
             (Count(c), _) => *c += 1,
-            (SumDecimal { sum, overflow, .. }, Num::I128(v)) => accumulate_decimal(sum, overflow, v),
-            (AvgDecimal { sum, overflow, .. }, Num::I128(v)) => accumulate_decimal(sum, overflow, v),
+            (SumDecimal { sum, overflow, .. }, Num::I128(v)) => {
+                accumulate_decimal(sum, overflow, v)
+            }
+            (AvgDecimal { sum, overflow, .. }, Num::I128(v)) => {
+                accumulate_decimal(sum, overflow, v)
+            }
             // FIRST_VALUE keeps the earliest value (set once); LAST_VALUE takes the most recent.
             (FirstI64(f), Num::I64(v)) => *f = Some(f.unwrap_or(v)),
             (LastI64(l), Num::I64(v)) => *l = Some(v),
@@ -938,15 +1075,21 @@ impl RunningAgg {
         match self {
             SumI64(v) | MinI64(v) | MaxI64(v) | FirstI64(v) | LastI64(v) => ScalarValue::Int64(*v),
             SumI32(v) | MinI32(v) | MaxI32(v) | FirstI32(v) | LastI32(v) => ScalarValue::Int32(*v),
-            SumF64(v) | MinF64(v) | MaxF64(v) | FirstF64(v) | LastF64(v) => ScalarValue::Float64(*v),
+            SumF64(v) | MinF64(v) | MaxF64(v) | FirstF64(v) | LastF64(v) => {
+                ScalarValue::Float64(*v)
+            }
             SumI16(v) | MinI16(v) | MaxI16(v) | FirstI16(v) | LastI16(v) => ScalarValue::Int16(*v),
             SumI8(v) | MinI8(v) | MaxI8(v) | FirstI8(v) | LastI8(v) => ScalarValue::Int8(*v),
-            SumF32(v) | MinF32(v) | MaxF32(v) | FirstF32(v) | LastF32(v) => ScalarValue::Float32(*v),
+            SumF32(v) | MinF32(v) | MaxF32(v) | FirstF32(v) | LastF32(v) => {
+                ScalarValue::Float32(*v)
+            }
             Count(c) => ScalarValue::Int64(Some(*c)),
             // Overflow past DECIMAL(38, s) reports NULL, matching Flink's fromBigDecimal.
-            SumDecimal { sum, scale, overflow } => {
-                ScalarValue::Decimal128((!*overflow).then_some(*sum), 38, *scale)
-            }
+            SumDecimal {
+                sum,
+                scale,
+                overflow,
+            } => ScalarValue::Decimal128((!*overflow).then_some(*sum), 38, *scale),
             // Never folded — MIN/MAX state is the Extremes multiset, which emits via MinMaxKey::scalar.
             MinMaxDecimal { precision, scale } => ScalarValue::Decimal128(None, *precision, *scale),
             MinMaxStr => ScalarValue::Utf8(None),
@@ -954,17 +1097,21 @@ impl RunningAgg {
             // the average itself is computed in GroupAggState::emit, where the count (non_null) lives.
             AvgInt { sum, .. } => ScalarValue::Int64(Some(*sum)),
             AvgFloat { sum, .. } => ScalarValue::Float64(Some(*sum)),
-            AvgDecimal { sum, scale, overflow } => {
-                ScalarValue::Decimal128((!*overflow).then_some(*sum), 38, *scale)
-            }
+            AvgDecimal {
+                sum,
+                scale,
+                overflow,
+            } => ScalarValue::Decimal128((!*overflow).then_some(*sum), 38, *scale),
             // The two-phase AVG's local sum partial IS the raw widened sum (the local is a transient
             // bundle — this is its flush emit, never a checkpoint). Only the decimal sum can be NULL
             // (a bundle whose sum overflowed DECIMAL(38, s)).
             AvgPartialSumInt(sum) => ScalarValue::Int64(Some(*sum)),
             AvgPartialSumFloat(sum) => ScalarValue::Float64(Some(*sum)),
-            AvgPartialSumDecimal { sum, scale, overflow } => {
-                ScalarValue::Decimal128((!*overflow).then_some(*sum), 38, *scale)
-            }
+            AvgPartialSumDecimal {
+                sum,
+                scale,
+                overflow,
+            } => ScalarValue::Decimal128((!*overflow).then_some(*sum), 38, *scale),
         }
     }
 
@@ -1007,23 +1154,29 @@ impl RunningAgg {
         use RunningAgg::*;
         match (self, scalar) {
             (Count(c), ScalarValue::Int64(Some(v))) => *c = *v,
-            (SumI64(s) | MinI64(s) | MaxI64(s) | FirstI64(s) | LastI64(s), ScalarValue::Int64(v)) => {
-                *s = *v
-            }
-            (SumI32(s) | MinI32(s) | MaxI32(s) | FirstI32(s) | LastI32(s), ScalarValue::Int32(v)) => {
-                *s = *v
-            }
+            (
+                SumI64(s) | MinI64(s) | MaxI64(s) | FirstI64(s) | LastI64(s),
+                ScalarValue::Int64(v),
+            ) => *s = *v,
+            (
+                SumI32(s) | MinI32(s) | MaxI32(s) | FirstI32(s) | LastI32(s),
+                ScalarValue::Int32(v),
+            ) => *s = *v,
             (
                 SumF64(s) | MinF64(s) | MaxF64(s) | FirstF64(s) | LastF64(s),
                 ScalarValue::Float64(v),
             ) => *s = *v,
-            (SumI16(s) | MinI16(s) | MaxI16(s) | FirstI16(s) | LastI16(s), ScalarValue::Int16(v)) => {
+            (
+                SumI16(s) | MinI16(s) | MaxI16(s) | FirstI16(s) | LastI16(s),
+                ScalarValue::Int16(v),
+            ) => *s = *v,
+            (SumI8(s) | MinI8(s) | MaxI8(s) | FirstI8(s) | LastI8(s), ScalarValue::Int8(v)) => {
                 *s = *v
             }
-            (SumI8(s) | MinI8(s) | MaxI8(s) | FirstI8(s) | LastI8(s), ScalarValue::Int8(v)) => *s = *v,
-            (SumF32(s) | MinF32(s) | MaxF32(s) | FirstF32(s) | LastF32(s), ScalarValue::Float32(v)) => {
-                *s = *v
-            }
+            (
+                SumF32(s) | MinF32(s) | MaxF32(s) | FirstF32(s) | LastF32(s),
+                ScalarValue::Float32(v),
+            ) => *s = *v,
             // A NULL snapshot value means the running sum had overflowed DECIMAL(38, s).
             (SumDecimal { sum, overflow, .. }, ScalarValue::Decimal128(v, _, _)) => match v {
                 Some(x) => {

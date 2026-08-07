@@ -53,58 +53,10 @@ pub(crate) fn scalar_row_bytes(row: &[ScalarValue]) -> usize {
     row.iter().map(ScalarValue::size).sum()
 }
 
-/// The normalizer persistent backend: the generic Paimon store under a plain row-payload codec.
-#[cfg(feature = "paimon-state")]
-pub(crate) type PaimonNormalizerStore = crate::state::PaimonStore<NormalizerStateCodec>;
+/// The normalizer persistent backend: the generic persistent store under a plain row-payload codec.
 
-/// The normalizer value codec for the Paimon store: exactly a row-payload codec (see
+/// The normalizer value codec for the persistent store: exactly a row-payload codec (see
 /// `RowPayloadCodec`) — the stored last row per unique key, as typed columns.
-#[cfg(feature = "paimon-state")]
-pub(crate) struct NormalizerStateCodec {
-    row: crate::state::RowPayloadCodec,
-}
-
-#[cfg(feature = "paimon-state")]
-impl NormalizerStateCodec {
-    pub(crate) fn new(row_types: Vec<DataType>) -> Self {
-        NormalizerStateCodec { row: crate::state::RowPayloadCodec::new(row_types) }
-    }
-}
-
-#[cfg(feature = "paimon-state")]
-impl crate::state::PaimonStateCodec for NormalizerStateCodec {
-    type Value = NormalizedRow;
-
-    fn supported(&self) -> bool {
-        self.row.supported()
-    }
-
-    fn value_fields(&self) -> Vec<(String, DataType)> {
-        self.row.fields()
-    }
-
-    fn encode(&self, row: &NormalizedRow) -> Vec<ScalarValue> {
-        self.row.encode_payload(&row.payload)
-    }
-
-    fn decode(&self, scalars: &[ScalarValue]) -> NormalizedRow {
-        let (payload, _) = self.row.decode_payload(scalars);
-        // The TTL timestamp rides the store's ts column via `stamp_write_ms`.
-        NormalizedRow { payload, staged: false, last_write_ms: 0 }
-    }
-
-    fn value_bytes(&self, row: &NormalizedRow) -> usize {
-        row.payload.len()
-    }
-
-    fn write_ms(&self, row: &NormalizedRow) -> i64 {
-        row.last_write_ms
-    }
-
-    fn stamp_write_ms(&self, row: &mut NormalizedRow, ts_ms: i64) {
-        row.last_write_ms = ts_ms;
-    }
-}
 
 impl ChangelogNormalizer {
     pub(crate) fn new(key_columns: Vec<usize>, generate_update_before: bool) -> Self {
@@ -134,7 +86,8 @@ impl ChangelogNormalizer {
             .iter()
             .map(|(key, row)| byte_key_bytes(&key.0) + row.payload.len())
             .sum();
-        self.memory.attach("changelog-normalize", budget_bytes, state)?;
+        self.memory
+            .attach("changelog-normalize", budget_bytes, state)?;
         Ok(self)
     }
 }
@@ -245,7 +198,9 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         // The sweep reclaims keys no later row ever touches. Once per TTL period bounds its
         // amortized cost at one map walk per period; it must not run mid-bundle, where removing a
         // staged key's state would turn silent expiry into a spurious -D at the flush.
-        if ttl.enabled() && self.staged.touched_keys() == 0 && now_ms >= self.last_sweep_ms + self.ttl_ms
+        if ttl.enabled()
+            && self.staged.touched_keys() == 0
+            && now_ms >= self.last_sweep_ms + self.ttl_ms
         {
             self.sweep_expired(ttl);
             self.last_sweep_ms = now_ms;
@@ -288,7 +243,13 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
             };
             // INSERT(0)/UPDATE_AFTER(2) put; UPDATE_BEFORE(1)/DELETE(3) remove.
             if kind == 0 || kind == 2 {
-                match ttl_get_mut(&mut self.rows, key, ttl, |row| row.last_write_ms, on_expired) {
+                match ttl_get_mut(
+                    &mut self.rows,
+                    key,
+                    ttl,
+                    |row| row.last_write_ms,
+                    on_expired,
+                ) {
                     None => {
                         let current: Arc<[u8]> = Arc::from(current);
                         if track {
@@ -305,7 +266,11 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
                         let last_write_ms = if ttl.enabled() { ttl.now() } else { 0 };
                         self.rows.insert(
                             ByteKey::from(key),
-                            NormalizedRow { payload: current, staged, last_write_ms },
+                            NormalizedRow {
+                                payload: current,
+                                staged,
+                                last_write_ms,
+                            },
                         );
                     }
                     // With TTL on the unchanged-row suppression is disabled: Flink always emits
@@ -321,7 +286,8 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
                         }
                         if self.mini_batch {
                             if !prev.staged {
-                                self.staged.touch(ByteKey::from(key), Some(prev.payload.clone()));
+                                self.staged
+                                    .touch(ByteKey::from(key), Some(prev.payload.clone()));
                                 prev.staged = true;
                             }
                         } else {
@@ -340,9 +306,14 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
                     }
                 }
             } else {
-                let removed =
-                    ttl_get_mut(&mut self.rows, key, ttl, |row| row.last_write_ms, on_expired)
-                        .map(|prev| (prev.payload.clone(), prev.staged));
+                let removed = ttl_get_mut(
+                    &mut self.rows,
+                    key,
+                    ttl,
+                    |row| row.last_write_ms,
+                    on_expired,
+                )
+                .map(|prev| (prev.payload.clone(), prev.staged));
                 if let Some((payload, staged)) = removed {
                     self.rows.remove(key);
                     if track {
@@ -360,10 +331,9 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
             }
         }
         if self.mini_batch {
-            let retained = self.staged.retained_bytes(
-                |key| byte_key_bytes(&key.0),
-                |row| row.len(),
-            );
+            let retained = self
+                .staged
+                .retained_bytes(|key| byte_key_bytes(&key.0), |row| row.len());
             delta += retained as isize - self.staged_bytes as isize;
             self.staged_bytes = retained;
         }
@@ -432,9 +402,15 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         if out_rows.is_empty() {
             return RecordBatch::new_empty(Arc::new(Schema::empty()));
         }
-        let schema = self.schema.as_ref().expect("schema set once a row was processed");
+        let schema = self
+            .schema
+            .as_ref()
+            .expect("schema set once a row was processed");
         let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
-        let converter = self.payload_converter.as_ref().expect("payload converter set");
+        let converter = self
+            .payload_converter
+            .as_ref()
+            .expect("payload converter set");
         let parser = converter.parser();
         let mut columns = converter
             .convert_rows(out_rows.iter().map(|row| parser.parse(row)))
@@ -455,7 +431,9 @@ impl ChangelogNormalizer {
     /// bytes per entry. The schema's metadata carries the typed payload schema so the converter
     /// can be rebuilt before any input arrives.
     fn raw_snapshot_groups(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
-        let Some(schema) = &self.schema else { return BTreeMap::new() };
+        let Some(schema) = &self.schema else {
+            return BTreeMap::new();
+        };
         // The TTL timestamps ride a trailing column only while TTL is on, so a TTL-off snapshot
         // stays byte-identical to the pre-TTL format (and disabling TTL sheds the timestamps).
         let ttl_on = self.ttl_ms > 0;
@@ -541,7 +519,11 @@ impl ChangelogNormalizer {
         let keys = column_binary(batch, RAW_SNAPSHOT_KEY);
         let payloads = column_binary(batch, RAW_SNAPSHOT_ROW);
         let write_timestamps = (batch.num_columns() > 2).then(|| {
-            assert_eq!(batch.schema().field(2).name(), TTL_TS_COLUMN, "normalizer snapshot schema");
+            assert_eq!(
+                batch.schema().field(2).name(),
+                TTL_TS_COLUMN,
+                "normalizer snapshot schema"
+            );
             column_i64(batch, TTL_TS_COLUMN)
         });
         for row in 0..batch.num_rows() {
@@ -563,7 +545,10 @@ impl ChangelogNormalizer {
     /// predates TTL, so every key is stamped with the restore time (the enable-TTL migration).
     fn load_batch_decoded(&mut self, batch: &RecordBatch, restored_at_ms: i64) {
         let schema = Arc::new(Schema::new(
-            batch.schema().fields()[1..].iter().map(|field| field.as_ref().clone()).collect::<Vec<_>>(),
+            batch.schema().fields()[1..]
+                .iter()
+                .map(|field| field.as_ref().clone())
+                .collect::<Vec<_>>(),
         ));
         self.schema = Some(schema.clone());
         let converter = RowConverter::new(
@@ -579,8 +564,9 @@ impl ChangelogNormalizer {
             .as_any()
             .downcast_ref::<arrow::array::BinaryArray>()
             .expect("normalizer snapshot binary keys");
-        let data_arrays: Vec<ArrayRef> =
-            (1..batch.num_columns()).map(|column| batch.column(column).clone()).collect();
+        let data_arrays: Vec<ArrayRef> = (1..batch.num_columns())
+            .map(|column| batch.column(column).clone())
+            .collect();
         let payloads = converter
             .convert_columns(&data_arrays)
             .expect("encode restored normalizer payloads");
@@ -649,7 +635,10 @@ impl ChangelogNormalizer {
     }
 }
 
-state_bytes_getter!(Java_tech_streamfusion_Native_changelogNormalizerStateBytes, ChangelogNormalizer);
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_changelogNormalizerStateBytes,
+    ChangelogNormalizer
+);
 
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_changelogNormalizerStagingBytes<'local>(
@@ -816,10 +805,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeChangelogNormalizer<'l
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<ChangelogNormalizer>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<ChangelogNormalizer>(handle));
     })
 }
 
@@ -847,9 +834,21 @@ mod tests {
         if batch.num_rows() == 0 {
             return Vec::new();
         }
-        let keys = batch.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
-        let values = batch.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
-        let kinds = batch.column(2).as_any().downcast_ref::<Int8Array>().unwrap();
+        let keys = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        let values = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        let kinds = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<Int8Array>()
+            .unwrap();
         (0..batch.num_rows())
             .map(|row| (keys.value(row), values.value(row), kinds.value(row)))
             .collect()
@@ -887,12 +886,17 @@ mod tests {
     #[test]
     fn mini_batch_without_update_before_only_emits_final_update() {
         let mut normalizer = ChangelogNormalizer::new(vec![0], false).with_mini_batch(true);
-        normalizer.push(&batch(vec![1], vec![10], vec![0]), 0).unwrap();
+        normalizer
+            .push(&batch(vec![1], vec![10], vec![0]), 0)
+            .unwrap();
         normalizer.flush_mini_batch().unwrap();
         normalizer
             .push(&batch(vec![1, 1], vec![20, 30], vec![2, 2]), 0)
             .unwrap();
-        assert_eq!(rows(&normalizer.flush_mini_batch().unwrap()), vec![(1, 30, 2)]);
+        assert_eq!(
+            rows(&normalizer.flush_mini_batch().unwrap()),
+            vec![(1, 30, 2)]
+        );
     }
 
     // State TTL: an idle key expires ttl millis after its last write; the next put is a fresh +I
@@ -900,10 +904,14 @@ mod tests {
     #[test]
     fn ttl_expires_an_idle_key_into_a_fresh_insert() {
         let mut normalizer = ChangelogNormalizer::new(vec![0], true).with_state_ttl(1000);
-        let out = normalizer.push(&batch(vec![1], vec![10], vec![0]), 5000).unwrap();
+        let out = normalizer
+            .push(&batch(vec![1], vec![10], vec![0]), 5000)
+            .unwrap();
         assert_eq!(rows(&out), vec![(1, 10, 0)]);
         // ts 5000 + ttl 1000 <= 6000: expired exactly at the boundary — a fresh +I, not -U/+U.
-        let out = normalizer.push(&batch(vec![1], vec![5], vec![2]), 6000).unwrap();
+        let out = normalizer
+            .push(&batch(vec![1], vec![5], vec![2]), 6000)
+            .unwrap();
         assert_eq!(rows(&out), vec![(1, 5, 0)]);
     }
 
@@ -912,11 +920,17 @@ mod tests {
     #[test]
     fn ttl_refreshes_on_every_write() {
         let mut normalizer = ChangelogNormalizer::new(vec![0], true).with_state_ttl(1000);
-        normalizer.push(&batch(vec![1], vec![10], vec![0]), 5000).unwrap();
-        let out = normalizer.push(&batch(vec![1], vec![20], vec![2]), 5900).unwrap();
+        normalizer
+            .push(&batch(vec![1], vec![10], vec![0]), 5000)
+            .unwrap();
+        let out = normalizer
+            .push(&batch(vec![1], vec![20], vec![2]), 5900)
+            .unwrap();
         assert_eq!(rows(&out), vec![(1, 10, 1), (1, 20, 2)]); // alive: -U/+U
-        // 900ms later the original write is long past ttl, but the refresh at 5900 keeps it alive.
-        let out = normalizer.push(&batch(vec![1], vec![30], vec![2]), 6800).unwrap();
+                                                              // 900ms later the original write is long past ttl, but the refresh at 5900 keeps it alive.
+        let out = normalizer
+            .push(&batch(vec![1], vec![30], vec![2]), 6800)
+            .unwrap();
         assert_eq!(rows(&out), vec![(1, 20, 1), (1, 30, 2)]);
     }
 
@@ -925,11 +939,17 @@ mod tests {
     #[test]
     fn ttl_drops_a_tombstone_against_an_expired_key() {
         let mut normalizer = ChangelogNormalizer::new(vec![0], true).with_state_ttl(1000);
-        normalizer.push(&batch(vec![1], vec![10], vec![0]), 5000).unwrap();
-        let out = normalizer.push(&batch(vec![1], vec![10], vec![3]), 7000).unwrap();
+        normalizer
+            .push(&batch(vec![1], vec![10], vec![0]), 5000)
+            .unwrap();
+        let out = normalizer
+            .push(&batch(vec![1], vec![10], vec![3]), 7000)
+            .unwrap();
         assert_eq!(out.num_rows(), 0);
         // The corpse is gone: the next put for the key is a fresh insert.
-        let out = normalizer.push(&batch(vec![1], vec![5], vec![0]), 7000).unwrap();
+        let out = normalizer
+            .push(&batch(vec![1], vec![5], vec![0]), 7000)
+            .unwrap();
         assert_eq!(rows(&out), vec![(1, 5, 0)]);
     }
 
@@ -938,14 +958,22 @@ mod tests {
     #[test]
     fn ttl_emits_the_unchanged_row_it_would_otherwise_suppress() {
         let mut normalizer = ChangelogNormalizer::new(vec![0], true).with_state_ttl(3_600_000);
-        normalizer.push(&batch(vec![1], vec![10], vec![0]), 5000).unwrap();
-        let out = normalizer.push(&batch(vec![1], vec![10], vec![2]), 5001).unwrap();
+        normalizer
+            .push(&batch(vec![1], vec![10], vec![0]), 5000)
+            .unwrap();
+        let out = normalizer
+            .push(&batch(vec![1], vec![10], vec![2]), 5001)
+            .unwrap();
         assert_eq!(rows(&out), vec![(1, 10, 1), (1, 10, 2)]); // -U/+U, not suppressed
 
         // The -U half still honors generate_update_before.
         let mut no_before = ChangelogNormalizer::new(vec![0], false).with_state_ttl(3_600_000);
-        no_before.push(&batch(vec![1], vec![10], vec![0]), 5000).unwrap();
-        let out = no_before.push(&batch(vec![1], vec![10], vec![2]), 5001).unwrap();
+        no_before
+            .push(&batch(vec![1], vec![10], vec![0]), 5000)
+            .unwrap();
+        let out = no_before
+            .push(&batch(vec![1], vec![10], vec![2]), 5001)
+            .unwrap();
         assert_eq!(rows(&out), vec![(1, 10, 2)]);
     }
 
@@ -954,15 +982,21 @@ mod tests {
     #[test]
     fn ttl_timestamps_survive_snapshot_restore() {
         let mut normalizer = ChangelogNormalizer::new(vec![0], true).with_state_ttl(1000);
-        normalizer.push(&batch(vec![1], vec![10], vec![0]), 5000).unwrap();
+        normalizer
+            .push(&batch(vec![1], vec![10], vec![0]), 5000)
+            .unwrap();
         let snapshot = normalizer.snapshot();
         let mut alive =
             ChangelogNormalizer::restore(vec![0], true, &snapshot, 5500).with_state_ttl(1000);
-        let out = alive.push(&batch(vec![1], vec![20], vec![2]), 5999).unwrap();
+        let out = alive
+            .push(&batch(vec![1], vec![20], vec![2]), 5999)
+            .unwrap();
         assert_eq!(rows(&out), vec![(1, 10, 1), (1, 20, 2)]); // one ms inside the window
         let mut expired =
             ChangelogNormalizer::restore(vec![0], true, &snapshot, 5500).with_state_ttl(1000);
-        let out = expired.push(&batch(vec![1], vec![20], vec![2]), 6000).unwrap();
+        let out = expired
+            .push(&batch(vec![1], vec![20], vec![2]), 6000)
+            .unwrap();
         assert_eq!(rows(&out), vec![(1, 20, 0)]); // ts 5000 + 1000 <= 6000 — fresh insert
     }
 
@@ -972,15 +1006,21 @@ mod tests {
     #[test]
     fn ttl_enable_migration_stamps_restore_time() {
         let mut normalizer = ChangelogNormalizer::new(vec![0], true);
-        normalizer.push(&batch(vec![1], vec![10], vec![0]), 0).unwrap();
+        normalizer
+            .push(&batch(vec![1], vec![10], vec![0]), 0)
+            .unwrap();
         let snapshot = normalizer.snapshot(); // TTL off: no timestamp column
         let mut restored =
             ChangelogNormalizer::restore(vec![0], true, &snapshot, 5000).with_state_ttl(1000);
-        let out = restored.push(&batch(vec![1], vec![20], vec![2]), 5999).unwrap();
+        let out = restored
+            .push(&batch(vec![1], vec![20], vec![2]), 5999)
+            .unwrap();
         assert_eq!(rows(&out), vec![(1, 10, 1), (1, 20, 2)]); // alive until restore + ttl
         let mut expired =
             ChangelogNormalizer::restore(vec![0], true, &snapshot, 5000).with_state_ttl(1000);
-        let out = expired.push(&batch(vec![1], vec![20], vec![2]), 6000).unwrap();
+        let out = expired
+            .push(&batch(vec![1], vec![20], vec![2]), 6000)
+            .unwrap();
         assert_eq!(rows(&out), vec![(1, 20, 0)]);
     }
 
@@ -989,17 +1029,25 @@ mod tests {
     #[test]
     fn ttl_sweep_reclaims_idle_keys_silently() {
         let mut normalizer = ChangelogNormalizer::new(vec![0], true).with_state_ttl(1000);
-        normalizer.push(&batch(vec![1], vec![10], vec![0]), 5000).unwrap();
-        normalizer.push(&batch(vec![2], vec![20], vec![0]), 5000).unwrap();
+        normalizer
+            .push(&batch(vec![1], vec![10], vec![0]), 5000)
+            .unwrap();
+        normalizer
+            .push(&batch(vec![2], vec![20], vec![0]), 5000)
+            .unwrap();
         // Touching only key 2 well past key 1's expiry triggers the once-per-period sweep; key 1's
         // row is gone from the snapshot without any -D having been emitted.
-        let out = normalizer.push(&batch(vec![2], vec![1], vec![2]), 7000).unwrap();
+        let out = normalizer
+            .push(&batch(vec![2], vec![1], vec![2]), 7000)
+            .unwrap();
         assert_eq!(rows(&out), vec![(2, 1, 0)]); // key 2 itself had expired too — fresh +I
         let snapshot = normalizer.snapshot();
         let mut probe =
             ChangelogNormalizer::restore(vec![0], true, &snapshot, 7000).with_state_ttl(1000);
         // Key 1 was swept: a delete for it finds nothing and emits nothing.
-        let out = probe.push(&batch(vec![1], vec![10], vec![3]), 7100).unwrap();
+        let out = probe
+            .push(&batch(vec![1], vec![10], vec![3]), 7100)
+            .unwrap();
         assert_eq!(out.num_rows(), 0);
     }
 
@@ -1010,9 +1058,13 @@ mod tests {
         let mut normalizer = ChangelogNormalizer::new(vec![0], true)
             .with_state_ttl(3_600_000)
             .with_mini_batch(true);
-        normalizer.push(&batch(vec![1], vec![10], vec![0]), 5000).unwrap();
+        normalizer
+            .push(&batch(vec![1], vec![10], vec![0]), 5000)
+            .unwrap();
         normalizer.flush_mini_batch().unwrap();
-        normalizer.push(&batch(vec![1], vec![10], vec![2]), 5001).unwrap(); // net no-op bundle
+        normalizer
+            .push(&batch(vec![1], vec![10], vec![2]), 5001)
+            .unwrap(); // net no-op bundle
         assert_eq!(
             rows(&normalizer.flush_mini_batch().unwrap()),
             vec![(1, 10, 1), (1, 10, 2)]
@@ -1023,14 +1075,21 @@ mod tests {
     // so the flush emits the fresh +I Flink would.
     #[test]
     fn ttl_mini_batch_stages_no_preimage_for_an_expired_key() {
-        let mut normalizer =
-            ChangelogNormalizer::new(vec![0], true).with_state_ttl(1000).with_mini_batch(true);
-        normalizer.push(&batch(vec![1], vec![10], vec![0]), 5000).unwrap();
+        let mut normalizer = ChangelogNormalizer::new(vec![0], true)
+            .with_state_ttl(1000)
+            .with_mini_batch(true);
+        normalizer
+            .push(&batch(vec![1], vec![10], vec![0]), 5000)
+            .unwrap();
         normalizer.flush_mini_batch().unwrap();
         // Key 9 opens the next bundle, so the sweep (skipped mid-bundle) cannot reclaim key 1;
         // its expiry is enforced by the delete-on-read probe, staging a None preimage.
-        normalizer.push(&batch(vec![9], vec![90], vec![0]), 5500).unwrap();
-        normalizer.push(&batch(vec![1], vec![20], vec![2]), 7000).unwrap();
+        normalizer
+            .push(&batch(vec![9], vec![90], vec![0]), 5500)
+            .unwrap();
+        normalizer
+            .push(&batch(vec![1], vec![20], vec![2]), 7000)
+            .unwrap();
         assert_eq!(
             rows(&normalizer.flush_mini_batch().unwrap()),
             vec![(9, 90, 0), (1, 20, 0)]

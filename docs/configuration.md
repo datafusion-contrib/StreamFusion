@@ -30,18 +30,16 @@ Flink's normal configuration surface.
 ## Memory
 
 See [Memory management](memory-management.md) for the authoritative pool, covered consumers,
-exhaustion behavior, Paimon flushing, sizing, and metrics.
+exhaustion behavior, RocksDB flushing, sizing, and metrics.
 
 - **`taskmanager.memory.task.off-heap.size`** — the single TaskManager-wide authority for
   StreamFusion memory. It must be greater than zero. Native operator state and DataFusion working
   memory, Arrow FFI buffers, native Kafka consumer queues, and native exactly-once producer queues
   all reserve from this shared cap. A denied reservation fails with a
   `NativeMemoryLimitException` naming this normal Flink setting.
-- **`-Dstreamfusion.state.paimon.write-buffer-mb`** (default 64) — flush a Paimon backend's native
-  in-memory write buffer into immutable local files once it reaches this size. StreamFusion may
-  lower the effective threshold under TaskManager-wide memory pressure. This local flush is
-  independent of Flink checkpoint timing; a later checkpoint snapshots and uploads the already
-  materialized local files.
+- **`-Dstreamfusion.state.rocksdb.write-buffer-mb`** (default 64) — force a local RocksDB checkpoint
+  when native state reaches this pressure threshold. StreamFusion may lower the effective threshold
+  under TaskManager-wide memory pressure.
 
 ### Off-heap sizing
 
@@ -55,8 +53,8 @@ one TaskManager, not per operator:
   handover.
 - Arrow FFI buffers are process-wide and bounded by in-flight batches.
 - Native operator state and DataFusion working reservations vary with the query. The in-memory state
-  backend fails when it cannot reserve more. The Paimon backend proactively flushes its write buffer
-  to local files at its threshold or when shared headroom is low; an allocation that still cannot
+  backend fails when it cannot reserve more. The RocksDB backend flushes to local files at its
+  threshold or when shared headroom is low; an allocation that still cannot
   reserve from the shared cap fails normally.
 
 Worked example: 4 Kafka source subtasks and 2 sink subtasks on one TaskManager at the defaults need

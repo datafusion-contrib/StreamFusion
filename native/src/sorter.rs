@@ -49,12 +49,19 @@ impl TemporalSorter {
         };
         let all = concat_batches(&schema, &self.buffered).expect("failed to concat sort buffer");
         let rt_millis = rt_to_millis(all.column(self.rt_column));
-        let complete_mask: BooleanArray =
-            rt_millis.iter().map(|v| Some(v.unwrap() <= watermark)).collect();
-        let complete = filter_record_batch(&all, &complete_mask).expect("failed to filter complete");
+        let complete_mask: BooleanArray = rt_millis
+            .iter()
+            .map(|v| Some(v.unwrap() <= watermark))
+            .collect();
+        let complete =
+            filter_record_batch(&all, &complete_mask).expect("failed to filter complete");
         let pending_mask = arrow::compute::not(&complete_mask).expect("failed to negate mask");
         let pending = filter_record_batch(&all, &pending_mask).expect("failed to filter pending");
-        self.buffered = if pending.num_rows() > 0 { vec![pending] } else { Vec::new() };
+        self.buffered = if pending.num_rows() > 0 {
+            vec![pending]
+        } else {
+            Vec::new()
+        };
         if self.memory.tracking() {
             self.memory.set(buffered_batches_bytes(&self.buffered));
             self.memory.account_shrink();
@@ -82,8 +89,9 @@ impl TemporalSorter {
             (Some(schema), false) => {
                 let all = concat_batches(schema, &self.buffered).expect("concat sort buffer");
                 let mut bytes = Vec::new();
-                let mut writer = arrow::ipc::writer::StreamWriter::try_new(&mut bytes, &all.schema())
-                    .expect("sort buffer writer");
+                let mut writer =
+                    arrow::ipc::writer::StreamWriter::try_new(&mut bytes, &all.schema())
+                        .expect("sort buffer writer");
                 writer.write(&all).expect("write sort buffer");
                 writer.finish().expect("finish sort buffer");
                 drop(writer);
@@ -113,23 +121,39 @@ pub(crate) fn rt_to_millis(array: &ArrayRef) -> Int64Array {
     use arrow::datatypes::TimeUnit;
     match array.data_type() {
         DataType::Timestamp(TimeUnit::Nanosecond, _) => {
-            let ts = array.as_any().downcast_ref::<TimestampNanosecondArray>().expect("ts ns");
+            let ts = array
+                .as_any()
+                .downcast_ref::<TimestampNanosecondArray>()
+                .expect("ts ns");
             ts.iter().map(|v| v.map(|x| x / 1_000_000)).collect()
         }
         DataType::Timestamp(TimeUnit::Microsecond, _) => {
-            let ts = array.as_any().downcast_ref::<TimestampMicrosecondArray>().expect("ts us");
+            let ts = array
+                .as_any()
+                .downcast_ref::<TimestampMicrosecondArray>()
+                .expect("ts us");
             ts.iter().map(|v| v.map(|x| x / 1_000)).collect()
         }
         DataType::Timestamp(TimeUnit::Millisecond, _) => {
-            let ts = array.as_any().downcast_ref::<TimestampMillisecondArray>().expect("ts ms");
+            let ts = array
+                .as_any()
+                .downcast_ref::<TimestampMillisecondArray>()
+                .expect("ts ms");
             ts.iter().map(|v| v.map(|x| x)).collect()
         }
-        DataType::Int64 => array.as_any().downcast_ref::<Int64Array>().expect("i64").clone(),
+        DataType::Int64 => array
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("i64")
+            .clone(),
         other => panic!("unsupported rowtime column type: {other:?}"),
     }
 }
 
-state_bytes_getter!(Java_tech_streamfusion_Native_temporalSorterStateBytes, TemporalSorter);
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_temporalSorterStateBytes,
+    TemporalSorter
+);
 
 /// Creates an event-time sorter over the given rowtime column and returns an opaque handle.
 #[no_mangle]
@@ -140,7 +164,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_createTemporalSorter<'local
     memory_budget_bytes: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
-        let sorter = TemporalSorter::new(rt_column as usize).with_memory_budget(memory_budget_bytes);
+        let sorter =
+            TemporalSorter::new(rt_column as usize).with_memory_budget(memory_budget_bytes);
         boxed_or_throw(&mut env, sorter)
     })
 }
@@ -190,10 +215,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeTemporalSorter<'local>
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<TemporalSorter>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<TemporalSorter>(handle));
     })
 }
 
@@ -222,9 +245,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreTemporalSorter<'loca
     memory_budget_bytes: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
-        let bytes = env.convert_byte_array(&snapshot).expect("failed to read sort snapshot");
-        let sorter =
-            TemporalSorter::restore(rt_column as usize, &bytes).with_memory_budget(memory_budget_bytes);
+        let bytes = env
+            .convert_byte_array(&snapshot)
+            .expect("failed to read sort snapshot");
+        let sorter = TemporalSorter::restore(rt_column as usize, &bytes)
+            .with_memory_budget(memory_budget_bytes);
         boxed_or_throw(&mut env, sorter)
     })
 }

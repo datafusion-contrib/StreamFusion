@@ -30,7 +30,7 @@ the watermark trails the wall clock by more than half the retention — is not r
 a key expires at the deadline its last push registered (never sooner than one full max retention
 after its last write).
 
-On the persistent (Paimon) backend the same lazy + sweep scheme narrows once more: the memory
+On the persistent RocksDB backend the same lazy + sweep scheme narrows once more: the memory
 path visits every buffered key at each watermark advance and can clear an expired key whose rows
 all sit above the watermark, while the backend only sees the keys the watermark actually fires
 (visiting the rest would mean a full state read per advance). Such a key's state lingers until
@@ -69,7 +69,7 @@ stored kind in snapshots as the heap backend effectively does.
 
 ## No resurrection when the retention grows across a restore
 
-Physical cleanup (the memory sweep; the Paimon compactor's record-level expire) removes rows that
+Physical cleanup (the memory sweep or RocksDB compaction filter) removes rows that
 were expired under the retention in force at the time. Restoring with a larger
 `table.exec.state.ttl` cannot bring them back. Flink documents the identical caveat for its
 RocksDB compaction filter; keeping the retention out of the persistent table schema (it is passed

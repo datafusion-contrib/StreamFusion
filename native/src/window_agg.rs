@@ -54,14 +54,27 @@ pub(crate) fn stamp_time_column(
     now_millis: i64,
     target: &DataType,
 ) -> RecordBatch {
-    let base: ArrayRef = Arc::new(TimestampMillisecondArray::from(vec![now_millis; batch.num_rows()]));
-    let array = arrow::compute::cast(&base, target).expect("cast stamped interval time to target type");
-    let mut fields: Vec<Field> =
-        batch.schema().fields().iter().map(|f| f.as_ref().clone()).collect();
-    fields[col] = Field::new(fields[col].name(), target.clone(), fields[col].is_nullable());
+    let base: ArrayRef = Arc::new(TimestampMillisecondArray::from(vec![
+        now_millis;
+        batch.num_rows()
+    ]));
+    let array =
+        arrow::compute::cast(&base, target).expect("cast stamped interval time to target type");
+    let mut fields: Vec<Field> = batch
+        .schema()
+        .fields()
+        .iter()
+        .map(|f| f.as_ref().clone())
+        .collect();
+    fields[col] = Field::new(
+        fields[col].name(),
+        target.clone(),
+        fields[col].is_nullable(),
+    );
     let mut columns = batch.columns().to_vec();
     columns[col] = array;
-    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("stamp interval time column")
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+        .expect("stamp interval time column")
 }
 
 pub(crate) fn assign_windows(
@@ -73,7 +86,10 @@ pub(crate) fn assign_windows(
     proctime_now_millis: Option<i64>,
 ) -> RecordBatch {
     let schema = input.schema();
-    let row_kind_idx = schema.fields().iter().position(|f| f.name() == ROW_KIND_COLUMN);
+    let row_kind_idx = schema
+        .fields()
+        .iter()
+        .position(|f| f.name() == ROW_KIND_COLUMN);
     let data_end = row_kind_idx.unwrap_or_else(|| schema.fields().len());
 
     // Event-time assigns each row by its rowtime column; proctime assigns every row to the window(s)
@@ -101,7 +117,13 @@ pub(crate) fn assign_windows(
             Some(now) => now,
             None => times.unwrap().value(row) / 1_000_000,
         };
-        windows_for(time_millis, window_millis, slide_millis, cumulative, &mut windows);
+        windows_for(
+            time_millis,
+            window_millis,
+            slide_millis,
+            cumulative,
+            &mut windows,
+        );
         for &(start, end) in &windows {
             take_indices.push(row as u32);
             starts.push(start * 1_000_000);
@@ -133,24 +155,6 @@ pub(crate) fn assign_windows(
 
 /// The BinaryRow key bytes of `n` rows whose decoded key columns lead `columns` — how the
 /// persistent stores address keyed rows. Shared by the window and session aggregates.
-#[cfg(feature = "paimon-state")]
-pub(crate) fn binary_row_keys(
-    columns: &[ArrayRef],
-    key_types: &[DataType],
-    precisions: &[i32],
-    n: usize,
-) -> Result<Vec<Vec<u8>>, DataFusionError> {
-    let arity = key_types.len();
-    let key_batch = RecordBatch::try_new_with_options(
-        Arc::new(Schema::new(key_fields(key_types))),
-        columns[..arity].to_vec(),
-        &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(n)),
-    )
-    .map_err(|e| DataFusionError::External(Box::new(e)))?;
-    let indices: Vec<usize> = (0..arity).collect();
-    let mut encoder = BinaryRowBatchEncoder::new(&key_batch, &indices, precisions);
-    Ok((0..n).map(|row| encoder.encode(row).to_vec()).collect())
-}
 
 /// One open aligned window: its start, plus the per-key accumulators folding in matching rows. The
 /// owning map keys windows by their *end*, which is unique even for cumulative windows that share a
@@ -192,11 +196,9 @@ pub(crate) struct TumblingAggregator {
     // Managed-memory accounting: open-window footprint tracked per touched group (not by
     // rescanning all state) and resized against the reservation after every state change.
     pub(crate) memory: OperatorMemory,
-    /// Persistent-state mode: committed (key, window) rows live in the Paimon store; the decoded
+    /// Persistent-state mode: committed (key, window) rows live in the persistent store; the decoded
     /// `windows` map holds only this interval's touched state (seeded on first touch, staged
     /// wholesale at the barrier, then dropped).
-    #[cfg(feature = "paimon-state")]
-    backend: Option<crate::state::PaimonWindowAggStore>,
     key_timestamp_precisions: Vec<i32>,
 }
 
@@ -220,8 +222,6 @@ impl TumblingAggregator {
             late_drops: 0,
             snapshot_cache: None,
             memory: OperatorMemory::unaccounted(),
-            #[cfg(feature = "paimon-state")]
-            backend: None,
             key_timestamp_precisions: Vec::new(),
         }
     }
@@ -234,58 +234,35 @@ impl TumblingAggregator {
         self
     }
 
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn with_backend(mut self, store: crate::state::PaimonWindowAggStore) -> Self {
-        self.backend = Some(store);
-        self
-    }
-
     /// Attaches the task off-heap budget for a backend that starts with nothing resident.
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn with_read_through_budget(
-        mut self,
-        budget_bytes: i64,
-    ) -> Result<Self, DataFusionError> {
-        self.memory.attach("window-aggregate", budget_bytes, 0)?;
-        Ok(self)
-    }
-
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn store_mut(&mut self) -> &mut crate::state::PaimonWindowAggStore {
-        self.backend.as_mut().expect("window-agg paimon backend")
-    }
 
     /// Restores the late-data watermark (persistent-state restore packs it in the token; the
     /// memory path's raw snapshot carries it in schema metadata).
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn set_current_watermark(&mut self, watermark: i64) {
-        self.current_watermark = watermark;
-    }
 
     /// The key-field timestamp descriptors, defaulting to non-timestamp (`-1`) per key column —
     /// the aggregator learns its key arity from batches, not at construction.
-    #[cfg(feature = "paimon-state")]
-    fn key_precisions(&self, arity: usize) -> Vec<i32> {
-        if self.key_timestamp_precisions.is_empty() {
-            vec![-1; arity]
-        } else {
-            self.key_timestamp_precisions.clone()
-        }
-    }
 
     /// Bounds this aggregator's state by a task off-heap budget the host reserved for the operator
     /// (a negative budget means unaccounted). Registers a reservation against a pool of that size and
     /// accounts any state already present (the restore path), so a restored snapshot that no longer
     /// fits fails here rather than as a container OOM.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
-        self.memory.attach("window-aggregate", budget_bytes, self.computed_state_bytes())?;
+        self.memory.attach(
+            "window-aggregate",
+            budget_bytes,
+            self.computed_state_bytes(),
+        )?;
         Ok(self)
     }
 
     /// [`with_memory_budget`](Self::with_memory_budget) against a caller-owned pool (shared in tests
     /// to observe the pool's balance from outside).
-    pub(crate) fn with_memory_pool(mut self, pool: &Arc<dyn MemoryPool>) -> Result<Self, DataFusionError> {
-        self.memory.attach_pool("window-aggregate", pool, self.computed_state_bytes())?;
+    pub(crate) fn with_memory_pool(
+        mut self,
+        pool: &Arc<dyn MemoryPool>,
+    ) -> Result<Self, DataFusionError> {
+        self.memory
+            .attach_pool("window-aggregate", pool, self.computed_state_bytes())?;
         Ok(self)
     }
 
@@ -299,7 +276,9 @@ impl TumblingAggregator {
                 window
                     .keys
                     .iter()
-                    .map(|(key, accumulators)| owned_row_bytes(key) + accumulators_bytes(accumulators))
+                    .map(|(key, accumulators)| {
+                        owned_row_bytes(key) + accumulators_bytes(accumulators)
+                    })
                     .sum::<usize>()
             })
             .sum()
@@ -308,7 +287,8 @@ impl TumblingAggregator {
     /// Removes a dropped group's footprint from the tracked state size (a flush closing its window).
     fn forget_group_bytes(&mut self, key: &OwnedRow, accumulators: &[Box<dyn Accumulator>]) {
         if self.memory.tracking() {
-            self.memory.forget(owned_row_bytes(key) + accumulators_bytes(accumulators));
+            self.memory
+                .forget(owned_row_bytes(key) + accumulators_bytes(accumulators));
         }
     }
 
@@ -317,112 +297,70 @@ impl TumblingAggregator {
     /// yields the `size / slide` overlapping windows; cumulative yields the nested windows
     /// `[base, base + k*step)` whose end is past the timestamp, all sharing the bucket start.
     fn windows_for(&self, timestamp: i64, windows: &mut Vec<(i64, i64)>) {
-        windows_for(timestamp, self.window_millis, self.slide_millis, self.cumulative, windows);
+        windows_for(
+            timestamp,
+            self.window_millis,
+            self.slide_millis,
+            self.cumulative,
+            windows,
+        );
     }
 
     /// The N accumulators (one per aggregate) for a (window, key), created on first touch. Windows
     /// are keyed by end; the start is stored on first creation. The group key is a composite of the
     /// (zero or more) grouping columns.
-    fn accumulators(&mut self, start: i64, end: i64, key: OwnedRow) -> &mut Vec<Box<dyn Accumulator>> {
+    fn accumulators(
+        &mut self,
+        start: i64,
+        end: i64,
+        key: OwnedRow,
+    ) -> &mut Vec<Box<dyn Accumulator>> {
         let aggregates = &self.aggregates;
         self.windows
             .entry(end)
-            .or_insert_with(|| AlignedWindow { start, keys: HashMap::default() })
+            .or_insert_with(|| AlignedWindow {
+                start,
+                keys: HashMap::default(),
+            })
             .keys
             .entry(key)
-            .or_insert_with(|| aggregates.iter().map(WindowAggregate::create_accumulator).collect())
+            .or_insert_with(|| {
+                aggregates
+                    .iter()
+                    .map(WindowAggregate::create_accumulator)
+                    .collect()
+            })
     }
 
     /// Window ends at or before the watermark, in ascending order (the map is keyed by end).
     fn closed_windows(&self, watermark: i64) -> Vec<i64> {
-        self.windows.keys().copied().take_while(|end| *end <= watermark).collect()
+        self.windows
+            .keys()
+            .copied()
+            .take_while(|end| *end <= watermark)
+            .collect()
     }
 
     /// Persistent-state seeding: on a key's first touch this interval, its committed open
     /// windows read into the decoded map through the per-batch key probe, so folds and firings
     /// see state written before the last barrier. One probe per key per interval — the committed
     /// table is immutable between barriers.
-    #[cfg(feature = "paimon-state")]
-    fn seed_batch_keys(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
-        if self.backend.is_none() || batch.num_rows() == 0 {
-            return Ok(());
-        }
-        let schema = batch.schema();
-        let key_indices: Vec<usize> = (0..)
-            .map_while(|j| schema.index_of(&format!("key{j}")).ok())
-            .collect();
-        let precisions = self.key_precisions(key_indices.len());
-        let mut encoder = BinaryRowBatchEncoder::new(batch, &key_indices, &precisions);
-        let mut seen: std::collections::HashSet<ByteKey> = std::collections::HashSet::new();
-        let mut unique: Vec<ByteKey> = Vec::new();
-        for row in 0..batch.num_rows() {
-            let key = encoder.encode(row);
-            if !seen.contains(key) {
-                let owned = ByteKey::from(key);
-                seen.insert(owned.clone());
-                unique.push(owned);
-            }
-        }
-        let batches =
-            self.backend.as_mut().expect("window-agg paimon backend").seed_scan(&unique)?;
-        self.absorb_committed(batches)?;
-        let delta = self.backend.as_mut().expect("window-agg paimon backend").footprint_delta();
-        self.memory.record(delta);
-        self.memory.account()
-    }
 
     /// Reads committed (key, window) rows into the decoded map — the restore path's own
     /// merge_batch round trip — skipping entries the map already holds (in-memory state is
     /// authoritative for anything touched this interval).
-    #[cfg(feature = "paimon-state")]
-    fn absorb_committed(&mut self, batches: Vec<RecordBatch>) -> Result<(), DataFusionError> {
-        let field_counts: Vec<usize> =
-            self.aggregates.iter().map(|a| a.state_fields().len()).collect();
-        let state_total: usize = field_counts.iter().sum();
-        let track = self.memory.tracking();
-        for batch in batches {
-            let arity = batch.num_columns() - 4 - state_total;
-            let wes = batch.column(2).as_any().downcast_ref::<Int64Array>().expect("we column");
-            let wss = batch.column(3).as_any().downcast_ref::<Int64Array>().expect("ws column");
-            let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(4 + j)).collect();
-            self.key_types = key_types(&key_arrays);
-            let keys_encoded =
-                encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
-            for row in 0..batch.num_rows() {
-                let (we, ws) = (wes.value(row), wss.value(row));
-                let key = keys_encoded.row(row).owned();
-                if self.windows.get(&we).is_some_and(|w| w.keys.contains_key(&key)) {
-                    continue;
-                }
-                let mut delta = if track { owned_row_bytes(&key) as isize } else { 0 };
-                let accumulators = self.accumulators(ws, we, key);
-                let mut column = 4 + arity;
-                for (i, accumulator) in accumulators.iter_mut().enumerate() {
-                    let count = field_counts[i];
-                    let state: Vec<ArrayRef> = (column..column + count)
-                        .map(|c| batch.column(c).slice(row, 1))
-                        .collect();
-                    accumulator.merge_batch(&state).expect("failed to seed window");
-                    column += count;
-                }
-                if track {
-                    delta += accumulators_bytes(accumulators) as isize;
-                    self.memory.record(delta);
-                }
-            }
-        }
-        Ok(())
-    }
 
     pub(crate) fn update(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         self.snapshot_cache = None;
-        #[cfg(feature = "paimon-state")]
-        self.seed_batch_keys(batch)?;
         let ts = column_i64(batch, "ts");
         // One value column per aggregate (value0, value1, …), so aggregates can read different
         // columns. Sliced by type-agnostic take, so each accumulator sees its column's own type.
         let values: Vec<&ArrayRef> = (0..self.aggregates.len())
-            .map(|i| batch.column_by_name(&format!("value{i}")).expect("missing value column"))
+            .map(|i| {
+                batch
+                    .column_by_name(&format!("value{i}"))
+                    .expect("missing value column")
+            })
             .collect();
         let key_arrays = key_arrays(batch);
         self.key_types = key_types(&key_arrays);
@@ -445,7 +383,10 @@ impl TumblingAggregator {
                 self.late_drops += 1;
             }
             for &(start, end) in windows.iter() {
-                grouped.entry((start, end, key)).or_default().push(row as u32);
+                grouped
+                    .entry((start, end, key))
+                    .or_default()
+                    .push(row as u32);
             }
         }
         self.accumulate_grouped(grouped, &values)
@@ -458,12 +399,14 @@ impl TumblingAggregator {
     /// watermark has already closed). `flush_partial` then emits the partials keyed by window end.
     pub(crate) fn update_attached(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         self.snapshot_cache = None;
-        #[cfg(feature = "paimon-state")]
-        self.seed_batch_keys(batch)?;
         let starts = column_i64(batch, "window_start");
         let ends = column_i64(batch, "window_end");
         let values: Vec<&ArrayRef> = (0..self.aggregates.len())
-            .map(|i| batch.column_by_name(&format!("value{i}")).expect("missing value column"))
+            .map(|i| {
+                batch
+                    .column_by_name(&format!("value{i}"))
+                    .expect("missing value column")
+            })
             .collect();
         let key_arrays = key_arrays(batch);
         self.key_types = key_types(&key_arrays);
@@ -477,7 +420,10 @@ impl TumblingAggregator {
         let mut grouped: ahash::HashMap<(i64, i64, Row<'_>), Vec<u32>> = ahash::HashMap::default();
         for row in 0..batch.num_rows() {
             let key = keys_encoded.row(row);
-            grouped.entry((starts.value(row), ends.value(row), key)).or_default().push(row as u32);
+            grouped
+                .entry((starts.value(row), ends.value(row), key))
+                .or_default()
+                .push(row as u32);
         }
         self.accumulate_grouped(grouped, &values)
     }
@@ -494,8 +440,10 @@ impl TumblingAggregator {
         let track = self.memory.tracking();
         for ((start, end, key), rows) in grouped {
             let indices = UInt32Array::from(rows);
-            let columns: Vec<ArrayRef> =
-                values.iter().map(|v| take(v, &indices, None).expect("failed to take values")).collect();
+            let columns: Vec<ArrayRef> = values
+                .iter()
+                .map(|v| take(v, &indices, None).expect("failed to take values"))
+                .collect();
             let key = key.owned();
             let mut delta = 0isize;
             if track {
@@ -506,7 +454,9 @@ impl TumblingAggregator {
             }
             let accumulators = self.accumulators(start, end, key);
             for (i, accumulator) in accumulators.iter_mut().enumerate() {
-                accumulator.update_batch(std::slice::from_ref(&columns[i])).expect("failed to update");
+                accumulator
+                    .update_batch(std::slice::from_ref(&columns[i]))
+                    .expect("failed to update");
             }
             if track {
                 delta += accumulators_bytes(accumulators) as isize;
@@ -525,15 +475,6 @@ impl TumblingAggregator {
         self.current_watermark = self.current_watermark.max(watermark);
         // Persistent state: windows committed at earlier barriers and untouched this interval
         // still close now — hydrate them into the decoded map so one drain covers both.
-        #[cfg(feature = "paimon-state")]
-        if self.backend.is_some() {
-            let batches = self
-                .backend
-                .as_mut()
-                .expect("window-agg paimon backend")
-                .fire_scan(watermark)?;
-            self.absorb_committed(batches)?;
-        }
         let n = self.aggregates.len();
         let mut keys: Vec<OwnedRow> = Vec::new();
         let mut starts = Vec::new();
@@ -561,16 +502,6 @@ impl TumblingAggregator {
         let mut columns = decode_keys(self.key_converter.as_ref(), &keys, &self.key_types);
         // Persistent state: every fired (key, window) leaves the store — a `-D` per row commits
         // at the next barrier, so a closed window can never re-fire after a restore.
-        #[cfg(feature = "paimon-state")]
-        if self.backend.is_some() && !keys.is_empty() {
-            let binary_keys = self.binary_keys(&columns, keys.len())?;
-            let key_slices: Vec<&[u8]> = binary_keys.iter().map(|k| k.as_slice()).collect();
-            let store = self.backend.as_mut().expect("window-agg paimon backend");
-            store.stage_deletes(&key_slices, &ends, &starts)?;
-            let delta = store.footprint_delta();
-            self.memory.record(delta);
-            self.memory.account()?;
-        }
         fields.push(Field::new("window_start", DataType::Int64, false));
         fields.push(Field::new("window_end", DataType::Int64, false));
         columns.push(Arc::new(Int64Array::from(starts)));
@@ -578,7 +509,11 @@ impl TumblingAggregator {
         for (i, scalars) in results.into_iter().enumerate() {
             // Nullable: a SUM whose window saw only NULL values (or whose decimal sum overflowed)
             // evaluates to NULL, matching the host.
-            fields.push(Field::new(format!("result{i}"), self.aggregates[i].result_type(), true));
+            fields.push(Field::new(
+                format!("result{i}"),
+                self.aggregates[i].result_type(),
+                true,
+            ));
             columns.push(scalars_to_array(scalars, &self.aggregates[i].result_type()));
         }
         Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
@@ -587,71 +522,10 @@ impl TumblingAggregator {
 
     /// The BinaryRow key bytes of `n` rows whose decoded key columns lead `columns` — how the
     /// store addresses (key, window) rows.
-    #[cfg(feature = "paimon-state")]
-    fn binary_keys(
-        &self,
-        columns: &[ArrayRef],
-        n: usize,
-    ) -> Result<Vec<Vec<u8>>, DataFusionError> {
-        binary_row_keys(columns, &self.key_types, &self.key_precisions(self.key_types.len()), n)
-    }
 
     /// Persistent-state barrier: stages every open (key, window) as a whole-row rewrite, drops
     /// the decoded map (the next interval re-seeds touched keys from the committed table), and
     /// commits the region. Returns the manifest and the watermark the token must carry.
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn checkpoint_backend(
-        &mut self,
-    ) -> Result<(crate::state::PaimonCheckpointManifest, i64), DataFusionError> {
-        self.snapshot_cache = None;
-        if self.memory.tracking() {
-            self.memory.forget(self.computed_state_bytes());
-        }
-        let state_types: Vec<DataType> = self
-            .aggregates
-            .iter()
-            .flat_map(|a| a.state_fields().into_iter().map(|f| f.data_type().clone()))
-            .collect();
-        let windows = std::mem::take(&mut self.windows);
-        for (end, window) in windows {
-            let mut entries: Vec<(OwnedRow, Vec<Box<dyn Accumulator>>)> =
-                window.keys.into_iter().collect();
-            let rows = entries.len();
-            let keys: Vec<OwnedRow> = entries.iter().map(|(k, _)| k.clone()).collect();
-            let key_columns = decode_keys(self.key_converter.as_ref(), &keys, &self.key_types);
-            let binary_keys = self.binary_keys(&key_columns, rows)?;
-            let key_slices: Vec<&[u8]> = binary_keys.iter().map(|k| k.as_slice()).collect();
-            let mut state_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); state_types.len()];
-            for (_, accumulators) in entries.iter_mut() {
-                let mut column = 0;
-                for accumulator in accumulators.iter_mut() {
-                    for scalar in accumulator.state().expect("state") {
-                        state_columns[column].push(scalar);
-                        column += 1;
-                    }
-                }
-            }
-            let state_arrays: Vec<ArrayRef> = state_columns
-                .into_iter()
-                .zip(&state_types)
-                .map(|(scalars, data_type)| scalars_to_array(scalars, data_type))
-                .collect();
-            let store = self.backend.as_mut().expect("window-agg paimon backend");
-            store.stage_upserts(
-                &key_slices,
-                &vec![end; rows],
-                &vec![window.start; rows],
-                key_columns,
-                state_arrays,
-            )?;
-        }
-        let store = self.backend.as_mut().expect("window-agg paimon backend");
-        let manifest = store.checkpoint()?;
-        let delta = store.footprint_delta();
-        self.memory.record(delta);
-        self.memory.account()?;
-        Ok((manifest, self.current_watermark))
-    }
 
     /// Local half of two-phase aggregation: emits each closed window's per-aggregate partial state
     /// as `[key, partial0..partialN-1, slice_end]`. Single-field partials (sum/min/max/count).
@@ -700,7 +574,11 @@ impl TumblingAggregator {
             // Nullable: a SUM partial is Flink's nullable-sum buffer — NULL for an all-NULL bundle
             // or an overflowed decimal bundle (the global's merge skips it, as the host's does).
             let partial_type = self.aggregates[i].state_fields()[0].data_type().clone();
-            fields.push(Field::new(format!("partial{i}"), partial_type.clone(), true));
+            fields.push(Field::new(
+                format!("partial{i}"),
+                partial_type.clone(),
+                true,
+            ));
             columns.push(scalars_to_array(scalars, &partial_type));
         }
         fields.push(Field::new("slice_end", DataType::Int64, false));
@@ -713,8 +591,6 @@ impl TumblingAggregator {
     /// `[key, partial0..partialN-1, slice_end]` into the window each slice belongs to.
     pub(crate) fn update_partial(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         self.snapshot_cache = None;
-        #[cfg(feature = "paimon-state")]
-        self.seed_batch_keys(batch)?;
         let n = self.aggregates.len();
         let key_arrays = key_arrays(batch);
         self.key_types = key_types(&key_arrays);
@@ -722,8 +598,13 @@ impl TumblingAggregator {
         let slice_ends = column_i64(batch, "slice_end");
         // Partials are read as whole columns and merged a row-slice at a time, so any partial type
         // (int64 sum/count, float64 sum, …) flows through without per-type handling here.
-        let partials: Vec<&ArrayRef> =
-            (0..n).map(|i| batch.column_by_name(&format!("partial{i}")).expect("partial")).collect();
+        let partials: Vec<&ArrayRef> = (0..n)
+            .map(|i| {
+                batch
+                    .column_by_name(&format!("partial{i}"))
+                    .expect("partial")
+            })
+            .collect();
 
         let track = self.memory.tracking();
         for row in 0..batch.num_rows() {
@@ -787,8 +668,11 @@ impl TumblingAggregator {
     }
 
     fn snapshot_batch(&mut self) -> RecordBatch {
-        let state_fields: Vec<Field> =
-            self.aggregates.iter().flat_map(WindowAggregate::state_fields).collect();
+        let state_fields: Vec<Field> = self
+            .aggregates
+            .iter()
+            .flat_map(WindowAggregate::state_fields)
+            .collect();
 
         let mut ends: Vec<i64> = Vec::new();
         let mut starts: Vec<i64> = Vec::new();
@@ -813,10 +697,16 @@ impl TumblingAggregator {
             Field::new("window_end", DataType::Int64, false),
             Field::new("window_start", DataType::Int64, false),
         ];
-        let mut columns: Vec<ArrayRef> =
-            vec![Arc::new(Int64Array::from(ends)), Arc::new(Int64Array::from(starts))];
+        let mut columns: Vec<ArrayRef> = vec![
+            Arc::new(Int64Array::from(ends)),
+            Arc::new(Int64Array::from(starts)),
+        ];
         fields.extend(key_fields(&self.key_types));
-        columns.extend(decode_keys(self.key_converter.as_ref(), &keys, &self.key_types));
+        columns.extend(decode_keys(
+            self.key_converter.as_ref(),
+            &keys,
+            &self.key_types,
+        ));
         fields.extend(state_fields.iter().cloned());
         for (index, scalars) in state_columns.into_iter().enumerate() {
             columns.push(if scalars.is_empty() {
@@ -831,8 +721,11 @@ impl TumblingAggregator {
             "current_watermark".to_string(),
             self.current_watermark.to_string(),
         )]);
-        RecordBatch::try_new(Arc::new(Schema::new(fields).with_metadata(metadata)), columns)
-            .expect("failed to build snapshot batch")
+        RecordBatch::try_new(
+            Arc::new(Schema::new(fields).with_metadata(metadata)),
+            columns,
+        )
+        .expect("failed to build snapshot batch")
     }
 
     pub(crate) fn snapshot_partitions(
@@ -882,8 +775,8 @@ impl TumblingAggregator {
                 .iter()
                 .map(|column| take(column, &indices, None).expect("partition window snapshot"))
                 .collect();
-            let partition = RecordBatch::try_new(batch.schema(), columns)
-                .expect("partitioned window snapshot");
+            let partition =
+                RecordBatch::try_new(batch.schema(), columns).expect("partitioned window snapshot");
             snapshots.insert(key_group, write_ipc(&partition));
         }
         self.snapshot_cache = Some(WindowSnapshotCache {
@@ -903,8 +796,11 @@ impl TumblingAggregator {
     ) -> Self {
         let mut aggregator =
             TumblingAggregator::new(window_millis, slide_millis, cumulative, value_types, kinds);
-        let field_counts: Vec<usize> =
-            aggregator.aggregates.iter().map(|a| a.state_fields().len()).collect();
+        let field_counts: Vec<usize> = aggregator
+            .aggregates
+            .iter()
+            .map(|a| a.state_fields().len())
+            .collect();
         let state_field_total: usize = field_counts.iter().sum();
         let reader = arrow::ipc::reader::StreamReader::try_new(bytes, None)
             .expect("failed to open snapshot reader");
@@ -915,10 +811,16 @@ impl TumblingAggregator {
             }
             // Columns are [window_end, window_start, key0..key{arity-1}, state fields...].
             let arity = batch.num_columns() - 2 - state_field_total;
-            let ends =
-                batch.column(0).as_any().downcast_ref::<Int64Array>().expect("window_end int64");
-            let starts =
-                batch.column(1).as_any().downcast_ref::<Int64Array>().expect("window_start int64");
+            let ends = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("window_end int64");
+            let starts = batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("window_start int64");
             let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(2 + j)).collect();
             aggregator.key_types = key_types(&key_arrays);
             let keys_encoded =
@@ -932,9 +834,12 @@ impl TumblingAggregator {
                     .enumerate()
                 {
                     let count = field_counts[i];
-                    let state: Vec<ArrayRef> =
-                        (column..column + count).map(|c| batch.column(c).slice(row, 1)).collect();
-                    accumulator.merge_batch(&state).expect("failed to restore window");
+                    let state: Vec<ArrayRef> = (column..column + count)
+                        .map(|c| batch.column(c).slice(row, 1))
+                        .collect();
+                    accumulator
+                        .merge_batch(&state)
+                        .expect("failed to restore window");
                     column += count;
                 }
             }
@@ -961,10 +866,17 @@ impl TumblingAggregator {
             }
         }
         if batches.is_empty() {
-            return TumblingAggregator::new(window_millis, slide_millis, cumulative, value_types, kinds);
+            return TumblingAggregator::new(
+                window_millis,
+                slide_millis,
+                cumulative,
+                value_types,
+                kinds,
+            );
         }
         let schema = batches[0].schema();
-        let combined = concat_batches(&schema, batches.iter()).expect("merge window raw partitions");
+        let combined =
+            concat_batches(&schema, batches.iter()).expect("merge window raw partitions");
         let mut restored = TumblingAggregator::restore(
             window_millis,
             slide_millis,
@@ -978,7 +890,10 @@ impl TumblingAggregator {
     }
 }
 
-state_bytes_getter!(Java_tech_streamfusion_Native_tumblingAggregatorStateBytes, TumblingAggregator);
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_tumblingAggregatorStateBytes,
+    TumblingAggregator
+);
 
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_tumblingAggregatorLateDrops<'local>(
@@ -1042,13 +957,20 @@ pub extern "system" fn Java_tech_streamfusion_Native_tumblingSum<'local>(
 ) {
     crate::bridge::jni_guard(env, move |_env| {
         let ffi_array = unsafe {
-            std::ptr::replace(in_array_address as *mut FFI_ArrowArray, FFI_ArrowArray::empty())
+            std::ptr::replace(
+                in_array_address as *mut FFI_ArrowArray,
+                FFI_ArrowArray::empty(),
+            )
         };
         let ffi_schema = unsafe {
-            std::ptr::replace(in_schema_address as *mut FFI_ArrowSchema, FFI_ArrowSchema::empty())
+            std::ptr::replace(
+                in_schema_address as *mut FFI_ArrowSchema,
+                FFI_ArrowSchema::empty(),
+            )
         };
 
-        let mut data = unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow batch");
+        let mut data =
+            unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow batch");
         data.align_buffers();
         let batch = RecordBatch::from(StructArray::from(data));
 
@@ -1060,9 +982,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_tumblingSum<'local>(
 
         let result = runtime().block_on(async move {
             let ctx = SessionContext::new();
-            ctx.register_batch("events", batch).expect("failed to register batch");
+            ctx.register_batch("events", batch)
+                .expect("failed to register batch");
             let frame = ctx.sql(&query).await.expect("failed to plan aggregation");
-            let mut stream = frame.execute_stream().await.expect("failed to execute plan");
+            let mut stream = frame
+                .execute_stream()
+                .await
+                .expect("failed to execute plan");
             let schema = stream.schema();
             let mut batches = Vec::new();
             while let Some(batch) = stream.next().await {
@@ -1120,8 +1046,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_createCumulativeAggregator<
     crate::bridge::jni_guard(env, move |mut env| {
         let kinds = read_int_array(&env, &aggregate_kinds);
         let value_types = read_int_array(&env, &value_types);
-        let aggregator = TumblingAggregator::new(max_size_millis, step_millis, true, value_types, kinds)
-            .with_memory_budget(memory_budget_bytes);
+        let aggregator =
+            TumblingAggregator::new(max_size_millis, step_millis, true, value_types, kinds)
+                .with_memory_budget(memory_budget_bytes);
         boxed_or_throw(&mut env, aggregator)
     })
 }
@@ -1153,9 +1080,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_updateTumblingAggregator<'l
 /// Window-attached local half: folds a batch whose rows carry explicit `window_start`/`window_end`
 /// columns (an upstream window aggregate's output being re-aggregated per window — Nexmark q5).
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_updateAttachedTumblingAggregator<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_updateAttachedTumblingAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1197,9 +1122,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushTumblingAggregator<'lo
 
 /// Local two-phase half: merges a batch of partials `[key, partial, slice_end]` into the windows.
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_updatePartialTumblingAggregator<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_updatePartialTumblingAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1221,9 +1144,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_updatePartialTumblingAggreg
 
 /// Local two-phase half: emits the partial state of the windows the watermark has closed.
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_flushPartialTumblingAggregator<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_flushPartialTumblingAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1240,9 +1161,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushPartialTumblingAggrega
 
 /// Local two-phase half: emits every open window's partial state at a barrier, watermark untouched.
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_drainPartialTumblingAggregator<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_drainPartialTumblingAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1263,10 +1182,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeTumblingAggregator<'lo
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<TumblingAggregator>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<TumblingAggregator>(handle));
     })
 }
 
@@ -1300,10 +1217,18 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreTumblingAggregator<'
     crate::bridge::jni_guard(env, move |mut env| {
         let kinds = read_int_array(&env, &aggregate_kinds);
         let value_types = read_int_array(&env, &value_types);
-        let bytes = env.convert_byte_array(&snapshot).expect("failed to read snapshot");
-        let aggregator =
-            TumblingAggregator::restore(window_millis, slide_millis, false, value_types, kinds, &bytes)
-                .with_memory_budget(memory_budget_bytes);
+        let bytes = env
+            .convert_byte_array(&snapshot)
+            .expect("failed to read snapshot");
+        let aggregator = TumblingAggregator::restore(
+            window_millis,
+            slide_millis,
+            false,
+            value_types,
+            kinds,
+            &bytes,
+        )
+        .with_memory_budget(memory_budget_bytes);
         boxed_or_throw(&mut env, aggregator)
     })
 }
@@ -1323,10 +1248,18 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreCumulativeAggregator
     crate::bridge::jni_guard(env, move |mut env| {
         let kinds = read_int_array(&env, &aggregate_kinds);
         let value_types = read_int_array(&env, &value_types);
-        let bytes = env.convert_byte_array(&snapshot).expect("failed to read snapshot");
-        let aggregator =
-            TumblingAggregator::restore(max_size_millis, step_millis, true, value_types, kinds, &bytes)
-                .with_memory_budget(memory_budget_bytes);
+        let bytes = env
+            .convert_byte_array(&snapshot)
+            .expect("failed to read snapshot");
+        let aggregator = TumblingAggregator::restore(
+            max_size_millis,
+            step_millis,
+            true,
+            value_types,
+            kinds,
+            &bytes,
+        )
+        .with_memory_budget(memory_budget_bytes);
         boxed_or_throw(&mut env, aggregator)
     })
 }
@@ -1353,9 +1286,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotTumblingAggregatorP
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_restoreTumblingAggregatorPartitions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_restoreTumblingAggregatorPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     window_millis: jlong,

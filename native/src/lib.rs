@@ -6,20 +6,20 @@ pub(crate) use arrow::array::types::{
     Time32MillisecondType, Time32SecondType, Time64MicrosecondType, Time64NanosecondType,
     TimestampNanosecondType,
 };
+pub(crate) use arrow::array::NullBufferBuilder;
 pub(crate) use arrow::array::{
     make_array, new_empty_array, new_null_array, Array, ArrayRef, BinaryArray, BooleanArray,
     Decimal128Array, Float32Array, Int16Array, Int32Array, Int64Array, Int8Array,
     IntervalDayTimeArray, ListArray, MapArray, MutableArrayData, PrimitiveArray, RecordBatch,
-    StringArray, StructArray,
-    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, UInt32Array,
+    StringArray, StructArray, TimestampMicrosecondArray, TimestampMillisecondArray,
+    TimestampNanosecondArray, UInt32Array,
 };
-pub(crate) use arrow::array::NullBufferBuilder;
 pub(crate) use arrow::buffer::{OffsetBuffer, ScalarBuffer};
 pub(crate) use arrow::compute::{concat_batches, filter_record_batch, take, SortOptions};
 pub(crate) use arrow::datatypes::ArrowPrimitiveType;
-pub(crate) use arrow::row::{OwnedRow, Row, RowConverter, Rows, SortField};
 pub(crate) use arrow::datatypes::{DataType, Field, FieldRef, Fields, Schema, SchemaRef};
 pub(crate) use arrow::ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema};
+pub(crate) use arrow::row::{OwnedRow, Row, RowConverter, Rows, SortField};
 pub(crate) use datafusion::catalog::memory::MemorySourceConfig;
 pub(crate) use datafusion::common::{DFSchema, DataFusionError, JoinSide, JoinType, NullEquality};
 pub(crate) use datafusion::execution::memory_pool::{
@@ -33,7 +33,9 @@ pub(crate) use datafusion::functions_aggregate::sum::sum_udaf;
 pub(crate) use datafusion::logical_expr::execution_props::ExecutionProps;
 pub(crate) use datafusion::logical_expr::{Accumulator, AggregateUDF, Operator};
 pub(crate) use datafusion::optimizer::simplify_expressions::{ExprSimplifier, SimplifyContext};
-pub(crate) use datafusion::physical_expr::aggregate::{AggregateExprBuilder, AggregateFunctionExpr};
+pub(crate) use datafusion::physical_expr::aggregate::{
+    AggregateExprBuilder, AggregateFunctionExpr,
+};
 pub(crate) use datafusion::physical_expr::expressions::{binary, col, lit, Column};
 pub(crate) use datafusion::physical_expr::{create_physical_expr, PhysicalExpr};
 pub(crate) use datafusion::physical_plan::collect;
@@ -62,7 +64,14 @@ mod avro_datum;
 mod bridge;
 mod calc;
 mod changelog;
-#[cfg(any(feature = "json", feature = "csv", feature = "raw", feature = "avro", feature = "protobuf", test))]
+#[cfg(any(
+    feature = "json",
+    feature = "csv",
+    feature = "raw",
+    feature = "avro",
+    feature = "protobuf",
+    test
+))]
 mod csv;
 // The sink-side CSV encoder: it needs the Kafka sink's encode seam (EncodedLines and the shared
 // Flink text helpers live with it), and rides the `csv` feature so a connector build without the
@@ -74,24 +83,52 @@ mod exchange;
 mod expr;
 #[cfg(feature = "parquet")]
 mod files;
-mod flink_key;
-mod format_abi;
-mod format_codes;
 mod flatten;
-#[cfg(any(feature = "json", feature = "csv", feature = "raw", feature = "avro", feature = "protobuf", test))]
+mod flink_key;
+#[cfg(any(
+    feature = "json",
+    feature = "csv",
+    feature = "raw",
+    feature = "avro",
+    feature = "protobuf",
+    test
+))]
 mod flink_text;
 #[cfg(feature = "fluss")]
 mod fluss;
-#[cfg(any(feature = "json", feature = "csv", feature = "raw", feature = "avro", feature = "protobuf", test))]
+mod format_abi;
+mod format_codes;
+#[cfg(any(
+    feature = "json",
+    feature = "csv",
+    feature = "raw",
+    feature = "avro",
+    feature = "protobuf",
+    test
+))]
 mod formats;
 mod group_agg;
 mod interval_join;
 mod ipc;
 mod jdk_double;
 mod join_common;
-#[cfg(any(feature = "json", feature = "csv", feature = "raw", feature = "avro", feature = "protobuf", test))]
+#[cfg(any(
+    feature = "json",
+    feature = "csv",
+    feature = "raw",
+    feature = "avro",
+    feature = "protobuf",
+    test
+))]
 mod json;
-#[cfg(any(feature = "json", feature = "csv", feature = "raw", feature = "avro", feature = "protobuf", test))]
+#[cfg(any(
+    feature = "json",
+    feature = "csv",
+    feature = "raw",
+    feature = "avro",
+    feature = "protobuf",
+    test
+))]
 mod json_retry;
 #[cfg(feature = "kafka")]
 mod kafka;
@@ -120,13 +157,21 @@ mod window_join;
 // operator's re-export is "unused" outside `cfg(test)`, hence the allow.
 #[allow(unused_imports)]
 pub(crate) use {
-    aggregates::*, bridge::*, calc::*, changelog::*, dedup::*, exchange::*, expr::*,
-    flink_key::*, flatten::*, format_abi::*, format_codes::*, group_agg::*, interval_join::*, ipc::*, jdk_double::*, join_common::*,
-    keys::*, memory::*, mini_batch::*, normalizer::*, over_agg::*, rowtime::*, session_agg::*, sorter::*,
-    state::*, temporal_join::*, topn::*, updating_join::*, window_agg::*, window_join::*,
+    aggregates::*, bridge::*, calc::*, changelog::*, dedup::*, exchange::*, expr::*, flatten::*,
+    flink_key::*, format_abi::*, format_codes::*, group_agg::*, interval_join::*, ipc::*,
+    jdk_double::*, join_common::*, keys::*, memory::*, mini_batch::*, normalizer::*, over_agg::*,
+    rowtime::*, session_agg::*, sorter::*, state::*, temporal_join::*, topn::*, updating_join::*,
+    window_agg::*, window_join::*,
 };
 
-#[cfg(any(feature = "json", feature = "csv", feature = "raw", feature = "avro", feature = "protobuf", test))]
+#[cfg(any(
+    feature = "json",
+    feature = "csv",
+    feature = "raw",
+    feature = "avro",
+    feature = "protobuf",
+    test
+))]
 #[allow(unused_imports)]
 pub(crate) use {formats::*, json::*};
 

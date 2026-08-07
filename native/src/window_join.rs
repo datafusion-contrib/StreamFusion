@@ -31,10 +31,8 @@ pub(crate) struct WindowJoiner {
     pub(crate) left_late_drops: u64,
     pub(crate) right_late_drops: u64,
     pub(crate) memory: OperatorMemory,
-    /// Persistent-state mode: both sides' buffered rows live in the Paimon store (write buffers
+    /// Persistent-state mode: both sides' buffered rows live in the persistent store (write buffers
     /// + disk tables); the in-memory `*_buffered` vectors stay empty between calls.
-    #[cfg(feature = "paimon-state")]
-    backend: Option<crate::state::PaimonWindowJoinStore>,
     key_timestamp_precisions: Vec<i32>,
 }
 
@@ -72,8 +70,6 @@ impl WindowJoiner {
             left_late_drops: 0,
             right_late_drops: 0,
             memory: OperatorMemory::unaccounted(),
-            #[cfg(feature = "paimon-state")]
-            backend: None,
             // Equi-join key columns have matching types on both sides, so one precision stream
             // serves both (the raw snapshot partitioner already relies on this).
             key_timestamp_precisions: vec![-1; key_arity],
@@ -88,26 +84,7 @@ impl WindowJoiner {
         self
     }
 
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn with_backend(mut self, store: crate::state::PaimonWindowJoinStore) -> Self {
-        self.backend = Some(store);
-        self
-    }
-
     /// Attaches the task off-heap budget for a backend that starts with nothing resident.
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn with_read_through_budget(
-        mut self,
-        budget_bytes: i64,
-    ) -> Result<Self, DataFusionError> {
-        self.memory.attach("window-join", budget_bytes, 0)?;
-        Ok(self)
-    }
-
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn store_mut(&mut self) -> &mut crate::state::PaimonWindowJoinStore {
-        self.backend.as_mut().expect("window-join paimon backend")
-    }
 
     /// Bounds the buffered rows by the operator's task off-heap budget (negative = unaccounted),
     /// accounting any restored buffers immediately.
@@ -135,10 +112,6 @@ impl WindowJoiner {
         self.left_schema = Some(batch.schema());
         let (batch, dropped) = Self::filter_late(batch, self.left_wend, self.current_watermark)?;
         self.left_late_drops += dropped as u64;
-        #[cfg(feature = "paimon-state")]
-        if self.backend.is_some() {
-            return self.push_backend(batch, true);
-        }
         self.left_buffered.push(batch);
         self.account()
     }
@@ -147,10 +120,6 @@ impl WindowJoiner {
         self.right_schema = Some(batch.schema());
         let (batch, dropped) = Self::filter_late(batch, self.right_wend, self.current_watermark)?;
         self.right_late_drops += dropped as u64;
-        #[cfg(feature = "paimon-state")]
-        if self.backend.is_some() {
-            return self.push_backend(batch, false);
-        }
         self.right_buffered.push(batch);
         self.account()
     }
@@ -174,60 +143,12 @@ impl WindowJoiner {
     /// Persistent-state arrival path: every input row stages into its side's write buffer under
     /// a fresh arrival sequence, keyed by its window end (the fire column) and routed by the
     /// equi-join key's group. Nothing joins here — emission is watermark-driven (`flush`).
-    #[cfg(feature = "paimon-state")]
-    fn push_backend(&mut self, batch: RecordBatch, left: bool) -> Result<(), DataFusionError> {
-        if batch.num_rows() > 0 {
-            let (keys, wend) = if left {
-                (&self.left_keys, self.left_wend)
-            } else {
-                (&self.right_keys, self.right_wend)
-            };
-            let ends = rt_to_millis(batch.column(wend));
-            let mut encoder =
-                BinaryRowBatchEncoder::new(&batch, keys, &self.key_timestamp_precisions);
-            let store = self.backend.as_mut().expect("window-join paimon backend");
-            let side = if left { &mut store.left } else { &mut store.right };
-            let kgs: Vec<i32> =
-                (0..batch.num_rows()).map(|row| side.key_group(encoder.encode(row))).collect();
-            let times: Vec<i64> = (0..batch.num_rows()).map(|row| ends.value(row)).collect();
-            side.stage(&kgs, times, batch.columns().to_vec())?;
-        }
-        let store = self.backend.as_mut().expect("window-join paimon backend");
-        let delta = store.footprint_delta();
-        self.memory.record(delta);
-        self.memory.account()
-    }
 
     /// Persistent-state firing path: each side's overlay range read returns the rows of every
     /// closed window in arrival order (staging their deletions), and the memory path's own join
     /// runs over them.
-    #[cfg(feature = "paimon-state")]
-    fn flush_backend(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
-        let ctx = self.memory.task_ctx();
-        let store = self.backend.as_mut().expect("window-join paimon backend");
-        let left_fired = store.left.fire(watermark, ctx.clone())?;
-        let right_fired = store.right.fire(watermark, ctx)?;
-        let delta = store.footprint_delta();
-        self.memory.record(delta);
-        self.memory.account()?;
-        let left = self.side_payload(left_fired, &self.left_data_schema);
-        let right = self.side_payload(right_fired, &self.right_data_schema);
-        self.join_closed(left, right)
-    }
 
     /// Projects a fired store batch (`kg`, `k`, `rt`, payload…) back to the side's data rows.
-    #[cfg(feature = "paimon-state")]
-    fn side_payload(
-        &self,
-        fired: Option<RecordBatch>,
-        data_schema: &SchemaRef,
-    ) -> Option<RecordBatch> {
-        let fired = fired?;
-        Some(
-            RecordBatch::try_new(data_schema.clone(), fired.columns()[3..].to_vec())
-                .expect("window-join payload projection"),
-        )
-    }
 
     /// Splits a side's buffer into the rows whose window has closed (`window_end <= watermark`,
     /// returned) and the rest (kept buffered). `None` if the side has not seen any rows.
@@ -243,11 +164,16 @@ impl WindowJoiner {
         }
         let all = concat_batches(schema, buffered.iter()).expect("concat window-join buffer");
         let ends = rt_to_millis(all.column(wend));
-        let closed_mask: BooleanArray = ends.iter().map(|v| Some(v.unwrap() <= watermark)).collect();
+        let closed_mask: BooleanArray =
+            ends.iter().map(|v| Some(v.unwrap() <= watermark)).collect();
         let closed = filter_record_batch(&all, &closed_mask).expect("filter closed windows");
         let pending_mask = arrow::compute::not(&closed_mask).expect("negate window mask");
         let pending = filter_record_batch(&all, &pending_mask).expect("filter pending windows");
-        *buffered = if pending.num_rows() > 0 { vec![pending] } else { Vec::new() };
+        *buffered = if pending.num_rows() > 0 {
+            vec![pending]
+        } else {
+            Vec::new()
+        };
         Some(closed)
     }
 
@@ -258,31 +184,45 @@ impl WindowJoiner {
     /// the join's working memory draws on the operator's budget.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         self.current_watermark = self.current_watermark.max(watermark);
-        #[cfg(feature = "paimon-state")]
-        if self.backend.is_some() {
-            return self.flush_backend(watermark);
-        }
-        let left = Self::split_closed(&mut self.left_buffered, &self.left_schema, self.left_wend, watermark);
-        let right =
-            Self::split_closed(&mut self.right_buffered, &self.right_schema, self.right_wend, watermark);
-        self.account().expect("closing windows only shrinks the buffers");
+        let left = Self::split_closed(
+            &mut self.left_buffered,
+            &self.left_schema,
+            self.left_wend,
+            watermark,
+        );
+        let right = Self::split_closed(
+            &mut self.right_buffered,
+            &self.right_schema,
+            self.right_wend,
+            watermark,
+        );
+        self.account()
+            .expect("closing windows only shrinks the buffers");
         self.join_closed(left, right)
     }
 
     /// Joins the closed rows of both sides — the tail every flush shares, memory- or
-    /// Paimon-backed. See {@link flush} for the outer-join null-padding rationale.
+    /// persistent. See {@link flush} for the outer-join null-padding rationale.
     fn join_closed(
         &mut self,
         left: Option<RecordBatch>,
         right: Option<RecordBatch>,
     ) -> Result<RecordBatch, DataFusionError> {
         // Join on the user keys plus the window bounds, so only rows of the same window match.
-        let mut on: Vec<(usize, usize)> =
-            self.left_keys.iter().zip(&self.right_keys).map(|(&l, &r)| (l, r)).collect();
+        let mut on: Vec<(usize, usize)> = self
+            .left_keys
+            .iter()
+            .zip(&self.right_keys)
+            .map(|(&l, &r)| (l, r))
+            .collect();
         on.push((self.left_wstart, self.right_wstart));
         on.push((self.left_wend, self.right_wend));
-        let filter =
-            residual_filter(&self.left_data_schema, &self.right_data_schema, None, self.predicate.as_mut());
+        let filter = residual_filter(
+            &self.left_data_schema,
+            &self.right_data_schema,
+            None,
+            self.predicate.as_mut(),
+        );
 
         if self.join_type == JoinKind::Inner {
             return match (left, right) {
@@ -297,10 +237,18 @@ impl WindowJoiner {
         // row-ids null-pad the closed rows of each outer side that never appeared in a pair.
         let left_closed = left.filter(|b| b.num_rows() > 0);
         let right_closed = right.filter(|b| b.num_rows() > 0);
-        let left_types: Vec<DataType> =
-            self.left_data_schema.fields().iter().map(|f| f.data_type().clone()).collect();
-        let right_types: Vec<DataType> =
-            self.right_data_schema.fields().iter().map(|f| f.data_type().clone()).collect();
+        let left_types: Vec<DataType> = self
+            .left_data_schema
+            .fields()
+            .iter()
+            .map(|f| f.data_type().clone())
+            .collect();
+        let right_types: Vec<DataType> = self
+            .right_data_schema
+            .fields()
+            .iter()
+            .map(|f| f.data_type().clone())
+            .collect();
         let mut outputs: Vec<RecordBatch> = Vec::new();
         let mut matched_left: HashSet<i64> = HashSet::default();
         let mut matched_right: HashSet<i64> = HashSet::default();
@@ -315,33 +263,56 @@ impl WindowJoiner {
             )?;
             if joined.num_rows() > 0 {
                 let total = joined.num_columns();
-                let lrid = joined.column(left_types.len()).as_any().downcast_ref::<Int64Array>().expect("lrid");
-                let rrid = joined.column(total - 1).as_any().downcast_ref::<Int64Array>().expect("rrid");
+                let lrid = joined
+                    .column(left_types.len())
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .expect("lrid");
+                let rrid = joined
+                    .column(total - 1)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .expect("rrid");
                 for i in 0..joined.num_rows() {
                     matched_left.insert(lrid.value(i));
                     matched_right.insert(rrid.value(i));
                 }
-                let keep: Vec<usize> =
-                    (0..left_types.len()).chain(left_types.len() + 1..total - 1).collect();
+                let keep: Vec<usize> = (0..left_types.len())
+                    .chain(left_types.len() + 1..total - 1)
+                    .collect();
                 let fields: Vec<Field> = keep
                     .iter()
                     .enumerate()
-                    .map(|(j, &i)| Field::new(format!("c{j}"), joined.schema().field(i).data_type().clone(), true))
+                    .map(|(j, &i)| {
+                        Field::new(
+                            format!("c{j}"),
+                            joined.schema().field(i).data_type().clone(),
+                            true,
+                        )
+                    })
                     .collect();
-                let columns: Vec<ArrayRef> = keep.iter().map(|&i| joined.column(i).clone()).collect();
-                outputs.push(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("window pairs"));
+                let columns: Vec<ArrayRef> =
+                    keep.iter().map(|&i| joined.column(i).clone()).collect();
+                outputs.push(
+                    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+                        .expect("window pairs"),
+                );
             }
         }
         if self.join_type.left_is_outer() {
             if let Some(left) = &left_closed {
-                if let Some(pad) = unmatched_null_pad(left, &matched_left, &left_types, &right_types, true) {
+                if let Some(pad) =
+                    unmatched_null_pad(left, &matched_left, &left_types, &right_types, true)
+                {
                     outputs.push(pad);
                 }
             }
         }
         if self.join_type.right_is_outer() {
             if let Some(right) = &right_closed {
-                if let Some(pad) = unmatched_null_pad(right, &matched_right, &left_types, &right_types, false) {
+                if let Some(pad) =
+                    unmatched_null_pad(right, &matched_right, &left_types, &right_types, false)
+                {
                     outputs.push(pad);
                 }
             }
@@ -349,16 +320,18 @@ impl WindowJoiner {
         Ok(match outputs.len() {
             0 => empty_batch(),
             1 => outputs.pop().expect("one output"),
-            _ => concat_batches(&outputs[0].schema(), outputs.iter()).expect("concat window outputs"),
+            _ => {
+                concat_batches(&outputs[0].schema(), outputs.iter()).expect("concat window outputs")
+            }
         })
     }
 
     /// Serializes both buffers (`[u32 left_len][left ipc][right ipc]`) for a checkpoint.
     pub(crate) fn snapshot(&self) -> Vec<u8> {
         let serialize = |schema: &Option<SchemaRef>, buffered: &[RecordBatch]| match schema {
-            Some(schema) if !buffered.is_empty() => {
-                write_ipc(&concat_batches(schema, buffered.iter()).expect("concat window-join buffer"))
-            }
+            Some(schema) if !buffered.is_empty() => write_ipc(
+                &concat_batches(schema, buffered.iter()).expect("concat window-join buffer"),
+            ),
             _ => Vec::new(),
         };
         let left = serialize(&self.left_schema, &self.left_buffered);
@@ -387,7 +360,8 @@ impl WindowJoiner {
         timestamp_precisions: &[i32],
     ) -> BTreeMap<i32, Vec<u8>> {
         let snapshot = self.snapshot();
-        let left_len = u32::from_le_bytes(snapshot[0..4].try_into().expect("snapshot len")) as usize;
+        let left_len =
+            u32::from_le_bytes(snapshot[0..4].try_into().expect("snapshot len")) as usize;
         let left = Self::side_raw_partitions(
             &snapshot[4..4 + left_len],
             &self.left_keys,
@@ -408,8 +382,13 @@ impl WindowJoiner {
             snapshots.insert(
                 key_group,
                 Self::snapshot_parts(
-                    left.get(&key_group).map(Self::merge_snapshot_batches).unwrap_or_default(),
-                    right.get(&key_group).map(Self::merge_snapshot_batches).unwrap_or_default(),
+                    left.get(&key_group)
+                        .map(Self::merge_snapshot_batches)
+                        .unwrap_or_default(),
+                    right
+                        .get(&key_group)
+                        .map(Self::merge_snapshot_batches)
+                        .unwrap_or_default(),
                 ),
             );
         }
@@ -437,15 +416,14 @@ impl WindowJoiner {
                 let columns = batch
                     .columns()
                     .iter()
-                    .map(|column| take(column, &indices, None).expect("partition window-join snapshot"))
+                    .map(|column| {
+                        take(column, &indices, None).expect("partition window-join snapshot")
+                    })
                     .collect();
-                partitions
-                    .entry(key_group)
-                    .or_insert_with(Vec::new)
-                    .push(
-                        RecordBatch::try_new(batch.schema(), columns)
-                            .expect("partitioned window-join snapshot"),
-                    );
+                partitions.entry(key_group).or_insert_with(Vec::new).push(
+                    RecordBatch::try_new(batch.schema(), columns)
+                        .expect("partitioned window-join snapshot"),
+                );
             }
         }
         partitions
@@ -519,8 +497,12 @@ impl WindowJoiner {
             if bytes.len() < 4 {
                 continue;
             }
-            let left_len = u32::from_le_bytes(bytes[0..4].try_into().expect("snapshot len")) as usize;
-            assert!(4 + left_len <= bytes.len(), "truncated window-join raw key-group snapshot");
+            let left_len =
+                u32::from_le_bytes(bytes[0..4].try_into().expect("snapshot len")) as usize;
+            assert!(
+                4 + left_len <= bytes.len(),
+                "truncated window-join raw key-group snapshot"
+            );
             left_batches.extend(read_ipc_if_present(&bytes[4..4 + left_len]));
             right_batches.extend(read_ipc_if_present(&bytes[4 + left_len..]));
         }
@@ -546,7 +528,10 @@ impl WindowJoiner {
     }
 }
 
-state_bytes_getter!(Java_tech_streamfusion_Native_windowJoinerStateBytes, WindowJoiner);
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_windowJoinerStateBytes,
+    WindowJoiner
+);
 
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_windowJoinerLateDrops<'local>(
@@ -687,17 +672,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeWindowJoiner<'local>(
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<WindowJoiner>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<WindowJoiner>(handle));
     })
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_snapshotWindowJoinerPartitions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotWindowJoinerPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -717,9 +698,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotWindowJoinerPartiti
 
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_restoreWindowJoinerPartitions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_restoreWindowJoinerPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     left_keys: JIntArray<'local>,

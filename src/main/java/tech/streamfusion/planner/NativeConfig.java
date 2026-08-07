@@ -53,40 +53,6 @@ public final class NativeConfig {
   }
 
   /**
-   * The Paimon data file format for native state tables ({@code streamfusion.state.paimon.file-format},
-   * default {@code parquet}). Table maintenance belongs exclusively to the Java Paimon compactor
-   * module, which must be able to read this format — released Paimon has no vortex format (it
-   * arrives with Paimon 2.0), so {@code vortex} state files are an opt-in that today also opts
-   * out of compaction.
-   */
-  public static String paimonFileFormat() {
-    return System.getProperty("streamfusion.state.paimon.file-format", "parquet");
-  }
-
-  /**
-   * The Paimon {@code file.compression} for native state tables
-   * ({@code streamfusion.state.paimon.file-compression}, default {@code uncompressed}).
-   * Deliberately the boring baseline until the state-format benchmarks pick a better
-   * format/compression pairing; both writers — the native store and the Java compactor's
-   * rewrites — honor it, and {@code uncompressed} is the spelling both sides accept.
-   */
-  public static String paimonFileCompression() {
-    return System.getProperty("streamfusion.state.paimon.file-compression", "uncompressed");
-  }
-
-  /**
-   * The Paimon bucket count for native state tables
-   * ({@code streamfusion.state.paimon.buckets}, default 1: one LSM per operator subtask, the
-   * RocksDB shape). Deliberately small and decoupled from max parallelism — a bucket per key
-   * group wrote one file per touched key group per commit. Key-group locality survives because
-   * the key-group column leads the primary key (hydration prunes by key-group predicate), and
-   * rescale pays a one-time clip rewrite at recovery instead of free bucket adoption.
-   */
-  public static int paimonBuckets() {
-    return Integer.getInteger("streamfusion.state.paimon.buckets", 1);
-  }
-
-  /**
    * Whether a columnar shuffle edge may move Arrow batches by ownership transfer instead of IPC
    * bytes ({@code streamfusion.exchange.zeroCopyLocal}, default {@code auto}). Zero-copy is only
    * sound when every consumer shares the producer's process and no in-flight record outlives the
@@ -167,13 +133,11 @@ public final class NativeConfig {
   }
 
   /**
-   * Maximum resident Paimon write-buffer target per native operator, in mebibytes
-   * ({@code streamfusion.state.paimon.write-buffer-mb}, default 64). Crossing it commits an
-   * immutable local snapshot and clears the buffer; Flink checkpoints independently pin and upload
-   * those local files.
+   * Maximum resident native state target before forcing a local RocksDB checkpoint, in mebibytes
+   * ({@code streamfusion.state.rocksdb.write-buffer-mb}, default 64).
    */
-  public static long paimonWriteBufferBytes() {
-    return Math.max(1L, Long.getLong("streamfusion.state.paimon.write-buffer-mb", 64L)) << 20;
+  public static long rocksDBWriteBufferBytes() {
+    return Math.max(1L, Long.getLong("streamfusion.state.rocksdb.write-buffer-mb", 64L)) << 20;
   }
 
 }

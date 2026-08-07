@@ -26,6 +26,7 @@ readonly SUITE_MODE="${1:-runtime}"
 readonly FLINK_MODULE_CONFIG="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED -Djunit.platform.reflection.search.useLegacySemantics=true -javaagent:${AGENT_JAR}"
 readonly FORMAT_MODULES="flink-formats/flink-json,flink-formats/flink-csv,flink-formats/flink-avro,flink-formats/flink-avro-confluent-registry,flink-formats/flink-protobuf"
 readonly KAFKA_SQL_TESTS="org.apache.flink.streaming.connectors.kafka.table.DynamicKafkaTableITCase,org.apache.flink.streaming.connectors.kafka.table.KafkaChangelogTableITCase,org.apache.flink.streaming.connectors.kafka.table.KafkaTableITCase,org.apache.flink.streaming.connectors.kafka.table.UpsertKafkaTableITCase"
+readonly ROCKSDB_STATE_SQL_TESTS="org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase,org.apache.flink.table.planner.runtime.stream.sql.DeduplicateITCase,org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase,org.apache.flink.table.planner.runtime.stream.sql.IntervalJoinITCase,org.apache.flink.table.planner.runtime.stream.sql.JoinITCase,org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase,org.apache.flink.table.planner.runtime.stream.sql.RankITCase,org.apache.flink.table.planner.runtime.stream.sql.TemporalJoinITCase,org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase,org.apache.flink.table.planner.runtime.stream.sql.WindowDeduplicateITCase,org.apache.flink.table.planner.runtime.stream.sql.WindowJoinITCase,org.apache.flink.table.planner.runtime.stream.sql.WindowRankITCase,org.apache.flink.table.planner.runtime.stream.table.AggregateITCase,org.apache.flink.table.planner.runtime.stream.table.JoinITCase,org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase,org.apache.flink.table.planner.runtime.stream.table.RetractionITCase"
 TEST_SELECTOR_ARGS=()
 if [[ -n "${FLINK_SUITE_TEST:-}" ]]; then
   TEST_SELECTOR_ARGS=("-Dtest=${FLINK_SUITE_TEST}")
@@ -41,6 +42,14 @@ case "${SUITE_MODE}" in
     TEST_GOAL="integration-test"
     TEST_MODULES="flink-table/flink-table-planner"
     REPORT_ROOT="${FLINK_ROOT}/flink-table/flink-table-planner/target/surefire-reports"
+    ;;
+  state)
+    TEST_GOAL="surefire:test@integration-tests"
+    TEST_MODULES="flink-table/flink-table-planner"
+    REPORT_ROOT="${FLINK_ROOT}/flink-table/flink-table-planner/target/surefire-reports"
+    if [[ -z "${FLINK_SUITE_TEST:-}" ]]; then
+      TEST_SELECTOR_ARGS=("-Dtest=${ROCKSDB_STATE_SQL_TESTS}")
+    fi
     ;;
   formats)
     TEST_GOAL="surefire:test@integration-tests"
@@ -62,7 +71,7 @@ case "${SUITE_MODE}" in
     exit $?
     ;;
   *)
-    echo "Usage: $0 [runtime|diagnostic|formats|kafka|all]" >&2
+    echo "Usage: $0 [runtime|diagnostic|state|formats|kafka|all]" >&2
     exit 2
     ;;
 esac
@@ -203,6 +212,9 @@ MAVEN_TEST_ARGS=(
   -Dflink.forkCountUnitTest="${FLINK_SUITE_UNIT_FORKS:-2}" \
   -Dflink.forkCountITCase="${FLINK_SUITE_IT_FORKS:-1}"
 )
+if [[ "${SUITE_MODE}" == "state" ]]; then
+  MAVEN_TEST_ARGS+=("-Dstreamfusion.flink-suite.native-rocksdb=true")
+fi
 if [[ "${SUITE_MODE}" == "kafka" ]]; then
   MAVEN_TEST_ARGS+=(
     -f "${KAFKA_CONNECTOR_ROOT}/pom.xml"

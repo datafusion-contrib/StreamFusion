@@ -16,11 +16,11 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 
 /**
- * The Paimon state backend behind Flink's normal backend toggle: with {@code state.backend.type}
- * set to the StreamFusion factory, a native group aggregate keeps its state in a local Paimon
+ * The RocksDB state backend behind Flink's normal backend toggle: with {@code state.backend.type}
+ * set to the StreamFusion factory, a native group aggregate keeps its state in a local RocksDB
  * table (read-through probes, barrier commits) and must produce exactly the host's results; host
  * (fallback) operators in the same job run unchanged on the wrapped hashmap backend. MIN/MAX keep
- * multiset state, which the Paimon row codec does not carry — that query exercises the
+ * multiset state, which the RocksDB row codec does not carry — that query exercises the
  * per-operator fallback to memory state under the same backend.
  *
  * <p>Lives in the compactor module because the backend fails closed without the Java compactor
@@ -28,32 +28,32 @@ import org.junit.jupiter.api.Test;
  * vectors and compact synchronously at every barrier, so committed reads take the raw path with
  * the vectors applied.
  */
-class FlinkPaimonStateBackendSqlHarnessTest {
+class FlinkRocksDBNativeStateBackendSqlHarnessTest {
 
   // Collapsed-changelog parity: the bounded filesystem source may split the input across part
   // files whose read order differs run to run, so the raw -U/+U interleaving is not stable here.
-  // Per-row changelog parity on the Paimon backend is covered deterministically by the operator
+  // Per-row changelog parity on the RocksDB backend is covered deterministically by the operator
   // harness test; this verifies the materialized end state through the whole SQL stack.
 
   @Test
-  void groupBySumOnPaimonBackendMatchesHost() throws Exception {
-    Path input = Files.createTempDirectory("paimon-sum-in");
+  void groupBySumOnRocksDBBackendMatchesHost() throws Exception {
+    Path input = Files.createTempDirectory("rocksdb-sum-in");
     writeInput(input);
     NativeParity.assertChangelogParity(
-        () -> paimonEnvironment(input), "SELECT k, SUM(v) AS total, COUNT(*) AS c FROM t GROUP BY k");
+        () -> rocksdbEnvironment(input), "SELECT k, SUM(v) AS total, COUNT(*) AS c FROM t GROUP BY k");
   }
 
   @Test
-  void groupBySumWithTtlOnPaimonBackendMatchesHost() throws Exception {
+  void groupBySumWithTtlOnRocksDBBackendMatchesHost() throws Exception {
     // Idle-state TTL no longer forces the memory fallback: the store carries the last-write
     // timestamps in the state table's trailing ts column. 1h retention — nothing expires
-    // in-test; the operator-harness TTL test covers expiry and proves the Paimon route (its
-    // snapshot is an incremental Paimon handle). This pins the end-to-end SQL result.
-    Path input = Files.createTempDirectory("paimon-ttl-sum-in");
+    // in-test; the operator-harness TTL test covers expiry and proves the RocksDB route (its
+    // snapshot is an incremental RocksDB handle). This pins the end-to-end SQL result.
+    Path input = Files.createTempDirectory("rocksdb-ttl-sum-in");
     writeInput(input);
     NativeParity.assertChangelogParity(
         () -> {
-          TableEnvironment tEnv = paimonEnvironment(input);
+          TableEnvironment tEnv = rocksdbEnvironment(input);
           tEnv.getConfig().set("table.exec.state.ttl", "1 h");
           return tEnv;
         },
@@ -61,16 +61,16 @@ class FlinkPaimonStateBackendSqlHarnessTest {
   }
 
   @Test
-  void joinWithTtlOnPaimonBackendMatchesHost() throws Exception {
-    // A TTL'd regular join no longer forces the memory fallback: each side's Paimon table
+  void joinWithTtlOnRocksDBBackendMatchesHost() throws Exception {
+    // A TTL'd regular join no longer forces the memory fallback: each side's RocksDB table
     // carries per-entry last-write timestamps in its trailing ts column. 1h retention — nothing
     // expires in-test; the native tests cover per-side expiry and tombstoning. This pins the
-    // end-to-end SQL result on the Paimon route.
-    Path input = Files.createTempDirectory("paimon-ttl-join-in");
+    // end-to-end SQL result on the RocksDB route.
+    Path input = Files.createTempDirectory("rocksdb-ttl-join-in");
     writeInput(input);
     NativeParity.assertChangelogParity(
         () -> {
-          TableEnvironment tEnv = paimonEnvironment(input);
+          TableEnvironment tEnv = rocksdbEnvironment(input);
           tEnv.getConfig().set("table.exec.state.ttl", "1 h");
           return tEnv;
         },
@@ -78,15 +78,15 @@ class FlinkPaimonStateBackendSqlHarnessTest {
   }
 
   @Test
-  void topNWithTtlOnPaimonBackendMatchesHost() throws Exception {
-    // A TTL'd append-only Top-N stays on the Paimon list store: element timestamps round-trip
+  void topNWithTtlOnRocksDBBackendMatchesHost() throws Exception {
+    // A TTL'd append-only Top-N stays on the RocksDB list store: element timestamps round-trip
     // through the ts column and the ranker's own first-touch prune enforces expiry (nothing
     // expires under the 1h retention here; the native tests cover expiry after restore).
-    Path input = Files.createTempDirectory("paimon-ttl-topn-in");
+    Path input = Files.createTempDirectory("rocksdb-ttl-topn-in");
     writeInput(input);
     NativeParity.assertChangelogParity(
         () -> {
-          TableEnvironment tEnv = paimonEnvironment(input);
+          TableEnvironment tEnv = rocksdbEnvironment(input);
           tEnv.getConfig().set("table.exec.state.ttl", "1 h");
           return tEnv;
         },
@@ -95,14 +95,14 @@ class FlinkPaimonStateBackendSqlHarnessTest {
   }
 
   @Test
-  void retractingTopNWithTtlOnPaimonBackendMatchesHost() throws Exception {
+  void retractingTopNWithTtlOnRocksDBBackendMatchesHost() throws Exception {
     // The retracting ranker's whole-buffer clock rides the head element's ts; with retention on
-    // both stateful operators here (aggregate + rank) keep their state in TTL'd Paimon tables.
-    Path input = Files.createTempDirectory("paimon-ttl-retopn-in");
+    // both stateful operators here (aggregate + rank) keep their state in TTL'd RocksDB tables.
+    Path input = Files.createTempDirectory("rocksdb-ttl-retopn-in");
     writeInput(input);
     NativeParity.assertChangelogParity(
         () -> {
-          TableEnvironment tEnv = paimonEnvironment(input);
+          TableEnvironment tEnv = rocksdbEnvironment(input);
           tEnv.getConfig().set("table.exec.state.ttl", "1 h");
           return tEnv;
         },
@@ -111,17 +111,17 @@ class FlinkPaimonStateBackendSqlHarnessTest {
   }
 
   @Test
-  void updateFastTopNWithTtlOnPaimonBackendMatchesHost() throws Exception {
+  void updateFastTopNWithTtlOnRocksDBBackendMatchesHost() throws Exception {
     // The update-fast ranker (monotonic COUNT(*) DESC over a unique-keyed changelog) runs on its
-    // row-keyed Paimon map shape, TTL included: per-row-key clocks ride the ts column and
+    // row-keyed RocksDB map shape, TTL included: per-row-key clocks ride the ts column and
     // hydration expires per entry (nothing expires under the 1h retention here; the native tests
     // cover expiry, tombstones, and the ts-refresh re-persist). Both stateful operators —
-    // aggregate and rank — keep TTL'd Paimon tables; the operator harness test proves the route.
-    Path input = Files.createTempDirectory("paimon-ttl-upfast-in");
+    // aggregate and rank — keep TTL'd RocksDB tables; the operator harness test proves the route.
+    Path input = Files.createTempDirectory("rocksdb-ttl-upfast-in");
     writeInput(input);
     NativeParity.assertChangelogParity(
         () -> {
-          TableEnvironment tEnv = paimonEnvironment(input);
+          TableEnvironment tEnv = rocksdbEnvironment(input);
           tEnv.getConfig().set("table.exec.state.ttl", "1 h");
           return tEnv;
         },
@@ -130,135 +130,68 @@ class FlinkPaimonStateBackendSqlHarnessTest {
   }
 
   @Test
-  void proctimeDeduplicationOnPaimonBackendMatchesHost() throws Exception {
-    Path input = Files.createTempDirectory("paimon-dedup-in");
+  void proctimeDeduplicationOnRocksDBBackendMatchesHost() throws Exception {
+    Path input = Files.createTempDirectory("rocksdb-dedup-in");
     writeInput(input);
     NativeParity.assertChangelogParity(
-        () -> paimonEnvironment(input),
+        () -> rocksdbEnvironment(input),
         "SELECT k, v FROM (SELECT k, v, ROW_NUMBER() OVER (PARTITION BY k ORDER BY PROCTIME() DESC)"
             + " AS rn FROM t) WHERE rn = 1");
   }
 
   @Test
-  void retractingTopNOnPaimonBackendMatchesHost() throws Exception {
-    Path input = Files.createTempDirectory("paimon-retopn-in");
+  void retractingTopNOnRocksDBBackendMatchesHost() throws Exception {
+    Path input = Files.createTempDirectory("rocksdb-retopn-in");
     writeInput(input);
     // A Top-N over a GROUP BY changelog plans as the retracting ranker; both stateful operators
-    // in this job keep their state in Paimon tables.
+    // in this job keep their state in RocksDB tables.
     NativeParity.assertChangelogParity(
-        () -> paimonEnvironment(input),
+        () -> rocksdbEnvironment(input),
         "SELECT k, total FROM (SELECT k, total, ROW_NUMBER() OVER (ORDER BY total DESC) AS rn"
             + " FROM (SELECT k, SUM(v) AS total FROM t GROUP BY k)) WHERE rn <= 2");
   }
 
   @Test
-  void rowtimeKeepFirstDeduplicationOnPaimonBackendMatchesHost() throws Exception {
-    // Guard against a silent fallback first: the dedup row type includes the rowtime column,
-    // which the bridge pins to a nanosecond timestamp — if the backend's type map refused it the
-    // parity below would pass vacuously on memory state.
-    org.apache.flink.table.types.logical.RowType dedupRow =
-        org.apache.flink.table.types.logical.RowType.of(
-            new org.apache.flink.table.types.logical.BigIntType(),
-            new org.apache.flink.table.types.logical.BigIntType(),
-            new org.apache.flink.table.types.logical.BigIntType(),
-            new org.apache.flink.table.types.logical.LocalZonedTimestampType(3));
-    try (org.apache.arrow.memory.BufferAllocator allocator =
-            new org.apache.arrow.memory.RootAllocator();
-        org.apache.arrow.c.ArrowSchema schema =
-            org.apache.arrow.c.ArrowSchema.allocateNew(allocator)) {
-      org.apache.arrow.c.Data.exportSchema(
-          allocator,
-          tech.streamfusion.arrow.ArrowConversion.toArrowSchema(dedupRow),
-          null,
-          schema);
-      org.junit.jupiter.api.Assertions.assertTrue(
-          Native.paimonRowStateSupported(schema.memoryAddress()),
-          "the keep-first dedup row type must be persistable on the Paimon backend");
-    }
-    // Watermark-driven keep-first: candidates and fired markers live in the Paimon store; every
+  void rowtimeKeepFirstDeduplicationOnRocksDBBackendMatchesHost() throws Exception {
+    // Watermark-driven keep-first: candidates and fired markers live in the RocksDB store; every
     // watermark firing is a range read merging the uncommitted write buffer with the committed
     // table, checkpointing every 50 ms so both sides of that merge are exercised.
     NativeParity.assertParity(
-        FlinkPaimonStateBackendSqlHarnessTest::paimonRowtimeEnvironment,
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbRowtimeEnvironment,
         "SELECT k, v, ts FROM ("
             + "SELECT *, ROW_NUMBER() OVER (PARTITION BY k ORDER BY rt ASC) AS rn FROM src)"
             + " WHERE rn = 1");
   }
 
   @Test
-  void rowtimeKeepLastDeduplicationOnPaimonBackendMatchesHost() throws Exception {
+  void rowtimeKeepLastDeduplicationOnRocksDBBackendMatchesHost() throws Exception {
     // Rowtime keep-last rows carry the rowtime column too (nanosecond timestamps after the
     // bridge), so persisting them rides the same type-map support as keep-first.
     NativeParity.assertChangelogParity(
-        FlinkPaimonStateBackendSqlHarnessTest::paimonRowtimeEnvironment,
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbRowtimeEnvironment,
         "SELECT k, v, ts FROM ("
             + "SELECT *, ROW_NUMBER() OVER (PARTITION BY k ORDER BY rt DESC) AS rn FROM src)"
             + " WHERE rn = 1");
   }
 
   @Test
-  void rowtimeOverAggregateOnPaimonBackendMatchesHost() throws Exception {
-    // Guard against a silent fallback: the OVER input row carries the rowtime column (pinned to
-    // nanoseconds by the bridge) and the running-SUM fold state must be persistable too.
-    org.apache.flink.table.types.logical.RowType overRow =
-        org.apache.flink.table.types.logical.RowType.of(
-            new org.apache.flink.table.types.logical.BigIntType(),
-            new org.apache.flink.table.types.logical.BigIntType(),
-            new org.apache.flink.table.types.logical.BigIntType(),
-            new org.apache.flink.table.types.logical.LocalZonedTimestampType(3));
-    try (org.apache.arrow.memory.BufferAllocator allocator =
-            new org.apache.arrow.memory.RootAllocator();
-        org.apache.arrow.c.ArrowSchema schema =
-            org.apache.arrow.c.ArrowSchema.allocateNew(allocator)) {
-      org.apache.arrow.c.Data.exportSchema(
-          allocator,
-          tech.streamfusion.arrow.ArrowConversion.toArrowSchema(overRow),
-          null,
-          schema);
-      org.junit.jupiter.api.Assertions.assertTrue(
-          Native.paimonOverStateSupported(
-              schema.memoryAddress(), new int[] {0}, new int[] {0}, 0, false),
-          "the rowtime OVER state shape must be persistable on the Paimon backend");
-    }
-    // Watermark-driven OVER: pending rows and the per-key running fold live in the Paimon store;
+  void rowtimeOverAggregateOnRocksDBBackendMatchesHost() throws Exception {
+    // Watermark-driven OVER: pending rows and the per-key running fold live in the RocksDB store;
     // every firing is a range read merging the write buffer with the committed table, and the
     // running sum crosses 50 ms barriers, so folds round-trip through the folds table.
     NativeParity.assertParity(
-        FlinkPaimonStateBackendSqlHarnessTest::paimonRowtimeEnvironment,
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbRowtimeEnvironment,
         "SELECT k, v, ts, SUM(v) OVER (PARTITION BY k ORDER BY rt) AS s FROM src");
   }
 
   @Test
-  void rowtimeOverAggregateWithTtlOnPaimonBackendMatchesHost() throws Exception {
-    // The same anti-fallback guard as the retention-less test: idle-state retention no longer
-    // forces the memory route — the per-key cleanup deadlines ride a third state table — so the
-    // shape probe alone decides, and it must accept this query.
-    org.apache.flink.table.types.logical.RowType overRow =
-        org.apache.flink.table.types.logical.RowType.of(
-            new org.apache.flink.table.types.logical.BigIntType(),
-            new org.apache.flink.table.types.logical.BigIntType(),
-            new org.apache.flink.table.types.logical.BigIntType(),
-            new org.apache.flink.table.types.logical.LocalZonedTimestampType(3));
-    try (org.apache.arrow.memory.BufferAllocator allocator =
-            new org.apache.arrow.memory.RootAllocator();
-        org.apache.arrow.c.ArrowSchema schema =
-            org.apache.arrow.c.ArrowSchema.allocateNew(allocator)) {
-      org.apache.arrow.c.Data.exportSchema(
-          allocator,
-          tech.streamfusion.arrow.ArrowConversion.toArrowSchema(overRow),
-          null,
-          schema);
-      org.junit.jupiter.api.Assertions.assertTrue(
-          Native.paimonOverStateSupported(
-              schema.memoryAddress(), new int[] {0}, new int[] {0}, 0, false),
-          "the retention-bounded rowtime OVER must stay persistable on the Paimon backend");
-    }
+  void rowtimeOverAggregateWithTtlOnRocksDBBackendMatchesHost() throws Exception {
     // 1h retention — nothing expires in-test; the operator-harness test covers expiry across a
-    // restore and proves the Paimon route. This pins the end-to-end SQL result with the
+    // restore and proves the RocksDB route. This pins the end-to-end SQL result with the
     // deadlines table in the checkpoint.
     NativeParity.assertParity(
         () -> {
-          org.apache.flink.table.api.TableEnvironment tEnv = paimonRowtimeEnvironment();
+          org.apache.flink.table.api.TableEnvironment tEnv = rocksdbRowtimeEnvironment();
           tEnv.getConfig().set("table.exec.state.ttl", "1 h");
           return tEnv;
         },
@@ -266,61 +199,61 @@ class FlinkPaimonStateBackendSqlHarnessTest {
   }
 
   @Test
-  void windowTopNOnPaimonBackendMatchesHost() throws Exception {
-    // Event-time window Top-N: open windows' buffers stage into the Paimon table at each 50 ms
+  void windowTopNOnRocksDBBackendMatchesHost() throws Exception {
+    // Event-time window Top-N: open windows' buffers stage into the RocksDB table at each 50 ms
     // barrier, and every watermark firing merges the write buffer with a committed range scan
     // (a window buffered before a barrier and closed after it fires from the table).
     NativeParity.assertParity(
-        FlinkPaimonStateBackendSqlHarnessTest::paimonRowtimeEnvironment,
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbRowtimeEnvironment,
         "SELECT k, v, window_start FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY window_start,"
             + " window_end, k ORDER BY v DESC) AS rn FROM"
             + " TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND))) WHERE rn <= 2");
   }
 
   @Test
-  void windowAggregateOnPaimonBackendMatchesHost() throws Exception {
+  void windowAggregateOnRocksDBBackendMatchesHost() throws Exception {
     // Event-time tumbling aggregate: the interval's touched (key, window) accumulators stage
-    // into the Paimon table at each 50 ms barrier and re-seed from it on the next touch, so a
+    // into the RocksDB table at each 50 ms barrier and re-seed from it on the next touch, so a
     // window spanning barriers folds committed and uncommitted contributions; a watermark firing
     // merges the decoded windows with a committed range scan.
     NativeParity.assertParity(
-        FlinkPaimonStateBackendSqlHarnessTest::paimonRowtimeEnvironment,
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbRowtimeEnvironment,
         "SELECT k, window_start, window_end, SUM(v) AS s, COUNT(*) AS c FROM"
             + " TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND))"
             + " GROUP BY k, window_start, window_end");
   }
 
   @Test
-  void hoppingWindowAggregateOnPaimonBackendMatchesHost() throws Exception {
+  void hoppingWindowAggregateOnRocksDBBackendMatchesHost() throws Exception {
     // Overlapping HOP windows: one row feeds several open windows, so the barrier's staged
     // rewrite and the firing's range scan both cover windows sharing rows.
     NativeParity.assertParity(
-        FlinkPaimonStateBackendSqlHarnessTest::paimonRowtimeEnvironment,
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbRowtimeEnvironment,
         "SELECT k, window_start, window_end, SUM(v) AS s FROM"
             + " TABLE(HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND, INTERVAL '2' SECOND))"
             + " GROUP BY k, window_start, window_end");
   }
 
   @Test
-  void sessionAggregateOnPaimonBackendMatchesHost() throws Exception {
+  void sessionAggregateOnRocksDBBackendMatchesHost() throws Exception {
     // Event-time session aggregate: sessions extend and merge across 50 ms barriers — an
     // extension rewrites the same start, a merge tombstones the consumed start — and a watermark
     // firing merges the decoded sessions with a committed range scan.
     NativeParity.assertParity(
-        FlinkPaimonStateBackendSqlHarnessTest::paimonRowtimeEnvironment,
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbRowtimeEnvironment,
         "SELECT k, window_start, window_end, SUM(v) AS s FROM"
             + " TABLE(SESSION(TABLE src PARTITION BY k, DESCRIPTOR(rt), INTERVAL '1' SECOND))"
             + " GROUP BY k, window_start, window_end");
   }
 
   @Test
-  void windowJoinOnPaimonBackendMatchesHost() throws Exception {
-    // Event-time window join: both sides' rows buffer in per-side Paimon row-buffer tables
+  void windowJoinOnRocksDBBackendMatchesHost() throws Exception {
+    // Event-time window join: both sides' rows buffer in per-side RocksDB row-buffer tables
     // across 50 ms barriers, and every watermark firing joins each side's range read (write
     // buffer merged with the committed table) — a window buffered before a barrier and closed
     // after it joins from the tables.
     NativeParity.assertParity(
-        FlinkPaimonStateBackendSqlHarnessTest::paimonRowtimeEnvironment,
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbRowtimeEnvironment,
         "SELECT a.k, a.v, b.v FROM "
             + "(SELECT * FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND))) a "
             + "JOIN "
@@ -329,58 +262,35 @@ class FlinkPaimonStateBackendSqlHarnessTest {
   }
 
   @Test
-  void intervalJoinOnPaimonBackendMatchesHost() throws Exception {
-    // Event-time interval self-join: rows buffer per side in Paimon tables across 50 ms
+  void intervalJoinOnRocksDBBackendMatchesHost() throws Exception {
+    // Event-time interval self-join: rows buffer per side in RocksDB tables across 50 ms
     // barriers, each push probes the opposite table by its equi keys (a post-barrier row joins a
     // committed row through the probe), and watermarks evict retired rows from the tables.
     NativeParity.assertParity(
-        FlinkPaimonStateBackendSqlHarnessTest::paimonRowtimeEnvironment,
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbRowtimeEnvironment,
         "SELECT a.k, a.v, b.v FROM src a JOIN src b ON a.k = b.k"
             + " AND a.rt BETWEEN b.rt - INTERVAL '1' SECOND AND b.rt + INTERVAL '1' SECOND");
   }
 
   @Test
-  void temporalJoinOnPaimonBackendMatchesHost() throws Exception {
-    // Event-time temporal join: the probe rows and the versioned build side live in Paimon
-    // tables across 50 ms barriers (the versioned view's keep-last dedup is Paimon-backed too),
+  void temporalJoinOnRocksDBBackendMatchesHost() throws Exception {
+    // Event-time temporal join: the probe rows and the versioned build side live in RocksDB
+    // tables across 50 ms barriers (the versioned view's keep-last dedup is RocksDB-backed too),
     // and a watermark firing resolves buffered probes against committed versions.
     NativeParity.assertParity(
-        FlinkPaimonStateBackendSqlHarnessTest::paimonTemporalEnvironment,
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbTemporalEnvironment,
         "SELECT o.currency, o.amount, r.rate FROM Orders o"
             + " JOIN Rates FOR SYSTEM_TIME AS OF o.rt AS r ON o.currency = r.currency");
   }
 
   @Test
-  void temporalJoinWithTtlOnPaimonBackendMatchesHost() throws Exception {
-    // The same anti-fallback guard as the keep-first test: both temporal-join sides carry the
-    // rowtime column, and retention no longer forces the memory route — the per-key cleanup
-    // deadlines ride a third state table.
-    org.apache.flink.table.types.logical.RowType sideRow =
-        org.apache.flink.table.types.logical.RowType.of(
-            new org.apache.flink.table.types.logical.VarCharType(
-                org.apache.flink.table.types.logical.VarCharType.MAX_LENGTH),
-            new org.apache.flink.table.types.logical.BigIntType(),
-            new org.apache.flink.table.types.logical.BigIntType(),
-            new org.apache.flink.table.types.logical.LocalZonedTimestampType(3));
-    try (org.apache.arrow.memory.BufferAllocator allocator =
-            new org.apache.arrow.memory.RootAllocator();
-        org.apache.arrow.c.ArrowSchema schema =
-            org.apache.arrow.c.ArrowSchema.allocateNew(allocator)) {
-      org.apache.arrow.c.Data.exportSchema(
-          allocator,
-          tech.streamfusion.arrow.ArrowConversion.toArrowSchema(sideRow),
-          null,
-          schema);
-      org.junit.jupiter.api.Assertions.assertTrue(
-          Native.paimonRowStateSupported(schema.memoryAddress()),
-          "the retention-bounded temporal join must stay persistable on the Paimon backend");
-    }
+  void temporalJoinWithTtlOnRocksDBBackendMatchesHost() throws Exception {
     // 1h retention — nothing expires in-test; the operator-harness test covers expiry across a
-    // restore and proves the Paimon route. This pins the end-to-end SQL result with the
+    // restore and proves the RocksDB route. This pins the end-to-end SQL result with the
     // deadlines table in the checkpoint.
     NativeParity.assertParity(
         () -> {
-          TableEnvironment tEnv = paimonTemporalEnvironment();
+          TableEnvironment tEnv = rocksdbTemporalEnvironment();
           tEnv.getConfig().set("table.exec.state.ttl", "1 h");
           return tEnv;
         },
@@ -388,11 +298,11 @@ class FlinkPaimonStateBackendSqlHarnessTest {
             + " JOIN Rates FOR SYSTEM_TIME AS OF o.rt AS r ON o.currency = r.currency");
   }
 
-  /** The temporal-join harness sources (orders + versioned rates) on the Paimon backend. */
-  private static TableEnvironment paimonTemporalEnvironment() {
+  /** The temporal-join harness sources (orders + versioned rates) on the RocksDB backend. */
+  private static TableEnvironment rocksdbTemporalEnvironment() {
     Configuration configuration = new Configuration();
     configuration.setString(
-        "state.backend.type", "tech.streamfusion.state.PaimonStateBackendFactory");
+        "state.backend.type", "tech.streamfusion.state.RocksDBNativeStateBackendFactory");
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(configuration);
     env.setParallelism(1);
     env.enableCheckpointing(50);
@@ -442,11 +352,11 @@ class FlinkPaimonStateBackendSqlHarnessTest {
   }
 
   @Test
-  void unsupportedAggregatesFallBackToMemoryStateUnderPaimonBackend() throws Exception {
-    Path input = Files.createTempDirectory("paimon-minmax-in");
+  void unsupportedAggregatesCheckpointThroughRocksDBBackend() throws Exception {
+    Path input = Files.createTempDirectory("rocksdb-minmax-in");
     writeInput(input);
     NativeParity.assertChangelogParity(
-        () -> paimonEnvironment(input),
+        () -> rocksdbEnvironment(input),
         "SELECT k, MIN(v) AS mn, MAX(v) AS mx, SUM(v) AS s FROM t GROUP BY k");
   }
 
@@ -468,11 +378,11 @@ class FlinkPaimonStateBackendSqlHarnessTest {
         .await();
   }
 
-  /** The rowtime dedup harness source (out-of-order rows per key) on the Paimon backend. */
-  private static TableEnvironment paimonRowtimeEnvironment() {
+  /** The rowtime dedup harness source (out-of-order rows per key) on the RocksDB backend. */
+  private static TableEnvironment rocksdbRowtimeEnvironment() {
     Configuration configuration = new Configuration();
     configuration.setString(
-        "state.backend.type", "tech.streamfusion.state.PaimonStateBackendFactory");
+        "state.backend.type", "tech.streamfusion.state.RocksDBNativeStateBackendFactory");
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(configuration);
     env.setParallelism(1);
     env.enableCheckpointing(50);
@@ -501,10 +411,10 @@ class FlinkPaimonStateBackendSqlHarnessTest {
     return tEnv;
   }
 
-  private static TableEnvironment paimonEnvironment(Path directory) {
+  private static TableEnvironment rocksdbEnvironment(Path directory) {
     Configuration configuration = new Configuration();
     configuration.setString(
-        "state.backend.type", "tech.streamfusion.state.PaimonStateBackendFactory");
+        "state.backend.type", "tech.streamfusion.state.RocksDBNativeStateBackendFactory");
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(configuration);
     env.setParallelism(1);
     env.enableCheckpointing(50);

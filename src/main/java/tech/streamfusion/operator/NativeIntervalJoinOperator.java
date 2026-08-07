@@ -2,7 +2,6 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.PaimonNativeStateSupport;
 import java.util.function.LongBinaryOperator;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
@@ -95,43 +94,6 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
   @Override
   protected void beforeHandleCreation() {
     predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
-  }
-
-  @Override
-  protected PaimonNativeStateSupport resolvePaimonState(boolean rawStateRestored) {
-    // A proctime interval join times rows by the clock and evicts on processing-time timers
-    // (deadline in raw state), so only the event-time mode is Paimon-eligible.
-    if (proctime) {
-      return null;
-    }
-    return resolvePaimon(
-        rawStateRestored,
-        () ->
-            withSchemas(
-                    (l, r) ->
-                        Native.paimonRowStateSupported(l) && Native.paimonRowStateSupported(r)
-                            ? 1L
-                            : 0L)
-                != 0);
-  }
-
-  @Override
-  protected long createPaimonHandle(PaimonNativeStateSupport paimon) {
-    return withSchemas(
-        (l, r) ->
-            Native.createPaimonIntervalJoiner(
-                leftKeys, rightKeys, leftTime, rightTime, lowerMillis, upperMillis, joinType, l, r,
-                predicate.kinds, predicate.payload, predicate.childCounts, predicate.boundLongs(),
-                predicate.doubles, predicate.strings, keyTimestampPrecisions(), memoryBudgetBytes(),
-                paimon.tableDirectory(), maxParallelism(), NativeConfig.paimonBuckets(),
-                NativeConfig.paimonFileFormat(), NativeConfig.paimonFileCompression(),
-                paimon.sourceDirectories(), paimon.sourceSnapshotTokens(),
-                paimon.keyGroupStart(), paimon.keyGroupEnd(), paimon.aligned()));
-  }
-
-  @Override
-  protected String[] checkpointPaimonHandle() {
-    return Native.checkpointPaimonIntervalJoiner(handle);
   }
 
   @Override

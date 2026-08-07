@@ -117,10 +117,7 @@ impl DistinctSet {
     /// entries and keeps the primitive fast path for genuine BIGINT columns.
     fn scalar_map(&mut self) -> &mut ahash::HashMap<ScalarValue, i64> {
         if matches!(self, DistinctSet::I64(_)) {
-            let old = std::mem::replace(
-                self,
-                DistinctSet::Scalar(ahash::HashMap::default()),
-            );
+            let old = std::mem::replace(self, DistinctSet::Scalar(ahash::HashMap::default()));
             let DistinctSet::I64(old) = old else {
                 unreachable!()
             };
@@ -666,83 +663,27 @@ pub(crate) struct GroupKeyState {
 /// The resident default backend for the group store (see `state/` for the seam).
 pub(crate) type MemoryGroupStore = MemoryStateStore<GroupKeyState>;
 
-/// The group aggregate's persistent backend: the generic Paimon store under the group row codec.
-#[cfg(feature = "paimon-state")]
-pub(crate) type PaimonGroupStore = crate::state::PaimonStore<GroupStateCodec>;
+/// The group aggregate's persistent backend: the generic persistent store under the group row codec.
 
 #[cfg(feature = "rocksdb-state")]
 pub(crate) type RocksGroupStore = crate::state::RocksStore<GroupStateCodec>;
 
-/// The group aggregate's value codec for the Paimon store: one row per group holding the live
+/// The group aggregate's value codec for the persistent store: one row per group holding the live
 /// record count and each aggregate's `(state scalar, non-null count)` pair, delegating to the same
 /// scalar round-trip the raw keyed-state snapshot uses so the two persistence paths cannot drift.
-#[cfg(any(feature = "paimon-state", feature = "rocksdb-state"))]
+#[cfg(feature = "rocksdb-state")]
 pub(crate) struct GroupStateCodec {
     pub kinds: Vec<i64>,
     pub value_types: Vec<DataType>,
     pub state_types: Vec<DataType>,
 }
 
-#[cfg(feature = "paimon-state")]
-impl crate::state::PaimonStateCodec for GroupStateCodec {
-    type Value = GroupKeyState;
-
-    fn supported(&self) -> bool {
-        crate::state::paimon_group_supported(&self.kinds, &self.state_types)
-    }
-
-    fn value_fields(&self) -> Vec<(String, DataType)> {
-        let mut fields = vec![("records".to_string(), DataType::Int64)];
-        for (i, state_type) in self.state_types.iter().enumerate() {
-            fields.push((format!("s{i}"), state_type.clone()));
-            fields.push((format!("n{i}"), DataType::Int64));
-        }
-        fields
-    }
-
-    fn encode(&self, state: &GroupKeyState) -> Vec<ScalarValue> {
-        let (records, scalars, counts) = group_state_scalars(state, &self.state_types);
-        let mut row = Vec::with_capacity(1 + 2 * scalars.len());
-        row.push(ScalarValue::Int64(Some(records)));
-        for (scalar, count) in scalars.into_iter().zip(counts) {
-            row.push(scalar);
-            row.push(ScalarValue::Int64(Some(count)));
-        }
-        row
-    }
-
-    fn decode(&self, scalars: &[ScalarValue]) -> GroupKeyState {
-        let as_i64 = |scalar: &ScalarValue| match scalar {
-            ScalarValue::Int64(Some(v)) => *v,
-            _ => 0,
-        };
-        let records = as_i64(&scalars[0]);
-        let mut states = Vec::with_capacity(self.state_types.len());
-        let mut non_nulls = Vec::with_capacity(self.state_types.len());
-        for i in 0..self.state_types.len() {
-            states.push(scalars[1 + 2 * i].clone());
-            non_nulls.push(as_i64(&scalars[2 + 2 * i]));
-        }
-        group_state_from_scalars(&self.kinds, &self.value_types, records, &states, &non_nulls)
-    }
-
-    fn value_bytes(&self, state: &GroupKeyState) -> usize {
-        group_key_state_bytes(state)
-    }
-
-    fn write_ms(&self, state: &GroupKeyState) -> i64 {
-        state.last_write_ms
-    }
-
-    fn stamp_write_ms(&self, state: &mut GroupKeyState, ts_ms: i64) {
-        state.last_write_ms = ts_ms;
-    }
-}
-
 #[cfg(feature = "rocksdb-state")]
 impl crate::state::RocksStateCodec for GroupStateCodec {
     type Value = GroupKeyState;
-    fn supported(&self) -> bool { crate::state::rocks_group_supported(&self.kinds, &self.state_types) }
+    fn supported(&self) -> bool {
+        crate::state::rocks_group_supported(&self.kinds, &self.state_types)
+    }
     fn value_fields(&self) -> Vec<(String, DataType)> {
         let mut fields = vec![("records".to_string(), DataType::Int64)];
         for (i, state_type) in self.state_types.iter().enumerate() {
@@ -755,21 +696,42 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
         let (records, scalars, counts) = group_state_scalars(state, &self.state_types);
         let mut row = vec![ScalarValue::Int64(Some(records))];
         for (scalar, count) in scalars.into_iter().zip(counts) {
-            row.push(scalar); row.push(ScalarValue::Int64(Some(count)));
+            row.push(scalar);
+            row.push(ScalarValue::Int64(Some(count)));
         }
         row
     }
     fn decode(&self, scalars: &[ScalarValue]) -> GroupKeyState {
-        let as_i64 = |s: &ScalarValue| if let ScalarValue::Int64(Some(v)) = s { *v } else { 0 };
-        let mut states = Vec::new(); let mut non_nulls = Vec::new();
+        let as_i64 = |s: &ScalarValue| {
+            if let ScalarValue::Int64(Some(v)) = s {
+                *v
+            } else {
+                0
+            }
+        };
+        let mut states = Vec::new();
+        let mut non_nulls = Vec::new();
         for i in 0..self.state_types.len() {
-            states.push(scalars[1 + 2 * i].clone()); non_nulls.push(as_i64(&scalars[2 + 2 * i]));
+            states.push(scalars[1 + 2 * i].clone());
+            non_nulls.push(as_i64(&scalars[2 + 2 * i]));
         }
-        group_state_from_scalars(&self.kinds, &self.value_types, as_i64(&scalars[0]), &states, &non_nulls)
+        group_state_from_scalars(
+            &self.kinds,
+            &self.value_types,
+            as_i64(&scalars[0]),
+            &states,
+            &non_nulls,
+        )
     }
-    fn value_bytes(&self, state: &GroupKeyState) -> usize { group_key_state_bytes(state) }
-    fn write_ms(&self, state: &GroupKeyState) -> i64 { state.last_write_ms }
-    fn stamp_write_ms(&self, state: &mut GroupKeyState, ts_ms: i64) { state.last_write_ms = ts_ms; }
+    fn value_bytes(&self, state: &GroupKeyState) -> usize {
+        group_key_state_bytes(state)
+    }
+    fn write_ms(&self, state: &GroupKeyState) -> i64 {
+        state.last_write_ms
+    }
+    fn stamp_write_ms(&self, state: &mut GroupKeyState, ts_ms: i64) {
+        state.last_write_ms = ts_ms;
+    }
 }
 
 /// The Arrow type of each aggregate's persisted state scalar (equals the result type except AVG,
@@ -835,7 +797,13 @@ pub(crate) fn group_state_from_scalars(
             agg_state
         })
         .collect();
-    GroupKeyState { aggs, records, last_output: None, last_output_bytes: 0, last_write_ms: 0 }
+    GroupKeyState {
+        aggs,
+        records,
+        last_output: None,
+        last_output_bytes: 0,
+        last_write_ms: 0,
+    }
 }
 
 struct StagedGroupChange {
@@ -1074,7 +1042,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         self.staged_bytes
     }
 
-    pub(crate) fn with_key_timestamp_precisions(mut self, key_timestamp_precisions: Vec<i32>) -> Self {
+    pub(crate) fn with_key_timestamp_precisions(
+        mut self,
+        key_timestamp_precisions: Vec<i32>,
+    ) -> Self {
         self.key_timestamp_precisions = key_timestamp_precisions;
         self
     }
@@ -1170,7 +1141,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // The sweep reclaims groups no later row ever touches. Once per TTL period bounds its
         // amortized cost at one map walk per period; it must not run mid-bundle, where removing a
         // staged key's state would turn silent expiry into a spurious -D at the flush.
-        if ttl.enabled() && self.staged_changes.is_empty() && now_ms >= self.last_sweep_ms + self.ttl_ms
+        if ttl.enabled()
+            && self.staged_changes.is_empty()
+            && now_ms >= self.last_sweep_ms + self.ttl_ms
         {
             self.sweep_expired(ttl);
             self.last_sweep_ms = now_ms;
@@ -1398,7 +1371,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 staged_delta += staged_group_change_bytes(&owned, &prev);
                 self.staged_changes.insert(
                     owned,
-                    StagedGroupChange { old: prev.take(), key_batch: staged_key_batch, key_row: row },
+                    StagedGroupChange {
+                        old: prev.take(),
+                        key_batch: staged_key_batch,
+                        key_row: row,
+                    },
                 );
             }
             {
@@ -1674,7 +1651,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let ttl_on = self.ttl_ms > 0;
         for key in order {
             let staged = &changes[&key];
-            let new = self.store.get(&key.0).map(|state| output_of(state, &self.result_types));
+            let new = self
+                .store
+                .get(&key.0)
+                .map(|state| output_of(state, &self.result_types));
             match (&staged.old, &new) {
                 (None, Some(after)) => push(0, staged, after.clone()),
                 (Some(before), None) => push(3, staged, before.clone()),
@@ -1711,7 +1691,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .collect();
         let mut columns: Vec<ArrayRef> = Vec::with_capacity(self.key_columns.len() + num_agg + 1);
         for &column in &self.key_columns {
-            let data: Vec<_> = key_batches.iter().map(|batch| batch.column(column).to_data()).collect();
+            let data: Vec<_> = key_batches
+                .iter()
+                .map(|batch| batch.column(column).to_data())
+                .collect();
             let refs: Vec<_> = data.iter().collect();
             let mut gathered = MutableArrayData::new(refs, false, key_rows.len());
             for &(batch, row) in &key_rows {
@@ -1721,7 +1704,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         }
         for (i, result_type) in self.result_types.iter().enumerate() {
             fields.push(Field::new(format!("result{i}"), result_type.clone(), true));
-            columns.push(scalars_to_array(std::mem::take(&mut out_results[i]), result_type));
+            columns.push(scalars_to_array(
+                std::mem::take(&mut out_results[i]),
+                result_type,
+            ));
         }
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
         columns.push(Arc::new(Int8Array::from(out_kinds)));
@@ -1961,8 +1947,9 @@ impl GroupAggregator {
             let key = ByteKey::from(keys.value(row));
             let state = aggregator.create(key);
             state.records = records.value(row);
-            state.last_write_ms =
-                write_timestamps.as_ref().map_or(restored_at_ms, |ts| ts.value(row));
+            state.last_write_ms = write_timestamps
+                .as_ref()
+                .map_or(restored_at_ms, |ts| ts.value(row));
             for i in 0..num_agg {
                 if let GroupAggState::Running { agg, non_null } = &mut state.aggs[i] {
                     let scalar = ScalarValue::try_from_array(main.column(2 + 2 * i), row)
@@ -2553,13 +2540,23 @@ state_bytes_getter!(
     LocalGroupAggregator
 );
 
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_localGroupAggregatorStagedKeys<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let aggregator = unsafe { &*(handle as *const LocalGroupAggregator) };
+        aggregator.order.len() as jlong
+    })
+}
+
 /// Creates a buffering local two-phase GROUP BY pre-aggregate and returns an opaque handle. It
 /// accumulates across batches in memory until flushed; the buffer is transient (drained before each
 /// checkpoint on the JVM side), so there is no snapshot/restore.
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_createLocalGroupAggregator<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_createLocalGroupAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     aggregate_kinds: JIntArray<'local>,
@@ -2592,9 +2589,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createLocalGroupAggregator<
 
 /// Folds an Arrow batch the JVM exported into the buffered per-key accumulators; emits nothing.
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_updateLocalGroupAggregator<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_updateLocalGroupAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2617,9 +2612,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_updateLocalGroupAggregator<
 
 /// Emits the buffered partials (one row per key) and clears the buffer.
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_flushLocalGroupAggregator<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_flushLocalGroupAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2634,17 +2627,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushLocalGroupAggregator<
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_closeLocalGroupAggregator<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_closeLocalGroupAggregator<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<LocalGroupAggregator>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<LocalGroupAggregator>(handle));
     })
 }
 
@@ -2745,9 +2734,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushGroupAggregator<'local
 
 /// Lists the non-empty Flink key groups represented by this group aggregator's current state.
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_snapshotGroupAggregatorPartitions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotGroupAggregatorPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2767,9 +2754,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotGroupAggregatorPart
 
 /// Rebuilds a `GROUP BY` aggregator from all raw keyed-state partitions assigned to this subtask.
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_restoreGroupAggregatorPartitions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_restoreGroupAggregatorPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     aggregate_kinds: JIntArray<'local>,
@@ -2841,9 +2826,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeGroupAggregator<'local
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<GroupAggregator>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<GroupAggregator>(handle));
     })
 }

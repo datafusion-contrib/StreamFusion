@@ -291,7 +291,12 @@ pub(crate) struct TimeJsonAppender<T: ArrowPrimitiveType> {
 }
 
 impl<T: ArrowPrimitiveType> TimeJsonAppender<T> {
-    fn new(data_type: &DataType, capacity: usize, per_second: i64, env: JsonEnv) -> TimeJsonAppender<T> {
+    fn new(
+        data_type: &DataType,
+        capacity: usize,
+        per_second: i64,
+        env: JsonEnv,
+    ) -> TimeJsonAppender<T> {
         TimeJsonAppender {
             builder: PrimitiveBuilder::<T>::with_capacity(capacity)
                 .with_data_type(data_type.clone()),
@@ -404,7 +409,8 @@ impl JsonAppend for BooleanJsonAppender {
     }
 
     fn append_key(&mut self, key: &str) {
-        self.builder.append_value(flink_text::parse_java_boolean(key.trim()));
+        self.builder
+            .append_value(flink_text::parse_java_boolean(key.trim()));
     }
 
     fn finish(&mut self) -> ArrayRef {
@@ -435,15 +441,20 @@ impl JsonAppend for StringJsonAppender {
             simd_json::ValueType::String => {
                 self.builder.append_value(v.as_str().expect("string node"))
             }
-            simd_json::ValueType::I64 => {
-                self.builder.append_value(v.as_i64().expect("i64 node").to_string())
-            }
-            simd_json::ValueType::U64 => {
-                self.builder.append_value(v.as_u64().expect("u64 node").to_string())
-            }
-            simd_json::ValueType::Bool => self
+            simd_json::ValueType::I64 => self
                 .builder
-                .append_value(if v.as_bool().expect("bool node") { "true" } else { "false" }),
+                .append_value(v.as_i64().expect("i64 node").to_string()),
+            simd_json::ValueType::U64 => self
+                .builder
+                .append_value(v.as_u64().expect("u64 node").to_string()),
+            simd_json::ValueType::Bool => {
+                self.builder
+                    .append_value(if v.as_bool().expect("bool node") {
+                        "true"
+                    } else {
+                        "false"
+                    })
+            }
             simd_json::ValueType::F64 if self.env.lenient => self.builder.append_null(),
             simd_json::ValueType::F64 => panic!(
                 "a float literal under a STRING column cannot be echoed exactly (raw literal \
@@ -479,12 +490,16 @@ fn json_echoable(value: simd_json::tape::Value<'_, '_>) -> bool {
     use simd_json::prelude::*;
     match value.value_type() {
         simd_json::ValueType::F64 => false,
-        simd_json::ValueType::Object => {
-            value.as_object().expect("object node").iter().all(|(_, v)| json_echoable(v))
-        }
-        simd_json::ValueType::Array => {
-            value.as_array().expect("array node").iter().all(json_echoable)
-        }
+        simd_json::ValueType::Object => value
+            .as_object()
+            .expect("object node")
+            .iter()
+            .all(|(_, v)| json_echoable(v)),
+        simd_json::ValueType::Array => value
+            .as_array()
+            .expect("array node")
+            .iter()
+            .all(json_echoable),
         _ => true,
     }
 }
@@ -497,15 +512,13 @@ fn write_json_value(out: &mut String, value: simd_json::tape::Value<'_, '_>) {
     use simd_json::prelude::*;
     match value.value_type() {
         simd_json::ValueType::Null => out.push_str("null"),
-        simd_json::ValueType::Bool => {
-            out.push_str(if value.as_bool().expect("bool node") { "true" } else { "false" })
-        }
-        simd_json::ValueType::I64 => {
-            out.push_str(&value.as_i64().expect("i64 node").to_string())
-        }
-        simd_json::ValueType::U64 => {
-            out.push_str(&value.as_u64().expect("u64 node").to_string())
-        }
+        simd_json::ValueType::Bool => out.push_str(if value.as_bool().expect("bool node") {
+            "true"
+        } else {
+            "false"
+        }),
+        simd_json::ValueType::I64 => out.push_str(&value.as_i64().expect("i64 node").to_string()),
+        simd_json::ValueType::U64 => out.push_str(&value.as_u64().expect("u64 node").to_string()),
         simd_json::ValueType::F64 => panic!(
             "a float literal inside a JSON value under a STRING column cannot be echoed exactly \
              (raw literal lost in the parse) — divergences/21"
@@ -587,8 +600,10 @@ pub(crate) struct StructJsonAppender {
 
 impl StructJsonAppender {
     fn new(fields: &Fields, capacity: usize, env: JsonEnv) -> StructJsonAppender {
-        let children =
-            fields.iter().map(|f| make_json_appender(f.data_type(), capacity, env)).collect();
+        let children = fields
+            .iter()
+            .map(|f| make_json_appender(f.data_type(), capacity, env))
+            .collect();
         let index = (fields.len() >= 16).then(|| {
             let mut map = HashMap::with_capacity_and_hasher(fields.len(), Default::default());
             for (i, field) in fields.iter().enumerate() {
@@ -764,8 +779,10 @@ impl JsonAppend for ListJsonAppender {
 
     fn finish(&mut self) -> ArrayRef {
         let values = self.child.finish();
-        let offsets =
-            OffsetBuffer::new(ScalarBuffer::from(std::mem::replace(&mut self.offsets, vec![0])));
+        let offsets = OffsetBuffer::new(ScalarBuffer::from(std::mem::replace(
+            &mut self.offsets,
+            vec![0],
+        )));
         Arc::new(
             ListArray::try_new(self.field.clone(), offsets, values, self.nulls.finish())
                 .expect("failed to build JSON array column"),
@@ -854,11 +871,19 @@ impl JsonAppend for MapJsonAppender {
             None,
         )
         .expect("failed to build JSON map entries");
-        let offsets =
-            OffsetBuffer::new(ScalarBuffer::from(std::mem::replace(&mut self.offsets, vec![0])));
+        let offsets = OffsetBuffer::new(ScalarBuffer::from(std::mem::replace(
+            &mut self.offsets,
+            vec![0],
+        )));
         Arc::new(
-            MapArray::try_new(self.entries_field.clone(), offsets, entries, self.nulls.finish(), false)
-                .expect("failed to build JSON map column"),
+            MapArray::try_new(
+                self.entries_field.clone(),
+                offsets,
+                entries,
+                self.nulls.finish(),
+                false,
+            )
+            .expect("failed to build JSON map column"),
         )
     }
 }
@@ -874,48 +899,60 @@ pub(crate) fn make_json_appender(
 ) -> Box<dyn JsonAppend> {
     use arrow::datatypes::TimeUnit;
     match data_type {
-        DataType::Int8 => {
-            Box::new(PrimitiveJsonAppender::<Int8Type>::new(data_type, capacity, false, env))
-        }
-        DataType::Int16 => {
-            Box::new(PrimitiveJsonAppender::<Int16Type>::new(data_type, capacity, false, env))
-        }
-        DataType::Int32 => {
-            Box::new(PrimitiveJsonAppender::<Int32Type>::new(data_type, capacity, true, env))
-        }
-        DataType::Int64 => {
-            Box::new(PrimitiveJsonAppender::<Int64Type>::new(data_type, capacity, true, env))
-        }
-        DataType::Float32 => {
-            Box::new(FloatJsonAppender::<Float32Type>::new(data_type, capacity, env))
-        }
-        DataType::Float64 => {
-            Box::new(FloatJsonAppender::<Float64Type>::new(data_type, capacity, env))
-        }
-        DataType::Date32 => {
-            Box::new(DateJsonAppender { builder: PrimitiveBuilder::with_capacity(capacity), env })
-        }
+        DataType::Int8 => Box::new(PrimitiveJsonAppender::<Int8Type>::new(
+            data_type, capacity, false, env,
+        )),
+        DataType::Int16 => Box::new(PrimitiveJsonAppender::<Int16Type>::new(
+            data_type, capacity, false, env,
+        )),
+        DataType::Int32 => Box::new(PrimitiveJsonAppender::<Int32Type>::new(
+            data_type, capacity, true, env,
+        )),
+        DataType::Int64 => Box::new(PrimitiveJsonAppender::<Int64Type>::new(
+            data_type, capacity, true, env,
+        )),
+        DataType::Float32 => Box::new(FloatJsonAppender::<Float32Type>::new(
+            data_type, capacity, env,
+        )),
+        DataType::Float64 => Box::new(FloatJsonAppender::<Float64Type>::new(
+            data_type, capacity, env,
+        )),
+        DataType::Date32 => Box::new(DateJsonAppender {
+            builder: PrimitiveBuilder::with_capacity(capacity),
+            env,
+        }),
         DataType::Timestamp(TimeUnit::Nanosecond, None) => {
             Box::new(TimestampJsonAppender::new(data_type, capacity, env))
         }
         // TIME(p)'s Arrow unit follows the declared precision; the value is always whole seconds.
-        DataType::Time32(TimeUnit::Second) => {
-            Box::new(TimeJsonAppender::<Time32SecondType>::new(data_type, capacity, 1, env))
+        DataType::Time32(TimeUnit::Second) => Box::new(TimeJsonAppender::<Time32SecondType>::new(
+            data_type, capacity, 1, env,
+        )),
+        DataType::Time32(TimeUnit::Millisecond) => {
+            Box::new(TimeJsonAppender::<Time32MillisecondType>::new(
+                data_type, capacity, 1_000, env,
+            ))
         }
-        DataType::Time32(TimeUnit::Millisecond) => Box::new(
-            TimeJsonAppender::<Time32MillisecondType>::new(data_type, capacity, 1_000, env),
-        ),
-        DataType::Time64(TimeUnit::Microsecond) => Box::new(
-            TimeJsonAppender::<Time64MicrosecondType>::new(data_type, capacity, 1_000_000, env),
-        ),
+        DataType::Time64(TimeUnit::Microsecond) => {
+            Box::new(TimeJsonAppender::<Time64MicrosecondType>::new(
+                data_type, capacity, 1_000_000, env,
+            ))
+        }
         DataType::Time64(TimeUnit::Nanosecond) => Box::new(
             TimeJsonAppender::<Time64NanosecondType>::new(data_type, capacity, 1_000_000_000, env),
         ),
-        DataType::Binary => Box::new(BinaryJsonAppender { builder: BinaryBuilder::new(), env }),
-        DataType::Boolean => {
-            Box::new(BooleanJsonAppender { builder: BooleanBuilder::new(), env })
-        }
-        DataType::Utf8 => Box::new(StringJsonAppender { builder: StringBuilder::new(), env }),
+        DataType::Binary => Box::new(BinaryJsonAppender {
+            builder: BinaryBuilder::new(),
+            env,
+        }),
+        DataType::Boolean => Box::new(BooleanJsonAppender {
+            builder: BooleanBuilder::new(),
+            env,
+        }),
+        DataType::Utf8 => Box::new(StringJsonAppender {
+            builder: StringBuilder::new(),
+            env,
+        }),
         DataType::Struct(fields) => Box::new(StructJsonAppender::new(fields, capacity, env)),
         DataType::List(field) => Box::new(ListJsonAppender::new(field, capacity, env)),
         DataType::Map(entries, false) => Box::new(MapJsonAppender::new(entries, capacity, env)),
@@ -1034,9 +1071,9 @@ fn object_needs_token_walk(fields: &Fields, object: &simd_json::tape::Object<'_,
 pub(crate) fn json_needs_raw_number_literals(data_type: &DataType) -> bool {
     match data_type {
         DataType::Decimal128(_, _) => true,
-        DataType::Struct(fields) => {
-            fields.iter().any(|f| json_needs_raw_number_literals(f.data_type()))
-        }
+        DataType::Struct(fields) => fields
+            .iter()
+            .any(|f| json_needs_raw_number_literals(f.data_type())),
         DataType::List(field) => json_needs_raw_number_literals(field.data_type()),
         DataType::Map(entries, _) => json_needs_raw_number_literals(entries.data_type()),
         _ => false,
@@ -1072,7 +1109,10 @@ fn skip_blank_body(bytes: &[u8], lenient: bool) -> bool {
         return true;
     }
     if bytes.iter().all(u8::is_ascii_whitespace) {
-        assert!(lenient, "failed to decode JSON record: no content to map due to end-of-input");
+        assert!(
+            lenient,
+            "failed to decode JSON record: no content to map due to end-of-input"
+        );
         return true;
     }
     false
@@ -1095,14 +1135,19 @@ pub(crate) fn decode_json_bodies_simd(
     let mut root = StructJsonAppender::new(schema.fields(), bodies.num_rows(), env);
     let mut scratch: Vec<u8> = Vec::new();
     let mut buffers = simd_json::Buffers::default();
-    let scan_binary =
-        env.lenient && schema.fields().iter().any(|f| contains_binary(f.data_type()));
+    let scan_binary = env.lenient
+        && schema
+            .fields()
+            .iter()
+            .any(|f| contains_binary(f.data_type()));
     // Only the plain `json` format re-decodes a message through the Jackson-faithful walk (on a
     // failed fast parse or a cursor drift); the CDC envelopes keep the spec-strict fast parse —
     // their `old`-presence pre-scans mirror its skip conditions row for row.
     let retryable = array_roots == ArrayRootPolicy::FanOut;
     for row in 0..bodies.num_rows() {
-        let Some(bytes) = binary_body(column, row) else { continue };
+        let Some(bytes) = binary_body(column, row) else {
+            continue;
+        };
         if skip_blank_body(bytes, env.lenient) {
             continue;
         }
@@ -1131,7 +1176,10 @@ pub(crate) fn decode_json_bodies_simd(
                 let array = value.as_array().expect("array node");
                 // A drift anywhere re-decodes the MESSAGE: Flink's cursor drift crosses element
                 // boundaries (a nested-array element drifts the element loop itself).
-                if array.iter().any(|element| element_needs_token_walk(schema.fields(), element)) {
+                if array
+                    .iter()
+                    .any(|element| element_needs_token_walk(schema.fields(), element))
+                {
                     append_rewritten(&mut root, bytes, schema.fields(), env, scan_binary);
                     continue;
                 }
@@ -1180,8 +1228,7 @@ pub(crate) fn decode_json_bodies_simd(
             },
         }
     }
-    RecordBatch::try_new(schema.clone(), root.finish_columns())
-        .expect("failed to build JSON batch")
+    RecordBatch::try_new(schema.clone(), root.finish_columns()).expect("failed to build JSON batch")
 }
 
 /// Appends one decoded row object, first applying the lenient BINARY poison pre-scan (a
@@ -1212,7 +1259,12 @@ fn append_rewritten(
         let mut buf = row.into_bytes();
         let tape = simd_json::to_tape(&mut buf).expect("sanitized row reparses");
         let value = tape.as_value();
-        append_checked(root, &value.as_object().expect("sanitized row object"), fields, scan_binary);
+        append_checked(
+            root,
+            &value.as_object().expect("sanitized row object"),
+            fields,
+            scan_binary,
+        );
     }
 }
 
@@ -1317,9 +1369,16 @@ impl JsonDecoder {
     }
 
     fn build(schema: SchemaRef, env: JsonEnv, array_roots: ArrayRootPolicy) -> JsonDecoder {
-        let raw_literals =
-            schema.fields().iter().any(|f| json_needs_raw_number_literals(f.data_type()));
-        JsonDecoder { schema, raw_literals, env, array_roots }
+        let raw_literals = schema
+            .fields()
+            .iter()
+            .any(|f| json_needs_raw_number_literals(f.data_type()));
+        JsonDecoder {
+            schema,
+            raw_literals,
+            env,
+            array_roots,
+        }
     }
 
     /// Decodes the single body column of `bodies` into a batch of the target schema. Each row is a
@@ -1366,7 +1425,9 @@ impl JsonDecoder {
         let mut batches = Vec::new();
         if self.env.lenient {
             for row in 0..bodies.num_rows() {
-                let Some(bytes) = binary_body(column, row) else { continue };
+                let Some(bytes) = binary_body(column, row) else {
+                    continue;
+                };
                 if skip_blank_body(bytes, true) {
                     continue;
                 }
@@ -1396,7 +1457,9 @@ impl JsonDecoder {
             // at its batch size — so gather every document first and size the decoder to fit.
             let mut documents: Vec<&[u8]> = Vec::with_capacity(bodies.num_rows());
             for row in 0..bodies.num_rows() {
-                let Some(bytes) = binary_body(column, row) else { continue };
+                let Some(bytes) = binary_body(column, row) else {
+                    continue;
+                };
                 if skip_blank_body(bytes, false) {
                     continue;
                 }
@@ -1416,7 +1479,9 @@ impl JsonDecoder {
             }
             let mut decoder = build(documents.len());
             for document in documents {
-                let consumed = decoder.decode(document).expect("failed to decode JSON record");
+                let consumed = decoder
+                    .decode(document)
+                    .expect("failed to decode JSON record");
                 assert_eq!(
                     consumed,
                     document.len(),
@@ -1492,8 +1557,11 @@ enum ArrayBody<'a> {
 /// default mode any junk element fails the message first; in skip mode junk is skipped and only
 /// the surviving-row count matters).
 fn unwrap_single_element(elements: Vec<&[u8]>, lenient: bool) -> ArrayBody<'_> {
-    let objects: Vec<&[u8]> =
-        elements.iter().copied().filter(|element| starts_with_object(element)).collect();
+    let objects: Vec<&[u8]> = elements
+        .iter()
+        .copied()
+        .filter(|element| starts_with_object(element))
+        .collect();
     if objects.len() == 1 && (lenient || elements.len() == 1) {
         ArrayBody::Elements(objects)
     } else {
@@ -1573,7 +1641,10 @@ fn exact_leaves_as_text(field: &Field) -> Field {
     let data_type = match field.data_type() {
         leaf if text_restored_leaf(leaf) => DataType::Utf8,
         DataType::Struct(fields) => DataType::Struct(
-            fields.iter().map(|f| Arc::new(exact_leaves_as_text(f))).collect::<Fields>(),
+            fields
+                .iter()
+                .map(|f| Arc::new(exact_leaves_as_text(f)))
+                .collect::<Fields>(),
         ),
         DataType::List(f) => DataType::List(Arc::new(exact_leaves_as_text(f))),
         DataType::Map(entries, sorted) => {
@@ -1595,7 +1666,10 @@ fn restore_exact_leaves(column: &ArrayRef, target: &DataType, lenient: bool) -> 
     }
     match target {
         DataType::Time32(_) | DataType::Time64(_) => {
-            let strings = column.as_any().downcast_ref::<StringArray>().expect("time text");
+            let strings = column
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("time text");
             let seconds: Vec<Option<i64>> = strings
                 .iter()
                 .map(|text| {
@@ -1610,7 +1684,10 @@ fn restore_exact_leaves(column: &ArrayRef, target: &DataType, lenient: bool) -> 
             time_array(target, &seconds)
         }
         DataType::Binary => {
-            let strings = column.as_any().downcast_ref::<StringArray>().expect("binary text");
+            let strings = column
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("binary text");
             let values: BinaryArray = strings
                 .iter()
                 .map(|text| {
@@ -1628,7 +1705,10 @@ fn restore_exact_leaves(column: &ArrayRef, target: &DataType, lenient: bool) -> 
             Arc::new(values)
         }
         DataType::Decimal128(p, s) => {
-            let strings = column.as_any().downcast_ref::<StringArray>().expect("decimal text");
+            let strings = column
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("decimal text");
             let values: Decimal128Array = strings
                 .iter()
                 .map(|text| {
@@ -1642,10 +1722,17 @@ fn restore_exact_leaves(column: &ArrayRef, target: &DataType, lenient: bool) -> 
                     }
                 })
                 .collect();
-            Arc::new(values.with_precision_and_scale(*p, *s).expect("declared decimal type"))
+            Arc::new(
+                values
+                    .with_precision_and_scale(*p, *s)
+                    .expect("declared decimal type"),
+            )
         }
         DataType::Struct(fields) => {
-            let source = column.as_any().downcast_ref::<StructArray>().expect("struct column");
+            let source = column
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .expect("struct column");
             let children = fields
                 .iter()
                 .zip(source.columns())
@@ -1657,7 +1744,10 @@ fn restore_exact_leaves(column: &ArrayRef, target: &DataType, lenient: bool) -> 
             )
         }
         DataType::List(field) => {
-            let source = column.as_any().downcast_ref::<ListArray>().expect("list column");
+            let source = column
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .expect("list column");
             let values = restore_exact_leaves(source.values(), field.data_type(), lenient);
             Arc::new(
                 ListArray::try_new(
@@ -1670,13 +1760,20 @@ fn restore_exact_leaves(column: &ArrayRef, target: &DataType, lenient: bool) -> 
             )
         }
         DataType::Map(entries_field, sorted) => {
-            let source = column.as_any().downcast_ref::<MapArray>().expect("map column");
+            let source = column
+                .as_any()
+                .downcast_ref::<MapArray>()
+                .expect("map column");
             let entries = restore_exact_leaves(
                 &(Arc::new(source.entries().clone()) as ArrayRef),
                 entries_field.data_type(),
                 lenient,
             );
-            let entries = entries.as_any().downcast_ref::<StructArray>().expect("map entries").clone();
+            let entries = entries
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .expect("map entries")
+                .clone();
             Arc::new(
                 MapArray::try_new(
                     entries_field.clone(),
@@ -1713,7 +1810,10 @@ fn collapse_duplicate_map_keys(column: &ArrayRef, data_type: &DataType) -> Array
     }
     match data_type {
         DataType::Struct(fields) => {
-            let source = column.as_any().downcast_ref::<StructArray>().expect("struct column");
+            let source = column
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .expect("struct column");
             let children = fields
                 .iter()
                 .zip(source.columns())
@@ -1725,7 +1825,10 @@ fn collapse_duplicate_map_keys(column: &ArrayRef, data_type: &DataType) -> Array
             )
         }
         DataType::List(field) => {
-            let source = column.as_any().downcast_ref::<ListArray>().expect("list column");
+            let source = column
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .expect("list column");
             let values = collapse_duplicate_map_keys(source.values(), field.data_type());
             Arc::new(
                 ListArray::try_new(
@@ -1738,7 +1841,10 @@ fn collapse_duplicate_map_keys(column: &ArrayRef, data_type: &DataType) -> Array
             )
         }
         DataType::Map(entries_field, sorted) => {
-            let source = column.as_any().downcast_ref::<MapArray>().expect("map column");
+            let source = column
+                .as_any()
+                .downcast_ref::<MapArray>()
+                .expect("map column");
             let entry_fields = match entries_field.data_type() {
                 DataType::Struct(kv) if kv.len() == 2 => kv.clone(),
                 other => panic!("MAP entries must be a two-field struct, got {other}"),
@@ -1749,8 +1855,10 @@ fn collapse_duplicate_map_keys(column: &ArrayRef, data_type: &DataType) -> Array
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .expect("string map keys");
-            let values =
-                collapse_duplicate_map_keys(source.entries().column(1), entry_fields[1].data_type());
+            let values = collapse_duplicate_map_keys(
+                source.entries().column(1),
+                entry_fields[1].data_type(),
+            );
             let offsets = source.offsets();
             let mut surviving: Vec<u32> = Vec::with_capacity(keys.len());
             let mut new_offsets: Vec<i32> = Vec::with_capacity(offsets.len());

@@ -79,6 +79,12 @@ public final class FlinkRocksDBOptions implements Serializable {
         "{"
             + field("maxBackgroundThreads", threads)
             + field("maxOpenFiles", openFiles)
+            + field("logMaxFileSize", config.get(LOG_MAX_FILE_SIZE).getBytes())
+            + field("logFileNum", config.get(LOG_FILE_NUM))
+            + field(
+                "logDirectory",
+                config.getOptional(LOG_DIR).map(FlinkRocksDBOptions::quote).orElse("null"))
+            + field("logLevel", quote(config.get(LOG_LEVEL).name()))
             + field("compactionStyle", quote(config.get(COMPACTION_STYLE).name()))
             + "\"compressionPerLevel\":["
             + compression
@@ -89,6 +95,10 @@ public final class FlinkRocksDBOptions implements Serializable {
             + field("writeBufferSize", writeBuffer)
             + field("maxWriteBufferNumber", buffers)
             + field("minWriteBufferNumberToMerge", mergeBuffers)
+            + field("writeBatchSize", config.get(WRITE_BATCH_SIZE).getBytes())
+            + field(
+                "compactionFilterQueryTimeAfterNumEntries",
+                config.get(COMPACT_FILTER_QUERY_TIME_AFTER_NUM_ENTRIES))
             + field(
                 "periodicCompactionSeconds",
                 config.get(COMPACT_FILTER_PERIODIC_COMPACTION_TIME).getSeconds())

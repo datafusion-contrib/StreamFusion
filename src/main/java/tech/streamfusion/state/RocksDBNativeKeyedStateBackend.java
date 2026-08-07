@@ -35,80 +35,80 @@ import java.util.stream.Stream;
 import static org.apache.flink.runtime.state.SnapshotExecutionType.ASYNCHRONOUS;
 
 /**
- * The keyed state backend given to every keyed operator when the Paimon state backend is selected.
+ * The keyed state backend given to every keyed operator when the RocksDB state backend is selected.
  * JVM-side keyed state (descriptors, timer queues) delegates untouched to the wrapped backend; a
- * native operator whose state lives in a local Paimon table registers its checkpoint hook here in
- * {@code initializeState}, and from then on this backend's snapshot is the operator's Paimon
+ * native operator whose state lives in a local RocksDB table registers its checkpoint hook here in
+ * {@code initializeState}, and from then on this backend's snapshot is the operator's RocksDB
  * commit, emitted as an {@link org.apache.flink.runtime.state.IncrementalRemoteKeyedStateHandle}.
  *
  * <p>The two channels are exclusive by construction: an operator that registered a native hook
  * must not also create JVM keyed state (there is exactly one keyed-state handle per operator per
  * checkpoint), and this backend fails fast if both are used.
  */
-public final class PaimonKeyedStateBackend<K>
+public final class RocksDBNativeKeyedStateBackend<K>
     implements CheckpointableKeyedStateBackend<K>, CheckpointListener {
 
   private final CheckpointableKeyedStateBackend<K> delegate;
-  private final PaimonSnapshotStrategy snapshotStrategy;
+  private final RocksDBNativeSnapshotStrategy snapshotStrategy;
   private final File workingDirectory;
   private final File tableDirectory;
-  private final List<PaimonRestoredSource> restoredSources;
+  private final List<RocksDBRestoredSource> restoredSources;
+  private final String optionsJson;
   private final CloseableRegistry cancelStreamRegistry = new CloseableRegistry();
 
   private boolean delegateStateUsed;
 
-  PaimonKeyedStateBackend(
+  RocksDBNativeKeyedStateBackend(
       CheckpointableKeyedStateBackend<K> delegate,
-      PaimonSnapshotStrategy snapshotStrategy,
+      RocksDBNativeSnapshotStrategy snapshotStrategy,
       File workingDirectory,
-      List<PaimonRestoredSource> restoredSources) {
+      List<RocksDBRestoredSource> restoredSources,
+      String optionsJson) {
     this.delegate = delegate;
     this.snapshotStrategy = snapshotStrategy;
     this.workingDirectory = workingDirectory;
-    this.tableDirectory = new File(workingDirectory, "table");
+    this.tableDirectory = new File(workingDirectory, "db");
     this.restoredSources = restoredSources;
+    this.optionsJson = optionsJson;
   }
 
   // ---- The native operator's surface -----------------------------------------------------------
 
-  /** The local directory the operator's Paimon table lives in (created by the native side). */
+  /** The local directory the operator's RocksDB table lives in (created by the native side). */
   public String tableDirectory() {
     return tableDirectory.getAbsolutePath();
   }
 
   /** Restored checkpoint tables to adopt buckets from; empty on a fresh start. */
-  public List<PaimonRestoredSource> restoredSources() {
+  public List<RocksDBRestoredSource> restoredSources() {
     return restoredSources;
   }
 
+  public String optionsJson() {
+    return optionsJson;
+  }
+
   /**
-   * Registers the operator's native checkpoint hook; snapshots then go through Paimon commits.
+   * Registers the operator's native checkpoint hook; snapshots then go through RocksDB commits.
    * The operator's idle-state retention (0 = off) rides along so table maintenance can
    * physically drop rows the read path already treats as expired.
    */
-  public void registerNativeState(PaimonNativeState nativeState, long stateTtlMillis) {
+  public void registerNativeState(RocksDBNativeState nativeState, long stateTtlMillis) {
     if (snapshotStrategy.hasNativeState()) {
       throw new IllegalStateException("a native state hook is already registered");
     }
     if (delegateStateUsed) {
       throw new IllegalStateException(
-          "operator created JVM keyed state before registering native Paimon state; "
+          "operator created JVM keyed state before registering native RocksDB state; "
               + "the two channels are exclusive");
     }
     snapshotStrategy.registerNativeState(nativeState, stateTtlMillis);
-    if (!restoredSources.isEmpty()) {
-      try {
-        snapshotStrategy.maintainAfterRestore();
-      } catch (Exception e) {
-        throw new IllegalStateException("restored state tables could not be maintained", e);
-      }
-    }
   }
 
   /** Flushes native state to local immutable files without publishing a Flink checkpoint. */
   public void flushForMemoryPressure() throws Exception {
     if (!snapshotStrategy.hasNativeState()) {
-      throw new IllegalStateException("no native Paimon state is registered");
+      throw new IllegalStateException("no native RocksDB state is registered");
     }
     snapshotStrategy.flushForMemoryPressure();
   }
@@ -128,13 +128,13 @@ public final class PaimonKeyedStateBackend<K>
     }
     if (delegateStateUsed) {
       throw new IllegalStateException(
-          "operator holds both native Paimon state and JVM keyed state; cannot snapshot");
+          "operator holds both native RocksDB state and JVM keyed state; cannot snapshot");
     }
     // The sync phase decides per-file reuse (and links what the upload will read), so it needs
     // the options and factory the runner interface only hands to the async phase.
     snapshotStrategy.beforeSnapshot(checkpointOptions, streamFactory);
     return new SnapshotStrategyRunner<>(
-            "Paimon incremental snapshot", snapshotStrategy, cancelStreamRegistry, ASYNCHRONOUS)
+            "RocksDB incremental snapshot", snapshotStrategy, cancelStreamRegistry, ASYNCHRONOUS)
         .snapshot(checkpointId, timestamp, streamFactory, checkpointOptions);
   }
 
@@ -159,7 +159,7 @@ public final class PaimonKeyedStateBackend<K>
   public SavepointResources<K> savepoint() throws Exception {
     if (snapshotStrategy.hasNativeState()) {
       throw new UnsupportedOperationException(
-          "canonical savepoints are not supported for native Paimon state; "
+          "canonical savepoints are not supported for native RocksDB state; "
               + "use native-format savepoints");
     }
     return delegate.savepoint();

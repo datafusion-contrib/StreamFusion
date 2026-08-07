@@ -1,12 +1,10 @@
 package tech.streamfusion;
 
-import tech.streamfusion.state.StateTableCompactor;
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
 import tech.streamfusion.fluss.NativeFluss;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ServiceLoader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -821,11 +819,11 @@ class NexmarkMatrixBenchmark {
 
   /**
    * The persistent-state-backend comparison on the readme's exactly-once Kafka pipeline: stock
-   * Flink on RocksDB versus the native engine on the Paimon state backend, mini-batching off —
+   * Flink on RocksDB versus the native engine on the native RocksDB state backend, mini-batching off —
    * the same corpus, one-second checkpoints, exactly-once delivery, and best-of rule as {@link
    * #exactlyOnceKafkaSinkModeComparison}, with each engine's production disk backend swapped in.
    * A q4 preflight pins both backends actually engaging (RocksDB materializes working files
-   * under a directed localdir; a live Paimon store handle is observed), so a silent fall-back to
+   * under a directed localdir; a live RocksDB store handle is observed), so a silent fall-back to
    * heap state cannot turn this into a heap-vs-heap comparison. Gated by
    * {@code SF_MATRIX_STATE_BACKENDS=true}.
    */
@@ -858,22 +856,22 @@ class NexmarkMatrixBenchmark {
         Map<String, String> rocksdb = new LinkedHashMap<>();
         rocksdb.put("state.backend.type", "rocksdb");
         rocksdb.put("state.backend.rocksdb.localdir", rocksDir.toString());
-        Map<String, String> paimon = new LinkedHashMap<>();
-        paimon.put(
+        Map<String, String> nativeRocksDB = new LinkedHashMap<>();
+        nativeRocksDB.put(
             "state.backend.type",
-            "tech.streamfusion.state.PaimonStateBackendFactory");
+            "tech.streamfusion.state.RocksDBNativeStateBackendFactory");
         if (miniBatch) {
-          for (Map<String, String> config : List.of(rocksdb, paimon)) {
+          for (Map<String, String> config : List.of(rocksdb, nativeRocksDB)) {
             config.put("table.exec.mini-batch.enabled", "true");
             config.put("table.exec.mini-batch.allow-latency", "2 s");
             config.put("table.exec.mini-batch.size", "50000");
           }
         }
         if (!preflighted) {
-          assertStateBackendsEngage(brokers, rocksdb, paimon, rocksDir);
+          assertStateBackendsEngage(brokers, rocksdb, nativeRocksDB, rocksDir);
           preflighted = true;
         }
-        compareStateBackends(brokers, queries, rocksdb, paimon, miniBatch);
+        compareStateBackends(brokers, queries, rocksdb, nativeRocksDB, miniBatch);
       }
     }
   }
@@ -882,26 +880,26 @@ class NexmarkMatrixBenchmark {
       String brokers,
       Query[] queries,
       Map<String, String> rocksdb,
-      Map<String, String> paimon,
+      Map<String, String> nativeRocksDB,
       boolean miniBatch)
       throws Exception {
     StringBuilder out =
         new StringBuilder(
             "\n##### NEXMARK STATE BACKENDS (exactly-once Kafka, mini-batch "
                 + (miniBatch ? "on" : "off")
-                + "; Flink on RocksDB vs StreamFusion on Paimon; "
+                + "; Flink RocksDB vs StreamFusion native RocksDB; "
                 + ROWS
                 + " events, best of "
                 + RUNS
                 + ") #####\n");
-    out.append("query  Flink/RocksDB s      ev/s  SF/Paimon s      ev/s  SF/Flink\n");
+    out.append("query  Flink/RocksDB s      ev/s  SF/RocksDB s     ev/s  SF/Flink\n");
     for (Query q : queries) {
       String row;
       // See the mode comparison: a query lost to a transient stall is marked, not fatal.
       try {
         double flink = kafkaSinkBest(brokers, q, false, rocksdb);
         try {
-          double nativeRun = kafkaSinkBest(brokers, q, true, paimon);
+          double nativeRun = kafkaSinkBest(brokers, q, true, nativeRocksDB);
           row =
               String.format(
                   "%4s  %15.3f  %8.0f  %11.3f  %8.0f  %7.2fx%n",
@@ -929,24 +927,13 @@ class NexmarkMatrixBenchmark {
     System.out.println(out);
   }
 
-  /** q4 preflight proving both persistent backends engage under the job-level configuration. */
+  /** q4 preflight proving both RocksDB backends engage under the job-level configuration. */
   private static void assertStateBackendsEngage(
       String brokers,
       Map<String, String> rocksdb,
-      Map<String, String> paimon,
+      Map<String, String> nativeRocksDB,
       Path rocksDir)
       throws Exception {
-    boolean deletionVectors = false;
-    for (StateTableCompactor candidate : ServiceLoader.load(StateTableCompactor.class)) {
-      deletionVectors |= candidate.available() && candidate.supportsDeletionVectors();
-    }
-    if (!deletionVectors) {
-      throw new IllegalStateException(
-          "no deletion-vector-capable state-table compactor on the classpath: the Paimon backend"
-              + " would refuse to start, so no comparison can run here. Run"
-              + " NexmarkStateBackendBenchmark in streamfusion-paimon-compactor against a Paimon"
-              + " bundle with the binary-key lookup comparator fix (apache/paimon#8873).");
-    }
     Query q4 =
         Arrays.stream(ALL_QUERIES).filter(q -> q.label.equals("q4")).findFirst().orElseThrow();
     AtomicBoolean rocksSeen = new AtomicBoolean();
@@ -971,18 +958,18 @@ class NexmarkMatrixBenchmark {
           "state.backend.type=rocksdb never materialized working files under its localdir;"
               + " the comparison would run stock Flink on heap state");
     }
-    AtomicBoolean paimonSeen = new AtomicBoolean();
-    Thread paimonWatcher =
-        engagementWatcher(paimonSeen, () -> Native.liveNativeHandles().contains("Paimon"));
+    AtomicBoolean nativeRocksSeen = new AtomicBoolean();
+    Thread nativeRocksWatcher =
+        engagementWatcher(nativeRocksSeen, () -> Native.liveNativeHandles().contains("Rocks"));
     try {
-      kafkaSinkBest(brokers, q4, true, paimon, 0, 1);
+      kafkaSinkBest(brokers, q4, true, nativeRocksDB, 0, 1);
     } finally {
-      paimonWatcher.interrupt();
-      paimonWatcher.join();
+      nativeRocksWatcher.interrupt();
+      nativeRocksWatcher.join();
     }
-    if (!paimonSeen.get()) {
+    if (!nativeRocksSeen.get()) {
       throw new IllegalStateException(
-          "the Paimon backend never engaged (no live Paimon store handle was observed);"
+          "the native RocksDB backend never engaged (no live RocksDB store handle was observed);"
               + " the comparison would run StreamFusion on memory state");
     }
   }
@@ -1227,11 +1214,10 @@ class NexmarkMatrixBenchmark {
       config.put("table.exec.mini-batch.allow-latency", "2 s");
       config.put("table.exec.mini-batch.size", "50000");
     }
-    // profile.backend=paimon runs the loop on the persistent backend (from the compactor
-    // module, so maintenance and deletion vectors engage exactly as the comparison measures).
-    if ("paimon".equals(System.getProperty("profile.backend"))) {
+    // profile.backend=rocksdb runs the loop on the Rust-owned persistent backend.
+    if ("rocksdb".equals(System.getProperty("profile.backend"))) {
       config.put(
-          "state.backend.type", "tech.streamfusion.state.PaimonStateBackendFactory");
+          "state.backend.type", "tech.streamfusion.state.RocksDBNativeStateBackendFactory");
     }
     try (KafkaContainer kafka =
         new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))

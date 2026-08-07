@@ -40,10 +40,10 @@ A reservation that would cross the TaskManager-wide cap is denied with
 `taskmanager.memory.task.off-heap.size`.
 
 The in-memory state backend cannot spill, so a denied growth request fails the task and Flink's
-configured restart policy applies. The Paimon backend can reduce its resident footprint: once an
-operator's buffer reaches `-Dstreamfusion.state.paimon.write-buffer-mb` (64 MiB by default), or
-shared headroom becomes low, StreamFusion flushes it to immutable local Paimon files independently
-of checkpoint timing. The next Flink checkpoint pins and uploads those files through the normal
+configured restart policy applies. The RocksDB backend can reduce its resident footprint: once an
+operator reaches `-Dstreamfusion.state.rocksdb.write-buffer-mb` (64 MiB by default), or shared
+headroom becomes low, StreamFusion flushes it to local RocksDB files independently of checkpoint
+timing. The next Flink checkpoint pins and uploads those files through the normal
 incremental state-handle path. A single allocation that cannot fit can still fail before a flush
 can help.
 
@@ -75,5 +75,5 @@ StreamFusion registers these gauges with each native operator or connector metri
 - `nativeStateBytes` — the operator's sampled native state footprint.
 
 See [Configuration](configuration.md#memory) for the related settings and
-[Paimon backend](backends/paimon.md) for checkpoint and restore semantics after local buffer
+[RocksDB backend](backends/rocksdb.md) for checkpoint and restore semantics after local buffer
 flushes.

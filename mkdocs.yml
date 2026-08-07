@@ -91,7 +91,7 @@ nav:
   - Backends:
       - backends/index.md
       - Memory: backends/memory.md
-      - Paimon (experimental): backends/paimon.md
+      - RocksDB: backends/rocksdb.md
   - Deployment: deployment.md
   - Configuration: configuration.md
   - Memory management: memory-management.md
@@ -129,7 +129,6 @@ nav:
       - Allocation discipline: optimizations/allocation-discipline.md
       - Memory accounting off the hot path: optimizations/memory-accounting-off-hot-path.md
       - Checkpoint partitioning in one pass: optimizations/checkpoint-partition-in-one-pass.md
-      - Paimon state backend performance: optimizations/paimon-state-backend-performance.md
       - Sub-plan reuse digest barriers: optimizations/subplan-reuse-digest-barriers.md
       - UDFs via columnar upcall: optimizations/udf-columnar-upcall.md
       - Host-exact builtins via upcall: optimizations/host-exact-builtins-upcall.md

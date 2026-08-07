@@ -7,6 +7,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.state.rocksdb.RocksDBConfigurableOptions;
 import org.apache.flink.state.rocksdb.RocksDBOptions;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 class FlinkRocksDBOptionsTest {
@@ -17,12 +18,20 @@ class FlinkRocksDBOptionsTest {
     configuration.set(
         RocksDBConfigurableOptions.WRITE_BUFFER_SIZE, MemorySize.parse("17mb"));
     configuration.set(RocksDBConfigurableOptions.USE_DYNAMIC_LEVEL_SIZE, true);
+    configuration.set(RocksDBConfigurableOptions.COMPACTION_STYLE, org.rocksdb.CompactionStyle.UNIVERSAL);
+    configuration.set(
+        RocksDBConfigurableOptions.COMPACT_FILTER_PERIODIC_COMPACTION_TIME,
+        Duration.ofMinutes(7));
+    configuration.set(
+        RocksDBConfigurableOptions.COMPACT_FILTER_QUERY_TIME_AFTER_NUM_ENTRIES, 19L);
 
     String json = FlinkRocksDBOptions.from(configuration).json();
 
     assertTrue(json.contains("\"writeBufferSize\":17825792"));
     assertTrue(json.contains("\"useDynamicLevelSize\":true"));
-    assertTrue(json.contains("\"compactionStyle\":\"LEVEL\""));
+    assertTrue(json.contains("\"compactionStyle\":\"UNIVERSAL\""));
+    assertTrue(json.contains("\"periodicCompactionSeconds\":420"));
+    assertTrue(json.contains("\"compactionFilterQueryTimeAfterNumEntries\":19"));
     assertTrue(json.contains("\"compressionPerLevel\":[\"SNAPPY_COMPRESSION\"]"));
   }
 

@@ -6,94 +6,11 @@ pub(crate) use ttl::*;
 #[cfg(feature = "rocksdb-state")]
 pub(crate) mod rocks_config;
 #[cfg(feature = "rocksdb-state")]
+pub(crate) mod rocks_jni;
+#[cfg(feature = "rocksdb-state")]
 pub(crate) mod rocks_store;
 #[cfg(feature = "rocksdb-state")]
 pub(crate) use rocks_store::*;
-
-#[cfg(feature = "paimon-state")]
-pub(crate) mod dirty_region;
-#[cfg(feature = "paimon-state")]
-pub(crate) mod paimon_jni;
-#[cfg(feature = "paimon-state")]
-pub(crate) mod paimon_store;
-#[cfg(feature = "paimon-state")]
-pub(crate) mod state_fs;
-#[cfg(feature = "paimon-state")]
-pub(crate) use paimon_store::*;
-
-/// Whether this build carries the Paimon persistent state backend. Present in every build so the
-/// host can probe capability without risking an unresolved native symbol.
-#[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_paimonStateAvailable<'local>(
-    env: jni::JNIEnv<'local>,
-    _class: jni::objects::JClass<'local>,
-) -> jni::sys::jboolean {
-    crate::bridge::jni_guard(env, move |_env| {
-        cfg!(feature = "paimon-state") as jni::sys::jboolean
-    })
-}
-
-/// Whether the aggregate list can run on the Paimon backend (see `group_kinds_persistable` and the
-/// backend's type map). Always resolvable; answers false in a build without the backend.
-#[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_paimonGroupAggregatorSupported<
-    'local,
->(
-    env: jni::JNIEnv<'local>,
-    _class: jni::objects::JClass<'local>,
-    aggregate_kinds: jni::objects::JIntArray<'local>,
-    value_types: jni::objects::JIntArray<'local>,
-) -> jni::sys::jboolean {
-    crate::bridge::jni_guard(env, move |env| {
-        #[cfg(feature = "paimon-state")]
-        {
-            let kinds = read_int_array(&env, &aggregate_kinds);
-            let value_types: Vec<DataType> = read_int_array(&env, &value_types)
-                .iter()
-                .map(|&code| value_data_type(code))
-                .collect();
-            let state_types = group_state_types(&kinds, &value_types);
-            return paimon_group_supported(&kinds, &state_types) as jni::sys::jboolean;
-        }
-        #[cfg(not(feature = "paimon-state"))]
-        {
-            let _ = (env, aggregate_kinds, value_types);
-            0
-        }
-    })
-}
-
-/// Whether a row-payload operator (keep-last dedup, changelog normalize) can persist its stored
-/// rows on the Paimon backend: every column of the row type must map to a Paimon scalar column.
-/// Consumes the FFI schema at `row_schema_address`. Always resolvable; answers false in a build
-/// without the backend.
-#[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_paimonRowStateSupported<
-    'local,
->(
-    env: jni::JNIEnv<'local>,
-    _class: jni::objects::JClass<'local>,
-    row_schema_address: jni::sys::jlong,
-) -> jni::sys::jboolean {
-    crate::bridge::jni_guard(env, move |_env| {
-        #[cfg(feature = "paimon-state")]
-        {
-            let row_types: Vec<DataType> = import_schema(row_schema_address)
-                .fields()
-                .iter()
-                .map(|field| field.data_type().clone())
-                .collect();
-            return paimon_row_supported(&row_types) as jni::sys::jboolean;
-        }
-        #[cfg(not(feature = "paimon-state"))]
-        {
-            // The FFI schema must still be consumed (imported and dropped) so the host-side export is
-            // released even when this build lacks the backend.
-            let _ = import_schema(row_schema_address);
-            0
-        }
-    })
-}
 
 /// The storage seam between a stateful operator and its per-key state. Operators are generic over
 /// this trait and fully monomorphized — the memory implementation must compile to exactly the
@@ -152,7 +69,9 @@ pub(crate) struct MemoryStateStore<V> {
 
 impl<V> Default for MemoryStateStore<V> {
     fn default() -> Self {
-        MemoryStateStore { map: ahash::HashMap::default() }
+        MemoryStateStore {
+            map: ahash::HashMap::default(),
+        }
     }
 }
 

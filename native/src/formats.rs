@@ -29,8 +29,10 @@ pub(crate) fn prune_descriptor_set(bytes: &[u8], root_message: &str, schema: &Sc
     // field is a Struct. Read-only over `set` here.
     let mut keep: std::collections::HashMap<String, std::collections::HashSet<String>> =
         std::collections::HashMap::default();
-    let mut work: Vec<(String, arrow::datatypes::Fields)> =
-        vec![(root_message.trim_start_matches('.').to_string(), schema.fields().clone())];
+    let mut work: Vec<(String, arrow::datatypes::Fields)> = vec![(
+        root_message.trim_start_matches('.').to_string(),
+        schema.fields().clone(),
+    )];
     while let Some((name, fields)) = work.pop() {
         let names: std::collections::HashSet<String> =
             fields.iter().map(|f| f.name().clone()).collect();
@@ -86,7 +88,8 @@ pub(crate) fn find_message<'a>(
     for file in &set.file {
         let package = file.package();
         for message in &file.message_type {
-            if let Some(found) = find_message_in(message, &qualify(package, message.name()), full_name)
+            if let Some(found) =
+                find_message_in(message, &qualify(package, message.name()), full_name)
             {
                 return Some(found);
             }
@@ -131,7 +134,10 @@ impl ProtobufDecoder {
             .unwrap_or_else(|| panic!("protobuf message {message_name} not found in descriptor"));
         // ConfluentWirePolicy::Raw (the default) = bare protobuf bytes, which is what Flink's `protobuf`
         // format carries; the Confluent variant (strip magic+id+message-index) would set it here.
-        ProtobufDecoder { message, config: ptars::PtarsConfig::default() }
+        ProtobufDecoder {
+            message,
+            config: ptars::PtarsConfig::default(),
+        }
     }
 
     /// Decodes the single binary body column into a typed batch (schema derived from the descriptor).
@@ -139,7 +145,11 @@ impl ProtobufDecoder {
     /// tables already stay on Flink, so a tombstone must fail rather than becoming a synthetic null row.
     pub(crate) fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
         use arrow::array::{Array, BinaryArray};
-        let column = bodies.column(0).as_any().downcast_ref::<BinaryArray>().expect("binary body");
+        let column = bodies
+            .column(0)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .expect("binary body");
         assert_eq!(
             column.null_count(),
             0,
@@ -147,8 +157,18 @@ impl ProtobufDecoder {
         );
         let batch = ptars::binary_array_to_record_batch_direct(column, &self.message, &self.config)
             .expect("failed to decode protobuf batch");
-        let columns = batch.columns().iter().cloned().map(null_empty_containers).collect();
-        let fields: Vec<_> = batch.schema().fields().iter().map(nullable_containers).collect();
+        let columns = batch
+            .columns()
+            .iter()
+            .cloned()
+            .map(null_empty_containers)
+            .collect();
+        let fields: Vec<_> = batch
+            .schema()
+            .fields()
+            .iter()
+            .map(nullable_containers)
+            .collect();
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to rebuild protobuf batch")
     }
@@ -167,11 +187,13 @@ fn null_empty_containers(array: ArrayRef) -> ArrayRef {
     use arrow::buffer::NullBuffer;
     match array.data_type() {
         DataType::List(_) => {
-            let list = array.as_any().downcast_ref::<ListArray>().expect("list column");
+            let list = array
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .expect("list column");
             let (field, offsets, values, nulls) = list.clone().into_parts();
-            let non_empty = NullBuffer::from_iter(
-                offsets.windows(2).map(|window| window[1] > window[0]),
-            );
+            let non_empty =
+                NullBuffer::from_iter(offsets.windows(2).map(|window| window[1] > window[0]));
             let nulls = NullBuffer::union(nulls.as_ref(), Some(&non_empty));
             Arc::new(ListArray::new(
                 nullable_containers(&field),
@@ -181,18 +203,33 @@ fn null_empty_containers(array: ArrayRef) -> ArrayRef {
             ))
         }
         DataType::Map(_, _) => {
-            let map = array.as_any().downcast_ref::<MapArray>().expect("map column");
+            let map = array
+                .as_any()
+                .downcast_ref::<MapArray>()
+                .expect("map column");
             let (field, offsets, entries, nulls, ordered) = map.clone().into_parts();
-            let non_empty = NullBuffer::from_iter(
-                offsets.windows(2).map(|window| window[1] > window[0]),
-            );
+            let non_empty =
+                NullBuffer::from_iter(offsets.windows(2).map(|window| window[1] > window[0]));
             let nulls = NullBuffer::union(nulls.as_ref(), Some(&non_empty));
             let entries = null_empty_containers(Arc::new(entries));
-            let entries = entries.as_any().downcast_ref::<StructArray>().expect("map entries").clone();
-            Arc::new(MapArray::new(nullable_containers(&field), offsets, entries, nulls, ordered))
+            let entries = entries
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .expect("map entries")
+                .clone();
+            Arc::new(MapArray::new(
+                nullable_containers(&field),
+                offsets,
+                entries,
+                nulls,
+                ordered,
+            ))
         }
         DataType::Struct(_) => {
-            let strukt = array.as_any().downcast_ref::<StructArray>().expect("struct column");
+            let strukt = array
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .expect("struct column");
             let (fields, children, nulls) = strukt.clone().into_parts();
             let fields: Vec<_> = fields.iter().map(nullable_containers).collect();
             let children = children.into_iter().map(null_empty_containers).collect();
@@ -208,9 +245,11 @@ fn null_empty_containers(array: ArrayRef) -> ArrayRef {
 fn nullable_containers(field: &FieldRef) -> FieldRef {
     use arrow::datatypes::Fields;
     match field.data_type() {
-        DataType::List(element) => Arc::new(
-            Field::new(field.name(), DataType::List(nullable_containers(element)), true),
-        ),
+        DataType::List(element) => Arc::new(Field::new(
+            field.name(),
+            DataType::List(nullable_containers(element)),
+            true,
+        )),
         DataType::Map(entries, ordered) => Arc::new(Field::new(
             field.name(),
             DataType::Map(nullable_containers(entries), *ordered),
@@ -240,11 +279,16 @@ pub(crate) struct RawDecoder {
 
 impl RawDecoder {
     fn new(schema: SchemaRef, little_endian: bool) -> RawDecoder {
-        RawDecoder { schema, little_endian }
+        RawDecoder {
+            schema,
+            little_endian,
+        }
     }
 
     fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
-        use arrow::datatypes::{Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type};
+        use arrow::datatypes::{
+            Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
+        };
         let body = bodies.column(0);
         let column = match self.schema.field(0).data_type() {
             DataType::Boolean => self.decode_booleans(body),
@@ -534,7 +578,10 @@ pub(crate) fn cdc_emit(
 ) {
     let require = |image: &StructArray, idx: usize, name: &str| {
         if !image.is_valid(idx) {
-            panic!("CDC {action} has a null {name} image", action = action.name());
+            panic!(
+                "CDC {action} has a null {name} image",
+                action = action.name()
+            );
         }
     };
     match action {
@@ -545,7 +592,11 @@ pub(crate) fn cdc_emit(
         CdcAction::Update => {
             let before_source = match shape {
                 CdcShape::BeforeAfter => {
-                    require(before, before_idx, "\"before\"/pre (REPLICA IDENTITY not FULL?)");
+                    require(
+                        before,
+                        before_idx,
+                        "\"before\"/pre (REPLICA IDENTITY not FULL?)",
+                    );
                     RowSource::Before
                 }
                 CdcShape::DataOld => {
@@ -559,7 +610,11 @@ pub(crate) fn cdc_emit(
         }
         CdcAction::Delete => match shape {
             CdcShape::BeforeAfter => {
-                require(before, before_idx, "\"before\"/pre (REPLICA IDENTITY not FULL?)");
+                require(
+                    before,
+                    before_idx,
+                    "\"before\"/pre (REPLICA IDENTITY not FULL?)",
+                );
                 out.push((3, before_idx, after_idx, RowSource::Before));
             }
             // Maxwell/Canal: the deleted row lives in the post-image (`data`).
@@ -652,7 +707,10 @@ impl CdcJsonDecoder {
         output_fields.push(Arc::new(Field::new(ROW_KIND_COLUMN, DataType::Int8, false)));
         let output = Arc::new(Schema::new(output_fields));
         if spec.shape == CdcShape::DataOld {
-            assert!(nullable.len() <= 128, "the old-key presence bitmask carries up to 128 columns");
+            assert!(
+                nullable.len() <= 128,
+                "the old-key presence bitmask carries up to 128 columns"
+            );
         }
         // A CDC envelope never fans a top-level array out the way the plain `json` format does:
         // Maxwell/Canal hand the root to the tree converter (any array is corrupt), while
@@ -695,7 +753,11 @@ impl CdcJsonDecoder {
         out_rows: &mut Vec<(i8, usize, usize, RowSource)>,
     ) {
         use arrow::array::ListArray;
-        let ops = envelope.column(2).as_any().downcast_ref::<StringArray>().expect("op string");
+        let ops = envelope
+            .column(2)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("op string");
         // A missing op field is malformed; Flink fails on it (NPE caught → rethrown). Match that.
         let op = if ops.is_valid(row) {
             ops.value(row)
@@ -710,17 +772,29 @@ impl CdcJsonDecoder {
         };
         let mask = presence.get(row).copied().unwrap_or(0);
         if spec.arrays {
-            let after_list = envelope.column(1).as_any().downcast_ref::<ListArray>().unwrap();
-            let before_list = envelope.column(0).as_any().downcast_ref::<ListArray>().unwrap();
+            let after_list = envelope
+                .column(1)
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .unwrap();
+            let before_list = envelope
+                .column(0)
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .unwrap();
             if after_list.is_null(row) {
                 // Flink reads row.getArray(0) unconditionally for a change op — a null `data`
                 // is a corrupt message, not an empty fan-out.
                 panic!("CDC {} has no \"data\" array", action.name());
             }
-            let (after_off, after_len) =
-                (after_list.value_offsets()[row] as usize, after_list.value_length(row) as usize);
-            let (before_off, before_len) =
-                (before_list.value_offsets()[row] as usize, before_list.value_length(row) as usize);
+            let (after_off, after_len) = (
+                after_list.value_offsets()[row] as usize,
+                after_list.value_length(row) as usize,
+            );
+            let (before_off, before_len) = (
+                before_list.value_offsets()[row] as usize,
+                before_list.value_length(row) as usize,
+            );
             for i in 0..after_len {
                 // Canal pairs data[i] with old[i]. Flink indexes `old` unchecked for an UPDATE, so
                 // a shorter (or absent) `old` array is a corrupt message there; other ops never
@@ -796,7 +870,9 @@ impl CdcJsonDecoder {
         let mut scratch: Vec<u8> = Vec::new();
         let mut buffers = simd_json::Buffers::default();
         for row in 0..bodies.num_rows() {
-            let Some(bytes) = binary_body(column, row) else { continue };
+            let Some(bytes) = binary_body(column, row) else {
+                continue;
+            };
             if bytes.iter().all(u8::is_ascii_whitespace) {
                 continue;
             }
@@ -816,7 +892,10 @@ impl CdcJsonDecoder {
             let old = root
                 .as_object()
                 .and_then(|envelope| {
-                    envelope.iter().filter(|(key, _)| *key == spec.before_field).last()
+                    envelope
+                        .iter()
+                        .filter(|(key, _)| *key == spec.before_field)
+                        .last()
                 })
                 .map(|(_, value)| value);
             let mut mask = 0u128;
@@ -861,26 +940,48 @@ impl CdcJsonDecoder {
         }
 
         let spec = self.dialect.spec();
-        let ops = envelope.column(2).as_any().downcast_ref::<StringArray>().expect("op string");
+        let ops = envelope
+            .column(2)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("op string");
 
         // The pre/post images as struct arrays the gather reads from. For Canal they are the *flattened*
         // values of the `old`/`data` list columns, and a list's element pairs `old[i]` with `data[i]`;
         // for scalar dialects each envelope row is itself the single unit (pre/post index = the row).
         let (before, after) = if spec.arrays {
-            let before_list = envelope.column(0).as_any().downcast_ref::<ListArray>().expect("old list");
-            let after_list = envelope.column(1).as_any().downcast_ref::<ListArray>().expect("data list");
+            let before_list = envelope
+                .column(0)
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .expect("old list");
+            let after_list = envelope
+                .column(1)
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .expect("data list");
             (before_list.values().clone(), after_list.values().clone())
         } else {
             (envelope.column(0).clone(), envelope.column(1).clone())
         };
-        let before = before.as_any().downcast_ref::<StructArray>().expect("pre-image struct");
-        let after = after.as_any().downcast_ref::<StructArray>().expect("post-image struct");
+        let before = before
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .expect("pre-image struct");
+        let after = after
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .expect("post-image struct");
 
         // The DataOld dialects need per-message key presence in `old` (Flink's findValue rule);
         // the scan mirrors the envelope decode's skip conditions, asserted here.
         let presence = if spec.shape == CdcShape::DataOld {
             let masks = self.old_key_presence(bodies);
-            assert_eq!(masks.len(), envelope.num_rows(), "old-key presence misaligned");
+            assert_eq!(
+                masks.len(),
+                envelope.num_rows(),
+                "old-key presence misaligned"
+            );
             masks
         } else {
             Vec::new()
@@ -888,7 +989,8 @@ impl CdcJsonDecoder {
 
         // Per output row: its RowKind byte (0 +I, 1 -U, 2 +U, 3 -D — `RowKind.toByteValue()`), and the
         // rows to read in the pre/post-image struct arrays, and which image to read each column from.
-        let mut out_rows: Vec<(i8, usize, usize, RowSource)> = Vec::with_capacity(envelope.num_rows());
+        let mut out_rows: Vec<(i8, usize, usize, RowSource)> =
+            Vec::with_capacity(envelope.num_rows());
         for row in 0..envelope.num_rows() {
             if self.skip_errors {
                 // Flink's skip keeps whatever a message emitted before its failure: the
@@ -898,11 +1000,27 @@ impl CdcJsonDecoder {
                 use std::panic::{catch_unwind, AssertUnwindSafe};
                 let _ = silence_expected_decode_panics(|| {
                     catch_unwind(AssertUnwindSafe(|| {
-                        self.emit_message(row, &spec, &presence, &envelope, before, after, &mut out_rows)
+                        self.emit_message(
+                            row,
+                            &spec,
+                            &presence,
+                            &envelope,
+                            before,
+                            after,
+                            &mut out_rows,
+                        )
                     }))
                 });
             } else {
-                self.emit_message(row, &spec, &presence, &envelope, before, after, &mut out_rows);
+                self.emit_message(
+                    row,
+                    &spec,
+                    &presence,
+                    &envelope,
+                    before,
+                    after,
+                    &mut out_rows,
+                );
             }
         }
 
@@ -947,7 +1065,10 @@ pub(crate) fn gather_cdc_batch(
         );
     }
     columns.push(Arc::new(Int8Array::from(
-        out_rows.iter().map(|&(kind, _, _, _)| kind).collect::<Vec<i8>>(),
+        out_rows
+            .iter()
+            .map(|&(kind, _, _, _)| kind)
+            .collect::<Vec<i8>>(),
     )));
     RecordBatch::try_new(output.clone(), columns).expect("failed to build CDC batch")
 }
@@ -1000,11 +1121,21 @@ impl AvroCdcDecoder {
 
     fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
         let envelope = self.envelope.decode(bodies);
-        let before =
-            envelope.column(0).as_any().downcast_ref::<StructArray>().expect("pre-image struct");
-        let after =
-            envelope.column(1).as_any().downcast_ref::<StructArray>().expect("post-image struct");
-        let ops = envelope.column(2).as_any().downcast_ref::<StringArray>().expect("op string");
+        let before = envelope
+            .column(0)
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .expect("pre-image struct");
+        let after = envelope
+            .column(1)
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .expect("post-image struct");
+        let ops = envelope
+            .column(2)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("op string");
         let mut out_rows: Vec<(i8, usize, usize, RowSource)> =
             Vec::with_capacity(envelope.num_rows());
         for row in 0..envelope.num_rows() {
@@ -1018,7 +1149,16 @@ impl AvroCdcDecoder {
                 CdcOp::Skip => continue,
                 CdcOp::Unknown => panic!("unknown CDC operation \"{op}\""),
             };
-            cdc_emit(&action, row, row, CdcShape::BeforeAfter, 0, before, after, &mut out_rows);
+            cdc_emit(
+                &action,
+                row,
+                row,
+                CdcShape::BeforeAfter,
+                0,
+                before,
+                after,
+                &mut out_rows,
+            );
         }
         gather_cdc_batch(&out_rows, before, after, self.arity, &self.output)
     }
@@ -1072,7 +1212,9 @@ pub(crate) fn parse_format_options(encoded: &str) -> FormatOptions {
     let mut keyed_value_positions = None;
     let mut keyed_key_little_endian = false;
     for line in encoded.lines().filter(|l| !l.is_empty()) {
-        let (key, value) = line.split_once('=').expect("format option is not key=value");
+        let (key, value) = line
+            .split_once('=')
+            .expect("format option is not key=value");
         let single_byte = || -> u8 {
             assert_eq!(value.len(), 1, "format option {key} must be one ASCII char");
             value.as_bytes()[0]
@@ -1125,7 +1267,12 @@ pub(crate) fn parse_format_options(encoded: &str) -> FormatOptions {
         value_positions: keyed_value_positions.expect("keyed decode carries no value positions"),
         key_little_endian: keyed_key_little_endian,
     });
-    FormatOptions { csv, timestamp_mode, raw_little_endian, keyed }
+    FormatOptions {
+        csv,
+        timestamp_mode,
+        raw_little_endian,
+        keyed,
+    }
 }
 
 pub(crate) enum FormatDecoder {
@@ -1191,7 +1338,11 @@ impl KeyedDecoder {
         let indices = Int32Array::from(sources);
         let gathered = take(keys, &indices, None).expect("failed to gather Kafka keys");
         let key_input = RecordBatch::try_new(
-            Arc::new(Schema::new(vec![Field::new("key", gathered.data_type().clone(), true)])),
+            Arc::new(Schema::new(vec![Field::new(
+                "key",
+                gathered.data_type().clone(),
+                true,
+            )])),
             vec![gathered],
         )
         .expect("failed to build the key decode batch");
@@ -1291,7 +1442,9 @@ impl MessageDecoder {
         let reader = if reader_avro_schema.is_empty() {
             None
         } else {
-            Some(arrow_avro::schema::AvroSchema::new(reader_avro_schema.to_string()))
+            Some(arrow_avro::schema::AvroSchema::new(
+                reader_avro_schema.to_string(),
+            ))
         };
         let options = parse_format_options(format_options);
         if let Some(keyed) = options.keyed.clone() {
@@ -1351,9 +1504,11 @@ impl MessageDecoder {
                 reader,
                 output_schema,
             )),
-            FORMAT_AVRO => {
-                FormatDecoder::Avro(crate::avro::AvroDecoder::bare(avro_schema, reader, output_schema))
-            }
+            FORMAT_AVRO => FormatDecoder::Avro(crate::avro::AvroDecoder::bare(
+                avro_schema,
+                reader,
+                output_schema,
+            )),
             // CSV owns its skip mode: Flink's ignore-parse-errors granularity for CSV is per FIELD
             // (a bad value nulls the field, a short row pads, only a record-level failure drops the
             // row), which the generic per-message retry below cannot reproduce.
@@ -1395,7 +1550,10 @@ impl MessageDecoder {
                 }
             }
         };
-        MessageDecoder { decoder, skip_errors }
+        MessageDecoder {
+            decoder,
+            skip_errors,
+        }
     }
 
     pub(crate) fn decode(&self, body: &RecordBatch) -> RecordBatch {
@@ -1473,12 +1631,19 @@ pub extern "system" fn Java_tech_streamfusion_Native_createDecoder<'local>(
         } else {
             import_record_batch(schema_array_address, schema_address).schema()
         };
-        let avro_schema: String = env.get_string(&avro_schema).map(Into::into).unwrap_or_default();
+        let avro_schema: String = env
+            .get_string(&avro_schema)
+            .map(Into::into)
+            .unwrap_or_default();
         // Empty unless the planner pushed a projection into an Avro decode: the narrowed reader schema.
-        let reader_avro_schema: String =
-            env.get_string(&reader_avro_schema).map(Into::into).unwrap_or_default();
-        let format_options: String =
-            env.get_string(&format_options).map(Into::into).unwrap_or_default();
+        let reader_avro_schema: String = env
+            .get_string(&reader_avro_schema)
+            .map(Into::into)
+            .unwrap_or_default();
+        let format_options: String = env
+            .get_string(&format_options)
+            .map(Into::into)
+            .unwrap_or_default();
         into_handle(MessageDecoder::new(
             format,
             schema,
@@ -1507,8 +1672,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_createProtobufDecoder<'loca
     schema_address: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |env| {
-        let descriptor = env.convert_byte_array(&descriptor).expect("failed to read proto descriptor");
-        let message_name: String = env.get_string(&message_name).expect("failed to read message name").into();
+        let descriptor = env
+            .convert_byte_array(&descriptor)
+            .expect("failed to read proto descriptor");
+        let message_name: String = env
+            .get_string(&message_name)
+            .expect("failed to read message name")
+            .into();
         // When the planner pushed a projection into the decode, it exports the narrowed output schema (0/0
         // otherwise): prune the descriptor to those fields so ptars builds only the read columns.
         let descriptor = if schema_array_address != 0 {
@@ -1539,7 +1709,10 @@ pub extern "system" fn Java_tech_streamfusion_Native_registerAvroSchema<'local>(
 ) {
     crate::bridge::jni_guard(env, move |env| {
         let decoder = unsafe { &mut *(handle as *mut MessageDecoder) };
-        let schema: String = env.get_string(&schema).expect("failed to read avro schema").into();
+        let schema: String = env
+            .get_string(&schema)
+            .expect("failed to read avro schema")
+            .into();
         decoder.register_writer_schema(schema_id as u32, &schema);
     })
 }
@@ -1600,10 +1773,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeDecoder<'local>(
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<MessageDecoder>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<MessageDecoder>(handle));
     })
 }
 
@@ -1721,8 +1892,13 @@ macro_rules! format_jni_facade {
         #[cfg(feature = $feature)]
         #[no_mangle]
         pub extern "system" fn $decode_into<'local>(
-            env: JNIEnv<'local>, class: JClass<'local>, handle: jlong, in_array: jlong,
-            in_schema: jlong, out_array: jlong, out_schema: jlong,
+            env: JNIEnv<'local>,
+            class: JClass<'local>,
+            handle: jlong,
+            in_array: jlong,
+            in_schema: jlong,
+            out_array: jlong,
+            out_schema: jlong,
         ) {
             Java_tech_streamfusion_Native_decodeInto(
                 env, class, handle, in_array, in_schema, out_array, out_schema,
@@ -1732,7 +1908,9 @@ macro_rules! format_jni_facade {
         #[cfg(feature = $feature)]
         #[no_mangle]
         pub extern "system" fn $close_decoder<'local>(
-            env: JNIEnv<'local>, class: JClass<'local>, handle: jlong,
+            env: JNIEnv<'local>,
+            class: JClass<'local>,
+            handle: jlong,
         ) {
             Java_tech_streamfusion_Native_closeDecoder(env, class, handle)
         }
@@ -1814,42 +1992,74 @@ pub extern "system" fn Java_tech_streamfusion_format_json_NativeJsonFormat_creat
 #[cfg(feature = "csv")]
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_format_csv_NativeCsvFormat_createDecoder<'local>(
-    mut env: JNIEnv<'local>, class: JClass<'local>, schema_array_address: jlong, schema_address: jlong,
-    skip_parse_errors: jboolean, format_options: JString<'local>,
+    mut env: JNIEnv<'local>,
+    class: JClass<'local>,
+    schema_array_address: jlong,
+    schema_address: jlong,
+    skip_parse_errors: jboolean,
+    format_options: JString<'local>,
 ) -> jlong {
     let empty_writer = env.new_string("").expect("empty writer schema");
     let empty_reader = env.new_string("").expect("empty reader schema");
     Java_tech_streamfusion_Native_createDecoder(
-        env, class, FORMAT_CSV, schema_array_address, schema_address, empty_writer, empty_reader, 0,
-        skip_parse_errors, format_options,
+        env,
+        class,
+        FORMAT_CSV,
+        schema_array_address,
+        schema_address,
+        empty_writer,
+        empty_reader,
+        0,
+        skip_parse_errors,
+        format_options,
     )
 }
 
 #[cfg(feature = "raw")]
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_format_raw_NativeRawFormat_createDecoder<'local>(
-    mut env: JNIEnv<'local>, class: JClass<'local>, schema_array_address: jlong, schema_address: jlong,
+    mut env: JNIEnv<'local>,
+    class: JClass<'local>,
+    schema_array_address: jlong,
+    schema_address: jlong,
     format_options: JString<'local>,
 ) -> jlong {
     let empty_writer = env.new_string("").expect("empty writer schema");
     let empty_reader = env.new_string("").expect("empty reader schema");
     Java_tech_streamfusion_Native_createDecoder(
-        env, class, FORMAT_RAW, schema_array_address, schema_address, empty_writer, empty_reader, 0,
-        0, format_options,
+        env,
+        class,
+        FORMAT_RAW,
+        schema_array_address,
+        schema_address,
+        empty_writer,
+        empty_reader,
+        0,
+        0,
+        format_options,
     )
 }
 
 #[cfg(feature = "avro")]
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_format_avro_NativeAvroFormat_createDecoder<'local>(
-    mut env: JNIEnv<'local>, class: JClass<'local>, confluent: jboolean, writer_schema: JString<'local>,
-    reader_schema: JString<'local>, schema_array_address: jlong, schema_address: jlong,
+    mut env: JNIEnv<'local>,
+    class: JClass<'local>,
+    confluent: jboolean,
+    writer_schema: JString<'local>,
+    reader_schema: JString<'local>,
+    schema_array_address: jlong,
+    schema_address: jlong,
 ) -> jlong {
     let empty_options = env.new_string("").expect("empty format options");
     Java_tech_streamfusion_Native_createDecoder(
         env,
         class,
-        if confluent != 0 { FORMAT_AVRO_CONFLUENT } else { FORMAT_AVRO },
+        if confluent != 0 {
+            FORMAT_AVRO_CONFLUENT
+        } else {
+            FORMAT_AVRO
+        },
         schema_array_address,
         schema_address,
         writer_schema,
@@ -1862,9 +2072,14 @@ pub extern "system" fn Java_tech_streamfusion_format_avro_NativeAvroFormat_creat
 
 #[cfg(feature = "avro")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_format_avro_NativeAvroFormat_createDebeziumDecoder<'local>(
-    mut env: JNIEnv<'local>, class: JClass<'local>, reader_schema: JString<'local>,
-    schema_array_address: jlong, schema_address: jlong,
+pub extern "system" fn Java_tech_streamfusion_format_avro_NativeAvroFormat_createDebeziumDecoder<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    class: JClass<'local>,
+    reader_schema: JString<'local>,
+    schema_array_address: jlong,
+    schema_address: jlong,
 ) -> jlong {
     let empty_writer = env.new_string("").expect("empty writer schema");
     let empty_options = env.new_string("").expect("empty format options");
@@ -1884,20 +2099,36 @@ pub extern "system" fn Java_tech_streamfusion_format_avro_NativeAvroFormat_creat
 
 #[cfg(feature = "avro")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_format_avro_NativeAvroFormat_registerWriterSchema<'local>(
-    env: JNIEnv<'local>, class: JClass<'local>, handle: jlong, schema_id: jint, schema: JString<'local>,
+pub extern "system" fn Java_tech_streamfusion_format_avro_NativeAvroFormat_registerWriterSchema<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+    handle: jlong,
+    schema_id: jint,
+    schema: JString<'local>,
 ) {
     Java_tech_streamfusion_Native_registerAvroSchema(env, class, handle, schema_id, schema)
 }
 
 #[cfg(feature = "protobuf")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_createDecoder<'local>(
-    env: JNIEnv<'local>, class: JClass<'local>, descriptor: JByteArray<'local>, message_name: JString<'local>,
-    schema_array_address: jlong, schema_address: jlong,
+pub extern "system" fn Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_createDecoder<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+    descriptor: JByteArray<'local>,
+    message_name: JString<'local>,
+    schema_array_address: jlong,
+    schema_address: jlong,
 ) -> jlong {
     Java_tech_streamfusion_Native_createProtobufDecoder(
-        env, class, descriptor, message_name, schema_array_address, schema_address,
+        env,
+        class,
+        descriptor,
+        message_name,
+        schema_array_address,
+        schema_address,
     )
 }
-

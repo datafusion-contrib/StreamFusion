@@ -58,9 +58,9 @@ impl DatumSkipper {
                 advance(bytes, pos, byte_count(length)?)
             }
             SkipNode::Fixed(size) => advance(bytes, pos, *size),
-            SkipNode::Record(fields) => {
-                fields.iter().try_fold(pos, |pos, field| self.skip(*field, bytes, pos))
-            }
+            SkipNode::Record(fields) => fields
+                .iter()
+                .try_fold(pos, |pos, field| self.skip(*field, bytes, pos)),
             SkipNode::Union(branches) => {
                 let (branch, pos) = read_long(bytes, pos)?;
                 let branch = usize::try_from(branch)
@@ -129,7 +129,9 @@ impl Fault {
 
 #[inline]
 fn advance(bytes: &[u8], pos: usize, by: usize) -> Result<usize, Fault> {
-    pos.checked_add(by).filter(|end| *end <= bytes.len()).ok_or(Fault::Overrun)
+    pos.checked_add(by)
+        .filter(|end| *end <= bytes.len())
+        .ok_or(Fault::Overrun)
 }
 
 #[inline]
@@ -147,7 +149,11 @@ fn skip_varint(bytes: &[u8], pos: usize) -> Result<usize, Fault> {
             return Ok(p + 1);
         }
     }
-    Err(if limit < pos + 10 { Fault::Overrun } else { Fault::InvalidVarint })
+    Err(if limit < pos + 10 {
+        Fault::Overrun
+    } else {
+        Fault::InvalidVarint
+    })
 }
 
 /// Zigzag varint, with the Java decoder's 10-byte bound.
@@ -187,8 +193,9 @@ fn compile(
             Ok(push(nodes, SkipNode::Union(branches)))
         }
         Value::Object(object) => {
-            let type_value =
-                object.get("type").ok_or("avro schema object carries no type")?;
+            let type_value = object
+                .get("type")
+                .ok_or("avro schema object carries no type")?;
             let Value::String(type_name) = type_value else {
                 return compile(type_value, namespace, nodes, names);
             };
@@ -205,8 +212,9 @@ fn compile(
                     let fields = fields
                         .iter()
                         .map(|field| {
-                            let field_type =
-                                field.get("type").ok_or("avro record field carries no type")?;
+                            let field_type = field
+                                .get("type")
+                                .ok_or("avro record field carries no type")?;
                             compile(field_type, child_namespace.as_deref(), nodes, names)
                         })
                         .collect::<Result<Vec<_>, String>>()?;
@@ -224,7 +232,8 @@ fn compile(
                     let size = object
                         .get("size")
                         .and_then(Value::as_u64)
-                        .ok_or("avro fixed carries no size")? as usize;
+                        .ok_or("avro fixed carries no size")?
+                        as usize;
                     let index = push(nodes, SkipNode::Fixed(size));
                     names.insert(fullname, index);
                     Ok(index)
@@ -270,7 +279,9 @@ fn leaf_or_ref(
                     .and_then(|namespace| names.get(format!("{namespace}.{name}").as_str()))
                     .or_else(|| names.get(name))
             };
-            return resolved.copied().ok_or_else(|| format!("unresolved avro type name {name}"));
+            return resolved
+                .copied()
+                .ok_or_else(|| format!("unresolved avro type name {name}"));
         }
     };
     Ok(push(nodes, node))
@@ -281,8 +292,10 @@ fn fullname(
     object: &serde_json::Map<String, Value>,
     enclosing: Option<&str>,
 ) -> Result<(String, Option<String>), String> {
-    let name =
-        object.get("name").and_then(Value::as_str).ok_or("avro named type carries no name")?;
+    let name = object
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or("avro named type carries no name")?;
     if let Some((namespace, _)) = name.rsplit_once('.') {
         return Ok((name.to_string(), Some(namespace.to_string())));
     }

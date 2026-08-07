@@ -124,7 +124,10 @@ impl ProtobufEncoder {
         let message = pool
             .get_message_by_name(message_name)
             .unwrap_or_else(|| panic!("protobuf message {message_name} not found in descriptor"));
-        ProtobufEncoder { message, null_string_literal: null_string_literal.to_string() }
+        ProtobufEncoder {
+            message,
+            null_string_literal: null_string_literal.to_string(),
+        }
     }
 
     pub(crate) fn encode(&self, batch: &RecordBatch) -> EncodedMessages {
@@ -181,7 +184,14 @@ impl ProtobufEncoder {
             } else if proto_field.is_list() {
                 self.encode_repeated_field(&proto_field, column, row, out);
             } else {
-                self.encode_singular(&proto_field.kind(), proto_field.number(), column, row, true, out);
+                self.encode_singular(
+                    &proto_field.kind(),
+                    proto_field.number(),
+                    column,
+                    row,
+                    true,
+                    out,
+                );
             }
         }
     }
@@ -275,7 +285,13 @@ impl ProtobufEncoder {
                 // nested content is empty (tag + zero length), exactly like a set Java builder.
                 let strukt = typed::<StructArray>(array, kind);
                 let mut nested = Vec::new();
-                self.encode_message(descriptor, strukt.fields(), strukt.columns(), index, &mut nested);
+                self.encode_message(
+                    descriptor,
+                    strukt.fields(),
+                    strukt.columns(),
+                    index,
+                    &mut nested,
+                );
                 tag(number, 2, out);
                 varint(nested.len() as u64, out);
                 out.extend_from_slice(&nested);
@@ -300,8 +316,15 @@ impl ProtobufEncoder {
         match &kind {
             // Numeric/bool elements pack (proto3 default on both engines); a null element writes
             // the type default into the packed run, Flink's container-null substitution.
-            Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 | Kind::Int64 | Kind::Sint64
-            | Kind::Sfixed64 | Kind::Float | Kind::Double | Kind::Bool => {
+            Kind::Int32
+            | Kind::Sint32
+            | Kind::Sfixed32
+            | Kind::Int64
+            | Kind::Sint64
+            | Kind::Sfixed64
+            | Kind::Float
+            | Kind::Double
+            | Kind::Bool => {
                 let mut packed = Vec::new();
                 for index in 0..elements.len() {
                     self.packed_element(&kind, &elements, index, &mut packed);
@@ -350,35 +373,67 @@ impl ProtobufEncoder {
         let null = array.is_null(index);
         match kind {
             Kind::Int32 => {
-                let value = if null { 0 } else { typed::<Int32Array>(array, kind).value(index) };
+                let value = if null {
+                    0
+                } else {
+                    typed::<Int32Array>(array, kind).value(index)
+                };
                 varint(value as i64 as u64, out);
             }
             Kind::Sint32 => {
-                let value = if null { 0 } else { typed::<Int32Array>(array, kind).value(index) };
+                let value = if null {
+                    0
+                } else {
+                    typed::<Int32Array>(array, kind).value(index)
+                };
                 varint(zigzag32(value), out);
             }
             Kind::Sfixed32 => {
-                let value = if null { 0 } else { typed::<Int32Array>(array, kind).value(index) };
+                let value = if null {
+                    0
+                } else {
+                    typed::<Int32Array>(array, kind).value(index)
+                };
                 out.extend_from_slice(&value.to_le_bytes());
             }
             Kind::Int64 => {
-                let value = if null { 0 } else { typed::<Int64Array>(array, kind).value(index) };
+                let value = if null {
+                    0
+                } else {
+                    typed::<Int64Array>(array, kind).value(index)
+                };
                 varint(value as u64, out);
             }
             Kind::Sint64 => {
-                let value = if null { 0 } else { typed::<Int64Array>(array, kind).value(index) };
+                let value = if null {
+                    0
+                } else {
+                    typed::<Int64Array>(array, kind).value(index)
+                };
                 varint(zigzag64(value), out);
             }
             Kind::Sfixed64 => {
-                let value = if null { 0 } else { typed::<Int64Array>(array, kind).value(index) };
+                let value = if null {
+                    0
+                } else {
+                    typed::<Int64Array>(array, kind).value(index)
+                };
                 out.extend_from_slice(&value.to_le_bytes());
             }
             Kind::Float => {
-                let value = if null { 0.0 } else { typed::<Float32Array>(array, kind).value(index) };
+                let value = if null {
+                    0.0
+                } else {
+                    typed::<Float32Array>(array, kind).value(index)
+                };
                 out.extend_from_slice(&value.to_le_bytes());
             }
             Kind::Double => {
-                let value = if null { 0.0 } else { typed::<Float64Array>(array, kind).value(index) };
+                let value = if null {
+                    0.0
+                } else {
+                    typed::<Float64Array>(array, kind).value(index)
+                };
                 out.extend_from_slice(&value.to_le_bytes());
             }
             Kind::Bool => {
@@ -397,7 +452,10 @@ impl ProtobufEncoder {
         out: &mut Vec<u8>,
     ) {
         let Kind::Message(entry) = field.kind() else {
-            panic!("protobuf map field {} has a non-message entry kind", field.name())
+            panic!(
+                "protobuf map field {} has a non-message entry kind",
+                field.name()
+            )
         };
         let key_field = entry.map_entry_key_field();
         let value_field = entry.map_entry_value_field();

@@ -11,7 +11,11 @@ pub(crate) struct SortColumn {
 
 /// Orders two rows by the sort columns, returning the first column's decision. Null placement
 /// follows `nulls_first` and is not flipped by `ascending`; the value comparison is.
-pub(crate) fn compare_rows(a: &[ScalarValue], b: &[ScalarValue], sort: &[SortColumn]) -> std::cmp::Ordering {
+pub(crate) fn compare_rows(
+    a: &[ScalarValue],
+    b: &[ScalarValue],
+    sort: &[SortColumn],
+) -> std::cmp::Ordering {
     use std::cmp::Ordering::Equal;
     for s in sort {
         let (x, y) = (&a[s.index], &b[s.index]);
@@ -67,7 +71,7 @@ pub(crate) fn compare_rows(a: &[ScalarValue], b: &[ScalarValue], sort: &[SortCol
 /// value-encoded full row.
 pub(crate) struct TopNConverters {
     partition: RowConverter,
-    // Arc-shared: the Paimon codec re-derives sort keys and payload rows on hydration, and
+    // Arc-shared: the state codec re-derives sort keys and payload rows on hydration, and
     // arrow-row rejects rows decoded by a different converter INSTANCE — the codec and the
     // operator must literally share these two.
     sort: Arc<RowConverter>,
@@ -83,14 +87,17 @@ impl TopNConverters {
         sort_columns: &[SortColumn],
     ) -> Self {
         let payload = RowConverter::new(
-            (0..arity).map(|i| SortField::new(batch.column(i).data_type().clone())).collect(),
+            (0..arity)
+                .map(|i| SortField::new(batch.column(i).data_type().clone()))
+                .collect(),
         )
         .expect("top-n payload converter");
         // A plain LIMIT (no ORDER BY) has zero sort columns; like the empty partition key, encode a
         // constant dummy so all rows compare equal and the buffer preserves arrival order (Flink's
         // first-n by arrival). With sort columns present, encode them memcomparable with their options.
         let sort = if sort_columns.is_empty() {
-            RowConverter::new(vec![SortField::new(DataType::Boolean)]).expect("top-n empty sort converter")
+            RowConverter::new(vec![SortField::new(DataType::Boolean)])
+                .expect("top-n empty sort converter")
         } else {
             RowConverter::new(
                 sort_columns
@@ -98,7 +105,10 @@ impl TopNConverters {
                     .map(|s| {
                         SortField::new_with_options(
                             batch.column(s.index).data_type().clone(),
-                            SortOptions { descending: !s.ascending, nulls_first: s.nulls_first },
+                            SortOptions {
+                                descending: !s.ascending,
+                                nulls_first: s.nulls_first,
+                            },
                         )
                     })
                     .collect(),
@@ -111,25 +121,10 @@ impl TopNConverters {
         let partition_refs: Vec<&ArrayRef> =
             partition_columns.iter().map(|&i| batch.column(i)).collect();
         let partition = key_row_converter(&partition_refs);
-        TopNConverters { partition, sort: Arc::new(sort), payload: Arc::new(payload) }
-    }
-
-    /// Builds the converter set from declared row types, sharing the codec's sort/payload
-    /// converters so hydrated rows and operator-built rows are interchangeable.
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn from_codec(codec: &TopNStateCodec, partition_columns: &[usize]) -> Self {
-        let partition_fields: Vec<SortField> = if partition_columns.is_empty() {
-            vec![SortField::new(DataType::Boolean)]
-        } else {
-            partition_columns
-                .iter()
-                .map(|&i| SortField::new(codec.row_types[i].clone()))
-                .collect()
-        };
         TopNConverters {
-            partition: RowConverter::new(partition_fields).expect("top-n partition converter"),
-            sort: Arc::clone(&codec.sort),
-            payload: Arc::clone(&codec.payload),
+            partition,
+            sort: Arc::new(sort),
+            payload: Arc::new(payload),
         }
     }
 }
@@ -197,122 +192,14 @@ pub(crate) struct TopNRanker<S: KeyedStateStore<Vec<TopNRow>> = MemoryTopNStore>
 /// The resident default backend for the Top-N buffer store (see `state/` for the seam).
 pub(crate) type MemoryTopNStore = MemoryStateStore<Vec<TopNRow>>;
 
-/// The Top-N buffer's persistent backend: the Paimon LIST store — one table row per buffered
+/// The Top-N buffer's persistent backend: the persistent list store — one table row per buffered
 /// element under PK `[kg, k, ord]` — under the Top-N element codec.
-#[cfg(feature = "paimon-state")]
-pub(crate) type PaimonTopNStore = crate::state::PaimonListStore<TopNStateCodec>;
 
 /// The Top-N element codec: each buffered row persists as its full row in typed columns (never
 /// the transient arrow-row bytes; see the dedup codec for why), and the memcomparable sort key is
 /// re-derived from the row's own sort columns on hydration. The list store's `ord` column
 /// preserves buffer positions exactly, so tie order (arrival order among equal sort keys — which
 /// decides evictions at the boundary) survives restore byte-for-byte.
-#[cfg(feature = "paimon-state")]
-pub(crate) struct TopNStateCodec {
-    row_types: Vec<DataType>,
-    sort_columns: Vec<SortColumn>,
-    payload: Arc<RowConverter>,
-    sort: Arc<RowConverter>,
-}
-
-#[cfg(feature = "paimon-state")]
-impl TopNStateCodec {
-    pub(crate) fn new(row_types: Vec<DataType>, sort_columns: Vec<SortColumn>) -> Self {
-        let payload = RowConverter::new(
-            row_types.iter().map(|t| SortField::new(t.clone())).collect(),
-        )
-        .expect("top-n codec payload converter");
-        // Mirror `TopNConverters::build` exactly, so re-derived sort keys compare byte-identically
-        // with the ones the operator builds from live batches.
-        let sort = if sort_columns.is_empty() {
-            RowConverter::new(vec![SortField::new(DataType::Boolean)])
-                .expect("top-n codec empty sort converter")
-        } else {
-            RowConverter::new(
-                sort_columns
-                    .iter()
-                    .map(|s| {
-                        SortField::new_with_options(
-                            row_types[s.index].clone(),
-                            SortOptions { descending: !s.ascending, nulls_first: s.nulls_first },
-                        )
-                    })
-                    .collect(),
-            )
-            .expect("top-n codec sort converter")
-        };
-        TopNStateCodec { row_types, sort_columns, payload: Arc::new(payload), sort: Arc::new(sort) }
-    }
-}
-
-#[cfg(feature = "paimon-state")]
-impl TopNStateCodec {
-    /// Decodes one buffered payload row back to a scalar per column — the persisted form shared
-    /// by the list shape's elements and the update-fast shape's row-keyed entries.
-    pub(crate) fn encode_payload(&self, payload: &OwnedRow) -> Vec<ScalarValue> {
-        let parser = self.payload.parser();
-        let columns = self
-            .payload
-            .convert_rows([parser.parse(payload.row().data())])
-            .expect("decode top-n payload for persistence");
-        columns
-            .iter()
-            .map(|column| ScalarValue::try_from_array(column, 0).expect("top-n state scalar"))
-            .collect()
-    }
-}
-
-#[cfg(feature = "paimon-state")]
-impl crate::state::PaimonListCodec for TopNStateCodec {
-    type Entry = TopNRow;
-
-    fn supported(&self) -> bool {
-        crate::state::paimon_row_supported(&self.row_types)
-    }
-
-    fn value_fields(&self) -> Vec<(String, DataType)> {
-        self.row_types
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (format!("c{i}"), t.clone()))
-            .collect()
-    }
-
-    fn encode(&self, entry: &TopNRow) -> Vec<ScalarValue> {
-        self.encode_payload(&entry.payload)
-    }
-
-    fn decode(&self, scalars: &[ScalarValue]) -> TopNRow {
-        let columns: Vec<ArrayRef> = scalars
-            .iter()
-            .zip(&self.row_types)
-            .map(|(scalar, data_type)| scalars_to_array(vec![scalar.clone()], data_type))
-            .collect();
-        let sort_arrays: Vec<ArrayRef> =
-            self.sort_columns.iter().map(|s| columns[s.index].clone()).collect();
-        let sort_key = encode_group_keys(&self.sort, &sort_arrays, 1).row(0).owned();
-        let payload = self
-            .payload
-            .convert_columns(&columns)
-            .expect("encode hydrated top-n payload")
-            .row(0)
-            .owned();
-        // The TTL timestamp rides the store's ts column via `stamp_write_ms`.
-        TopNRow { sort: sort_key, payload: Arc::new(payload), ts_ms: 0 }
-    }
-
-    fn write_ms(&self, entry: &TopNRow) -> i64 {
-        entry.ts_ms
-    }
-
-    fn stamp_write_ms(&self, entry: &mut TopNRow, ts_ms: i64) {
-        entry.ts_ms = ts_ms;
-    }
-
-    fn entry_bytes(&self, entry: &TopNRow) -> usize {
-        topn_entry_bytes(entry)
-    }
-}
 
 /// Estimated footprint of one buffered Top-N entry (sort key + payload row + container overhead).
 pub(crate) fn topn_entry_bytes(entry: &TopNRow) -> usize {
@@ -410,10 +297,7 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
     /// Moves this freshly built (empty, memory-backed) ranker's configuration onto another state
     /// backend; construction goes through `new` + builders first so backend choice stays
     /// orthogonal to the shape builders.
-    pub(crate) fn with_backend<T: KeyedStateStore<Vec<TopNRow>>>(
-        self,
-        groups: T,
-    ) -> TopNRanker<T> {
+    pub(crate) fn with_backend<T: KeyedStateStore<Vec<TopNRow>>>(self, groups: T) -> TopNRanker<T> {
         TopNRanker {
             partition_columns: self.partition_columns,
             key_timestamp_precisions: self.key_timestamp_precisions,
@@ -455,7 +339,7 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
         self
     }
 
-    /// Pre-installs a converter set built from declared types (the Paimon path, which must share
+    /// Pre-installs a converter set built from declared types (the persistent path, which must share
     /// the codec's converters); the lazy first-batch build then never runs.
     pub(crate) fn with_converters(mut self, converters: TopNConverters) -> Self {
         self.converters = Some(converters);
@@ -465,8 +349,12 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
     /// Builds the three arrow-row converters from a batch's column types, once.
     fn ensure_converters(&mut self, batch: &RecordBatch, arity: usize) {
         if self.converters.is_none() {
-            self.converters =
-                Some(TopNConverters::build(batch, arity, &self.partition_columns, &self.sort_columns));
+            self.converters = Some(TopNConverters::build(
+                batch,
+                arity,
+                &self.partition_columns,
+                &self.sort_columns,
+            ));
         }
     }
 
@@ -516,8 +404,11 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
             self.sweep_expired(ttl);
             self.last_sweep_ms = now_ms;
         }
-        self.groups
-            .begin_batch(batch, &self.partition_columns, &self.key_timestamp_precisions)?;
+        self.groups.begin_batch(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
         let conv = self.converters.as_ref().expect("converters set");
         // Encode the sort key and full-row payload columnar->row in two vectorized passes; the
         // partition key encodes per row into the BinaryRow encoder's reused buffer.
@@ -526,11 +417,17 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
             &self.partition_columns,
             &self.key_timestamp_precisions,
         );
-        let sort_arrays: Vec<ArrayRef> =
-            self.sort_columns.iter().map(|s| batch.column(s.index).clone()).collect();
+        let sort_arrays: Vec<ArrayRef> = self
+            .sort_columns
+            .iter()
+            .map(|s| batch.column(s.index).clone())
+            .collect();
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
         let keys = encode_group_keys(&conv.sort, &sort_arrays, batch.num_rows());
-        let payloads = conv.payload.convert_columns(&data_arrays).expect("encode payload");
+        let payloads = conv
+            .payload
+            .convert_columns(&data_arrays)
+            .expect("encode payload");
 
         let limit = self.limit as usize;
         let output_rank = self.output_rank_number;
@@ -609,7 +506,8 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
                 }
                 if buffer.len() > limit {
                     if track {
-                        delta -= buffer[limit..].iter().map(topn_entry_bytes).sum::<usize>() as isize;
+                        delta -=
+                            buffer[limit..].iter().map(topn_entry_bytes).sum::<usize>() as isize;
                     }
                     buffer.truncate(limit); // the row past N was retracted by the -U at rank=limit
                 }
@@ -617,7 +515,11 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
                 let payload = Arc::new(payloads.row(row).owned());
                 buffer.insert(
                     pos,
-                    TopNRow { sort: key_row.owned(), payload: Arc::clone(&payload), ts_ms: 0 },
+                    TopNRow {
+                        sort: key_row.owned(),
+                        payload: Arc::clone(&payload),
+                        ts_ms: 0,
+                    },
                 );
                 if track {
                     delta += topn_entry_bytes(&buffer[pos]) as isize;
@@ -683,19 +585,28 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
         }
         // The mini-batch bundle spans pushes: hydrated partitions stay resident until the flush
         // ends the bundle, so the staged preimages' re-probes there stay truthful.
-        self.groups
-            .begin_batch(batch, &self.partition_columns, &self.key_timestamp_precisions)?;
+        self.groups.begin_batch(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
         let conv = self.converters.as_ref().expect("converters set");
         let mut parts = BinaryRowBatchEncoder::new(
             batch,
             &self.partition_columns,
             &self.key_timestamp_precisions,
         );
-        let sort_arrays: Vec<ArrayRef> =
-            self.sort_columns.iter().map(|s| batch.column(s.index).clone()).collect();
+        let sort_arrays: Vec<ArrayRef> = self
+            .sort_columns
+            .iter()
+            .map(|s| batch.column(s.index).clone())
+            .collect();
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
         let keys = encode_group_keys(&conv.sort, &sort_arrays, batch.num_rows());
-        let payloads = conv.payload.convert_columns(&data_arrays).expect("encode payload");
+        let payloads = conv
+            .payload
+            .convert_columns(&data_arrays)
+            .expect("encode payload");
 
         let limit = self.limit as usize;
         let output_rank = self.output_rank_number;
@@ -771,7 +682,11 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
         if !self.net_diff {
             return self.emit(Vec::new(), Vec::new(), Vec::new());
         }
-        let staged_bytes = if self.memory.tracking() { self.staging_bytes() } else { 0 };
+        let staged_bytes = if self.memory.tracking() {
+            self.staging_bytes()
+        } else {
+            0
+        };
         let touched = std::mem::take(&mut self.staged_order);
         let old_tops = std::mem::take(&mut self.staged_old_tops);
         let mut out_rows: Vec<Arc<OwnedRow>> = Vec::new();
@@ -831,7 +746,12 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
         self.emit(out_rows, out_kinds, out_ranks)
     }
 
-    fn emit(&self, out_rows: Vec<Arc<OwnedRow>>, out_kinds: Vec<i8>, out_ranks: Vec<i64>) -> RecordBatch {
+    fn emit(
+        &self,
+        out_rows: Vec<Arc<OwnedRow>>,
+        out_kinds: Vec<i8>,
+        out_ranks: Vec<i64>,
+    ) -> RecordBatch {
         emit_changelog(
             self.schema.as_ref(),
             self.converters.as_ref(),
@@ -859,7 +779,9 @@ fn raw_topn_snapshot_groups(
     max_parallelism: usize,
     ttl_on: bool,
 ) -> BTreeMap<i32, Vec<u8>> {
-    let Some(schema) = schema else { return BTreeMap::new() };
+    let Some(schema) = schema else {
+        return BTreeMap::new();
+    };
     let mut builders: BTreeMap<i32, (BinaryBuilder, BinaryBuilder, BinaryBuilder, Int64Builder)> =
         BTreeMap::new();
     for (key, buffer) in groups.iter() {
@@ -892,19 +814,21 @@ fn raw_topn_snapshot_groups(
     ));
     builders
         .into_iter()
-        .map(|(group, (mut keys, mut sorts, mut rows, mut write_timestamps))| {
-            let mut columns: Vec<ArrayRef> = vec![
-                Arc::new(keys.finish()),
-                Arc::new(sorts.finish()),
-                Arc::new(rows.finish()),
-            ];
-            if ttl_on {
-                columns.push(Arc::new(write_timestamps.finish()));
-            }
-            let batch = RecordBatch::try_new(raw_schema.clone(), columns)
-                .expect("raw top-n snapshot batch");
-            (group, write_ipc(&batch))
-        })
+        .map(
+            |(group, (mut keys, mut sorts, mut rows, mut write_timestamps))| {
+                let mut columns: Vec<ArrayRef> = vec![
+                    Arc::new(keys.finish()),
+                    Arc::new(sorts.finish()),
+                    Arc::new(rows.finish()),
+                ];
+                if ttl_on {
+                    columns.push(Arc::new(write_timestamps.finish()));
+                }
+                let batch = RecordBatch::try_new(raw_schema.clone(), columns)
+                    .expect("raw top-n snapshot batch");
+                (group, write_ipc(&batch))
+            },
+        )
         .collect()
 }
 
@@ -920,7 +844,12 @@ impl TopNRanker {
     }
 
     pub(crate) fn snapshot_partitions(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
-        raw_topn_snapshot_groups(&self.groups, self.schema.as_ref(), max_parallelism, self.ttl_ms > 0)
+        raw_topn_snapshot_groups(
+            &self.groups,
+            self.schema.as_ref(),
+            max_parallelism,
+            self.ttl_ms > 0,
+        )
     }
 
     /// `restored_at_ms` stamps rows from a snapshot carrying no TTL timestamps (a pre-TTL or
@@ -960,9 +889,14 @@ impl TopNRanker {
         snapshots: &[Vec<u8>],
         restored_at_ms: i64,
     ) -> Self {
-        let mut ranker =
-            TopNRanker::new(partition_columns, sort_columns, limit, output_rank_number, net_diff)
-                .with_key_timestamp_precisions(key_timestamp_precisions);
+        let mut ranker = TopNRanker::new(
+            partition_columns,
+            sort_columns,
+            limit,
+            output_rank_number,
+            net_diff,
+        )
+        .with_key_timestamp_precisions(key_timestamp_precisions);
         for bytes in snapshots {
             for batch in read_ipc_if_present(bytes) {
                 if batch.schema_ref().field(0).name() == RAW_SNAPSHOT_KEY {
@@ -996,11 +930,17 @@ impl TopNRanker {
             &self.partition_columns,
             &self.key_timestamp_precisions,
         );
-        let sort_arrays: Vec<ArrayRef> =
-            self.sort_columns.iter().map(|s| batch.column(s.index).clone()).collect();
+        let sort_arrays: Vec<ArrayRef> = self
+            .sort_columns
+            .iter()
+            .map(|s| batch.column(s.index).clone())
+            .collect();
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
         let keys = encode_group_keys(&conv.sort, &sort_arrays, batch.num_rows());
-        let payloads = conv.payload.convert_columns(&data_arrays).expect("encode payload");
+        let payloads = conv
+            .payload
+            .convert_columns(&data_arrays)
+            .expect("encode payload");
         let groups = &mut self.groups;
         for row in 0..batch.num_rows() {
             let part = parts.encode(row);
@@ -1062,7 +1002,9 @@ fn load_topn_batch_raw(
         buffer.push(TopNRow {
             sort: sort_parser.parse(sorts.value(row)).owned(),
             payload: Arc::new(payload_parser.parse(rows.value(row)).owned()),
-            ts_ms: write_timestamps.as_ref().map_or(restored_at_ms, |ts| ts.value(row)),
+            ts_ms: write_timestamps
+                .as_ref()
+                .map_or(restored_at_ms, |ts| ts.value(row)),
         });
     }
 }
@@ -1190,7 +1132,8 @@ impl RetractableTopNRanker {
                 byte_key_bytes(&key.0) + buffer.iter().map(topn_entry_bytes).sum::<usize>()
             })
             .sum();
-        self.memory.attach("retracting-top-n", budget_bytes, state)?;
+        self.memory
+            .attach("retracting-top-n", budget_bytes, state)?;
         Ok(self)
     }
 }
@@ -1248,7 +1191,7 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> RetractableTopNRanker<S> {
         self
     }
 
-    /// Pre-installs a converter set built from declared types (the Paimon path, which must share
+    /// Pre-installs a converter set built from declared types (the persistent path, which must share
     /// the codec's converters); the lazy first-batch build then never runs.
     pub(crate) fn with_converters(mut self, converters: TopNConverters) -> Self {
         self.converters = Some(converters);
@@ -1318,16 +1261,23 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> RetractableTopNRanker<S> {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         if self.converters.is_none() {
-            self.converters =
-                Some(TopNConverters::build(batch, arity, &self.partition_columns, &self.sort_columns));
+            self.converters = Some(TopNConverters::build(
+                batch,
+                arity,
+                &self.partition_columns,
+                &self.sort_columns,
+            ));
         }
         let ttl = StateTtl::new(self.ttl_ms, now_ms);
         if ttl.enabled() && now_ms >= self.last_sweep_ms + self.ttl_ms {
             self.sweep_expired(ttl);
             self.last_sweep_ms = now_ms;
         }
-        self.groups
-            .begin_batch(batch, &self.partition_columns, &self.key_timestamp_precisions)?;
+        self.groups.begin_batch(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
         let conv = self.converters.as_ref().expect("converters set");
         // Encode the sort key and full-row payload columnar->row in two vectorized passes; the
         // partition key encodes per row into the BinaryRow encoder's reused buffer.
@@ -1336,11 +1286,17 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> RetractableTopNRanker<S> {
             &self.partition_columns,
             &self.key_timestamp_precisions,
         );
-        let sort_arrays: Vec<ArrayRef> =
-            self.sort_columns.iter().map(|s| batch.column(s.index).clone()).collect();
+        let sort_arrays: Vec<ArrayRef> = self
+            .sort_columns
+            .iter()
+            .map(|s| batch.column(s.index).clone())
+            .collect();
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
         let keys = encode_group_keys(&conv.sort, &sort_arrays, batch.num_rows());
-        let payloads = conv.payload.convert_columns(&data_arrays).expect("encode payload");
+        let payloads = conv
+            .payload
+            .convert_columns(&data_arrays)
+            .expect("encode payload");
 
         let row_kinds = row_kind_column(batch);
         // Output window: buffer indices [offset, limit) = ranks [offset+1, limit], clamped to len.
@@ -1421,7 +1377,16 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> RetractableTopNRanker<S> {
                 .iter()
                 .map(|e| Arc::clone(&e.payload))
                 .collect();
-            diff_top(rank_output, true, rank_base, &old_top, &new_top, &mut out_rows, &mut out_kinds, &mut out_ranks);
+            diff_top(
+                rank_output,
+                true,
+                rank_base,
+                &old_top,
+                &new_top,
+                &mut out_rows,
+                &mut out_kinds,
+                &mut out_ranks,
+            );
         }
         self.groups.end_bundle()?;
         self.memory.record(delta + self.groups.footprint_delta());
@@ -1457,8 +1422,12 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> RetractableTopNRanker<S> {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         if self.converters.is_none() {
-            self.converters =
-                Some(TopNConverters::build(batch, arity, &self.partition_columns, &self.sort_columns));
+            self.converters = Some(TopNConverters::build(
+                batch,
+                arity,
+                &self.partition_columns,
+                &self.sort_columns,
+            ));
         }
         let ttl = StateTtl::new(self.ttl_ms, now_ms);
         // The sweep must not run mid-bundle: dropping a staged partition's buffer would surface
@@ -1472,19 +1441,28 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> RetractableTopNRanker<S> {
         }
         // The mini-batch bundle spans pushes: hydrated partitions stay resident until the flush
         // ends the bundle, so the staged preimages' re-probes there stay truthful.
-        self.groups
-            .begin_batch(batch, &self.partition_columns, &self.key_timestamp_precisions)?;
+        self.groups.begin_batch(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
         let conv = self.converters.as_ref().expect("converters set");
         let mut parts = BinaryRowBatchEncoder::new(
             batch,
             &self.partition_columns,
             &self.key_timestamp_precisions,
         );
-        let sort_arrays: Vec<ArrayRef> =
-            self.sort_columns.iter().map(|s| batch.column(s.index).clone()).collect();
+        let sort_arrays: Vec<ArrayRef> = self
+            .sort_columns
+            .iter()
+            .map(|s| batch.column(s.index).clone())
+            .collect();
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
         let keys = encode_group_keys(&conv.sort, &sort_arrays, batch.num_rows());
-        let payloads = conv.payload.convert_columns(&data_arrays).expect("encode payload");
+        let payloads = conv
+            .payload
+            .convert_columns(&data_arrays)
+            .expect("encode payload");
         let row_kinds = row_kind_column(batch);
         let (offset, limit) = (self.offset as usize, self.limit as usize);
         let track = self.memory.tracking();
@@ -1578,7 +1556,11 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> RetractableTopNRanker<S> {
                 Vec::new(),
             );
         }
-        let staged_bytes = if self.memory.tracking() { self.staging_bytes() } else { 0 };
+        let staged_bytes = if self.memory.tracking() {
+            self.staging_bytes()
+        } else {
+            0
+        };
         let touched = std::mem::take(&mut self.staged_order);
         let old_tops = std::mem::take(&mut self.staged_old_tops);
         let (offset, limit) = (self.offset as usize, self.limit as usize);
@@ -1603,7 +1585,9 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> RetractableTopNRanker<S> {
                 &mut out_ranks,
             );
         }
-        self.groups.end_bundle().expect("end retracting top-n bundle");
+        self.groups
+            .end_bundle()
+            .expect("end retracting top-n bundle");
         self.memory.record(self.groups.footprint_delta());
         self.memory.forget(staged_bytes);
         self.memory.account_shrink();
@@ -1630,7 +1614,12 @@ impl RetractableTopNRanker {
     }
 
     fn snapshot_partitions(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
-        raw_topn_snapshot_groups(&self.groups, self.schema.as_ref(), max_parallelism, self.ttl_ms > 0)
+        raw_topn_snapshot_groups(
+            &self.groups,
+            self.schema.as_ref(),
+            max_parallelism,
+            self.ttl_ms > 0,
+        )
     }
 
     /// `restored_at_ms` stamps rows from a snapshot carrying no TTL timestamps (a pre-TTL or
@@ -1671,9 +1660,14 @@ impl RetractableTopNRanker {
         snapshots: &[Vec<u8>],
         restored_at_ms: i64,
     ) -> Self {
-        let mut ranker =
-            RetractableTopNRanker::new(partition_columns, sort_columns, offset, limit, output_rank_number)
-                .with_key_timestamp_precisions(key_timestamp_precisions);
+        let mut ranker = RetractableTopNRanker::new(
+            partition_columns,
+            sort_columns,
+            offset,
+            limit,
+            output_rank_number,
+        )
+        .with_key_timestamp_precisions(key_timestamp_precisions);
         for bytes in snapshots {
             for batch in read_ipc_if_present(bytes) {
                 if batch.schema_ref().field(0).name() == RAW_SNAPSHOT_KEY {
@@ -1714,11 +1708,17 @@ impl RetractableTopNRanker {
             &self.partition_columns,
             &self.key_timestamp_precisions,
         );
-        let sort_arrays: Vec<ArrayRef> =
-            self.sort_columns.iter().map(|s| batch.column(s.index).clone()).collect();
+        let sort_arrays: Vec<ArrayRef> = self
+            .sort_columns
+            .iter()
+            .map(|s| batch.column(s.index).clone())
+            .collect();
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
         let keys = encode_group_keys(&conv.sort, &sort_arrays, batch.num_rows());
-        let payloads = conv.payload.convert_columns(&data_arrays).expect("encode payload");
+        let payloads = conv
+            .payload
+            .convert_columns(&data_arrays)
+            .expect("encode payload");
         let groups = &mut self.groups;
         for row in 0..batch.num_rows() {
             let part = parts.encode(row);
@@ -1958,7 +1958,7 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
         &mut self.groups
     }
 
-    /// Pre-installs a converter set built from declared types (the Paimon path, which must share
+    /// Pre-installs a converter set built from declared types (the persistent path, which must share
     /// the codec's converters); the lazy first-batch build then never runs.
     pub(crate) fn with_converters(mut self, converters: TopNConverters) -> Self {
         self.converters = Some(converters);
@@ -2014,8 +2014,11 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
             self.sweep_expired(ttl);
             self.last_sweep_ms = now_ms;
         }
-        self.groups
-            .begin_batch(batch, &self.partition_columns, &self.key_timestamp_precisions)?;
+        self.groups.begin_batch(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
         let conv = self.converters.as_ref().expect("converters set");
         let mut parts = BinaryRowBatchEncoder::new(
             batch,
@@ -2027,11 +2030,17 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
             &self.row_key_columns,
             &self.row_key_timestamp_precisions,
         );
-        let sort_arrays: Vec<ArrayRef> =
-            self.sort_columns.iter().map(|s| batch.column(s.index).clone()).collect();
+        let sort_arrays: Vec<ArrayRef> = self
+            .sort_columns
+            .iter()
+            .map(|s| batch.column(s.index).clone())
+            .collect();
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
         let keys = encode_group_keys(&conv.sort, &sort_arrays, batch.num_rows());
-        let payloads = conv.payload.convert_columns(&data_arrays).expect("encode payload");
+        let payloads = conv
+            .payload
+            .convert_columns(&data_arrays)
+            .expect("encode payload");
 
         let limit = self.limit as usize;
         let top1 = limit == 1;
@@ -2102,8 +2111,7 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
                         if track {
                             delta += updatable_entry_bytes(&buffer[0]) as isize;
                         }
-                        direct_update =
-                            Some((old_payload, Arc::clone(&buffer[0].payload), 1));
+                        direct_update = Some((old_payload, Arc::clone(&buffer[0].payload), 1));
                     }
                     _ => continue, // equal or worse — dropped, state and output untouched
                 }
@@ -2221,8 +2229,8 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
                 if let Some((old, _, old_rank)) = &direct_update {
                     if let Some(index) = (output_start..out_rows.len()).find(|&index| {
                         out_kinds[index] == 1
-                        && out_ranks[index] == *old_rank
-                        && out_rows[index].row() == old.row()
+                            && out_ranks[index] == *old_rank
+                            && out_rows[index].row() == old.row()
                     }) {
                         if index > output_start {
                             let row = out_rows.remove(index);
@@ -2263,18 +2271,27 @@ impl UpdatableTopNRanker {
                 byte_key_bytes(&key.0) + buffer.iter().map(updatable_entry_bytes).sum::<usize>()
             })
             .sum();
-        self.memory.attach("update-fast-top-n", budget_bytes, state)?;
+        self.memory
+            .attach("update-fast-top-n", budget_bytes, state)?;
         Ok(self)
     }
 
     pub(crate) fn snapshot_partitions(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
-        let Some(schema) = self.schema.as_ref() else { return BTreeMap::new() };
+        let Some(schema) = self.schema.as_ref() else {
+            return BTreeMap::new();
+        };
         // The TTL timestamps ride a trailing column only while TTL is on, so a TTL-off snapshot
         // stays byte-identical to the pre-TTL format.
         let ttl_on = self.ttl_ms > 0;
         let mut builders: BTreeMap<
             i32,
-            (BinaryBuilder, BinaryBuilder, BinaryBuilder, BinaryBuilder, Int64Builder),
+            (
+                BinaryBuilder,
+                BinaryBuilder,
+                BinaryBuilder,
+                BinaryBuilder,
+                Int64Builder,
+            ),
         > = BTreeMap::new();
         for (key, buffer) in self.groups.iter() {
             if buffer.is_empty() {
@@ -2356,8 +2373,8 @@ impl UpdatableTopNRanker {
         for bytes in snapshots {
             for batch in read_ipc_if_present(bytes) {
                 if ranker.schema.is_none() {
-                    let payload_schema =
-                        decode_schema_metadata(&batch).expect("raw update-fast snapshot payload schema");
+                    let payload_schema = decode_schema_metadata(&batch)
+                        .expect("raw update-fast snapshot payload schema");
                     let empty = RecordBatch::new_empty(payload_schema.clone());
                     ranker.converters = Some(TopNConverters::build(
                         &empty,
@@ -2519,13 +2536,6 @@ pub(crate) struct WindowRanker {
     groups: HashMap<(i64, i64, GroupKey), Vec<JoinRow>>,
     schema: Option<SchemaRef>,
     pub(crate) memory: OperatorMemory,
-    /// Paimon persistent state: open-window buffers and closed windows live in the store instead
-    /// of `groups`; that field then stays unused. BinaryRow key encoding needs the partition
-    /// keys' timestamp precisions, which the memory path only needs at snapshot time.
-    #[cfg(feature = "paimon-state")]
-    backend: Option<crate::state::PaimonWindowRankStore>,
-    #[cfg(feature = "paimon-state")]
-    key_timestamp_precisions: Vec<i32>,
 }
 
 impl WindowRanker {
@@ -2537,8 +2547,6 @@ impl WindowRanker {
         limit: i64,
         output_rank_number: bool,
     ) -> Self {
-        #[cfg(feature = "paimon-state")]
-        let key_arity = partition_columns.len();
         WindowRanker {
             window_start_col,
             window_end_col,
@@ -2551,37 +2559,7 @@ impl WindowRanker {
             groups: HashMap::default(),
             schema: None,
             memory: OperatorMemory::unaccounted(),
-            #[cfg(feature = "paimon-state")]
-            backend: None,
-            #[cfg(feature = "paimon-state")]
-            key_timestamp_precisions: vec![-1; key_arity],
         }
-    }
-
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn with_backend(mut self, store: crate::state::PaimonWindowRankStore) -> Self {
-        self.backend = Some(store);
-        self
-    }
-
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn with_key_timestamp_precisions(mut self, precisions: Vec<i32>) -> Self {
-        self.key_timestamp_precisions = precisions;
-        self
-    }
-
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn with_read_through_budget(
-        mut self,
-        budget_bytes: i64,
-    ) -> Result<Self, DataFusionError> {
-        self.memory.attach("window-rank", budget_bytes, 0)?;
-        Ok(self)
-    }
-
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn store_mut(&mut self) -> &mut crate::state::PaimonWindowRankStore {
-        self.backend.as_mut().expect("window-rank paimon backend")
     }
 
     /// Bounds the per-window buffers by the operator's task off-heap budget (negative =
@@ -2592,7 +2570,10 @@ impl WindowRanker {
             .iter()
             .map(|((_, _, key), buffer)| {
                 group_key_bytes(key)
-                    + buffer.iter().map(|r| scalar_row_bytes(r) + GROUP_ENTRY_OVERHEAD).sum::<usize>()
+                    + buffer
+                        .iter()
+                        .map(|r| scalar_row_bytes(r) + GROUP_ENTRY_OVERHEAD)
+                        .sum::<usize>()
             })
             .sum();
         self.memory.attach("window-rank", budget_bytes, state)?;
@@ -2602,84 +2583,20 @@ impl WindowRanker {
     /// Persistent-state arrival path: new windows this batch touches seed from the committed
     /// table first (committed rows precede this batch's rows — the ROW_NUMBER tie-break is
     /// arrival order), then every live row ranks into its window's buffer in the store.
-    #[cfg(feature = "paimon-state")]
-    fn push_backend(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
-        let arity = data_arity(batch);
-        self.schema = Some(data_schema(batch));
-        let ws = rt_to_millis(batch.column(self.window_start_col));
-        let we = rt_to_millis(batch.column(self.window_end_col));
-        let data_arrays: Vec<&ArrayRef> = (0..arity).map(|i| batch.column(i)).collect();
-        let mut encoder = crate::BinaryRowBatchEncoder::new(
-            batch,
-            &self.partition_columns,
-            &self.key_timestamp_precisions,
-        );
-        let mut row_windows: Vec<Option<(i64, i64, ByteKey)>> =
-            Vec::with_capacity(batch.num_rows());
-        let mut fresh: Vec<(i64, i64, ByteKey)> = Vec::new();
-        let mut seen: HashSet<(i64, i64, ByteKey)> = HashSet::default();
-        for row in 0..batch.num_rows() {
-            let window_end = we.value(row);
-            if window_end <= self.current_watermark {
-                self.late_drops += 1;
-                row_windows.push(None); // late: the window already closed and emitted
-                continue;
-            }
-            let window = (window_end, ws.value(row), ByteKey::from(encoder.encode(row)));
-            let store = self.backend.as_ref().expect("window-rank paimon backend");
-            if !store.buffer_exists(window.0, window.1, &window.2) && seen.insert(window.clone())
-            {
-                fresh.push(window.clone());
-            }
-            row_windows.push(Some(window));
-        }
-        let store = self.backend.as_mut().expect("window-rank paimon backend");
-        store.seed_windows(&fresh)?;
-        for (row, window) in row_windows.iter().enumerate() {
-            let Some((window_end, window_start, key)) = window else { continue };
-            let full: JoinRow = data_arrays
-                .iter()
-                .map(|a| ScalarValue::try_from_array(a, row).expect("window-rank row scalar"))
-                .collect();
-            let buffer = store
-                .buffer_mut(*window_end, *window_start, key)
-                .expect("seeded window buffer");
-            buffer.insert_ranked(full, &self.sort_columns, self.limit as usize);
-        }
-        let delta = store.footprint_delta();
-        self.memory.record(delta);
-        self.memory.account()
-    }
 
     /// Persistent-state firing path: the store's overlay fire returns every closed window's rows
     /// (in-memory buffers plus committed windows untouched this interval) in rank order.
-    #[cfg(feature = "paimon-state")]
-    fn flush_backend(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
-        self.current_watermark = watermark;
-        let store = self.backend.as_mut().expect("window-rank paimon backend");
-        let (rows, ranks) = store.fire(watermark)?;
-        if self.schema.is_none() && !rows.is_empty() {
-            // A post-restore fire before any push: rebuild the data schema from the store's
-            // payload types (positional names; the FFI export is positional).
-            self.schema = Some(Arc::new(Schema::new(store.payload_fields_for_schema())));
-        }
-        let delta = store.footprint_delta();
-        self.memory.record(delta);
-        self.memory.account()?;
-        Ok(self.emit(rows, ranks))
-    }
 
     pub(crate) fn push(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
-        #[cfg(feature = "paimon-state")]
-        if self.backend.is_some() {
-            return self.push_backend(batch);
-        }
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         let ws = rt_to_millis(batch.column(self.window_start_col));
         let we = rt_to_millis(batch.column(self.window_end_col));
-        let partition_arrays: Vec<&ArrayRef> =
-            self.partition_columns.iter().map(|&i| batch.column(i)).collect();
+        let partition_arrays: Vec<&ArrayRef> = self
+            .partition_columns
+            .iter()
+            .map(|&i| batch.column(i))
+            .collect();
         let data_arrays: Vec<&ArrayRef> = (0..arity).map(|i| batch.column(i)).collect();
         let track = self.memory.tracking();
         let mut delta = 0isize;
@@ -2699,15 +2616,19 @@ impl WindowRanker {
                 delta += (scalar_row_bytes(&full) + GROUP_ENTRY_OVERHEAD) as isize;
             }
             let key_bytes = if track { group_key_bytes(&key) } else { 0 };
-            let buffer = self.groups.entry((window_end, window_start, key)).or_default();
+            let buffer = self
+                .groups
+                .entry((window_end, window_start, key))
+                .or_default();
             // An empty buffer means the (window, key) entry was just created (never emptied by push).
             if track && buffer.is_empty() {
                 delta += key_bytes as isize;
             }
             // Insert after rows ordering equal-or-before, preserving arrival order for ties (the
             // ROW_NUMBER tie-break), then drop anything past rank N.
-            let pos = buffer
-                .partition_point(|r| compare_rows(r, &full, &self.sort_columns) != std::cmp::Ordering::Greater);
+            let pos = buffer.partition_point(|r| {
+                compare_rows(r, &full, &self.sort_columns) != std::cmp::Ordering::Greater
+            });
             buffer.insert(pos, full);
             if buffer.len() as i64 > self.limit {
                 if track {
@@ -2726,13 +2647,13 @@ impl WindowRanker {
     /// Emits the top-N rows of every window the watermark has closed, in rank order (with the rank
     /// number appended when the host projects it), and evicts those windows.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
-        #[cfg(feature = "paimon-state")]
-        if self.backend.is_some() {
-            return self.flush_backend(watermark);
-        }
         self.current_watermark = watermark;
-        let mut ready: Vec<(i64, i64, GroupKey)> =
-            self.groups.keys().filter(|(we, _, _)| *we <= watermark).cloned().collect();
+        let mut ready: Vec<(i64, i64, GroupKey)> = self
+            .groups
+            .keys()
+            .filter(|(we, _, _)| *we <= watermark)
+            .cloned()
+            .collect();
         // Evict in (window_end, window_start) order for a deterministic emission sequence.
         ready.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
         let mut rows: Vec<JoinRow> = Vec::new();
@@ -2743,7 +2664,10 @@ impl WindowRanker {
             let buffer = self.groups.remove(&group).expect("ready group present");
             if track {
                 freed += GROUP_ENTRY_OVERHEAD;
-                freed += buffer.iter().map(|r| scalar_row_bytes(r) + GROUP_ENTRY_OVERHEAD).sum::<usize>();
+                freed += buffer
+                    .iter()
+                    .map(|r| scalar_row_bytes(r) + GROUP_ENTRY_OVERHEAD)
+                    .sum::<usize>();
             }
             for (rank, row) in buffer.into_iter().enumerate() {
                 rows.push(row);
@@ -2762,13 +2686,19 @@ impl WindowRanker {
         };
         let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
         let mut columns: Vec<ArrayRef> = (0..fields.len())
-            .map(|j| scalars_to_array(rows.iter().map(|r| r[j].clone()).collect(), fields[j].data_type()))
+            .map(|j| {
+                scalars_to_array(
+                    rows.iter().map(|r| r[j].clone()).collect(),
+                    fields[j].data_type(),
+                )
+            })
             .collect();
         if self.output_rank_number {
             fields.push(Field::new("w0$o0", DataType::Int64, false));
             columns.push(Arc::new(Int64Array::from(ranks)));
         }
-        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("window-rank output batch")
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("window-rank output batch")
     }
 
     fn snapshot_parts(&self, batch: Option<RecordBatch>) -> Vec<u8> {
@@ -2779,16 +2709,26 @@ impl WindowRanker {
     }
 
     fn snapshot_batch(&self) -> Option<RecordBatch> {
-        let Some(schema) = &self.schema else { return None };
+        let Some(schema) = &self.schema else {
+            return None;
+        };
         let rows: Vec<&JoinRow> = self.groups.values().flatten().collect();
         if rows.is_empty() {
             return None;
         }
         let fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
         let columns: Vec<ArrayRef> = (0..fields.len())
-            .map(|j| scalars_to_array(rows.iter().map(|r| r[j].clone()).collect(), fields[j].data_type()))
+            .map(|j| {
+                scalars_to_array(
+                    rows.iter().map(|r| r[j].clone()).collect(),
+                    fields[j].data_type(),
+                )
+            })
             .collect();
-        Some(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("window-rank snapshot"))
+        Some(
+            RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+                .expect("window-rank snapshot"),
+        )
     }
 
     fn snapshot_partitions(
@@ -2805,7 +2745,9 @@ impl WindowRanker {
         timestamp_precisions: &[i32],
     ) -> BTreeMap<i32, Vec<u8>> {
         let mut snapshots = BTreeMap::new();
-        let Some(batch) = self.snapshot_batch() else { return snapshots };
+        let Some(batch) = self.snapshot_batch() else {
+            return snapshots;
+        };
         let mut rows_by_group: BTreeMap<i32, Vec<u32>> = BTreeMap::new();
         for row in 0..batch.num_rows() {
             let key_group = flink_key_group(
@@ -2906,7 +2848,10 @@ impl WindowRanker {
     }
 }
 
-state_bytes_getter!(Java_tech_streamfusion_Native_windowRankerStateBytes, WindowRanker);
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_windowRankerStateBytes,
+    WindowRanker
+);
 
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_windowRankerLateDrops<'local>(
@@ -3063,17 +3008,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeWindowRanker<'local>(
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<WindowRanker>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<WindowRanker>(handle));
     })
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_snapshotWindowRankerPartitions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotWindowRankerPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -3092,9 +3033,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotWindowRankerPartiti
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_restoreWindowRankerPartitions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_restoreWindowRankerPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     window_start_col: jint,
@@ -3259,9 +3198,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushTopNRanker<'local>(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_snapshotTopNRankerPartitions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotTopNRankerPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -3279,9 +3216,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotTopNRankerPartition
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_restoreTopNRankerPartitions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_restoreTopNRankerPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     partition_columns: JIntArray<'local>,
@@ -3339,9 +3274,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreTopNRankerPartitions
 /// `FastTop1Function` shape: unique-keyed changelog without retractions, monotonic sort key) and
 /// returns an opaque handle served by the shared Top-N push/flush/snapshot/close entry points.
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_createUpdateFastTopNRanker<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_createUpdateFastTopNRanker<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     partition_columns: JIntArray<'local>,
@@ -3449,10 +3382,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeTopNRanker<'local>(
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<TopNHandle>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<TopNHandle>(handle));
     })
 }
 
@@ -3480,18 +3411,34 @@ mod tests {
     fn retracting_top_n_emits_one_final_diff_per_logical_bundle() {
         let mut ranker = RetractableTopNRanker::new(
             vec![0],
-            vec![SortColumn { index: 1, ascending: true, nulls_first: false }],
+            vec![SortColumn {
+                index: 1,
+                ascending: true,
+                nulls_first: false,
+            }],
             0,
             2,
             false,
         )
         .with_net_diff(true);
 
-        assert_eq!(ranker.push(&changelog(&[10, 20, 30], &[0, 0, 0]), 0).unwrap().num_rows(), 0);
+        assert_eq!(
+            ranker
+                .push(&changelog(&[10, 20, 30], &[0, 0, 0]), 0)
+                .unwrap()
+                .num_rows(),
+            0
+        );
         assert_eq!(ranker.flush_net_diff().num_rows(), 2);
 
-        assert_eq!(ranker.push(&changelog(&[10], &[3]), 0).unwrap().num_rows(), 0);
-        assert_eq!(ranker.push(&changelog(&[5], &[0]), 0).unwrap().num_rows(), 0);
+        assert_eq!(
+            ranker.push(&changelog(&[10], &[3]), 0).unwrap().num_rows(),
+            0
+        );
+        assert_eq!(
+            ranker.push(&changelog(&[5], &[0]), 0).unwrap().num_rows(),
+            0
+        );
         assert_eq!(ranker.staged_partitions(), 1);
         let out = ranker.flush_net_diff();
         let values = out.column(1).as_any().downcast_ref::<Int64Array>().unwrap();

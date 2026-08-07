@@ -42,7 +42,7 @@ APIs that allocate INTERNALLY and hand the buffer out — `realpath(3)` with a N
 `std::fs::canonicalize` in the object-store layer — return system-allocator memory that the
 aliased `free` then fed to `mi_free`, a foreign free whose outcome depends on where the system
 allocation lands relative to mimalloc's segment map (it crashed SIGBUS/SIGSEGV only under
-classpaths that shifted the address-space layout, e.g. with the Java Paimon bundle loaded).
+classpaths that shifted the address-space layout, e.g. with additional state libraries loaded).
 `free` and `realloc` now alias to shims (`mimalloc_shim.c`) that take the mimalloc fast path when
 `mi_is_in_heap_region` says so — a global segment-map lookup that never dereferences near the
 pointer — and otherwise return the pointer to the allocator that owns it (macOS

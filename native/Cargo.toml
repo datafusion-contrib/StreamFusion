@@ -97,38 +97,16 @@ csv-core = "0.1"
 num-traits = "0.2"
 # Flink's JSON format writes binary values as RFC 4648 base64 rather than arrow-json's hexadecimal.
 base64 = "0.22"
-# Persistent state backend (`paimon-state` feature): local Apache Paimon primary-key tables hold
-# operator state as typed Arrow columns on disk, giving Flink incremental checkpoints (a Paimon
-# snapshot is a manifest-pinned immutable file set — "new since last checkpoint" is a manifest
-# diff). Pinned to a rev because the machinery this backend needs (Vortex format writer, mod bucket
-# function, Arrow write path) is newer than the last crates.io release. Vortex is the data file
-# format (BtrBlocks-style compression); storage-fs is the local-disk FileIO.
-# Temporarily pinned to the jordepic fork: five commits on top of apache/paimon-rust 7b54d44 add
-# `FileIOBuilder::with_operator` (the hook the custom state-table fs backend needs, see
-# src/state/state_fs.rs), hash-set In/NotIn evaluation (the per-batch key-probe read path
-# pushes hundreds of key literals; the stock per-literal loop is O(rows × literals)), and
-# bloom-filter file-index support, read and flush-time write (Java-byte-compatible; unused by the
-# store — deletion-vector tables read raw with exact IN pushdown instead — carried purely for
-# upstreaming), and public ManifestEntry kind/bucket accessors (the store maintains its
-# checkpoint listing incrementally from delta manifests); drop back to the apache repo once all
-# are merged upstream.
-paimon = { git = "https://github.com/jordepic/paimon-rust.git", rev = "f005828e9474c1c36cce736cc0b9917ad12ed078", default-features = false, features = ["storage-fs", "vortex"], optional = true }
 # StreamFusion state is owned by Rust and talks to RocksDB through its native C API. Version 0.22
 # builds RocksDB 8.10.0, matching the RocksDB release used by Flink 2.2.1. Keep the dependency
 # statically linked into the StreamFusion DSO; the production link uses hidden visibility so it can
 # coexist with Flink's frocksdbjni in jobs containing host-side fallback operators.
 rocksdb = { version = "0.22.0", default-features = false, features = ["snappy", "lz4", "zstd"], optional = true }
-# The custom local-fs backend for state tables (skips the stock fs service's per-write
-# create_dir_all — the top cost in the backend CPU profile). Version-matched to paimon's own
-# split opendal crates so the two share one build of each.
-opendal = { package = "opendal-core", version = "0.58.0", optional = true }
-opendal-service-fs = { version = "0.58.0", optional = true }
 # Checkpoint file manifests cross the JNI boundary as JSON (small, once per checkpoint — not a hot
-# path). Already in the tree transitively via paimon.
+# path).
 serde = { version = "1", features = ["derive"], optional = true }
 # Also parses Avro writer schemas for the decode framing walk; in the tree via arrow-avro anyway.
 serde_json = "1"
-# Persisting the Paimon schema document on table creation. Already in the tree transitively.
 bytes = { version = "1", optional = true }
 # Opt-in mimalloc (see the `mimalloc` feature): librdkafka allocates one op per consumed message
 # on the broker thread and frees it on the app thread; the system allocator makes that cross-thread
@@ -154,11 +132,9 @@ csv = []
 raw = []
 avro = []
 protobuf = []
-# Paimon-backed persistent operator state (see src/state/). Core-engine infrastructure, not a
-# connector: the toggle is Flink's state-backend selection, and a build without this feature makes
-# the persistent backend unavailable (planner/operator falls back to memory state), never a
-# linkage failure.
-paimon-state = ["dep:paimon", "dep:opendal", "dep:opendal-service-fs", "dep:serde", "dep:bytes"]
+# Rust-owned persistent operator state (see src/state/). Core-engine infrastructure, not a
+# connector: Flink's RocksDB backend selection activates it without routing state access through
+# Java or JNI.
 rocksdb-state = ["dep:rocksdb", "dep:serde", "dep:bytes"]
 # Rebind the C allocator to mimalloc for everything linked into THIS library (librdkafka included),
 # via link-time symbol aliases emitted by build.rs. Library-scoped: the hosting JVM process keeps

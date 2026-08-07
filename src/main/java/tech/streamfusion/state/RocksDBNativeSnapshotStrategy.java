@@ -41,13 +41,13 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 /**
- * Incremental snapshots of a native operator's local Paimon table, mirroring the RocksDB
- * incremental strategy's shared-state contract: a Paimon data file is immutable and uniquely
+ * Incremental snapshots of a native operator's local RocksDB table, mirroring the RocksDB
+ * incremental strategy's shared-state contract: a RocksDB data file is immutable and uniquely
  * named, so a file already uploaded by a completed checkpoint is referenced with a placeholder
  * handle instead of re-uploaded, and the {@code SharedStateRegistry} resolves ownership on the
  * checkpoint coordinator. Snapshot/manifest/schema documents travel as private state each
  * checkpoint (they are small and pin the exact snapshot); the checkpoint's metadata document
- * carries the Paimon snapshot id for restore.
+ * carries the RocksDB snapshot id for restore.
  *
  * <p>The synchronous phase runs the native barrier commit and receives a hard-linked file listing;
  * the asynchronous phase only moves bytes. Bookkeeping follows {@code
@@ -56,18 +56,18 @@ import java.util.UUID;
  * complete/abort notifications prune the map.
  *
  * <p>The manifest's first entry is an OPAQUE snapshot token, defined and consumed only by the
- * native store (a single-table store uses its Paimon snapshot id; a multi-table operator can pack
+ * native store (a single-table store uses its RocksDB snapshot id; a multi-table operator can pack
  * several). This layer stores it in the meta document and hands it back on restore; the one thing
  * it interprets is emptiness — an empty token means no state was ever committed.
  */
-final class PaimonSnapshotStrategy
-    implements SnapshotStrategy<KeyedStateHandle, PaimonSnapshotStrategy.PaimonSnapshotResources> {
+final class RocksDBNativeSnapshotStrategy
+    implements SnapshotStrategy<KeyedStateHandle, RocksDBNativeSnapshotStrategy.RocksDBSnapshotResources> {
 
-  private static final Logger LOG = LoggerFactory.getLogger(PaimonSnapshotStrategy.class);
+  private static final Logger LOG = LoggerFactory.getLogger(RocksDBNativeSnapshotStrategy.class);
 
-  /** Version tag of the checkpoint metadata document; v2 replaced the snapshot-id long with an
-   * opaque token string (v1 documents read back as the id's decimal string). */
-  private static final int META_VERSION = 2;
+  /** A backend discriminator followed by the metadata format version. */
+  private static final int META_MAGIC = 0x5346524b; // SFRK
+  private static final int META_VERSION = 1;
 
   private static final int COPY_BUFFER_BYTES = 64 * 1024;
 
@@ -75,32 +75,8 @@ final class PaimonSnapshotStrategy
   private final KeyGroupRange keyGroupRange;
   private final File checkpointLinkRoot;
   private final File tableDirectory;
-  /** Maintains the state tables synchronously at each barrier, between the data commit and the
-   * manifest capture; never null — the backend fails closed at creation without a compactor. */
-  private final StateTableCompactor compactor;
-
-  /** Kicked after each barrier's minimal round. */
-  private final PaimonTableShaping shaping;
-
-  /** One compactor per table at a time (see {@link PaimonTableShaping}). */
-  private final Object compactionMutex = new Object();
-
-  /** Long-lived maintenance sessions per table directory, guarded by the mutex: a session holds
-   * the table and writer across barriers and folds the native store's commits in incrementally,
-   * so the full manifest chain is scanned once per session, not once per barrier. */
-  private final Map<String, StateTableCompactor.Session> sessions = new HashMap<>();
-
-  /** Compaction commit identifier: monotonic across restarts (millis-seeded — Paimon dedupes
-   * re-committed identifiers per commit user, so barrier checkpoint ids, which restart small,
-   * cannot be reused for the compactor's own commits). */
-  private long compactRound = System.currentTimeMillis();
-
-  private PaimonNativeState nativeState;
-
-  /** The operator's idle-state retention millis (0 = off), set at native-state registration —
-   * before any maintenance session opens — so every session carries the retention as dynamic
-   * record-level-expire options. */
-  private long stateTtlMillis;
+  private final boolean incrementalCheckpoints;
+  private RocksDBNativeState nativeState;
 
   /** Shared files uploaded per checkpoint; a reuse base once the checkpoint completes. */
   private final SortedMap<Long, Collection<HandleAndLocalPath>> uploadedFiles = new TreeMap<>();
@@ -116,33 +92,23 @@ final class PaimonSnapshotStrategy
 
   private CheckpointStreamFactory currentStreamFactory;
 
-  PaimonSnapshotStrategy(
+  RocksDBNativeSnapshotStrategy(
       UUID backendUID,
       KeyGroupRange keyGroupRange,
       File checkpointLinkRoot,
       File tableDirectory,
-      StateTableCompactor compactor) {
+      boolean incrementalCheckpoints) {
     this.backendUID = backendUID;
     this.keyGroupRange = keyGroupRange;
     this.checkpointLinkRoot = checkpointLinkRoot;
     this.tableDirectory = tableDirectory;
-    this.compactor = compactor;
-    this.shaping = new PaimonTableShaping(this::shapeTables);
+    this.incrementalCheckpoints = incrementalCheckpoints;
   }
 
-  void close() {
-    shaping.close();
-    synchronized (compactionMutex) {
-      for (StateTableCompactor.Session session : sessions.values()) {
-        session.close();
-      }
-      sessions.clear();
-    }
-  }
+  void close() {}
 
-  void registerNativeState(PaimonNativeState nativeState, long stateTtlMillis) {
+  void registerNativeState(RocksDBNativeState nativeState, long stateTtlMillis) {
     this.nativeState = nativeState;
-    this.stateTtlMillis = stateTtlMillis;
   }
 
   boolean hasNativeState() {
@@ -155,12 +121,7 @@ final class PaimonSnapshotStrategy
    * native call re-pins that maintained snapshot. A later barrier uploads these immutable files.
    */
   void flushForMemoryPressure() throws Exception {
-    String[] manifest = nativeState.checkpoint();
-    if (!manifest[0].isEmpty()) {
-      compactTables();
-      nativeState.checkpoint();
-      shaping.kick();
-    }
+    nativeState.checkpoint();
   }
 
   /** Seeds the reuse base from a restored checkpoint (single-handle, claim-style restore). */
@@ -195,34 +156,15 @@ final class PaimonSnapshotStrategy
   }
 
   @Override
-  public PaimonSnapshotResources syncPrepareResources(long checkpointId) throws Exception {
+  public RocksDBSnapshotResources syncPrepareResources(long checkpointId) throws Exception {
     long profileStart = System.nanoTime();
-    long profileCompactNs = 0;
     File linkDir = new File(checkpointLinkRoot, "chk-" + checkpointId);
     String[] manifest = nativeState.checkpoint();
-    if (!manifest[0].isEmpty()) {
-      // Maintenance runs synchronously between the data commit and the manifest capture —
-      // Paimon's own lookup-wait model. The barrier's sorted runs are compacted away (with
-      // deletion vectors maintained) before any file is listed, so the checkpoint carries no
-      // level-0 files and the next interval's reads take the raw path. The second native
-      // checkpoint call commits nothing (the write buffer already drained); it re-pins the
-      // maintenance snapshot, lists its files, and lets local GC drop the superseded runs. A
-      // maintenance failure must fail the snapshot: on a deletion-vector table, reads over an
-      // uncompacted run would bypass the vectors and resurrect masked rows.
-      long compactStart = System.nanoTime();
-      compactTables();
-      profileCompactNs = System.nanoTime() - compactStart;
-      manifest = nativeState.checkpoint();
-      // The discretionary merges (run counts, space amplification) happen off-thread; deletion
-      // vectors keep reads correct however far shaping lags.
-      shaping.kick();
-    }
     if (System.getenv("SF_STATE_PROFILE") != null) {
       System.err.printf(
-          "SFPROF barrier chk=%d sync_ms=%d compact_ms=%d%n",
+          "SFPROF rocksdb barrier chk=%d sync_ms=%d%n",
           checkpointId,
-          (System.nanoTime() - profileStart) / 1_000_000,
-          profileCompactNs / 1_000_000);
+          (System.nanoTime() - profileStart) / 1_000_000);
     }
     String snapshotToken = manifest[0];
     List<String> dataFiles = new ArrayList<>();
@@ -248,7 +190,8 @@ final class PaimonSnapshotStrategy
     // NO_SHARING, rescale-bound FORWARD) uploads everything. Meta documents re-upload every
     // checkpoint regardless.
     boolean mayReuse =
-        currentOptions != null
+        incrementalCheckpoints
+            && currentOptions != null
             && currentOptions.getCheckpointType().getSharingFilesStrategy()
                 == SnapshotType.SharingFilesStrategy.FORWARD_BACKWARD;
     Map<String, StreamStateHandle> reusable = new HashMap<>();
@@ -261,109 +204,26 @@ final class PaimonSnapshotStrategy
           reusable.put(rel, confirmed);
           continue;
         }
-        link(rel, linkDir);
+        stage(rel, linkDir, false);
       }
       for (String rel : metaFiles) {
-        link(rel, linkDir);
+        // CURRENT and MANIFEST can change after the barrier. Copy their bytes now; hard-linking
+        // them would let later writes mutate the checkpoint while its async upload is running.
+        stage(rel, linkDir, true);
       }
     }
-    return new PaimonSnapshotResources(snapshotToken, dataFiles, metaFiles, linkDir, reusable);
+    return new RocksDBSnapshotResources(snapshotToken, dataFiles, metaFiles, linkDir, reusable);
   }
 
-  private void compactTables() throws Exception {
-    synchronized (compactionMutex) {
-      for (File table : discoverTables(tableDirectory)) {
-        session(table).compact(++compactRound);
-      }
-    }
-  }
-
-  /** One shaping round over every table; called by the shaping thread. */
-  private void shapeTables(long round) throws Exception {
-    synchronized (compactionMutex) {
-      for (File table : discoverTables(tableDirectory)) {
-        session(table).shape(round);
-      }
-    }
-  }
-
-  private StateTableCompactor.Session session(File table) throws Exception {
-    String dir = table.getAbsolutePath();
-    StateTableCompactor.Session session = sessions.get(dir);
-    if (session == null) {
-      session = compactor.open(dir, recordLevelExpireOptions(stateTtlMillis));
-      sessions.put(dir, session);
-    }
-    return session;
-  }
-
-  /**
-   * The dynamic Paimon options letting a maintenance session physically drop rows past the
-   * operator's retention during its compaction rewrites — the analog of RocksDB's compaction
-   * filter. The read path already enforces expiry logically off the trailing {@code ts}
-   * epoch-millis column, so this only reclaims space for rows never read again; correctness
-   * therefore demands physical drops happen strictly AFTER logical expiry ({@code now >= ts +
-   * ttl}), never before.
-   *
-   * <p>Paimon's {@code RecordLevelExpire} truncates everything to whole seconds: it compares
-   * {@code currentTimeMillis()/1000} against {@code ts/1000 + expireSec}, keeping a row iff
-   * {@code nowSec <= tsSec + expireSec}. Both floor divisions lose up to ~1s each, so the expiry
-   * seconds are padded — {@code ceil(ttl/1000) + 1} — to guarantee a logically live row can never
-   * be dropped, at the cost of holding a dead row for up to ~2 extra seconds. Do NOT "simplify"
-   * the ceil or the +1 away: an unpadded floor could physically drop a row the read path still
-   * serves. The same pad absorbs any sub-second skew between the task's stamping clock and the
-   * compactor's clock (they share a JVM).
-   */
-  static Map<String, String> recordLevelExpireOptions(long stateTtlMillis) {
-    if (stateTtlMillis <= 0) {
-      return Collections.emptyMap();
-    }
-    long paddedExpireSeconds = (stateTtlMillis + 999) / 1000 + 1;
-    Map<String, String> options = new HashMap<>();
-    options.put("record-level.expire-time", paddedExpireSeconds + "s");
-    options.put("record-level.time-field", "ts");
-    return options;
-  }
-
-  /**
-   * Restore-time maintenance, called once after the operator's native state opened: a rescale
-   * restore rewrites rows at level 0, which deletion-vector reads skip, so the tables must be
-   * compacted — and the native store re-pinned onto the maintenance snapshot — before the first
-   * record is processed. An adoption restore has no level-0 files, so this is a cheap no-op scan.
-   */
-  void maintainAfterRestore() throws Exception {
-    compactTables();
-    nativeState.checkpoint();
-  }
-
-  private void link(String rel, File linkDir) throws IOException {
+  private void stage(String rel, File linkDir, boolean copy) throws IOException {
     Path to = new File(linkDir, rel).toPath();
     Files.createDirectories(to.getParent());
-    Files.createLink(to, new File(tableDirectory, rel).toPath());
-  }
-
-  /**
-   * The Paimon tables under an operator's state directory. The native side owns the layout — a
-   * single table rooted at the directory itself, or one table per immediate child for a
-   * multi-state operator (the join's two sides) — and the presence of a {@code schema/} dir is
-   * the ground truth, so the compactor plugin interface stays a single-table contract.
-   */
-  static List<File> discoverTables(File tableDirectory) {
-    if (new File(tableDirectory, "schema").isDirectory()) {
-      return Collections.singletonList(tableDirectory);
+    Path from = new File(tableDirectory, rel).toPath();
+    if (copy) {
+      Files.copy(from, to);
+    } else {
+      Files.createLink(to, from);
     }
-    File[] children = tableDirectory.listFiles(File::isDirectory);
-    if (children == null) {
-      return Collections.emptyList();
-    }
-    List<File> tables = new ArrayList<>();
-    Arrays.sort(children);
-    for (File child : children) {
-      if (new File(child, "schema").isDirectory()) {
-        tables.add(child);
-      }
-    }
-    return tables;
   }
 
   /**
@@ -394,7 +254,7 @@ final class PaimonSnapshotStrategy
 
   @Override
   public SnapshotResultSupplier<KeyedStateHandle> asyncSnapshot(
-      PaimonSnapshotResources resources,
+      RocksDBSnapshotResources resources,
       long checkpointId,
       long timestamp,
       CheckpointStreamFactory streamFactory,
@@ -522,6 +382,7 @@ final class PaimonSnapshotStrategy
     closeableRegistry.registerCloseable(out);
     try {
       DataOutputStream data = new DataOutputStream(out);
+      data.writeInt(META_MAGIC);
       data.writeInt(META_VERSION);
       data.writeUTF(snapshotToken);
       data.flush();
@@ -540,20 +401,28 @@ final class PaimonSnapshotStrategy
   static String readMetaDocument(StreamStateHandle metaHandle) throws IOException {
     try (InputStream in = metaHandle.openInputStream()) {
       DataInputStream data = new DataInputStream(in);
-      int version = data.readInt();
-      if (version == 1) {
-        // v1 carried the single-table Paimon snapshot id as a long; its token form is the
-        // decimal string, so pre-token checkpoints stay restorable.
-        return Long.toString(data.readLong());
+      int magic = data.readInt();
+      if (magic != META_MAGIC) {
+        throw new IOException("not StreamFusion RocksDB state metadata");
       }
+      int version = data.readInt();
       if (version != META_VERSION) {
-        throw new IOException("unknown paimon state metadata version " + version);
+        throw new IOException("unknown StreamFusion RocksDB state metadata version " + version);
       }
       return data.readUTF();
     }
   }
 
-  static final class PaimonSnapshotResources implements SnapshotResources {
+  static boolean isNativeMeta(StreamStateHandle metaHandle) {
+    try {
+      readMetaDocument(metaHandle);
+      return true;
+    } catch (IOException ignored) {
+      return false;
+    }
+  }
+
+  static final class RocksDBSnapshotResources implements SnapshotResources {
     final String snapshotToken;
     final List<String> dataFiles;
     final List<String> metaFiles;
@@ -561,7 +430,7 @@ final class PaimonSnapshotStrategy
     /** rel path -> confirmed handle for files the async phase re-references as placeholders. */
     final Map<String, StreamStateHandle> reusable;
 
-    PaimonSnapshotResources(
+    RocksDBSnapshotResources(
         String snapshotToken,
         List<String> dataFiles,
         List<String> metaFiles,

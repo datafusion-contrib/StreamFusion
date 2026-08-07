@@ -78,7 +78,10 @@ pub(crate) fn join_state_bytes(state: &MemoryJoinStore) -> usize {
         .iter()
         .map(|(key, bucket)| {
             join_key_entry_bytes(&key.0)
-                + bucket.keys().map(|r| join_row_entry_bytes(&r.0)).sum::<usize>()
+                + bucket
+                    .keys()
+                    .map(|r| join_row_entry_bytes(&r.0))
+                    .sum::<usize>()
         })
         .sum()
 }
@@ -95,7 +98,11 @@ impl UpdatingJoiner {
         let left_payload = payload_converter(&left_schema);
         let right_payload = payload_converter(&right_schema);
         let left_null = ByteKey::from(encode_null_row(&left_payload, &left_schema).row().as_ref());
-        let right_null = ByteKey::from(encode_null_row(&right_payload, &right_schema).row().as_ref());
+        let right_null = ByteKey::from(
+            encode_null_row(&right_payload, &right_schema)
+                .row()
+                .as_ref(),
+        );
         let key_arity = left_keys.len();
         UpdatingJoiner {
             left_keys,
@@ -204,7 +211,11 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
     }
 
     fn side_join_key_unique(&self, is_left: bool) -> bool {
-        if is_left { self.left_join_key_unique } else { self.right_join_key_unique }
+        if is_left {
+            self.left_join_key_unique
+        } else {
+            self.right_join_key_unique
+        }
     }
 
     fn prepare_unique_accumulate(
@@ -238,7 +249,14 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
 
     /// The TTL ruleset one side's state is read and written under at this clock reading.
     fn side_ttl(&self, is_left: bool, now_ms: i64) -> StateTtl {
-        StateTtl::new(if is_left { self.left_ttl_ms } else { self.right_ttl_ms }, now_ms)
+        StateTtl::new(
+            if is_left {
+                self.left_ttl_ms
+            } else {
+                self.right_ttl_ms
+            },
+            now_ms,
+        )
     }
 
     /// Reclaims one side's rows whose TTL elapsed with no further touch — the lazy per-touch expiry
@@ -276,8 +294,10 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
     /// the staged mini-batch changes read their first durable row at staging time, and reclaiming
     /// it underneath them would change what the flush replays.
     fn maybe_sweep(&mut self, now_ms: i64) {
-        let enabled: Vec<i64> =
-            [self.left_ttl_ms, self.right_ttl_ms].into_iter().filter(|&t| t > 0).collect();
+        let enabled: Vec<i64> = [self.left_ttl_ms, self.right_ttl_ms]
+            .into_iter()
+            .filter(|&t| t > 0)
+            .collect();
         let Some(&period) = enabled.iter().min() else {
             return;
         };
@@ -311,21 +331,31 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         // rows via a zero-index gather, and decode all associated other-side rows in ONE vectorized
         // pass (a per-row convert_rows here was a measured regression on q7, whose price-equi predicate
         // builds large associated sets). Only joins with a residual non-equi condition reach this.
-        let input_conv = if is_left { &self.left_payload } else { &self.right_payload };
+        let input_conv = if is_left {
+            &self.left_payload
+        } else {
+            &self.right_payload
+        };
         let input_parser = input_conv.parser();
-        let input_cols =
-            input_conv.convert_rows([input_parser.parse(full)]).expect("decode join input row");
+        let input_cols = input_conv
+            .convert_rows([input_parser.parse(full)])
+            .expect("decode join input row");
         let zero = UInt32Array::from(vec![0u32; n]);
         let input_broadcast: Vec<ArrayRef> = input_cols
             .iter()
             .map(|a| take(a.as_ref(), &zero, None).expect("broadcast join input row"))
             .collect();
-        let other_conv = if is_left { &self.right_payload } else { &self.left_payload };
+        let other_conv = if is_left {
+            &self.right_payload
+        } else {
+            &self.left_payload
+        };
         let other_parser = other_conv.parser();
         let other_cols = other_conv
             .convert_rows(associated.iter().map(|o| other_parser.parse(&o.record.0)))
             .expect("decode associated rows");
-        let mut columns: Vec<ArrayRef> = Vec::with_capacity(input_broadcast.len() + other_cols.len());
+        let mut columns: Vec<ArrayRef> =
+            Vec::with_capacity(input_broadcast.len() + other_cols.len());
         if is_left {
             columns.extend(input_broadcast);
             columns.extend(other_cols);
@@ -333,8 +363,13 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             columns.extend(other_cols);
             columns.extend(input_broadcast);
         }
-        let batch = RecordBatch::try_new(joined.clone(), columns).expect("build join-predicate batch");
-        let mask = self.predicate.as_mut().expect("predicate present").evaluate_batch(&joined, &batch);
+        let batch =
+            RecordBatch::try_new(joined.clone(), columns).expect("build join-predicate batch");
+        let mask = self
+            .predicate
+            .as_mut()
+            .expect("predicate present")
+            .evaluate_batch(&joined, &batch);
         let mut keep = mask.into_iter();
         associated.retain(|_| keep.next().unwrap_or(false));
     }
@@ -358,7 +393,10 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                     continue;
                 }
                 for _ in 0..meta.count.max(0) {
-                    out.push(OuterRecord { record: row.clone(), num_assoc: meta.num_assoc });
+                    out.push(OuterRecord {
+                        record: row.clone(),
+                        num_assoc: meta.num_assoc,
+                    });
                 }
             }
         }
@@ -411,7 +449,10 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         if track {
             *delta += join_row_entry_bytes(row) as isize;
         }
-        let meta = bucket.entry(ByteKey::from(row)).insert_entry(fresh).into_mut();
+        let meta = bucket
+            .entry(ByteKey::from(row))
+            .insert_entry(fresh)
+            .into_mut();
         if ttl.enabled() {
             meta.last_write_ms = ttl.now();
         }
@@ -432,7 +473,11 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         Self::bump_row(
             bucket,
             row,
-            RowMeta { count: 1, num_assoc, last_write_ms: 0 },
+            RowMeta {
+                count: 1,
+                num_assoc,
+                last_write_ms: 0,
+            },
             |m| {
                 m.count += 1;
                 m.num_assoc = num_assoc;
@@ -457,7 +502,11 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         Self::bump_row(
             bucket,
             row,
-            RowMeta { count: 1, num_assoc, last_write_ms: 0 },
+            RowMeta {
+                count: 1,
+                num_assoc,
+                last_write_ms: 0,
+            },
             |m| m.num_assoc = num_assoc,
             ttl,
             track,
@@ -531,8 +580,15 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         let arity = data_arity(batch);
-        let key_indices: &[usize] = if is_left { &self.left_keys } else { &self.right_keys };
-        let key_arrays: Vec<ArrayRef> = key_indices.iter().map(|&i| batch.column(i).clone()).collect();
+        let key_indices: &[usize] = if is_left {
+            &self.left_keys
+        } else {
+            &self.right_keys
+        };
+        let key_arrays: Vec<ArrayRef> = key_indices
+            .iter()
+            .map(|&i| batch.column(i).clone())
+            .collect();
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
         let row_kinds = row_kind_column(batch);
         // A probe reads (and, for the degree, writes) the OTHER side's whole bucket for each input
@@ -541,13 +597,18 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             .begin_batch(batch, key_indices, &self.key_timestamp_precisions)?;
         self.right_state
             .begin_batch(batch, key_indices, &self.key_timestamp_precisions)?;
-        let payloads = if is_left { &self.left_payload } else { &self.right_payload }
-            .convert_columns(&data_arrays)
-            .expect("encode join payload");
+        let payloads = if is_left {
+            &self.left_payload
+        } else {
+            &self.right_payload
+        }
+        .convert_columns(&data_arrays)
+        .expect("encode join payload");
         // A null in any equi-key column matches nothing; flagged per row off the key arrays (the null
         // can't be recovered from the encoded key bytes).
-        let key_null: Vec<bool> =
-            (0..batch.num_rows()).map(|r| key_arrays.iter().any(|a| a.is_null(r))).collect();
+        let key_null: Vec<bool> = (0..batch.num_rows())
+            .map(|r| key_arrays.iter().any(|a| a.is_null(r)))
+            .collect();
 
         // INNER keeps no degree and never mutates the probe (other) side, so the whole batch's rows are
         // independent: each probes a fixed other-side state. That lets us gather every candidate pair,
@@ -574,21 +635,37 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             let full = payloads.row(row);
             if self.kind.is_semi_anti() {
                 self.process_semi_anti(
-                    key, full.as_ref(), kind, is_left, key_null[row], now_ms, &mut out_left,
-                    &mut out_kinds, track, &mut delta,
+                    key,
+                    full.as_ref(),
+                    kind,
+                    is_left,
+                    key_null[row],
+                    now_ms,
+                    &mut out_left,
+                    &mut out_kinds,
+                    track,
+                    &mut delta,
                 );
             } else {
                 self.process_inner_outer(
-                    key, full.as_ref(), kind, is_left, key_null[row], now_ms, &mut out_left,
-                    &mut out_right, &mut out_kinds, track, &mut delta,
+                    key,
+                    full.as_ref(),
+                    kind,
+                    is_left,
+                    key_null[row],
+                    now_ms,
+                    &mut out_left,
+                    &mut out_right,
+                    &mut out_kinds,
+                    track,
+                    &mut delta,
                 );
             }
         }
         self.left_state.end_bundle()?;
         self.right_state.end_bundle()?;
-        self.memory.record(
-            delta + self.left_state.footprint_delta() + self.right_state.footprint_delta(),
-        );
+        self.memory
+            .record(delta + self.left_state.footprint_delta() + self.right_state.footprint_delta());
         self.memory.account()?;
         Ok(self.emit(out_left, out_right, out_kinds))
     }
@@ -625,7 +702,11 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         let arity = data_arity(batch);
-        let key_indices: &[usize] = if is_left { &self.left_keys } else { &self.right_keys };
+        let key_indices: &[usize] = if is_left {
+            &self.left_keys
+        } else {
+            &self.right_keys
+        };
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
         // The first-durable-row capture reads the input side's buckets, so they must be resident.
         if is_left {
@@ -635,11 +716,19 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             self.right_state
                 .begin_batch(batch, key_indices, &self.key_timestamp_precisions)?;
         }
-        let payloads = if is_left { &self.left_payload } else { &self.right_payload }
-            .convert_columns(&data_arrays)
-            .expect("encode join payload");
+        let payloads = if is_left {
+            &self.left_payload
+        } else {
+            &self.right_payload
+        }
+        .convert_columns(&data_arrays)
+        .expect("encode join payload");
         let row_kinds = row_kind_column(batch);
-        let before_bytes = if self.memory.tracking() { self.staging_bytes() } else { 0 };
+        let before_bytes = if self.memory.tracking() {
+            self.staging_bytes()
+        } else {
+            0
+        };
         let mut key_encoder =
             BinaryRowBatchEncoder::new(batch, key_indices, &self.key_timestamp_precisions);
         let input_ttl = self.side_ttl(is_left, now_ms);
@@ -657,9 +746,7 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                 let durable = state.get(key).and_then(|bucket| {
                     bucket
                         .iter()
-                        .find(|(_, meta)| {
-                            meta.count > 0 && !input_ttl.expired(meta.last_write_ms)
-                        })
+                        .find(|(_, meta)| meta.count > 0 && !input_ttl.expired(meta.last_write_ms))
                         .map(|(payload, _)| payload.clone())
                 });
                 staged.touch(ByteKey::from(key), durable);
@@ -678,11 +765,11 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             self.right_state.end_bundle()?;
         }
         if self.memory.tracking() {
-            self.memory.record(self.staging_bytes() as isize - before_bytes as isize);
+            self.memory
+                .record(self.staging_bytes() as isize - before_bytes as isize);
         }
-        self.memory.record(
-            self.left_state.footprint_delta() + self.right_state.footprint_delta(),
-        );
+        self.memory
+            .record(self.left_state.footprint_delta() + self.right_state.footprint_delta());
         self.memory.account()?;
         Ok(RecordBatch::new_empty(Arc::new(Schema::empty())))
     }
@@ -724,14 +811,25 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         let mut columns = converter
             .convert_rows(rows.iter().map(|row| parser.parse(&row.0)))
             .expect("decode staged join rows");
-        let mut fields: Vec<Field> = schema.fields().iter().map(|field| field.as_ref().clone()).collect();
+        let mut fields: Vec<Field> = schema
+            .fields()
+            .iter()
+            .map(|field| field.as_ref().clone())
+            .collect();
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
         columns.push(Arc::new(Int8Array::from(kinds)));
-        Some(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("staged join batch"))
+        Some(
+            RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+                .expect("staged join batch"),
+        )
     }
 
     pub(crate) fn flush_mini_batch(&mut self) -> Result<RecordBatch, DataFusionError> {
-        let staged_bytes = if self.memory.tracking() { self.staging_bytes() } else { 0 };
+        let staged_bytes = if self.memory.tracking() {
+            self.staging_bytes()
+        } else {
+            0
+        };
         let left = self.left_staged.drain();
         let right = self.right_staged.drain();
         self.memory.forget(staged_bytes);
@@ -760,7 +858,12 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
 
     /// Rebuilds the joined changelog batch from the emitted byte rows: one vectorized `convert_rows`
     /// per side (left, and right for non-semi joins), concatenated, then the `$row_kind$` byte column.
-    fn emit(&self, out_left: Vec<ByteKey>, out_right: Vec<ByteKey>, out_kinds: Vec<i8>) -> RecordBatch {
+    fn emit(
+        &self,
+        out_left: Vec<ByteKey>,
+        out_right: Vec<ByteKey>,
+        out_kinds: Vec<i8>,
+    ) -> RecordBatch {
         if out_left.is_empty() {
             return RecordBatch::new_empty(Arc::new(Schema::empty()));
         }
@@ -808,7 +911,11 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         let mut delta = 0isize;
         let input_ttl = self.side_ttl(is_left, now_ms);
         let other_ttl = self.side_ttl(!is_left, now_ms);
-        let key_indices: &[usize] = if is_left { &self.left_keys } else { &self.right_keys };
+        let key_indices: &[usize] = if is_left {
+            &self.left_keys
+        } else {
+            &self.right_keys
+        };
         let mut key_encoder =
             BinaryRowBatchEncoder::new(batch, key_indices, &self.key_timestamp_precisions);
         let (input_state, other_state) = if is_left {
@@ -845,7 +952,11 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                 Self::prepare_unique_accumulate(
                     input_state,
                     key,
-                    if is_left { self.left_join_key_unique } else { self.right_join_key_unique },
+                    if is_left {
+                        self.left_join_key_unique
+                    } else {
+                        self.right_join_key_unique
+                    },
                     track,
                     &mut delta,
                 );
@@ -853,14 +964,25 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                 Self::bump_row(
                     bucket,
                     full.as_ref(),
-                    RowMeta { count: 1, num_assoc: -1, last_write_ms: 0 },
+                    RowMeta {
+                        count: 1,
+                        num_assoc: -1,
+                        last_write_ms: 0,
+                    },
                     |m| m.count += 1,
                     input_ttl,
                     track,
                     &mut delta,
                 );
             } else {
-                Self::retract_record(input_state, key, full.as_ref(), input_ttl, track, &mut delta);
+                Self::retract_record(
+                    input_state,
+                    key,
+                    full.as_ref(),
+                    input_ttl,
+                    track,
+                    &mut delta,
+                );
             }
         }
         self.memory.record(delta);
@@ -868,16 +990,19 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         if cand_input_idx.is_empty() {
             self.left_state.end_bundle()?;
             self.right_state.end_bundle()?;
-            self.memory.record(
-                self.left_state.footprint_delta() + self.right_state.footprint_delta(),
-            );
+            self.memory
+                .record(self.left_state.footprint_delta() + self.right_state.footprint_delta());
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
 
         // Decode the matched other-side rows in one pass (releases the probe-side borrow — which
         // must happen before the bundle ends and drops clean hydrated slots), then the input rows
         // repeated per candidate — assembled into the joined `[left.., right..]` layout.
-        let other_conv = if is_left { &self.right_payload } else { &self.left_payload };
+        let other_conv = if is_left {
+            &self.right_payload
+        } else {
+            &self.left_payload
+        };
         let other_parser = other_conv.parser();
         let other_cols = other_conv
             .convert_rows(cand_other.iter().map(|b| other_parser.parse(&b.0)))
@@ -887,12 +1012,17 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         self.right_state.end_bundle()?;
         self.memory
             .record(self.left_state.footprint_delta() + self.right_state.footprint_delta());
-        let input_conv = if is_left { &self.left_payload } else { &self.right_payload };
+        let input_conv = if is_left {
+            &self.left_payload
+        } else {
+            &self.right_payload
+        };
         let input_cols = input_conv
             .convert_rows(cand_input_idx.iter().map(|&r| payloads.row(r)))
             .expect("decode join input rows");
         let joined = joined_schema(&self.left_schema, &self.right_schema);
-        let mut data_columns: Vec<ArrayRef> = Vec::with_capacity(input_cols.len() + other_cols.len());
+        let mut data_columns: Vec<ArrayRef> =
+            Vec::with_capacity(input_cols.len() + other_cols.len());
         if is_left {
             data_columns.extend(input_cols);
             data_columns.extend(other_cols);
@@ -911,13 +1041,19 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             .map(|pred| BooleanArray::from(pred.evaluate_batch(&joined, &data_batch)));
 
         let mut fields: Vec<Field> = (0..data_batch.num_columns())
-            .map(|j| Field::new(format!("c{j}"), data_batch.column(j).data_type().clone(), true))
+            .map(|j| {
+                Field::new(
+                    format!("c{j}"),
+                    data_batch.column(j).data_type().clone(),
+                    true,
+                )
+            })
             .collect();
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
         let mut columns: Vec<ArrayRef> = data_batch.columns().to_vec();
         columns.push(Arc::new(Int8Array::from(cand_kind)));
-        let full_batch =
-            RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("build inner-join batch");
+        let full_batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("build inner-join batch");
         Ok(match mask {
             Some(mask) => filter_record_batch(&full_batch, &mask).expect("filter inner-join batch"),
             None => full_batch,
@@ -944,8 +1080,16 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         let accumulate = kind == 0 || kind == 2;
         let input_ttl = self.side_ttl(is_left, now_ms);
         let other_ttl = self.side_ttl(!is_left, now_ms);
-        let input_is_outer = if is_left { self.kind.left_is_outer() } else { self.kind.right_is_outer() };
-        let other_is_outer = if is_left { self.kind.right_is_outer() } else { self.kind.left_is_outer() };
+        let input_is_outer = if is_left {
+            self.kind.left_is_outer()
+        } else {
+            self.kind.right_is_outer()
+        };
+        let other_is_outer = if is_left {
+            self.kind.right_is_outer()
+        } else {
+            self.kind.left_is_outer()
+        };
         let left_null = self.left_null.clone();
         let right_null = self.right_null.clone();
         // Each builder returns the `(left, right)` byte rows for one emitted output row; the input goes
@@ -963,7 +1107,11 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             (left_null.clone(), ByteKey::from(full))
         };
         let other_padded = |other: &ByteKey| -> (ByteKey, ByteKey) {
-            if is_left { (left_null.clone(), other.clone()) } else { (other.clone(), right_null.clone()) }
+            if is_left {
+                (left_null.clone(), other.clone())
+            } else {
+                (other.clone(), right_null.clone())
+            }
         };
 
         // Gather the matching other-side rows (a null equi-key matches nothing), then drop those failing
@@ -973,7 +1121,11 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             Vec::new()
         } else {
             Self::associated(
-                if is_left { &self.right_state } else { &self.left_state },
+                if is_left {
+                    &self.right_state
+                } else {
+                    &self.left_state
+                },
                 key,
                 other_ttl,
             )
@@ -982,16 +1134,22 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
 
         if accumulate {
             let unique = self.side_join_key_unique(is_left);
-            Self::prepare_unique_accumulate(
-                self.input_state(is_left), key, unique, track, delta,
-            );
+            Self::prepare_unique_accumulate(self.input_state(is_left), key, unique, track, delta);
             if input_is_outer {
                 if associated.is_empty() {
                     let (l, r) = input_padded;
                     out_left.push(l);
                     out_right.push(r);
                     out_kinds.push(0); // +I[record+null]
-                    Self::add_record(self.input_state(is_left), key, full, 0, input_ttl, track, delta);
+                    Self::add_record(
+                        self.input_state(is_left),
+                        key,
+                        full,
+                        0,
+                        input_ttl,
+                        track,
+                        delta,
+                    );
                 } else {
                     let num = associated.len() as i32;
                     for other in &associated {
@@ -1002,17 +1160,41 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                                 out_right.push(r);
                                 out_kinds.push(3); // -D[null+other]
                             }
-                            Self::update_num_assoc(self.other_state(is_left), key, &other.record.0, other.num_assoc + 1, other_ttl, track, delta);
+                            Self::update_num_assoc(
+                                self.other_state(is_left),
+                                key,
+                                &other.record.0,
+                                other.num_assoc + 1,
+                                other_ttl,
+                                track,
+                                delta,
+                            );
                         }
                         let (l, r) = paired(&other.record);
                         out_left.push(l);
                         out_right.push(r);
                         out_kinds.push(0); // +I[record+other]
                     }
-                    Self::add_record(self.input_state(is_left), key, full, num, input_ttl, track, delta);
+                    Self::add_record(
+                        self.input_state(is_left),
+                        key,
+                        full,
+                        num,
+                        input_ttl,
+                        track,
+                        delta,
+                    );
                 }
             } else {
-                Self::add_record(self.input_state(is_left), key, full, -1, input_ttl, track, delta);
+                Self::add_record(
+                    self.input_state(is_left),
+                    key,
+                    full,
+                    -1,
+                    input_ttl,
+                    track,
+                    delta,
+                );
                 for other in &associated {
                     if other_is_outer {
                         if other.num_assoc == 0 {
@@ -1021,7 +1203,15 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                             out_right.push(r);
                             out_kinds.push(3); // -D[null+other]
                         }
-                        Self::update_num_assoc(self.other_state(is_left), key, &other.record.0, other.num_assoc + 1, other_ttl, track, delta);
+                        Self::update_num_assoc(
+                            self.other_state(is_left),
+                            key,
+                            &other.record.0,
+                            other.num_assoc + 1,
+                            other_ttl,
+                            track,
+                            delta,
+                        );
                         let (l, r) = paired(&other.record);
                         out_left.push(l);
                         out_right.push(r);
@@ -1035,7 +1225,14 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                 }
             }
         } else {
-            Self::retract_record(self.input_state(is_left), key, full, input_ttl, track, delta);
+            Self::retract_record(
+                self.input_state(is_left),
+                key,
+                full,
+                input_ttl,
+                track,
+                delta,
+            );
             if associated.is_empty() {
                 if input_is_outer {
                     let (l, r) = input_padded;
@@ -1056,7 +1253,15 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                             out_right.push(r);
                             out_kinds.push(0); // +I[null+other]
                         }
-                        Self::update_num_assoc(self.other_state(is_left), key, &other.record.0, other.num_assoc - 1, other_ttl, track, delta);
+                        Self::update_num_assoc(
+                            self.other_state(is_left),
+                            key,
+                            &other.record.0,
+                            other.num_assoc - 1,
+                            other_ttl,
+                            track,
+                            delta,
+                        );
                     }
                 }
             }
@@ -1065,12 +1270,20 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
 
     /// The state store for the arriving (input) side.
     fn input_state(&mut self, is_left: bool) -> &mut S {
-        if is_left { &mut self.left_state } else { &mut self.right_state }
+        if is_left {
+            &mut self.left_state
+        } else {
+            &mut self.right_state
+        }
     }
 
     /// The state store for the side opposite the arriving one.
     fn other_state(&mut self, is_left: bool) -> &mut S {
-        if is_left { &mut self.right_state } else { &mut self.left_state }
+        if is_left {
+            &mut self.right_state
+        } else {
+            &mut self.left_state
+        }
     }
 
     /// SEMI/ANTI — a faithful port of `StreamingSemiAntiJoinOperator`. The left side carries the
@@ -1108,7 +1321,15 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                 out_kinds.push(kind); // forward input RowKind
             }
             if accumulate {
-                Self::add_record(&mut self.left_state, key, full, associated.len() as i32, left_ttl, track, delta);
+                Self::add_record(
+                    &mut self.left_state,
+                    key,
+                    full,
+                    associated.len() as i32,
+                    left_ttl,
+                    track,
+                    delta,
+                );
             } else {
                 Self::retract_record(&mut self.left_state, key, full, left_ttl, track, delta);
             }
@@ -1122,14 +1343,30 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             };
             self.filter_associated(full, false, &mut associated);
             if accumulate {
-                Self::add_record(&mut self.right_state, key, full, -1, right_ttl, track, delta);
+                Self::add_record(
+                    &mut self.right_state,
+                    key,
+                    full,
+                    -1,
+                    right_ttl,
+                    track,
+                    delta,
+                );
                 for other in &associated {
                     if other.num_assoc == 0 {
                         // anti: -D[left]; semi: +I/+U[left] (input RowKind)
                         out_rows.push(other.record.clone());
                         out_kinds.push(if is_anti { 3 } else { kind });
                     }
-                    Self::update_num_assoc(&mut self.left_state, key, &other.record.0, other.num_assoc + 1, left_ttl, track, delta);
+                    Self::update_num_assoc(
+                        &mut self.left_state,
+                        key,
+                        &other.record.0,
+                        other.num_assoc + 1,
+                        left_ttl,
+                        track,
+                        delta,
+                    );
                 }
             } else {
                 Self::retract_record(&mut self.right_state, key, full, right_ttl, track, delta);
@@ -1139,12 +1376,19 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                         out_rows.push(other.record.clone());
                         out_kinds.push(if is_anti { 0 } else { kind });
                     }
-                    Self::update_num_assoc(&mut self.left_state, key, &other.record.0, other.num_assoc - 1, left_ttl, track, delta);
+                    Self::update_num_assoc(
+                        &mut self.left_state,
+                        key,
+                        &other.record.0,
+                        other.num_assoc - 1,
+                        left_ttl,
+                        track,
+                        delta,
+                    );
                 }
             }
         }
     }
-
 }
 
 /// Builders for one key group's raw snapshot batch. The TTL timestamps ride a trailing column
@@ -1198,13 +1442,27 @@ impl UpdatingJoiner {
     /// Flink-BinaryRow key and arrow-row payload of every live row, verbatim. Snapshotting
     /// neither decodes rows nor re-encodes keys — the bucket key's bytes ARE the hash input
     /// Flink's key-group routing takes, so the group is one hash of bytes per bucket.
-    fn side_snapshot_groups(&self, is_left: bool, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
-        let state = if is_left { &self.left_state } else { &self.right_state };
-        let with_ttl = (if is_left { self.left_ttl_ms } else { self.right_ttl_ms }) > 0;
+    fn side_snapshot_groups(
+        &self,
+        is_left: bool,
+        max_parallelism: usize,
+    ) -> BTreeMap<i32, Vec<u8>> {
+        let state = if is_left {
+            &self.left_state
+        } else {
+            &self.right_state
+        };
+        let with_ttl = (if is_left {
+            self.left_ttl_ms
+        } else {
+            self.right_ttl_ms
+        }) > 0;
         let mut groups: BTreeMap<i32, RawSnapshotColumns> = BTreeMap::new();
         for (key, bucket) in state.iter() {
             let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
-            let columns = groups.entry(group).or_insert_with(|| RawSnapshotColumns::new(with_ttl));
+            let columns = groups
+                .entry(group)
+                .or_insert_with(|| RawSnapshotColumns::new(with_ttl));
             for (row, meta) in bucket.iter() {
                 columns.keys.append_value(&key.0);
                 columns.rows.append_value(&row.0);
@@ -1223,8 +1481,14 @@ impl UpdatingJoiner {
 
     #[cfg(test)]
     pub(crate) fn snapshot(&self) -> Vec<u8> {
-        let left = self.side_snapshot_groups(true, 1).remove(&0).unwrap_or_default();
-        let right = self.side_snapshot_groups(false, 1).remove(&0).unwrap_or_default();
+        let left = self
+            .side_snapshot_groups(true, 1)
+            .remove(&0)
+            .unwrap_or_default();
+        let right = self
+            .side_snapshot_groups(false, 1)
+            .remove(&0)
+            .unwrap_or_default();
         Self::snapshot_parts(left, right)
     }
 
@@ -1271,9 +1535,15 @@ impl UpdatingJoiner {
         bytes: &[u8],
         restored_at_ms: i64,
     ) -> Self {
-        let mut joiner =
-            UpdatingJoiner::new(left_keys, right_keys, kind, left_schema, right_schema, predicate)
-                .with_key_timestamp_precisions(key_timestamp_precisions);
+        let mut joiner = UpdatingJoiner::new(
+            left_keys,
+            right_keys,
+            kind,
+            left_schema,
+            right_schema,
+            predicate,
+        )
+        .with_key_timestamp_precisions(key_timestamp_precisions);
         if bytes.is_empty() {
             return joiner;
         }
@@ -1295,15 +1565,25 @@ impl UpdatingJoiner {
         snapshots: &[Vec<u8>],
         restored_at_ms: i64,
     ) -> Self {
-        let mut joiner =
-            UpdatingJoiner::new(left_keys, right_keys, kind, left_schema, right_schema, predicate)
-                .with_key_timestamp_precisions(key_timestamp_precisions);
+        let mut joiner = UpdatingJoiner::new(
+            left_keys,
+            right_keys,
+            kind,
+            left_schema,
+            right_schema,
+            predicate,
+        )
+        .with_key_timestamp_precisions(key_timestamp_precisions);
         for bytes in snapshots {
             if bytes.len() < 4 {
                 continue;
             }
-            let left_len = u32::from_le_bytes(bytes[0..4].try_into().expect("snapshot len")) as usize;
-            assert!(4 + left_len <= bytes.len(), "truncated updating-join raw key-group snapshot");
+            let left_len =
+                u32::from_le_bytes(bytes[0..4].try_into().expect("snapshot len")) as usize;
+            assert!(
+                4 + left_len <= bytes.len(),
+                "truncated updating-join raw key-group snapshot"
+            );
             joiner.load_side(true, &bytes[4..4 + left_len], restored_at_ms);
             joiner.load_side(false, &bytes[4 + left_len..], restored_at_ms);
         }
@@ -1332,7 +1612,11 @@ impl UpdatingJoiner {
             .schema_ref()
             .column_with_name(TTL_TS_COLUMN)
             .map(|_| column_i64(batch, TTL_TS_COLUMN));
-        let state = if is_left { &mut self.left_state } else { &mut self.right_state };
+        let state = if is_left {
+            &mut self.left_state
+        } else {
+            &mut self.right_state
+        };
         for row in 0..batch.num_rows() {
             let key = keys.value(row);
             let bucket = if state.contains(key) {
@@ -1356,16 +1640,28 @@ impl UpdatingJoiner {
     /// predate TTL, so rows take the enable-TTL migration stamp.
     fn load_side_decoded(&mut self, is_left: bool, batch: &RecordBatch, restored_at_ms: i64) {
         let arity = batch.num_columns() - 2;
-        let key_indices = if is_left { &self.left_keys } else { &self.right_keys };
+        let key_indices = if is_left {
+            &self.left_keys
+        } else {
+            &self.right_keys
+        };
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
         let counts = column_i64(batch, "__count__");
         let assocs = column_i32(batch, "__assoc__");
         let mut key_encoder =
             BinaryRowBatchEncoder::new(batch, key_indices, &self.key_timestamp_precisions);
-        let payloads = if is_left { &self.left_payload } else { &self.right_payload }
-            .convert_columns(&data_arrays)
-            .expect("encode join payload");
-        let state = if is_left { &mut self.left_state } else { &mut self.right_state };
+        let payloads = if is_left {
+            &self.left_payload
+        } else {
+            &self.right_payload
+        }
+        .convert_columns(&data_arrays)
+        .expect("encode join payload");
+        let state = if is_left {
+            &mut self.left_state
+        } else {
+            &mut self.right_state
+        };
         for row in 0..batch.num_rows() {
             let key = key_encoder.encode(row);
             let bucket = if state.contains(key) {
@@ -1385,11 +1681,16 @@ impl UpdatingJoiner {
     }
 }
 
-state_bytes_getter!(Java_tech_streamfusion_Native_updatingJoinerStateBytes, UpdatingJoiner);
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_updatingJoinerStateBytes,
+    UpdatingJoiner
+);
 
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_updatingJoinerStagingBytes<'local>(
-    env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
         let joiner = unsafe { &*(handle as *const UpdatingJoiner) };
@@ -1399,7 +1700,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_updatingJoinerStagingBytes<
 
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_updatingJoinerStagedKeys<'local>(
-    env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
         let joiner = unsafe { &*(handle as *const UpdatingJoiner) };
@@ -1483,8 +1786,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_createUpdatingJoiner<'local
 
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_flushUpdatingJoiner<'local>(
-    env: JNIEnv<'local>, _class: JClass<'local>, handle: jlong,
-    out_array_address: jlong, out_schema_address: jlong,
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
         let joiner = unsafe { &mut *(handle as *mut UpdatingJoiner) };
@@ -1549,9 +1855,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_pushRightUpdatingJoiner<'lo
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_snapshotUpdatingJoinerPartitions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotUpdatingJoinerPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -1570,9 +1874,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotUpdatingJoinerParti
 
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_tech_streamfusion_Native_restoreUpdatingJoinerPartitions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_restoreUpdatingJoinerPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     left_keys: JIntArray<'local>,
@@ -1651,132 +1953,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeUpdatingJoiner<'local>
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<UpdatingJoiner>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<UpdatingJoiner>(handle));
     })
-}
-
-/// The join-side persistent backend: the Paimon MAP store — one typed table row per stored join
-/// row under PK `[kg, k, r]` — under the join side codec. One store per side.
-#[cfg(feature = "paimon-state")]
-pub(crate) type PaimonJoinStore = crate::state::PaimonMapStore<JoinStateCodec>;
-
-/// One join side's codec for the Paimon map store: the persisted entry is the stored full row as
-/// typed columns plus its appear-count and degree (Flink's no-unique-key
-/// `OuterJoinRecordStateView` layout, one RocksDB-style row per map entry). The sub-key `r` is the
-/// row's Flink BinaryRow bytes — a stable wire format, unlike the arrow-row bytes the working set
-/// keys by, which do not survive an arrow upgrade.
-#[cfg(feature = "paimon-state")]
-pub(crate) struct JoinStateCodec {
-    row_types: Vec<DataType>,
-    payload: RowConverter,
-    row_schema: SchemaRef,
-    /// BinaryRow timestamp precisions per column, derived from the arrow unit (ms is always the
-    /// compact encoding, us always the non-compact one — the only distinction BinaryRow makes).
-    row_precisions: Vec<i32>,
-}
-
-#[cfg(feature = "paimon-state")]
-impl JoinStateCodec {
-    pub(crate) fn new(schema: &SchemaRef) -> Self {
-        let row_types: Vec<DataType> =
-            schema.fields().iter().map(|f| f.data_type().clone()).collect();
-        let payload = payload_converter(schema);
-        let row_precisions: Vec<i32> = row_types
-            .iter()
-            .map(|t| match t {
-                DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, _) => 3,
-                DataType::Timestamp(arrow::datatypes::TimeUnit::Microsecond, _) => 6,
-                _ => -1,
-            })
-            .collect();
-        JoinStateCodec { row_types, payload, row_schema: schema.clone(), row_precisions }
-    }
-
-    /// The stored row's one-row typed columns, rebuilt from its arrow-row bytes.
-    fn row_columns(&self, row: &[u8]) -> Vec<ArrayRef> {
-        let parser = self.payload.parser();
-        self.payload
-            .convert_rows([parser.parse(row)])
-            .expect("decode join row for persistence")
-    }
-}
-
-#[cfg(feature = "paimon-state")]
-impl crate::state::PaimonMapCodec for JoinStateCodec {
-    type Entry = RowMeta;
-
-    fn supported(&self) -> bool {
-        crate::state::paimon_row_supported(&self.row_types)
-    }
-
-    fn value_fields(&self) -> Vec<(String, DataType)> {
-        let mut fields: Vec<(String, DataType)> = self
-            .row_types
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (format!("c{i}"), t.clone()))
-            .collect();
-        fields.push(("cnt".to_string(), DataType::Int64));
-        fields.push(("deg".to_string(), DataType::Int32));
-        fields
-    }
-
-    fn sub_key(&self, row: &[u8]) -> Vec<u8> {
-        let columns = self.row_columns(row);
-        let batch = RecordBatch::try_new(self.row_schema.clone(), columns)
-            .expect("one-row join batch");
-        let all_columns: Vec<usize> = (0..self.row_types.len()).collect();
-        BinaryRowBatchEncoder::new(&batch, &all_columns, &self.row_precisions)
-            .encode(0)
-            .to_vec()
-    }
-
-    fn encode(&self, row: &[u8], entry: &RowMeta) -> Vec<ScalarValue> {
-        let columns = self.row_columns(row);
-        let mut scalars: Vec<ScalarValue> = columns
-            .iter()
-            .map(|column| ScalarValue::try_from_array(column, 0).expect("join state scalar"))
-            .collect();
-        scalars.push(ScalarValue::Int64(Some(entry.count)));
-        scalars.push(ScalarValue::Int32(Some(entry.num_assoc)));
-        scalars
-    }
-
-    fn decode(&self, scalars: &[ScalarValue]) -> (ByteKey, RowMeta) {
-        let n = self.row_types.len();
-        let columns: Vec<ArrayRef> = scalars[..n]
-            .iter()
-            .zip(&self.row_types)
-            .map(|(scalar, data_type)| scalars_to_array(vec![scalar.clone()], data_type))
-            .collect();
-        let rows = self.payload.convert_columns(&columns).expect("encode hydrated join row");
-        let count = match &scalars[n] {
-            ScalarValue::Int64(Some(v)) => *v,
-            _ => 0,
-        };
-        let num_assoc = match &scalars[n + 1] {
-            ScalarValue::Int32(Some(v)) => *v,
-            _ => -1,
-        };
-        // The TTL timestamp rides the store's ts column via `stamp_write_ms`.
-        (
-            ByteKey::from(rows.row(0).data()),
-            RowMeta { count, num_assoc, last_write_ms: 0 },
-        )
-    }
-
-    fn write_ms(&self, entry: &RowMeta) -> i64 {
-        entry.last_write_ms
-    }
-
-    fn stamp_write_ms(&self, entry: &mut RowMeta, ts_ms: i64) {
-        entry.last_write_ms = ts_ms;
-    }
-
-    fn entry_bytes(&self, row: &[u8], _entry: &RowMeta) -> usize {
-        join_row_entry_bytes(row)
-    }
 }

@@ -3,8 +3,7 @@ use super::*;
 /// The production Kafka JSON encoder, exposed only to its Criterion benchmark.
 #[cfg(feature = "kafka")]
 pub fn encode_kafka_json(batch: &RecordBatch) -> crate::kafka::EncodedLines {
-    encode_json_batch(batch, &JsonEncodeOptions::default(), &[], &[])
-        .expect("Kafka JSON encode")
+    encode_json_batch(batch, &JsonEncodeOptions::default(), &[], &[]).expect("Kafka JSON encode")
 }
 
 #[cfg(feature = "kafka")]
@@ -260,7 +259,11 @@ impl UniqueUpdatingJoin {
     }
 
     pub fn snapshot_partitions(&self, max_parallelism: usize) -> usize {
-        self.0.snapshot_partitions(max_parallelism).values().map(Vec::len).sum()
+        self.0
+            .snapshot_partitions(max_parallelism)
+            .values()
+            .map(Vec::len)
+            .sum()
     }
 }
 

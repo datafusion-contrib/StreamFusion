@@ -24,6 +24,7 @@ import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
@@ -48,7 +49,7 @@ import tech.streamfusion.operator.CoalescingOff;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
- * Native operators on the Paimon state backend: state lives in a local Paimon table, snapshots go
+ * Native operators on the RocksDB state backend: state lives in a local RocksDB table, snapshots go
  * through the keyed-state backend as {@link IncrementalRemoteKeyedStateHandle}s (not raw keyed
  * state), a completed checkpoint's files are referenced by placeholders instead of re-uploaded
  * (incremental), and a fresh operator restored from the handle continues the changelog exactly.
@@ -58,7 +59,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
  * vectors and barriers compact synchronously.
  */
 @ExtendWith(CoalescingOff.class)
-class PaimonStateBackendOperatorTest {
+class RocksDBNativeStateBackendAllOperatorsTest {
 
   private static final int MAX_PARALLELISM = 128;
 
@@ -88,7 +89,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             harness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -96,7 +97,7 @@ class PaimonStateBackendOperatorTest {
       assertEquals(List.of(insert(1, 10), insert(2, 20)), collect(harness));
 
       OperatorSubtaskState first = harness.snapshot(1, 1);
-      IncrementalRemoteKeyedStateHandle firstHandle = paimonHandle(first);
+      IncrementalRemoteKeyedStateHandle firstHandle = rocksHandle(first);
       assertTrue(firstHandle.getSharedState().size() > 0, "first checkpoint uploads data files");
       assertTrue(
           firstHandle.getSharedState().stream()
@@ -110,7 +111,7 @@ class PaimonStateBackendOperatorTest {
           collect(harness));
 
       second = harness.snapshot(2, 2);
-      IncrementalRemoteKeyedStateHandle secondHandle = paimonHandle(second);
+      IncrementalRemoteKeyedStateHandle secondHandle = rocksHandle(second);
       List<HandleAndLocalPath> reused = new ArrayList<>();
       for (HandleAndLocalPath file : secondHandle.getSharedState()) {
         if (file.getHandle() instanceof PlaceholderStreamStateHandle) {
@@ -137,7 +138,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             harness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(second);
       harness.open();
@@ -154,7 +155,7 @@ class PaimonStateBackendOperatorTest {
   }
 
   /**
-   * A TTL'd group aggregate rides the Paimon route too (its snapshot is an incremental Paimon
+   * A TTL'd group aggregate rides the RocksDB route too (its snapshot is an incremental RocksDB
    * handle, not raw keyed state): the last-write timestamp persists absolutely in the table's
    * trailing ts column, so after restore the key expires at write-time + ttl and its next row
    * is a fresh insert.
@@ -165,7 +166,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             harness(1000)) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -173,14 +174,14 @@ class PaimonStateBackendOperatorTest {
       harness.processElement(new StreamRecord<>(batch(allocator, row(1, 10))));
       assertEquals(List.of(insert(1, 10)), collect(harness));
       snapshot = harness.snapshot(1, 1);
-      paimonHandle(snapshot); // the TTL'd aggregate must resolve to the Paimon route
+      rocksHandle(snapshot); // the TTL'd aggregate must resolve to the RocksDB route
       harness.notifyOfCompletedCheckpoint(1);
     }
 
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             harness(1000)) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -194,13 +195,13 @@ class PaimonStateBackendOperatorTest {
   }
 
   /**
-   * A retention-bounded event-time OVER rides the Paimon route: the per-key cleanup deadline
+   * A retention-bounded event-time OVER rides the RocksDB route: the per-key cleanup deadline
    * persists absolutely in the deadlines table, so after restore the key folds fresh at exactly
    * the writer's deadline. The deadline shapes deliberately register no retention with the
-   * backend ({@code resolvePaimon} without a TTL) — a deferred or re-armed deadline is not a
+   * backend ({@code resolveRocksDB} without a TTL) — a deferred or re-armed deadline is not a
    * truthful per-row clock, so every maintenance session opens WITHOUT record-level expiry
    * options ({@link #recordLevelExpireOptionsPadTheRetention} pins the zero-retention mapping,
-   * and {@code JavaPaimonStateCompactorTtlTest.sessionWithoutOptionsNeverDropsRows} that such a
+   * and {@code JavaRocksDBStateCompactorTtlTest.sessionWithoutOptionsNeverDropsRows} that such a
    * session never drops rows); physical cleanup is the operator's own staged tombstones.
    */
   @Test
@@ -209,7 +210,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             overHarness(2000)) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -223,7 +224,7 @@ class PaimonStateBackendOperatorTest {
       harness.processWatermark(new Watermark(200));
       assertEquals(List.of(List.of(RowKind.INSERT, 1L, 10L, 100L, 10L)), collectOver(harness));
       snapshot = harness.snapshot(1, 1);
-      paimonHandle(snapshot); // the retention-bounded OVER must resolve to the Paimon route
+      rocksHandle(snapshot); // the retention-bounded OVER must resolve to the RocksDB route
       harness.notifyOfCompletedCheckpoint(1);
     }
 
@@ -231,7 +232,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             overHarness(2000)) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -249,7 +250,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             overHarness(2000)) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -265,7 +266,7 @@ class PaimonStateBackendOperatorTest {
   }
 
   /**
-   * A retention-bounded temporal join rides the Paimon route with the same absolute-deadline
+   * A retention-bounded temporal join rides the RocksDB route with the same absolute-deadline
    * semantics: past the restored deadline the key's whole state — both sides — is gone, so the
    * probe null-pads exactly as if no version ever existed. See the OVER test above for why the
    * maintenance session gets no record-level expiry options.
@@ -276,7 +277,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
             harness = temporalHarness(2000)) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -288,7 +289,7 @@ class PaimonStateBackendOperatorTest {
                   RowDataArrowConverter.write(
                       List.of(GenericRowData.of(1L, 10L, 100L)), TEMPORAL_ROW, allocator, true))));
       snapshot = harness.snapshot(1, 1);
-      paimonHandle(snapshot); // the retention-bounded join must resolve to the Paimon route
+      rocksHandle(snapshot); // the retention-bounded join must resolve to the RocksDB route
       harness.notifyOfCompletedCheckpoint(1);
     }
 
@@ -296,7 +297,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
             harness = temporalHarness(2000)) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -315,7 +316,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
             harness = temporalHarness(2000)) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -331,29 +332,6 @@ class PaimonStateBackendOperatorTest {
     }
   }
 
-  /**
-   * The retention handed to a maintenance session as record-level-expire options: nothing
-   * without TTL, and padded seconds with it — {@code ceil(ttl/1000) + 1}, so Paimon's
-   * whole-second truncation (of both the clock and the ts column) can never physically drop a
-   * row before its logical {@code ts + ttl} expiry.
-   */
-  @Test
-  void recordLevelExpireOptionsPadTheRetention() {
-    assertEquals(Map.of(), PaimonSnapshotStrategy.recordLevelExpireOptions(0));
-    assertEquals(
-        Map.of("record-level.expire-time", "2s", "record-level.time-field", "ts"),
-        PaimonSnapshotStrategy.recordLevelExpireOptions(1));
-    assertEquals(
-        Map.of("record-level.expire-time", "2s", "record-level.time-field", "ts"),
-        PaimonSnapshotStrategy.recordLevelExpireOptions(1000));
-    assertEquals(
-        Map.of("record-level.expire-time", "3s", "record-level.time-field", "ts"),
-        PaimonSnapshotStrategy.recordLevelExpireOptions(1001));
-    assertEquals(
-        Map.of("record-level.expire-time", "3601s", "record-level.time-field", "ts"),
-        PaimonSnapshotStrategy.recordLevelExpireOptions(3_600_000));
-  }
-
   /** Retracting a group to zero records deletes it in the table, across a checkpoint. */
   @Test
   void deletesSurviveCheckpointAndRestore() throws Exception {
@@ -361,7 +339,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             harness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -377,14 +355,14 @@ class PaimonStateBackendOperatorTest {
       assertEquals(List.of(update(RowKind.DELETE, 7, 70)), collect(harness));
       snapshot = harness.snapshot(2, 2);
       SharedStateRegistryImpl registry = new SharedStateRegistryImpl();
-      paimonHandle(first).registerSharedStates(registry, 1);
-      paimonHandle(snapshot).registerSharedStates(registry, 2);
+      rocksHandle(first).registerSharedStates(registry, 1);
+      rocksHandle(snapshot).registerSharedStates(registry, 2);
     }
 
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             harness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -396,7 +374,7 @@ class PaimonStateBackendOperatorTest {
   }
 
   /**
-   * The keep-last deduplicator rides the same backend: its checkpoint is an incremental Paimon
+   * The keep-last deduplicator rides the same backend: its checkpoint is an incremental RocksDB
    * handle, and a restored operator's retraction carries the payload persisted before the restore.
    */
   @Test
@@ -405,7 +383,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             dedupHarness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -422,14 +400,14 @@ class PaimonStateBackendOperatorTest {
           collectDedup(harness));
 
       snapshot = harness.snapshot(1, 1);
-      paimonHandle(snapshot); // the dedup checkpoint travels as an incremental handle, not raw state
+      rocksHandle(snapshot); // the dedup checkpoint travels as an incremental handle, not raw state
       harness.notifyOfCompletedCheckpoint(1);
     }
 
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             dedupHarness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -457,21 +435,21 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             normalizerHarness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
       harness.processElement(new StreamRecord<>(batch(allocator, row(1, 10), row(2, 20))));
       assertEquals(List.of(insert(1, 10), insert(2, 20)), collect(harness));
       snapshot = harness.snapshot(1, 1);
-      paimonHandle(snapshot);
+      rocksHandle(snapshot);
       harness.notifyOfCompletedCheckpoint(1);
     }
 
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             normalizerHarness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -493,7 +471,7 @@ class PaimonStateBackendOperatorTest {
   }
 
   /**
-   * The append-only Top-N rides the Paimon LIST store: buffer positions (tie order) survive the
+   * The append-only Top-N rides the RocksDB LIST store: buffer positions (tie order) survive the
    * restore, so the eviction after restore hits exactly the row Flink would evict.
    */
   @Test
@@ -502,7 +480,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             topNHarness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -516,14 +494,14 @@ class PaimonStateBackendOperatorTest {
                       allocator))));
       collectDedupless(harness);
       snapshot = harness.snapshot(1, 1);
-      paimonHandle(snapshot);
+      rocksHandle(snapshot);
       harness.notifyOfCompletedCheckpoint(1);
     }
 
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             topNHarness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -548,7 +526,7 @@ class PaimonStateBackendOperatorTest {
   /**
    * The retracting Top-N keeps its FULL buffer (never truncated to N) on the same list store: a
    * retraction after restore promotes the row that sat beyond rank N, which only works if the
-   * whole buffer — not just the visible top — survived the Paimon round trip.
+   * whole buffer — not just the visible top — survived the RocksDB round trip.
    */
   @Test
   void retractingTopNPromotesFromBeyondNAfterRestore() throws Exception {
@@ -556,7 +534,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             retractingTopNHarness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -574,14 +552,14 @@ class PaimonStateBackendOperatorTest {
           List.of(List.of(RowKind.INSERT, 9L, 1L), List.of(RowKind.INSERT, 9L, 2L)),
           collectDedupless(harness));
       snapshot = harness.snapshot(1, 1);
-      paimonHandle(snapshot);
+      rocksHandle(snapshot);
       harness.notifyOfCompletedCheckpoint(1);
     }
 
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             retractingTopNHarness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -604,9 +582,9 @@ class PaimonStateBackendOperatorTest {
           new String[] {"p", "k", "s"});
 
   /**
-   * The update-fast Top-N rides its row-keyed Paimon map shape (PK = the row's unique-key bytes,
+   * The update-fast Top-N rides its row-keyed RocksDB map shape (PK = the row's unique-key bytes,
    * with the inner rank among sort-key ties persisted alongside the payload): its checkpoint is
-   * an incremental Paimon handle, and after restore a new version of a buffered row key MOVES the
+   * an incremental RocksDB handle, and after restore a new version of a buffered row key MOVES the
    * row — retracting its old payload — which only works if the persisted row-key identity and the
    * tie order survived the round trip.
    */
@@ -616,7 +594,7 @@ class PaimonStateBackendOperatorTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             updateFastTopNHarness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -630,14 +608,14 @@ class PaimonStateBackendOperatorTest {
                       allocator))));
       collectUpdateFast(harness);
       snapshot = harness.snapshot(1, 1);
-      paimonHandle(snapshot);
+      rocksHandle(snapshot);
       harness.notifyOfCompletedCheckpoint(1);
     }
 
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             updateFastTopNHarness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -697,7 +675,7 @@ class PaimonStateBackendOperatorTest {
   }
 
   /**
-   * The updating join rides two Paimon tables under one backend (the analog of Flink's two named
+   * The updating join rides two RocksDB tables under one backend (the analog of Flink's two named
    * join states as two column families in one RocksDB): one incremental handle carries both, and a
    * restored joiner's retraction still finds the pre-restore match.
    */
@@ -708,7 +686,7 @@ class PaimonStateBackendOperatorTest {
         org.apache.flink.streaming.util.KeyedTwoInputStreamOperatorTestHarness<
                 Integer, ArrowBatch, ArrowBatch, ArrowBatch>
             harness = joinHarness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -724,7 +702,7 @@ class PaimonStateBackendOperatorTest {
                       List.of(GenericRowData.of(1L, 10L)), INPUT, allocator))));
       collectJoin(harness);
       snapshot = harness.snapshot(1, 1);
-      paimonHandle(snapshot); // one incremental handle covers both side tables
+      rocksHandle(snapshot); // one incremental handle covers both side tables
       harness.notifyOfCompletedCheckpoint(1);
     }
 
@@ -732,7 +710,7 @@ class PaimonStateBackendOperatorTest {
         org.apache.flink.streaming.util.KeyedTwoInputStreamOperatorTestHarness<
                 Integer, ArrowBatch, ArrowBatch, ArrowBatch>
             harness = joinHarness()) {
-      harness.setStateBackend(new PaimonStateBackend());
+      harness.setStateBackend(backend());
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -1048,6 +1026,13 @@ class PaimonStateBackendOperatorTest {
     return harness(0);
   }
 
+  private static RocksDBNativeStateBackend backend() {
+    Configuration config = new Configuration();
+    config.set(CheckpointingOptions.INCREMENTAL_CHECKPOINTS, true);
+    return new RocksDBNativeStateBackend(
+        config, RocksDBNativeStateBackendAllOperatorsTest.class.getClassLoader());
+  }
+
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness(
       long stateTtlMillis) throws Exception {
     NativeColumnarGroupAggregateOperator operator =
@@ -1070,7 +1055,7 @@ class PaimonStateBackendOperatorTest {
         operator, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0);
   }
 
-  private static IncrementalRemoteKeyedStateHandle paimonHandle(OperatorSubtaskState state) {
+  private static IncrementalRemoteKeyedStateHandle rocksHandle(OperatorSubtaskState state) {
     assertEquals(1, state.getManagedKeyedState().size(), "one keyed state handle per checkpoint");
     KeyedStateHandle handle = state.getManagedKeyedState().iterator().next();
     return assertInstanceOf(IncrementalRemoteKeyedStateHandle.class, handle);

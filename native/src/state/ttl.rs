@@ -28,7 +28,10 @@ impl StateTtl {
     }
 
     pub(crate) fn disabled() -> StateTtl {
-        StateTtl { ttl_ms: 0, now_ms: 0 }
+        StateTtl {
+            ttl_ms: 0,
+            now_ms: 0,
+        }
     }
 
     /// Flink enables TTL iff the retention is positive (zero means "never expire").
@@ -142,7 +145,10 @@ mod tests {
         let mut store: MemoryStateStore<i64> = MemoryStateStore::default();
         store.insert(ByteKey(Box::from(&b"k"[..])), 4001);
         let ttl = StateTtl::new(1000, 5000);
-        assert_eq!(ttl_get_mut(&mut store, b"k", ttl, |ts| *ts, |_| {}), Some(&mut 4001));
+        assert_eq!(
+            ttl_get_mut(&mut store, b"k", ttl, |ts| *ts, |_| {}),
+            Some(&mut 4001)
+        );
         assert_eq!(store.get(b"k"), Some(&4001)); // a read never extends the lifetime
     }
 

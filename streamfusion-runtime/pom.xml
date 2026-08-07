@@ -40,11 +40,8 @@
                     </execution>
                     <execution>
                         <id>test-jar</id>
-                        <!-- The Paimon backend suites and state-backend benchmark live in the
-                             compactor module (the backend fails closed without its table
-                             maintainer on the classpath) and reuse this module's parity and
-                             Nexmark test environments; publish the test classes on the same
-                             early-reactor schedule as the main JAR. -->
+                        <!-- Publish reusable parity and Nexmark test environments for downstream
+                             connector suites on the same early-reactor schedule as the main JAR. -->
                         <phase>process-test-classes</phase>
                         <goals><goal>test-jar</goal></goals>
                     </execution>

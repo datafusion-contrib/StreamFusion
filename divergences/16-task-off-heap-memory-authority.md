@@ -29,7 +29,7 @@ real runtime cap, rather than only a process-sizing hint.
   increase. Metrics expose capacity, current/available/peak bytes, denials, and Arrow usage.
 
 State footprint remains incremental and off the per-row hot path. The in-memory state backend cannot
-spill and fails on denial. The Paimon backend can flush its mutable buffer into immutable local files
+spill and fails on denial. The RocksDB backend can flush its mutable buffer into local files
 when it reaches its configured threshold or memory is tight; Flink checkpoints later make those
 files durable, just as checkpointing a local-disk state backend is separate from its ordinary flushes.
 

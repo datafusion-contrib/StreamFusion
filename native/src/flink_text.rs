@@ -59,7 +59,10 @@ fn parse_java_float_body<T: JavaFloat>(t: &str) -> Option<T> {
     }
     // Restrict to Java's decimal grammar before handing to Rust's parser: Rust would otherwise
     // accept spellings Java rejects ("inf", "nan", "infinity").
-    if t.is_empty() || !t.bytes().all(|b| matches!(b, b'0'..=b'9' | b'+' | b'-' | b'.' | b'e' | b'E'))
+    if t.is_empty()
+        || !t
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'+' | b'-' | b'.' | b'e' | b'E'))
     {
         return None;
     }
@@ -150,7 +153,8 @@ pub(crate) fn parse_flink_timestamp(s: &str, mode: TimestampMode) -> Option<i64>
     }
     let time = s[11..].strip_suffix('Z').unwrap_or(&s[11..]);
     let nanos_of_day = parse_flink_time(time, mode == TimestampMode::Iso8601)?;
-    days.checked_mul(86_400_000_000_000)?.checked_add(nanos_of_day)
+    days.checked_mul(86_400_000_000_000)?
+        .checked_add(nanos_of_day)
 }
 
 /// A TIME column string per Flink's `SQL_TIME_FORMAT` (`HH:mm:ss[.f{0,9}]` — seconds required,
@@ -322,7 +326,10 @@ pub(crate) fn parse_java_big_decimal(s: &str) -> Option<(num_bigint::BigInt, i64
     }
     let exponent: i64 = if i < b.len() {
         // At 'e'/'E': BigDecimal requires a parsable integer exponent.
-        s[i + 1..].parse().ok().filter(|e: &i64| e.unsigned_abs() < i32::MAX as u64)?
+        s[i + 1..]
+            .parse()
+            .ok()
+            .filter(|e: &i64| e.unsigned_abs() < i32::MAX as u64)?
     } else {
         0
     };
@@ -337,7 +344,12 @@ pub(crate) fn parse_java_big_decimal(s: &str) -> Option<(num_bigint::BigInt, i64
 /// fails the field); `Ok(None)` is the precision-overflow null.
 pub(crate) fn parse_flink_decimal(s: &str, precision: u8, scale: i8) -> Result<Option<i128>, ()> {
     let (unscaled, source_scale) = parse_java_big_decimal(s).ok_or(())?;
-    Ok(crate::expr::rescale_half_up(unscaled, source_scale, precision, scale))
+    Ok(crate::expr::rescale_half_up(
+        unscaled,
+        source_scale,
+        precision,
+        scale,
+    ))
 }
 
 #[cfg(test)]
@@ -371,7 +383,10 @@ mod tests {
         assert_eq!(parse_java_float::<f64>("1.5d"), Some(1.5));
         assert_eq!(parse_java_float::<f32>("1.5f"), Some(1.5));
         assert_eq!(parse_java_float::<f64>("Infinity"), Some(f64::INFINITY));
-        assert_eq!(parse_java_float::<f64>("-Infinity"), Some(f64::NEG_INFINITY));
+        assert_eq!(
+            parse_java_float::<f64>("-Infinity"),
+            Some(f64::NEG_INFINITY)
+        );
         assert!(parse_java_float::<f64>("NaN").unwrap().is_nan());
         assert_eq!(parse_java_float::<f64>("1e999"), Some(f64::INFINITY));
         // Java rejects Rust-only spellings.
@@ -397,7 +412,10 @@ mod tests {
         assert_eq!(parse_java_sql_date("1970-1-2"), Some(1));
         assert_eq!(parse_java_sql_date("+1970-01-02"), Some(1));
         // Day overflow normalizes into the next month, like java.util.Date.
-        assert_eq!(parse_java_sql_date("2020-02-31"), parse_iso_local_date("2020-03-02"));
+        assert_eq!(
+            parse_java_sql_date("2020-02-31"),
+            parse_iso_local_date("2020-03-02")
+        );
         assert_eq!(parse_java_sql_date("2020-13-01"), None);
         assert_eq!(parse_java_sql_date("2020-01-32"), None);
         assert_eq!(parse_java_sql_date("2020-01-01x"), None);
@@ -407,7 +425,10 @@ mod tests {
     #[test]
     fn sql_timestamps_require_space_and_seconds() {
         let base = 86_400_000_000_000i64;
-        assert_eq!(parse_flink_timestamp("1970-01-02 00:00:00", TimestampMode::Sql), Some(base));
+        assert_eq!(
+            parse_flink_timestamp("1970-01-02 00:00:00", TimestampMode::Sql),
+            Some(base)
+        );
         assert_eq!(
             parse_flink_timestamp("1970-01-02 00:00:00.5", TimestampMode::Sql),
             Some(base + 500_000_000)
@@ -417,33 +438,66 @@ mod tests {
             Some(base + 123_456_789)
         );
         // The LTZ 'Z' is tolerated (documented leniency), same value.
-        assert_eq!(parse_flink_timestamp("1970-01-02 00:00:00Z", TimestampMode::Sql), Some(base));
-        assert_eq!(parse_flink_timestamp("1970-01-02T00:00:00", TimestampMode::Sql), None);
-        assert_eq!(parse_flink_timestamp("1970-01-02 00:00", TimestampMode::Sql), None);
+        assert_eq!(
+            parse_flink_timestamp("1970-01-02 00:00:00Z", TimestampMode::Sql),
+            Some(base)
+        );
+        assert_eq!(
+            parse_flink_timestamp("1970-01-02T00:00:00", TimestampMode::Sql),
+            None
+        );
+        assert_eq!(
+            parse_flink_timestamp("1970-01-02 00:00", TimestampMode::Sql),
+            None
+        );
         // Java's fraction parser tolerates the bare decimal point (parity-pinned).
-        assert_eq!(parse_flink_timestamp("1970-01-02 00:00:00.", TimestampMode::Sql), Some(base));
+        assert_eq!(
+            parse_flink_timestamp("1970-01-02 00:00:00.", TimestampMode::Sql),
+            Some(base)
+        );
         // SMART hour-24 rolls a timestamp to the NEXT day's midnight (parity-pinned against
         // Flink's deserializer); anything nonzero behind the 24 is an error.
         assert_eq!(
             parse_flink_timestamp("1970-01-02 24:00:00", TimestampMode::Sql),
             Some(2 * base)
         );
-        assert_eq!(parse_flink_timestamp("1970-01-02 24:00:00.5", TimestampMode::Sql), None);
-        assert_eq!(parse_flink_timestamp("1970-01-02 00:00:00.1234567890", TimestampMode::Sql), None);
-        assert_eq!(parse_flink_timestamp("1970-01-02 00:00:00+05:00", TimestampMode::Sql), None);
-        assert_eq!(parse_flink_timestamp("1970-01-02", TimestampMode::Sql), None);
+        assert_eq!(
+            parse_flink_timestamp("1970-01-02 24:00:00.5", TimestampMode::Sql),
+            None
+        );
+        assert_eq!(
+            parse_flink_timestamp("1970-01-02 00:00:00.1234567890", TimestampMode::Sql),
+            None
+        );
+        assert_eq!(
+            parse_flink_timestamp("1970-01-02 00:00:00+05:00", TimestampMode::Sql),
+            None
+        );
+        assert_eq!(
+            parse_flink_timestamp("1970-01-02", TimestampMode::Sql),
+            None
+        );
     }
 
     #[test]
     fn iso_timestamps_require_t_and_allow_missing_seconds() {
         let base = 86_400_000_000_000i64;
-        assert_eq!(parse_flink_timestamp("1970-01-02T00:00:00", TimestampMode::Iso8601), Some(base));
+        assert_eq!(
+            parse_flink_timestamp("1970-01-02T00:00:00", TimestampMode::Iso8601),
+            Some(base)
+        );
         assert_eq!(
             parse_flink_timestamp("1970-01-02T00:01", TimestampMode::Iso8601),
             Some(base + 60_000_000_000)
         );
-        assert_eq!(parse_flink_timestamp("1970-01-02 00:00:00", TimestampMode::Iso8601), None);
-        assert_eq!(parse_flink_timestamp("1970-01-02T00:01.5", TimestampMode::Iso8601), None);
+        assert_eq!(
+            parse_flink_timestamp("1970-01-02 00:00:00", TimestampMode::Iso8601),
+            None
+        );
+        assert_eq!(
+            parse_flink_timestamp("1970-01-02T00:01.5", TimestampMode::Iso8601),
+            None
+        );
     }
 
     #[test]
@@ -452,7 +506,10 @@ mod tests {
         assert_eq!(parse_sql_time_second_of_day("12:34:56"), Some(45_296));
         // Sub-second digits parse but never reach the value (Flink's toSecondOfDay * 1000).
         assert_eq!(parse_sql_time_second_of_day("12:34:56.789"), Some(45_296));
-        assert_eq!(parse_sql_time_second_of_day("12:34:56.123456789"), Some(45_296));
+        assert_eq!(
+            parse_sql_time_second_of_day("12:34:56.123456789"),
+            Some(45_296)
+        );
         assert_eq!(parse_sql_time_second_of_day("12:34:56."), Some(45_296));
         assert_eq!(parse_sql_time_second_of_day("23:59:59"), Some(86_399));
         // Seconds are required (SQL_TIME_FORMAT, unlike ISO_LOCAL_TIME) and the shape is strict.
@@ -489,7 +546,10 @@ mod tests {
         assert_eq!(parse_jackson_base64("AQ-_"), Err(Base64Error::Recoverable));
         // The quote-consuming shapes: a 1-char group, or a group cut after a single '='.
         assert_eq!(parse_jackson_base64("A"), Err(Base64Error::QuoteConsumed));
-        assert_eq!(parse_jackson_base64("AQIDA"), Err(Base64Error::QuoteConsumed));
+        assert_eq!(
+            parse_jackson_base64("AQIDA"),
+            Err(Base64Error::QuoteConsumed)
+        );
         assert_eq!(parse_jackson_base64("AQ="), Err(Base64Error::QuoteConsumed));
     }
 
@@ -501,7 +561,10 @@ mod tests {
         assert_eq!(parse_java_big_decimal(".5"), Some((BigInt::from(5), 1)));
         assert_eq!(parse_java_big_decimal("1."), Some((BigInt::from(1), 0)));
         assert_eq!(parse_java_big_decimal("1e5"), Some((BigInt::from(1), -5)));
-        assert_eq!(parse_java_big_decimal("1.5e-2"), Some((BigInt::from(15), 3)));
+        assert_eq!(
+            parse_java_big_decimal("1.5e-2"),
+            Some((BigInt::from(15), 3))
+        );
         assert_eq!(parse_java_big_decimal(" 1.5"), None);
         assert_eq!(parse_java_big_decimal("."), None);
         assert_eq!(parse_java_big_decimal("1.5.5"), None);

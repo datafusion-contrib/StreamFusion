@@ -42,7 +42,10 @@ fn forward(record: &log::Record) {
     let logger = slf4j_logger_name(record.target());
     let message = record.args().to_string();
     if !upcall(record.level(), &logger, &message) {
-        eprintln!("[streamfusion native] {} {logger}: {message}", record.level());
+        eprintln!(
+            "[streamfusion native] {} {logger}: {message}",
+            record.level()
+        );
     }
 }
 
@@ -114,7 +117,9 @@ fn install(vm: *mut jni::sys::JavaVM) {
     };
     if BRIDGE.set(LogBridge { vm, class, method }).is_ok() {
         let _ = log::set_logger(&LOGGER);
-        log::set_max_level(configured_level(std::env::var("STREAMFUSION_NATIVE_LOG").ok()));
+        log::set_max_level(configured_level(
+            std::env::var("STREAMFUSION_NATIVE_LOG").ok(),
+        ));
     }
 }
 
@@ -153,20 +158,36 @@ mod tests {
                 .target("streamfusion::logging::test")
                 .build(),
         );
-        assert!(!upcall(log::Level::Warn, "streamfusion.logging.test", "no JVM present"));
+        assert!(!upcall(
+            log::Level::Warn,
+            "streamfusion.logging.test",
+            "no JVM present"
+        ));
     }
 
     #[test]
     fn logger_names_are_dot_separated() {
-        assert_eq!(slf4j_logger_name("streamfusion::kafka"), "streamfusion.kafka");
+        assert_eq!(
+            slf4j_logger_name("streamfusion::kafka"),
+            "streamfusion.kafka"
+        );
         assert_eq!(slf4j_logger_name("librdkafka"), "librdkafka");
     }
 
     #[test]
     fn level_defaults_to_info_and_honors_the_override() {
         assert_eq!(configured_level(None), log::LevelFilter::Info);
-        assert_eq!(configured_level(Some("garbage".to_string())), log::LevelFilter::Info);
-        assert_eq!(configured_level(Some("debug".to_string())), log::LevelFilter::Debug);
-        assert_eq!(configured_level(Some("off".to_string())), log::LevelFilter::Off);
+        assert_eq!(
+            configured_level(Some("garbage".to_string())),
+            log::LevelFilter::Info
+        );
+        assert_eq!(
+            configured_level(Some("debug".to_string())),
+            log::LevelFilter::Debug
+        );
+        assert_eq!(
+            configured_level(Some("off".to_string())),
+            log::LevelFilter::Off
+        );
     }
 }

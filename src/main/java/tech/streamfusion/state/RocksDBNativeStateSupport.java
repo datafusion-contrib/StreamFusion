@@ -8,27 +8,27 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The per-operator glue between a native stateful operator and the Paimon keyed state backend:
- * the gate deciding whether the operator's state lives in a Paimon table this run, plus the
- * restored-source marshalling and checkpoint-hook registration every Paimon-backed operator
+ * The per-operator glue between a native stateful operator and the RocksDB keyed state backend:
+ * the gate deciding whether the operator's state lives in a RocksDB table this run, plus the
+ * restored-source marshalling and checkpoint-hook registration every RocksDB-backed operator
  * repeats verbatim. An operator supplies only its own pieces — the native supported-probe, the
  * native create call, and the native checkpoint method — and branches its hot paths on whether
  * this resolved.
  */
-public final class PaimonNativeStateSupport {
+public final class RocksDBNativeStateSupport {
 
-  private static final Logger LOG = LoggerFactory.getLogger(PaimonNativeStateSupport.class);
+  private static final Logger LOG = LoggerFactory.getLogger(RocksDBNativeStateSupport.class);
 
-  private final PaimonKeyedStateBackend<?> backend;
+  private final RocksDBNativeKeyedStateBackend<?> backend;
   private final String[] sourceDirectories;
   private final String[] sourceSnapshotTokens;
   private final boolean aligned;
   private final long stateTtlMillis;
 
-  private PaimonNativeStateSupport(PaimonKeyedStateBackend<?> backend, long stateTtlMillis) {
+  private RocksDBNativeStateSupport(RocksDBNativeKeyedStateBackend<?> backend, long stateTtlMillis) {
     this.backend = backend;
     this.stateTtlMillis = stateTtlMillis;
-    List<PaimonRestoredSource> sources = backend.restoredSources();
+    List<RocksDBRestoredSource> sources = backend.restoredSources();
     this.sourceDirectories = new String[sources.size()];
     this.sourceSnapshotTokens = new String[sources.size()];
     this.aligned =
@@ -42,13 +42,13 @@ public final class PaimonNativeStateSupport {
   }
 
   /**
-   * Resolves Paimon mode for one operator, or null when its state stays on memory. The backend
+   * Resolves RocksDB mode for one operator, or null when its state stays on memory. The backend
    * takes over only when the job selected it, no raw keyed state arrived (a checkpoint written by
    * the memory backend restores on the memory backend — no silent migration), this build carries
-   * the native store, and the operator's own state shape is persistable. A Paimon backend that
+   * the native store, and the operator's own state shape is persistable. A RocksDB backend that
    * loses on a later gate logs the fallback — memory state stays correct, just non-incremental.
    */
-  public static PaimonNativeStateSupport resolve(
+  public static RocksDBNativeStateSupport resolve(
       KeyedStateBackend<?> keyedStateBackend,
       String operatorLabel,
       boolean rawStateRestored,
@@ -57,21 +57,21 @@ public final class PaimonNativeStateSupport {
   }
 
   /** {@link #resolve} for an operator whose persistent shape carries state-TTL timestamps. */
-  public static PaimonNativeStateSupport resolve(
+  public static RocksDBNativeStateSupport resolve(
       KeyedStateBackend<?> keyedStateBackend,
       String operatorLabel,
       boolean rawStateRestored,
       BooleanSupplier operatorSupported,
       long stateTtlMillis) {
-    if (!(keyedStateBackend instanceof PaimonKeyedStateBackend)) {
+    if (!(keyedStateBackend instanceof RocksDBNativeKeyedStateBackend)) {
       return null;
     }
-    PaimonKeyedStateBackend<?> backend = (PaimonKeyedStateBackend<?>) keyedStateBackend;
-    if (!rawStateRestored && Native.paimonStateAvailable() && operatorSupported.getAsBoolean()) {
-      return new PaimonNativeStateSupport(backend, stateTtlMillis);
+    RocksDBNativeKeyedStateBackend<?> backend = (RocksDBNativeKeyedStateBackend<?>) keyedStateBackend;
+    if (!rawStateRestored && Native.rocksdbStateAvailable() && operatorSupported.getAsBoolean()) {
+      return new RocksDBNativeStateSupport(backend, stateTtlMillis);
     }
     LOG.info(
-        "{} falls back to memory state under the Paimon backend "
+        "{} falls back to memory state under the RocksDB backend "
             + "(unsupported state shape, missing native feature, or raw-state restore)",
         operatorLabel);
     return null;
@@ -79,6 +79,10 @@ public final class PaimonNativeStateSupport {
 
   public String tableDirectory() {
     return backend.tableDirectory();
+  }
+
+  public String optionsJson() {
+    return backend.optionsJson();
   }
 
   public String[] sourceDirectories() {
@@ -113,8 +117,8 @@ public final class PaimonNativeStateSupport {
     return backend.getKeyGroupRange().getEndKeyGroup();
   }
 
-  /** Installs the operator's checkpoint hook (see {@link PaimonNativeState}); call once. */
-  public void register(PaimonNativeState nativeState) {
+  /** Installs the operator's checkpoint hook (see {@link RocksDBNativeState}); call once. */
+  public void register(RocksDBNativeState nativeState) {
     backend.registerNativeState(nativeState, stateTtlMillis);
   }
 
@@ -123,7 +127,7 @@ public final class PaimonNativeStateSupport {
     try {
       backend.flushForMemoryPressure();
     } catch (Exception failure) {
-      throw new IllegalStateException("Paimon state memory-pressure flush failed", failure);
+      throw new IllegalStateException("RocksDB state memory-pressure flush failed", failure);
     }
   }
 }

@@ -109,10 +109,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeSplit<'local>(
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<SplitState>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<SplitState>(handle));
     })
 }
 

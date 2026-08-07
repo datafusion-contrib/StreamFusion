@@ -2,7 +2,6 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.PaimonNativeStateSupport;
 import java.util.function.LongBinaryOperator;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
@@ -74,62 +73,6 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
   @Override
   protected void beforeHandleCreation() {
     predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
-  }
-
-  @Override
-  protected PaimonNativeStateSupport resolvePaimonState(boolean rawStateRestored) {
-    // Deliberately the retention-less resolvePaimon: the persistent deadlines are not truthful
-    // per-row clocks (a deferred or re-armed deadline must never drive a physical drop), so the
-    // maintenance session gets no record-level expiry options — physical cleanup happens through
-    // the operator's own staged tombstones when a deadline fires.
-    return resolvePaimon(
-        rawStateRestored,
-        () ->
-            withSchemas(
-                    (l, r) ->
-                        Native.paimonRowStateSupported(l) && Native.paimonRowStateSupported(r)
-                            ? 1L
-                            : 0L)
-                != 0);
-  }
-
-  @Override
-  protected long createPaimonHandle(PaimonNativeStateSupport paimon) {
-    return withSchemas(
-        (l, r) ->
-            Native.createPaimonTemporalJoiner(
-                leftKeys,
-                rightKeys,
-                leftTime,
-                rightTime,
-                joinType,
-                l,
-                r,
-                predicate.kinds,
-                predicate.payload,
-                predicate.childCounts,
-                predicate.boundLongs(),
-                predicate.doubles,
-                predicate.strings,
-                keyTimestampPrecisions(),
-                stateTtlMillis,
-                getProcessingTimeService().getCurrentProcessingTime(),
-                memoryBudgetBytes(),
-                paimon.tableDirectory(),
-                maxParallelism(),
-                NativeConfig.paimonBuckets(),
-                NativeConfig.paimonFileFormat(),
-                NativeConfig.paimonFileCompression(),
-                paimon.sourceDirectories(),
-                paimon.sourceSnapshotTokens(),
-                paimon.keyGroupStart(),
-                paimon.keyGroupEnd(),
-                paimon.aligned()));
-  }
-
-  @Override
-  protected String[] checkpointPaimonHandle() {
-    return Native.checkpointPaimonTemporalJoiner(handle);
   }
 
   @Override

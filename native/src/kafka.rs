@@ -143,9 +143,7 @@ fn parse_json_encode_options(encoded: &str) -> Result<JsonEncodeOptions, String>
         match key {
             "timestamp-format" => options.iso_8601 = value == "ISO-8601",
             "encode.ignore-null-fields" => options.ignore_null_fields = value == "true",
-            "encode.decimal-as-plain-number" => {
-                options.decimal_as_plain_number = value == "true"
-            }
+            "encode.decimal-as-plain-number" => options.decimal_as_plain_number = value == "true",
             "map-null-key.mode" => {
                 options.map_null_key_mode = match value {
                     "FAIL" => MapNullKeyMode::Fail,
@@ -255,20 +253,19 @@ pub(crate) fn encode_json_batch(
 
     let batch = annotate_flink_types(batch, logical_types, field_names)?;
 
-    let mut builder =
-        WriterBuilder::new()
-            .with_explicit_nulls(!options.ignore_null_fields)
-            .with_time_format("%H:%M:%S".to_string())
-            .with_encoder_factory(Arc::new(FlinkJsonEncoderFactory {
-                iso_8601: options.iso_8601,
-                decimal_as_plain_number: options.decimal_as_plain_number,
-                map_null_key_mode: options.map_null_key_mode,
-                map_null_key_literal: {
-                    let mut literal = Vec::new();
-                    encode_json_string_value(options.map_null_key_literal.as_bytes(), &mut literal);
-                    literal
-                },
-            }));
+    let mut builder = WriterBuilder::new()
+        .with_explicit_nulls(!options.ignore_null_fields)
+        .with_time_format("%H:%M:%S".to_string())
+        .with_encoder_factory(Arc::new(FlinkJsonEncoderFactory {
+            iso_8601: options.iso_8601,
+            decimal_as_plain_number: options.decimal_as_plain_number,
+            map_null_key_mode: options.map_null_key_mode,
+            map_null_key_literal: {
+                let mut literal = Vec::new();
+                encode_json_string_value(options.map_null_key_literal.as_bytes(), &mut literal);
+                literal
+            },
+        }));
     if options.iso_8601 {
         builder = builder
             .with_timestamp_format("%Y-%m-%dT%H:%M:%S%.f".to_string())
@@ -608,8 +605,10 @@ fn mark_ltz_leaves(array: ArrayRef, descriptor: &str) -> Result<ArrayRef, String
         DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None)
             if descriptor.starts_with("TIMESTAMP_LTZ") =>
         {
-            let marked =
-                array.as_primitive::<TimestampNanosecondType>().clone().with_timezone("UTC");
+            let marked = array
+                .as_primitive::<TimestampNanosecondType>()
+                .clone()
+                .with_timezone("UTC");
             Ok(Arc::new(marked))
         }
         DataType::Struct(struct_fields) => {
@@ -620,26 +619,41 @@ fn mark_ltz_leaves(array: ArrayRef, descriptor: &str) -> Result<ArrayRef, String
             for ((field, column), child) in fields.iter().zip(columns).zip(children) {
                 let column = mark_ltz_leaves(column, child)?;
                 new_fields.push(Arc::new(
-                    field.as_ref().clone().with_data_type(column.data_type().clone()),
+                    field
+                        .as_ref()
+                        .clone()
+                        .with_data_type(column.data_type().clone()),
                 ));
                 new_columns.push(column);
             }
-            Ok(Arc::new(StructArray::new(new_fields.into(), new_columns, nulls)))
+            Ok(Arc::new(StructArray::new(
+                new_fields.into(),
+                new_columns,
+                nulls,
+            )))
         }
         DataType::List(_) => {
             let element = children(1)?[0];
             let (field, offsets, values, nulls) = array.as_list::<i32>().clone().into_parts();
             let values = mark_ltz_leaves(values, element)?;
-            let field =
-                Arc::new(field.as_ref().clone().with_data_type(values.data_type().clone()));
+            let field = Arc::new(
+                field
+                    .as_ref()
+                    .clone()
+                    .with_data_type(values.data_type().clone()),
+            );
             Ok(Arc::new(ListArray::new(field, offsets, values, nulls)))
         }
         DataType::LargeList(_) => {
             let element = children(1)?[0];
             let (field, offsets, values, nulls) = array.as_list::<i64>().clone().into_parts();
             let values = mark_ltz_leaves(values, element)?;
-            let field =
-                Arc::new(field.as_ref().clone().with_data_type(values.data_type().clone()));
+            let field = Arc::new(
+                field
+                    .as_ref()
+                    .clone()
+                    .with_data_type(values.data_type().clone()),
+            );
             Ok(Arc::new(LargeListArray::new(field, offsets, values, nulls)))
         }
         DataType::Map(_, ordered) => {
@@ -654,7 +668,10 @@ fn mark_ltz_leaves(array: ArrayRef, descriptor: &str) -> Result<ArrayRef, String
             for ((field, column), child) in fields.iter().zip(columns).zip(children) {
                 let column = mark_ltz_leaves(column, child)?;
                 new_fields.push(Arc::new(
-                    field.as_ref().clone().with_data_type(column.data_type().clone()),
+                    field
+                        .as_ref()
+                        .clone()
+                        .with_data_type(column.data_type().clone()),
                 ));
                 new_columns.push(column);
             }
@@ -663,9 +680,18 @@ fn mark_ltz_leaves(array: ArrayRef, descriptor: &str) -> Result<ArrayRef, String
                 unreachable!("matched Map above");
             };
             let entry_field = Arc::new(
-                entry_field.as_ref().clone().with_data_type(entries.data_type().clone()),
+                entry_field
+                    .as_ref()
+                    .clone()
+                    .with_data_type(entries.data_type().clone()),
             );
-            Ok(Arc::new(MapArray::new(entry_field, offsets, entries, map_nulls, ordered)))
+            Ok(Arc::new(MapArray::new(
+                entry_field,
+                offsets,
+                entries,
+                map_nulls,
+                ordered,
+            )))
         }
         _ => Ok(array),
     }
@@ -1007,7 +1033,10 @@ fn json_needs_escape(bytes: &[u8]) -> bool {
             return true;
         }
     }
-    chunks.remainder().iter().any(|&byte| byte < 0x20 || byte == b'"' || byte == b'\\')
+    chunks
+        .remainder()
+        .iter()
+        .any(|&byte| byte < 0x20 || byte == b'"' || byte == b'\\')
 }
 
 /// Jackson's escape table, applied over unescaped runs (without the surrounding quotes): the
@@ -1328,13 +1357,16 @@ pub(crate) fn iso_local_date(epoch_days: i64, out: &mut Vec<u8>) {
 pub(crate) fn civil_date_from_epoch_days(days: i64) -> (i32, u32, u32) {
     // Decompose the proleptic Gregorian calendar into 400-year eras; the shift aligns Unix day 0.
     let shifted = days + 719_468;
-    let era = (if shifted >= 0 { shifted } else { shifted - 146_096 }) / 146_097;
+    let era = (if shifted >= 0 {
+        shifted
+    } else {
+        shifted - 146_096
+    }) / 146_097;
     let day_of_era = shifted - era * 146_097;
     let year_of_era =
         (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
     let mut year = year_of_era + era * 400;
-    let day_of_year =
-        day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let month_prime = (5 * day_of_year + 2) / 153;
     let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
     let month = month_prime + if month_prime < 10 { 3 } else { -9 };
@@ -1406,9 +1438,10 @@ mod timestamp_encoder_tests {
             1_700_000_000_100_000_000,
             i64::MAX,
         ];
-        values.extend((0..=2048_i128).map(|index| {
-            (i64::MIN as i128 + (u64::MAX as i128 * index / 2048)) as i64
-        }));
+        values.extend(
+            (0..=2048_i128)
+                .map(|index| (i64::MIN as i128 + (u64::MAX as i128 * index / 2048)) as i64),
+        );
         for value in values {
             for precision in 0..=12 {
                 for iso_8601 in [false, true] {
@@ -1525,7 +1558,11 @@ impl KafkaSplitReader {
         Ok(KafkaSplitReader {
             consumer,
             consumer_queue,
-            body_schema: Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)])),
+            body_schema: Arc::new(Schema::new(vec![Field::new(
+                "body",
+                DataType::Binary,
+                true,
+            )])),
             decode: None,
             next_offsets: HashMap::default(),
             stopping_offsets: HashMap::default(),
@@ -1556,9 +1593,7 @@ impl KafkaSplitReader {
         assert_eq!(topics.len(), stopping_offsets.len());
         for i in 0..topics.len() {
             let key = (topics[i].clone(), partitions[i] as i32);
-            self.next_offsets
-                .entry(key.clone())
-                .or_insert(offsets[i]);
+            self.next_offsets.entry(key.clone()).or_insert(offsets[i]);
             if stopping_offsets[i] != i64::MIN {
                 self.stopping_offsets.insert(key, stopping_offsets[i]);
             }
@@ -1571,7 +1606,8 @@ impl KafkaSplitReader {
     /// Without this a finished partition makes `poll` block for the timeout at the bounded tail.
     fn unassign_splits(&mut self, topics: &[String], partitions: &[i64]) {
         for i in 0..topics.len() {
-            self.next_offsets.remove(&(topics[i].clone(), partitions[i] as i32));
+            self.next_offsets
+                .remove(&(topics[i].clone(), partitions[i] as i32));
             self.stopping_offsets
                 .remove(&(topics[i].clone(), partitions[i] as i32));
         }
@@ -1592,12 +1628,8 @@ impl KafkaSplitReader {
 
         let mut tpl = TopicPartitionList::with_capacity(topics.len());
         for i in 0..topics.len() {
-            tpl.add_partition_offset(
-                &topics[i],
-                partitions[i] as i32,
-                Offset::Offset(offsets[i]),
-            )
-            .map_err(|error| format!("failed to build Kafka offset commit: {error}"))?;
+            tpl.add_partition_offset(&topics[i], partitions[i] as i32, Offset::Offset(offsets[i]))
+                .map_err(|error| format!("failed to build Kafka offset commit: {error}"))?;
         }
         self.consumer
             .commit(&tpl, CommitMode::Sync)
@@ -1647,8 +1679,11 @@ impl KafkaSplitReader {
         // fetch. An explicit blocking metadata fetch resolves leaders now (the same warm-up the
         // Java client gets from its initial metadata round). Failure is ignored: assign still
         // works through the refresh cycle, just slower.
-        for topic in
-            self.next_offsets.keys().map(|(topic, _)| topic.clone()).collect::<Vec<_>>()
+        for topic in self
+            .next_offsets
+            .keys()
+            .map(|(topic, _)| topic.clone())
+            .collect::<Vec<_>>()
         {
             if self.warmed_topics.insert(topic.clone()) {
                 let _ = self
@@ -1668,7 +1703,9 @@ impl KafkaSplitReader {
             tpl.add_partition_offset(topic, *partition, position)
                 .expect("failed to add partition offset");
         }
-        self.consumer.assign(&tpl).expect("failed to assign partitions");
+        self.consumer
+            .assign(&tpl)
+            .expect("failed to assign partitions");
     }
 
     /// Polls up to `max_records` messages, buckets them by partition, and decodes one typed Arrow batch
@@ -1725,20 +1762,18 @@ impl KafkaSplitReader {
                     .is_some_and(|bucket| bucket.0 == message.rkt && bucket.1 == message.partition)
                 {
                     context.last_bucket
-                } else if let Some(found) =
-                    context
-                        .buckets
-                        .iter()
-                        .position(|bucket| bucket.0 == message.rkt && bucket.1 == message.partition)
+                } else if let Some(found) = context
+                    .buckets
+                    .iter()
+                    .position(|bucket| bucket.0 == message.rkt && bucket.1 == message.partition)
                 {
                     found
                 } else {
                     // Topic resolved once per partition (not per message); pre-size so the binary
                     // buffers don't reallocate as the batch fills.
-                    let topic =
-                        std::ffi::CStr::from_ptr(rdsys::rd_kafka_topic_name(message.rkt))
-                            .to_string_lossy()
-                            .into_owned();
+                    let topic = std::ffi::CStr::from_ptr(rdsys::rd_kafka_topic_name(message.rkt))
+                        .to_string_lossy()
+                        .into_owned();
                     // Pre-size for the poll cap (bounded — the cap can be huge when a caller wants
                     // an unchunked drain; the builder grows amortized past this).
                     let presize = context.max_records.min(65536);
@@ -1832,10 +1867,9 @@ impl KafkaSplitReader {
             .elements()
             .into_iter()
             .filter_map(|position| match position.offset() {
-                rdkafka::Offset::Offset(offset) => Some((
-                    (position.topic().to_owned(), position.partition()),
-                    offset,
-                )),
+                rdkafka::Offset::Offset(offset) => {
+                    Some(((position.topic().to_owned(), position.partition()), offset))
+                }
                 _ => None,
             })
             .collect::<HashMap<_, _>>();
@@ -1847,8 +1881,9 @@ impl KafkaSplitReader {
             let key = (topic.clone(), partition);
             let position = positions.get(&key).copied().unwrap_or(payload_next_offset);
             let next_offset = stop.map_or(position, |stop| position.min(stop));
-            let body = RecordBatch::try_new(self.body_schema.clone(), vec![Arc::new(builder.finish())])
-                .expect("failed to build kafka body batch");
+            let body =
+                RecordBatch::try_new(self.body_schema.clone(), vec![Arc::new(builder.finish())])
+                    .expect("failed to build kafka body batch");
             let records = body.num_rows() as i64;
             let batch = match (self.decode, body.num_rows()) {
                 (_, 0) | (None, _) => body,
@@ -1859,7 +1894,8 @@ impl KafkaSplitReader {
                     )
                 })?,
             };
-            self.next_offsets.insert((topic.clone(), partition), next_offset);
+            self.next_offsets
+                .insert((topic.clone(), partition), next_offset);
             let high_watermark = self.cached_high_watermark(&topic, partition);
             self.pending.push_back((
                 topic,
@@ -1917,17 +1953,17 @@ impl KafkaSplitReader {
 
         self.transient_errors += count;
         self.transient_errors_unreported += count;
-        if self.last_transient_warn.is_some_and(|at| at.elapsed() < WARN_INTERVAL) {
+        if self
+            .last_transient_warn
+            .is_some_and(|at| at.elapsed() < WARN_INTERVAL)
+        {
             return;
         }
-        let name = unsafe {
-            std::ffi::CStr::from_ptr(rdkafka::bindings::rd_kafka_err2name(last))
-        }
-        .to_string_lossy();
-        let description = unsafe {
-            std::ffi::CStr::from_ptr(rdkafka::bindings::rd_kafka_err2str(last))
-        }
-        .to_string_lossy();
+        let name = unsafe { std::ffi::CStr::from_ptr(rdkafka::bindings::rd_kafka_err2name(last)) }
+            .to_string_lossy();
+        let description =
+            unsafe { std::ffi::CStr::from_ptr(rdkafka::bindings::rd_kafka_err2str(last)) }
+                .to_string_lossy();
         log::warn!(
             "Kafka consumer absorbed {} transient error(s) since the last report \
              (most recent {name}: {description}; {} over the reader's lifetime); \
@@ -1999,14 +2035,14 @@ impl KafkaSplitReader {
     /// format's thread-local, valid only until this thread's next failed decode.
     fn decode_error(attached: AttachedDecode, rc: i32) -> String {
         let mut len = 0i32;
-        let pointer = attached.last_error.map(|last_error| last_error(attached.decoder, &mut len));
+        let pointer = attached
+            .last_error
+            .map(|last_error| last_error(attached.decoder, &mut len));
         match pointer {
-            Some(pointer) if !pointer.is_null() && len > 0 => {
-                String::from_utf8_lossy(unsafe {
-                    std::slice::from_raw_parts(pointer, len as usize)
-                })
-                .into_owned()
-            }
+            Some(pointer) if !pointer.is_null() && len > 0 => String::from_utf8_lossy(unsafe {
+                std::slice::from_raw_parts(pointer, len as usize)
+            })
+            .into_owned(),
             _ => format!("attached format decode failed (rc {rc})"),
         }
     }
@@ -2016,8 +2052,7 @@ impl KafkaSplitReader {
 mod kafka_error_tests {
     use super::{
         client_error_level, encode_java_big_decimal, encode_json_batch, fold_partition_eofs,
-        transient_consumer_error,
-        JsonEncodeOptions,
+        transient_consumer_error, JsonEncodeOptions,
     };
     use arrow::array::{ArrayRef, BooleanArray, Int64Array, StringArray};
     use arrow::datatypes::{DataType, Field, Schema};
@@ -2053,7 +2088,9 @@ mod kafka_error_tests {
     fn decode_bucket_failure_resolves_the_format_error_text() {
         use super::{AttachedDecode, KafkaSplitReader};
         use crate::format_abi::{FormatDriver, FORMAT_DRIVER_VERSION_2};
-        use crate::formats::{silence_expected_decode_panics, streamfusion_format_driver_init, MessageDecoder};
+        use crate::formats::{
+            silence_expected_decode_panics, streamfusion_format_driver_init, MessageDecoder,
+        };
         use arrow::array::BinaryArray;
         use arrow::datatypes::SchemaRef;
 
@@ -2061,10 +2098,21 @@ mod kafka_error_tests {
             decode_body_batch: super::unsupported_decode,
             decode_last_error: super::unsupported_last_error,
         };
-        assert_eq!(streamfusion_format_driver_init(FORMAT_DRIVER_VERSION_2, &mut driver), 0);
+        assert_eq!(
+            streamfusion_format_driver_init(FORMAT_DRIVER_VERSION_2, &mut driver),
+            0
+        );
         let output: SchemaRef =
             Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, true)]));
-        let decoder = MessageDecoder::new(crate::format_codes::FORMAT_JSON, output, "", "", 0, false, "");
+        let decoder = MessageDecoder::new(
+            crate::format_codes::FORMAT_JSON,
+            output,
+            "",
+            "",
+            0,
+            false,
+            "",
+        );
         let attached = AttachedDecode {
             decode: driver.decode_body_batch,
             last_error: Some(driver.decode_last_error),
@@ -2073,7 +2121,11 @@ mod kafka_error_tests {
         let body = || {
             let column: ArrayRef = Arc::new(BinaryArray::from(vec![b"not json".as_ref()]));
             RecordBatch::try_new(
-                Arc::new(Schema::new(vec![Field::new("body", DataType::Binary, true)])),
+                Arc::new(Schema::new(vec![Field::new(
+                    "body",
+                    DataType::Binary,
+                    true,
+                )])),
                 vec![column],
             )
             .unwrap()
@@ -2087,7 +2139,10 @@ mod kafka_error_tests {
             "v2 failure must carry the format's panic text, got: {error}"
         );
 
-        let version_1 = AttachedDecode { last_error: None, ..attached };
+        let version_1 = AttachedDecode {
+            last_error: None,
+            ..attached
+        };
         let error = silence_expected_decode_panics(|| {
             KafkaSplitReader::decode_bucket(version_1, body()).unwrap_err()
         });
@@ -2126,11 +2181,19 @@ mod kafka_error_tests {
     #[test]
     fn retries_transport_but_surfaces_semantic_and_security_failures() {
         assert!(transient_consumer_error(RD_KAFKA_RESP_ERR__TRANSPORT));
-        assert!(transient_consumer_error(RD_KAFKA_RESP_ERR__ALL_BROKERS_DOWN));
-        assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR_OFFSET_OUT_OF_RANGE));
-        assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR__AUTO_OFFSET_RESET));
+        assert!(transient_consumer_error(
+            RD_KAFKA_RESP_ERR__ALL_BROKERS_DOWN
+        ));
+        assert!(!transient_consumer_error(
+            RD_KAFKA_RESP_ERR_OFFSET_OUT_OF_RANGE
+        ));
+        assert!(!transient_consumer_error(
+            RD_KAFKA_RESP_ERR__AUTO_OFFSET_RESET
+        ));
         assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR__AUTHENTICATION));
-        assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR_TOPIC_AUTHORIZATION_FAILED));
+        assert!(!transient_consumer_error(
+            RD_KAFKA_RESP_ERR_TOPIC_AUTHORIZATION_FAILED
+        ));
         assert!(!transient_consumer_error(RD_KAFKA_RESP_ERR__UNKNOWN_TOPIC));
     }
 
@@ -2142,7 +2205,9 @@ mod kafka_error_tests {
         use rdkafka::types::RDKafkaErrorCode;
 
         assert_eq!(
-            client_error_level(&KafkaError::Global(RDKafkaErrorCode::BrokerTransportFailure)),
+            client_error_level(&KafkaError::Global(
+                RDKafkaErrorCode::BrokerTransportFailure
+            )),
             log::Level::Warn
         );
         assert_eq!(
@@ -2154,7 +2219,9 @@ mod kafka_error_tests {
             log::Level::Error
         );
         assert_eq!(
-            client_error_level(&KafkaError::Global(RDKafkaErrorCode::TopicAuthorizationFailed)),
+            client_error_level(&KafkaError::Global(
+                RDKafkaErrorCode::TopicAuthorizationFailed
+            )),
             log::Level::Error
         );
         assert_eq!(
@@ -2192,7 +2259,8 @@ mod kafka_error_tests {
             Err(e) => e,
         };
         assert!(
-            err.to_string().contains("No provider for SASL mechanism GSSAPI"),
+            err.to_string()
+                .contains("No provider for SASL mechanism GSSAPI"),
             "unexpected GSSAPI refusal: {err}"
         );
     }
@@ -2214,19 +2282,25 @@ mod kafka_error_tests {
         )
         .unwrap();
 
-        let explicit =
-            encode_json_batch(&batch, &JsonEncodeOptions::default(), &[], &[])
-                .unwrap();
-        assert_eq!(explicit.line(0), br#"{"id":1,"name":"one","active":true}"#.as_slice());
-        assert_eq!(explicit.line(1), br#"{"id":2,"name":null,"active":false}"#.as_slice());
-        let omitted =
-            encode_json_batch(
-                &batch,
-                &JsonEncodeOptions { ignore_null_fields: true, ..JsonEncodeOptions::default() },
-                &[],
-                &[],
-            )
-                .unwrap();
+        let explicit = encode_json_batch(&batch, &JsonEncodeOptions::default(), &[], &[]).unwrap();
+        assert_eq!(
+            explicit.line(0),
+            br#"{"id":1,"name":"one","active":true}"#.as_slice()
+        );
+        assert_eq!(
+            explicit.line(1),
+            br#"{"id":2,"name":null,"active":false}"#.as_slice()
+        );
+        let omitted = encode_json_batch(
+            &batch,
+            &JsonEncodeOptions {
+                ignore_null_fields: true,
+                ..JsonEncodeOptions::default()
+            },
+            &[],
+            &[],
+        )
+        .unwrap();
         assert_eq!(omitted.line(1), br#"{"id":2,"active":false}"#.as_slice());
     }
 
@@ -2237,16 +2311,16 @@ mod kafka_error_tests {
     #[test]
     fn decimal_spellings_match_java_big_decimal() {
         let cases: &[(i128, i8, &str, &str)] = &[
-            (10000, 2, "1E+2", "100.00"),           // 100.00
-            (100, 2, "1", "1.00"),                  // 1.00
-            (0, 2, "0", "0.00"),                    // 0.00
-            (123450, 3, "123.45", "123.450"),       // 123.450
-            (-1, 2, "-0.01", "-0.01"),              // -0.01
-            (-10000, 2, "-1E+2", "-100.00"),        // -100.00
-            (10, 9, "1E-8", "0.000000010"),         // 0.000000010
-            (1, 6, "0.000001", "0.000001"),         // adjusted exponent exactly -6 stays plain
+            (10000, 2, "1E+2", "100.00"),     // 100.00
+            (100, 2, "1", "1.00"),            // 1.00
+            (0, 2, "0", "0.00"),              // 0.00
+            (123450, 3, "123.45", "123.450"), // 123.450
+            (-1, 2, "-0.01", "-0.01"),        // -0.01
+            (-10000, 2, "-1E+2", "-100.00"),  // -100.00
+            (10, 9, "1E-8", "0.000000010"),   // 0.000000010
+            (1, 6, "0.000001", "0.000001"),   // adjusted exponent exactly -6 stays plain
             (12345, 0, "12345", "12345"),
-            (1234500, 0, "1.2345E+6", "1234500"),   // strips into a negative scale
+            (1234500, 0, "1.2345E+6", "1234500"), // strips into a negative scale
             (
                 i128::MIN + 1,
                 38,
@@ -2258,10 +2332,18 @@ mod kafka_error_tests {
         for (unscaled, scale, stripped, plain) in cases {
             let mut output = Vec::new();
             encode_java_big_decimal(*unscaled, *scale, false, &mut output);
-            assert_eq!(std::str::from_utf8(&output).unwrap(), *stripped, "default {unscaled}/{scale}");
+            assert_eq!(
+                std::str::from_utf8(&output).unwrap(),
+                *stripped,
+                "default {unscaled}/{scale}"
+            );
             output.clear();
             encode_java_big_decimal(*unscaled, *scale, true, &mut output);
-            assert_eq!(std::str::from_utf8(&output).unwrap(), *plain, "plain {unscaled}/{scale}");
+            assert_eq!(
+                std::str::from_utf8(&output).unwrap(),
+                *plain,
+                "plain {unscaled}/{scale}"
+            );
         }
     }
 
@@ -2324,9 +2406,7 @@ mod kafka_error_tests {
             .map(jackson_hex)
             .collect();
 
-        let ours =
-            encode_json_batch(&batch, &JsonEncodeOptions::default(), &[], &[])
-                .unwrap();
+        let ours = encode_json_batch(&batch, &JsonEncodeOptions::default(), &[], &[]).unwrap();
         assert_eq!(ours.len(), stock_lines.len());
         for index in 0..ours.len() {
             assert_eq!(
@@ -2555,7 +2635,9 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_pollKafkaBatch<'
 /// the handle (like `pollKafkaBatch`); the Java side publishes the value to its metric gauge.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_kafkaConsumerTransientErrors<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_kafkaConsumerTransientErrors<
+    'local,
+>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2631,9 +2713,7 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_encodeKafkaBatch
 /// Flink instead of accepting a query the runtime dispatch would fail.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_encodeFormatSupported<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_encodeFormatSupported<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     format: jint,
@@ -2648,9 +2728,7 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_encodeFormatSupp
 /// and FLOAT/DOUBLE columns fall back instead of silently diverging.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_spellFloatingPoint<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_spellFloatingPoint<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     doubles: JDoubleArray<'local>,
@@ -2800,15 +2878,28 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_drainKafkaSplit<
     crate::bridge::jni_guard(env, move |env| {
         let reader = unsafe { &mut *(handle as *mut KafkaSplitReader) };
         let (topic, partition, next_offset, batch, bytes, records, high_watermark, first_offset) =
-            reader.pending.pop_front().expect("drainKafkaSplit called with no pending batch");
+            reader
+                .pending
+                .pop_front()
+                .expect("drainKafkaSplit called with no pending batch");
         let rows = batch.num_rows() as jint;
-        let metadata =
-            [partition as i64, next_offset, bytes, records, high_watermark, first_offset];
+        let metadata = [
+            partition as i64,
+            next_offset,
+            bytes,
+            records,
+            high_watermark,
+            first_offset,
+        ];
         let metadata_len = env
             .get_array_length(&split_meta)
             .expect("failed to read split meta length") as usize;
-        env.set_long_array_region(&split_meta, 0, &metadata[..metadata_len.min(metadata.len())])
-            .expect("failed to write split meta");
+        env.set_long_array_region(
+            &split_meta,
+            0,
+            &metadata[..metadata_len.min(metadata.len())],
+        )
+        .expect("failed to write split meta");
         let topic_jstr = env.new_string(&topic).expect("failed to make topic string");
         env.set_object_array_element(&out_topic, 0, &topic_jstr)
             .expect("failed to write topic");
@@ -2825,10 +2916,8 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_closeKafkaConsum
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<KafkaSplitReader>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<KafkaSplitReader>(handle));
     })
 }
 
@@ -2857,9 +2946,14 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_benchmarkNativeC
         let values = read_string_array(&mut env, &config_values);
         let config: Vec<(String, String)> = keys.into_iter().zip(values).collect();
         let topic: String = env.get_string(&topic).expect("failed to read topic").into();
-        let _ = (format, schema_array_address, schema_address, avro_schema, schema_id);
-        let mut reader =
-            KafkaSplitReader::open(&config).expect("failed to create kafka consumer");
+        let _ = (
+            format,
+            schema_array_address,
+            schema_address,
+            avro_schema,
+            schema_id,
+        );
+        let mut reader = KafkaSplitReader::open(&config).expect("failed to create kafka consumer");
         reader.assign_splits(&[topic], &[0], &[-2], &[i64::MIN]); // partition 0, earliest
 
         let timeout = std::time::Duration::from_millis(250);
@@ -2874,7 +2968,9 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_benchmarkNativeC
             .and_then(|v| v.parse().ok())
             .unwrap_or(65536);
         while rows < max_messages && idle < 40 {
-            let count = reader.poll(poll_cap, timeout).expect("failed to poll Kafka");
+            let count = reader
+                .poll(poll_cap, timeout)
+                .expect("failed to poll Kafka");
             if count == 0 {
                 idle += 1;
                 continue;
@@ -2930,7 +3026,8 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_benchmarkConsume
             .partitions();
         let mut tpl = TopicPartitionList::new();
         for partition in partitions {
-            tpl.add_partition_offset(&topic, partition.id(), Offset::Beginning).expect("add partition");
+            tpl.add_partition_offset(&topic, partition.id(), Offset::Beginning)
+                .expect("add partition");
         }
         consumer.assign(&tpl).expect("assign");
         let queue = unsafe { rdsys::rd_kafka_queue_get_consumer(consumer.client().native_ptr()) };
@@ -2981,7 +3078,9 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_benchmarkConsume
 /// client; format decode is now deliberately owned by a separate format DSO.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_benchmarkNativeConsumeSerial<'local>(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_benchmarkNativeConsumeSerial<
+    'local,
+>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     config_keys: JObjectArray<'local>,
@@ -3003,7 +3102,13 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_benchmarkNativeC
         let keys = read_string_array(&mut env, &config_keys);
         let values = read_string_array(&mut env, &config_values);
         let topic: String = env.get_string(&topic).expect("failed to read topic").into();
-        let _ = (format, schema_array_address, schema_address, avro_schema, schema_id);
+        let _ = (
+            format,
+            schema_array_address,
+            schema_address,
+            avro_schema,
+            schema_id,
+        );
 
         let mut client = ClientConfig::new();
         for (key, value) in keys.iter().zip(&values) {
@@ -3014,8 +3119,15 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_benchmarkNativeC
             .fetch_metadata(Some(&topic), std::time::Duration::from_secs(10))
             .expect("fetch metadata");
         let mut tpl = TopicPartitionList::new();
-        for partition in metadata.topics().iter().find(|t| t.name() == topic).expect("topic").partitions() {
-            tpl.add_partition_offset(&topic, partition.id(), Offset::Beginning).expect("add partition");
+        for partition in metadata
+            .topics()
+            .iter()
+            .find(|t| t.name() == topic)
+            .expect("topic")
+            .partitions()
+        {
+            tpl.add_partition_offset(&topic, partition.id(), Offset::Beginning)
+                .expect("add partition");
         }
         consumer.assign(&tpl).expect("assign");
         let queue = unsafe { rdsys::rd_kafka_queue_get_consumer(consumer.client().native_ptr()) };
@@ -3084,7 +3196,10 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_benchmarkKafkaCo
         use rdkafka::consumer::{BaseConsumer, Consumer};
         use rdkafka::message::Message;
 
-        let brokers: String = env.get_string(&brokers).expect("failed to read brokers").into();
+        let brokers: String = env
+            .get_string(&brokers)
+            .expect("failed to read brokers")
+            .into();
         let topic: String = env.get_string(&topic).expect("failed to read topic").into();
         let decoder = JsonDecoder::new(
             import_record_batch(schema_array_address, schema_address).schema(),
@@ -3190,8 +3305,7 @@ impl rdkafka::ClientContext for TxnProducerContext {
     fn stats(&self, statistics: rdkafka::Statistics) {
         if let Some(eos) = statistics.eos {
             if eos.producer_id >= 0 {
-                *self.shared.identity.lock().unwrap() =
-                    Some((eos.producer_id, eos.producer_epoch));
+                *self.shared.identity.lock().unwrap() = Some((eos.producer_id, eos.producer_epoch));
             }
         }
     }
@@ -3230,7 +3344,9 @@ impl KafkaTransactionalProducer {
         }
         let shared = Arc::new(TxnProducerShared::default());
         let producer = client
-            .create_with_context(TxnProducerContext { shared: Arc::clone(&shared) })
+            .create_with_context(TxnProducerContext {
+                shared: Arc::clone(&shared),
+            })
             .map_err(|error| format!("failed to create Kafka transactional producer: {error}"))?;
         Ok(KafkaTransactionalProducer {
             producer,
@@ -3268,12 +3384,7 @@ impl KafkaTransactionalProducer {
             .map_err(|error| format!("begin_transaction failed: {error}"))
     }
 
-    fn produce(
-        &self,
-        topic: &str,
-        key: Option<&[u8]>,
-        value: Option<&[u8]>,
-    ) -> Result<(), String> {
+    fn produce(&self, topic: &str, key: Option<&[u8]>, value: Option<&[u8]>) -> Result<(), String> {
         use rdkafka::error::KafkaError;
         use rdkafka::producer::BaseRecord;
         use rdkafka::types::RDKafkaErrorCode;
@@ -3396,7 +3507,9 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_openTransactiona
 ) -> jlong {
     kafka_jni(&mut env, 0, |env| {
         if config_version != 1 {
-            return Err(format!("unsupported Kafka producer config ABI {config_version}"));
+            return Err(format!(
+                "unsupported Kafka producer config ABI {config_version}"
+            ));
         }
         let keys = read_string_array(env, &config_keys);
         let values = read_string_array(env, &config_values);
@@ -3433,9 +3546,7 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_openTransactiona
 /// `outIdentity`.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_initKafkaTransactions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_initKafkaTransactions<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -3451,9 +3562,7 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_initKafkaTransac
 
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_beginKafkaTransaction<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_beginKafkaTransaction<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -3467,9 +3576,7 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_beginKafkaTransa
 /// Produces one record into the open transaction. A null `key` produces an unkeyed record.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_produceKafkaRecord<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_produceKafkaRecord<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -3507,9 +3614,7 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_produceKafkaReco
 /// objects. Returns the total key+value payload bytes enqueued for producer metrics.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_produceKafkaBatch<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_produceKafkaBatch<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -3568,9 +3673,7 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_produceKafkaBatc
 /// ONGOING) and the producer can be closed without losing it.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_flushKafkaProducer<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_flushKafkaProducer<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -3586,9 +3689,7 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_flushKafkaProduc
 
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_abortKafkaTransaction<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_abortKafkaTransaction<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -3604,9 +3705,7 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_abortKafkaTransa
 /// open flushed transaction stays ONGOING on the broker for the Java committer to finish.
 #[cfg(feature = "kafka")]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_closeKafkaProducer<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_closeKafkaProducer<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,

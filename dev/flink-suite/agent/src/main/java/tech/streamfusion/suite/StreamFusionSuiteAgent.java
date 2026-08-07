@@ -21,6 +21,8 @@ public final class StreamFusionSuiteAgent {
       "org.apache.flink.table.planner.loader.DelegatePlannerFactory";
   private static final String JSON_PLAN_TEST_BASE =
       "org.apache.flink.table.planner.utils.JsonPlanTestBase";
+  private static final String STREAM_EXECUTION_ENVIRONMENT =
+      "org.apache.flink.streaming.api.environment.StreamExecutionEnvironment";
   private static final AtomicBoolean ACTIVATION_REPORTED = new AtomicBoolean();
   private static final Set<Object> INSTALLED_CONFIGS =
       Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
@@ -51,6 +53,12 @@ public final class StreamFusionSuiteAgent {
                 builder.visit(
                     Advice.to(MarkUnmodifiedPlanSetup.class)
                         .on(named("setup").and(takesArguments(0)))))
+        .type(named(STREAM_EXECUTION_ENVIRONMENT))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(
+                    Advice.to(InstallNativeRocksDB.class)
+                        .on(named("configure").and(takesArguments(2)))))
         .installOn(instrumentation);
   }
 
@@ -159,6 +167,41 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodExit
     public static void exit() {
       StreamFusionSuiteAgent.exitUnmodifiedPlanSetup();
+    }
+  }
+
+  /** Replaces only upstream tests' stock RocksDB selection, preserving the same Configuration. */
+  public static final class InstallNativeRocksDB {
+
+    private InstallNativeRocksDB() {}
+
+    @Advice.OnMethodEnter
+    static void enter(@Advice.Argument(0) Object configuration) {
+      if (!Boolean.getBoolean("streamfusion.flink-suite.native-rocksdb")) {
+        return;
+      }
+      try {
+        Class<?> configOption =
+            Class.forName("org.apache.flink.configuration.ConfigOption");
+        Object backendOption =
+            Class.forName("org.apache.flink.configuration.StateBackendOptions")
+                .getField("STATE_BACKEND")
+                .get(null);
+        Object selected =
+            configuration.getClass().getMethod("get", configOption).invoke(configuration, backendOption);
+        if (!"rocksdb".equalsIgnoreCase(String.valueOf(selected))) {
+          return;
+        }
+        configuration
+            .getClass()
+            .getMethod("set", configOption, Object.class)
+            .invoke(
+                configuration,
+                backendOption,
+                "tech.streamfusion.state.RocksDBNativeStateBackendFactory");
+      } catch (ReflectiveOperationException e) {
+        throw new IllegalStateException("native RocksDB suite backend installation failed", e);
+      }
     }
   }
 }

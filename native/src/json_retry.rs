@@ -91,12 +91,18 @@ pub(crate) fn rewrite_message(bytes: &[u8], fields: &Fields, env: JsonEnv) -> Ve
             return Vec::new();
         }
     };
-    let mut cursor = Cursor { tokens: &tokens, pos: 0 };
+    let mut cursor = Cursor {
+        tokens: &tokens,
+        pos: 0,
+    };
     let rows = match cursor.current() {
         // Jackson found no token, or a root Flink's deserializer rejects outright (it only maps
         // object and array roots).
         None => {
-            assert!(env.lenient, "failed to decode JSON record: no content to map due to end-of-input");
+            assert!(
+                env.lenient,
+                "failed to decode JSON record: no content to map due to end-of-input"
+            );
             return Vec::new();
         }
         Some(Token::StartObject) => row_object(&mut cursor, fields, env).map(|row| vec![row]),
@@ -132,7 +138,10 @@ fn fan_out(cursor: &mut Cursor, fields: &Fields, env: JsonEnv) -> Walk<Vec<Strin
             Some(Token::EndArray) => return Ok(rows),
             Some(Token::StartObject) => rows.push(row_object(cursor, fields, env)?),
             Some(other) => {
-                assert!(env.lenient, "JSON array element was not an object: {other:?}");
+                assert!(
+                    env.lenient,
+                    "JSON array element was not an object: {other:?}"
+                );
             }
         }
     }
@@ -192,7 +201,10 @@ fn row_object(cursor: &mut Cursor, fields: &Fields, env: JsonEnv) -> Walk<String
 /// `skipToNextField`: a container skips to its balanced end, anything else is a single token;
 /// both end with one more advance.
 fn skip_to_next_field(cursor: &mut Cursor) -> Walk<()> {
-    if matches!(cursor.current(), Some(Token::StartObject | Token::StartArray)) {
+    if matches!(
+        cursor.current(),
+        Some(Token::StartObject | Token::StartArray)
+    ) {
         let mut depth = 1;
         while depth > 0 {
             cursor.advance();
@@ -212,7 +224,12 @@ fn skip_to_next_field(cursor: &mut Cursor) -> Walk<()> {
 /// value, a conversion failure nulls the field in skip mode and fails the message in strict mode
 /// with Flink's row-converter error. The returned snippet is the JSON value the fast path
 /// re-decodes; the cursor consumes exactly what Flink's converter would.
-fn convert_value(cursor: &mut Cursor, target: &DataType, env: JsonEnv, field: &str) -> Walk<String> {
+fn convert_value(
+    cursor: &mut Cursor,
+    target: &DataType,
+    env: JsonEnv,
+    field: &str,
+) -> Walk<String> {
     let Some(token) = cursor.current() else {
         return Ok("null".into());
     };
@@ -527,7 +544,10 @@ impl Reader<'_> {
     }
 
     fn peek(&self) -> Result<u8, String> {
-        self.bytes.get(self.pos).copied().ok_or_else(|| "unexpected end-of-input".to_string())
+        self.bytes
+            .get(self.pos)
+            .copied()
+            .ok_or_else(|| "unexpected end-of-input".to_string())
     }
 
     fn read_value(&mut self, tokens: &mut Vec<Token>, depth: usize) -> Result<(), String> {
@@ -667,8 +687,7 @@ impl Reader<'_> {
                             if !(0xDC00..=0xDFFF).contains(&low) {
                                 return Err("unpaired surrogate escape".to_string());
                             }
-                            let combined =
-                                0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
+                            let combined = 0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
                             char::from_u32(combined).expect("valid surrogate pair")
                         }
                         0xDC00..=0xDFFF => return Err("unpaired surrogate escape".to_string()),

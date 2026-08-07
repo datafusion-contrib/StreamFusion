@@ -1,7 +1,10 @@
 use crate::*;
 
 /// Downcasts a projected OVER value column (`value{a}`) to its typed per-row reader.
-pub(crate) fn over_value_column<'a>(column: &'a ArrayRef, value_type: &DataType) -> ValueColumn<'a> {
+pub(crate) fn over_value_column<'a>(
+    column: &'a ArrayRef,
+    value_type: &DataType,
+) -> ValueColumn<'a> {
     if matches!(column.data_type(), DataType::Null) {
         return ValueColumn::NullOnly(column);
     }
@@ -10,8 +13,12 @@ pub(crate) fn over_value_column<'a>(column: &'a ArrayRef, value_type: &DataType)
         DataType::Int32 => ValueColumn::I32(column.as_any().downcast_ref().expect("int32 value")),
         DataType::Int16 => ValueColumn::I16(column.as_any().downcast_ref().expect("int16 value")),
         DataType::Int8 => ValueColumn::I8(column.as_any().downcast_ref().expect("int8 value")),
-        DataType::Float64 => ValueColumn::F64(column.as_any().downcast_ref().expect("float64 value")),
-        DataType::Float32 => ValueColumn::F32(column.as_any().downcast_ref().expect("float32 value")),
+        DataType::Float64 => {
+            ValueColumn::F64(column.as_any().downcast_ref().expect("float64 value"))
+        }
+        DataType::Float32 => {
+            ValueColumn::F32(column.as_any().downcast_ref().expect("float32 value"))
+        }
         other => panic!("unsupported OVER value type: {other:?}"),
     }
 }
@@ -56,7 +63,12 @@ impl OverAggState {
     fn distinct_values(&self) -> Vec<ScalarValue> {
         self.distinct
             .as_ref()
-            .map(|seen| seen.scalar_entries().into_iter().map(|(value, _)| value).collect())
+            .map(|seen| {
+                seen.scalar_entries()
+                    .into_iter()
+                    .map(|(value, _)| value)
+                    .collect()
+            })
             .unwrap_or_default()
     }
 }
@@ -79,7 +91,10 @@ pub(crate) struct OverAggregator {
 impl OverAggregator {
     pub(crate) fn new(value_types: Vec<i64>, kinds: Vec<i64>) -> Self {
         OverAggregator {
-            value_types: value_types.iter().map(|&code| value_data_type(code)).collect(),
+            value_types: value_types
+                .iter()
+                .map(|&code| value_data_type(code))
+                .collect(),
             kinds,
             keys: HashMap::default(),
             key_converter: None,
@@ -95,7 +110,11 @@ impl OverAggregator {
     }
 
     fn recompute_bytes(&mut self) {
-        self.bytes = self.keys.keys().map(|key| self.key_state_bytes(&key.0)).sum();
+        self.bytes = self
+            .keys
+            .keys()
+            .map(|key| self.key_state_bytes(&key.0))
+            .sum();
     }
 
     /// The running aggregate state for a key, created (copying the key bytes) on first touch.
@@ -120,7 +139,9 @@ impl OverAggregator {
         let num_agg = self.kinds.len();
         let value_columns: Vec<ValueColumn> = (0..num_agg)
             .map(|a| {
-                let column = batch.column_by_name(&format!("value{a}")).expect("missing value column");
+                let column = batch
+                    .column_by_name(&format!("value{a}"))
+                    .expect("missing value column");
                 over_value_column(column, &self.value_types[a])
             })
             .collect();
@@ -155,8 +176,10 @@ impl OverAggregator {
                 }
             }
             for &row in &order[start..end] {
-                let states =
-                    self.keys.get(keys_encoded.row(row).data()).expect("key present");
+                let states = self
+                    .keys
+                    .get(keys_encoded.row(row).data())
+                    .expect("key present");
                 for (a, state) in states.iter().enumerate() {
                     results[a][row] = state.emit();
                 }
@@ -169,7 +192,10 @@ impl OverAggregator {
         for a in 0..num_agg {
             let result_type = OverAggState::new(self.kinds[a], &self.value_types[a]).result_type();
             fields.push(Field::new(format!("result{a}"), result_type.clone(), true));
-            columns.push(scalars_to_array(std::mem::take(&mut results[a]), &result_type));
+            columns.push(scalars_to_array(
+                std::mem::take(&mut results[a]),
+                &result_type,
+            ));
         }
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build over result batch")
@@ -209,7 +235,11 @@ impl OverAggregator {
         let mut fields = key_fields(&self.key_types);
         let mut columns = decode_byte_keys(self.key_converter.as_ref(), &keys, &self.key_types);
         for (index, result_type) in result_types.iter().enumerate() {
-            fields.push(Field::new(format!("state{index}"), result_type.clone(), true));
+            fields.push(Field::new(
+                format!("state{index}"),
+                result_type.clone(),
+                true,
+            ));
         }
         for (index, scalars) in state_columns.into_iter().enumerate() {
             columns.push(scalars_to_array(scalars, &result_types[index]));
@@ -234,51 +264,16 @@ impl OverAggregator {
             fields.push(Field::new(name, DataType::Int64, false));
             columns.push(Arc::new(Int64Array::from(stamps)));
         }
-        write_ipc(&RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build over snapshot batch"))
+        write_ipc(
+            &RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+                .expect("failed to build over snapshot batch"),
+        )
     }
 
     /// Backend-mode firing: seeds each listed key's running state from persisted scalars (the
     /// same emit()/restore_value round trip the raw snapshot uses), folds the batch, then
     /// exports the updated scalars per seed and drops the in-memory map — in backend mode the
     /// store's write buffer owns the state between firings.
-    #[cfg(feature = "paimon-state")]
-    fn update_hydrated(
-        &mut self,
-        batch: &RecordBatch,
-        seeds: &[(usize, Option<Vec<ScalarValue>>)],
-    ) -> (RecordBatch, Vec<Vec<ScalarValue>>) {
-        {
-            let key_arrays = key_arrays(batch);
-            self.key_types = key_types(&key_arrays);
-            let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
-            for (row, scalars) in seeds {
-                if let Some(scalars) = scalars {
-                    for (i, state) in
-                        self.states(keys_encoded.row(*row).data()).iter_mut().enumerate()
-                    {
-                        state.restore_value(&scalars[i]);
-                    }
-                }
-            }
-        }
-        let out = self.update(batch);
-        let key_arrays = key_arrays(batch);
-        let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
-        let published = seeds
-            .iter()
-            .map(|(row, _)| {
-                self.keys
-                    .get(keys_encoded.row(*row).data())
-                    .expect("fired key folded")
-                    .iter()
-                    .map(|state| state.emit())
-                    .collect()
-            })
-            .collect();
-        self.keys.clear();
-        (out, published)
-    }
 
     fn restore(
         value_types: Vec<i64>,
@@ -371,7 +366,10 @@ pub(crate) struct BoundedOverAggregator {
 impl BoundedOverAggregator {
     fn new(value_types: Vec<i64>, kinds: Vec<i64>, rows_frame: bool, offset: i64) -> Self {
         BoundedOverAggregator {
-            value_types: value_types.iter().map(|&code| value_data_type(code)).collect(),
+            value_types: value_types
+                .iter()
+                .map(|&code| value_data_type(code))
+                .collect(),
             kinds,
             rows_frame,
             offset,
@@ -385,8 +383,7 @@ impl BoundedOverAggregator {
 
     /// One buffered row's fixed footprint (its rowtime and per-aggregate values).
     fn row_bytes(&self) -> usize {
-        std::mem::size_of::<BufferedRow>()
-            + self.kinds.len() * std::mem::size_of::<Option<Num>>()
+        std::mem::size_of::<BufferedRow>() + self.kinds.len() * std::mem::size_of::<Option<Num>>()
     }
 
     fn recompute_bytes(&mut self) {
@@ -406,7 +403,9 @@ impl BoundedOverAggregator {
         let num_agg = self.kinds.len();
         let value_columns: Vec<ValueColumn> = (0..num_agg)
             .map(|a| {
-                let column = batch.column_by_name(&format!("value{a}")).expect("missing value column");
+                let column = batch
+                    .column_by_name(&format!("value{a}"))
+                    .expect("missing value column");
                 over_value_column(column, &self.value_types[a])
             })
             .collect();
@@ -483,7 +482,10 @@ impl BoundedOverAggregator {
         for a in 0..num_agg {
             let result_type = OverAggState::new(self.kinds[a], &self.value_types[a]).result_type();
             fields.push(Field::new(format!("result{a}"), result_type.clone(), true));
-            columns.push(scalars_to_array(std::mem::take(&mut results[a]), &result_type));
+            columns.push(scalars_to_array(
+                std::mem::take(&mut results[a]),
+                &result_type,
+            ));
         }
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build bounded over result batch")
@@ -540,7 +542,12 @@ impl BoundedOverAggregator {
                     value_columns[a].push(num_to_scalar(&self.value_types[a], row.values[a]));
                 }
                 if let Some((_, per_key)) = retention {
-                    stamps.push(per_key.get(key).copied().expect("bounded over retention stamp"));
+                    stamps.push(
+                        per_key
+                            .get(key)
+                            .copied()
+                            .expect("bounded over retention stamp"),
+                    );
                 }
             }
         }
@@ -549,15 +556,21 @@ impl BoundedOverAggregator {
         fields.push(Field::new("rt", DataType::Int64, false));
         columns.push(scalars_to_array(rts, &DataType::Int64));
         for (a, scalars) in value_columns.into_iter().enumerate() {
-            fields.push(Field::new(format!("value{a}"), self.value_types[a].clone(), true));
+            fields.push(Field::new(
+                format!("value{a}"),
+                self.value_types[a].clone(),
+                true,
+            ));
             columns.push(scalars_to_array(scalars, &self.value_types[a]));
         }
         if let Some((name, _)) = retention {
             fields.push(Field::new(name, DataType::Int64, false));
             columns.push(Arc::new(Int64Array::from(stamps)));
         }
-        write_ipc(&RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build bounded over snapshot batch"))
+        write_ipc(
+            &RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+                .expect("failed to build bounded over snapshot batch"),
+        )
     }
 
     fn restore(
@@ -583,14 +596,21 @@ impl BoundedOverAggregator {
                 let key = ByteKey::from(keys_encoded.row(row).data());
                 let values: Vec<Option<Num>> = (0..num_agg)
                     .map(|a| {
-                        let column = batch.column_by_name(&format!("value{a}")).expect("value column");
-                        num_from_scalar(&ScalarValue::try_from_array(column, row).expect("over value"))
+                        let column = batch
+                            .column_by_name(&format!("value{a}"))
+                            .expect("value column");
+                        num_from_scalar(
+                            &ScalarValue::try_from_array(column, row).expect("over value"),
+                        )
                     })
                     .collect();
                 if let Some(column) = retention {
                     stamps.insert(key.clone(), column.value(row));
                 }
-                aggregator.keys.entry(key).or_default().push(BufferedRow { rt: rt.value(row), values });
+                aggregator.keys.entry(key).or_default().push(BufferedRow {
+                    rt: rt.value(row),
+                    values,
+                });
             }
         }
         aggregator
@@ -611,7 +631,11 @@ pub(crate) enum WindowFnState {
     RowNumber(i64),
     /// `RANK()` — `count` rows seen, `rank` of the current order-value group, `last` order value.
     /// Tied order values share a rank; the next value's rank jumps to its row position (gaps).
-    Rank { count: i64, rank: i64, last: Option<i64> },
+    Rank {
+        count: i64,
+        rank: i64,
+        last: Option<i64>,
+    },
     /// `DENSE_RANK()` — increments only when the order value changes, so ranks are gap-free.
     DenseRank { dense: i64, last: Option<i64> },
 }
@@ -620,8 +644,15 @@ impl WindowFnState {
     fn new(kind: i64) -> Self {
         match kind {
             10 => WindowFnState::RowNumber(0),
-            11 => WindowFnState::Rank { count: 0, rank: 0, last: None },
-            12 => WindowFnState::DenseRank { dense: 0, last: None },
+            11 => WindowFnState::Rank {
+                count: 0,
+                rank: 0,
+                last: None,
+            },
+            12 => WindowFnState::DenseRank {
+                dense: 0,
+                last: None,
+            },
             other => panic!("unsupported window function kind: {other}"),
         }
     }
@@ -729,7 +760,11 @@ impl WindowFunctionOver {
     }
 
     fn recompute_bytes(&mut self) {
-        self.bytes = self.keys.keys().map(|key| self.key_state_bytes(&key.0)).sum();
+        self.bytes = self
+            .keys
+            .keys()
+            .map(|key| self.key_state_bytes(&key.0))
+            .sum();
     }
 
     fn states(&mut self, key: &[u8]) -> &mut Vec<WindowFnState> {
@@ -769,7 +804,10 @@ impl WindowFunctionOver {
         for (i, &kind) in self.kinds.iter().enumerate() {
             let result_type = WindowFnState::new(kind).result_type();
             fields.push(Field::new(format!("result{i}"), result_type.clone(), true));
-            columns.push(scalars_to_array(std::mem::take(&mut results[i]), &result_type));
+            columns.push(scalars_to_array(
+                std::mem::take(&mut results[i]),
+                &result_type,
+            ));
         }
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build window-function result batch")
@@ -778,8 +816,11 @@ impl WindowFunctionOver {
     /// Serializes the per-key running state (`[key0.., state…]`, one row per key), the optional
     /// retention stamp riding as a trailing per-key column.
     fn snapshot(&mut self, retention: RetentionStamps) -> Vec<u8> {
-        let state_types: Vec<DataType> =
-            self.kinds.iter().flat_map(|&k| WindowFnState::new(k).state_types()).collect();
+        let state_types: Vec<DataType> = self
+            .kinds
+            .iter()
+            .flat_map(|&k| WindowFnState::new(k).state_types())
+            .collect();
         let mut keys: Vec<&[u8]> = Vec::new();
         let mut state_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); state_types.len()];
         let mut stamps: Vec<i64> = Vec::new();
@@ -793,13 +834,22 @@ impl WindowFunctionOver {
                 }
             }
             if let Some((_, per_key)) = retention {
-                stamps.push(per_key.get(key).copied().expect("window-function retention stamp"));
+                stamps.push(
+                    per_key
+                        .get(key)
+                        .copied()
+                        .expect("window-function retention stamp"),
+                );
             }
         }
         let mut fields = key_fields(&self.key_types);
         let mut columns = decode_byte_keys(self.key_converter.as_ref(), &keys, &self.key_types);
         for (index, state_type) in state_types.iter().enumerate() {
-            fields.push(Field::new(format!("state{index}"), state_type.clone(), true));
+            fields.push(Field::new(
+                format!("state{index}"),
+                state_type.clone(),
+                true,
+            ));
         }
         for (index, scalars) in state_columns.into_iter().enumerate() {
             columns.push(scalars_to_array(scalars, &state_types[index]));
@@ -808,59 +858,22 @@ impl WindowFunctionOver {
             fields.push(Field::new(name, DataType::Int64, false));
             columns.push(Arc::new(Int64Array::from(stamps)));
         }
-        write_ipc(&RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build window-function snapshot batch"))
+        write_ipc(
+            &RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+                .expect("failed to build window-function snapshot batch"),
+        )
     }
 
     /// Backend-mode firing — see {@link OverAggregator::update_hydrated}; window-function state
     /// round-trips through the same state()/restore_state scalars as the raw snapshot.
-    #[cfg(feature = "paimon-state")]
-    fn update_hydrated(
-        &mut self,
-        batch: &RecordBatch,
-        seeds: &[(usize, Option<Vec<ScalarValue>>)],
-    ) -> (RecordBatch, Vec<Vec<ScalarValue>>) {
-        let state_counts: Vec<usize> =
-            self.kinds.iter().map(|&k| WindowFnState::new(k).state_types().len()).collect();
-        {
-            let key_arrays = key_arrays(batch);
-            self.key_types = key_types(&key_arrays);
-            let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
-            for (row, scalars) in seeds {
-                if let Some(scalars) = scalars {
-                    let mut column = 0;
-                    for (i, state) in
-                        self.states(keys_encoded.row(*row).data()).iter_mut().enumerate()
-                    {
-                        let count = state_counts[i];
-                        state.restore_state(&scalars[column..column + count]);
-                        column += count;
-                    }
-                }
-            }
-        }
-        let out = self.update(batch);
-        let key_arrays = key_arrays(batch);
-        let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
-        let published = seeds
-            .iter()
-            .map(|(row, _)| {
-                self.keys
-                    .get(keys_encoded.row(*row).data())
-                    .expect("fired key folded")
-                    .iter()
-                    .flat_map(|state| state.state())
-                    .collect()
-            })
-            .collect();
-        self.keys.clear();
-        (out, published)
-    }
 
     fn restore(kinds: Vec<i64>, bytes: &[u8], stamps: &mut HashMap<ByteKey, i64>) -> Self {
         let mut over = WindowFunctionOver::new(kinds);
-        let state_counts: Vec<usize> =
-            over.kinds.iter().map(|&k| WindowFnState::new(k).state_types().len()).collect();
+        let state_counts: Vec<usize> = over
+            .kinds
+            .iter()
+            .map(|&k| WindowFnState::new(k).state_types().len())
+            .collect();
         let state_total: usize = state_counts.iter().sum();
         for batch in read_ipc(bytes) {
             let retention = retention_stamps(&batch);
@@ -874,7 +887,9 @@ impl WindowFunctionOver {
                 for (i, state) in over.states(key).iter_mut().enumerate() {
                     let count = state_counts[i];
                     let scalars: Vec<ScalarValue> = (column..column + count)
-                        .map(|c| ScalarValue::try_from_array(batch.column(c), row).expect("state scalar"))
+                        .map(|c| {
+                            ScalarValue::try_from_array(batch.column(c), row).expect("state scalar")
+                        })
                         .collect();
                     state.restore_state(&scalars);
                     column += count;
@@ -913,7 +928,12 @@ pub(crate) fn retention_stamps(batch: &RecordBatch) -> Option<&Int64Array> {
     [CLEANUP_AT_COLUMN, TTL_TS_COLUMN]
         .iter()
         .find_map(|name| batch.column_by_name(name))
-        .map(|column| column.as_any().downcast_ref().expect("retention stamp column"))
+        .map(|column| {
+            column
+                .as_any()
+                .downcast_ref()
+                .expect("retention stamp column")
+        })
 }
 
 /// The inner per-key computation of a columnar OVER: mergeable aggregates (DataFusion accumulators)
@@ -951,19 +971,7 @@ impl OverInner {
     }
 
     /// Backend-mode firing with store-resident per-key state; only the fixed-width fold shapes
-    /// support the backend (see `paimon_over_state_types`).
-    #[cfg(feature = "paimon-state")]
-    fn update_hydrated(
-        &mut self,
-        batch: &RecordBatch,
-        seeds: &[(usize, Option<Vec<ScalarValue>>)],
-    ) -> (RecordBatch, Vec<Vec<ScalarValue>>) {
-        match self {
-            OverInner::Aggregates(inner) => inner.update_hydrated(batch, seeds),
-            OverInner::WindowFunctions(inner) => inner.update_hydrated(batch, seeds),
-            OverInner::Bounded(_) => unreachable!("bounded OVER frames stay on memory state"),
-        }
-    }
+    /// support the native state codec.
 
     fn snapshot(&mut self, retention: RetentionStamps) -> Vec<u8> {
         match self {
@@ -1072,34 +1080,10 @@ impl OverInner {
     }
 }
 
-/// The fold-state column types a Paimon-backed OVER persists per key, or `None` when the shape
+/// The fold-state column types a persistent OVER persists per key, or `None` when the shape
 /// stays on memory state: proctime ordering (emission is eager, off-watermark), bounded
 /// ROWS/RANGE frames (a per-key row buffer, not a fixed-width fold), or a mix of window
 /// functions and aggregates.
-#[cfg(feature = "paimon-state")]
-pub(crate) fn paimon_over_state_types(
-    value_types: &[i64],
-    kinds: &[i64],
-    frame_kind: i64,
-    proctime: bool,
-) -> Option<Vec<DataType>> {
-    if proctime || kinds.iter().any(|&kind| kind >= 100) {
-        return None;
-    }
-    if kinds.iter().all(|&k| is_window_function_kind(k)) {
-        return Some(kinds.iter().flat_map(|&k| WindowFnState::new(k).state_types()).collect());
-    }
-    if frame_kind != 0 || kinds.iter().any(|&k| is_window_function_kind(k)) {
-        return None;
-    }
-    Some(
-        kinds
-            .iter()
-            .zip(value_types)
-            .map(|(&kind, &vt)| OverAggState::new(kind, &value_data_type(vt)).result_type())
-            .collect(),
-    )
-}
 
 /// Columnar OVER: buffers whole input batches, and on a watermark emits the rows it has completed
 /// (rowtime <= watermark) with the running aggregate / window-function column(s) appended — the input
@@ -1150,11 +1134,9 @@ pub(crate) struct OverWindowAggregator {
     /// byte-identically to the inner's converter (same columns, same codec).
     key_converter: Option<RowConverter>,
     pub(crate) memory: OperatorMemory,
-    /// Persistent-state mode: pending rows and per-key fold state live in the Paimon store
+    /// Persistent-state mode: pending rows and per-key fold state live in the persistent store
     /// (write buffers + disk tables); the in-memory `buffered` batches and the inner's key map
     /// stay empty between calls.
-    #[cfg(feature = "paimon-state")]
-    backend: Option<crate::state::PaimonOverStore>,
     key_timestamp_precisions: Vec<i32>,
 }
 
@@ -1190,8 +1172,6 @@ impl OverWindowAggregator {
             retention_bytes: 0,
             key_converter: None,
             memory: OperatorMemory::unaccounted(),
-            #[cfg(feature = "paimon-state")]
-            backend: None,
             key_timestamp_precisions: vec![-1; key_arity],
         }
     }
@@ -1250,14 +1230,6 @@ impl OverWindowAggregator {
     /// Writes a deadline mutation through to the persistent deadlines table — a no-op on memory
     /// state, where the deadline map rides the raw snapshot instead.
     fn stage_backend_deadline(&mut self, key: &[u8], deadline: Option<i64>) {
-        #[cfg(feature = "paimon-state")]
-        if let Some(store) = &mut self.backend {
-            match deadline {
-                Some(cleanup_at) => store.deadlines_mut().stage(key, cleanup_at),
-                None => store.deadlines_mut().stage_delete(key),
-            }
-        }
-        #[cfg(not(feature = "paimon-state"))]
         let _ = (key, deadline);
     }
 
@@ -1290,10 +1262,6 @@ impl OverWindowAggregator {
     /// buffer, so a restore cannot resurrect the cleared fold.
     fn clear_key(&mut self, key: &[u8]) {
         self.inner.clear_key(key);
-        #[cfg(feature = "paimon-state")]
-        if let Some(store) = &mut self.backend {
-            store.remove_fold(key);
-        }
         if self.cleanup_state.remove(key).is_some() {
             self.retention_bytes -= byte_key_bytes(key);
             self.stage_backend_deadline(key, None);
@@ -1362,7 +1330,8 @@ impl OverWindowAggregator {
     /// fired before this element arrived, so the next fold restarts fresh), then re-armed under
     /// the hysteresis, and the buffered row joins the deferral count.
     fn register_batch(&mut self, batch: &RecordBatch, now_ms: i64) {
-        let key_arrays: Vec<&ArrayRef> = self.key_columns.iter().map(|&i| batch.column(i)).collect();
+        let key_arrays: Vec<&ArrayRef> =
+            self.key_columns.iter().map(|&i| batch.column(i)).collect();
         let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
         for row in 0..batch.num_rows() {
             let key = keys_encoded.row(row).data();
@@ -1381,8 +1350,11 @@ impl OverWindowAggregator {
     /// Flink's post-fire re-registration: after an event-time fire folds a key's completed rows,
     /// they leave the deferral count and the cleanup deadline re-arms under the same hysteresis.
     fn settle_fired(&mut self, complete: &RecordBatch, now_ms: i64) {
-        let key_arrays: Vec<&ArrayRef> =
-            self.key_columns.iter().map(|&i| complete.column(i)).collect();
+        let key_arrays: Vec<&ArrayRef> = self
+            .key_columns
+            .iter()
+            .map(|&i| complete.column(i))
+            .collect();
         let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, complete.num_rows());
         for row in 0..complete.num_rows() {
             let key = keys_encoded.row(row).data();
@@ -1403,7 +1375,8 @@ impl OverWindowAggregator {
     /// Under the bounded-ROWS deadline the frame clears unconditionally at the deadline and the
     /// touch re-arms it.
     fn expire_and_stamp(&mut self, batch: &RecordBatch, now_ms: i64, ttl: StateTtl) {
-        let key_arrays: Vec<&ArrayRef> = self.key_columns.iter().map(|&i| batch.column(i)).collect();
+        let key_arrays: Vec<&ArrayRef> =
+            self.key_columns.iter().map(|&i| batch.column(i)).collect();
         let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
         for row in 0..batch.num_rows() {
             let key = keys_encoded.row(row).data();
@@ -1427,26 +1400,7 @@ impl OverWindowAggregator {
         }
     }
 
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn with_backend(mut self, store: crate::state::PaimonOverStore) -> Self {
-        self.backend = Some(store);
-        self
-    }
-
     /// Attaches the task off-heap budget for a backend that starts with nothing resident.
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn with_read_through_budget(
-        mut self,
-        budget_bytes: i64,
-    ) -> Result<Self, DataFusionError> {
-        self.memory.attach("over-aggregate", budget_bytes, 0)?;
-        Ok(self)
-    }
-
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn store_mut(&mut self) -> &mut crate::state::PaimonOverStore {
-        self.backend.as_mut().expect("over paimon backend")
-    }
 
     /// Restore-time hydration of the persistent retention state — the backend's
     /// `adopt_restored_stamps`: the resident deadline map from the `deadlines/` table, the
@@ -1455,100 +1409,12 @@ impl OverWindowAggregator {
     /// fold key without a restored deadline stamped `restored_at + max` (the enable-flip
     /// migration; pending-only keys deliberately get no stamp, exactly as memory mode stamps
     /// only fold-state keys — deferral protects them regardless).
-    #[cfg(feature = "paimon-state")]
-    pub(crate) fn hydrate_backend_retention(
-        &mut self,
-        restored_at_ms: i64,
-    ) -> Result<(), DataFusionError> {
-        if !self.deadline_cleaning() {
-            return Ok(());
-        }
-        let (deadlines, fold_keys, pending_batches) = {
-            let store = self.backend.as_mut().expect("over paimon backend");
-            (
-                store.deadlines_mut().hydrate_all()?,
-                store.scan_fold_keys()?,
-                store.scan_pending_payload()?,
-            )
-        };
-        for (key, deadline) in deadlines {
-            self.retention_bytes += byte_key_bytes(&key.0);
-            self.cleanup_state.insert(key, deadline);
-        }
-        let stamp = restored_at_ms.saturating_add(self.max_retention_ms);
-        let missing: Vec<ByteKey> = fold_keys
-            .into_iter()
-            .filter(|key| !self.cleanup_state.contains_key(&*key.0))
-            .collect();
-        let store = self.backend.as_mut().expect("over paimon backend");
-        for key in &missing {
-            store.deadlines_mut().stage(&key.0, stamp);
-        }
-        for key in missing {
-            self.retention_bytes += byte_key_bytes(&key.0);
-            self.cleanup_state.insert(key, stamp);
-        }
-        let key_columns = self.key_columns.clone();
-        let precisions = self.key_timestamp_precisions.clone();
-        for batch in pending_batches {
-            let mut encoder = BinaryRowBatchEncoder::new(&batch, &key_columns, &precisions);
-            for row in 0..batch.num_rows() {
-                let key = encoder.encode(row);
-                match self.pending_rows.get_mut(key) {
-                    Some(count) => *count += 1,
-                    None => {
-                        self.retention_bytes += byte_key_bytes(key);
-                        self.pending_rows.insert(ByteKey::from(key), 1);
-                    }
-                }
-            }
-        }
-        let store = self.backend.as_mut().expect("over paimon backend");
-        let delta = store.footprint_delta();
-        self.memory.record(self.retention_bytes as isize + delta);
-        self.memory.account()
-    }
 
     /// `register_batch` for the persistent path, keyed by the store's BinaryRow key (the folds
     /// table's PK) so a fired deadline addresses the same fold row: expire, re-arm, and count
     /// per row, exactly as the memory twin.
-    #[cfg(feature = "paimon-state")]
-    fn register_batch_backend(&mut self, batch: &RecordBatch, now_ms: i64) {
-        let key_columns = self.key_columns.clone();
-        let precisions = self.key_timestamp_precisions.clone();
-        let mut encoder = BinaryRowBatchEncoder::new(batch, &key_columns, &precisions);
-        for row in 0..batch.num_rows() {
-            let key = ByteKey::from(encoder.encode(row));
-            self.expire_if_due(&key.0, now_ms);
-            self.register_cleanup(&key.0, now_ms);
-            match self.pending_rows.get_mut(&*key.0) {
-                Some(count) => *count += 1,
-                None => {
-                    self.retention_bytes += byte_key_bytes(&key.0);
-                    self.pending_rows.insert(key, 1);
-                }
-            }
-        }
-    }
 
     /// `settle_fired` for the persistent path, over the same BinaryRow keys.
-    #[cfg(feature = "paimon-state")]
-    fn settle_fired_backend(&mut self, complete: &RecordBatch, now_ms: i64) {
-        let key_columns = self.key_columns.clone();
-        let precisions = self.key_timestamp_precisions.clone();
-        let mut encoder = BinaryRowBatchEncoder::new(complete, &key_columns, &precisions);
-        for row in 0..complete.num_rows() {
-            let key = ByteKey::from(encoder.encode(row));
-            if let Some(count) = self.pending_rows.get_mut(&*key.0) {
-                *count -= 1;
-                if *count == 0 {
-                    self.pending_rows.remove(&*key.0);
-                    self.retention_bytes -= byte_key_bytes(&key.0);
-                }
-            }
-            self.register_cleanup(&key.0, now_ms);
-        }
-    }
 
     /// Bounds this operator's state (buffered batches plus the inner per-key fold state) by the
     /// operator's task off-heap budget (negative = unaccounted), accounting restored state
@@ -1586,15 +1452,11 @@ impl OverWindowAggregator {
         let rowtimes = rt_to_millis(batch.column(self.rt_column));
         let on_time: BooleanArray = rowtimes
             .iter()
-            .map(|value| Some(value.is_some_and(|value| value > self.watermark)))
+            .map(|value| Some(value.is_some_and(|value| value >= self.watermark)))
             .collect();
         let input_rows = batch.num_rows();
         let batch = filter_record_batch(&batch, &on_time)?;
         self.late_drops += (input_rows - batch.num_rows()) as u64;
-        #[cfg(feature = "paimon-state")]
-        if self.backend.is_some() {
-            return self.push_backend(batch, now_ms);
-        }
         if self.deadline_cleaning() {
             self.maybe_sweep(now_ms);
             self.register_batch(&batch, now_ms);
@@ -1607,120 +1469,12 @@ impl OverWindowAggregator {
     /// a fresh arrival sequence, routed by its PARTITION BY key's group. Nothing folds here —
     /// emission and the per-key fold are watermark-driven (`flush`). The deadline bookkeeping
     /// runs exactly as on memory state, over the store's BinaryRow keys.
-    #[cfg(feature = "paimon-state")]
-    fn push_backend(&mut self, batch: RecordBatch, now_ms: i64) -> Result<(), DataFusionError> {
-        let retention_before = self.retention_bytes;
-        if self.deadline_cleaning() {
-            self.maybe_sweep(now_ms);
-            if batch.num_rows() > 0 {
-                self.register_batch_backend(&batch, now_ms);
-            }
-        }
-        if batch.num_rows() > 0 {
-            let rts = rt_to_millis(batch.column(self.rt_column));
-            let mut encoder = BinaryRowBatchEncoder::new(
-                &batch,
-                &self.key_columns,
-                &self.key_timestamp_precisions,
-            );
-            let store = self.backend.as_mut().expect("over paimon backend");
-            let kgs: Vec<i32> =
-                (0..batch.num_rows()).map(|row| store.key_group(encoder.encode(row))).collect();
-            let rt_values: Vec<i64> = (0..batch.num_rows()).map(|row| rts.value(row)).collect();
-            store.stage_pending(&kgs, rt_values, batch.columns().to_vec())?;
-        }
-        let store = self.backend.as_mut().expect("over paimon backend");
-        let delta = store.footprint_delta();
-        self.memory
-            .record(delta + self.retention_bytes as isize - retention_before as isize);
-        self.memory.account()
-    }
 
     /// Persistent-state firing path: the store's overlay range read returns every pending row the
     /// watermark completed, in arrival order; the per-key running state hydrates from the folds
     /// table for exactly the fired keys, folds, and writes back into the folds write buffer. A
     /// fired key past its deadline folds anyway — its pending rows deferred the cleanup, exactly
     /// as memory mode — and re-arms through the post-fire settle.
-    #[cfg(feature = "paimon-state")]
-    fn flush_backend(&mut self, watermark: i64, now_ms: i64) -> Result<RecordBatch, DataFusionError> {
-        let retention_before = self.retention_bytes;
-        if self.deadline_cleaning() {
-            self.maybe_sweep(now_ms);
-        }
-        let ctx = self.memory.task_ctx();
-        let fired = self.backend.as_mut().expect("over paimon backend").fire(watermark, ctx)?;
-        let Some(fired) = fired else {
-            let store = self.backend.as_mut().expect("over paimon backend");
-            store.end_bundle();
-            let delta = store.footprint_delta();
-            self.memory
-                .record(delta + self.retention_bytes as isize - retention_before as isize);
-            self.memory.account()?;
-            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
-        };
-        // The fired batch is store-schema (`kg`, `k`, `rt` millis, payload…): the payload is the
-        // completed input rows in arrival order, the rt column is already the fold's ordering key.
-        let payload_schema = match &self.input_schema {
-            Some(schema) => schema.clone(),
-            None => Arc::new(Schema::new(
-                fired.schema().fields()[3..]
-                    .iter()
-                    .map(|f| f.as_ref().clone())
-                    .collect::<Vec<_>>(),
-            )),
-        };
-        let complete = RecordBatch::try_new(payload_schema, fired.columns()[3..].to_vec())
-            .expect("over payload projection");
-        let subbatch = self.keyed_subbatch(&complete, fired.column(2).clone());
-
-        let mut encoder = BinaryRowBatchEncoder::new(
-            &complete,
-            &self.key_columns,
-            &self.key_timestamp_precisions,
-        );
-        let mut seen: std::collections::HashSet<ByteKey> = std::collections::HashSet::new();
-        let mut first_rows: Vec<(ByteKey, usize)> = Vec::new();
-        for row in 0..complete.num_rows() {
-            let key = encoder.encode(row);
-            if !seen.contains(key) {
-                let owned = ByteKey::from(key);
-                seen.insert(owned.clone());
-                first_rows.push((owned, row));
-            }
-        }
-        let seeds: Vec<(usize, Option<Vec<ScalarValue>>)> = {
-            let store = self.backend.as_mut().expect("over paimon backend");
-            let unique_keys: Vec<ByteKey> = first_rows.iter().map(|(k, _)| k.clone()).collect();
-            store.ensure_folds(&unique_keys)?;
-            first_rows
-                .iter()
-                .map(|(key, row)| (*row, store.fold_scalars(&key.0).map(|s| s.to_vec())))
-                .collect()
-        };
-        let (aggregates, published) = self.inner.update_hydrated(&subbatch, &seeds);
-        let store = self.backend.as_mut().expect("over paimon backend");
-        for ((key, _), scalars) in first_rows.iter().zip(published) {
-            store.put_fold(&key.0, scalars);
-        }
-        if self.deadline_cleaning() {
-            self.settle_fired_backend(&complete, now_ms);
-        }
-        let store = self.backend.as_mut().expect("over paimon backend");
-        store.end_bundle();
-        let delta = store.footprint_delta();
-        self.memory.record(delta + self.retention_bytes as isize - retention_before as isize);
-        self.memory.account()?;
-
-        let mut fields: Vec<Field> =
-            complete.schema().fields().iter().map(|f| f.as_ref().clone()).collect();
-        let mut columns: Vec<ArrayRef> = complete.columns().to_vec();
-        for (i, field) in aggregates.schema().fields().iter().enumerate() {
-            fields.push(field.as_ref().clone());
-            columns.push(aggregates.column(i).clone());
-        }
-        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build over output batch"))
-    }
 
     /// Proctime OVER: fold the whole batch in arrival order and emit every row immediately (proctime
     /// has no watermark to wait on). Each row is tagged with an increasing arrival sequence used as the
@@ -1743,10 +1497,16 @@ impl OverWindowAggregator {
         let n = batch.num_rows();
         let seq: Int64Array = (0..n as i64).map(|i| self.next_seq + i).collect();
         self.next_seq += n as i64;
-        let aggregates = self.inner.update(&self.keyed_subbatch(&batch, Arc::new(seq)));
+        let aggregates = self
+            .inner
+            .update(&self.keyed_subbatch(&batch, Arc::new(seq)));
         self.account()?;
-        let mut fields: Vec<Field> =
-            batch.schema().fields().iter().map(|f| f.as_ref().clone()).collect();
+        let mut fields: Vec<Field> = batch
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| f.as_ref().clone())
+            .collect();
         let mut columns: Vec<ArrayRef> = batch.columns().to_vec();
         for (i, field) in aggregates.schema().fields().iter().enumerate() {
             fields.push(field.as_ref().clone());
@@ -1765,10 +1525,6 @@ impl OverWindowAggregator {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         self.watermark = self.watermark.max(watermark);
-        #[cfg(feature = "paimon-state")]
-        if self.backend.is_some() {
-            return self.flush_backend(watermark, now_ms);
-        }
         if self.deadline_cleaning() {
             self.maybe_sweep(now_ms);
         }
@@ -1778,11 +1534,19 @@ impl OverWindowAggregator {
         };
         let all = concat_batches(&schema, &self.buffered).expect("failed to concat over buffer");
         let rt_millis = rt_to_millis(all.column(self.rt_column));
-        let complete_mask: BooleanArray = rt_millis.iter().map(|v| Some(v.unwrap() <= watermark)).collect();
-        let complete = filter_record_batch(&all, &complete_mask).expect("failed to filter complete");
+        let complete_mask: BooleanArray = rt_millis
+            .iter()
+            .map(|v| Some(v.unwrap() <= watermark))
+            .collect();
+        let complete =
+            filter_record_batch(&all, &complete_mask).expect("failed to filter complete");
         let pending_mask = arrow::compute::not(&complete_mask).expect("failed to negate mask");
         let pending = filter_record_batch(&all, &pending_mask).expect("failed to filter pending");
-        self.buffered = if pending.num_rows() > 0 { vec![pending] } else { Vec::new() };
+        self.buffered = if pending.num_rows() > 0 {
+            vec![pending]
+        } else {
+            Vec::new()
+        };
         if complete.num_rows() == 0 {
             self.account()?;
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
@@ -1796,8 +1560,12 @@ impl OverWindowAggregator {
             self.settle_fired(&complete, now_ms);
         }
         self.account()?;
-        let mut fields: Vec<Field> =
-            complete.schema().fields().iter().map(|f| f.as_ref().clone()).collect();
+        let mut fields: Vec<Field> = complete
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| f.as_ref().clone())
+            .collect();
         let mut columns: Vec<ArrayRef> = complete.columns().to_vec();
         for (i, field) in aggregates.schema().fields().iter().enumerate() {
             fields.push(field.as_ref().clone());
@@ -1823,7 +1591,11 @@ impl OverWindowAggregator {
             columns.push(complete.column(value_column).clone());
         }
         for (j, &key) in self.key_columns.iter().enumerate() {
-            fields.push(Field::new(format!("key{j}"), complete.column(key).data_type().clone(), false));
+            fields.push(Field::new(
+                format!("key{j}"),
+                complete.column(key).data_type().clone(),
+                false,
+            ));
             columns.push(complete.column(key).clone());
         }
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
@@ -1841,9 +1613,11 @@ impl OverWindowAggregator {
     /// retention is on — a retention-off checkpoint stays byte-identical to the pre-TTL format.
     fn snapshot_accumulators(&mut self) -> Vec<u8> {
         if self.deadline_cleaning() {
-            self.inner.snapshot(Some((CLEANUP_AT_COLUMN, &self.cleanup_state)))
+            self.inner
+                .snapshot(Some((CLEANUP_AT_COLUMN, &self.cleanup_state)))
         } else if self.value_ttl_on() {
-            self.inner.snapshot(Some((TTL_TS_COLUMN, &self.last_write_ms)))
+            self.inner
+                .snapshot(Some((TTL_TS_COLUMN, &self.last_write_ms)))
         } else {
             self.inner.snapshot(None)
         }
@@ -1944,13 +1718,10 @@ impl OverWindowAggregator {
                     .iter()
                     .map(|column| take(column, &indices, None).expect("partition over snapshot"))
                     .collect();
-                partitions
-                    .entry(key_group)
-                    .or_insert_with(Vec::new)
-                    .push(
-                        RecordBatch::try_new(batch.schema(), columns)
-                            .expect("partitioned over snapshot"),
-                    );
+                partitions.entry(key_group).or_insert_with(Vec::new).push(
+                    RecordBatch::try_new(batch.schema(), columns)
+                        .expect("partitioned over snapshot"),
+                );
             }
         }
         partitions
@@ -1979,13 +1750,9 @@ impl OverWindowAggregator {
                     .iter()
                     .map(|column| take(column, &indices, None).expect("partition over buffer"))
                     .collect();
-                partitions
-                    .entry(key_group)
-                    .or_insert_with(Vec::new)
-                    .push(
-                        RecordBatch::try_new(batch.schema(), columns)
-                            .expect("partitioned over buffer"),
-                    );
+                partitions.entry(key_group).or_insert_with(Vec::new).push(
+                    RecordBatch::try_new(batch.schema(), columns).expect("partitioned over buffer"),
+                );
             }
         }
         partitions
@@ -1993,7 +1760,8 @@ impl OverWindowAggregator {
 
     fn merge_snapshot_batches(batches: &Vec<RecordBatch>) -> Vec<u8> {
         write_ipc(
-            &concat_batches(&batches[0].schema(), batches.iter()).expect("merge over raw partitions"),
+            &concat_batches(&batches[0].schema(), batches.iter())
+                .expect("merge over raw partitions"),
         )
     }
 
@@ -2026,7 +1794,10 @@ impl OverWindowAggregator {
         }
         let next_seq = i64::from_le_bytes(bytes[0..8].try_into().expect("next_seq"));
         let accumulators_len = u32::from_le_bytes(bytes[8..12].try_into().expect("len")) as usize;
-        assert!(12 + accumulators_len <= bytes.len(), "truncated over snapshot");
+        assert!(
+            12 + accumulators_len <= bytes.len(),
+            "truncated over snapshot"
+        );
         let mut stamps: HashMap<ByteKey, i64> = HashMap::default();
         let inner = if accumulators_len == 0 {
             OverInner::new(value_types.clone(), kinds.clone(), frame_kind, frame_offset)
@@ -2061,15 +1832,13 @@ impl OverWindowAggregator {
             retention_bytes: 0,
             key_converter: None,
             memory: OperatorMemory::unaccounted(),
-            #[cfg(feature = "paimon-state")]
-            backend: None,
             key_timestamp_precisions: vec![-1; key_arity],
         }
         .with_state_retention(min_retention_ms);
         let buffer = &bytes[12 + accumulators_len..];
         if !buffer.is_empty() {
-            let reader =
-                arrow::ipc::reader::StreamReader::try_new(buffer, None).expect("over buffer reader");
+            let reader = arrow::ipc::reader::StreamReader::try_new(buffer, None)
+                .expect("over buffer reader");
             for batch in reader {
                 let batch = batch.expect("read over buffer");
                 aggregator.input_schema = Some(batch.schema());
@@ -2105,8 +1874,11 @@ impl OverWindowAggregator {
             for key in self.inner.state_keys() {
                 self.last_write_ms.entry(key).or_insert(restored_at_ms);
             }
-            self.retention_bytes =
-                self.last_write_ms.keys().map(|key| byte_key_bytes(&key.0)).sum();
+            self.retention_bytes = self
+                .last_write_ms
+                .keys()
+                .map(|key| byte_key_bytes(&key.0))
+                .sum();
         }
     }
 
@@ -2120,7 +1892,8 @@ impl OverWindowAggregator {
                 match self.pending_rows.get_mut(keys_encoded.row(row).data()) {
                     Some(count) => *count += 1,
                     None => {
-                        self.pending_rows.insert(ByteKey::from(keys_encoded.row(row).data()), 1);
+                        self.pending_rows
+                            .insert(ByteKey::from(keys_encoded.row(row).data()), 1);
                     }
                 }
             }
@@ -2148,10 +1921,15 @@ impl OverWindowAggregator {
             if bytes.len() < 12 {
                 continue;
             }
-            next_seq = next_seq.max(i64::from_le_bytes(bytes[0..8].try_into().expect("next_seq")));
+            next_seq = next_seq.max(i64::from_le_bytes(
+                bytes[0..8].try_into().expect("next_seq"),
+            ));
             let accumulator_len =
                 u32::from_le_bytes(bytes[8..12].try_into().expect("accumulator len")) as usize;
-            assert!(12 + accumulator_len <= bytes.len(), "truncated over raw key-group snapshot");
+            assert!(
+                12 + accumulator_len <= bytes.len(),
+                "truncated over raw key-group snapshot"
+            );
             accumulator_batches.extend(read_ipc_if_present(&bytes[12..12 + accumulator_len]));
             buffer_batches.extend(read_ipc_if_present(&bytes[12 + accumulator_len..]));
         }
@@ -2177,7 +1955,10 @@ impl OverWindowAggregator {
     }
 }
 
-state_bytes_getter!(Java_tech_streamfusion_Native_overAggregatorStateBytes, OverWindowAggregator);
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_overAggregatorStateBytes,
+    OverWindowAggregator
+);
 
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_overAggregatorLateDrops<'local>(
@@ -2247,8 +2028,10 @@ pub extern "system" fn Java_tech_streamfusion_Native_pushOverAggregator<'local>(
         let aggregator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
         // The pushed batch is retained in the buffer (not dropped), so no JVM release upcall runs
         // between a failed account and the throw (see updateTumblingAggregator).
-        let result =
-            aggregator.push(import_record_batch(in_array_address, in_schema_address), now_millis);
+        let result = aggregator.push(
+            import_record_batch(in_array_address, in_schema_address),
+            now_millis,
+        );
         if let Err(e) = result {
             throw_memory_limit(&mut env, &e.to_string());
         }
@@ -2311,17 +2094,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeOverAggregator<'local>
     _class: JClass<'local>,
     handle: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
-        unsafe {
-            drop(from_handle::<OverWindowAggregator>(handle));
-        }
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<OverWindowAggregator>(handle));
     })
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_snapshotOverAggregatorPartitions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotOverAggregatorPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -2341,9 +2120,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotOverAggregatorParti
 
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_restoreOverAggregatorPartitions<
-    'local,
->(
+pub extern "system" fn Java_tech_streamfusion_Native_restoreOverAggregatorPartitions<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     value_types: JIntArray<'local>,

@@ -2,7 +2,6 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.PaimonNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -23,7 +22,7 @@ import org.apache.flink.table.types.logical.RowType;
  * drops every later row for the key. Insert-only — the watermark guarantees no smaller-rowtime row
  * can still arrive once a key's row fires. Keys are co-located by the columnar shuffle; the per-key
  * candidate state and the late-data drop live in the native deduplicator, and this layer moves
- * batches across the bridge and owns the handle's checkpointed state. On the Paimon backend the
+ * batches across the bridge and owns the handle's checkpointed state. On the RocksDB backend the
  * candidates and fired markers live in the persistent store (write buffer + disk table) and the
  * watermark firing is a range read over both; memory state travels as raw keyed-state blobs.
  */
@@ -50,46 +49,6 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
     this.rowtimeColumn = rowtimeColumn;
     this.rowType = rowType;
     this.stateTtlMillis = stateTtlMillis;
-  }
-
-  @Override
-  protected PaimonNativeStateSupport resolvePaimonState(boolean rawStateRestored) {
-    // The Paimon shape does not carry marker TTL timestamps yet; a TTL'd deduplicator keeps the
-    // memory route (the standard fallback for an unsupported shape) until the store gains them.
-    return resolvePaimon(
-        rawStateRestored,
-        () ->
-            stateTtlMillis == 0
-                && withRowSchema(rowType, address -> Native.paimonRowStateSupported(address) ? 1L : 0L)
-                    != 0);
-  }
-
-  @Override
-  protected long createPaimonHandle(PaimonNativeStateSupport paimon) {
-    return withRowSchema(
-        rowType,
-        rowSchemaAddress ->
-            Native.createPaimonKeepFirstDeduplicator(
-                partitionColumns,
-                keyTimestampPrecisions(),
-                rowtimeColumn,
-                rowSchemaAddress,
-                memoryBudgetBytes(),
-                paimon.tableDirectory(),
-                maxParallelism(),
-                NativeConfig.paimonBuckets(),
-                NativeConfig.paimonFileFormat(),
-                NativeConfig.paimonFileCompression(),
-                paimon.sourceDirectories(),
-                paimon.sourceSnapshotTokens(),
-                paimon.keyGroupStart(),
-                paimon.keyGroupEnd(),
-                paimon.aligned()));
-  }
-
-  @Override
-  protected String[] checkpointPaimonHandle() {
-    return Native.checkpointPaimonKeepFirstDeduplicator(handle);
   }
 
   @Override
@@ -122,18 +81,12 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
 
   @Override
   protected void closeHandle() {
-    if (paimonState()) {
-      Native.closePaimonKeepFirstDeduplicator(handle);
-    } else {
-      Native.closeKeepFirstDeduplicator(handle);
-    }
+    Native.closeKeepFirstDeduplicator(handle);
   }
 
   @Override
   protected long stateBytesHandle() {
-    return paimonState()
-        ? Native.paimonKeepFirstDeduplicatorStateBytes(handle)
-        : Native.keepFirstDeduplicatorStateBytes(handle);
+    return Native.keepFirstDeduplicatorStateBytes(handle);
   }
 
   @Override
@@ -156,18 +109,13 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
     try (ArrowArray array = ArrowArray.allocateNew(inAllocator);
         ArrowSchema schema = ArrowSchema.allocateNew(inAllocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, array, schema);
-      if (paimonState()) {
-        Native.pushPaimonKeepFirstDeduplicator(
-            handle, array.memoryAddress(), schema.memoryAddress());
-      } else {
-        // Flink's TtlTimeProvider clock: the processing-time service is System.currentTimeMillis
-        // in production and harness-controlled in tests, so expiry is deterministic to test.
-        Native.pushKeepFirstDeduplicator(
-            handle,
-            array.memoryAddress(),
-            schema.memoryAddress(),
-            getProcessingTimeService().getCurrentProcessingTime());
-      }
+      // Flink's TtlTimeProvider clock: the processing-time service is System.currentTimeMillis
+      // in production and harness-controlled in tests, so expiry is deterministic to test.
+      Native.pushKeepFirstDeduplicator(
+          handle,
+          array.memoryAddress(),
+          schema.memoryAddress(),
+          getProcessingTimeService().getCurrentProcessingTime());
     } finally {
       in.close();
     }
@@ -185,17 +133,12 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
   public void processWatermark(Watermark mark) throws Exception {
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      if (paimonState()) {
-        Native.flushPaimonKeepFirstDeduplicator(
-            handle, mark.getTimestamp(), array.memoryAddress(), schema.memoryAddress());
-      } else {
-        Native.flushKeepFirstDeduplicator(
-            handle,
-            mark.getTimestamp(),
-            getProcessingTimeService().getCurrentProcessingTime(),
-            array.memoryAddress(),
-            schema.memoryAddress());
-      }
+      Native.flushKeepFirstDeduplicator(
+          handle,
+          mark.getTimestamp(),
+          getProcessingTimeService().getCurrentProcessingTime(),
+          array.memoryAddress(),
+          schema.memoryAddress());
       VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
       if (out.getRowCount() > 0) {
         ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));

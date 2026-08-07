@@ -37,8 +37,13 @@ pub(crate) fn encode_schema_metadata(schema: &SchemaRef) -> String {
 pub(crate) fn decode_schema_metadata(batch: &RecordBatch) -> Option<SchemaRef> {
     use base64::Engine;
 
-    let value = batch.schema_ref().metadata().get(RAW_SNAPSHOT_PAYLOAD_SCHEMA)?;
-    let bytes = base64::engine::general_purpose::STANDARD.decode(value).ok()?;
+    let value = batch
+        .schema_ref()
+        .metadata()
+        .get(RAW_SNAPSHOT_PAYLOAD_SCHEMA)?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(value)
+        .ok()?;
     read_ipc(&bytes).first().map(RecordBatch::schema)
 }
 
@@ -80,7 +85,11 @@ pub(crate) fn serialize_id_set(ids: &HashSet<i64>) -> Vec<u8> {
 pub(crate) fn deserialize_id_set(bytes: &[u8]) -> HashSet<i64> {
     let mut set = HashSet::default();
     for batch in read_ipc_if_present(bytes) {
-        let ids = batch.column(0).as_any().downcast_ref::<Int64Array>().expect("id column");
+        let ids = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("id column");
         for i in 0..ids.len() {
             set.insert(ids.value(i));
         }
@@ -93,7 +102,8 @@ pub(crate) fn read_framed_sections(bytes: &[u8]) -> Vec<Vec<u8>> {
     let mut sections = Vec::new();
     let mut cursor = 0usize;
     while cursor + 4 <= bytes.len() {
-        let len = u32::from_le_bytes(bytes[cursor..cursor + 4].try_into().expect("section len")) as usize;
+        let len =
+            u32::from_le_bytes(bytes[cursor..cursor + 4].try_into().expect("section len")) as usize;
         cursor += 4;
         sections.push(bytes[cursor..cursor + len].to_vec());
         cursor += len;

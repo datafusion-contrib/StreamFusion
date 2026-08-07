@@ -2,7 +2,6 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.PaimonNativeStateSupport;
 import org.apache.flink.api.common.operators.ProcessingTimeService.ProcessingTimeCallback;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
@@ -116,47 +115,6 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
         scheduleNextTimer(now);
       }
     }
-  }
-
-  @Override
-  protected PaimonNativeStateSupport resolvePaimonState(
-      boolean rawStateRestored) {
-    // A proctime window closes on processing-time timers whose deadline travels in raw state,
-    // so only the event-time mode is Paimon-eligible.
-    return proctime
-        ? null
-        : resolvePaimon(
-            rawStateRestored,
-            () -> Native.paimonWindowAggStateSupported(valueTypes, aggregateKinds, keyTypes));
-  }
-
-  @Override
-  protected long createPaimonHandle(
-      PaimonNativeStateSupport paimon) {
-    return Native.createPaimonTumblingAggregator(
-        windowMillis,
-        slideMillis,
-        cumulative,
-        valueTypes,
-        aggregateKinds,
-        keyTypes,
-        keyTimestampPrecisions(),
-        memoryBudgetBytes(),
-        paimon.tableDirectory(),
-        maxParallelism(),
-        NativeConfig.paimonBuckets(),
-        NativeConfig.paimonFileFormat(),
-        NativeConfig.paimonFileCompression(),
-        paimon.sourceDirectories(),
-        paimon.sourceSnapshotTokens(),
-        paimon.keyGroupStart(),
-        paimon.keyGroupEnd(),
-        paimon.aligned());
-  }
-
-  @Override
-  protected String[] checkpointPaimonHandle() {
-    return Native.checkpointPaimonTumblingAggregator(handle);
   }
 
   @Override
