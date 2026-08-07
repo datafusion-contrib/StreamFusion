@@ -30,7 +30,7 @@ jobs:
 
       - name: Run native test suite
         working-directory: native
-        run: cargo test --features kafka,parquet
+        run: cargo test --features kafka,parquet,rocksdb-state
 
   java-tests:
     name: Java tests (debug native build)

@@ -155,12 +155,6 @@ The multi-source/blackhole ladder, raw timings, reproduction commands, and profi
 remain on the docs site's [Benchmarks](https://datafusion-contrib.github.io/StreamFusion/benchmarks/)
 page.
 
-The disk columns' key enabler is **deletion-vector mode**: the retired Java state layer maintains the
-state tables' deletion vectors synchronously at each barrier, so every committed read is a raw
-parquet scan with exact predicate pushdown — no merge reads, no resident index. The disk
-comparison's largest wins are the stateful shapes RocksDB pays per-record for (up to 8.9× on
-session windows).
-
 _Apple M1 Max; numbers are comparable only within a machine._
 
 ## Running and configuration

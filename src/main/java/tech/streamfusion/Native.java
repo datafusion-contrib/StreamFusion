@@ -1086,7 +1086,8 @@ public final class Native {
   public static native void flushRocksDBGroupAggregator(
       long handle, long outArrayAddress, long outSchemaAddress);
 
-  public static native String[] checkpointRocksDBGroupAggregator(long handle);
+  public static native String[] checkpointRocksDBGroupAggregator(
+      long handle, String snapshotDirectory);
 
   public static native long rocksdbGroupAggregatorStateBytes(long handle);
 
@@ -1112,7 +1113,7 @@ public final class Native {
   public static native long rocksdbSnapshotStoreTimerDeadline(long handle);
 
   public static native String[] checkpointRocksDBSnapshotStore(
-      long handle, byte[][] partitions, long timerDeadline);
+      long handle, byte[][] partitions, long timerDeadline, String snapshotDirectory);
 
   public static native void closeRocksDBSnapshotStore(long handle);
 

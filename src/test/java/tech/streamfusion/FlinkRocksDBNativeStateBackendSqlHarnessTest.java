@@ -23,10 +23,8 @@ import org.junit.jupiter.api.Test;
  * multiset state, which the RocksDB row codec does not carry — that query exercises the
  * per-operator fallback to memory state under the same backend.
  *
- * <p>Lives in the compactor module because the backend fails closed without the Java compactor
- * on the classpath: every run here is the production shape — state tables carry deletion
- * vectors and compact synchronously at every barrier, so committed reads take the raw path with
- * the vectors applied.
+ * <p>Every run here is the production shape: Rust reads and writes its RocksDB instance directly,
+ * while Java coordinates Flink checkpoint handles and uploads.
  */
 class FlinkRocksDBNativeStateBackendSqlHarnessTest {
 

@@ -211,11 +211,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBGroupAggre
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
+    snapshot_directory: JString<'local>,
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
+        let snapshot_directory = read_string(&mut env, &snapshot_directory);
         match unsafe { &mut *(handle as *mut RocksGroupAggregator) }
             .store_mut()
-            .checkpoint()
+            .checkpoint(&snapshot_directory)
         {
             Ok(m) => manifest_array(&mut env, &m),
             Err(e) => {
@@ -318,7 +320,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreRocksDBSnapshotStore
     _class: JClass<'local>,
     handle: jlong,
 ) -> jobjectArray {
-    crate::bridge::jni_guard(env, move |mut env| {
+    crate::bridge::jni_guard(env, move |env| {
         let store = unsafe { &*(handle as *const RocksSnapshotStore) };
         match store.partitions() {
             Ok(partitions) => {
@@ -363,8 +365,10 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBSnapshotSt
     handle: jlong,
     snapshots: JObjectArray<'local>,
     timer_deadline: jlong,
+    snapshot_directory: JString<'local>,
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
+        let snapshot_directory = read_string(&mut env, &snapshot_directory);
         let count = env.get_array_length(&snapshots).expect("snapshot count");
         let mut partitions = Vec::with_capacity(count as usize);
         for index in 0..count {
@@ -376,9 +380,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBSnapshotSt
                     .expect("snapshot bytes"),
             );
         }
-        match unsafe { &mut *(handle as *mut RocksSnapshotStore) }
-            .checkpoint(&partitions, timer_deadline)
-        {
+        match unsafe { &mut *(handle as *mut RocksSnapshotStore) }.checkpoint(
+            &partitions,
+            timer_deadline,
+            &snapshot_directory,
+        ) {
             Ok(manifest) => manifest_array(&mut env, &manifest),
             Err(error) => {
                 let _ = env.throw_new(

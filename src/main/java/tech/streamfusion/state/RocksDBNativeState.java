@@ -8,13 +8,13 @@ package tech.streamfusion.state;
 public interface RocksDBNativeState {
 
   /**
-   * Flushes the operator's write buffer, commits the checkpoint's RocksDB snapshot, and returns
+   * Flushes the operator's write buffer, commits a native RocksDB checkpoint into {@code
+   * snapshotDirectory}, and returns
    * the file manifest: the first entry is the opaque snapshot token (empty when no state was ever
    * committed), followed by one {@code d:<relative path>} entry per shared data file and one
    * {@code m:<relative path>} entry per private snapshot/manifest/schema document. The strategy
-   * hard-links the files its upload will read (new against the last confirmed checkpoint) before
-   * the sync phase returns, so uploads survive local compaction and GC without re-linking the
-   * whole table each barrier.
+   * uploads the files from that immutable directory asynchronously. An empty directory requests a
+   * local memory-pressure flush without publishing checkpoint state.
    */
-  String[] checkpoint() throws Exception;
+  String[] checkpoint(String snapshotDirectory) throws Exception;
 }

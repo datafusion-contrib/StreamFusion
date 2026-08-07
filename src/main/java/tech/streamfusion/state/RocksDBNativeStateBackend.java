@@ -77,7 +77,6 @@ public final class RocksDBNativeStateBackend implements StateBackend {
             backendUID,
             parameters.getKeyGroupRange(),
             new File(workingDirectory, "checkpoints"),
-            new File(workingDirectory, "db"),
             incrementalCheckpoints);
     if (alignedRestore && incrementalCheckpoints) {
       IncrementalRemoteKeyedStateHandle restored = nativeHandles.get(0);

@@ -1,7 +1,6 @@
 package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
-import tech.streamfusion.planner.FlinkKeyGroupUtils;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -75,7 +74,7 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
     super.open();
     TaskInfo task = getRuntimeContext().getTaskInfo();
     setCurrentKey(
-        FlinkKeyGroupUtils.stateKeysForSubtasks(
+        ArrowBatchSubtaskKeySelector.stateKeysForSubtasks(
             maxParallelism(), task.getNumberOfParallelSubtasks())[task.getIndexOfThisSubtask()]);
   }
 

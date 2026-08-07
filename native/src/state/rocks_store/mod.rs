@@ -6,7 +6,8 @@ use crate::*;
 use arrow::array::{Array, Int64Array};
 use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::StreamWriter;
-use rocksdb::{Cache, CompactionDecision, IteratorMode, Options, WriteBatch, DB};
+use rocksdb::checkpoint::Checkpoint;
+use rocksdb::{Cache, CompactionDecision, IteratorMode, Options, WriteBatch, WriteOptions, DB};
 use std::collections::HashSet;
 use std::io::Cursor;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -134,6 +135,60 @@ enum Slot<V> {
     Absent { dirty: bool },
 }
 
+/// Flink's write-batch size is a memory bound, not a semantic transaction boundary. Apply the
+/// same cap while restoring or committing buffered native state, with WAL disabled on every
+/// physical write just like Flink's `RocksDBWriteBatchWrapper`.
+struct FlinkWriteBatch<'a> {
+    db: &'a DB,
+    options: WriteOptions,
+    max_bytes: usize,
+    batch: WriteBatch,
+}
+
+impl<'a> FlinkWriteBatch<'a> {
+    fn new(db: &'a DB, max_bytes: usize) -> Self {
+        Self {
+            db,
+            options: flink_write_options(),
+            max_bytes,
+            batch: WriteBatch::default(),
+        }
+    }
+
+    fn put<K: AsRef<[u8]>, V: AsRef<[u8]>>(
+        &mut self,
+        key: K,
+        value: V,
+    ) -> Result<(), DataFusionError> {
+        self.batch.put(key, value);
+        self.flush_if_full()
+    }
+
+    fn delete<K: AsRef<[u8]>>(&mut self, key: K) -> Result<(), DataFusionError> {
+        self.batch.delete(key);
+        self.flush_if_full()
+    }
+
+    fn flush_if_full(&mut self) -> Result<(), DataFusionError> {
+        if self.max_bytes > 0 && self.batch.size_in_bytes() >= self.max_bytes {
+            self.flush()?;
+        }
+        Ok(())
+    }
+
+    fn finish(mut self) -> Result<(), DataFusionError> {
+        self.flush()
+    }
+
+    fn flush(&mut self) -> Result<(), DataFusionError> {
+        if !self.batch.is_empty() {
+            let batch = std::mem::take(&mut self.batch);
+            self.db.write_opt(batch, &self.options).map_err(re)?;
+        }
+        Ok(())
+    }
+}
+
 pub(crate) struct RocksStore<C: RocksStateCodec> {
     db: DB,
     _cache: Option<Cache>,
@@ -143,6 +198,7 @@ pub(crate) struct RocksStore<C: RocksStateCodec> {
     now_ms: i64,
     clock: Arc<AtomicI64>,
     generation: i64,
+    write_batch_size: usize,
     working: ahash::HashMap<ByteKey, Slot<C::Value>>,
     footprint: isize,
 }
@@ -172,7 +228,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
         }
         let mut store = Self::open_db(config, codec)?;
         store.now_ms = now_ms;
-        let mut writes = WriteBatch::default();
+        let mut writes = FlinkWriteBatch::new(&store.db, store.write_batch_size);
         for (source, _) in sources {
             let source_db =
                 DB::open_for_read_only(&Options::default(), source, false).map_err(re)?;
@@ -181,12 +237,12 @@ impl<C: RocksStateCodec> RocksStore<C> {
                 if key.len() >= 4 {
                     let kg = i32::from_be_bytes(key[0..4].try_into().expect("key group prefix"));
                     if key_groups.contains(&kg) {
-                        writes.put(key, value);
+                        writes.put(key, value)?;
                     }
                 }
             }
         }
-        store.db.write(writes).map_err(re)?;
+        writes.finish()?;
         Ok(store)
     }
 
@@ -201,6 +257,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
             crate::state::rocks_config::FlinkRocksOptions::from_json(&config.options_json)
                 .map_err(DataFusionError::Plan)?;
         let (mut options, cache) = resolved.build().map_err(DataFusionError::Plan)?;
+        let write_batch_size = resolved.write_batch_size;
         let clock = Arc::new(AtomicI64::new(0));
         if config.ttl_ms > 0 {
             let filter_clock = Arc::clone(&clock);
@@ -242,6 +299,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
             now_ms: 0,
             clock,
             generation: 0,
+            write_batch_size,
             working: ahash::HashMap::default(),
             footprint: 0,
         })
@@ -321,46 +379,29 @@ impl<C: RocksStateCodec> RocksStore<C> {
         Ok(Some(state))
     }
 
-    pub(crate) fn checkpoint(&mut self) -> Result<RocksCheckpointManifest, DataFusionError> {
-        let mut writes = WriteBatch::default();
+    pub(crate) fn checkpoint(
+        &mut self,
+        snapshot_dir: &str,
+    ) -> Result<RocksCheckpointManifest, DataFusionError> {
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (key, slot) in &self.working {
             let db_key = self.db_key(&key.0);
             match slot {
                 Slot::Present { state, dirty: true } => {
-                    writes.put(db_key, self.encode_value(state)?)
+                    writes.put(db_key, self.encode_value(state)?)?
                 }
-                Slot::Absent { dirty: true } => writes.delete(db_key),
+                Slot::Absent { dirty: true } => writes.delete(db_key)?,
                 _ => {}
             }
         }
-        self.db.write(writes).map_err(re)?;
+        writes.finish()?;
         self.db.flush().map_err(re)?;
         self.working.clear();
-        self.generation += 1;
-        let mut data_files = Vec::new();
-        let mut meta_files = Vec::new();
-        for entry in std::fs::read_dir(&self.config.table_dir).map_err(ioe)? {
-            let entry = entry.map_err(ioe)?;
-            if !entry.file_type().map_err(ioe)?.is_file() {
-                continue;
-            }
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name == "LOCK" || name.starts_with("LOG") {
-                continue;
-            }
-            if name.ends_with(".sst") {
-                data_files.push(name);
-            } else {
-                meta_files.push(name);
-            }
+        if snapshot_dir.is_empty() {
+            return Ok(RocksCheckpointManifest::absent());
         }
-        data_files.sort();
-        meta_files.sort();
-        Ok(RocksCheckpointManifest {
-            snapshot_id: self.generation,
-            data_files,
-            meta_files,
-        })
+        self.generation += 1;
+        checkpoint_files(&self.db, snapshot_dir, self.generation)
     }
 }
 
@@ -452,6 +493,15 @@ fn ae(error: arrow::error::ArrowError) -> DataFusionError {
     DataFusionError::External(Box::new(error))
 }
 
+/// Flink deliberately disables the WAL for keyed state: completed checkpoints, rather than the
+/// local database log, are the durability boundary. Keep the Rust-owned instance on that same
+/// write path so barriers flush memtables to SSTs without uploading transient WAL files.
+fn flink_write_options() -> WriteOptions {
+    let mut options = WriteOptions::default();
+    options.disable_wal(true);
+    options
+}
+
 fn persisted_write_ms(bytes: &[u8]) -> Option<i64> {
     let mut reader = StreamReader::try_new(Cursor::new(bytes), None).ok()?;
     let batch = reader.next()?.ok()?;
@@ -469,9 +519,9 @@ fn persisted_write_ms(bytes: &[u8]) -> Option<i64> {
 pub(crate) struct RocksSnapshotStore {
     db: DB,
     _cache: Option<Cache>,
-    table_dir: String,
     generation: i64,
     timer_deadline: i64,
+    write_batch_size: usize,
 }
 
 impl RocksSnapshotStore {
@@ -487,6 +537,7 @@ impl RocksSnapshotStore {
                 crate::state::rocks_config::FlinkRocksOptions::from_json(&config.options_json)
                     .map_err(DataFusionError::Plan)?;
             let (options, cache) = resolved.build().map_err(DataFusionError::Plan)?;
+            let write_batch_size = resolved.write_batch_size;
             let db = DB::open(&options, &config.table_dir).map_err(re)?;
             let timer_deadline = db
                 .get(SNAPSHOT_TIMER_KEY)
@@ -497,9 +548,9 @@ impl RocksSnapshotStore {
             return Ok(Self {
                 db,
                 _cache: cache,
-                table_dir: config.table_dir,
                 generation: sources[0].1,
                 timer_deadline,
+                write_batch_size,
             });
         }
         std::fs::create_dir_all(&config.table_dir).map_err(ioe)?;
@@ -507,9 +558,10 @@ impl RocksSnapshotStore {
             crate::state::rocks_config::FlinkRocksOptions::from_json(&config.options_json)
                 .map_err(DataFusionError::Plan)?;
         let (options, cache) = resolved.build().map_err(DataFusionError::Plan)?;
+        let write_batch_size = resolved.write_batch_size;
         let db = DB::open(&options, &config.table_dir).map_err(re)?;
         let mut timer_deadline = i64::MIN;
-        let mut writes = WriteBatch::default();
+        let mut writes = FlinkWriteBatch::new(&db, write_batch_size);
         for (source, _) in sources {
             let source_db =
                 DB::open_for_read_only(&Options::default(), source, false).map_err(re)?;
@@ -523,21 +575,21 @@ impl RocksSnapshotStore {
                 } else if key.len() >= 4 {
                     let kg = i32::from_be_bytes(key[..4].try_into().unwrap());
                     if key_groups.contains(&kg) {
-                        writes.put(key, value);
+                        writes.put(key, value)?;
                     }
                 }
             }
         }
         if timer_deadline != i64::MIN {
-            writes.put(SNAPSHOT_TIMER_KEY, timer_deadline.to_be_bytes());
+            writes.put(SNAPSHOT_TIMER_KEY, timer_deadline.to_be_bytes())?;
         }
-        db.write(writes).map_err(re)?;
+        writes.finish()?;
         Ok(Self {
             db,
             _cache: cache,
-            table_dir: config.table_dir,
             generation: 0,
             timer_deadline,
+            write_batch_size,
         })
     }
 
@@ -560,11 +612,12 @@ impl RocksSnapshotStore {
         &mut self,
         partitions: &[Vec<u8>],
         timer_deadline: i64,
+        snapshot_dir: &str,
     ) -> Result<RocksCheckpointManifest, DataFusionError> {
-        let mut writes = WriteBatch::default();
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for row in self.db.iterator(IteratorMode::Start) {
             let (key, _) = row.map_err(re)?;
-            writes.delete(key);
+            writes.delete(key)?;
         }
         for partition in partitions {
             if partition.len() < 4 {
@@ -572,16 +625,19 @@ impl RocksSnapshotStore {
                     "native state partition has no key-group prefix".into(),
                 ));
             }
-            writes.put(&partition[..4], &partition[4..]);
+            writes.put(&partition[..4], &partition[4..])?;
         }
         if timer_deadline != i64::MIN {
-            writes.put(SNAPSHOT_TIMER_KEY, timer_deadline.to_be_bytes());
+            writes.put(SNAPSHOT_TIMER_KEY, timer_deadline.to_be_bytes())?;
         }
-        self.db.write(writes).map_err(re)?;
+        writes.finish()?;
         self.db.flush().map_err(re)?;
         self.timer_deadline = timer_deadline;
+        if snapshot_dir.is_empty() {
+            return Ok(RocksCheckpointManifest::absent());
+        }
         self.generation += 1;
-        checkpoint_files(&self.table_dir, self.generation)
+        checkpoint_files(&self.db, snapshot_dir, self.generation)
     }
 }
 
@@ -601,12 +657,24 @@ fn copy_checkpoint_db(source: &str, destination: &str) -> Result<(), DataFusionE
 }
 
 fn checkpoint_files(
-    table_dir: &str,
+    db: &DB,
+    snapshot_dir: &str,
     generation: i64,
 ) -> Result<RocksCheckpointManifest, DataFusionError> {
+    let snapshot_path = std::path::Path::new(snapshot_dir);
+    if snapshot_path.exists() {
+        std::fs::remove_dir_all(snapshot_path).map_err(ioe)?;
+    }
+    if let Some(parent) = snapshot_path.parent() {
+        std::fs::create_dir_all(parent).map_err(ioe)?;
+    }
+    Checkpoint::new(db)
+        .map_err(re)?
+        .create_checkpoint(snapshot_path)
+        .map_err(re)?;
     let mut data_files = Vec::new();
     let mut meta_files = Vec::new();
-    for entry in std::fs::read_dir(table_dir).map_err(ioe)? {
+    for entry in std::fs::read_dir(snapshot_path).map_err(ioe)? {
         let entry = entry.map_err(ioe)?;
         if !entry.file_type().map_err(ioe)?.is_file() {
             continue;

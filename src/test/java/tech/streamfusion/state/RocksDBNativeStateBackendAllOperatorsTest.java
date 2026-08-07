@@ -54,9 +54,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
  * state), a completed checkpoint's files are referenced by placeholders instead of re-uploaded
  * (incremental), and a fresh operator restored from the handle continues the changelog exactly.
  *
- * <p>Lives in the compactor module because the backend fails closed without the Java compactor
- * on the classpath: every run here is the production shape — state tables carry deletion
- * vectors and barriers compact synchronously.
+ * <p>Every run here is the production shape: Rust reads and writes its RocksDB instance directly,
+ * while Java coordinates Flink checkpoint handles and uploads.
  */
 @ExtendWith(CoalescingOff.class)
 class RocksDBNativeStateBackendAllOperatorsTest {
@@ -200,9 +199,8 @@ class RocksDBNativeStateBackendAllOperatorsTest {
    * the writer's deadline. The deadline shapes deliberately register no retention with the
    * backend ({@code resolveRocksDB} without a TTL) — a deferred or re-armed deadline is not a
    * truthful per-row clock, so every maintenance session opens WITHOUT record-level expiry
-   * options ({@link #recordLevelExpireOptionsPadTheRetention} pins the zero-retention mapping,
-   * and {@code JavaRocksDBStateCompactorTtlTest.sessionWithoutOptionsNeverDropsRows} that such a
-   * session never drops rows); physical cleanup is the operator's own staged tombstones.
+   * options ({@link #recordLevelExpireOptionsPadTheRetention} pins the zero-retention mapping);
+   * physical cleanup is the operator's own staged tombstones.
    */
   @Test
   void overAggregateRetentionExpiresAcrossCheckpointAndRestore() throws Exception {

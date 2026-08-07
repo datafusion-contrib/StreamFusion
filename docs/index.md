@@ -30,8 +30,7 @@ more jobs.
   mark exactly what's native, what's partial, and what still falls back, with the precise
   condition in each case.
 - **[Backends](backends/index.md)** hold state for the stateful operators — an in-memory backend
-  by default, with an experimental persistent backend for durability without RocksDB's per-record
-  serialization tax.
+  by default, with a Rust-owned RocksDB backend for persistent state and incremental checkpoints.
 - **[Deployment](deployment.md)** and **[Configuration](configuration.md)** cover installing
   StreamFusion into a Flink cluster and the runtime flags that control it.
 

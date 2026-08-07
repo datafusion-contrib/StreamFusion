@@ -17,6 +17,8 @@ class FlinkRocksDBOptionsTest {
     Configuration configuration = new Configuration();
     configuration.set(
         RocksDBConfigurableOptions.WRITE_BUFFER_SIZE, MemorySize.parse("17mb"));
+    configuration.set(
+        RocksDBConfigurableOptions.WRITE_BATCH_SIZE, MemorySize.parse("3mb"));
     configuration.set(RocksDBConfigurableOptions.USE_DYNAMIC_LEVEL_SIZE, true);
     configuration.set(RocksDBConfigurableOptions.COMPACTION_STYLE, org.rocksdb.CompactionStyle.UNIVERSAL);
     configuration.set(
@@ -28,6 +30,7 @@ class FlinkRocksDBOptionsTest {
     String json = FlinkRocksDBOptions.from(configuration).json();
 
     assertTrue(json.contains("\"writeBufferSize\":17825792"));
+    assertTrue(json.contains("\"writeBatchSize\":3145728"));
     assertTrue(json.contains("\"useDynamicLevelSize\":true"));
     assertTrue(json.contains("\"compactionStyle\":\"UNIVERSAL\""));
     assertTrue(json.contains("\"periodicCompactionSeconds\":420"));

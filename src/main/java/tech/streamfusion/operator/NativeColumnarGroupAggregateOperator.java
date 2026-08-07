@@ -97,10 +97,10 @@ public class NativeColumnarGroupAggregateOperator
   }
 
   @Override
-  protected String[] checkpointRocksDBHandle() {
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
     return directRocksDBState()
-        ? Native.checkpointRocksDBGroupAggregator(handle)
-        : super.checkpointRocksDBHandle();
+        ? Native.checkpointRocksDBGroupAggregator(handle, snapshotDirectory)
+        : super.checkpointRocksDBHandle(snapshotDirectory);
   }
 
   @Override

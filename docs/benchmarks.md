@@ -74,12 +74,6 @@ throughput divided by Flink throughput within the same backend and mode.
 | q23 | **1.75×** | **2.05×** | **2.00×** | **2.93×** |
 | **geomean** | **1.47×** | **1.51×** | **1.83×** | **1.84×** |
 
-The disk columns' key enabler is deletion-vector mode: the retired Java state layer maintains the state
-tables' deletion vectors synchronously at each barrier, so every committed read is a raw parquet
-scan with exact predicate pushdown — no merge reads, no resident index — which is why the
-stateful shapes RocksDB pays per-record for show the largest disk-column wins (up to 8.9× on
-session windows).
-
 _Apple M1 Max; numbers are comparable only within a machine._
 
 ## Reproducing

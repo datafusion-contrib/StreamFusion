@@ -103,7 +103,7 @@ public final class RocksDBNativeStateSupport {
 
   /**
    * The operator's idle-state retention millis (0 = off): the store writes each row's last-write
-   * timestamp behind it, and the table compactor may drop rows past it during maintenance.
+   * timestamp behind it, and the RocksDB compaction filter may drop expired rows.
    */
   public long stateTtlMillis() {
     return stateTtlMillis;

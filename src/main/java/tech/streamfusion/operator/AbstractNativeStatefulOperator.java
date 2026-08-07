@@ -97,14 +97,14 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
     throw new UnsupportedOperationException("operator resolved RocksDB state without a create");
   }
 
-  protected String[] checkpointRocksDBHandle() {
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
     byte[][] partitions = snapshotRawPartitions();
     long deadline =
         carriesProcessingTimeTimer()
             ? processingTimeTimerDeadlineForSnapshot()
             : Long.MIN_VALUE;
     return Native.checkpointRocksDBSnapshotStore(
-        rocksdbSnapshotStoreHandle, partitions, deadline);
+        rocksdbSnapshotStoreHandle, partitions, deadline, snapshotDirectory);
   }
 
   protected final RocksDBNativeStateSupport resolveRocksDB(

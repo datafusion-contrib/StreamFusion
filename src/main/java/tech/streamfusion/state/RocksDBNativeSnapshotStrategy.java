@@ -1,7 +1,6 @@
 package tech.streamfusion.state;
 
 import java.io.DataInputStream;
-import java.nio.file.Path;
 import java.util.Arrays;
 import org.apache.flink.core.fs.CloseableRegistry;
 import org.apache.flink.runtime.checkpoint.CheckpointOptions;
@@ -49,8 +48,8 @@ import java.util.UUID;
  * checkpoint (they are small and pin the exact snapshot); the checkpoint's metadata document
  * carries the RocksDB snapshot id for restore.
  *
- * <p>The synchronous phase runs the native barrier commit and receives a hard-linked file listing;
- * the asynchronous phase only moves bytes. Bookkeeping follows {@code
+ * <p>The synchronous phase runs the native barrier commit and has RocksDB create its native
+ * hard-linked checkpoint directory; the asynchronous phase only moves bytes. Bookkeeping follows {@code
  * RocksIncrementalSnapshotStrategy}: only checkpoints confirmed complete are a reuse base, a file
  * re-uploaded by a later checkpoint drops out of the base (notification-delay race), and
  * complete/abort notifications prune the map.
@@ -74,7 +73,6 @@ final class RocksDBNativeSnapshotStrategy
   private final UUID backendUID;
   private final KeyGroupRange keyGroupRange;
   private final File checkpointLinkRoot;
-  private final File tableDirectory;
   private final boolean incrementalCheckpoints;
   private RocksDBNativeState nativeState;
 
@@ -85,9 +83,8 @@ final class RocksDBNativeSnapshotStrategy
 
   /** The in-flight snapshot's options and stream factory, stashed by the backend just before the
    * sync phase (task thread, so strictly ordered): the sync phase decides file reuse — which
-   * files become placeholders and which the async phase uploads — so it can hard-link exactly the
-   * files the upload will read; the async phase consumes that one decision, so the two can never
-   * drift. */
+   * files become placeholders and which the async phase uploads — from the already-pinned native
+   * checkpoint directory. */
   private CheckpointOptions currentOptions;
 
   private CheckpointStreamFactory currentStreamFactory;
@@ -96,12 +93,10 @@ final class RocksDBNativeSnapshotStrategy
       UUID backendUID,
       KeyGroupRange keyGroupRange,
       File checkpointLinkRoot,
-      File tableDirectory,
       boolean incrementalCheckpoints) {
     this.backendUID = backendUID;
     this.keyGroupRange = keyGroupRange;
     this.checkpointLinkRoot = checkpointLinkRoot;
-    this.tableDirectory = tableDirectory;
     this.incrementalCheckpoints = incrementalCheckpoints;
   }
 
@@ -117,11 +112,10 @@ final class RocksDBNativeSnapshotStrategy
 
   /**
    * Commits the native write buffer to the local table without creating Flink checkpoint state.
-   * Maintenance makes the new run readable through the deletion-vector raw-scan path; a second
-   * native call re-pins that maintained snapshot. A later barrier uploads these immutable files.
+   * A later barrier uses RocksDB's native checkpoint API to pin and upload the immutable files.
    */
   void flushForMemoryPressure() throws Exception {
-    nativeState.checkpoint();
+    nativeState.checkpoint("");
   }
 
   /** Seeds the reuse base from a restored checkpoint (single-handle, claim-style restore). */
@@ -159,7 +153,10 @@ final class RocksDBNativeSnapshotStrategy
   public RocksDBSnapshotResources syncPrepareResources(long checkpointId) throws Exception {
     long profileStart = System.nanoTime();
     File linkDir = new File(checkpointLinkRoot, "chk-" + checkpointId);
-    String[] manifest = nativeState.checkpoint();
+    if (linkDir.exists()) {
+      FileUtils.deleteDirectory(linkDir);
+    }
+    String[] manifest = nativeState.checkpoint(linkDir.getAbsolutePath());
     if (System.getenv("SF_STATE_PROFILE") != null) {
       System.err.printf(
           "SFPROF rocksdb barrier chk=%d sync_ms=%d%n",
@@ -183,10 +180,8 @@ final class RocksDBNativeSnapshotStrategy
     synchronized (uploadedFiles) {
       confirmedBase = confirmedBase(uploadedFiles, lastCompletedCheckpointId);
     }
-    // Decide reuse now and hard-link exactly the files the async upload will read, so they
-    // survive the compaction and GC of later barriers while the upload runs. Only
-    // FORWARD_BACKWARD sharing may reuse the confirmed base as placeholders (never read again —
-    // linking them re-linked the whole table each barrier); every other mode (savepoints,
+    // Decide reuse against the already-pinned native checkpoint directory. Only FORWARD_BACKWARD
+    // sharing may reuse the confirmed base as placeholders; every other mode (savepoints,
     // NO_SHARING, rescale-bound FORWARD) uploads everything. Meta documents re-upload every
     // checkpoint regardless.
     boolean mayReuse =
@@ -204,26 +199,9 @@ final class RocksDBNativeSnapshotStrategy
           reusable.put(rel, confirmed);
           continue;
         }
-        stage(rel, linkDir, false);
-      }
-      for (String rel : metaFiles) {
-        // CURRENT and MANIFEST can change after the barrier. Copy their bytes now; hard-linking
-        // them would let later writes mutate the checkpoint while its async upload is running.
-        stage(rel, linkDir, true);
       }
     }
     return new RocksDBSnapshotResources(snapshotToken, dataFiles, metaFiles, linkDir, reusable);
-  }
-
-  private void stage(String rel, File linkDir, boolean copy) throws IOException {
-    Path to = new File(linkDir, rel).toPath();
-    Files.createDirectories(to.getParent());
-    Path from = new File(tableDirectory, rel).toPath();
-    if (copy) {
-      Files.copy(from, to);
-    } else {
-      Files.createLink(to, from);
-    }
   }
 
   /**

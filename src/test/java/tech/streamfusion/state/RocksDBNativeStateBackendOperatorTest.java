@@ -75,6 +75,12 @@ class RocksDBNativeStateBackendOperatorTest {
       OperatorSubtaskState first = harness.snapshot(1, 1);
       IncrementalRemoteKeyedStateHandle firstHandle = nativeHandle(first);
       assertTrue(!firstHandle.getSharedState().isEmpty());
+      assertTrue(
+          firstHandle.getSharedState().stream()
+              .noneMatch(file -> file.getLocalPath().endsWith(".log"))
+              && firstHandle.getPrivateState().stream()
+                  .noneMatch(file -> file.getLocalPath().endsWith(".log")),
+          "Flink state writes disable the WAL, so checkpoints must not carry RocksDB WAL files");
       harness.notifyOfCompletedCheckpoint(1);
 
       harness.processElement(new StreamRecord<>(batch(allocator, row(1, 5))));
