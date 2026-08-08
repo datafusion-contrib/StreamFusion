@@ -1,32 +1,22 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.kafka.ConsumerPrefetch;
-import tech.streamfusion.kafka.KafkaConfigTranslator;
-import tech.streamfusion.kafka.KeyedKafkaBytesDeserialization;
-import tech.streamfusion.kafka.NativeKafka;
-import tech.streamfusion.kafka.NativeKafkaSource;
 import tech.streamfusion.format.FormatCodes;
 import tech.streamfusion.format.NativeFormatContext;
 import tech.streamfusion.format.NativeFormatOptions;
 import tech.streamfusion.format.NativeFormatProvider;
 import tech.streamfusion.format.NativeFormatProviders;
-import tech.streamfusion.format.NativeMessageDecoderFactory;
+import tech.streamfusion.kafka.KeyedKafkaBytesDeserialization;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.Random;
-import java.util.UUID;
 import java.util.regex.Pattern;
 import org.apache.calcite.rel.RelNode;
-import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.KafkaSourceBuilder;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.NoStoppingOffsetsInitializer;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.flink.connector.kafka.source.enumerator.subscriber.KafkaSubscriber;
 import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDeserializationSchema;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
 import org.apache.flink.table.types.logical.RowType;
@@ -36,75 +26,15 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 
 /**
- * Maps a Flink Kafka SQL table's options to a {@link NativeKafkaSource}, and decides whether the native
- * source can run it at all. The native path is taken only for the cases it faithfully supports — a JSON
- * value format, an explicit topic list, a supported startup mode, and consumer properties that
- * {@link KafkaConfigTranslator} can render into librdkafka. Anything else returns {@code false} from
- * {@link #isNativeKafka}, so the planner leaves Flink's own Kafka source in place (the fallback).
+ * Maps a Flink Kafka SQL table to a byte-oriented Flink source followed by native format decoding.
+ * Flink's Kafka connector remains the sole owner of consumer configuration, offsets, discovery,
+ * authentication, and checkpoint integration.
  */
 final class KafkaTables {
 
   private KafkaTables() {}
 
   private static final String PROPERTIES_PREFIX = "properties.";
-  // Native batch cap per poll (Java's max.poll.records has no librdkafka analog) and poll timeout. The
-  // timeout is the most a drained poll blocks before returning empty; at a bounded source's tail the
-  // reader does a couple of empty polls before concluding the split is finished, so a large timeout adds
-  // dead seconds there (a 1s timeout dominated a 200k-row bounded run). Keep it short — a steady stream
-  // with prefetch rarely waits on it (the queue is non-empty), so it only bounds tail latency.
-  private static final int MAX_RECORDS = 8192;
-  private static final long POLL_TIMEOUT_MILLIS = 100;
-  /** Whether the native Kafka source can faithfully run this scan's table. */
-  static boolean isNativeKafka(org.apache.calcite.rel.RelNode node) {
-    if (!(node instanceof StreamPhysicalTableSourceScan)) {
-      return false;
-    }
-    if (!nativeKafkaAvailable()) {
-      return false;
-    }
-    StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) node;
-    // The format decode runs inside the poll, so the connector holds typed batches and the source
-    // regenerates a pushed WATERMARK per split (max rowtime per batch, Flink's own min combination
-    // and idleness). Only a shape outside ScanWatermarkSpec's reproducible set stays on Flink.
-    if (ScanWatermarkSpec.of(scan) == ScanWatermarkSpec.UNSUPPORTED) {
-      return false;
-    }
-    return decodableAppendScan(scan) && supports(FilesystemTables.options(scan));
-  }
-
-  /** The Kafka-consumption prerequisites of the native source (on top of the decode ones). */
-  private static boolean supports(Map<String, String> options) {
-    if (!decodeCommon(options)) {
-      return false;
-    }
-    // Flink's source reader owns the exact group-offset error/auto-commit behavior and the
-    // latest-offset submission/savepoint boundary. Keep those modes on the shallow decode path,
-    // which still accelerates the format while retaining Flink's source implementation.
-    if (!nativeStartupModeSupported(options)) {
-      return false;
-    }
-    // The fused source's poll buckets carry only the value bytes; a keyed table stays on the
-    // decode-operator path, whose keyed edge carries both.
-    if (options.containsKey("key.format")) {
-      return false;
-    }
-    return KafkaConfigTranslator.translate(consumerProperties(options)).fallbackReason == null;
-  }
-
-  private static boolean nativeStartupModeSupported(Map<String, String> options) {
-    String mode = options.getOrDefault("scan.startup.mode", "group-offsets");
-    return "earliest-offset".equals(mode)
-        || "timestamp".equals(mode)
-        || "specific-offsets".equals(mode);
-  }
-
-  private static boolean nativeKafkaAvailable() {
-    try {
-      return NativeKafka.isLoaded();
-    } catch (LinkageError ignored) {
-      return false;
-    }
-  }
 
   /** Whether the table's value format sets Flink's {@code ignore-parse-errors} (skip malformed
    * messages instead of failing). */
@@ -112,52 +42,7 @@ final class KafkaTables {
     return "true".equalsIgnoreCase(NativeFormatOptions.option(options, "ignore-parse-errors"));
   }
 
-  /**
-   * Builds the native rdkafka source for a table {@link #isNativeKafka} accepted. The format decoder
-   * rides into the source so the split reader decodes on the fetch thread; {@code decodedType} is the
-   * (possibly projection-narrowed) type the decoder emits. {@code rowtimeIndex} names the watermark's
-   * rowtime column there (or -1): the reader stamps each batch's max rowtime as its record timestamp
-   * for the source operator's per-split watermark generators.
-   */
-  static NativeKafkaSource build(
-      Map<String, String> options,
-      NativeMessageDecoderFactory decoderFactory,
-      RowType decodedType,
-      int rowtimeIndex) {
-    OffsetsInitializer startingOffsets = mapStartupMode(options);
-    Properties props = configuredSourceProperties(options, startingOffsets);
-    Properties nativeProps = new Properties();
-    nativeProps.putAll(props);
-    // librdkafka requires group.id even for manual assign(), while Kafka's Java consumer does not.
-    // Keep this implementation detail out of the enumerator/source properties so it cannot make
-    // group-offset startup or checkpoint commits appear configured when the table omitted a group.
-    nativeProps.putIfAbsent(
-        "group.id", "streamfusion-native-" + UUID.randomUUID());
-    Map<String, String> librdkafka =
-        new HashMap<>(KafkaConfigTranslator.translate(nativeProps).config());
-    ConsumerPrefetch.tune(librdkafka);
-    String[] keys = librdkafka.keySet().toArray(new String[0]);
-    String[] values = new String[keys.length];
-    for (int i = 0; i < keys.length; i++) {
-      values[i] = librdkafka.get(keys[i]);
-    }
-    boolean bounded = "latest-offset".equals(options.get("scan.bounded.mode"));
-    return new NativeKafkaSource(
-        subscriber(options),
-        startingOffsets,
-        bounded ? OffsetsInitializer.latest() : new NoStoppingOffsetsInitializer(),
-        bounded ? Boundedness.BOUNDED : Boundedness.CONTINUOUS_UNBOUNDED,
-        props,
-        keys,
-        values,
-        MAX_RECORDS,
-        POLL_TIMEOUT_MILLIS,
-        decoderFactory,
-        decodedType,
-        rowtimeIndex);
-  }
-
-  // --- Shallow decode path (Phase 2/3): Flink's own KafkaSource consumes raw value bytes, a native
+  // Flink's own KafkaSource consumes raw value bytes, then a native
   // operator decodes them to Arrow. Insert-only formats (JSON/CSV/raw/bare-Avro/Confluent-Avro/protobuf)
   // route via isNativeKafkaDecode; CDC changelog formats (the JSON dialects and debezium-avro-confluent)
   // route via isCdcDecode, gated to the cases reproduced identically to Flink.
@@ -192,7 +77,7 @@ final class KafkaTables {
       return false;
     }
     // Exactly one of topic / topic-pattern (the factory enforces that); discovery for a pattern is
-    // the reused enumerator's job, so both forms work on both native paths.
+    // Flink's enumerator owns discovery for a pattern, so both forms work.
     if (options.get("topic") == null && options.get("topic-pattern") == null) {
       return false;
     }
@@ -202,7 +87,7 @@ final class KafkaTables {
     return mapStartupMode(options) != null && boundedModeSupported(options);
   }
 
-  /** Whether the shallow native-decode path can run this scan for an <em>insert-only</em> value format
+  /** Whether the native-decode path can run this scan for an <em>insert-only</em> value format
    * (JSON/CSV/raw/bare-Avro/protobuf — codes 0/2/3/4/5): Flink consumes bytes, the native operator decodes
    * them to Arrow. CDC changelog formats are handled separately by {@link #isCdcDecode}. */
   static boolean isNativeKafkaDecode(RelNode node) {
@@ -212,15 +97,14 @@ final class KafkaTables {
     StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) node;
     // The decode operator runs downstream of Flink's source and regenerates no watermarks, so a
     // watermarked table (the WATERMARK clause is pushed into the Kafka scan — no assigner node
-    // remains) must stay on the host; only the native source reproduces per-split source watermarks.
+    // remains) must stay on the host.
     if (ScanWatermarkSpec.of(scan) != null) {
       return false;
     }
     return decodableAppendScan(scan);
   }
 
-  /** The format/option checks shared by the native source and the decode-operator path (which differ
-   * only in who consumes and whether a pushed watermark can be regenerated). */
+  /** The format and option checks for the decode-operator path. */
   private static boolean decodableAppendScan(StreamPhysicalTableSourceScan scan) {
     Map<String, String> options = FilesystemTables.options(scan);
     if (!decodeCommon(options)) {
@@ -349,9 +233,7 @@ final class KafkaTables {
 
   /**
    * Why a watermarked, otherwise-decodable insert-only Kafka table stayed on Flink, or null when the
-   * scan isn't such a table. Checked after the native-source branch (which regenerates supported
-   * watermark shapes per split), so a reason is produced only when the shape is outside the
-   * reproducible set or the native source couldn't take the table at all.
+   * scan isn't such a table.
    */
   static String appendWatermarkFallback(RelNode node) {
     return watermarkFallback(node, false);
@@ -385,13 +267,8 @@ final class KafkaTables {
       return "kafka CDC decode: the table's WATERMARK is pushed into the scan, and the CDC decode"
           + " runs downstream of the source, which cannot regenerate it — the table stays on Flink";
     }
-    if (watermark == ScanWatermarkSpec.UNSUPPORTED) {
-      return "kafka source: the pushed WATERMARK isn't a shape the native source reproduces (bounded"
-          + " out-of-orderness over a physical rowtime or TO_TIMESTAMP_LTZ(col, 3), periodic emit,"
-          + " no alignment) — the table stays on Flink";
-    }
-    return "kafka decode: only the native source regenerates the pushed WATERMARK, and this table"
-        + " couldn't take it — the table stays on Flink";
+    return "kafka decode: the table's WATERMARK is pushed into the scan, and native decoding runs"
+        + " downstream of Flink's source, which cannot regenerate it — the table stays on Flink";
   }
 
   /** Builds Flink's own {@link KafkaSource} producing each record's raw value as a {@code byte[]} (no
@@ -419,17 +296,7 @@ final class KafkaTables {
     return builder.build();
   }
 
-  /** The subscriber: an explicit topic list, or the pattern subscriber for {@code topic-pattern} —
-   * discovery runs in the reused enumerator either way, the reader only ever sees concrete splits. */
-  private static KafkaSubscriber subscriber(Map<String, String> options) {
-    String topic = options.get("topic");
-    return topic != null
-        ? KafkaSubscriber.getTopicListSubscriber(Arrays.asList(topic.split(";")))
-        : KafkaSubscriber.getTopicPatternSubscriber(
-            Pattern.compile(options.get("topic-pattern")));
-  }
-
-  /** Whether {@code scan.bounded.mode} is one the native source handles (unbounded or latest-offset). */
+  /** Whether {@code scan.bounded.mode} is one the byte-oriented source handles. */
   private static boolean boundedModeSupported(Map<String, String> options) {
     String mode = options.get("scan.bounded.mode");
     return mode == null || "unbounded".equals(mode) || "latest-offset".equals(mode);
@@ -455,27 +322,6 @@ final class KafkaTables {
     // KafkaSourceBuilder defaults auto commit off but preserves an explicit user value. This is
     // observable for group-offset startup tests and external consumer-offset monitoring.
     props.putIfAbsent("enable.auto.commit", "false");
-    return props;
-  }
-
-  /** Applies the overrides {@link KafkaSourceBuilder} makes when it builds a source. */
-  static Properties configuredSourceProperties(
-      Map<String, String> options, OffsetsInitializer startingOffsets) {
-    Properties props = consumerProperties(options);
-    props.setProperty(
-        "auto.offset.reset",
-        startingOffsets
-            .getAutoOffsetResetStrategy()
-            .name()
-            .toLowerCase(Locale.ROOT));
-    if (!props.containsKey("group.id")) {
-      props.setProperty("commit.offsets.on.checkpoint", "false");
-    }
-    props.putIfAbsent(
-        "client.id.prefix",
-        props.containsKey("group.id")
-            ? props.getProperty("group.id")
-            : "KafkaSource-" + new Random().nextLong());
     return props;
   }
 
@@ -563,18 +409,4 @@ final class KafkaTables {
     return null;
   }
 
-  /**
-   * The native rdkafka source consumes and decodes in one place: the installed format provider's
-   * decoder runs inside the poll, so the source emits typed batches — and, because it therefore
-   * holds decoded rowtimes, it regenerates a pushed WATERMARK per split (Flink's own min
-   * combination and idleness over batch-max timestamps).
-   */
-  static RelNode substituteSource(StreamPhysicalTableSourceScan scan, PlanContext ctx) {
-    return new StreamPhysicalNativeKafkaSource(
-        scan.getCluster(),
-        scan.getTraitSet(),
-        scan.getRowType(),
-        FilesystemTables.options(scan),
-        ScanWatermarkSpec.of(scan));
-  }
 }

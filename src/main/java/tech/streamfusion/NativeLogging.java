@@ -6,10 +6,9 @@ import org.slf4j.LoggerFactory;
 /**
  * Receives the native libraries' log stream. Every StreamFusion native library installs a Rust
  * {@code log}-facade bridge in its {@code JNI_OnLoad} that upcalls {@link #log} from whatever
- * thread produced the event (librdkafka's own broker threads included, attached as daemons), so
- * native and librdkafka logging follows the deployment's SLF4J configuration instead of being
- * dropped. Level values follow the Rust {@code log} crate; the logger name is the Rust log target
- * with {@code ::} rewritten to {@code .} (librdkafka's stream arrives under {@code librdkafka}).
+ * thread produced the event (native threads are attached as daemons), so native logging follows
+ * the deployment's SLF4J configuration instead of being dropped. Level values follow the Rust
+ * {@code log} crate; the logger name is the Rust log target with {@code ::} rewritten to {@code .}.
  */
 public final class NativeLogging {
 

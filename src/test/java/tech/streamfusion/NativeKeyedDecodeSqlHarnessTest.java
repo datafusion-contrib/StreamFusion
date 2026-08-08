@@ -28,12 +28,10 @@ class NativeKeyedDecodeSqlHarnessTest {
   @org.junit.jupiter.api.BeforeEach
   void pinDecodePath() {
     // The fused source declines keyed tables; pin the decode path so the parity run exercises it.
-    System.setProperty("streamfusion.operator.kafkaSource.enabled", "false");
   }
 
   @org.junit.jupiter.api.AfterEach
   void unpinDecodePath() {
-    System.clearProperty("streamfusion.operator.kafkaSource.enabled");
   }
 
   @Test

@@ -78,9 +78,7 @@
                                         <exclude>tech/streamfusion/planner/KafkaTables*.class</exclude>
                                         <exclude>tech/streamfusion/planner/ProtobufDescriptors*.class</exclude>
                                         <exclude>tech/streamfusion/planner/NativeKafkaDecodeExecNode*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/NativeKafkaSourceExecNode*.class</exclude>
                                         <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaSource*.class</exclude>
                                         <exclude>tech/streamfusion/planner/FlussTables*.class</exclude>
                                         <exclude>tech/streamfusion/planner/NativeFlussSourceExecNode*.class</exclude>
                                         <exclude>tech/streamfusion/planner/StreamPhysicalNativeFlussSource*.class</exclude>

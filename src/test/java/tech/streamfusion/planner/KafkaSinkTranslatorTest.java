@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import tech.streamfusion.format.EncodeFormat;
 import java.util.Map;
 import org.apache.flink.connector.base.DeliveryGuarantee;
+import org.apache.flink.connector.kafka.sink.TransactionNamingStrategy;
 import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.RowType;
@@ -34,8 +35,6 @@ class KafkaSinkTranslatorTest {
     assertEquals(DeliveryGuarantee.EXACTLY_ONCE, result.planned().deliveryGuarantee);
     assertEquals("orders", result.planned().transactionalIdPrefix);
     assertEquals("lz4", result.planned().producerProperties.getProperty("compression.type"));
-    assertEquals(
-        "lz4", result.planned().nativeProducerConfig.nativeConfig().get("compression.type"));
     assertEquals(3, result.planned().parallelism);
   }
 
@@ -172,7 +171,22 @@ class KafkaSinkTranslatorTest {
   }
 
   @Test
-  void fallsBackWhenAProducerPropertyCannotRunNatively() {
+  void leavesPoolingTransactionNamingToFlinksKafkaSink() {
+    KafkaSinkTranslator.Result result =
+        KafkaSinkTranslator.translate(
+            Map.of(
+                "topic", "output",
+                "properties.bootstrap.servers", "broker:9092",
+                "format", "json",
+                "sink.delivery-guarantee", "exactly-once",
+                "sink.transactional-id-prefix", "orders",
+                "sink.transaction-naming-strategy", "pooling"));
+    assertNull(result.fallbackReason);
+    assertEquals(TransactionNamingStrategy.POOLING, result.planned().transactionNamingStrategy);
+  }
+
+  @Test
+  void passesProducerPropertiesToFlinksKafkaSinkUnchanged() {
     KafkaSinkTranslator.Result result =
         KafkaSinkTranslator.translate(
             Map.of(
@@ -182,8 +196,10 @@ class KafkaSinkTranslatorTest {
                 "format", "json",
                 "sink.delivery-guarantee", "exactly-once",
                 "sink.transactional-id-prefix", "orders"));
-    assertTrue(result.fallbackReason != null);
-    assertTrue(result.fallbackReason.contains("interceptor.classes"));
+    assertNull(result.fallbackReason);
+    assertEquals(
+        "com.example.AuditInterceptor",
+        result.planned().producerProperties.getProperty("interceptor.classes"));
   }
 
   private static void assertFallback(Map<String, String> options, String expected) {

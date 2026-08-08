@@ -25,7 +25,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.types.logical.RowType;
 
 /**
- * Zero-input exec node for the shallow native-decode Kafka path. It chains two transformations: Flink's
+ * Zero-input exec node for the native-decode Kafka path. It chains two transformations: Flink's
  * {@code KafkaSource} producing raw value {@code byte[]}s, then a {@link NativeBytesDecodeOperator} that
  * batches the bytes and decodes them natively to Arrow. The result starts the pipeline columnar without
  * Flink ever materializing a {@code RowData} for the message.
@@ -39,7 +39,7 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
   // the rest of the pipeline uses).
   private static final int BATCH_SIZE = 8192;
   // Longest a buffered record waits before a partial batch flushes — the latency bound the batching
-  // trades against per-batch decode efficiency (the native Kafka source's poll timeout is the same
+  // trades against per-batch decode efficiency (Flink's Kafka source poll cadence is the same
   // order, so both ingest paths cap tail latency alike).
   private static final long FLUSH_INTERVAL_MILLIS = 100;
   private final RowType outputType;

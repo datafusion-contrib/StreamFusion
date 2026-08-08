@@ -39,8 +39,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # A cold debug build of the native library (DataFusion + Arrow + bundled
-      # librdkafka) plus the Maven repository outgrows the runner's default free
+      # A cold debug build of the native library (DataFusion + Arrow) plus the
+      # Maven repository outgrows the runner's default free
       # space; drop the preinstalled toolchains we never touch.
       - name: Free disk space
         run: |

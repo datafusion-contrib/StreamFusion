@@ -43,18 +43,6 @@ import org.testcontainers.utility.DockerImageName;
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class NativeAvroDecodeSqlHarnessTest {
 
-  @org.junit.jupiter.api.BeforeEach
-  void pinDecodePath() {
-    // These tests cover the shallow decode operator; with the native rdkafka source now on by
-    // default it would otherwise take the JSON/Avro/protobuf tables, testing the wrong path.
-    System.setProperty("streamfusion.operator.kafkaSource.enabled", "false");
-  }
-
-  @org.junit.jupiter.api.AfterEach
-  void unpinDecodePath() {
-    System.clearProperty("streamfusion.operator.kafkaSource.enabled");
-  }
-
   private static final int MESSAGES = 2_000;
 
   @Test

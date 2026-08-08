@@ -34,10 +34,9 @@ Native coverage is broad — most of the streaming SQL surface:
 - **Connectors:** a Parquet file source (native Arrow scan, local paths) and a Parquet sink that
   writes to any filesystem Flink supports (`s3:`/`gs:`/`abfs:`/`hdfs:`/…, `PARTITIONED BY` and
   partition commit included — native encoding drained into Flink's own recoverable streams); Kafka
-  source ingest for JSON/CSV/raw/Avro/protobuf and Debezium/OGG CDC — native rdkafka consumes and
-  the independently installed format artifact decodes inside the same poll, invoked through a
-  versioned C ABI it hands the connector at runtime (never linked). Watermarked Kafka tables remain
-  on Flink for now.
+  source ingest and sink output for JSON/CSV/raw/Avro/protobuf and supported CDC formats — Flink's
+  unmodified Kafka clients own consumption, production, offsets, and transactions while Rust
+  performs the format serialization/deserialization. Watermarked Kafka tables remain on Flink.
 - **UDFs:** a Flink `ScalarFunction` the expression engine can't implement itself is invoked over
   Arrow columns by a native→JVM upcall (Comet's `JvmScalarUdfExpr` pattern), one JNI crossing per
   batch, so the pipeline stays native *through* the UDF and the result is byte-identical.
@@ -89,15 +88,13 @@ the bounded job's final transaction commit. The benchmark profile disables Strea
 same-JVM handle-table shuffle, so both engines pay their normal record serialization costs and
 StreamFusion uses the same Arrow IPC format it uses across TaskManagers.
 
-On StreamFusion, Kafka poll/decode, every supported operator, sink key/value/tombstone
-serialization, and record production all stay native: librdkafka produces each query result inside
-the checkpoint epoch's Kafka transaction, and Flink's stock Java committer commits it after the
-checkpoint completes, preserving the host connector's exactly-once recovery exactly. The native
-plan — including the native-producer sink shape — is asserted for every cell. q6 is omitted because
+On StreamFusion, Flink's Kafka source and sink retain their normal client and exactly-once paths;
+Rust accelerates decode, every supported operator, and sink key/value/tombstone serialization. q6 is omitted because
 Flink SQL itself cannot run it ([analysis](.claude/wontdos/39-nexmark-q6-exclusion.md)).
 
-The table below predates the handle-table exclusion and will be refreshed by the next benchmark
-run; do not compare new results against it as if the methodology were identical. These are Apple
+The table below predates both the handle-table exclusion and the switch back to Flink-owned Kafka
+clients. It will be refreshed by the next benchmark run; do not compare new results against it as
+if the methodology were identical. These are Apple
 M1 Max release+`mimalloc` results at parallelism 4, best of two measured runs,
 across all four backend/mode combinations (memory columns measured 2026-08-02, disk columns
 2026-07-28). The memory columns compare Flink's

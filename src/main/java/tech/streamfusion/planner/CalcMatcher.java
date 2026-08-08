@@ -68,23 +68,6 @@ final class CalcMatcher {
             encoded.remapInputs(pruned.remap));
       }
     }
-    if (ctx.kafkaExtension() && pruned != null && input instanceof StreamPhysicalNativeKafkaSource) {
-      // The fully-native rdkafka source decodes in Rust too: push the projection in so the in-Rust
-      // decode builds only the read columns/fields straight from the bytes (the columnar-source analog
-      // of pruning the entry transpose). Only for formats whose decoder honors a pruned schema.
-      StreamPhysicalNativeKafkaSource source = (StreamPhysicalNativeKafkaSource) input;
-      // A watermarked source must keep decoding its rowtime column (the per-split watermark reads
-      // it), so a projection that drops it is not pushed — the Calc still runs natively, unpruned.
-      if (KafkaTables.decodeHonorsProjection(source.options())
-          && source.projectionKeepsRowtime(pruned.inputType)) {
-        return new StreamPhysicalNativeCalc(
-            calc.getCluster(),
-            calc.getTraitSet(),
-            source.withProjection(pruned.inputType),
-            calc.getRowType(),
-            encoded.remapInputs(pruned.remap));
-      }
-    }
     if (pruned != null && !(input instanceof ColumnarOutput)) {
       // A rowwise input is about to be transposed: prune that entry transpose to the read fields.
       boolean carryRowKind =

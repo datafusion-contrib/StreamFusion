@@ -14,13 +14,8 @@ managed-memory size, fraction, and consumer-weight settings do not cap StreamFus
 
 The shared cap currently covers:
 
-- native operator state and DataFusion working-memory reservations;
-- Arrow buffers allocated by the shared Arrow C Data Interface allocator;
-- each native Kafka source subtask's librdkafka consumer queue, reserving its configured
-  `queued.max.messages.kbytes` maximum; and
-- each native exactly-once Kafka producer's librdkafka queue, reserving its configured
-  `queue.buffering.max.kbytes` maximum. An active producer and a producer warming for the next
-  checkpoint each hold their own reservation while both exist.
+- native operator state and DataFusion working-memory reservations; and
+- Arrow buffers allocated by the shared Arrow C Data Interface allocator.
 
 Reservations are acquired before the corresponding native capacity is made available and are
 released with their owner. Arrow allocations are charged and released at their actual allocation
@@ -52,15 +47,10 @@ can help.
 Size `taskmanager.memory.task.off-heap.size` for the peak aggregate across every StreamFusion task
 running in one TaskManager:
 
-- `-Dstreamfusion.kafka.prefetch-mb` controls the native Kafka source queue per source subtask
-  (256 MiB by default, capped by librdkafka at just under 2 GiB).
-- A native exactly-once Kafka sink mirrors the Java producer's `buffer.memory` into the native
-  producer queue (32 MiB by default) per live producer. Allow for two during producer handover.
 - Add peak Arrow in-flight buffers plus native operator state and DataFusion working memory.
 
-For example, four Kafka source subtasks alone reserve 1 GiB at the default prefetch size. Treat
-this as a starting point, then use the live high-water mark to include the query's Arrow and
-operator working set.
+Flink's Kafka consumer and producer buffers are Java-client memory and use Flink's normal JVM
+memory model. Use the native high-water mark to size the Arrow and operator working set.
 
 ## Metrics
 

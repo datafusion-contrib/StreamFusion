@@ -10,8 +10,8 @@ Flink's normal configuration surface.
   lone cheap `filter` on a row source, which can't earn back the transpose round-trip). A switch
   covers every shape that reaches the same native operator — e.g. `groupAggregate` also covers the
   two-phase global half, `windowRank` also covers window deduplication. All default on.
-  `kafkaSource` (and `flussSource`) only activate once the matching connector extension and format
-  JAR are installed; otherwise the plan falls back to Flink's own connector path.
+  Optional connector operators only activate once the matching connector extension and format JAR
+  are installed; otherwise the plan falls back to Flink's own path.
 - **`-Dstreamfusion.expression.<NAME>.allowIncompatible=true`** — opt into the faster pure-Rust
   path for expressions that otherwise use a byte-exact JVM upcall or fall back (`UPPER`/`LOWER`,
   `REGEXP_EXTRACT`, `DATE_FORMAT`/`EXTRACT` over `TIMESTAMP_LTZ`, `ROUND` on float, transcendental
@@ -34,8 +34,7 @@ exhaustion behavior, RocksDB flushing, sizing, and metrics.
 
 - **`taskmanager.memory.task.off-heap.size`** — the single TaskManager-wide authority for
   StreamFusion memory. It must be greater than zero. Native operator state and DataFusion working
-  memory, Arrow FFI buffers, native Kafka consumer queues, and native exactly-once producer queues
-  all reserve from this shared cap. A denied reservation fails with a
+  memory and Arrow FFI buffers reserve from this shared cap. A denied reservation fails with a
   `NativeMemoryLimitException` naming this normal Flink setting.
 - **`-Dstreamfusion.state.rocksdb.write-buffer-mb`** (default 64) — force a local RocksDB checkpoint
   when native state reaches this pressure threshold. StreamFusion may lower the effective threshold
@@ -46,22 +45,14 @@ exhaustion behavior, RocksDB flushing, sizing, and metrics.
 Size `taskmanager.memory.task.off-heap.size` for the peak aggregate of all StreamFusion consumers in
 one TaskManager, not per operator:
 
-- **`-Dstreamfusion.kafka.prefetch-mb`** (default 256, capped at 2 GiB) — the native Kafka source's
-  off-heap prefetch budget, **per source subtask**.
-- The native Kafka **sink** mirrors the Java client's `buffer.memory` (default 32 MiB) **per live
-  producer**. Allow for an active producer and the next checkpoint's warming producer during
-  handover.
 - Arrow FFI buffers are process-wide and bounded by in-flight batches.
 - Native operator state and DataFusion working reservations vary with the query. The in-memory state
   backend fails when it cannot reserve more. The RocksDB backend flushes to local files at its
   threshold or when shared headroom is low; an allocation that still cannot
   reserve from the shared cap fails normally.
 
-Worked example: 4 Kafka source subtasks and 2 sink subtasks on one TaskManager at the defaults need
-at least `4 × 256 MiB + 2 × 32 MiB ≈ 1.1 GiB` of task off-heap before Arrow's in-flight batches and
-native operator state, and temporarily another 64 MiB if both sinks have a warming producer. The
-Java Kafka producer's own heap allocations remain under Flink/JVM heap sizing; only the native
-exactly-once producer path is charged here.
+Kafka client buffers are owned by Flink's Java source/sink and remain under the normal Flink/JVM
+memory model; StreamFusion charges only its Arrow batches and native codec/operator work here.
 
 ### Live metrics
 

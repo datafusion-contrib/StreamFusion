@@ -70,7 +70,6 @@ class NativeKafkaSinkIntegrationTest {
 
   @Test
   void keepsNativeKafkaInputColumnarThroughExactlyOnceOutput() throws Exception {
-    System.setProperty("streamfusion.operator.kafkaSource.enabled", "true");
     try (KafkaContainer kafka =
         new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
             .withEnv("KAFKA_TRANSACTION_MAX_TIMEOUT_MS", "7200000")) {
@@ -117,13 +116,11 @@ class NativeKafkaSinkIntegrationTest {
       assertEquals(rows, committed.size());
       assertEquals(rows, new HashSet<>(committed).size());
     } finally {
-      System.clearProperty("streamfusion.operator.kafkaSource.enabled");
     }
   }
 
   @Test
   void finishesEmptyAndStartAtStopBoundedPartitions() throws Exception {
-    System.setProperty("streamfusion.operator.kafkaSource.enabled", "true");
     try (KafkaContainer kafka =
         new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
       kafka.start();
@@ -140,13 +137,11 @@ class NativeKafkaSinkIntegrationTest {
       produceJson(brokers, startAtStopTopic, 10);
       assertBoundedScanEmpty(brokers, startAtStopTopic, "latest-offset");
     } finally {
-      System.clearProperty("streamfusion.operator.kafkaSource.enabled");
     }
   }
 
   @Test
   void restoresNativeKafkaInputAcrossExactlyOnceFailover() throws Exception {
-    System.setProperty("streamfusion.operator.kafkaSource.enabled", "true");
     FAILED_ONCE.set(false);
     try (KafkaContainer kafka =
         new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
@@ -211,14 +206,12 @@ class NativeKafkaSinkIntegrationTest {
       assertEquals(rows, committed.size(), "replayed source records must remain invisible");
       assertEquals(rows, new HashSet<>(committed).size(), "restored source records must be unique");
     } finally {
-      System.clearProperty("streamfusion.operator.kafkaSource.enabled");
     }
   }
 
   @Test
   void restoresNativeKafkaInputIntoCheckpointedFilesystemSink(@TempDir Path outputDirectory)
       throws Exception {
-    System.setProperty("streamfusion.operator.kafkaSource.enabled", "true");
     FAILED_ONCE.set(false);
     try (KafkaContainer kafka =
         new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
@@ -285,7 +278,6 @@ class NativeKafkaSinkIntegrationTest {
       assertEquals(rows, output.size(), "checkpointed sink must not retain replayed records");
       assertEquals(rows, new HashSet<>(output).size(), "restored source records must be unique");
     } finally {
-      System.clearProperty("streamfusion.operator.kafkaSource.enabled");
     }
   }
 

@@ -116,9 +116,6 @@ nav:
       - String copy reduction: optimizations/string-copy-reduction.md
       - Projection pruning into the transpose: optimizations/projection-pruning-transpose.md
       - Batched native decode: optimizations/batched-native-decode.md
-      - Native rdkafka source: optimizations/native-rdkafka-source.md
-      - Decode inside the poll (driver ABI): optimizations/decode-inside-poll-abi.md
-      - Kafka consume fast path: optimizations/kafka-consume-fast-path.md
       - Decoder projection pushdown: optimizations/decoder-projection-pushdown.md
       - SIMD JSON decode: optimizations/simd-json-decode.md
       - DataFusion file scans: optimizations/datafusion-file-scans.md
@@ -138,7 +135,6 @@ nav:
       - Identity expression passthroughs: optimizations/identity-expression-passthroughs.md
       - Parquet sink file coalescing: optimizations/parquet-sink-file-coalescing.md
       - Batch-native Kafka JSON serialization: optimizations/batch-native-kafka-json-serialization.md
-      - Native exactly-once Kafka production: optimizations/native-exactly-once-kafka-production.md
       - DATE_FORMAT pattern cache: optimizations/date-format-pattern-cache.md
       - Kafka timestamps as fixed JSON syntax: optimizations/kafka-timestamp-fixed-json.md
       - Post-exchange batch coalescing: optimizations/post-exchange-coalescing.md

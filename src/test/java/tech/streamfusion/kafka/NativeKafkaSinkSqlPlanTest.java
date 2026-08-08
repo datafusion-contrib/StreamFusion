@@ -40,7 +40,8 @@ class NativeKafkaSinkSqlPlanTest {
 
     assertTrue(scan.substitutions() > 0, scan::explainSummary);
     assertTrue(plan.contains("NativeKafkaSink"), plan);
-    assertTrue(plan.contains("native-kafka-exactly-once-sink"), plan);
+    assertTrue(plan.contains("flink-kafka-sink: Writer"), plan);
+    assertTrue(plan.contains("flink-kafka-sink: Committer"), plan);
   }
 
   @Test
@@ -64,8 +65,8 @@ class NativeKafkaSinkSqlPlanTest {
             "INSERT INTO output SELECT * FROM src", ExplainDetail.JSON_EXECUTION_PLAN);
 
     assertTrue(scan.substitutions() > 0, scan::explainSummary);
-    // Without exactly-once, the sink keeps the encode-only shape feeding Flink's own KafkaSink.
-    assertFalse(plan.contains("native-kafka-exactly-once-sink"), plan);
+    assertTrue(plan.contains("native-kafka-serialization"), plan);
+    assertTrue(plan.contains("flink-kafka-sink: Writer"), plan);
   }
 
   /**

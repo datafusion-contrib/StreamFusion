@@ -23,7 +23,7 @@ chrono-tz = "0.10"
 # REGEXP_EXTRACT (opt-in, allowIncompatible): Rust's regex engine differs from Java's, so the JVM
 # encoder gates it. Already in the tree transitively via datafusion; pinned here for direct use.
 regex = "1"
-# The logging facade the whole native tree (rdkafka and datafusion included) emits through; the
+# The logging facade the whole native tree (including DataFusion) emits through; the
 # JNI_OnLoad-installed bridge forwards it to the host's SLF4J. Already in the tree transitively;
 # pinned here for direct use.
 log = "0.4"
@@ -62,17 +62,6 @@ datafusion = { version = "54.0.0", default-features = false, features = [
   "recursive_protection",
   "sql",
 ] }
-# Native Kafka consumer, behind the `kafka` feature so the normal build pulls in no Kafka code at all.
-# rdkafka-sys builds and statically links its bundled librdkafka (mklove build, needs only a C
-# toolchain + make + perl — no cmake, no system librdkafka, no pkg-config), so any dev who clones the
-# repo can build it. The sync BaseConsumer is enough, so tokio is off; libz gives gzip-topic support
-# without a system dependency. `ssl-vendored` statically builds OpenSSL for the same self-contained
-# reason: it lights up the SSL/SASL_SSL protocols plus the SCRAM-SHA-256/512 and OAUTHBEARER
-# mechanisms librdkafka gates on OpenSSL (PLAIN is always built in). SASL/GSSAPI is deliberately
-# excluded — it would drag source builds of cyrus-sasl and MIT krb5 into every build environment,
-# and Kerberos needs host configuration no portable artifact can carry; the planner declines it to
-# Flink instead.
-rdkafka = { version = "0.36", default-features = false, features = ["libz-static", "ssl-vendored"], optional = true }
 # Native Fluss log-table reader, behind the `fluss` feature. Pinned to a temporary fork of
 # apache/fluss-rust whose only change is bumping its arrow dependency to align with this workspace's
 # arrow version (resolving to 58.3.0 in Cargo.lock), so the batches the reader hands back are this
@@ -108,10 +97,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 # Also parses Avro writer schemas for the decode framing walk; in the tree via arrow-avro anyway.
 serde_json = "1"
 bytes = { version = "1", optional = true }
-# Opt-in mimalloc (see the `mimalloc` feature): librdkafka allocates one op per consumed message
-# on the broker thread and frees it on the app thread; the system allocator makes that cross-thread
-# malloc/free pattern the top cost on both threads (macOS even madvises pages back mid-loop), and
-# the changelog operators measurably churn the system allocator too.
+# Opt-in mimalloc (see the `mimalloc` feature) for native operator allocation churn.
 libmimalloc-sys = { version = "0.1", optional = true }
 
 [build-dependencies]
@@ -120,11 +106,9 @@ cc = "1"
 
 [features]
 # A core build carries no connector-specific code. Maven's development test build explicitly enables
-# Kafka, while deployable connector JARs compile and ship their own feature-specific DSO.
-# `kafka-bench` additionally builds the throwaway whole-topic benchmark consumer.
+# Kafka serialization, while deployable connector JARs compile and ship their own feature-specific DSO.
 default = []
-kafka = ["dep:rdkafka"]
-kafka-bench = ["kafka", "json"]
+kafka = []
 fluss = ["dep:fluss_rs"]
 parquet = ["dep:parquet", "datafusion/parquet"]
 json = []
@@ -136,7 +120,7 @@ protobuf = []
 # connector: Flink's RocksDB backend selection activates it without routing state access through
 # Java or JNI.
 rocksdb-state = ["dep:rocksdb", "dep:serde", "dep:bytes"]
-# Rebind the C allocator to mimalloc for everything linked into THIS library (librdkafka included),
+# Rebind the C allocator to mimalloc for everything linked into THIS library,
 # via link-time symbol aliases emitted by build.rs. Library-scoped: the hosting JVM process keeps
 # its own allocator, so this carries none of the risk of a process-wide malloc override (a zone-swap
 # variant was tried and crashed under JVM thread churn — divergences/19). Pinned to the mimalloc v2

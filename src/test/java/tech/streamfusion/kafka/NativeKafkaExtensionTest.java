@@ -2,6 +2,7 @@ package tech.streamfusion.kafka;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import tech.streamfusion.format.FormatCodes;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -9,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class NativeKafkaExtensionTest {
 
   @Test
-  void loadsTheKafkaJniFacadeFromTheDevelopmentLibrary() {
-    assertTrue(NativeKafka.isLoaded());
+  void loadsTheKafkaSerializationFacadeFromTheDevelopmentLibrary() {
+    assertTrue(NativeKafka.encodeFormatSupported(FormatCodes.JSON));
   }
 }

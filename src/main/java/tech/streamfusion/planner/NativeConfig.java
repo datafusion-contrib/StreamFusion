@@ -41,11 +41,7 @@ public final class NativeConfig {
    * Whether a specific operator may be substituted ({@code streamfusion.operator.<name>.enabled}) — the
    * operator analog of {@link #allowsIncompatible}, for keeping an operator on the host where native
    * does not pay (e.g. a lone row-source filter that measures below 1×), mirroring Comet's {@code
-   * spark.comet.exec.<op>.enabled}. All operators default on — including {@code kafkaSource}, since
-   * the consume fast path made the native rdkafka source decisively faster than the decode path
-   * (divergences/19) and it is the only Kafka path that regenerates a pushed-down watermark; the
-   * planner loads the Kafka extension before substituting the source, so a core-only deployment
-   * falls back cleanly without carrying rdkafka.
+   * spark.comet.exec.<op>.enabled}. All operators default on.
    */
   public static boolean operatorEnabled(String operator) {
     return Boolean.parseBoolean(
@@ -118,18 +114,6 @@ public final class NativeConfig {
    */
   public static boolean shareSources() {
     return Boolean.parseBoolean(System.getProperty("streamfusion.plan.shareSources", "true"));
-  }
-
-  /**
-   * The native Kafka source's prefetch budget per source subtask, in mebibytes
-   * ({@code streamfusion.kafka.prefetch-mb}, default 256) — rendered into librdkafka's
-   * {@code queued.max.messages.kbytes}, whose 2 GiB ceiling clamps larger values. The native source
-   * reserves this maximum from Flink task off-heap memory: a backpressured subtask on a deep topic
-   * can fill its consumer queue to this cap, and a TaskManager running several Kafka source
-   * subtasks holds one budget per subtask.
-   */
-  public static int kafkaPrefetchMb() {
-    return Integer.getInteger("streamfusion.kafka.prefetch-mb", 256);
   }
 
   /**

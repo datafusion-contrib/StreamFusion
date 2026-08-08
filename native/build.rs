@@ -1,7 +1,7 @@
 fn main() {
     // The `mimalloc` feature rebinds the C allocator for everything linked INTO this library —
-    // librdkafka's per-message op calloc/free (unreachable from a Rust #[global_allocator]) and the
-    // Rust side's own allocations — by aliasing the libc allocation symbols to mimalloc's at link
+    // including C dependencies unreachable from a Rust #[global_allocator] and the Rust side's own
+    // allocations — by aliasing the libc allocation symbols to mimalloc's at link
     // time. The binding is resolved inside the library only: nothing is exported, no malloc zone is
     // registered, and the hosting process (a Flink JVM) is untouched — the failure mode that made
     // the process-wide override benchmark-grade only. strdup/strndup must be aliased along with

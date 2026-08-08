@@ -1169,9 +1169,8 @@ impl AvroCdcDecoder {
 /// the simd-json tape walk (arrow-json for decimal-bearing schemas — see `JsonDecoder`), CSV
 /// through `arrow-csv`, Avro (bare or Confluent-framed) through `arrow-avro` against a
 /// local schema-id store, protobuf through `prost-reflect`/`ptars`, the CDC changelog formats through
-/// `CdcJsonDecoder`, and `raw` is a passthrough. Both the shallow path (Flink polls bytes, hands them
-/// here) and the native source (rdkafka polls bytes, hands them here) feed the *same* `MessageDecoder`;
-/// only who produces the body batch differs.
+/// `CdcJsonDecoder`, and `raw` is a passthrough. Flink polls bytes and the native decode operator
+/// hands those body batches to the same `MessageDecoder` used by every format artifact.
 ///
 /// `skip_errors` is Flink's `ignore-parse-errors`: an undecodable message contributes no rows instead
 /// of failing the decode. Flink implements it as a catch-everything around each message's decode, so

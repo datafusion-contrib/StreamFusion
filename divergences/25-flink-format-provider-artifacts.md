@@ -8,68 +8,25 @@ connector and serialization formats it uses.
 
 ## StreamFusion decision
 
-StreamFusion follows that deployment shape for native value decoding. `streamfusion-kafka` owns Kafka
-consumption and emits Arrow batches containing raw Kafka value bodies. `streamfusion-json`,
+StreamFusion follows that deployment shape for native Kafka serialization and deserialization.
+`streamfusion-kafka` owns the planner and byte-array boundary, while `streamfusion-json`,
 `streamfusion-csv`, `streamfusion-raw`, `streamfusion-avro`,
 `streamfusion-avro-confluent-registry`, and `streamfusion-protobuf` register
 `NativeFormatProvider` implementations through Java `ServiceLoader`. The planner selects a provider
-only when its artifact and supported options are present; otherwise it leaves the table on stock Flink.
+only when its artifact and supported options are present; otherwise it leaves the table on stock
+Flink.
 
-## Why not let Kafka call every format directly?
+Flink's `KafkaSource<byte[]>` and `KafkaSink` own all broker I/O. Source bytes cross into the selected
+native decoder downstream of the source, and native sink serialization produces final byte arrays for
+Flink's sink. No Rust Kafka client or connector-to-format poll ABI is involved.
 
-An earlier native Kafka source owned the message decoder. That made its DSO link Kafka plus every
-format dependency and made the base deployment unable to follow Flink's optional-format convention.
-Passing a Rust decoder handle from the Kafka DSO to a format DSO would exchange Rust-owned objects and
+## Why keep the formats separate?
+
+Linking every format into the Kafka extension would make the base deployment unable to follow Flink's
+optional-format convention. Passing Rust-owned decoder objects between format DSOs would also exchange
 allocator state across dynamic-library boundaries, which is not a stable ABI.
 
-Arrow's C Data Interface is already the ownership-safe JNI boundary in this project. The Kafka DSO
-exports a body batch to Java and the format DSO imports that batch through the same interface; each
-handle remains private to its creator. This adds a DSO boundary at source ingest, but keeps the format
-installable, testable, and fallback-safe. A future fused ABI is acceptable only after benchmarks show
-the boundary is material and it can preserve these ownership rules.
-
-## 2026-07-12: the decode moved back into the poll, through an ADBC-style driver ABI
-
-A benchmarking round answered the "future fused ABI" clause. Profiles first showed the
-decode-as-operator arrangement putting the format work (65% of a JSON job's CPU) on the task thread
-behind the whole island while the fetch thread idled, so the decode moved to the fetch thread via
-the provider SPI; an A/B against the pre-split source then showed the remaining gap was not
-threading, the extra copy, or the C Data crossings (~3%), and a decoder-only Criterion A/B showed
-the decode itself unchanged. What the arrangement had actually lost was decoding **inside the poll
-call** — and separately, the published pre-split Kafka numbers came from the ladder harness, whose
-tables declare no watermark; the matrix's Kafka table does, and its pushed `WATERMARK` kept the
-whole scan on Flink (the gate below), so the matrix "native source" cells of that period never
-measured the native source at all — only the downstream island over Flink's own consume+decode.
-
-The decode now runs inside `pollKafkaBatch` again, dispatched through the pattern ADBC's driver
-manager uses (`AdbcDriverInit`): each format DSO exports one init function; the connector obtains
-its address through the format's Java facade (never symbol linkage), calls it with the ABI version
-it was compiled to speak, and the format fills a `#[repr(C)]` vtable or refuses. Everything
-crossing the boundary is C — the vtable, function pointers, opaque handles, and Arrow C Data whose
-release callbacks carry buffer ownership back into the producing library — so the original
-ownership rules stand. A refusal (a format artifact from another release, or a format needing
-per-batch JVM work like the registry variant) falls back to the split reader's JVM-mediated decode:
-mixed-version deployments degrade in speed, never in correctness. On the like-for-like ladder
-corpus this measured **faster than the pre-split fused source** (JSON q0 2.35× vs 1.94× stock
-Flink, same machine and day), so the boundary now costs less than the coupling it replaced.
-
-Watermark regeneration, gated off while decoding happened after the source (computing a rowtime
-maximum inside the connector would have re-coupled it to formats), came back once the in-poll decode
-gave the split reader typed batches: it reads the max rowtime off the decoded Arrow batch on the JVM
-side — no format coupling, no ABI addition — and stamps it as the batch's record timestamp, driving
-the same per-split strategy the Fluss source uses (Flink's own one-generator-per-split machinery,
-min combination, idleness). Supported shapes and the remaining fallbacks are listed on the
-[Kafka connector page](https://datafusion-contrib.github.io/StreamFusion/connectors/kafka/).
-
-## 2026-08-02: ABI revision 2 — an error-message channel for the failure path
-
-A malformed production message used to kill the job undiagnosably: the format side collapsed its
-decode panic to a bare nonzero return code, so the connector could only report "decode failed
-(rc 1)" with no parse error, topic, partition, or offsets. Revision 2 appends one vtable entry —
-after a nonzero decode the connector reads the failure's UTF-8 text from a thread-local the format
-owns (valid on that thread until its next failed decode, copied out immediately) — and folds it
-into an error naming the bucket's topic, partition, and offset range. The success path is
-untouched, keeping the fused decode's cost identical. Version skew keeps the ADBC contract: init
-fills only the requested version's prefix of the vtable, a connector asks for revision 2 and falls
-back to requesting revision 1, and either mismatch direction decodes as before with rc-only
-failures. The JVM-mediated decode raises the same failure shape from the split reader.
+Arrow's C Data Interface is already the ownership-safe JNI boundary in this project. Each format DSO
+imports or exports Arrow data through that boundary while every native handle remains private to its
+creator. The JVM byte-array boundary adds copies, but it keeps Kafka settings and runtime semantics
+identical to Flink and keeps each format independently installable, testable, and fallback-safe.

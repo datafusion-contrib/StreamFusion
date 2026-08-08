@@ -1,6 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.kafka.KafkaProducerConfigTranslator;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -47,7 +46,6 @@ final class KafkaSinkTranslator {
     final Map<String, String> valueFormatOptions;
     final Map<String, String> keyFormatOptions;
     final boolean upsert;
-    final KafkaProducerConfigTranslator.Result nativeProducerConfig;
 
     private Planned(
         String topic,
@@ -60,8 +58,7 @@ final class KafkaSinkTranslator {
         String keyFormat,
         Map<String, String> valueFormatOptions,
         Map<String, String> keyFormatOptions,
-        boolean upsert,
-        KafkaProducerConfigTranslator.Result nativeProducerConfig) {
+        boolean upsert) {
       this.topic = topic;
       this.producerProperties = producerProperties;
       this.deliveryGuarantee = deliveryGuarantee;
@@ -73,7 +70,6 @@ final class KafkaSinkTranslator {
       this.valueFormatOptions = valueFormatOptions;
       this.keyFormatOptions = keyFormatOptions;
       this.upsert = upsert;
-      this.nativeProducerConfig = nativeProducerConfig;
     }
   }
 
@@ -140,18 +136,6 @@ final class KafkaSinkTranslator {
     if (!producer.containsKey("bootstrap.servers")) {
       return Result.fallback("properties.bootstrap.servers is required");
     }
-    KafkaProducerConfigTranslator.Result nativeProducerConfig = null;
-    if (guarantee == DeliveryGuarantee.EXACTLY_ONCE) {
-      if (naming != TransactionNamingStrategy.INCREMENTING) {
-        return Result.fallback(
-            "native exactly-once producer currently requires incremental transaction naming");
-      }
-      nativeProducerConfig = KafkaProducerConfigTranslator.translate(producer);
-      if (nativeProducerConfig.fallbackReason != null) {
-        return Result.fallback(nativeProducerConfig.fallbackReason);
-      }
-    }
-
     // Flink configures the key and value formats as two independent format instances: value
     // options live under `<format>.` / `value.<format>.`, key options only under `key.<format>.`
     // (with the format factory's own defaults when absent, never the value's settings).
@@ -187,8 +171,7 @@ final class KafkaSinkTranslator {
             keyFormat,
             valueFormatOptions,
             keyFormatOptions,
-            upsert,
-            nativeProducerConfig));
+            upsert));
   }
 
   private static void stripPrefix(

@@ -32,7 +32,7 @@ final class PlanContext {
 
   /**
    * Whether the optional Kafka extension is linked. Only the Calc's projection pushdown needs this:
-   * it inspects its input for a native Kafka source/decode, and naming those classes at all is
+   * it inspects its input for native Kafka decode, and naming that class at all is
    * unsafe without the connector on the classpath.
    */
   boolean kafkaExtension() {

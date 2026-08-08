@@ -14,8 +14,7 @@ import tech.streamfusion.operator.NativeAllocator;
  * Task-local bridge from a binary body batch to a typed Arrow batch through one installed format
  * provider. It owns the Arrow C Data Interface round trip and the provider's {@code beforeDecode}
  * hook (schema-registry formats resolve writer schemas from the bodies there); callers own thread
- * placement — the native Kafka source runs this on the fetch thread so decode overlaps the task
- * thread's operators instead of serializing with them.
+ * placement.
  */
 public final class NativeBodyBatchDecoder implements AutoCloseable {
 

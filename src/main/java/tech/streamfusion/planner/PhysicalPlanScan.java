@@ -319,7 +319,6 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       entries.add(flussSourceSubstitution());
     }
     if (KAFKA_AVAILABLE) {
-      entries.add(kafkaSourceSubstitution());
       entries.add(kafkaDecodeSubstitution());
       entries.add(appendWatermarkReport());
     }
@@ -577,12 +576,6 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         .yieldingOnDecline();
   }
 
-  private static Substitution<StreamPhysicalTableSourceScan> kafkaSourceSubstitution() {
-    return Substitution.of(StreamPhysicalTableSourceScan.class, KafkaTables::substituteSource)
-        .matching(
-            scan -> KafkaTables.isNativeKafka(scan) && NativeConfig.operatorEnabled("kafkaSource"));
-  }
-
   /**
    * Shallow native-decode path (the default for every value format): Flink's KafkaSource consumes raw
    * bytes, a native operator decodes them to Arrow, skipping Flink's RowData decode. JSON/CSV/raw/Avro
@@ -615,9 +608,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   }
 
   /**
-   * A watermarked table that didn't route to a native source or decode stays on Flink (an
-   * unreproducible watermark shape, or a table only the decode-operator path — which regenerates no
-   * watermarks — could take). Records the precise reason rather than silently stalling event-time
+   * A watermarked table that cannot route to the downstream decode stays on Flink. Records the
+   * precise reason rather than silently stalling event-time
    * timers. Reports only, so it always yields.
    */
   private static Substitution<RelNode> appendWatermarkReport() {
@@ -628,7 +620,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   // ---------------------------------------------------------------------------- island composition
 
   /**
-   * Rewires every group of semantically identical native Kafka sources to one shared instance under
+   * Rewires every group of semantically identical native source/decode boundaries to one shared instance under
    * a {@link StreamPhysicalNativeShare} carrying the branch count (the same DAG shape Flink's
    * sub-plan reuse produces for the rowwise plan, and the source dedup Arroyo's named nodes and
    * RisingWave's share operator perform). The share operator declares the count on each batch, so

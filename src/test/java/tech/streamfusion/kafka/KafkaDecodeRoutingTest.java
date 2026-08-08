@@ -56,7 +56,7 @@ class KafkaDecodeRoutingTest {
     tEnv.executeSql(table("id BIGINT, t TIME(0), t3 TIME(3), b VARBINARY(1024)", "json"));
     String plan = NativePlanner.explain(tEnv, "SELECT id, t, t3, b FROM t");
     assertTrue(
-        plan.contains("NativeKafkaDecode") || plan.contains("NativeKafkaSource"),
+        plan.contains("NativeKafkaDecode"),
         "TIME and VARBINARY columns should decode natively:\n" + plan);
   }
 
@@ -169,14 +169,14 @@ class KafkaDecodeRoutingTest {
         table("id BIGINT, name STRING, nested ROW<a BIGINT>, m MAP<STRING, INT>", "json"));
     String plan = NativePlanner.explain(tEnv, "SELECT id, name, nested, m FROM t");
     assertTrue(
-        plan.contains("NativeKafkaDecode") || plan.contains("NativeKafkaSource"),
+        plan.contains("NativeKafkaDecode"),
         "a supported schema should route natively:\n" + plan);
   }
 
   private static void assertStaysOnFlink(StreamTableEnvironment tEnv, String sql) {
     String plan = NativePlanner.explain(tEnv, sql);
     assertTrue(
-        !plan.contains("NativeKafkaDecode") && !plan.contains("NativeKafkaSource"),
+        !plan.contains("NativeKafkaDecode"),
         "the scan must stay on Flink:\n" + plan);
   }
 
@@ -208,9 +208,6 @@ class KafkaDecodeRoutingTest {
     assertTrue(
         plan.contains("NativeKafkaDecode"),
         "a raw-keyed table should route to the decode path:\n" + plan);
-    assertTrue(
-        !plan.contains("NativeKafkaSource"),
-        "the fused source cannot carry keys yet:\n" + plan);
   }
 
   @Test

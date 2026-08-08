@@ -2,14 +2,12 @@ use crate::*;
 
 /// Bridges the Rust `log` facade into the host's SLF4J configuration. Each StreamFusion library
 /// (the core and every connector/format extension carries its own copy of the `log` statics)
-/// installs this bridge from its `JNI_OnLoad`, so everything the native side logs — including
-/// librdkafka's log/error stream, which rust-rdkafka's client contexts forward into the facade —
-/// lands in the same log files as the host's own logging instead of a void.
+/// installs this bridge from its `JNI_OnLoad`, so everything the native side logs lands in the same
+/// log files as the host's own logging instead of a void.
 ///
 /// The class and method handles are resolved once at load time, while the loader that owns the
-/// StreamFusion classes is in scope: log events fire on arbitrary threads (librdkafka's broker
-/// threads are not JVM threads and are attached as daemons on first use), where `FindClass` would
-/// resolve against the wrong class loader.
+/// StreamFusion classes is in scope: log events can fire on arbitrary native threads, where
+/// `FindClass` would resolve against the wrong class loader.
 struct LogBridge {
     vm: jni::JavaVM,
     class: jni::objects::GlobalRef,
@@ -27,7 +25,7 @@ impl log::Log for NativeLogger {
     }
 
     /// Never panics and never leaves a pending JVM exception: a log call can sit inside a C
-    /// callback frame (librdkafka) where unwinding would abort the process.
+    /// callback frame where unwinding would abort the process.
     fn log(&self, record: &log::Record) {
         if !self.enabled(record.metadata()) {
             return;
@@ -171,7 +169,6 @@ mod tests {
             slf4j_logger_name("streamfusion::kafka"),
             "streamfusion.kafka"
         );
-        assert_eq!(slf4j_logger_name("librdkafka"), "librdkafka");
     }
 
     #[test]

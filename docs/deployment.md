@@ -85,4 +85,4 @@ roughly a third of the transpose CPU was per-accessor bounds/refcount checks:
 ```
 
 See [Configuration](configuration.md) for the full `-Dstreamfusion.*` runtime flag surface,
-including off-heap memory sizing for the native Kafka source/sink buffers.
+including off-heap sizing for Arrow batches and native operator state.

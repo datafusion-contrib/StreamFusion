@@ -120,26 +120,19 @@ class NexmarkMatrixBenchmark {
   private static final Map<String, String> ALLOW_INCOMPATIBLE =
       Map.of("streamfusion.expression.allowIncompatible", "true");
 
-  /** A rung of the Kafka source→columnar ladder (mirrors {@link NexmarkKafkaLadderBenchmark}). */
+  /** A rung of the Kafka source-to-columnar boundary. */
   private enum Rung {
     FLINK("Flink", Map.of("streamfusion.native.enabled", "false")),
     JVM_TRANSPOSE(
         "JVM transpose",
         Map.of(
             "streamfusion.native.enabled", "true",
-            "streamfusion.operator.kafkaDecode.enabled", "false",
-            "streamfusion.operator.kafkaSource.enabled", "false")),
+            "streamfusion.operator.kafkaDecode.enabled", "false")),
     RUST_DECODE(
         "Rust decode (JVM poll)",
         Map.of(
             "streamfusion.native.enabled", "true",
-            "streamfusion.operator.kafkaDecode.enabled", "true",
-            "streamfusion.operator.kafkaSource.enabled", "false")),
-    RUST_SOURCE(
-        "Rust poll + decode",
-        Map.of(
-            "streamfusion.native.enabled", "true",
-            "streamfusion.operator.kafkaSource.enabled", "true"));
+            "streamfusion.operator.kafkaDecode.enabled", "true"));
 
     final String label;
     final Map<String, String> properties;
@@ -1019,9 +1012,7 @@ class NexmarkMatrixBenchmark {
       throws Exception {
     Map<String, String> properties =
         nativeRun
-            ? Map.of(
-                "streamfusion.native.enabled", "true",
-                "streamfusion.operator.kafkaSource.enabled", "true")
+            ? Map.of("streamfusion.native.enabled", "true")
             : Map.of("streamfusion.native.enabled", "false");
     Map<String, String> previous = new LinkedHashMap<>();
     properties.forEach((key, value) -> previous.put(key, System.getProperty(key)));
@@ -1078,14 +1069,13 @@ class NexmarkMatrixBenchmark {
     tEnv.executeSql(q.insertSql).await();
     double seconds = (System.nanoTime() - start) / 1e9;
     long executed = System.nanoTime();
-    // The exec-node name covers both sink shapes; the transformation name pins that the fully
-    // native exactly-once producer engaged rather than the encode-only Java-KafkaSink shape.
+    // The exec-node and transformation names pin native serialization feeding Flink's KafkaSink.
     if (nativeRun
         && (!plan.contains("NativeKafkaSink")
-            || !plan.contains("native-kafka-exactly-once-sink")
+            || !plan.contains("flink-kafka-sink")
             || scan.substitutions() < 2)) {
       throw new IllegalStateException(
-          q.label + ": native Kafka source/sink did not engage. " + scan.explainSummary());
+          q.label + ": native Kafka decode/serialization did not engage. " + scan.explainSummary());
     }
     try (Admin admin =
         Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokers))) {
@@ -1660,7 +1650,7 @@ class NexmarkMatrixBenchmark {
   // ----- kafka source -----
 
   /**
-   * One Kafka cell for a query: the Flink baseline plus the three source rungs, under the given extra
+   * One Kafka cell for a query: the Flink baseline plus the two source/decode rungs, under the given extra
    * native props (null = the byte-parity default; the variant props = the allowIncompatible path). The
    * label prefix distinguishes the two rows.
    */
@@ -1677,7 +1667,7 @@ class NexmarkMatrixBenchmark {
         variantLabel == null
             ? String.format("kafka/%-8s Flink %6.3fs", format, flink)
             : String.format("kafka/%-8s [%s]", format, variantLabel));
-    for (Rung rung : new Rung[] {Rung.JVM_TRANSPOSE, Rung.RUST_DECODE, Rung.RUST_SOURCE}) {
+    for (Rung rung : new Rung[] {Rung.JVM_TRANSPOSE, Rung.RUST_DECODE}) {
       double s = kafkaBest(brokers, format, rung, q, extraProps);
       cell.append(String.format("  | %s %6.3fs %.2fx", rung.label, s, flink / s));
     }

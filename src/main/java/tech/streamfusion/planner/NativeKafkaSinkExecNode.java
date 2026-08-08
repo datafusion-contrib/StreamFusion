@@ -1,7 +1,6 @@
 package tech.streamfusion.planner;
 
 import tech.streamfusion.format.LogicalTypeDescriptors;
-import tech.streamfusion.kafka.NativeKafkaExactlyOnceSink;
 import tech.streamfusion.kafka.NativeKafkaSerializationOperator;
 import tech.streamfusion.kafka.PreSerializedKafkaRecord;
 import tech.streamfusion.kafka.PreSerializedKafkaRecordSchema;
@@ -55,34 +54,6 @@ public final class NativeKafkaSinkExecNode extends ExecNodeBase<Object>
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     boolean parallelismConfigured = planned.sink.parallelism != null;
     int parallelism = parallelismConfigured ? planned.sink.parallelism : input.getParallelism();
-    if (planned.sink.nativeProducerConfig != null) {
-      NativeKafkaExactlyOnceSink nativeSink =
-          new NativeKafkaExactlyOnceSink(
-              planned.sink.topic,
-              planned.sink.transactionalIdPrefix,
-              planned.sink.nativeProducerConfig.javaProperties(),
-              planned.sink.nativeProducerConfig.nativeConfig(),
-              planned.sink.nativeProducerConfig.maxBlockMs(),
-              planned.sink.nativeProducerConfig.maxRequestSize(),
-              planned.valueFormat,
-              planned.keyFormat,
-              LogicalTypeDescriptors.of(planned.rowType),
-              planned.rowType.getFieldNames().toArray(String[]::new),
-              planned.keyFields,
-              planned.valueFields,
-              planned.upsert);
-      DataStream<ArrowBatch> nativeStream = new DataStream<>(planner.getExecEnv(), input);
-      DataStreamSink<ArrowBatch> nativeDataSink =
-          nativeStream
-              .sinkTo(nativeSink)
-              .name("native-kafka-exactly-once-sink")
-              // The transactional-id prefix is unique and stable per sink, so it pins the writer
-              // and committer operator ids across restores and rescale (Flink derives the
-              // committer uid from the sink uid).
-              .uid("native-kafka-exactly-once-sink-" + planned.sink.transactionalIdPrefix)
-              .setParallelism(parallelism);
-      return (Transformation<Object>) (Transformation<?>) nativeDataSink.getTransformation();
-    }
     OneInputTransformation<ArrowBatch, PreSerializedKafkaRecord> serialization =
         new OneInputTransformation<>(
             input,
@@ -112,7 +83,7 @@ public final class NativeKafkaSinkExecNode extends ExecNodeBase<Object>
     DataStream<PreSerializedKafkaRecord> stream =
         new DataStream<>(planner.getExecEnv(), serialization);
     DataStreamSink<PreSerializedKafkaRecord> sink =
-        stream.sinkTo(builder.build()).name("native-kafka-sink").setParallelism(parallelism);
+        stream.sinkTo(builder.build()).name("flink-kafka-sink").setParallelism(parallelism);
     return (Transformation<Object>) (Transformation<?>) sink.getTransformation();
   }
 }

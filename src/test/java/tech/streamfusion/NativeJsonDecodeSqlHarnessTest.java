@@ -18,7 +18,7 @@ import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * End-to-end parity tests for the JSON native-decode path. With the native rdkafka source opt-in and off
+ * End-to-end parity tests for the JSON native-decode path downstream of Flink's Kafka source.
  * by default, a {@code 'format'='json'} Kafka table routes through the shallow decode operator (Flink
  * consumes the raw bytes, a native operator decodes them to Arrow), like the other value formats.
  * {@link NativeParity#assertParity} compares the native decode against Flink's own {@code json} format.
@@ -30,18 +30,6 @@ import org.testcontainers.utility.DockerImageName;
  */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class NativeJsonDecodeSqlHarnessTest {
-
-  @org.junit.jupiter.api.BeforeEach
-  void pinDecodePath() {
-    // These tests cover the shallow decode operator; with the native rdkafka source now on by
-    // default it would otherwise take the JSON/Avro/protobuf tables, testing the wrong path.
-    System.setProperty("streamfusion.operator.kafkaSource.enabled", "false");
-  }
-
-  @org.junit.jupiter.api.AfterEach
-  void unpinDecodePath() {
-    System.clearProperty("streamfusion.operator.kafkaSource.enabled");
-  }
 
   private static final int MESSAGES = 2_000;
 

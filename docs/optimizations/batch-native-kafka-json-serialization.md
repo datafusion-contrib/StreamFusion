@@ -19,10 +19,9 @@ post-checkpoint failover.
 ## Records produce straight from the encode buffer
 
 The JSON encoder used to split its one line-delimited batch buffer into a fresh `Vec<u8>` per record
-before producing — a per-record allocation and copy that was pure waste, since librdkafka copies
-borrowed payloads into its own queue on `produce` anyway, and the encode-to-Java path materializes a
-heap `byte[]` regardless. The encoder now returns the single buffer plus per-row line ranges, and
-both the native producer and the JNI materialization read the row slices in place.
+before materializing the final JVM records — a per-record native allocation and copy that was pure
+waste because the encode-to-Java path must materialize a heap `byte[]` regardless. The encoder now
+returns one buffer plus per-row line ranges, and JNI reads those slices in place.
 
 Together with the escape fast path below, the 4096-row Criterion encode dropped 592 µs → 497 µs per
 batch (**6.9 → 8.2 M rows/s**); the q9 differential profile had shown the copy as part of the sink's

@@ -51,9 +51,9 @@ rename Flink's `bundleSize` and `bundleRatio` gauges.
 
 | Native connector path | Flink reference | Current state | Remaining work |
 | --- | --- | --- | --- |
-| Kafka source | Flink Kafka Source | Standard logical `numRecordsIn`, `transientConsumerErrors`, and the stable consumer metrics `bytes-consumed-total` and `records-consumed-total` are live | **Partial**: byte values currently measure decoded Kafka payload rather than the Java client's network-byte metric. Expose librdkafka's complete per-consumer catalog under Flink's consumer subgroup and reproduce every Kafka-client metric name/type |
+| Kafka source | Flink Kafka Source | Flink owns the source and exposes its complete standard and kafka-clients metric surface unchanged | **Complete** for connector metrics; native decode counters are additive |
 | Kafka serialization | Flink sink serialization | Standard logical input plus native batch/row/byte/time counters | No separate Flink operator metric surface exists; the counters are additive |
-| Native exactly-once Kafka sink | Flink Kafka Sink V2 | Standard `numRecordsOut` and error observation are live, with `numBytesOut` and `currentSendTime` estimates, in addition to native batch/flush totals | **Partial**: bytes currently mean key/value payload bytes rather than Kafka's outgoing network total; send time is local enqueue/flush latency rather than Java Kafka's request-latency plus record-queue-time gauges. Translate librdkafka statistics into the full producer catalog |
+| Kafka sink | Flink Kafka Sink V2 | Flink owns all delivery guarantees and exposes its standard and kafka-clients producer metrics unchanged | **Complete** for connector metrics; native serialization counters are additive |
 | Fluss source | Flink Fluss source | Standard logical input, per-table-bucket `currentOffset`, and `currentFetchEventTimeLag` are live through Fluss's own `FlinkSourceReaderMetrics` shape | **Partial**: bridge the full Fluss client `FlinkMetricRegistry` catalog |
 
 ## Native-only operators and Comet analogues
@@ -82,7 +82,7 @@ accounting occurred.
    partitions * N`, or the configured update-fast cache size) rather than native resident rows.
 4. Replace the batch-scoped async lookup admission model with Flink's key-accounting queue if exact
    blocking/finished controller behavior is required, then drive the three `aec_*` gauges from it.
-5. Translate the dynamic librdkafka and Fluss client registries. These are catalogs rather than a
+5. Translate the dynamic Fluss client registry. It is a catalog rather than a
    fixed handful of operator metrics, so parity tests must compare discovered metric identifiers as
    well as values.
 

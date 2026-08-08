@@ -11,7 +11,7 @@ one decode — but that reuse is digest-based, and every native rel deliberately
 digest-unique barrier: an Arrow batch is handed to exactly one consumer, which closes its off-heap
 buffers after reading, so a blindly merged native subtree would fan one batch to two consumers and
 the second would read freed memory. The consequence, exposed by a per-thread q3 profile, was two
-full native Kafka sources per query — twice the topic read, twice the JSON decode — the whole q3
+full Kafka byte-source/native-decode boundaries per query — twice the topic read, twice the JSON decode — the whole q3
 loss (its join is under 2% of CPU).
 
 ## The fix
@@ -23,7 +23,7 @@ faced this same problem do:
 - RisingWave rewrites any source referenced twice into one shared `StreamShare` node.
 - Flink's own `SubplanReuser` is the host-side precedent this mirrors on the native side.
 
-Semantically identical sources — same options, schemas, and watermark — collapse into one instance
+Semantically identical source/decode boundaries — same options and schemas — collapse into one instance
 under an explicit share node carrying the branch count. At runtime the share operator declares that
 count on each batch, and every chained consumer's `root()` take returns its own zero-copy view over
 the same retained buffers (Arrow's buffer reference counts; the split-and-transfer share idiom), so

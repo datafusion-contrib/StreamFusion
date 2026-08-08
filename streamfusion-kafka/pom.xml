@@ -66,10 +66,8 @@
                                         <include>tech/streamfusion/planner/KafkaSinkTranslator*.class</include>
                                         <include>tech/streamfusion/planner/NativeKafkaDecodeExecNode*.class</include>
                                         <include>tech/streamfusion/planner/NativeKafkaSinkExecNode*.class</include>
-                                        <include>tech/streamfusion/planner/NativeKafkaSourceExecNode*.class</include>
                                         <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode*.class</include>
                                         <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaSink*.class</include>
-                                        <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaSource*.class</include>
                                     </includes>
                                     <excludes>
                                         <exclude>tech/streamfusion/kafka/ConfluentSchemaRegistry*.class</exclude>
