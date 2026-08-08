@@ -90,8 +90,8 @@ public class NativeCalcOperator extends AbstractStreamOperator<ArrowBatch>
     ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
     // A Calc can sit immediately after a columnar key-group exchange (for example, the planner
     // appends OVER-frame constants there). The projection does not change the batch's routing, so
-    // retain the destination used by the downstream keyed operator's Flink state-key context.
-    int destination = element.getValue().destination();
+    // retain the key group used by the downstream keyed operator's Flink state-key context.
+    int keyGroup = element.getValue().keyGroup();
     VectorSchemaRoot in = element.getValue().root();
     // The input batch's buffers belong to the upstream operator's allocator; the C Data export must
     // use that allocator (buffers associate only within one allocator root). The operator's own
@@ -118,6 +118,6 @@ public class NativeCalcOperator extends AbstractStreamOperator<ArrowBatch>
     } finally {
       in.close(); // the input batch is consumed
     }
-    ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out, destination));
+    ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out, keyGroup));
   }
 }

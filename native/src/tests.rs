@@ -8538,8 +8538,7 @@ fn calc_timestamp_minus_interval() {
     assert!(col.is_null(1));
 }
 
-// The by-key split sends every row with the same key to the same partition and preserves all
-// rows, for any partition count.
+// The by-key split emits each row in a sub-batch tagged with its exact Flink key group.
 #[test]
 fn partitions_a_batch_by_key() {
     use std::collections::HashMap;
@@ -8557,30 +8556,34 @@ fn partitions_a_batch_by_key() {
     )
     .unwrap();
 
-    for num_partitions in [1usize, 3, 8] {
-        let parts = partition_batch(&batch, &[0], &[-1], num_partitions, num_partitions);
+    for max_parallelism in [1usize, 3, 8] {
+        let parts = partition_batch(&batch, &[0], &[-1], max_parallelism);
         let mut rows = 0usize;
-        let mut key_to_partition: HashMap<i64, usize> = HashMap::default();
-        for (partition, sub) in &parts {
-            assert!(*partition < num_partitions);
+        let mut key_to_group: HashMap<i64, usize> = HashMap::default();
+        for (key_group, sub) in &parts {
+            assert!(*key_group < max_parallelism);
             let keys = sub.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
             for i in 0..sub.num_rows() {
-                // Each key is consistently assigned to one partition.
-                let prev = key_to_partition.insert(keys.value(i), *partition);
+                let single = RecordBatch::try_new(
+                    Arc::new(Schema::new(vec![Field::new("k", DataType::Int64, true)])),
+                    vec![Arc::new(Int64Array::from(vec![keys.value(i)]))],
+                )
+                .unwrap();
+                let mut encoder = BinaryRowBatchEncoder::new(&single, &[0], &[-1]);
+                assert_eq!(
+                    flink_key_group(encoder.hash(0), max_parallelism),
+                    *key_group
+                );
+                let prev = key_to_group.insert(keys.value(i), *key_group);
                 if let Some(p) = prev {
-                    assert_eq!(
-                        p,
-                        *partition,
-                        "key {} split across partitions",
-                        keys.value(i)
-                    );
+                    assert_eq!(p, *key_group, "key {} split across groups", keys.value(i));
                 }
             }
             rows += sub.num_rows();
         }
         assert_eq!(
             rows, n,
-            "all rows preserved for {num_partitions} partitions"
+            "all rows preserved for max parallelism {max_parallelism}"
         );
     }
 }

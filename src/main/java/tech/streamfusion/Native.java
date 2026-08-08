@@ -477,29 +477,27 @@ public final class Native {
   public static native void closeCalcExpression(long handle);
 
   /**
-   * Splits a batch the JVM exported using Flink's BinaryRow key hash and key-group assignment into up
-   * to {@code numPartitions} sub-batches (every row with a given key in one partition), returning a
-   * handle to pull them with {@link #nextSplit}; released with {@link #closeSplit}. The columnar
-   * shuffle's by-key routing.
+   * Splits a batch the JVM exported using Flink's BinaryRow key hash into one sub-batch per non-empty
+   * key group, returning a handle to pull them with {@link #nextSplit}; released with {@link
+   * #closeSplit}. A key-group batch can be rerouted after unaligned-checkpoint rescaling because its
+   * routing tag is independent of the old downstream parallelism.
    *
    * @param inArrayAddress address of the input {@code ArrowArray} C struct
    * @param inSchemaAddress address of the input {@code ArrowSchema} C struct
    * @param keyColumns indices of the key columns to hash
    * @param timestampPrecisions logical timestamp precision per key column ({@code -1} for non-timestamp keys)
    * @param maxParallelism number of Flink key groups
-   * @param numPartitions number of partitions (downstream channels) to split into
    */
   public static native long splitByKey(
       long inArrayAddress,
       long inSchemaAddress,
       int[] keyColumns,
       int[] timestampPrecisions,
-      int maxParallelism,
-      int numPartitions);
+      int maxParallelism);
 
   /**
-   * Exports the next sub-batch of a split into the consumer-allocated C structs and returns its
-   * partition index, or -1 once the split is exhausted.
+   * Exports the next sub-batch of a split into the consumer-allocated C structs and returns its key
+   * group, or -1 once the split is exhausted.
    */
   public static native int nextSplit(long handle, long outArrayAddress, long outSchemaAddress);
 

@@ -25,7 +25,7 @@ import org.apache.flink.core.memory.DataOutputView;
  *
  * <ul>
  *   <li>the IPC format — Arrow's IPC stream encoding, preserving the columnar exchange's
- *       destination tag before the length-framed payload — valid across any process boundary;
+ *       key-group tag before the length-framed payload — valid across any process boundary;
  *   <li>the zero-copy format (write side opt-in via the constructor flag) — the batch is parked in
  *       {@link ArrowBatchHandles} and only a token-guarded handle crosses the wire, so a shuffle
  *       whose endpoints share the JVM moves Arrow buffers by ownership transfer, not by bytes.
@@ -34,7 +34,8 @@ import org.apache.flink.core.memory.DataOutputView;
 public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
 
   // Negative so they cannot be confused with the non-negative IPC length in the legacy format.
-  private static final int DESTINATION_TAG = 0xD5A5_0001;
+  // Keep the existing wire tag: only the meaning of its integer changes from channel to key group.
+  private static final int KEY_GROUP_TAG = 0xD5A5_0001;
   private static final int ZERO_COPY_TAG = 0xD5A5_0002;
 
   private final boolean zeroCopy;
@@ -107,8 +108,8 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
       root.close();
     }
     byte[] encoded = bytes.toByteArray();
-    target.writeInt(DESTINATION_TAG);
-    target.writeInt(batch.destination());
+    target.writeInt(KEY_GROUP_TAG);
+    target.writeInt(batch.keyGroup());
     target.writeInt(encoded.length);
     target.write(encoded);
     batch.recordEncodeNanos(System.nanoTime() - started);
@@ -120,8 +121,8 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
     if (tagOrLength == ZERO_COPY_TAG) {
       return ArrowBatchHandles.claim(source.readLong(), source.readLong(), source.readLong());
     }
-    int destination = tagOrLength == DESTINATION_TAG ? source.readInt() : -1;
-    int length = tagOrLength == DESTINATION_TAG ? source.readInt() : tagOrLength;
+    int keyGroup = tagOrLength == KEY_GROUP_TAG ? source.readInt() : -1;
+    int length = tagOrLength == KEY_GROUP_TAG ? source.readInt() : tagOrLength;
     byte[] encoded = new byte[length];
     source.readFully(encoded);
     try (ArrowStreamReader reader =
@@ -138,7 +139,7 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
       }
       VectorSchemaRoot root = new VectorSchemaRoot(transferred);
       root.setRowCount(read.getRowCount());
-      return new ArrowBatch(root, destination);
+      return new ArrowBatch(root, keyGroup);
     }
   }
 
@@ -157,12 +158,12 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
       target.writeLong(source.readLong());
       return;
     }
-    int destination = tagOrLength == DESTINATION_TAG ? source.readInt() : -1;
-    int length = tagOrLength == DESTINATION_TAG ? source.readInt() : tagOrLength;
+    int keyGroup = tagOrLength == KEY_GROUP_TAG ? source.readInt() : -1;
+    int length = tagOrLength == KEY_GROUP_TAG ? source.readInt() : tagOrLength;
     byte[] encoded = new byte[length];
     source.readFully(encoded);
-    target.writeInt(DESTINATION_TAG);
-    target.writeInt(destination);
+    target.writeInt(KEY_GROUP_TAG);
+    target.writeInt(keyGroup);
     target.writeInt(length);
     target.write(encoded);
   }

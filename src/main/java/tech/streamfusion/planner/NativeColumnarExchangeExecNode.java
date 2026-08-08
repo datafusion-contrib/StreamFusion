@@ -20,9 +20,9 @@ import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Builds the columnar keyed exchange transformation: a {@link SplitByKeyGroupOperator} that splits
- * each Arrow batch into one sub-batch per destination channel, followed by a {@link
+ * each Arrow batch into one sub-batch per non-empty key group, followed by a {@link
  * PartitionTransformation} using {@link ColumnarKeyGroupPartitioner} to route each sub-batch to its
- * channel. The result is an {@code ArrowBatch} stream the downstream native operator consumes
+ * current owner. The result is an {@code ArrowBatch} stream the downstream native operator consumes
  * without a row transpose; watermarks ride through the partition transformation as usual.
  */
 public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
@@ -69,23 +69,22 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
     // UPDATE_BEFORE from its earlier INSERT/UPDATE_AFTER.
     int numChannels =
         keyColumns.length == 0 ? 1 : Math.max(1, planner.getExecEnv().getParallelism());
-    int maxParallelism = FlinkKeyGroupUtils.defaultMaxParallelism(numChannels);
-    // Split each batch into per-channel sub-batches (homogeneous in destination)...
+    int maxParallelism = FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), numChannels);
+    // Split each batch into topology-independent, per-key-group sub-batches...
     Transformation<ArrowBatch> split =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
-            new SplitByKeyGroupOperator(
-                keyColumns, timestampPrecisions, maxParallelism, numChannels),
+            new SplitByKeyGroupOperator(keyColumns, timestampPrecisions, maxParallelism),
             NativeConfig.zeroCopyExchange(planner.getExecEnv())
                 ? ArrowBatchTypeInformation.ZERO_COPY
                 : ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);
-    // ...then route each whole sub-batch to its channel. Pipelined so watermarks flow downstream.
+    // ...then route each whole sub-batch to its current owner. Pipelined so watermarks flow.
     PartitionTransformation<ArrowBatch> partition =
         new PartitionTransformation<>(
-            split, new ColumnarKeyGroupPartitioner(), StreamExchangeMode.PIPELINED);
+            split, new ColumnarKeyGroupPartitioner(maxParallelism), StreamExchangeMode.PIPELINED);
     partition.setParallelism(numChannels);
     return partition;
   }

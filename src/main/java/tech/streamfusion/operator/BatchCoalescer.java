@@ -16,8 +16,8 @@ import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
 
 /**
  * Re-assembles processing-sized batches in front of a keyed native operator. The columnar exchange
- * splits every source batch into per-channel sub-batches, so at parallelism p an operator would
- * otherwise see batches roughly p× smaller than the source emitted — and a changelog operator
+ * splits every source batch into non-empty per-key-group sub-batches, so an operator can otherwise
+ * see batches much smaller than the source emitted — and a changelog operator
  * feeding another keyed operator compounds the fragmentation. Buffered sub-batches are merged
  * natively into one batch once the row target is reached; a processing-time timer bounds the wait
  * on trickle streams. Coalescing changes only physical chunking, never the record-level changelog:

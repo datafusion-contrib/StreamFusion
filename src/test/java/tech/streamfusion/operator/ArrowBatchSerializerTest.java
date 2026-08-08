@@ -45,7 +45,7 @@ class ArrowBatchSerializerTest {
       serializer.copy(new DataInputDeserializer(out.getCopyOfBuffer()), copied);
       ArrowBatch back = serializer.deserialize(new DataInputDeserializer(copied.getCopyOfBuffer()));
       try (VectorSchemaRoot result = back.root()) {
-        assertEquals(3, back.destination());
+        assertEquals(3, back.keyGroup());
         assertEquals(3, back.rowCount());
         List<RowData> readBack = RowDataArrowConverter.read(result, SCHEMA);
         assertEquals(3, readBack.size());
@@ -75,7 +75,7 @@ class ArrowBatchSerializerTest {
       serializer.copy(new DataInputDeserializer(out.getCopyOfBuffer()), copied);
       ArrowBatch back = serializer.deserialize(new DataInputDeserializer(copied.getCopyOfBuffer()));
       assertSame(batch, back);
-      assertEquals(2, back.destination());
+      assertEquals(2, back.keyGroup());
       assertEquals(0, ArrowBatchHandles.inFlight());
       root.close();
     }

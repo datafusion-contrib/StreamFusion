@@ -345,14 +345,13 @@ impl KeepLastDedup {
 pub fn split_by_key(
     batch: &RecordBatch,
     key_columns: &[usize],
-    num_partitions: usize,
+    max_parallelism: usize,
 ) -> Vec<(usize, RecordBatch)> {
     partition_batch(
         batch,
         key_columns,
         &vec![-1; key_columns.len()],
-        num_partitions,
-        num_partitions,
+        max_parallelism,
     )
 }
 

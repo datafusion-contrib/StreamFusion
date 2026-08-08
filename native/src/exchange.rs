@@ -1,28 +1,26 @@
 use crate::*;
 
-/// Splits a batch into up to `num_partitions` sub-batches using Flink's key-group assignment:
-/// `BinaryRowData.hashCode()` → `MathUtils.murmurHash` → key group → operator index. Each
-/// sub-batch keeps the full input schema (a row subset); empty partitions are omitted. This makes
-/// the columnar exchange and raw keyed state agree during rescaling.
+/// Splits a batch into one sub-batch per non-empty Flink key group using
+/// `BinaryRowData.hashCode()` → `MathUtils.murmurHash`. Each sub-batch keeps the full input schema
+/// and carries a topology-independent key-group id. Flink can therefore rerun the partitioner on
+/// an in-flight sub-batch restored from an unaligned checkpoint after the downstream parallelism
+/// changes; a destination-channel batch would not be independently reroutable.
 pub(crate) fn partition_batch(
     batch: &RecordBatch,
     key_columns: &[usize],
     timestamp_precisions: &[i32],
     max_parallelism: usize,
-    num_partitions: usize,
 ) -> Vec<(usize, RecordBatch)> {
     // The precision sidecar is a pre-order type tree, so a nested key contributes more than one
     // descriptor; the encoder validates that it is consumed exactly.
-    assert!(max_parallelism >= num_partitions);
-    let mut rows_by_partition: Vec<Vec<u32>> = vec![Vec::new(); num_partitions];
+    let mut rows_by_key_group: Vec<Vec<u32>> = vec![Vec::new(); max_parallelism];
     let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, timestamp_precisions);
     for row in 0..batch.num_rows() {
         let key_group = flink_key_group(encoder.hash(row), max_parallelism);
-        let partition = key_group * num_partitions / max_parallelism;
-        rows_by_partition[partition].push(row as u32);
+        rows_by_key_group[key_group].push(row as u32);
     }
     let mut out = Vec::new();
-    for (partition, rows) in rows_by_partition.into_iter().enumerate() {
+    for (key_group, rows) in rows_by_key_group.into_iter().enumerate() {
         if rows.is_empty() {
             continue;
         }
@@ -33,20 +31,20 @@ pub(crate) fn partition_batch(
             .map(|c| take(c, &indices, None).expect("take"))
             .collect();
         out.push((
-            partition,
+            key_group,
             RecordBatch::try_new(batch.schema(), columns).expect("sub batch"),
         ));
     }
     out
 }
 
-/// Holds the per-partition sub-batches of one split, pulled out one at a time by the JVM.
+/// Holds the per-key-group sub-batches of one split, pulled out one at a time by the JVM.
 pub(crate) struct SplitState {
-    partitions: Vec<(usize, RecordBatch)>,
+    key_groups: Vec<(usize, RecordBatch)>,
     cursor: usize,
 }
 
-/// Splits a batch from the JVM by key into per-partition sub-batches and returns a handle to pull
+/// Splits a batch from the JVM by key into per-key-group sub-batches and returns a handle to pull
 /// them with `nextSplit`; released with `closeSplit`.
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
@@ -57,7 +55,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
     key_columns: JIntArray<'local>,
     timestamp_precisions: JIntArray<'local>,
     max_parallelism: jint,
-    num_partitions: jint,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |env| {
         let batch = import_record_batch(in_array_address, in_schema_address);
@@ -66,21 +63,15 @@ pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
             .map(|k| k as usize)
             .collect();
         let precisions = read_i32_array(&env, &timestamp_precisions);
-        let partitions = partition_batch(
-            &batch,
-            &keys,
-            &precisions,
-            max_parallelism as usize,
-            num_partitions as usize,
-        );
+        let key_groups = partition_batch(&batch, &keys, &precisions, max_parallelism as usize);
         into_handle(SplitState {
-            partitions,
+            key_groups,
             cursor: 0,
         })
     })
 }
 
-/// Exports the next sub-batch into the consumer-allocated C structs and returns its partition, or
+/// Exports the next sub-batch into the consumer-allocated C structs and returns its key group, or
 /// -1 once the split is exhausted.
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_nextSplit<'local>(
@@ -92,13 +83,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_nextSplit<'local>(
 ) -> jint {
     crate::bridge::jni_guard(env, move |_env| {
         let state = unsafe { &mut *(handle as *mut SplitState) };
-        if state.cursor >= state.partitions.len() {
+        if state.cursor >= state.key_groups.len() {
             return -1;
         }
-        let (partition, batch) = state.partitions[state.cursor].clone();
+        let (key_group, batch) = state.key_groups[state.cursor].clone();
         state.cursor += 1;
         export_record_batch(batch, out_array_address, out_schema_address);
-        partition as jint
+        key_group as jint
     })
 }
 

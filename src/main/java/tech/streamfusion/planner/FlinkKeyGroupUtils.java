@@ -9,6 +9,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.transformations.OneInputTransformation;
 import org.apache.flink.streaming.api.transformations.TwoInputTransformation;
 
@@ -61,9 +62,16 @@ public final class FlinkKeyGroupUtils {
     return KeyGroupRangeAssignment.computeDefaultMaxParallelism(parallelism);
   }
 
+  /** Honors Flink's program-wide key-group count, falling back to Flink's normal default. */
+  static int maxParallelism(StreamExecutionEnvironment env, int parallelism) {
+    int configured = env.getConfig().getMaxParallelism();
+    return configured > 0 ? configured : defaultMaxParallelism(parallelism);
+  }
+
   /**
    * One ordinary JVM key per downstream subtask, used only to establish Flink's keyed-operator
-   * context for a columnar batch. Native state itself is partitioned by every row's BinaryRow key.
+   * context for tests that construct destination-subtask-tagged batches directly. Native exchange
+   * records use an exact key-group selector instead.
    */
   public static int[] stateKeysForSubtasks(int maxParallelism, int parallelism) {
     return ArrowBatchSubtaskKeySelector.stateKeysForSubtasks(maxParallelism, parallelism);
@@ -71,14 +79,14 @@ public final class FlinkKeyGroupUtils {
 
   /**
    * Establishes the Flink keyed-operator context for a native keyed transformation. Raw keyed
-   * state uses the exchange's BinaryRow key groups; the selector only maps each whole columnar
-   * batch to an ordinary JVM key owned by its subtask — no managed keyed state reads it.
+   * state uses the exchange's BinaryRow key groups; the selector maps each whole, single-key-group
+   * columnar batch to an ordinary JVM key in that exact group — no managed keyed state reads it.
    */
   static void applyColumnarKeying(
       OneInputTransformation<ArrowBatch, ArrowBatch> transformation, int maxParallelism) {
     transformation.setMaxParallelism(maxParallelism);
     transformation.setStateKeySelector(
-        subtaskStateKeySelector(maxParallelism, transformation.getParallelism()));
+        subtaskStateKeySelector(maxParallelism));
     transformation.setStateKeyType(Types.INT);
   }
 
@@ -86,14 +94,13 @@ public final class FlinkKeyGroupUtils {
       TwoInputTransformation<ArrowBatch, ArrowBatch, ArrowBatch> transformation,
       int maxParallelism) {
     KeySelector<ArrowBatch, Integer> stateKeySelector =
-        subtaskStateKeySelector(maxParallelism, transformation.getParallelism());
+        subtaskStateKeySelector(maxParallelism);
     transformation.setMaxParallelism(maxParallelism);
     transformation.setStateKeySelectors(stateKeySelector, stateKeySelector);
     transformation.setStateKeyType(Types.INT);
   }
 
-  private static KeySelector<ArrowBatch, Integer> subtaskStateKeySelector(
-      int maxParallelism, int parallelism) {
-    return new ArrowBatchSubtaskKeySelector(maxParallelism, parallelism);
+  private static KeySelector<ArrowBatch, Integer> subtaskStateKeySelector(int maxParallelism) {
+    return new ArrowBatchSubtaskKeySelector(maxParallelism);
   }
 }

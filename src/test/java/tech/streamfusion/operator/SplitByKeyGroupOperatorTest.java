@@ -1,7 +1,6 @@
 package tech.streamfusion.operator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import tech.streamfusion.planner.ColumnarKeyGroupPartitioner;
@@ -64,14 +63,14 @@ class SplitByKeyGroupOperatorTest {
 
   @Test
   @SuppressWarnings("unchecked")
-  void splitsABatchByKeyIntoTaggedSubBatches() throws Exception {
+  void splitsABatchIntoKeyGroupTaggedSubBatches() throws Exception {
     int channels = 4;
     int maxParallelism = KeyGroupRangeAssignment.computeDefaultMaxParallelism(channels);
     int n = 500;
     try (BufferAllocator allocator = new RootAllocator();
         OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
             new OneInputStreamOperatorTestHarness<>(
-                new SplitByKeyGroupOperator(new int[] {0}, new int[] {-1}, maxParallelism, channels),
+                new SplitByKeyGroupOperator(new int[] {0}, new int[] {-1}, maxParallelism),
                 new ArrowBatchSerializer())) {
       harness.setup(new ArrowBatchSerializer());
       harness.open();
@@ -84,32 +83,28 @@ class SplitByKeyGroupOperatorTest {
       harness.processElement(new StreamRecord<>(new ArrowBatch(in)));
 
       int total = 0;
-      Map<Long, Integer> keyToChannel = new HashMap<>();
+      Map<Long, Integer> keyToGroup = new HashMap<>();
       RowDataSerializer serializer = new RowDataSerializer(RowType.of(new BigIntType()));
       for (Object record : harness.getOutput()) {
         if (!(record instanceof StreamRecord)) {
           continue;
         }
         ArrowBatch batch = ((StreamRecord<ArrowBatch>) record).getValue();
-        int channel = batch.destination();
-        assertTrue(channel >= 0 && channel < channels, "destination in range");
+        int taggedGroup = batch.keyGroup();
+        assertTrue(taggedGroup >= 0 && taggedGroup < maxParallelism, "key group in range");
         try (VectorSchemaRoot sub = batch.root()) {
           for (RowData r : RowDataArrowConverter.read(sub, SCHEMA)) {
             long key = r.getLong(0);
-            Integer prev = keyToChannel.put(key, channel);
+            Integer prev = keyToGroup.put(key, taggedGroup);
             if (prev != null) {
-              assertEquals(prev.intValue(), channel, "key " + key + " split across channels");
+              assertEquals(prev.intValue(), taggedGroup, "key " + key + " split across groups");
             }
             GenericRowData projectedKey = new GenericRowData(1);
             projectedKey.setField(0, key);
             int keyGroup =
                 KeyGroupRangeAssignment.computeKeyGroupForKeyHash(
                     serializer.toBinaryRow(projectedKey).hashCode(), maxParallelism);
-            assertEquals(
-                KeyGroupRangeAssignment.computeOperatorIndexForKeyGroup(
-                    maxParallelism, channels, keyGroup),
-                channel,
-                "Flink key-group destination for key " + key);
+            assertEquals(keyGroup, taggedGroup, "Flink key group for key " + key);
             total++;
           }
         }
@@ -119,29 +114,43 @@ class SplitByKeyGroupOperatorTest {
   }
 
   @Test
-  void partitionerRoutesByDestination() {
-    ColumnarKeyGroupPartitioner partitioner = new ColumnarKeyGroupPartitioner();
+  void partitionerReroutesAKeyGroupAtRestoredParallelism() {
+    int maxParallelism = 128;
+    int keyGroup = 70;
+    ColumnarKeyGroupPartitioner partitioner = new ColumnarKeyGroupPartitioner(maxParallelism);
     partitioner.setup(4);
     StreamPartitioner<ArrowBatch> p = partitioner;
-    // selectChannel reads the batch's tagged destination; the serializer is never consulted.
     SerializationDelegate<StreamRecord<ArrowBatch>> delegate = new SerializationDelegate<>(null);
-    delegate.setInstance(new StreamRecord<>(new ArrowBatch(null, 2)));
-    assertEquals(2, p.selectChannel(delegate));
+    delegate.setInstance(new StreamRecord<>(new ArrowBatch(null, keyGroup)));
+    assertEquals(
+        KeyGroupRangeAssignment.computeOperatorIndexForKeyGroup(maxParallelism, 4, keyGroup),
+        p.selectChannel(delegate));
+
+    // Recovery configures the copied partitioner for the restored topology and filters/reroutes
+    // this whole record without inspecting its Arrow rows.
+    ColumnarKeyGroupPartitioner restored =
+        (ColumnarKeyGroupPartitioner) partitioner.copy();
+    restored.configure(maxParallelism);
+    restored.setup(7);
+    assertEquals(
+        KeyGroupRangeAssignment.computeOperatorIndexForKeyGroup(maxParallelism, 7, keyGroup),
+        restored.selectChannel(delegate));
+
     delegate.setInstance(new StreamRecord<>(new ArrowBatch(null, -1)));
     assertEquals(0, p.selectChannel(delegate), "an unrouted batch goes to channel 0");
   }
 
   @Test
-  void partitionerUsesKeyGroupRangeRecoveryAndForcesAlignedChannelState() {
-    ColumnarKeyGroupPartitioner partitioner = new ColumnarKeyGroupPartitioner();
+  void partitionerUsesKeyGroupRangeRecoveryAndSupportsUnalignedChannelState() {
+    ColumnarKeyGroupPartitioner partitioner = new ColumnarKeyGroupPartitioner(128);
     assertEquals(SubtaskStateMapper.RANGE, partitioner.getDownstreamSubtaskStateMapper());
-    assertFalse(
+    assertTrue(
         partitioner.isSupportsUnalignedCheckpoint(),
-        "an old-topology Arrow batch cannot be filtered row by row after rescaling");
+        "each Arrow record contains exactly one topology-independent key group");
   }
 
   @Test
-  void streamGraphForcesTheColumnarExchangeAlignedWhenUnalignedCheckpointsAreEnabled() {
+  void streamGraphAllowsUnalignedColumnarExchange() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.enableCheckpointing(10);
     env.getCheckpointConfig().enableUnalignedCheckpoints();
@@ -152,7 +161,7 @@ class SplitByKeyGroupOperatorTest {
     PartitionTransformation<ArrowBatch> partition =
         new PartitionTransformation<>(
             input.getTransformation(),
-            new ColumnarKeyGroupPartitioner(),
+            new ColumnarKeyGroupPartitioner(128),
             StreamExchangeMode.PIPELINED);
     new DataStream<>(env, partition).sinkTo(new DiscardingSink<>());
 
@@ -162,7 +171,19 @@ class SplitByKeyGroupOperatorTest {
             .filter(edge -> edge.getPartitioner() instanceof ColumnarKeyGroupPartitioner)
             .toList();
     assertEquals(1, columnarEdges.size());
-    assertFalse(columnarEdges.get(0).supportsUnalignedCheckpoints());
+    assertTrue(columnarEdges.get(0).supportsUnalignedCheckpoints());
+  }
+
+  @Test
+  void stateKeySelectorRepresentsTheExactTaggedKeyGroup() throws Exception {
+    int maxParallelism = 128;
+    ArrowBatchSubtaskKeySelector selector = new ArrowBatchSubtaskKeySelector(maxParallelism);
+    for (int keyGroup = 0; keyGroup < maxParallelism; keyGroup++) {
+      int stateKey = selector.getKey(new ArrowBatch(null, keyGroup));
+      assertEquals(
+          keyGroup,
+          KeyGroupRangeAssignment.computeKeyGroupForKeyHash(stateKey, maxParallelism));
+    }
   }
 
   @Test
@@ -175,7 +196,7 @@ class SplitByKeyGroupOperatorTest {
         OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
             new OneInputStreamOperatorTestHarness<>(
                 new SplitByKeyGroupOperator(
-                    new int[] {0}, new int[] {-1, -1, -1, 9}, maxParallelism, channels),
+                    new int[] {0}, new int[] {-1, -1, -1, 9}, maxParallelism),
                 new ArrowBatchSerializer())) {
       harness.setup(new ArrowBatchSerializer());
       harness.open();
@@ -196,10 +217,7 @@ class SplitByKeyGroupOperatorTest {
             int group =
                 KeyGroupRangeAssignment.computeKeyGroupForKeyHash(
                     serializer.toBinaryRow(projected).hashCode(), maxParallelism);
-            assertEquals(
-                KeyGroupRangeAssignment.computeOperatorIndexForKeyGroup(
-                    maxParallelism, channels, group),
-                batch.destination());
+            assertEquals(group, batch.keyGroup());
             total++;
           }
         }

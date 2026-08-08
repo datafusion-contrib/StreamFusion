@@ -40,8 +40,8 @@ public final class ArrowBatch {
   static final long NO_HANDLE_OWNER = 0;
 
   private final VectorSchemaRoot root;
-  // The destination channel for a key-partitioned batch (the columnar shuffle); -1 when unrouted.
-  private final int destination;
+  // The Flink key group for a key-partitioned batch (the columnar shuffle); -1 when unrouted.
+  private final int keyGroup;
   // The producing split subtask whose failure cleanup owns a parked zero-copy handle.
   private final long handleOwner;
   private final Backstop backstop;
@@ -54,17 +54,17 @@ public final class ArrowBatch {
     this(root, -1, NO_HANDLE_OWNER, null, null);
   }
 
-  public ArrowBatch(VectorSchemaRoot root, int destination) {
-    this(root, destination, NO_HANDLE_OWNER, null, null);
+  public ArrowBatch(VectorSchemaRoot root, int keyGroup) {
+    this(root, keyGroup, NO_HANDLE_OWNER, null, null);
   }
 
-  ArrowBatch(VectorSchemaRoot root, int destination, long handleOwner) {
-    this(root, destination, handleOwner, null, null);
+  ArrowBatch(VectorSchemaRoot root, int keyGroup, long handleOwner) {
+    this(root, keyGroup, handleOwner, null, null);
   }
 
   ArrowBatch(
-      VectorSchemaRoot root, int destination, long handleOwner, LongConsumer encodeTiming) {
-    this(root, destination, handleOwner, encodeTiming, null);
+      VectorSchemaRoot root, int keyGroup, long handleOwner, LongConsumer encodeTiming) {
+    this(root, keyGroup, handleOwner, encodeTiming, null);
   }
 
   ArrowBatch(VectorSchemaRoot root, NativeScanMetrics nativeScanMetrics) {
@@ -73,12 +73,12 @@ public final class ArrowBatch {
 
   private ArrowBatch(
       VectorSchemaRoot root,
-      int destination,
+      int keyGroup,
       long handleOwner,
       LongConsumer encodeTiming,
       NativeScanMetrics nativeScanMetrics) {
     this.root = root;
-    this.destination = destination;
+    this.keyGroup = keyGroup;
     this.handleOwner = handleOwner;
     this.encodeTiming = encodeTiming;
     this.nativeScanMetrics = nativeScanMetrics;
@@ -119,8 +119,14 @@ public final class ArrowBatch {
     return new VectorSchemaRoot(root.getSchema(), shared, root.getRowCount());
   }
 
+  public int keyGroup() {
+    return keyGroup;
+  }
+
+  /** Compatibility alias for callers that treat the routing tag as an opaque integer. */
+  @Deprecated
   public int destination() {
-    return destination;
+    return keyGroup;
   }
 
   long handleOwner() {

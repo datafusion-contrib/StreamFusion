@@ -60,7 +60,7 @@ class FlinkColumnarShuffleParallelismTest {
 
   /**
    * A changelog aggregate at parallelism 2: the keyed exchange fragments every source batch into
-   * per-channel sub-batches, and the post-exchange coalescer must reassemble processing-sized
+   * per-key-group sub-batches, and the post-exchange coalescer must reassemble processing-sized
    * batches without changing the per-record changelog. No watermark is declared and the latency
    * backstop is parked, so nothing flushes mid-stream and the engagement counter must observe an
    * actual merge — the coalesced path is the one being parity-checked, not the pass-through.

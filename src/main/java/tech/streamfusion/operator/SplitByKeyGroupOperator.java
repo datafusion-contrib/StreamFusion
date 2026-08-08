@@ -13,11 +13,10 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.metrics.Counter;
 
 /**
- * Splits each incoming Arrow batch by key into per-channel sub-batches, emitting each tagged with
- * its destination channel. Paired with {@link tech.streamfusion.planner.ColumnarKeyGroupPartitioner}
- * to keep a keyed exchange columnar: this makes each emitted record homogeneous in destination, so
- * the partitioner can route a whole batch to one channel (Flink's partitioner is one record → one
- * channel). Every row with a given key goes to the same channel.
+ * Splits each incoming Arrow batch into per-key-group sub-batches. Paired with {@link
+ * tech.streamfusion.planner.ColumnarKeyGroupPartitioner}, the stable key-group tag lets Flink route
+ * the whole record both normally and while filtering channel state after unaligned-checkpoint
+ * rescaling. Every emitted record is independently reroutable under a new parallelism.
  */
 public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
@@ -25,7 +24,6 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
   private final int[] keyColumns;
   private final int[] timestampPrecisions;
   private final int maxParallelism;
-  private final int numChannels;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
@@ -37,11 +35,10 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
   private transient Counter inputBatches;
 
   public SplitByKeyGroupOperator(
-      int[] keyColumns, int[] timestampPrecisions, int maxParallelism, int numChannels) {
+      int[] keyColumns, int[] timestampPrecisions, int maxParallelism) {
     this.keyColumns = keyColumns;
     this.timestampPrecisions = timestampPrecisions;
     this.maxParallelism = maxParallelism;
-    this.numChannels = numChannels;
   }
 
   @Override
@@ -87,8 +84,7 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
               inSchema.memoryAddress(),
               keyColumns,
               timestampPrecisions,
-              maxParallelism,
-              numChannels);
+              maxParallelism);
       repartTime.inc(System.nanoTime() - repartStarted);
     } finally {
       in.close(); // the input batch is consumed by the split
@@ -97,9 +93,9 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
       while (true) {
         try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
             ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-          int channel =
+          int keyGroup =
               Native.nextSplit(handle, outArray.memoryAddress(), outSchema.memoryAddress());
-          if (channel < 0) {
+          if (keyGroup < 0) {
             break;
           }
           long decodeStarted = System.nanoTime();
@@ -109,7 +105,7 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
           ColumnarRecordMetrics.emit(
               output,
               getMetricGroup(),
-              new ArrowBatch(sub, channel, handleOwner, encodeTime::inc));
+              new ArrowBatch(sub, keyGroup, handleOwner, encodeTime::inc));
         }
       }
     } finally {

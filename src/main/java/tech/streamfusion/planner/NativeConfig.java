@@ -79,9 +79,9 @@ public final class NativeConfig {
   /**
    * The row target for re-assembling processing-sized batches in front of a keyed native operator
    * ({@code streamfusion.exchange.coalesceRows}, default 4096; a value of 1 or less disables
-   * coalescing). The columnar exchange splits every source batch into per-channel sub-batches, so
-   * at parallelism p a keyed operator would otherwise see batches roughly p× smaller than the
-   * source emitted — and pay the per-batch native fixed cost p× as often. Coalescing changes only
+   * coalescing). The columnar exchange splits every source batch into non-empty per-key-group
+   * sub-batches, so a keyed operator can otherwise see batches much smaller than the source emitted
+   * and pay the per-batch native fixed cost much more often. Coalescing changes only
    * physical chunking: the record-level changelog is byte-identical because every keyed operator
    * emits its cascade per record, and watermarks and checkpoint barriers always flush first.
    */
