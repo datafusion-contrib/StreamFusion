@@ -11,6 +11,7 @@ class NativeKafkaExtensionTest {
 
   @Test
   void loadsTheKafkaSerializationFacadeFromTheDevelopmentLibrary() {
+    assertTrue(NativeKafka.isLoaded());
     assertTrue(NativeKafka.encodeFormatSupported(FormatCodes.JSON));
   }
 }

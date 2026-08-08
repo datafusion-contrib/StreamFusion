@@ -1413,6 +1413,16 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_nativeBuildVersi
     crate::bridge::Java_tech_streamfusion_Native_version(env, class)
 }
 
+/// Whether the Kafka serialization extension loaded successfully.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_isLoaded<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jni::sys::jboolean {
+    crate::bridge::jni_guard(env, move |_env| true as jni::sys::jboolean)
+}
+
 /// Imports a whole Arrow batch once and materializes the final `byte[]` values consumed by
 /// KafkaProducer. The JNI boundary is batch-grained even though Kafka's Java API requires one heap
 /// array per record.

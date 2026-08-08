@@ -14,6 +14,9 @@ public final class NativeKafka {
   /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
   private static native String nativeBuildVersion();
 
+  /** Whether the native Kafka serialization extension loaded successfully. */
+  public static native boolean isLoaded();
+
   /** Whether this build encodes the supplied {@code FormatCodes} wire code. */
   public static native boolean encodeFormatSupported(int format);
 
