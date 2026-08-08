@@ -69,7 +69,10 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
     // UPDATE_BEFORE from its earlier INSERT/UPDATE_AFTER.
     int numChannels =
         keyColumns.length == 0 ? 1 : Math.max(1, planner.getExecEnv().getParallelism());
-    int maxParallelism = FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), numChannels);
+    int maxParallelism =
+        keyColumns.length == 0
+            ? 1
+            : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), numChannels);
     // Split each batch into topology-independent, per-key-group sub-batches...
     Transformation<ArrowBatch> split =
         ExecNodeUtil.createOneInputTransformation(
@@ -86,6 +89,7 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
         new PartitionTransformation<>(
             split, new ColumnarKeyGroupPartitioner(maxParallelism), StreamExchangeMode.PIPELINED);
     partition.setParallelism(numChannels);
+    partition.setMaxParallelism(maxParallelism);
     return partition;
   }
 }

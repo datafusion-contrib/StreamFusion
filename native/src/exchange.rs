@@ -1,10 +1,12 @@
 use crate::*;
 
-/// Splits a batch into one sub-batch per non-empty Flink key group using
+/// Splits a batch into contiguous, single-key-group sub-batches using
 /// `BinaryRowData.hashCode()` → `MathUtils.murmurHash`. Each sub-batch keeps the full input schema
 /// and carries a topology-independent key-group id. Flink can therefore rerun the partitioner on
 /// an in-flight sub-batch restored from an unaligned checkpoint after the downstream parallelism
-/// changes; a destination-channel batch would not be independently reroutable.
+/// changes; a destination-channel batch would not be independently reroutable. Contiguous runs,
+/// rather than one gathered batch per key group, preserve Flink's per-channel input order when
+/// several key groups have the same owner.
 pub(crate) fn partition_batch(
     batch: &RecordBatch,
     key_columns: &[usize],
@@ -13,17 +15,17 @@ pub(crate) fn partition_batch(
 ) -> Vec<(usize, RecordBatch)> {
     // The precision sidecar is a pre-order type tree, so a nested key contributes more than one
     // descriptor; the encoder validates that it is consumed exactly.
-    let mut rows_by_key_group: Vec<Vec<u32>> = vec![Vec::new(); max_parallelism];
+    let mut runs: Vec<(usize, Vec<u32>)> = Vec::new();
     let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, timestamp_precisions);
     for row in 0..batch.num_rows() {
         let key_group = flink_key_group(encoder.hash(row), max_parallelism);
-        rows_by_key_group[key_group].push(row as u32);
-    }
-    let mut out = Vec::new();
-    for (key_group, rows) in rows_by_key_group.into_iter().enumerate() {
-        if rows.is_empty() {
-            continue;
+        if runs.last().is_none_or(|(group, _)| *group != key_group) {
+            runs.push((key_group, Vec::new()));
         }
+        runs.last_mut().unwrap().1.push(row as u32);
+    }
+    let mut out = Vec::with_capacity(runs.len());
+    for (key_group, rows) in runs {
         let indices = UInt32Array::from(rows);
         let columns: Vec<ArrayRef> = batch
             .columns()
@@ -38,7 +40,7 @@ pub(crate) fn partition_batch(
     out
 }
 
-/// Holds the per-key-group sub-batches of one split, pulled out one at a time by the JVM.
+/// Holds the single-key-group sub-batches of one split, pulled out one at a time by the JVM.
 pub(crate) struct SplitState {
     key_groups: Vec<(usize, RecordBatch)>,
     cursor: usize,

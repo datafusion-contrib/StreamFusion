@@ -8559,11 +8559,14 @@ fn partitions_a_batch_by_key() {
     for max_parallelism in [1usize, 3, 8] {
         let parts = partition_batch(&batch, &[0], &[-1], max_parallelism);
         let mut rows = 0usize;
+        let mut values_in_output_order = Vec::new();
         let mut key_to_group: HashMap<i64, usize> = HashMap::default();
         for (key_group, sub) in &parts {
             assert!(*key_group < max_parallelism);
             let keys = sub.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+            let values = sub.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
             for i in 0..sub.num_rows() {
+                values_in_output_order.push(values.value(i));
                 let single = RecordBatch::try_new(
                     Arc::new(Schema::new(vec![Field::new("k", DataType::Int64, true)])),
                     vec![Arc::new(Int64Array::from(vec![keys.value(i)]))],
@@ -8584,6 +8587,11 @@ fn partitions_a_batch_by_key() {
         assert_eq!(
             rows, n,
             "all rows preserved for max parallelism {max_parallelism}"
+        );
+        assert_eq!(
+            values_in_output_order,
+            (0..n as i64).collect::<Vec<_>>(),
+            "splitting must preserve input order within an output channel"
         );
     }
 }
