@@ -88,7 +88,8 @@ public class NativeWindowRankExecNode extends ExecNodeBase<ArrowBatch>
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     String timeZoneId = planner.getTableConfig().getLocalTimeZone().getId();
-    int maxParallelism = FlinkKeyGroupUtils.defaultMaxParallelism(input.getParallelism());
+    int maxParallelism =
+        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,

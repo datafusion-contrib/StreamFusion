@@ -89,7 +89,8 @@ public class NativeColumnarTopNExecNode extends ExecNodeBase<ArrowBatch>
     // The job-wide idle-state retention; Flink defines STATE_TTL hints only for joins and
     // aggregates, so ranks have no per-operator override to resolve.
     long stateTtlMillis = config.getStateRetentionTime();
-    int maxParallelism = FlinkKeyGroupUtils.defaultMaxParallelism(input.getParallelism());
+    int maxParallelism =
+        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,

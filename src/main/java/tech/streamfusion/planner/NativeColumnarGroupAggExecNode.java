@@ -79,7 +79,8 @@ public class NativeColumnarGroupAggExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
-    int maxParallelism = FlinkKeyGroupUtils.defaultMaxParallelism(input.getParallelism());
+    int maxParallelism =
+        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     boolean miniBatch = config.get(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED);
     long miniBatchSize = config.get(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE);
     long stateTtlMillis =

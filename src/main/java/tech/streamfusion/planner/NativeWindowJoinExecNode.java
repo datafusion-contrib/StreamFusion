@@ -91,7 +91,8 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     Transformation<ArrowBatch> right =
         (Transformation<ArrowBatch>) getInputEdges().get(1).translateToPlan(planner);
-    int maxParallelism = FlinkKeyGroupUtils.defaultMaxParallelism(left.getParallelism());
+    int maxParallelism =
+        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), left.getParallelism());
     TwoInputTransformation<ArrowBatch, ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createTwoInputTransformation(
             left,

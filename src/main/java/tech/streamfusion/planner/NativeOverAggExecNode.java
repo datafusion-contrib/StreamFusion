@@ -71,7 +71,8 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
-    int maxParallelism = FlinkKeyGroupUtils.defaultMaxParallelism(input.getParallelism());
+    int maxParallelism =
+        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     // The job-wide retention only: Flink's StreamExecOverAggregate reads the config directly,
     // with no STATE_TTL hint support. The 1.5x max deadline horizon is derived natively.
     long stateTtlMillis = config.getStateRetentionTime();

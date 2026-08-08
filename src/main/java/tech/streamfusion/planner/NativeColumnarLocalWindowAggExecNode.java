@@ -83,7 +83,8 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
     // aggregate's boundary rendering applied.
     String timeZoneId =
         timestampLtz ? planner.getTableConfig().getLocalTimeZone().getId() : "UTC";
-    int maxParallelism = FlinkKeyGroupUtils.defaultMaxParallelism(input.getParallelism());
+    int maxParallelism =
+        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     // The local half sits upstream of the exchange, so its batches carry no destination tag; the
     // operator sets its own subtask-local key context in open(). This selector exists only so
     // Flink creates the keyed backend for the raw-state plumbing and is never consulted.

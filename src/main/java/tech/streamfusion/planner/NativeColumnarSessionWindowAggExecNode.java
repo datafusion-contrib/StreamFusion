@@ -80,7 +80,8 @@ public class NativeColumnarSessionWindowAggExecNode extends ExecNodeBase<ArrowBa
     String timeZoneId =
         timestampLtz ? planner.getTableConfig().getLocalTimeZone().getId() : "UTC";
     RowType outputType = (RowType) getOutputType();
-    int maxParallelism = FlinkKeyGroupUtils.defaultMaxParallelism(input.getParallelism());
+    int maxParallelism =
+        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,

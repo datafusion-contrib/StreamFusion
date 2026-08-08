@@ -5,8 +5,8 @@ changelog normalizer
 
 ## The problem
 
-At parallelism p the columnar exchange splits every source batch into per-channel sub-batches, so a
-keyed operator sees batches roughly p× smaller than the source emitted — and a changelog operator
+The columnar exchange splits every source batch into non-empty per-key-group sub-batches, so a
+keyed operator can see batches much smaller than the source emitted — and a changelog operator
 feeding another keyed operator compounds the fragmentation: in the 2M/p=4 q4 pipeline the second
 aggregate processed 26-row batches at ~71× the p=1 batch count. The per-batch fixed cost (JNI
 crossings, per-call setup, per-batch emission) dominated wall time, and every task thread sat
@@ -33,5 +33,5 @@ with coalescing** on json (1.95 → 1.23 s; 1.45× avro, 2.06× protobuf), movin
 ~1.06× to **1.78×** on json; the row-fed q4 variants gain ~2.5× (5.5 → 2.2 s). q3/q19 sit within
 cross-leg noise.
 
-The remaining off-mode lever is the source-side batch floor (a p=4 consumer's ~950-row polls,
-quartered by the split before the first operator).
+The remaining off-mode lever is the source-side batch floor: smaller source polls create sparse
+key-group fragments before the first keyed operator.

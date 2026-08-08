@@ -73,7 +73,8 @@ public class NativeTemporalJoinExecNode extends ExecNodeBase<ArrowBatch>
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     Transformation<ArrowBatch> right =
         (Transformation<ArrowBatch>) getInputEdges().get(1).translateToPlan(planner);
-    int maxParallelism = FlinkKeyGroupUtils.defaultMaxParallelism(left.getParallelism());
+    int maxParallelism =
+        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), left.getParallelism());
     // The job-wide retention only: Flink's StreamExecTemporalJoin reads the config directly, with
     // no STATE_TTL hint support. The 1.5x max deadline horizon is derived natively.
     long stateTtlMillis = config.getStateRetentionTime();

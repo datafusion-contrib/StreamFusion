@@ -76,7 +76,8 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
     // its bundled retracting function — keep-first merely flips the comparator — so that shape
     // routes to the eager operator too.
     boolean eager = proctime || keepLast || miniBatchEnabled;
-    int maxParallelism = FlinkKeyGroupUtils.defaultMaxParallelism(input.getParallelism());
+    int maxParallelism =
+        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     // Proctime keep-first stays eager (its bundled function emits the same insert-only rows);
     // every other shape bundles.
     boolean miniBatch = miniBatchEnabled && (keepLast || !proctime);
