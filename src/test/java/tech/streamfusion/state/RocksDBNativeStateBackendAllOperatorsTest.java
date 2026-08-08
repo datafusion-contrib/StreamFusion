@@ -27,7 +27,9 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.configuration.TaskManagerOptions;
+import org.apache.flink.core.execution.SavepointFormatType;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
+import org.apache.flink.runtime.checkpoint.SavepointType;
 import org.apache.flink.runtime.state.IncrementalKeyedStateHandle.HandleAndLocalPath;
 import org.apache.flink.runtime.state.IncrementalRemoteKeyedStateHandle;
 import org.apache.flink.runtime.state.KeyedStateHandle;
@@ -35,6 +37,7 @@ import org.apache.flink.runtime.state.PlaceholderStreamStateHandle;
 import org.apache.flink.runtime.state.SharedStateRegistryImpl;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.KeyedTwoInputStreamOperatorTestHarness;
 import org.apache.flink.table.data.GenericRowData;
@@ -45,8 +48,10 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import tech.streamfusion.operator.CoalescingOff;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import tech.streamfusion.operator.CoalescingOff;
 
 /**
  * Native operators on the RocksDB state backend: state lives in a local RocksDB table, snapshots go
@@ -56,6 +61,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
  *
  * <p>Every run here is the production shape: Rust reads and writes its RocksDB instance directly,
  * while Java coordinates Flink checkpoint handles and uploads.
+ *
+ * <p>State-transition cases run through an ordinary RocksDB checkpoint and through canonical
+ * savepoints in both backend directions. This keeps the incremental lifecycle assertions while
+ * applying the same semantic continuation checks to memory-to-RocksDB and RocksDB-to-memory
+ * restores.
  */
 @ExtendWith(CoalescingOff.class)
 class RocksDBNativeStateBackendAllOperatorsTest {
@@ -202,13 +212,15 @@ class RocksDBNativeStateBackendAllOperatorsTest {
    * options ({@link #recordLevelExpireOptionsPadTheRetention} pins the zero-retention mapping);
    * physical cleanup is the operator's own staged tombstones.
    */
-  @Test
-  void overAggregateRetentionExpiresAcrossCheckpointAndRestore() throws Exception {
+  @ParameterizedTest
+  @EnumSource(StateTransition.class)
+  void stateTransitionPreservesOverAggregateRetention(StateTransition transition)
+      throws Exception {
     OperatorSubtaskState snapshot;
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             overHarness(2000)) {
-      harness.setStateBackend(backend());
+      transition.configureSource(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -221,16 +233,14 @@ class RocksDBNativeStateBackendAllOperatorsTest {
                       List.of(GenericRowData.of(1L, 10L, 100L)), OVER_ROW, allocator))));
       harness.processWatermark(new Watermark(200));
       assertEquals(List.of(List.of(RowKind.INSERT, 1L, 10L, 100L, 10L)), collectOver(harness));
-      snapshot = harness.snapshot(1, 1);
-      rocksHandle(snapshot); // the retention-bounded OVER must resolve to the RocksDB route
-      harness.notifyOfCompletedCheckpoint(1);
+      snapshot = transition.snapshot(harness);
     }
 
     // One ms inside the restored (absolute) deadline the fold continues from the table...
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             overHarness(2000)) {
-      harness.setStateBackend(backend());
+      transition.configureRestore(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -248,7 +258,7 @@ class RocksDBNativeStateBackendAllOperatorsTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             overHarness(2000)) {
-      harness.setStateBackend(backend());
+      transition.configureRestore(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -269,13 +279,15 @@ class RocksDBNativeStateBackendAllOperatorsTest {
    * probe null-pads exactly as if no version ever existed. See the OVER test above for why the
    * maintenance session gets no record-level expiry options.
    */
-  @Test
-  void temporalJoinRetentionExpiresAcrossCheckpointAndRestore() throws Exception {
+  @ParameterizedTest
+  @EnumSource(StateTransition.class)
+  void stateTransitionPreservesTemporalJoinRetention(StateTransition transition)
+      throws Exception {
     OperatorSubtaskState snapshot;
     try (BufferAllocator allocator = new RootAllocator();
         KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
             harness = temporalHarness(2000)) {
-      harness.setStateBackend(backend());
+      transition.configureSource(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -286,16 +298,14 @@ class RocksDBNativeStateBackendAllOperatorsTest {
               new ArrowBatch(
                   RowDataArrowConverter.write(
                       List.of(GenericRowData.of(1L, 10L, 100L)), TEMPORAL_ROW, allocator, true))));
-      snapshot = harness.snapshot(1, 1);
-      rocksHandle(snapshot); // the retention-bounded join must resolve to the RocksDB route
-      harness.notifyOfCompletedCheckpoint(1);
+      snapshot = transition.snapshot(harness);
     }
 
     // One ms inside the restored (absolute) deadline the probe still joins the version...
     try (BufferAllocator allocator = new RootAllocator();
         KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
             harness = temporalHarness(2000)) {
-      harness.setStateBackend(backend());
+      transition.configureRestore(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -314,7 +324,7 @@ class RocksDBNativeStateBackendAllOperatorsTest {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
             harness = temporalHarness(2000)) {
-      harness.setStateBackend(backend());
+      transition.configureRestore(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -375,13 +385,14 @@ class RocksDBNativeStateBackendAllOperatorsTest {
    * The keep-last deduplicator rides the same backend: its checkpoint is an incremental RocksDB
    * handle, and a restored operator's retraction carries the payload persisted before the restore.
    */
-  @Test
-  void dedupCheckpointsAndRestores() throws Exception {
+  @ParameterizedTest
+  @EnumSource(StateTransition.class)
+  void stateTransitionPreservesDedupState(StateTransition transition) throws Exception {
     OperatorSubtaskState snapshot;
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             dedupHarness()) {
-      harness.setStateBackend(backend());
+      transition.configureSource(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -397,15 +408,13 @@ class RocksDBNativeStateBackendAllOperatorsTest {
               List.of(RowKind.INSERT, 1L, 10L, 1L), List.of(RowKind.INSERT, 2L, 20L, 1L)),
           collectDedup(harness));
 
-      snapshot = harness.snapshot(1, 1);
-      rocksHandle(snapshot); // the dedup checkpoint travels as an incremental handle, not raw state
-      harness.notifyOfCompletedCheckpoint(1);
+      snapshot = transition.snapshot(harness);
     }
 
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             dedupHarness()) {
-      harness.setStateBackend(backend());
+      transition.configureRestore(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -427,27 +436,26 @@ class RocksDBNativeStateBackendAllOperatorsTest {
    * The changelog normalizer rides the same backend; a restored operator's delete emits the
    * stored full row (hydrated from the pre-restore table) and tombstones it.
    */
-  @Test
-  void normalizerCheckpointsAndRestores() throws Exception {
+  @ParameterizedTest
+  @EnumSource(StateTransition.class)
+  void stateTransitionPreservesNormalizerState(StateTransition transition) throws Exception {
     OperatorSubtaskState snapshot;
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             normalizerHarness()) {
-      harness.setStateBackend(backend());
+      transition.configureSource(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
       harness.processElement(new StreamRecord<>(batch(allocator, row(1, 10), row(2, 20))));
       assertEquals(List.of(insert(1, 10), insert(2, 20)), collect(harness));
-      snapshot = harness.snapshot(1, 1);
-      rocksHandle(snapshot);
-      harness.notifyOfCompletedCheckpoint(1);
+      snapshot = transition.snapshot(harness);
     }
 
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             normalizerHarness()) {
-      harness.setStateBackend(backend());
+      transition.configureRestore(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -472,13 +480,14 @@ class RocksDBNativeStateBackendAllOperatorsTest {
    * The append-only Top-N rides the RocksDB LIST store: buffer positions (tie order) survive the
    * restore, so the eviction after restore hits exactly the row Flink would evict.
    */
-  @Test
-  void topNCheckpointsAndRestoresTieOrder() throws Exception {
+  @ParameterizedTest
+  @EnumSource(StateTransition.class)
+  void stateTransitionPreservesTopNTieOrder(StateTransition transition) throws Exception {
     OperatorSubtaskState snapshot;
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             topNHarness()) {
-      harness.setStateBackend(backend());
+      transition.configureSource(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -491,15 +500,13 @@ class RocksDBNativeStateBackendAllOperatorsTest {
                       TOPN_ROW,
                       allocator))));
       collectDedupless(harness);
-      snapshot = harness.snapshot(1, 1);
-      rocksHandle(snapshot);
-      harness.notifyOfCompletedCheckpoint(1);
+      snapshot = transition.snapshot(harness);
     }
 
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             topNHarness()) {
-      harness.setStateBackend(backend());
+      transition.configureRestore(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -526,13 +533,15 @@ class RocksDBNativeStateBackendAllOperatorsTest {
    * retraction after restore promotes the row that sat beyond rank N, which only works if the
    * whole buffer — not just the visible top — survived the RocksDB round trip.
    */
-  @Test
-  void retractingTopNPromotesFromBeyondNAfterRestore() throws Exception {
+  @ParameterizedTest
+  @EnumSource(StateTransition.class)
+  void stateTransitionPreservesRetractingTopNBuffer(StateTransition transition)
+      throws Exception {
     OperatorSubtaskState snapshot;
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             retractingTopNHarness()) {
-      harness.setStateBackend(backend());
+      transition.configureSource(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -549,15 +558,13 @@ class RocksDBNativeStateBackendAllOperatorsTest {
       assertEquals(
           List.of(List.of(RowKind.INSERT, 9L, 1L), List.of(RowKind.INSERT, 9L, 2L)),
           collectDedupless(harness));
-      snapshot = harness.snapshot(1, 1);
-      rocksHandle(snapshot);
-      harness.notifyOfCompletedCheckpoint(1);
+      snapshot = transition.snapshot(harness);
     }
 
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             retractingTopNHarness()) {
-      harness.setStateBackend(backend());
+      transition.configureRestore(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -586,13 +593,15 @@ class RocksDBNativeStateBackendAllOperatorsTest {
    * row — retracting its old payload — which only works if the persisted row-key identity and the
    * tie order survived the round trip.
    */
-  @Test
-  void updateFastTopNCheckpointsAndRestoresRowKeyedMoves() throws Exception {
+  @ParameterizedTest
+  @EnumSource(StateTransition.class)
+  void stateTransitionPreservesUpdateFastTopNRows(StateTransition transition)
+      throws Exception {
     OperatorSubtaskState snapshot;
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             updateFastTopNHarness()) {
-      harness.setStateBackend(backend());
+      transition.configureSource(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -605,15 +614,13 @@ class RocksDBNativeStateBackendAllOperatorsTest {
                       UPDATE_FAST_ROW,
                       allocator))));
       collectUpdateFast(harness);
-      snapshot = harness.snapshot(1, 1);
-      rocksHandle(snapshot);
-      harness.notifyOfCompletedCheckpoint(1);
+      snapshot = transition.snapshot(harness);
     }
 
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             updateFastTopNHarness()) {
-      harness.setStateBackend(backend());
+      transition.configureRestore(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -677,14 +684,16 @@ class RocksDBNativeStateBackendAllOperatorsTest {
    * join states as two column families in one RocksDB): one incremental handle carries both, and a
    * restored joiner's retraction still finds the pre-restore match.
    */
-  @Test
-  void updatingJoinCheckpointsBothSidesAndRestores() throws Exception {
+  @ParameterizedTest
+  @EnumSource(StateTransition.class)
+  void stateTransitionPreservesUpdatingJoinBothSides(StateTransition transition)
+      throws Exception {
     OperatorSubtaskState snapshot;
     try (BufferAllocator allocator = new RootAllocator();
         org.apache.flink.streaming.util.KeyedTwoInputStreamOperatorTestHarness<
                 Integer, ArrowBatch, ArrowBatch, ArrowBatch>
             harness = joinHarness()) {
-      harness.setStateBackend(backend());
+      transition.configureSource(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
@@ -699,16 +708,14 @@ class RocksDBNativeStateBackendAllOperatorsTest {
                   RowDataArrowConverter.write(
                       List.of(GenericRowData.of(1L, 10L)), INPUT, allocator))));
       collectJoin(harness);
-      snapshot = harness.snapshot(1, 1);
-      rocksHandle(snapshot); // one incremental handle covers both side tables
-      harness.notifyOfCompletedCheckpoint(1);
+      snapshot = transition.snapshot(harness);
     }
 
     try (BufferAllocator allocator = new RootAllocator();
         org.apache.flink.streaming.util.KeyedTwoInputStreamOperatorTestHarness<
                 Integer, ArrowBatch, ArrowBatch, ArrowBatch>
             harness = joinHarness()) {
-      harness.setStateBackend(backend());
+      transition.configureRestore(harness);
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
@@ -1029,6 +1036,47 @@ class RocksDBNativeStateBackendAllOperatorsTest {
     config.set(CheckpointingOptions.INCREMENTAL_CHECKPOINTS, true);
     return new RocksDBNativeStateBackend(
         config, RocksDBNativeStateBackendAllOperatorsTest.class.getClassLoader());
+  }
+
+  private static OperatorSubtaskState canonicalSavepoint(
+      AbstractStreamOperatorTestHarness<?> harness) throws Exception {
+    OperatorSubtaskState savepoint =
+        harness
+            .snapshotWithLocalState(
+                1, 1, SavepointType.savepoint(SavepointFormatType.CANONICAL))
+            .getJobManagerOwnedState();
+    assertInstanceOf(
+        org.apache.flink.runtime.state.KeyGroupsSavepointStateHandle.class,
+        savepoint.getManagedKeyedState().iterator().next());
+    return savepoint;
+  }
+
+  private enum StateTransition {
+    ROCKSDB_CHECKPOINT,
+    MEMORY_TO_ROCKSDB,
+    ROCKSDB_TO_MEMORY;
+
+    void configureSource(AbstractStreamOperatorTestHarness<?> harness) {
+      if (this != MEMORY_TO_ROCKSDB) {
+        harness.setStateBackend(backend());
+      }
+    }
+
+    void configureRestore(AbstractStreamOperatorTestHarness<?> harness) {
+      if (this != ROCKSDB_TO_MEMORY) {
+        harness.setStateBackend(backend());
+      }
+    }
+
+    OperatorSubtaskState snapshot(AbstractStreamOperatorTestHarness<?> harness) throws Exception {
+      if (this != ROCKSDB_CHECKPOINT) {
+        return canonicalSavepoint(harness);
+      }
+      OperatorSubtaskState checkpoint = harness.snapshot(1, 1);
+      rocksHandle(checkpoint);
+      harness.notifyOfCompletedCheckpoint(1);
+      return checkpoint;
+    }
   }
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness(
