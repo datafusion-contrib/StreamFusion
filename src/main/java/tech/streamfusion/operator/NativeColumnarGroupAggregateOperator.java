@@ -127,6 +127,13 @@ public class NativeColumnarGroupAggregateOperator
   }
 
   @Override
+  protected byte[][] snapshotCanonicalPartitions() {
+    return directRocksDBState()
+        ? Native.snapshotRocksDBGroupAggregatorPartitions(handle)
+        : snapshotRawPartitions();
+  }
+
+  @Override
   protected void closeHandle() {
     if (directRocksDBState()) {
       Native.closeRocksDBGroupAggregator(handle);

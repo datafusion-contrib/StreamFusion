@@ -4,7 +4,6 @@ package tech.streamfusion.state;
  * The native side of a checkpoint for an operator whose state lives in a local RocksDB table. The
  * backend calls this in the synchronous snapshot phase, on the task thread, at the barrier.
  */
-@FunctionalInterface
 public interface RocksDBNativeState {
 
   /**
@@ -17,4 +16,13 @@ public interface RocksDBNativeState {
    * local memory-pressure flush without publishing checkpoint state.
    */
   String[] checkpoint(String snapshotDirectory) throws Exception;
+
+  /** Materializes logical key-group partitions for a backend-independent canonical savepoint. */
+  byte[][] canonicalPartitions() throws Exception;
+
+  /** Stable operator/state identifier checked before a canonical payload is restored. */
+  String canonicalOperatorId();
+
+  /** Processing-time cleanup deadline carried by this operator, or {@link Long#MIN_VALUE}. */
+  long canonicalTimerDeadline();
 }

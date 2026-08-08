@@ -403,6 +403,38 @@ impl<C: RocksStateCodec> RocksStore<C> {
         self.generation += 1;
         checkpoint_files(&self.db, snapshot_dir, self.generation)
     }
+
+    /// Flushes the read-through cache and decodes the complete logical table for a canonical
+    /// savepoint. This intentionally walks RocksDB only for the portable full-snapshot path.
+    pub(crate) fn canonical_keys_by_group(
+        &mut self,
+    ) -> Result<std::collections::BTreeMap<i32, Vec<ByteKey>>, DataFusionError> {
+        self.checkpoint("")?;
+        let mut keys = std::collections::BTreeMap::<i32, Vec<ByteKey>>::new();
+        for row in self.db.iterator(IteratorMode::Start) {
+            let (db_key, value) = row.map_err(re)?;
+            if db_key.len() < 4 || db_key.as_ref() == SNAPSHOT_TIMER_KEY {
+                continue;
+            }
+            let key_group = i32::from_be_bytes(db_key[..4].try_into().unwrap());
+            if let Some(state) = self.decode_value(&value)? {
+                let key = ByteKey::from(&db_key[4..]);
+                self.working.insert(
+                    key.clone(),
+                    Slot::Present {
+                        state,
+                        dirty: false,
+                    },
+                );
+                keys.entry(key_group).or_default().push(key);
+            }
+        }
+        Ok(keys)
+    }
+
+    pub(crate) fn finish_canonical_scan(&mut self) {
+        self.working.clear();
+    }
 }
 
 impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {

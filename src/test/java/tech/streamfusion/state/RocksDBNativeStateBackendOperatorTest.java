@@ -23,9 +23,12 @@ import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
+import org.apache.flink.core.execution.SavepointFormatType;
+import org.apache.flink.runtime.checkpoint.SavepointType;
 import org.apache.flink.runtime.state.IncrementalKeyedStateHandle.HandleAndLocalPath;
 import org.apache.flink.runtime.state.IncrementalRemoteKeyedStateHandle;
 import org.apache.flink.runtime.state.KeyedStateHandle;
+import org.apache.flink.runtime.state.KeyGroupsSavepointStateHandle;
 import org.apache.flink.runtime.state.PlaceholderStreamStateHandle;
 import org.apache.flink.runtime.state.SharedStateRegistryImpl;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
@@ -166,6 +169,81 @@ class RocksDBNativeStateBackendOperatorTest {
               .noneMatch(file -> file.getHandle() instanceof PlaceholderStreamStateHandle),
           "execution.checkpointing.incremental=false must not reuse prior SST handles");
     }
+  }
+
+  @Test
+  void canonicalSavepointMovesRocksDBStateToMemory() throws Exception {
+    OperatorSubtaskState savepoint;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            harness(0)) {
+      harness.setStateBackend(backend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 10), row(2, 20))));
+      collect(harness);
+      savepoint = canonicalSavepoint(harness);
+      assertInstanceOf(
+          KeyGroupsSavepointStateHandle.class,
+          savepoint.getManagedKeyedState().iterator().next());
+    }
+
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            harness(0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(savepoint);
+      harness.open();
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 5), row(2, 7))));
+      assertEquals(
+          List.of(
+              update(RowKind.UPDATE_BEFORE, 1, 10),
+              update(RowKind.UPDATE_AFTER, 1, 15),
+              update(RowKind.UPDATE_BEFORE, 2, 20),
+              update(RowKind.UPDATE_AFTER, 2, 27)),
+          collect(harness));
+    }
+  }
+
+  @Test
+  void canonicalSavepointMovesMemoryStateToRocksDB() throws Exception {
+    OperatorSubtaskState savepoint;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            harness(0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 10))));
+      collect(harness);
+      savepoint = canonicalSavepoint(harness);
+    }
+
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            harness(0)) {
+      harness.setStateBackend(backend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(savepoint);
+      harness.open();
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 5))));
+      assertEquals(
+          List.of(
+              update(RowKind.UPDATE_BEFORE, 1, 10),
+              update(RowKind.UPDATE_AFTER, 1, 15)),
+          collect(harness));
+      assertInstanceOf(
+          IncrementalRemoteKeyedStateHandle.class,
+          harness.snapshot(2, 2).getManagedKeyedState().iterator().next());
+    }
+  }
+
+  private static OperatorSubtaskState canonicalSavepoint(
+      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness)
+      throws Exception {
+    return harness
+        .snapshotWithLocalState(
+            1, 1, SavepointType.savepoint(SavepointFormatType.CANONICAL))
+        .getJobManagerOwnedState();
   }
 
   private static RocksDBNativeStateBackend backend() {

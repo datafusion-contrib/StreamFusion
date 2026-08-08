@@ -92,6 +92,7 @@ nav:
       - backends/index.md
       - Memory: backends/memory.md
       - RocksDB: backends/rocksdb.md
+      - Canonical state format: backends/canonical-state.md
   - Deployment: deployment.md
   - Configuration: configuration.md
   - Memory management: memory-management.md

@@ -1735,7 +1735,9 @@ impl GroupAggregator {
         let selected: Vec<ByteKey> = self.store.keys().cloned().collect();
         self.snapshot_keys(&selected)
     }
+}
 
+impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     fn snapshot_keys(&self, selected: &[ByteKey]) -> Vec<u8> {
         let num_agg = self.kinds.len();
         let mut encoded_keys: Vec<&[u8]> = Vec::new();
@@ -1854,7 +1856,9 @@ impl GroupAggregator {
         }
         write_framed(&batches)
     }
+}
 
+impl GroupAggregator {
     /// Materializes every non-empty Flink key group once and transfers ownership to the caller.
     pub(crate) fn snapshot_partitions(
         &mut self,
@@ -2033,6 +2037,21 @@ impl GroupAggregator {
             merged.store.absorb(restored.store);
         }
         merged
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl GroupAggregator<RocksGroupStore> {
+    pub(crate) fn canonical_partitions(
+        &mut self,
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let keys = self.store.canonical_keys_by_group()?;
+        let partitions = keys
+            .iter()
+            .map(|(&group, selected)| (group, self.snapshot_keys(selected)))
+            .collect();
+        self.store.finish_canonical_scan();
+        Ok(partitions)
     }
 }
 

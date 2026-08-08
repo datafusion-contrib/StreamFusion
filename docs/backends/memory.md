@@ -10,11 +10,11 @@ configuration keeps it off the [RocksDB backend](rocksdb.md).
 
 ## Checkpointing model
 
-State is checkpointed as **full raw keyed-state blobs**: on each barrier, an operator serializes its
-entire live state as Arrow-encoded native state and hands it to Flink through the raw keyed-state
-path, which Flink uploads whole. There is no incremental upload and no manifest diffing — every
-checkpoint is a complete snapshot of the operator's current state, the same shape regardless of how
-much changed since the last barrier.
+State is checkpointed as the backend-independent [canonical state format](canonical-state.md): on
+each barrier, an operator serializes its live state by key group into versioned, bounded managed-state
+chunks. There is no incremental upload and no manifest diffing — every checkpoint is a complete
+snapshot of the operator's current state, the same shape regardless of how much changed since the
+last barrier. Legacy raw keyed-state snapshots remain readable.
 
 This is the simplest possible durability story, and it is fast for the common case: no on-disk
 table, no compaction, no point-read join on the hot path. The tradeoff is checkpoint size and
@@ -23,9 +23,9 @@ what comfortably re-serializes and uploads every barrier.
 
 ## Restore
 
-A memory-backend checkpoint or savepoint restores only on memory state — there is no silent
-migration to or from the [RocksDB backend](rocksdb.md). Selecting a different backend at restore
-time is a plan-shape change.
+A memory-backend checkpoint or canonical savepoint can restore on either memory or the
+[RocksDB backend](rocksdb.md). A RocksDB restore imports the logical partitions into its snapshot
+store on the first run; subsequent checkpoints use the native RocksDB lifecycle.
 
 ## When to reach for the alternative
 

@@ -110,6 +110,13 @@ final class RocksDBNativeSnapshotStrategy
     return nativeState != null;
   }
 
+  RocksDBNativeState nativeState() {
+    if (nativeState == null) {
+      throw new IllegalStateException("no native RocksDB state is registered");
+    }
+    return nativeState;
+  }
+
   /**
    * Commits the native write buffer to the local table without creating Flink checkpoint state.
    * A later barrier uses RocksDB's native checkpoint API to pin and upload the immutable files.

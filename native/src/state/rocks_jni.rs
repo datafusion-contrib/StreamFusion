@@ -232,6 +232,31 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBGroupAggre
 }
 
 #[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBGroupAggregatorPartitions<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut RocksGroupAggregator) };
+        match aggregator.canonical_partitions() {
+            Ok(partitions) => {
+                keyed_state_partition_array(&mut env, partitions, "rocksdb-group-aggregate")
+            }
+            Err(error) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB canonical snapshot failed: {error}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_rocksdbGroupAggregatorStateBytes<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,

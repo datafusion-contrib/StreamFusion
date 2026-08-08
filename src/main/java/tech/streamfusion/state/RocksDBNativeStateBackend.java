@@ -154,6 +154,7 @@ public final class RocksDBNativeStateBackend implements StateBackend {
 
   @Override
   public boolean supportsSavepointFormat(SavepointFormatType formatType) {
-    return formatType == SavepointFormatType.NATIVE;
+    return formatType == SavepointFormatType.NATIVE
+        || formatType == SavepointFormatType.CANONICAL;
   }
 }

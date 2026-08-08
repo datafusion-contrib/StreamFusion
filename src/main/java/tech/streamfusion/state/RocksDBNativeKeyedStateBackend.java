@@ -113,6 +113,12 @@ public final class RocksDBNativeKeyedStateBackend<K>
     snapshotStrategy.flushForMemoryPressure();
   }
 
+  /** Reads and removes StreamFusion's reserved canonical state without claiming JVM state use. */
+  public CanonicalRestore restoreCanonicalState(String operatorId) throws Exception {
+    CanonicalNativeState.Restore restored = CanonicalNativeState.readAndClear(delegate, operatorId);
+    return new CanonicalRestore(restored.partitions, restored.timerDeadline);
+  }
+
   // ---- Snapshot ---------------------------------------------------------------------------------
 
   @Nonnull
@@ -158,11 +164,24 @@ public final class RocksDBNativeKeyedStateBackend<K>
   @Override
   public SavepointResources<K> savepoint() throws Exception {
     if (snapshotStrategy.hasNativeState()) {
-      throw new UnsupportedOperationException(
-          "canonical savepoints are not supported for native RocksDB state; "
-              + "use native-format savepoints");
+      RocksDBNativeState nativeState = snapshotStrategy.nativeState();
+      CanonicalNativeState.write(
+          delegate,
+          nativeState.canonicalPartitions(),
+          nativeState.canonicalOperatorId(),
+          nativeState.canonicalTimerDeadline());
     }
     return delegate.savepoint();
+  }
+
+  public static final class CanonicalRestore {
+    public final List<byte[]> partitions;
+    public final long timerDeadline;
+
+    private CanonicalRestore(List<byte[]> partitions, long timerDeadline) {
+      this.partitions = partitions;
+      this.timerDeadline = timerDeadline;
+    }
   }
 
   // ---- Lifecycle --------------------------------------------------------------------------------

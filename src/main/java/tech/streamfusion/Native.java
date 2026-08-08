@@ -1075,6 +1075,9 @@ public final class Native {
       int keyGroupEnd,
       boolean aligned);
 
+  /** Materializes direct RocksDB aggregate state as backend-independent key-group partitions. */
+  public static native byte[][] snapshotRocksDBGroupAggregatorPartitions(long handle);
+
   public static native void updateRocksDBGroupAggregator(
       long handle,
       long inArrayAddress,

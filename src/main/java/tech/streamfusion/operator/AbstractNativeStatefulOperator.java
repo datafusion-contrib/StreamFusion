@@ -2,8 +2,11 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
-import tech.streamfusion.state.RocksDBNativeStateSupport;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.CanonicalNativeState;
+import tech.streamfusion.state.RocksDBNativeKeyedStateBackend;
+import tech.streamfusion.state.RocksDBNativeState;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongBinaryOperator;
@@ -12,6 +15,7 @@ import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
 import org.apache.flink.runtime.state.StateInitializationContext;
 import org.apache.flink.runtime.state.StateSnapshotContext;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
@@ -23,8 +27,9 @@ import org.apache.flink.table.types.logical.RowType;
  *
  * <p>State travels one of two routes, decided once at {@link #initializeState}. On the native
  * RocksDB backend it checkpoints incrementally through the keyed state backend. Otherwise state
- * stays a Rust hot map and travels as Flink <em>raw keyed state</em>, one payload per non-empty key
- * group, which lets Flink's own protocol redistribute it on rescale.
+ * stays a Rust hot map and travels as reserved Flink managed keyed state, one versioned payload per
+ * non-empty key group, which lets Flink's own protocol redistribute it on rescale. Legacy raw keyed
+ * state remains readable.
  *
  * <p>Subclasses supply only the native calls that differ — create, restore, snapshot, close, and
  * the state-size probe — plus optional direct-RocksDB and processing-time-timer hooks. Everything else
@@ -75,6 +80,11 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
 
   /** Returns every non-empty raw key group from one native checkpoint pass. */
   protected abstract byte[][] snapshotRawPartitions();
+
+  /** Logical partitions used by canonical savepoints; direct stores may override their exporter. */
+  protected byte[][] snapshotCanonicalPartitions() {
+    return snapshotRawPartitions();
+  }
 
   /** Releases the native handle. */
   protected abstract void closeHandle();
@@ -161,6 +171,26 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
       snapshots = RawKeyedState.restore(context);
       restoredProcessingTimeTimerDeadline = Long.MIN_VALUE;
     }
+    if (getKeyedStateBackend() instanceof CheckpointableKeyedStateBackend) {
+      CanonicalNativeState.Restore canonical;
+      if (getKeyedStateBackend() instanceof RocksDBNativeKeyedStateBackend) {
+        RocksDBNativeKeyedStateBackend.CanonicalRestore restored =
+            ((RocksDBNativeKeyedStateBackend<?>) getKeyedStateBackend())
+                .restoreCanonicalState(stateLabel);
+        canonical = new CanonicalNativeState.Restore(restored.partitions, restored.timerDeadline);
+      } else {
+        canonical =
+            CanonicalNativeState.readAndClear(
+                (CheckpointableKeyedStateBackend<?>) getKeyedStateBackend(), stateLabel);
+      }
+      if (!canonical.partitions.isEmpty()) {
+        if (!snapshots.isEmpty()) {
+          throw new IllegalStateException("restore contains both raw and canonical native state");
+        }
+        snapshots.addAll(canonical.partitions);
+        restoredProcessingTimeTimerDeadline = canonical.timerDeadline;
+      }
+    }
     memoryBudget = NativeMemoryBudget.registerFor(this);
     memoryBudget.registerStateMetric(getMetricGroup());
     beforeHandleCreation();
@@ -168,7 +198,7 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
     rocksdbState = rocksdb != null;
     if (rocksdbState) {
       rocksdbSupport = rocksdb;
-      directRocksDBState = usesDirectRocksDBState();
+      directRocksDBState = snapshots.isEmpty() && usesDirectRocksDBState();
       if (directRocksDBState) {
         handle = createRocksDBHandle(rocksdb);
       } else {
@@ -188,9 +218,35 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
           restoredProcessingTimeTimerDeadline =
               Native.rocksdbSnapshotStoreTimerDeadline(rocksdbSnapshotStoreHandle);
         }
+        if (restored.length == 0 && !snapshots.isEmpty()) {
+          restored = snapshots.toArray(new byte[0][]);
+        }
         handle = restored.length == 0 ? createHandle() : restoreRawHandle(restored);
       }
-      rocksdb.register(this::checkpointRocksDBHandle);
+      rocksdb.register(
+          new RocksDBNativeState() {
+            @Override
+            public String[] checkpoint(String snapshotDirectory) {
+              return checkpointRocksDBHandle(snapshotDirectory);
+            }
+
+            @Override
+            public byte[][] canonicalPartitions() {
+              return snapshotCanonicalPartitions();
+            }
+
+            @Override
+            public String canonicalOperatorId() {
+              return stateLabel;
+            }
+
+            @Override
+            public long canonicalTimerDeadline() {
+              return carriesProcessingTimeTimer()
+                  ? processingTimeTimerDeadlineForSnapshot()
+                  : Long.MIN_VALUE;
+            }
+          });
       return;
     }
     handle =
@@ -208,17 +264,18 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
   public void snapshotState(StateSnapshotContext context) throws Exception {
     super.snapshotState(context);
     beforeSnapshotState();
-    // Native RocksDB state checkpoints through the keyed backend. Only standalone memory state
-    // travels as raw keyed-state blobs.
+    // Native RocksDB state checkpoints through the keyed backend. Standalone memory state uses the
+    // same managed canonical representation that RocksDB materializes for a canonical savepoint.
     if (rocksdbState) {
       return;
     }
-    if (carriesProcessingTimeTimer()) {
-      RawKeyedState.snapshotPartitionsWithTimer(
-          context, snapshotRawPartitions(), processingTimeTimerDeadlineForSnapshot());
-    } else {
-      RawKeyedState.snapshotPartitions(context, snapshotRawPartitions());
-    }
+    CanonicalNativeState.write(
+        (CheckpointableKeyedStateBackend<?>) getKeyedStateBackend(),
+        snapshotCanonicalPartitions(),
+        stateLabel,
+        carriesProcessingTimeTimer()
+            ? processingTimeTimerDeadlineForSnapshot()
+            : Long.MIN_VALUE);
   }
 
   @Override

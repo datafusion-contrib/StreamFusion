@@ -43,9 +43,9 @@ public final class RocksDBNativeStateSupport {
 
   /**
    * Resolves RocksDB mode for one operator, or null when its state stays on memory. The backend
-   * takes over only when the job selected it, no raw keyed state arrived (a checkpoint written by
-   * the memory backend restores on the memory backend — no silent migration), this build carries
-   * the native store, and the operator's own state shape is persistable. A RocksDB backend that
+   * takes over when the job selected it, this build carries the native store, and the operator's
+   * own state shape is persistable. Raw or canonical partitions are imported through the generic
+   * snapshot store on the first RocksDB checkpoint. A RocksDB backend that
    * loses on a later gate logs the fallback — memory state stays correct, just non-incremental.
    */
   public static RocksDBNativeStateSupport resolve(
@@ -67,12 +67,12 @@ public final class RocksDBNativeStateSupport {
       return null;
     }
     RocksDBNativeKeyedStateBackend<?> backend = (RocksDBNativeKeyedStateBackend<?>) keyedStateBackend;
-    if (!rawStateRestored && Native.rocksdbStateAvailable() && operatorSupported.getAsBoolean()) {
+    if (Native.rocksdbStateAvailable() && operatorSupported.getAsBoolean()) {
       return new RocksDBNativeStateSupport(backend, stateTtlMillis);
     }
     LOG.info(
         "{} falls back to memory state under the RocksDB backend "
-            + "(unsupported state shape, missing native feature, or raw-state restore)",
+            + "(unsupported state shape or missing native feature)",
         operatorLabel);
     return null;
   }
