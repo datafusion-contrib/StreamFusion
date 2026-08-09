@@ -1,6 +1,7 @@
 package tech.streamfusion;
 
 import java.time.Duration;
+import java.time.ZoneId;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -144,6 +145,57 @@ class FlinkWindowSqlHarnessTest {
         "SELECT window_start, window_end, SUM(`value`) AS s "
             + "FROM TABLE(HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND, INTERVAL '2' SECOND)) "
             + "GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void legacyTumblingSumMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithUtcZone,
+        "SELECT k, SUM(`value`) AS s, "
+            + "TUMBLE_START(rt, INTERVAL '1' SECOND) AS window_start, "
+            + "TUMBLE_END(rt, INTERVAL '1' SECOND) AS window_end "
+            + "FROM src GROUP BY k, TUMBLE(rt, INTERVAL '1' SECOND)");
+  }
+
+  @Test
+  void legacyHoppingSumMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithUtcZone,
+        "SELECT k, SUM(`value`) AS s, "
+            + "HOP_START(rt, INTERVAL '1' SECOND, INTERVAL '2' SECOND) AS window_start, "
+            + "HOP_END(rt, INTERVAL '1' SECOND, INTERVAL '2' SECOND) AS window_end "
+            + "FROM src GROUP BY k, HOP(rt, INTERVAL '1' SECOND, INTERVAL '2' SECOND)");
+  }
+
+  @Test
+  void legacyLtzRowtimePropertyMatchesHostInSessionZone() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithKolkataZone,
+        "SELECT k, SUM(`value`) AS s, "
+        + "TUMBLE_START(rt, INTERVAL '1' SECOND) AS window_start, "
+        + "TUMBLE_END(rt, INTERVAL '1' SECOND) AS window_end, "
+        + "TUMBLE_ROWTIME(rt, INTERVAL '1' SECOND) AS window_rowtime "
+        + "FROM src GROUP BY k, TUMBLE(rt, INTERVAL '1' SECOND)");
+    }
+
+    @Test
+    void legacyLtzWindowWithMisalignedSessionZoneFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+      FlinkWindowSqlHarnessTest::environmentWithKolkataZone,
+      "SELECT k, SUM(`value`) AS s, "
+        + "TUMBLE_START(rt, INTERVAL '1' HOUR) AS window_start "
+        + "FROM src GROUP BY k, TUMBLE(rt, INTERVAL '1' HOUR)",
+      "session-zone offset to align with the window slide");
+  }
+
+  @Test
+  void legacyLtzWindowWithDstSessionZoneFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkWindowSqlHarnessTest::environmentWithLosAngelesZone,
+        "SELECT k, SUM(`value`) AS s, "
+            + "TUMBLE_START(rt, INTERVAL '1' SECOND) AS window_start "
+            + "FROM src GROUP BY k, TUMBLE(rt, INTERVAL '1' SECOND)",
+        "fixed after 1970");
   }
 
   @Test
@@ -686,6 +738,24 @@ class FlinkWindowSqlHarnessTest {
 
   private static TableEnvironment environmentWithSource() {
     return buildEnvironment(true);
+  }
+
+  private static TableEnvironment environmentWithKolkataZone() {
+    TableEnvironment tEnv = buildEnvironment(true);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("Asia/Kolkata"));
+    return tEnv;
+  }
+
+  private static TableEnvironment environmentWithUtcZone() {
+    TableEnvironment tEnv = buildEnvironment(true);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
+    return tEnv;
+  }
+
+  private static TableEnvironment environmentWithLosAngelesZone() {
+    TableEnvironment tEnv = buildEnvironment(true);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("America/Los_Angeles"));
+    return tEnv;
   }
 
   private static TableEnvironment environmentForSessionMerge() {

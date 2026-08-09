@@ -397,17 +397,15 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
                         agg.aggCalls(),
                         agg.getInput().getRowType())));
 
-    // The legacy SESSION group-window aggregate (GROUP BY k, SESSION(rowtime, INTERVAL g)) — a
-    // different operator from the windowing-TVF window aggregate, but its output layout matches the
-    // native session operator's, so it routes to the same operator, under the same kill switch. It
-    // is the one legacy group-window shape we accelerate, because Nexmark q11 is written in it.
+    // Legacy GROUP BY TUMBLE/HOP/SESSION plans as a different Flink operator from a windowing TVF,
+    // but the supported shapes share the native fixed/session operators and the same kill switch.
     entries.add(
         Substitution.of(
                 StreamPhysicalGroupWindowAggregate.class,
                 "windowAggregate",
-                GroupWindowSessionMatcher::substitute)
-            .matching(GroupWindowSessionMatcher::matches)
-            .reason(GroupWindowSessionMatcher::unsupportedReason));
+                GroupWindowAggregateMatcher::substitute)
+            .matching(GroupWindowAggregateMatcher::matches)
+            .reason(GroupWindowAggregateMatcher::unsupportedReason));
 
     // The local half of a two-phase non-windowed GROUP BY: a stateless per-batch pre-aggregate that
     // emits partials for the global half to merge. Insert-only (append-only partials), so it sits

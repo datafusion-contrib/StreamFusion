@@ -7,6 +7,18 @@ and the two-phase local/global split — and the windowing-TVF operator that ass
 window(s) ahead of a downstream consumer (an aggregate, a [window join](joins/window-join.md), or
 window Top-N/dedup).
 
+## Legacy group windows
+
+The deprecated `GROUP BY TUMBLE(...)` and `GROUP BY HOP(...)` syntax is native for both event time
+and processing time, reusing the same single-phase fixed-window operator as TVF-planned aggregates.
+Legacy event-time `SESSION(...)` is native too. Legacy group windows have no offset and never use
+Flink's two-phase local/global optimization.
+
+The auxiliary properties retain Flink's legacy layout and types: start and end are plain
+`TIMESTAMP(3)`, rowtime is the window end minus one millisecond, and the internal proctime marker is
+null before the outer Calc materializes the current clock. Queries that select no auxiliary window
+property are native as well.
+
 ## Event-time assignment
 
 `TUMBLE`, `HOP`, and `CUMULATE` are native only at **zero offset**; `SESSION` needs no offset. The
@@ -52,6 +64,15 @@ own pages for their admission conditions.
 - Proctime: anything other than a single-phase `TUMBLE`/`HOP`/`CUMULATE` with slide dividing size, or
   a single-phase `SESSION` — the two-phase local/global path isn't yet native on proctime.
 - `HOP` slide / `CUMULATE` step that doesn't divide the window size.
+- Legacy row-count `TUMBLE`/`HOP` windows from the Table API.
+- Legacy early/late firing or allowed lateness.
+- A legacy group window over retracting or updating input.
+- Legacy proctime `HOP` when the slide does not divide the size. Event-time legacy `HOP` supports
+  non-dividing and gapped windows.
+- Legacy fixed-grid `TUMBLE`/`HOP` over `TIMESTAMP_LTZ` event-time or proctime unless the session
+  zone has one fixed post-1970 offset that is an integral multiple of the window slide. Zones with
+  post-1970 transitions fall back because Flink assigns and fires on a DST-aware local-time grid.
+- Legacy processing-time `SESSION`.
 - Key type outside bigint/int/string/boolean/date/timestamp/decimal.
 - A value type/aggregate mismatch.
 - `AVG` under the two-phase split — its `(sum, count)` buffer spans two positional partial columns.

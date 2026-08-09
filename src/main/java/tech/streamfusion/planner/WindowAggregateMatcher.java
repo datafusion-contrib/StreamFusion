@@ -110,16 +110,6 @@ final class WindowAggregateMatcher {
         == LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE;
   }
 
-  /**
-   * Legacy group-window rowtime properties are TIMESTAMP_LTZ values derived from a session-local
-   * boundary. Their host materialization applies a second zone interpretation that the native Arrow
-   * output does not currently model, so keep that narrow projection on Flink.
-   */
-  static boolean supportsOutput(RelDataType outputType) {
-    return outputType.getFieldList().stream()
-        .noneMatch(field -> field.getType().getSqlTypeName() == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE);
-  }
-
   static boolean isCumulative(WindowingStrategy windowing) {
     return windowing.getWindow() instanceof CumulativeWindowSpec;
   }

@@ -49,10 +49,34 @@ class ThroughputBenchmark {
     compare(
         "Tumbling (1s SUM)",
         ThroughputBenchmark::tumblingEnvironment,
-        "CREATE TABLE sink (window_start TIMESTAMP_LTZ(3), window_end TIMESTAMP_LTZ(3), total BIGINT)"
+        "CREATE TABLE sink (window_start TIMESTAMP(3), window_end TIMESTAMP(3), total BIGINT)"
             + " WITH ('connector' = 'blackhole')",
         "INSERT INTO sink SELECT window_start, window_end, SUM(v) AS total FROM TABLE(TUMBLE(TABLE g,"
             + " DESCRIPTOR(rt), INTERVAL '1' SECOND)) GROUP BY window_start, window_end");
+  }
+
+  @Test
+  void legacyTumblingThroughput() throws Exception {
+    compare(
+        "Legacy TUMBLE (1s SUM)",
+        ThroughputBenchmark::tumblingEnvironment,
+        "CREATE TABLE sink (window_start TIMESTAMP(3), window_end TIMESTAMP(3), total BIGINT)"
+            + " WITH ('connector' = 'blackhole')",
+        "INSERT INTO sink SELECT TUMBLE_START(rt, INTERVAL '1' SECOND),"
+            + " TUMBLE_END(rt, INTERVAL '1' SECOND), SUM(v) FROM g"
+            + " GROUP BY TUMBLE(rt, INTERVAL '1' SECOND)");
+  }
+
+  @Test
+  void legacyHoppingThroughput() throws Exception {
+    compare(
+        "Legacy HOP (2s size / 1s slide SUM)",
+        ThroughputBenchmark::tumblingEnvironment,
+        "CREATE TABLE sink (window_start TIMESTAMP(3), window_end TIMESTAMP(3), total BIGINT)"
+            + " WITH ('connector' = 'blackhole')",
+        "INSERT INTO sink SELECT HOP_START(rt, INTERVAL '1' SECOND, INTERVAL '2' SECOND),"
+            + " HOP_END(rt, INTERVAL '1' SECOND, INTERVAL '2' SECOND), SUM(v) FROM g"
+            + " GROUP BY HOP(rt, INTERVAL '1' SECOND, INTERVAL '2' SECOND)");
   }
 
   @Test
@@ -153,6 +177,22 @@ class ThroughputBenchmark {
     double nativeRun = bestOfWindow(input, true);
     System.out.printf(
         "%n[benchmark] Windowed aggregate over a columnar Parquet source (1s SUM) over %,d rows"
+            + " (best of %d)%n",
+        ROWS, RUNS);
+    System.out.printf("[benchmark]   Flink : %6.3f s  (%,.0f rows/s)%n", flink, ROWS / flink);
+    System.out.printf(
+        "[benchmark]   Native: %6.3f s  (%,.0f rows/s)  %.2fx vs Flink%n",
+        nativeRun, ROWS / nativeRun, flink / nativeRun);
+  }
+
+  @Test
+  void legacyWindowedColumnarSourceThroughput() throws Exception {
+    Path input = Files.createTempDirectory("bench-legacy-window-in");
+    writeWindowInput(input);
+    double flink = bestOfLegacyWindow(input, false);
+    double nativeRun = bestOfLegacyWindow(input, true);
+    System.out.printf(
+        "%n[benchmark] Legacy TUMBLE over a columnar Parquet source (1s SUM) over %,d rows"
             + " (best of %d)%n",
         ROWS, RUNS);
     System.out.printf("[benchmark]   Flink : %6.3f s  (%,.0f rows/s)%n", flink, ROWS / flink);
@@ -323,6 +363,46 @@ class ThroughputBenchmark {
     return best;
   }
 
+  private static double bestOfLegacyWindow(Path input, boolean useNative) throws Exception {
+    double best = Double.MAX_VALUE;
+    for (int run = 0; run < WARMUP + RUNS; run++) {
+      double seconds = legacyWindowRunOnce(input, useNative);
+      if (run >= WARMUP) {
+        best = Math.min(best, seconds);
+      }
+    }
+    return best;
+  }
+
+  private static double legacyWindowRunOnce(Path input, boolean useNative) throws Exception {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(java.time.ZoneId.of("UTC"));
+    tEnv.executeSql(
+        "CREATE TABLE t (v BIGINT, rt TIMESTAMP_LTZ(3), WATERMARK FOR rt AS rt - INTERVAL '1'"
+            + " SECOND) WITH ('connector' = 'filesystem', 'path' = '"
+            + input.toUri()
+            + "', 'format' = 'parquet')");
+    tEnv.executeSql(
+        "CREATE TABLE sink (window_start TIMESTAMP(3), window_end TIMESTAMP(3), total BIGINT)"
+            + " WITH ('connector' = 'blackhole')");
+    PhysicalPlanScan scan = useNative ? NativePlanner.install(tEnv) : null;
+    long start = System.nanoTime();
+    tEnv.executeSql(
+            "INSERT INTO sink SELECT TUMBLE_START(rt, INTERVAL '1' SECOND),"
+                + " TUMBLE_END(rt, INTERVAL '1' SECOND), SUM(v) FROM t"
+                + " GROUP BY TUMBLE(rt, INTERVAL '1' SECOND)")
+        .await();
+    double seconds = (System.nanoTime() - start) / 1e9;
+    if (useNative && (scan == null || scan.substitutions() < 3)) {
+      throw new IllegalStateException(
+          "native source+watermark+legacy window did not engage; fallback reasons: "
+              + (scan == null ? "scan unavailable" : scan.fallbackReasons()));
+    }
+    return seconds;
+  }
+
   /** One windowed aggregate reading the Parquet input into a discarding sink, timed to completion. */
   private static double windowRunOnce(Path input, boolean useNative) throws Exception {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -475,7 +555,9 @@ class ThroughputBenchmark {
     tEnv.executeSql(insertSql).await();
     double seconds = (System.nanoTime() - start) / 1e9;
     if (useNative && scan.substitutions() == 0) {
-      throw new IllegalStateException("native substitution did not engage; comparison is moot");
+      throw new IllegalStateException(
+          "native substitution did not engage; comparison is moot. fallback reasons: "
+              + scan.fallbackReasons());
     }
     return seconds;
   }
@@ -559,6 +641,7 @@ class ThroughputBenchmark {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(java.time.ZoneId.of("UTC"));
     // ts = row index in millis (monotonic), so each 1-second window holds 1000 rows.
     DataStream<Row> source =
         env.fromSequence(0, ROWS - 1)
