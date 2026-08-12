@@ -74,16 +74,14 @@ public final class TaskOffHeapMemory {
   }
 
   public static void closeOwner(long ownerId) {
-    Owner owner = OWNERS.remove(ownerId);
+    Owner owner = OWNERS.get(ownerId);
     if (owner == null) {
       return;
     }
-    synchronized (owner) {
-      owner.closed = true;
-      long released = owner.reserved.getAndSet(0);
-      if (released != 0) {
-        RESERVED.addAndGet(-released);
-      }
+    long released = owner.close();
+    OWNERS.remove(ownerId, owner);
+    if (released != 0) {
+      RESERVED.addAndGet(-released);
     }
   }
 
@@ -96,14 +94,16 @@ public final class TaskOffHeapMemory {
     if (owner == null) {
       return false;
     }
-    synchronized (owner) {
-      if (owner.closed || !reserveGlobal(bytes)) {
-        DENIED.incrementAndGet();
-        return false;
-      }
-      owner.reserved.addAndGet(bytes);
-      return true;
+    if (!reserveGlobal(bytes)) {
+      DENIED.incrementAndGet();
+      return false;
     }
+    if (!owner.reserve(bytes)) {
+      RESERVED.addAndGet(-bytes);
+      DENIED.incrementAndGet();
+      return false;
+    }
+    return true;
   }
 
   /** JNI entry used by the native DataFusion memory pool. */
@@ -115,13 +115,7 @@ public final class TaskOffHeapMemory {
     if (owner == null) {
       return;
     }
-    synchronized (owner) {
-      long held = owner.reserved.get();
-      if (bytes > held) {
-        throw new IllegalStateException(
-            "StreamFusion memory owner " + owner.name + " released " + bytes + " of " + held);
-      }
-      owner.reserved.addAndGet(-bytes);
+    if (owner.release(bytes)) {
       RESERVED.addAndGet(-bytes);
     }
   }
@@ -223,14 +217,55 @@ public final class TaskOffHeapMemory {
   }
 
   private static final class Owner {
+    private static final long CLOSED = -1;
+
     private final String category;
     private final String name;
     private final AtomicLong reserved = new AtomicLong();
-    private boolean closed;
 
     private Owner(String category, String name) {
       this.category = category;
       this.name = name;
+    }
+
+    private boolean reserve(long bytes) {
+      while (true) {
+        long held = reserved.get();
+        if (held == CLOSED) {
+          return false;
+        }
+        final long next;
+        try {
+          next = Math.addExact(held, bytes);
+        } catch (ArithmeticException ignored) {
+          return false;
+        }
+        if (reserved.compareAndSet(held, next)) {
+          return true;
+        }
+      }
+    }
+
+    private boolean release(long bytes) {
+      while (true) {
+        long held = reserved.get();
+        // closeOwner already returned the complete balance to the global pool.
+        if (held == CLOSED) {
+          return false;
+        }
+        if (bytes > held) {
+          throw new IllegalStateException(
+              "StreamFusion memory owner " + name + " released " + bytes + " of " + held);
+        }
+        if (reserved.compareAndSet(held, held - bytes)) {
+          return true;
+        }
+      }
+    }
+
+    private long close() {
+      long held = reserved.getAndSet(CLOSED);
+      return held == CLOSED ? 0 : held;
     }
   }
 
