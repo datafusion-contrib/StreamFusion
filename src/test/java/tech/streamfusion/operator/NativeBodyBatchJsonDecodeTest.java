@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.table.data.RowData;
@@ -59,6 +60,18 @@ class NativeBodyBatchJsonDecodeTest {
     }
   }
 
+  @Test
+  void decodesReusableContiguousKafkaSlabAcrossBatches() throws Exception {
+    try (NativeBodyBatchDecoder decoder = decoder()) {
+      assertEquals(
+          List.of(List.of(11L, "first", 1.25)),
+          decodeContiguousRows(decoder, "{\"id\":11,\"name\":\"first\",\"score\":1.25}"));
+      assertEquals(
+          List.of(List.of(12L, "second", 2.5)),
+          decodeContiguousRows(decoder, "{\"id\":12,\"name\":\"second\",\"score\":2.5}"));
+    }
+  }
+
   private static NativeBodyBatchDecoder decoder() throws Exception {
     return new NativeBodyBatchDecoder(
         new JsonFormatProvider()
@@ -97,5 +110,21 @@ class NativeBodyBatchJsonDecodeTest {
       }
     }
     return rows;
+  }
+
+  private static List<List<Object>> decodeContiguousRows(
+      NativeBodyBatchDecoder decoder, String document) throws Exception {
+    byte[] bytes = document.getBytes(StandardCharsets.UTF_8);
+    try (ArrowBuf slab = NativeAllocator.SHARED.buffer(bytes.length)) {
+      slab.setBytes(0, bytes);
+      try (VectorSchemaRoot root =
+          decoder.decodeContiguous(slab, bytes.length, 0, new int[] {-1, bytes.length}, 1, false)) {
+        List<List<Object>> rows = new ArrayList<>();
+        for (RowData r : RowDataArrowConverter.read(root, OUTPUT)) {
+          rows.add(List.of(r.getLong(0), r.getString(1).toString(), r.getDouble(2)));
+        }
+        return rows;
+      }
+    }
   }
 }

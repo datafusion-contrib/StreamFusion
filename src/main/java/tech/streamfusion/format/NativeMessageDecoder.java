@@ -30,6 +30,29 @@ public interface NativeMessageDecoder extends AutoCloseable {
     return 0;
   }
 
+  /** Whether this decoder can consume one contiguous Kafka byte slab without Arrow input export. */
+  default boolean supportsContiguousBytes() {
+    return false;
+  }
+
+  /**
+   * Decodes Kafka records stored as {@code [all keys][all values]}. {@code lengths} contains the
+   * key and value length for each record in that order; {@code -1} denotes a null. Implementations
+   * opting into this boundary avoid constructing and exporting input {@code VarBinaryVector}s.
+   */
+  default void decodeContiguousBytesInto(
+      long dataAddress,
+      long dataLength,
+      long keyBytes,
+      int[] lengths,
+      int count,
+      boolean keyed,
+      long outArrayAddress,
+      long outSchemaAddress)
+      throws Exception {
+    throw new UnsupportedOperationException("decoder does not support contiguous byte batches");
+  }
+
   void decodeInto(
       long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress)
       throws Exception;

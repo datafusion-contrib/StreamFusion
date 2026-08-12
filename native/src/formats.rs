@@ -1747,6 +1747,133 @@ pub extern "system" fn Java_tech_streamfusion_Native_decodeInto<'local>(
     }
 }
 
+/// Builds a binary input column over a contiguous values region. `copy_values` is used for keyed
+/// raw columns because a raw decode may legally pass those buffers through to the exported output;
+/// JSON bodies are consumed synchronously into fresh Arrow builders and can borrow the JVM slab.
+fn contiguous_binary_array(
+    address: usize,
+    values_len: usize,
+    lengths: impl Iterator<Item = i32>,
+    copy_values: bool,
+) -> BinaryArray {
+    let mut offsets = Vec::new();
+    let mut nulls = NullBufferBuilder::new(0);
+    offsets.push(0_i32);
+    let mut offset = 0_i32;
+    for length in lengths {
+        if length < 0 {
+            nulls.append_null();
+        } else {
+            nulls.append_non_null();
+            offset = offset
+                .checked_add(length)
+                .expect("contiguous Kafka byte batch exceeds Arrow binary offsets");
+        }
+        offsets.push(offset);
+    }
+    assert_eq!(
+        offset as usize, values_len,
+        "Kafka byte slab length mismatch"
+    );
+    let values = if copy_values {
+        let bytes = unsafe { std::slice::from_raw_parts(address as *const u8, values_len) };
+        arrow::buffer::Buffer::from(bytes)
+    } else {
+        let pointer =
+            std::ptr::NonNull::new(address as *mut u8).unwrap_or_else(std::ptr::NonNull::dangling);
+        // The Java ArrowBuf owns this memory for the duration of the JNI call. JSON decode consumes
+        // it synchronously and never exposes it in the output batch; the custom owner intentionally
+        // performs no deallocation when this temporary input array drops.
+        unsafe { arrow::buffer::Buffer::from_custom_allocation(pointer, values_len, Arc::new(())) }
+    };
+    BinaryArray::new(
+        OffsetBuffer::new(ScalarBuffer::from(offsets)),
+        values,
+        nulls.finish(),
+    )
+}
+
+/// JSON-source fast boundary: the JVM copies polled Kafka records once into `[keys][values]` and
+/// passes the slab plus lengths here. This avoids building/exporting/importing Arrow binary input
+/// vectors; the persistent MessageDecoder still owns all format options and schema-compiled state.
+#[cfg(feature = "json")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_format_json_NativeJsonFormat_decodeContiguousBytesInto<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    data_address: jlong,
+    data_length: jlong,
+    key_bytes: jlong,
+    lengths: JIntArray<'local>,
+    count: jint,
+    keyed: jboolean,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    let decoded = catch_unwind(AssertUnwindSafe(|| {
+        assert!(count >= 0, "negative Kafka byte batch row count");
+        let count = count as usize;
+        let data_length = usize::try_from(data_length).expect("negative Kafka byte slab length");
+        let key_bytes = usize::try_from(key_bytes).expect("negative Kafka key slab length");
+        assert!(key_bytes <= data_length, "Kafka key slab exceeds byte slab");
+        let mut row_lengths = vec![0_i32; count.checked_mul(2).expect("row count overflow")];
+        assert_eq!(
+            env.get_array_length(&lengths)
+                .expect("Kafka lengths array length") as usize,
+            row_lengths.len(),
+            "Kafka lengths array shape mismatch"
+        );
+        env.get_int_array_region(&lengths, 0, &mut row_lengths)
+            .expect("read Kafka lengths array");
+        let body_address = (data_address as usize)
+            .checked_add(key_bytes)
+            .expect("Kafka byte slab address overflow");
+        let bodies = contiguous_binary_array(
+            body_address,
+            data_length - key_bytes,
+            row_lengths.iter().skip(1).step_by(2).copied(),
+            false,
+        );
+        let columns: Vec<ArrayRef> = if keyed != 0 {
+            let keys = contiguous_binary_array(
+                data_address as usize,
+                key_bytes,
+                row_lengths.iter().step_by(2).copied(),
+                true,
+            );
+            vec![Arc::new(keys), Arc::new(bodies)]
+        } else {
+            assert_eq!(key_bytes, 0, "unkeyed Kafka byte batch carried key bytes");
+            vec![Arc::new(bodies)]
+        };
+        let fields = if keyed != 0 {
+            vec![
+                Field::new("key", DataType::Binary, true),
+                Field::new("body", DataType::Binary, true),
+            ]
+        } else {
+            vec![Field::new("body", DataType::Binary, true)]
+        };
+        let input = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("build contiguous Kafka byte batch");
+        let decoder = unsafe { &*(handle as *mut MessageDecoder) };
+        decoder.decode(&input)
+    }));
+    match decoded {
+        Ok(batch) => export_record_batch(batch, out_array_address, out_schema_address),
+        Err(panic) => {
+            let _ = env.throw_new(
+                "java/lang/RuntimeException",
+                format!("native contiguous decode failed: {}", panic_message(panic)),
+            );
+        }
+    }
+}
+
 /// Benchmark-only: decode a body batch and return the decoded row count without exporting the result —
 /// so the shallow path can terminate with Arrow in Rust (counted in Rust), symmetric with the native
 /// consumer, for an apples-to-apples comparison.

@@ -2,39 +2,53 @@ package tech.streamfusion.planner;
 
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.AbstractRelNode;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.sql.SqlExplainLevel;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 
 /**
- * Leaf physical node for the shallow native-decode Kafka path: Flink's own {@code KafkaSource} consumes
- * the topic's raw value bytes (offsets/checkpointing/auth all Flink's), and a native operator decodes
- * those bytes straight to Arrow — skipping Flink's per-record {@code RowData} materialization. The data
- * starts columnar at the source edge. Carries the scan's row type and raw table options (the exec node
- * builds the byte source + picks the decode format from them).
+ * Leaf physical node for the native-decode Kafka path: Flink owns enumeration, split assignment,
+ * offsets, checkpointing, authentication, and the Kafka consumer, while the split reader batches
+ * each partition's bytes and decodes them straight to Arrow. The partition identity is retained
+ * through collection, so Flink's normal per-split watermark machinery remains authoritative.
  */
 public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
-    implements StreamPhysicalRel, ColumnarOutput {
+    implements StreamPhysicalRel, ColumnarOutput, ShareableScan {
 
   private final RelDataType outputRowType;
   // The full record schema as written, kept when the output is pruned: JSON ignores it, but Avro needs
   // it as the writer schema (its datums are schema-less) and resolves the pruned output as the reader.
   private final RelDataType writerRowType;
   private final Map<String, String> options;
+  private final ScanWatermarkSpec watermark;
+  private final long shareToken;
+  private final boolean preserveFullSchemaForSharing;
 
   public StreamPhysicalNativeKafkaDecode(
       RelOptCluster cluster,
       RelTraitSet traitSet,
       RelDataType outputRowType,
-      Map<String, String> options) {
-    this(cluster, traitSet, outputRowType, outputRowType, options);
+      Map<String, String> options,
+      ScanWatermarkSpec watermark,
+      boolean preserveFullSchemaForSharing) {
+    this(
+        cluster,
+        traitSet,
+        outputRowType,
+        outputRowType,
+        options,
+        watermark,
+        0,
+        preserveFullSchemaForSharing);
   }
 
   private StreamPhysicalNativeKafkaDecode(
@@ -42,11 +56,61 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
       RelTraitSet traitSet,
       RelDataType outputRowType,
       RelDataType writerRowType,
-      Map<String, String> options) {
+      Map<String, String> options,
+      ScanWatermarkSpec watermark,
+      long shareToken,
+      boolean preserveFullSchemaForSharing) {
     super(cluster, traitSet);
     this.outputRowType = outputRowType;
     this.writerRowType = writerRowType;
     this.options = options;
+    this.watermark = watermark;
+    this.shareToken = shareToken;
+    this.preserveFullSchemaForSharing = preserveFullSchemaForSharing;
+  }
+
+  @Override
+  public StreamPhysicalNativeKafkaDecode withShareToken(long token) {
+    return new StreamPhysicalNativeKafkaDecode(
+        getCluster(),
+        getTraitSet(),
+        outputRowType,
+        writerRowType,
+        options,
+        watermark,
+        token,
+        preserveFullSchemaForSharing);
+  }
+
+  @Override
+  public String sharingKey() {
+    return sharingKey(options, writerRowType, outputRowType, watermark);
+  }
+
+  static String sharingKey(
+      Map<String, String> options,
+      RelDataType writerRowType,
+      RelDataType outputRowType,
+      ScanWatermarkSpec watermark) {
+    return new TreeMap<>(options)
+        + "|"
+        + writerRowType.getFullTypeString()
+        + '|'
+        + outputRowType.getFullTypeString()
+        + '|'
+        + (watermark == null
+            ? "none"
+            : watermark.rowtimeIndex
+                + ":"
+                + watermark.rowtimeFieldName
+                + ":"
+                + watermark.delayMillis
+                + ":"
+                + watermark.idleTimeoutMillis);
+  }
+
+  boolean allowsProjectionPushdown() {
+    return !preserveFullSchemaForSharing;
   }
 
   Map<String, String> options() {
@@ -59,8 +123,28 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
    * full record but builds only the projected fields; JSON just decodes the narrowed schema).
    */
   StreamPhysicalNativeKafkaDecode withProjection(RelDataType projected) {
+    ScanWatermarkSpec projectedWatermark = watermark;
+    if (watermark != null) {
+      int rowtimeIndex = projected.getFieldNames().indexOf(watermark.rowtimeFieldName);
+      if (rowtimeIndex < 0) {
+        throw new IllegalArgumentException("projection dropped the Kafka watermark column");
+      }
+      projectedWatermark = watermark.withRowtimeIndex(rowtimeIndex);
+    }
     return new StreamPhysicalNativeKafkaDecode(
-        getCluster(), getTraitSet(), projected, outputRowType, options);
+        getCluster(),
+        getTraitSet(),
+        projected,
+        outputRowType,
+        options,
+        projectedWatermark,
+        shareToken,
+        preserveFullSchemaForSharing);
+  }
+
+  /** Whether decode projection preserves the physical column used by per-split watermarks. */
+  boolean supportsProjection(RelDataType projected) {
+    return watermark == null || projected.getFieldNames().contains(watermark.rowtimeFieldName);
   }
 
   @Override
@@ -76,7 +160,14 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
     return new StreamPhysicalNativeKafkaDecode(
-        getCluster(), traitSet, outputRowType, writerRowType, options);
+        getCluster(),
+        traitSet,
+        outputRowType,
+        writerRowType,
+        options,
+        watermark,
+        shareToken,
+        preserveFullSchemaForSharing);
   }
 
 
@@ -86,10 +177,12 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
   public RelWriter explainTerms(RelWriter writer) {
     // The keyed items must be part of the digest: two tables differing only in their key format
     // or key projection would otherwise digest identically and be wrongly share-reused.
-    return NativeRelDigests.withBarrier(
+    RelWriter explained =
         super.explainTerms(writer)
             .item("topic", options.get("topic"))
             .item("format", options.getOrDefault("value.format", options.get("format")))
+            .itemIf("watermarkColumn", watermark == null ? null : watermark.rowtimeFieldName, watermark != null)
+            .itemIf("watermarkDelay", watermark == null ? null : watermark.delayMillis, watermark != null)
             .itemIf("keyFormat", options.get("key.format"), options.containsKey("key.format"))
             .itemIf("keyFields", options.get("key.fields"), options.containsKey("key.fields"))
             .itemIf(
@@ -99,8 +192,12 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
             .itemIf(
                 "valueFieldsInclude",
                 options.get("value.fields-include"),
-                options.containsKey("value.fields-include")),
-        reuseBarrier);
+                options.containsKey("value.fields-include"));
+    if (shareToken != 0) {
+      return explained.itemIf(
+          "shareToken", shareToken, writer.getDetailLevel() == SqlExplainLevel.DIGEST_ATTRIBUTES);
+    }
+    return NativeRelDigests.withBarrier(explained, reuseBarrier);
   }
 
   @Override
@@ -110,6 +207,7 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
         FlinkTypeFactory$.MODULE$.toLogicalRowType(writerRowType),
         getRelDetailedDescription(),
-        options);
+        options,
+        watermark);
   }
 }

@@ -1,10 +1,12 @@
 package tech.streamfusion.planner;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Calc;
 import org.apache.flink.table.api.config.OptimizerConfigOptions;
@@ -116,7 +118,14 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
 
   private RelNode substitute(RelNode root) {
     // Pass 1 substitutes native (columnar) operators.
-    RelNode substituted = rewrite(root, new PlanContext(this, KAFKA_AVAILABLE));
+    boolean sourceSharingEnabled =
+        NativeConfig.shareSources()
+            && ShortcutUtils.unwrapTableConfig(root)
+                .get(OptimizerConfigOptions.TABLE_OPTIMIZER_REUSE_SUB_PLAN_ENABLED);
+    Set<String> repeatedKafkaDecodes =
+        KAFKA_AVAILABLE && sourceSharingEnabled ? repeatedKafkaDecodeKeys(root) : Set.of();
+    RelNode substituted =
+        rewrite(root, new PlanContext(this, KAFKA_AVAILABLE, repeatedKafkaDecodes));
     // Whole-query all-or-nothing: every native operator but a source/sink is Arrow → Arrow.
     // If any operator other than a source (a leaf) or the sink (the plan root) is still row-wise, the
     // query cannot run as one columnar island, so accelerate nothing — it runs as stock Flink. The only
@@ -130,6 +139,31 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // reads and decodes its topic once — the columnar counterpart of Flink's sub-plan reuse, which
     // the digest barriers deliberately keep away from native nodes.
     return shareIdenticalSources(insertTransitions(substituted));
+  }
+
+  private static Set<String> repeatedKafkaDecodeKeys(RelNode root) {
+    Map<String, Integer> counts = new LinkedHashMap<>();
+    collectKafkaDecodeKeys(root, counts);
+    Set<String> repeated = new HashSet<>();
+    counts.forEach(
+        (key, count) -> {
+          if (count > 1) {
+            repeated.add(key);
+          }
+        });
+    return repeated;
+  }
+
+  private static void collectKafkaDecodeKeys(RelNode node, Map<String, Integer> counts) {
+    if (node instanceof StreamPhysicalTableSourceScan
+        && KafkaTables.isNativeKafkaDecode(node)) {
+      String key = KafkaTables.decodeSharingKey((StreamPhysicalTableSourceScan) node);
+      counts.merge(key, 1, Integer::sum);
+      return;
+    }
+    for (RelNode input : node.getInputs()) {
+      collectKafkaDecodeKeys(input, counts);
+    }
   }
 
   // ---------------------------------------------------------------------------- substitution chain
@@ -577,9 +611,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   }
 
   /**
-   * Shallow native-decode path (the default for every value format): Flink's KafkaSource consumes raw
-   * bytes, a native operator decodes them to Arrow, skipping Flink's RowData decode. JSON/CSV/raw/Avro
-   * and protobuf all route here; CDC changelog formats route to {@link #cdcDecodeSubstitution()}.
+   * Native-decode path (the default for every value format): Flink owns Kafka partitions and offsets,
+   * while a split-aware reader decodes each partition's bytes to Arrow without RowData. JSON/CSV/raw/
+   * Avro and protobuf route here; CDC formats route to {@link #cdcDecodeSubstitution()}.
    */
   private static Substitution<StreamPhysicalTableSourceScan> kafkaDecodeSubstitution() {
     return Substitution.of(StreamPhysicalTableSourceScan.class, KafkaTables::substituteDecode)
@@ -597,21 +631,14 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         .changelogSafe();
   }
 
-  /**
-   * A watermarked CDC table that did not route to the native decode stays on Flink. Reports only —
-   * it substitutes nothing, so it always yields to the entries after it.
-   */
+  /** Reports a CDC watermark shape outside the native regeneration contract. */
   private static Substitution<RelNode> cdcWatermarkReport() {
     return Substitution.of(RelNode.class, KafkaTables::reportCdcWatermark)
         .changelogSafe()
         .yieldingOnDecline();
   }
 
-  /**
-   * A watermarked table that cannot route to the downstream decode stays on Flink. Records the
-   * precise reason rather than silently stalling event-time
-   * timers. Reports only, so it always yields.
-   */
+  /** Reports an append-only watermark shape outside the native regeneration contract. */
   private static Substitution<RelNode> appendWatermarkReport() {
     return Substitution.of(RelNode.class, KafkaTables::reportAppendWatermark)
         .yieldingOnDecline();

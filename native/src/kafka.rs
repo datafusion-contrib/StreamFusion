@@ -30,6 +30,25 @@ impl EncodedLines {
     pub fn line(&self, index: usize) -> &[u8] {
         &self.bytes[self.lines[index].clone()]
     }
+
+    fn metadata(&self, nulls: &[bool]) -> Result<(Vec<i32>, Vec<i32>), String> {
+        self.lines
+            .iter()
+            .enumerate()
+            .map(|(index, range)| {
+                let offset = i32::try_from(range.start)
+                    .map_err(|_| "encoded Kafka batch exceeds JVM array limits".to_string())?;
+                let length = if nulls.get(index).copied().unwrap_or(false) {
+                    -1
+                } else {
+                    i32::try_from(range.len())
+                        .map_err(|_| "encoded Kafka record exceeds JVM array limits".to_string())?
+                };
+                Ok((offset, length))
+            })
+            .collect::<Result<Vec<_>, String>>()
+            .map(|metadata| metadata.into_iter().unzip())
+    }
 }
 
 /// One JSON format instance's encode-affecting options — Flink configures the Jackson mapper and
@@ -185,11 +204,14 @@ pub(crate) fn encode_json_batch(
     logical_types: &[String],
     field_names: &[String],
 ) -> Result<EncodedLines, String> {
-    use arrow::json::writer::{LineDelimited, WriterBuilder};
-
     let batch = annotate_flink_types(batch, logical_types, field_names)?;
+    let encoder_options = json_encoder_options(options);
+    encode_json_rows(&batch, &encoder_options)
+}
 
-    let mut builder = WriterBuilder::new()
+#[cfg(feature = "kafka")]
+fn json_encoder_options(options: &JsonEncodeOptions) -> arrow::json::writer::EncoderOptions {
+    let mut encoder_options = arrow::json::writer::EncoderOptions::default()
         .with_explicit_nulls(!options.ignore_null_fields)
         .with_time_format("%H:%M:%S".to_string())
         .with_encoder_factory(Arc::new(FlinkJsonEncoderFactory {
@@ -203,35 +225,40 @@ pub(crate) fn encode_json_batch(
             },
         }));
     if options.iso_8601 {
-        builder = builder
+        encoder_options = encoder_options
             .with_timestamp_format("%Y-%m-%dT%H:%M:%S%.f".to_string())
             .with_timestamp_tz_format("%Y-%m-%dT%H:%M:%S%.fZ".to_string());
     } else {
-        builder = builder
+        encoder_options = encoder_options
             .with_timestamp_format("%Y-%m-%d %H:%M:%S%.f".to_string())
             .with_timestamp_tz_format("%Y-%m-%d %H:%M:%S%.fZ".to_string());
     }
-    let mut bytes = Vec::new();
-    {
-        let mut writer = builder.build::<_, LineDelimited>(&mut bytes);
-        writer
-            .write(&batch)
-            .map_err(|error| format!("failed to encode Kafka JSON batch: {error}"))?;
-        writer
-            .finish()
-            .map_err(|error| format!("failed to finish Kafka JSON batch: {error}"))?;
-    }
+    encoder_options
+}
+
+#[cfg(feature = "kafka")]
+fn encode_json_rows(
+    batch: &RecordBatch,
+    encoder_options: &arrow::json::writer::EncoderOptions,
+) -> Result<EncodedLines, String> {
+    use arrow::json::writer::make_encoder;
+
+    // Arrow buffers are a reliable lower bound for row-oriented JSON. Starting there avoids the
+    // repeated grow-and-copy sequence that otherwise dominates wide Kafka batches, without
+    // retaining an oversized encoder buffer after this batch returns.
+    let mut bytes = Vec::with_capacity(batch.get_array_memory_size());
+    let array = StructArray::from(batch.clone());
+    let field = Arc::new(Field::new_struct(
+        "",
+        batch.schema().fields().clone(),
+        false,
+    ));
+    let mut encoder = make_encoder(&field, &array, encoder_options)
+        .map_err(|error| format!("failed to create Kafka JSON encoder: {error}"))?;
     let mut lines = Vec::with_capacity(batch.num_rows());
-    let mut start = 0;
-    for (index, byte) in bytes.iter().enumerate() {
-        if *byte == b'\n' {
-            if index > start {
-                lines.push(start..index);
-            }
-            start = index + 1;
-        }
-    }
-    if bytes.len() > start {
+    for index in 0..batch.num_rows() {
+        let start = bytes.len();
+        encoder.encode(index, &mut bytes);
         lines.push(start..bytes.len());
     }
     Ok(EncodedLines { bytes, lines })
@@ -248,10 +275,14 @@ fn encode_value_lines(
     format: &EncodeOptions,
     logical_types: &[String],
     field_names: &[String],
+    prepared_json: Option<&PreparedJsonEncoder>,
 ) -> Result<EncodedLines, String> {
     match format {
         EncodeOptions::Json { envelope, options } => {
-            let rows = encode_json_batch(batch, options, logical_types, field_names)?;
+            let rows = match prepared_json {
+                Some(prepared) => prepared.encode(batch, logical_types, field_names)?,
+                None => encode_json_batch(batch, options, logical_types, field_names)?,
+            };
             match envelope {
                 None => Ok(rows),
                 Some(dialect) => {
@@ -290,6 +321,40 @@ fn encode_value_lines(
             let (bytes, rows) = crate::raw_encode::encode_raw_batch(batch, options)?;
             Ok(EncodedLines::new(bytes, rows))
         }
+    }
+}
+
+/// Reusable portion of Arrow's JSON writer. The row encoder itself borrows the current batch, but
+/// its format/factory configuration and the Flink logical-type annotation plan are task-local.
+#[cfg(feature = "kafka")]
+struct PreparedJsonEncoder {
+    encoder_options: arrow::json::writer::EncoderOptions,
+    annotation: std::cell::RefCell<Option<BatchAnnotationPlan>>,
+}
+
+#[cfg(feature = "kafka")]
+impl PreparedJsonEncoder {
+    fn new(options: &JsonEncodeOptions) -> Self {
+        Self {
+            encoder_options: json_encoder_options(options),
+            annotation: std::cell::RefCell::new(None),
+        }
+    }
+
+    fn encode(
+        &self,
+        batch: &RecordBatch,
+        logical_types: &[String],
+        field_names: &[String],
+    ) -> Result<EncodedLines, String> {
+        let batch = {
+            let mut annotation = self.annotation.borrow_mut();
+            if annotation.is_none() {
+                *annotation = Some(BatchAnnotationPlan::new(batch, logical_types, field_names)?);
+            }
+            annotation.as_ref().unwrap().apply(batch)?
+        };
+        encode_json_rows(&batch, &self.encoder_options)
     }
 }
 
@@ -374,6 +439,19 @@ struct EncodedKafkaRecords {
 }
 
 #[cfg(feature = "kafka")]
+fn project_strings(values: &[String], fields: &[usize]) -> Result<Vec<String>, String> {
+    fields
+        .iter()
+        .map(|index| {
+            values
+                .get(*index)
+                .cloned()
+                .ok_or_else(|| format!("Kafka encoder projection index {index} is out of bounds"))
+        })
+        .collect()
+}
+
+#[cfg(feature = "kafka")]
 impl EncodedKafkaRecords {
     fn len(&self) -> usize {
         self.values.len()
@@ -397,11 +475,15 @@ fn encode_records(
     batch: &RecordBatch,
     options: &EncodeOptions,
     key_options: &EncodeOptions,
-    logical_types: &[String],
-    field_names: &[String],
     key_fields: &[usize],
     value_fields: &[usize],
+    key_logical_types: &[String],
+    key_field_names: &[String],
+    value_logical_types: &[String],
+    value_field_names: &[String],
     upsert: bool,
+    key_json: Option<&PreparedJsonEncoder>,
+    value_json: Option<&PreparedJsonEncoder>,
 ) -> Result<EncodedKafkaRecords, String> {
     let key_batch = batch
         .project(key_fields)
@@ -409,18 +491,6 @@ fn encode_records(
     let value_batch = batch
         .project(value_fields)
         .map_err(|error| format!("failed to project Kafka value fields: {error}"))?;
-    let project_types = |fields: &[usize]| {
-        fields
-            .iter()
-            .map(|index| logical_types[*index].clone())
-            .collect::<Vec<_>>()
-    };
-    let project_names = |fields: &[usize]| {
-        fields
-            .iter()
-            .map(|index| field_names[*index].clone())
-            .collect::<Vec<_>>()
-    };
     let keys = if key_fields.is_empty() {
         None
     } else {
@@ -430,16 +500,18 @@ fn encode_records(
             &key_batch,
             None,
             key_options,
-            &project_types(key_fields),
-            &project_names(key_fields),
+            key_logical_types,
+            key_field_names,
+            key_json,
         )?)
     };
     let values = encode_value_lines(
         &value_batch,
         row_kind_column(batch),
         options,
-        &project_types(value_fields),
-        &project_names(value_fields),
+        value_logical_types,
+        value_field_names,
+        value_json,
     )?;
     let key_lines = keys.as_ref().map_or(batch.num_rows(), EncodedLines::len);
     if values.len() != batch.num_rows() || key_lines != batch.num_rows() {
@@ -470,6 +542,44 @@ fn encode_records(
     })
 }
 
+/// Task-local sink encoder plan. Flink constructs one serialization schema per operator instance;
+/// mirror that lifecycle natively so JNI strings/arrays and format options are not reparsed for
+/// every Arrow batch.
+#[cfg(feature = "kafka")]
+struct NativeKafkaEncoder {
+    options: EncodeOptions,
+    key_options: EncodeOptions,
+    key_fields: Vec<usize>,
+    value_fields: Vec<usize>,
+    key_logical_types: Vec<String>,
+    key_field_names: Vec<String>,
+    value_logical_types: Vec<String>,
+    value_field_names: Vec<String>,
+    upsert: bool,
+    key_json: Option<PreparedJsonEncoder>,
+    value_json: Option<PreparedJsonEncoder>,
+}
+
+#[cfg(feature = "kafka")]
+impl NativeKafkaEncoder {
+    fn encode(&self, batch: &RecordBatch) -> Result<EncodedKafkaRecords, String> {
+        encode_records(
+            batch,
+            &self.options,
+            &self.key_options,
+            &self.key_fields,
+            &self.value_fields,
+            &self.key_logical_types,
+            &self.key_field_names,
+            &self.value_logical_types,
+            &self.value_field_names,
+            self.upsert,
+            self.key_json.as_ref(),
+            self.value_json.as_ref(),
+        )
+    }
+}
+
 /// Rebuilds the batch onto the declared sink boundary: each column takes its declared field name
 /// (the input plan may carry generated expression names) and has its TIMESTAMP_LTZ leaves re-marked
 /// (see `mark_ltz_leaves`), so the encoders below need no side channel.
@@ -479,157 +589,272 @@ pub(crate) fn annotate_flink_types(
     logical_types: &[String],
     field_names: &[String],
 ) -> Result<RecordBatch, String> {
-    if logical_types.is_empty() && field_names.is_empty() {
-        return Ok(batch.clone());
-    }
-    if logical_types.len() != batch.num_columns() || field_names.len() != batch.num_columns() {
-        return Err(format!(
-            "Kafka JSON encoder received {} logical types and {} names for {} columns",
-            logical_types.len(),
-            field_names.len(),
-            batch.num_columns()
-        ));
-    }
-    let mut fields = Vec::with_capacity(batch.num_columns());
-    let mut columns = Vec::with_capacity(batch.num_columns());
-    for (index, field) in batch.schema().fields().iter().enumerate() {
-        let column = mark_ltz_leaves(batch.column(index).clone(), &logical_types[index])?;
-        fields.push(
-            field
-                .as_ref()
-                .clone()
-                .with_name(&field_names[index])
-                .with_data_type(column.data_type().clone()),
-        );
-        columns.push(column);
-    }
-    let schema = Arc::new(Schema::new_with_metadata(
-        fields,
-        batch.schema().metadata().clone(),
-    ));
-    RecordBatch::try_new(schema, columns)
-        .map_err(|error| format!("failed to annotate Kafka JSON schema: {error}"))
+    BatchAnnotationPlan::new(batch, logical_types, field_names)?.apply(batch)
 }
 
-/// Re-marks every TIMESTAMP_LTZ leaf with a UTC timezone by walking the column's Flink logical
-/// type descriptor in lockstep with the Arrow tree. The Java boundary maps both of Flink's
-/// timestamp flavors to timezone-less nanoseconds, but the JSON encoder must render an LTZ instant
-/// with Flink's 'Z' designator — at any nesting depth. Only the type tree is rebuilt (buffers are
-/// shared), and a column whose descriptor carries no LTZ leaf passes through untouched.
 #[cfg(feature = "kafka")]
-fn mark_ltz_leaves(array: ArrayRef, descriptor: &str) -> Result<ArrayRef, String> {
-    use arrow::array::cast::AsArray;
-    use arrow::array::{LargeListArray, ListArray, MapArray, StructArray};
-    use arrow::datatypes::TimestampNanosecondType;
+struct BatchAnnotationPlan {
+    input_types: Vec<DataType>,
+    schema: SchemaRef,
+    columns: Vec<LtzMarkPlan>,
+}
 
-    if !descriptor.contains("TIMESTAMP_LTZ") {
-        return Ok(array);
-    }
-    let children = |expected: usize| -> Result<Vec<&str>, String> {
-        let children = descriptor_children(descriptor).ok_or_else(|| {
-            format!("Flink descriptor {descriptor} does not match an Arrow container")
-        })?;
-        if children.len() != expected {
+#[cfg(feature = "kafka")]
+impl BatchAnnotationPlan {
+    fn new(
+        batch: &RecordBatch,
+        logical_types: &[String],
+        field_names: &[String],
+    ) -> Result<Self, String> {
+        if logical_types.is_empty() && field_names.is_empty() {
+            return Ok(Self {
+                input_types: batch
+                    .schema()
+                    .fields()
+                    .iter()
+                    .map(|field| field.data_type().clone())
+                    .collect(),
+                schema: batch.schema(),
+                columns: vec![LtzMarkPlan::Identity; batch.num_columns()],
+            });
+        }
+        if logical_types.len() != batch.num_columns() || field_names.len() != batch.num_columns() {
             return Err(format!(
-                "Flink descriptor {descriptor} has {} children for {expected} Arrow children",
-                children.len()
+                "Kafka JSON encoder received {} logical types and {} names for {} columns",
+                logical_types.len(),
+                field_names.len(),
+                batch.num_columns()
             ));
         }
-        Ok(children)
-    };
-    match array.data_type() {
-        DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None)
-            if descriptor.starts_with("TIMESTAMP_LTZ") =>
+        let columns = batch
+            .schema()
+            .fields()
+            .iter()
+            .zip(logical_types)
+            .map(|(field, descriptor)| LtzMarkPlan::new(field.data_type(), descriptor))
+            .collect::<Result<Vec<_>, String>>()?;
+        let annotated = columns
+            .iter()
+            .zip(batch.columns())
+            .map(|(plan, column)| plan.apply(column.clone()))
+            .collect::<Result<Vec<_>, String>>()?;
+        let fields = batch
+            .schema()
+            .fields()
+            .iter()
+            .zip(field_names)
+            .zip(&annotated)
+            .map(|((field, name), column)| {
+                field
+                    .as_ref()
+                    .clone()
+                    .with_name(name)
+                    .with_data_type(column.data_type().clone())
+            })
+            .collect::<Vec<_>>();
+        Ok(Self {
+            input_types: batch
+                .schema()
+                .fields()
+                .iter()
+                .map(|field| field.data_type().clone())
+                .collect(),
+            schema: Arc::new(Schema::new_with_metadata(
+                fields,
+                batch.schema().metadata().clone(),
+            )),
+            columns,
+        })
+    }
+
+    fn apply(&self, batch: &RecordBatch) -> Result<RecordBatch, String> {
+        if batch.num_columns() != self.columns.len()
+            || batch
+                .schema()
+                .fields()
+                .iter()
+                .zip(&self.input_types)
+                .any(|(field, expected)| field.data_type() != expected)
         {
-            let marked = array
-                .as_primitive::<TimestampNanosecondType>()
-                .clone()
-                .with_timezone("UTC");
-            Ok(Arc::new(marked))
+            return Err("Kafka encoder input schema changed after operator open".to_string());
         }
-        DataType::Struct(struct_fields) => {
-            let children = children(struct_fields.len())?;
-            let (fields, columns, nulls) = array.as_struct().clone().into_parts();
-            let mut new_fields = Vec::with_capacity(columns.len());
-            let mut new_columns = Vec::with_capacity(columns.len());
-            for ((field, column), child) in fields.iter().zip(columns).zip(children) {
-                let column = mark_ltz_leaves(column, child)?;
-                new_fields.push(Arc::new(
+        let columns = self
+            .columns
+            .iter()
+            .zip(batch.columns())
+            .map(|(plan, column)| plan.apply(column.clone()))
+            .collect::<Result<Vec<_>, String>>()?;
+        RecordBatch::try_new(self.schema.clone(), columns)
+            .map_err(|error| format!("failed to annotate Kafka JSON schema: {error}"))
+    }
+}
+
+#[cfg(feature = "kafka")]
+#[derive(Clone)]
+enum LtzMarkPlan {
+    Identity,
+    Timestamp,
+    Struct(Vec<LtzMarkPlan>),
+    List(Box<LtzMarkPlan>),
+    LargeList(Box<LtzMarkPlan>),
+    Map(Box<LtzMarkPlan>, Box<LtzMarkPlan>),
+}
+
+#[cfg(feature = "kafka")]
+impl LtzMarkPlan {
+    fn new(data_type: &DataType, descriptor: &str) -> Result<Self, String> {
+        if !descriptor.contains("TIMESTAMP_LTZ") {
+            return Ok(Self::Identity);
+        }
+        let children = |expected: usize| -> Result<Vec<&str>, String> {
+            let children = descriptor_children(descriptor).ok_or_else(|| {
+                format!("Flink descriptor {descriptor} does not match an Arrow container")
+            })?;
+            if children.len() != expected {
+                return Err(format!(
+                    "Flink descriptor {descriptor} has {} children for {expected} Arrow children",
+                    children.len()
+                ));
+            }
+            Ok(children)
+        };
+        match data_type {
+            DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None)
+                if descriptor.starts_with("TIMESTAMP_LTZ") =>
+            {
+                Ok(Self::Timestamp)
+            }
+            DataType::Struct(fields) => Ok(Self::Struct(
+                fields
+                    .iter()
+                    .zip(children(fields.len())?)
+                    .map(|(field, child)| Self::new(field.data_type(), child))
+                    .collect::<Result<Vec<_>, String>>()?,
+            )),
+            DataType::List(field) => Ok(Self::List(Box::new(Self::new(
+                field.data_type(),
+                children(1)?[0],
+            )?))),
+            DataType::LargeList(field) => Ok(Self::LargeList(Box::new(Self::new(
+                field.data_type(),
+                children(1)?[0],
+            )?))),
+            DataType::Map(field, _) => {
+                let DataType::Struct(fields) = field.data_type() else {
+                    return Err("Arrow map entry type is not a struct".to_string());
+                };
+                let descriptors = children(2)?;
+                Ok(Self::Map(
+                    Box::new(Self::new(fields[0].data_type(), descriptors[0])?),
+                    Box::new(Self::new(fields[1].data_type(), descriptors[1])?),
+                ))
+            }
+            _ => Ok(Self::Identity),
+        }
+    }
+
+    fn apply(&self, array: ArrayRef) -> Result<ArrayRef, String> {
+        use arrow::array::cast::AsArray;
+        use arrow::array::{LargeListArray, ListArray, MapArray, StructArray};
+        use arrow::datatypes::TimestampNanosecondType;
+
+        match self {
+            Self::Identity => Ok(array),
+            Self::Timestamp => Ok(Arc::new(
+                array
+                    .as_primitive::<TimestampNanosecondType>()
+                    .clone()
+                    .with_timezone("UTC"),
+            )),
+            Self::Struct(plans) => {
+                let (fields, columns, nulls) = array.as_struct().clone().into_parts();
+                let columns = columns
+                    .into_iter()
+                    .zip(plans)
+                    .map(|(column, plan)| plan.apply(column))
+                    .collect::<Result<Vec<_>, String>>()?;
+                let fields = fields
+                    .iter()
+                    .zip(&columns)
+                    .map(|(field, column)| {
+                        Arc::new(
+                            field
+                                .as_ref()
+                                .clone()
+                                .with_data_type(column.data_type().clone()),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                Ok(Arc::new(StructArray::new(fields.into(), columns, nulls)))
+            }
+            Self::List(plan) => {
+                let (field, offsets, values, nulls) = array.as_list::<i32>().clone().into_parts();
+                let values = plan.apply(values)?;
+                let field = Arc::new(
                     field
                         .as_ref()
                         .clone()
-                        .with_data_type(column.data_type().clone()),
-                ));
-                new_columns.push(column);
+                        .with_data_type(values.data_type().clone()),
+                );
+                Ok(Arc::new(ListArray::new(field, offsets, values, nulls)))
             }
-            Ok(Arc::new(StructArray::new(
-                new_fields.into(),
-                new_columns,
-                nulls,
-            )))
-        }
-        DataType::List(_) => {
-            let element = children(1)?[0];
-            let (field, offsets, values, nulls) = array.as_list::<i32>().clone().into_parts();
-            let values = mark_ltz_leaves(values, element)?;
-            let field = Arc::new(
-                field
-                    .as_ref()
-                    .clone()
-                    .with_data_type(values.data_type().clone()),
-            );
-            Ok(Arc::new(ListArray::new(field, offsets, values, nulls)))
-        }
-        DataType::LargeList(_) => {
-            let element = children(1)?[0];
-            let (field, offsets, values, nulls) = array.as_list::<i64>().clone().into_parts();
-            let values = mark_ltz_leaves(values, element)?;
-            let field = Arc::new(
-                field
-                    .as_ref()
-                    .clone()
-                    .with_data_type(values.data_type().clone()),
-            );
-            Ok(Arc::new(LargeListArray::new(field, offsets, values, nulls)))
-        }
-        DataType::Map(_, ordered) => {
-            let ordered = *ordered;
-            let children = children(2)?;
-            let map = array.as_map();
-            let offsets = map.offsets().clone();
-            let map_nulls = map.nulls().cloned();
-            let (fields, columns, nulls) = map.entries().clone().into_parts();
-            let mut new_fields = Vec::with_capacity(2);
-            let mut new_columns = Vec::with_capacity(2);
-            for ((field, column), child) in fields.iter().zip(columns).zip(children) {
-                let column = mark_ltz_leaves(column, child)?;
-                new_fields.push(Arc::new(
+            Self::LargeList(plan) => {
+                let (field, offsets, values, nulls) = array.as_list::<i64>().clone().into_parts();
+                let values = plan.apply(values)?;
+                let field = Arc::new(
                     field
                         .as_ref()
                         .clone()
-                        .with_data_type(column.data_type().clone()),
-                ));
-                new_columns.push(column);
+                        .with_data_type(values.data_type().clone()),
+                );
+                Ok(Arc::new(LargeListArray::new(field, offsets, values, nulls)))
             }
-            let entries = StructArray::new(new_fields.into(), new_columns, nulls);
-            let DataType::Map(entry_field, _) = array.data_type() else {
-                unreachable!("matched Map above");
-            };
-            let entry_field = Arc::new(
-                entry_field
-                    .as_ref()
-                    .clone()
-                    .with_data_type(entries.data_type().clone()),
-            );
-            Ok(Arc::new(MapArray::new(
-                entry_field,
-                offsets,
-                entries,
-                map_nulls,
-                ordered,
-            )))
+            Self::Map(key_plan, value_plan) => {
+                let map = array.as_map();
+                let offsets = map.offsets().clone();
+                let map_nulls = map.nulls().cloned();
+                let ordered = match array.data_type() {
+                    DataType::Map(_, ordered) => *ordered,
+                    _ => unreachable!("map plan applied to non-map array"),
+                };
+                let (fields, columns, nulls) = map.entries().clone().into_parts();
+                let plans = [key_plan.as_ref(), value_plan.as_ref()];
+                let columns = columns
+                    .into_iter()
+                    .zip(plans)
+                    .map(|(column, plan)| plan.apply(column))
+                    .collect::<Result<Vec<_>, String>>()?;
+                let fields = fields
+                    .iter()
+                    .zip(&columns)
+                    .map(|(field, column)| {
+                        Arc::new(
+                            field
+                                .as_ref()
+                                .clone()
+                                .with_data_type(column.data_type().clone()),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let entries = StructArray::new(fields.into(), columns, nulls);
+                let DataType::Map(entry_field, _) = array.data_type() else {
+                    unreachable!("map plan applied to non-map array");
+                };
+                let entry_field = Arc::new(
+                    entry_field
+                        .as_ref()
+                        .clone()
+                        .with_data_type(entries.data_type().clone()),
+                );
+                Ok(Arc::new(MapArray::new(
+                    entry_field,
+                    offsets,
+                    entries,
+                    map_nulls,
+                    ordered,
+                )))
+            }
         }
-        _ => Ok(array),
     }
 }
 
@@ -1453,6 +1678,7 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_encodeKafkaBatch
             &options,
             &logical_types,
             &field_names,
+            None,
         )?;
         if encoded.len() != batch.num_rows() {
             return Err(format!(
@@ -1562,6 +1788,150 @@ fn byte_array_array<'slices, 'local>(
     Ok(result)
 }
 
+#[cfg(feature = "kafka")]
+fn int_array<'local>(
+    env: &mut JNIEnv<'local>,
+    values: &[i32],
+) -> Result<JIntArray<'local>, String> {
+    let output = env
+        .new_int_array(values.len() as i32)
+        .map_err(|error| format!("failed to allocate Kafka batch metadata: {error}"))?;
+    env.set_int_array_region(&output, 0, values)
+        .map_err(|error| format!("failed to materialize Kafka batch metadata: {error}"))?;
+    Ok(output)
+}
+
+#[cfg(feature = "kafka")]
+fn encoded_batch_object<'local>(
+    env: &mut JNIEnv<'local>,
+    records: &EncodedKafkaRecords,
+) -> Result<jni::sys::jobject, String> {
+    let (key_bytes, key_offsets, key_lengths) = match records.keys.as_ref() {
+        Some(keys) => {
+            let (offsets, lengths) = keys.metadata(&[])?;
+            (&keys.bytes[..], offsets, lengths)
+        }
+        None => (&[][..], vec![0; records.len()], vec![-1; records.len()]),
+    };
+    let (value_offsets, value_lengths) = records.values.metadata(&records.tombstones)?;
+    let key_bytes = env
+        .byte_array_from_slice(key_bytes)
+        .map_err(|error| format!("failed to materialize Kafka key slab: {error}"))?;
+    let key_offsets = int_array(env, &key_offsets)?;
+    let key_lengths = int_array(env, &key_lengths)?;
+    let value_bytes = env
+        .byte_array_from_slice(&records.values.bytes)
+        .map_err(|error| format!("failed to materialize Kafka value slab: {error}"))?;
+    let value_offsets = int_array(env, &value_offsets)?;
+    let value_lengths = int_array(env, &value_lengths)?;
+    let class = env
+        .find_class("tech/streamfusion/kafka/NativeKafkaEncodedBatch")
+        .map_err(|error| format!("failed to resolve Kafka batch class: {error}"))?;
+    let result = env
+        .new_object(
+            class,
+            "([B[I[I[B[I[I)V",
+            &[
+                jni::objects::JValue::Object(&key_bytes),
+                jni::objects::JValue::Object(&key_offsets),
+                jni::objects::JValue::Object(&key_lengths),
+                jni::objects::JValue::Object(&value_bytes),
+                jni::objects::JValue::Object(&value_offsets),
+                jni::objects::JValue::Object(&value_lengths),
+            ],
+        )
+        .map_err(|error| format!("failed to construct Kafka encoded batch: {error}"))?;
+    Ok(result.into_raw())
+}
+
+/// Parses all sink format options and projections once at operator open, matching Flink's
+/// task-local SerializationSchema lifecycle.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_createKafkaEncoder<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    format: jint,
+    format_options: JString<'local>,
+    key_format: jint,
+    key_format_options: JString<'local>,
+    logical_types: JObjectArray<'local>,
+    field_names: JObjectArray<'local>,
+    key_fields: JIntArray<'local>,
+    value_fields: JIntArray<'local>,
+    upsert: jboolean,
+) -> jlong {
+    kafka_jni(&mut env, 0, |env| {
+        let options = read_encode_format(env, format, &format_options)?;
+        let key_options = read_encode_format(env, key_format, &key_format_options)?;
+        let value_json = match &options {
+            EncodeOptions::Json { options, .. } => Some(PreparedJsonEncoder::new(options)),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        };
+        let key_json = match &key_options {
+            EncodeOptions::Json { options, .. } => Some(PreparedJsonEncoder::new(options)),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        };
+        let logical_types = read_string_array(env, &logical_types);
+        let field_names = read_string_array(env, &field_names);
+        let key_fields = read_int_array(env, &key_fields)
+            .into_iter()
+            .map(|index| index as usize)
+            .collect::<Vec<_>>();
+        let value_fields = read_int_array(env, &value_fields)
+            .into_iter()
+            .map(|index| index as usize)
+            .collect::<Vec<_>>();
+        let encoder = NativeKafkaEncoder {
+            options,
+            key_options,
+            key_logical_types: project_strings(&logical_types, &key_fields)?,
+            key_field_names: project_strings(&field_names, &key_fields)?,
+            value_logical_types: project_strings(&logical_types, &value_fields)?,
+            value_field_names: project_strings(&field_names, &value_fields)?,
+            key_fields,
+            value_fields,
+            upsert: upsert != 0,
+            key_json,
+            value_json,
+        };
+        Ok(crate::bridge::into_handle(encoder))
+    })
+}
+
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_encodeKafkaRecordBatchWithHandle<
+    'local,
+>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    array_address: jlong,
+    schema_address: jlong,
+) -> jni::sys::jobject {
+    kafka_jni(&mut env, std::ptr::null_mut(), |env| {
+        let batch = import_record_batch(array_address, schema_address);
+        let encoder = unsafe { &*(handle as *mut NativeKafkaEncoder) };
+        let records = encoder.encode(&batch)?;
+        encoded_batch_object(env, &records)
+    })
+}
+
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_closeKafkaEncoder<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(crate::bridge::from_handle::<NativeKafkaEncoder>(handle));
+    })
+}
+
 /// Serializes projected key/value rows together so an upsert batch crosses JNI once. Null values
 /// are Kafka tombstones for DELETE and UPDATE_BEFORE, matching Flink's upsert-kafka schema.
 #[cfg(feature = "kafka")]
@@ -1595,15 +1965,23 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_encodeKafkaRecor
             .into_iter()
             .map(|index| index as usize)
             .collect::<Vec<_>>();
+        let key_logical_types = project_strings(&logical_types, &key_fields)?;
+        let key_field_names = project_strings(&field_names, &key_fields)?;
+        let value_logical_types = project_strings(&logical_types, &value_fields)?;
+        let value_field_names = project_strings(&field_names, &value_fields)?;
         let records = encode_records(
             &batch,
             &options,
             &key_options,
-            &logical_types,
-            &field_names,
             &key_fields,
             &value_fields,
+            &key_logical_types,
+            &key_field_names,
+            &value_logical_types,
+            &value_field_names,
             upsert != 0,
+            None,
+            None,
         )?;
         let keys = byte_array_array(env, records.len(), |index| records.key(index))?;
         let values = byte_array_array(env, records.len(), |index| records.value(index))?;
@@ -1614,6 +1992,98 @@ pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_encodeKafkaRecor
             .map_err(|error| format!("failed to store Kafka keys: {error}"))?;
         env.set_object_array_element(&result, 1, values)
             .map_err(|error| format!("failed to store Kafka values: {error}"))?;
+        Ok(result.into_raw())
+    })
+}
+
+/// Returns each key/value column as one byte slab plus offsets and lengths. A negative length is a
+/// null key or Kafka tombstone; zero remains a present empty byte array. This follows Comet's bulk
+/// native-row handoff shape while keeping the slabs JVM-owned because Kafka retains each record.
+#[cfg(feature = "kafka")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_kafka_NativeKafka_encodeKafkaRecordBatch<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    array_address: jlong,
+    schema_address: jlong,
+    format: jint,
+    format_options: JString<'local>,
+    key_format: jint,
+    key_format_options: JString<'local>,
+    logical_types: JObjectArray<'local>,
+    field_names: JObjectArray<'local>,
+    key_fields: JIntArray<'local>,
+    value_fields: JIntArray<'local>,
+    upsert: jboolean,
+) -> jni::sys::jobject {
+    kafka_jni(&mut env, std::ptr::null_mut(), |env| {
+        let batch = import_record_batch(array_address, schema_address);
+        let options = read_encode_format(env, format, &format_options)?;
+        let key_options = read_encode_format(env, key_format, &key_format_options)?;
+        let logical_types = read_string_array(env, &logical_types);
+        let field_names = read_string_array(env, &field_names);
+        let key_fields = read_int_array(env, &key_fields)
+            .into_iter()
+            .map(|index| index as usize)
+            .collect::<Vec<_>>();
+        let value_fields = read_int_array(env, &value_fields)
+            .into_iter()
+            .map(|index| index as usize)
+            .collect::<Vec<_>>();
+        let key_logical_types = project_strings(&logical_types, &key_fields)?;
+        let key_field_names = project_strings(&field_names, &key_fields)?;
+        let value_logical_types = project_strings(&logical_types, &value_fields)?;
+        let value_field_names = project_strings(&field_names, &value_fields)?;
+        let records = encode_records(
+            &batch,
+            &options,
+            &key_options,
+            &key_fields,
+            &value_fields,
+            &key_logical_types,
+            &key_field_names,
+            &value_logical_types,
+            &value_field_names,
+            upsert != 0,
+            None,
+            None,
+        )?;
+
+        let (key_bytes, key_offsets, key_lengths) = match records.keys.as_ref() {
+            Some(keys) => {
+                let (offsets, lengths) = keys.metadata(&[])?;
+                (&keys.bytes[..], offsets, lengths)
+            }
+            None => (&[][..], vec![0; records.len()], vec![-1; records.len()]),
+        };
+        let (value_offsets, value_lengths) = records.values.metadata(&records.tombstones)?;
+        let key_bytes = env
+            .byte_array_from_slice(key_bytes)
+            .map_err(|error| format!("failed to materialize Kafka key slab: {error}"))?;
+        let key_offsets = int_array(env, &key_offsets)?;
+        let key_lengths = int_array(env, &key_lengths)?;
+        let value_bytes = env
+            .byte_array_from_slice(&records.values.bytes)
+            .map_err(|error| format!("failed to materialize Kafka value slab: {error}"))?;
+        let value_offsets = int_array(env, &value_offsets)?;
+        let value_lengths = int_array(env, &value_lengths)?;
+        let class = env
+            .find_class("tech/streamfusion/kafka/NativeKafkaEncodedBatch")
+            .map_err(|error| format!("failed to resolve Kafka batch class: {error}"))?;
+        let result = env
+            .new_object(
+                class,
+                "([B[I[I[B[I[I)V",
+                &[
+                    jni::objects::JValue::Object(&key_bytes),
+                    jni::objects::JValue::Object(&key_offsets),
+                    jni::objects::JValue::Object(&key_lengths),
+                    jni::objects::JValue::Object(&value_bytes),
+                    jni::objects::JValue::Object(&value_offsets),
+                    jni::objects::JValue::Object(&value_lengths),
+                ],
+            )
+            .map_err(|error| format!("failed to construct Kafka encoded batch: {error}"))?;
         Ok(result.into_raw())
     })
 }

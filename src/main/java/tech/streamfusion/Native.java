@@ -473,27 +473,32 @@ public final class Native {
       long outArrayAddress,
       long outSchemaAddress);
 
+  /** Runs a later Calc batch using the input schema cached by the handle's first call. */
+  public static native void calcExpressionArray(
+      long handle, long inArrayAddress, long outArrayAddress, long outSchemaAddress);
+
   /** Releases a compiled Calc handle and its native state. */
   public static native void closeCalcExpression(long handle);
 
   /**
-   * Splits a batch the JVM exported using Flink's BinaryRow key hash into one sub-batch per non-empty
-   * key group, returning a handle to pull them with {@link #nextSplit}; released with {@link
-   * #closeSplit}. A key-group batch can be rerouted after unaligned-checkpoint rescaling because its
-   * routing tag is independent of the old downstream parallelism.
+   * Splits a batch the JVM exported using Flink's BinaryRow key hash into one order-preserving
+   * sub-batch per non-empty destination channel, returning a handle to pull them with {@link
+   * #nextSplit}; released with {@link #closeSplit}.
    *
    * @param inArrayAddress address of the input {@code ArrowArray} C struct
    * @param inSchemaAddress address of the input {@code ArrowSchema} C struct
    * @param keyColumns indices of the key columns to hash
    * @param timestampPrecisions logical timestamp precision per key column ({@code -1} for non-timestamp keys)
    * @param maxParallelism number of Flink key groups
+   * @param parallelism number of downstream channels
    */
   public static native long splitByKey(
       long inArrayAddress,
       long inSchemaAddress,
       int[] keyColumns,
       int[] timestampPrecisions,
-      int maxParallelism);
+      int maxParallelism,
+      int parallelism);
 
   /**
    * Exports the next sub-batch of a split into the consumer-allocated C structs and returns its key
@@ -1570,6 +1575,22 @@ public final class Native {
   /** Serializes every non-empty Top-N key group once; each payload starts with its key-group id. */
   public static native byte[][] snapshotTopNRankerPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
+
+  /**
+   * Captures an immutable append-only Top-N checkpoint view without encoding IPC on the task
+   * thread. Returns zero when the ranker must use the synchronous compatibility path.
+   */
+  public static native long captureTopNRankerSnapshot(long handle, int maxParallelism);
+
+  /** Returns the non-empty key groups held by an immutable Top-N checkpoint view. */
+  public static native int[] topNRankerSnapshotKeyGroups(long snapshotHandle);
+
+  /** Encodes one key-group payload; called by Flink's async heap-state serializer. */
+  public static native byte[] encodeTopNRankerSnapshotPartition(
+      long snapshotHandle, int keyGroup);
+
+  /** Releases an immutable Top-N checkpoint view. */
+  public static native void closeTopNRankerSnapshot(long snapshotHandle);
 
   /**
    * Restores a Top-N ranker from raw keyed-state partitions assigned to this subtask. {@code

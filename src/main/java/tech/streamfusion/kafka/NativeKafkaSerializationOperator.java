@@ -31,6 +31,7 @@ public final class NativeKafkaSerializationOperator
   private transient Counter serializationRows;
   private transient Counter serializedBytes;
   private transient Counter serializationNanos;
+  private transient long encoderHandle;
 
   public NativeKafkaSerializationOperator(
       EncodeFormat valueFormat,
@@ -55,6 +56,17 @@ public final class NativeKafkaSerializationOperator
     NativeAllocator.initializeFor(this);
     valueFormatOptions = valueFormat.openOptions();
     keyFormatOptions = keyFormat == valueFormat ? valueFormatOptions : keyFormat.openOptions();
+    encoderHandle =
+        NativeKafka.createKafkaEncoder(
+            valueFormat.format,
+            valueFormatOptions,
+            keyFormat.format,
+            keyFormatOptions,
+            logicalTypes,
+            fieldNames,
+            keyFields,
+            valueFields,
+            upsert);
     serializationBatches = getMetricGroup().counter("nativeKafkaSerializationBatches");
     serializationRows = getMetricGroup().counter("nativeKafkaSerializationRows");
     serializedBytes = getMetricGroup().counter("nativeKafkaSerializedBytes");
@@ -77,38 +89,31 @@ public final class NativeKafkaSerializationOperator
           ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
         Data.exportVectorSchemaRoot(
             allocator, root, NativeAllocator.DICTIONARIES, array, schema);
-        byte[][][] records =
-            NativeKafka.encodeKafkaRecords(
-                array.memoryAddress(),
-                schema.memoryAddress(),
-                valueFormat.format,
-                valueFormatOptions,
-                keyFormat.format,
-                keyFormatOptions,
-                logicalTypes,
-                fieldNames,
-                keyFields,
-                valueFields,
-                upsert);
-        byte[][] keys = records[0];
-        byte[][] values = records[1];
+        NativeKafkaEncodedBatch records =
+            NativeKafka.encodeKafkaRecordBatchWithHandle(
+                encoderHandle, array.memoryAddress(), schema.memoryAddress());
         long bytes = 0;
-        for (int index = 0; index < values.length; index++) {
-          byte[] key = keys[index];
-          byte[] value = values[index];
-          if (key != null) {
-            bytes += key.length;
-          }
-          if (value != null) {
-            bytes += value.length;
-          }
-          output.collect(new StreamRecord<>(new PreSerializedKafkaRecord(key, value)));
+        for (int index = 0; index < records.size(); index++) {
+          output.collect(new StreamRecord<>(records.record(index)));
+          bytes += records.serializedBytes(index);
         }
         serializationBatches.inc();
-        serializationRows.inc(values.length);
+        serializationRows.inc(records.size());
         serializedBytes.inc(bytes);
         serializationNanos.inc(System.nanoTime() - started);
       }
+    }
+  }
+
+  @Override
+  public void close() throws Exception {
+    try {
+      if (encoderHandle != 0) {
+        NativeKafka.closeKafkaEncoder(encoderHandle);
+        encoderHandle = 0;
+      }
+    } finally {
+      super.close();
     }
   }
 }

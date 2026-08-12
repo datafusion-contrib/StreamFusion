@@ -64,6 +64,13 @@ class NativeKafkaSerializationOperatorTest {
                           GenericRowData.of(2, null)),
                       rowType,
                       allocator))));
+      harness.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(3, StringData.fromString("three"))),
+                      rowType,
+                      allocator))));
       for (Object record : harness.getOutput()) {
         if (record instanceof StreamRecord) {
           output.add(((StreamRecord<PreSerializedKafkaRecord>) record).getValue().value());
@@ -71,11 +78,13 @@ class NativeKafkaSerializationOperatorTest {
       }
     }
 
-    assertEquals(2, output.size());
+    assertEquals(3, output.size());
     assertArrayEquals(
         "{\"id\":1,\"name\":\"one\"}".getBytes(StandardCharsets.UTF_8), output.get(0));
     assertArrayEquals(
         "{\"id\":2,\"name\":null}".getBytes(StandardCharsets.UTF_8), output.get(1));
+    assertArrayEquals(
+        "{\"id\":3,\"name\":\"three\"}".getBytes(StandardCharsets.UTF_8), output.get(2));
   }
 
   @Test
@@ -133,6 +142,27 @@ class NativeKafkaSerializationOperatorTest {
     assertEquals(
         List.of("output"),
         schema.getKafkaDatasetFacet().orElseThrow().getTopicIdentifier().getTopics());
+  }
+
+  @Test
+  void contiguousBatchDistinguishesNullEmptyAndPresentRecords() {
+    NativeKafkaEncodedBatch batch =
+        new NativeKafkaEncodedBatch(
+            new byte[] {1, 2},
+            new int[] {0, 2, 2},
+            new int[] {2, -1, 0},
+            new byte[] {3, 4},
+            new int[] {0, 1, 2},
+            new int[] {1, 1, -1});
+
+    assertEquals(3, batch.size());
+    assertEquals(3, batch.serializedBytes(0));
+    assertArrayEquals(new byte[] {1, 2}, batch.record(0).key());
+    assertArrayEquals(new byte[] {3}, batch.record(0).value());
+    assertNull(batch.record(1).key());
+    assertArrayEquals(new byte[] {4}, batch.record(1).value());
+    assertArrayEquals(new byte[0], batch.record(2).key());
+    assertNull(batch.record(2).value());
   }
 
   @Test

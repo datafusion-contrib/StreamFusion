@@ -39,5 +39,16 @@ public final class NativeJsonFormat {
       long outArrayAddress,
       long outSchemaAddress);
 
+  static native void decodeContiguousBytesInto(
+      long handle,
+      long dataAddress,
+      long dataLength,
+      long keyBytes,
+      int[] lengths,
+      int count,
+      boolean keyed,
+      long outArrayAddress,
+      long outSchemaAddress);
+
   static native void closeDecoder(long handle);
 }

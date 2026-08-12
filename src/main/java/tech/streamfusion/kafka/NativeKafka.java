@@ -45,4 +45,37 @@ public final class NativeKafka {
       int[] keyFields,
       int[] valueFields,
       boolean upsert);
+
+  /** Serializes projected key/value bytes into two contiguous slabs and row metadata. */
+  public static native NativeKafkaEncodedBatch encodeKafkaRecordBatch(
+      long arrayAddress,
+      long schemaAddress,
+      int format,
+      String formatOptions,
+      int keyFormat,
+      String keyFormatOptions,
+      String[] logicalTypes,
+      String[] fieldNames,
+      int[] keyFields,
+      int[] valueFields,
+      boolean upsert);
+
+  /** Creates a task-local encoder plan, parsing formats and projections once at operator open. */
+  public static native long createKafkaEncoder(
+      int format,
+      String formatOptions,
+      int keyFormat,
+      String keyFormatOptions,
+      String[] logicalTypes,
+      String[] fieldNames,
+      int[] keyFields,
+      int[] valueFields,
+      boolean upsert);
+
+  /** Encodes a batch with a task-local plan created by {@link #createKafkaEncoder}. */
+  public static native NativeKafkaEncodedBatch encodeKafkaRecordBatchWithHandle(
+      long handle, long arrayAddress, long schemaAddress);
+
+  /** Releases a task-local Kafka encoder plan. */
+  public static native void closeKafkaEncoder(long handle);
 }

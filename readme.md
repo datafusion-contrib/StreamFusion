@@ -84,13 +84,17 @@ four-partition topic (one split per source subtask), and publish each query resu
 Kafka topic with a one-second checkpoint interval. Append-only queries use `kafka`; updating
 queries use `upsert-kafka` with the result's actual primary key. Each timed run includes source
 consumption, query execution, the keyed shuffle, serialization, Kafka writes, checkpoints, and
-the bounded job's final transaction commit. The benchmark profile disables StreamFusion's optional
-same-JVM handle-table shuffle, so both engines pay their normal record serialization costs and
-StreamFusion uses the same Arrow IPC format it uses across TaskManagers.
+the bounded job's final transaction commit. Both consumers use `max.poll.records=8192`, and both
+producers use `batch.size=524288` with `linger.ms=20`; these are shared workload settings, not
+StreamFusion-only tuning. The benchmark profile disables
+StreamFusion's optional same-JVM handle-table shuffle, so both engines pay their normal record
+serialization costs and StreamFusion uses the same Arrow IPC format it uses across TaskManagers.
 
-On StreamFusion, Flink's Kafka source and sink retain their normal client and exactly-once paths;
-Rust accelerates decode, every supported operator, and sink key/value/tombstone serialization. q6 is omitted because
-Flink SQL itself cannot run it ([analysis](.claude/wontdos/39-nexmark-q6-exclusion.md)).
+On StreamFusion, Flink retains Kafka enumeration, partition assignment, offsets, checkpointing,
+client, and exactly-once sink paths; a split-aware reader decodes Kafka bytes directly to Arrow in
+Rust. Rust also accelerates every supported operator and sink key/value/tombstone serialization. q6
+is omitted because Flink SQL itself cannot run it
+([analysis](.claude/wontdos/39-nexmark-q6-exclusion.md)).
 
 The table below predates both the handle-table exclusion and the switch back to Flink-owned Kafka
 clients. It will be refreshed by the next benchmark run; do not compare new results against it as

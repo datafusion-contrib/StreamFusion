@@ -137,6 +137,8 @@ codegen-units = 1
 
 [dev-dependencies]
 criterion = "0.5"
+serde = { version = "1", features = ["derive"] }
+sonic-rs = "0.5.8"
 # Reading encoder output back in tests: parquet's ChunkReader is implemented for bytes::Bytes.
 # Already in the tree transitively via arrow/parquet.
 bytes = "1"
@@ -149,3 +151,8 @@ harness = false
 name = "kafka_sink"
 harness = false
 required-features = ["kafka"]
+
+[[bench]]
+name = "json_codecs"
+harness = false
+required-features = ["json"]

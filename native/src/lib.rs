@@ -1,5 +1,5 @@
 pub(crate) use arrow::array::builder::{
-    BinaryBuilder, BooleanBuilder, Int32Builder, Int64Builder, PrimitiveBuilder, StringBuilder,
+    BinaryBuilder, BooleanBuilder, Int64Builder, PrimitiveBuilder, StringBuilder,
 };
 pub(crate) use arrow::array::types::{
     Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
@@ -18,7 +18,7 @@ pub(crate) use arrow::buffer::{OffsetBuffer, ScalarBuffer};
 pub(crate) use arrow::compute::{concat_batches, filter_record_batch, take, SortOptions};
 pub(crate) use arrow::datatypes::ArrowPrimitiveType;
 pub(crate) use arrow::datatypes::{DataType, Field, FieldRef, Fields, Schema, SchemaRef};
-pub(crate) use arrow::ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema};
+pub(crate) use arrow::ffi::{from_ffi, from_ffi_and_data_type, FFI_ArrowArray, FFI_ArrowSchema};
 pub(crate) use arrow::row::{OwnedRow, Row, RowConverter, Rows, SortField};
 pub(crate) use datafusion::catalog::memory::MemorySourceConfig;
 pub(crate) use datafusion::common::{DFSchema, DataFusionError, JoinSide, JoinType, NullEquality};

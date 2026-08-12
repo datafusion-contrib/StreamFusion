@@ -156,6 +156,33 @@ public final class JsonFormatProvider implements NativeFormatProvider {
     }
 
     @Override
+    public boolean supportsContiguousBytes() {
+      return true;
+    }
+
+    @Override
+    public void decodeContiguousBytesInto(
+        long dataAddress,
+        long dataLength,
+        long keyBytes,
+        int[] lengths,
+        int count,
+        boolean keyed,
+        long outArray,
+        long outSchema) {
+      NativeJsonFormat.decodeContiguousBytesInto(
+          handle,
+          dataAddress,
+          dataLength,
+          keyBytes,
+          lengths,
+          count,
+          keyed,
+          outArray,
+          outSchema);
+    }
+
+    @Override
     public long driverInitAddress() {
       return NativeJsonFormat.driverInitAddress();
     }

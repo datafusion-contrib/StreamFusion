@@ -4,6 +4,7 @@ import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.table.types.logical.RowType;
@@ -50,6 +51,29 @@ public final class NativeBodyBatchDecoder implements AutoCloseable {
           outArray.memoryAddress(),
           outSchema.memoryAddress());
       return Data.importVectorSchemaRoot(allocator, outArray, outSchema, NativeAllocator.DICTIONARIES);
+    }
+  }
+
+  /** Exercises the connector's contiguous Kafka-byte boundary without an input Arrow export. */
+  public VectorSchemaRoot decodeContiguous(
+      ArrowBuf data, long dataLength, long keyBytes, int[] lengths, int count, boolean keyed)
+      throws Exception {
+    if (!decoder.supportsContiguousBytes()) {
+      throw new UnsupportedOperationException("decoder does not support contiguous byte batches");
+    }
+    try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
+        ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+      decoder.decodeContiguousBytesInto(
+          data.memoryAddress(),
+          dataLength,
+          keyBytes,
+          lengths,
+          count,
+          keyed,
+          outArray.memoryAddress(),
+          outSchema.memoryAddress());
+      return Data.importVectorSchemaRoot(
+          allocator, outArray, outSchema, NativeAllocator.DICTIONARIES);
     }
   }
 

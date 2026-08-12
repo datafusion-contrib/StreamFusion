@@ -95,10 +95,9 @@ final class KafkaTables {
       return false;
     }
     StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) node;
-    // The decode operator runs downstream of Flink's source and regenerates no watermarks, so a
-    // watermarked table (the WATERMARK clause is pushed into the Kafka scan — no assigner node
-    // remains) must stay on the host.
-    if (ScanWatermarkSpec.of(scan) != null) {
+    // A supported pushed watermark is regenerated at the split-aware decoded source. Shapes outside
+    // that exact contract stay on Flink; otherwise event-time timers could silently stall.
+    if (ScanWatermarkSpec.of(scan) == ScanWatermarkSpec.UNSUPPORTED) {
       return false;
     }
     return decodableAppendScan(scan);
@@ -159,7 +158,8 @@ final class KafkaTables {
       return false;
     }
     StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) node;
-    // Same watermark rule as isNativeKafkaDecode: the decode path regenerates no watermarks.
+    // CDC's changelog translation has an additional host node above the scan. Keep watermarked CDC
+    // on Flink until that complete path can regenerate the pushed source watermark.
     if (ScanWatermarkSpec.of(scan) != null) {
       return false;
     }
@@ -239,9 +239,7 @@ final class KafkaTables {
     return watermarkFallback(node, false);
   }
 
-  /** The CDC-format variant of {@link #appendWatermarkFallback} (checked above the insert-only
-   * guard, where the CDC branch lives): CDC decode runs as an operator downstream of Flink's source,
-   * which regenerates no watermarks. */
+  /** The CDC-format variant of {@link #appendWatermarkFallback}. */
   static String cdcWatermarkFallback(RelNode node) {
     return watermarkFallback(node, true);
   }
@@ -252,7 +250,7 @@ final class KafkaTables {
     }
     StreamPhysicalTableSourceScan scan = (StreamPhysicalTableSourceScan) node;
     ScanWatermarkSpec watermark = ScanWatermarkSpec.of(scan);
-    if (watermark == null) {
+    if (watermark == null || (!cdc && watermark != ScanWatermarkSpec.UNSUPPORTED)) {
       return null;
     }
     Map<String, String> options = FilesystemTables.options(scan);
@@ -264,17 +262,47 @@ final class KafkaTables {
       return null;
     }
     if (cdc) {
-      return "kafka CDC decode: the table's WATERMARK is pushed into the scan, and the CDC decode"
-          + " runs downstream of the source, which cannot regenerate it — the table stays on Flink";
+      return "kafka CDC decode: pushed WATERMARK regeneration is not supported on the CDC changelog"
+          + " path — the table stays on Flink";
     }
-    return "kafka decode: the table's WATERMARK is pushed into the scan, and native decoding runs"
-        + " downstream of Flink's source, which cannot regenerate it — the table stays on Flink";
+    return "kafka decode: the pushed WATERMARK expression or emission policy is outside the native"
+        + " bounded-out-of-orderness contract — the table stays on Flink";
   }
 
-  /** Builds Flink's own {@link KafkaSource} producing each record's raw value as a {@code byte[]} (no
-   * decode) — the native decode operator turns those bytes into Arrow. Flink owns consume/offsets/auth. */
+  /** Builds the Flink Kafka source whose enumerator and serializers the native source delegates to. */
   static KafkaSource<byte[]> buildBytesSource(Map<String, String> options) {
+    return buildBytesSource(options, sourceConsumerProperties(options));
+  }
+
+  /** Fully normalized properties shared by Flink's enumerator and the native split reader. */
+  static Properties sourceConsumerProperties(Map<String, String> options) {
     Properties props = consumerProperties(options);
+    props.setProperty(
+        org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
+        ByteArrayDeserializer.class.getName());
+    props.setProperty(
+        org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
+        ByteArrayDeserializer.class.getName());
+    OffsetsInitializer startup = mapStartupMode(options);
+    props.setProperty(
+        org.apache.kafka.clients.consumer.ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,
+        startup.getAutoOffsetResetStrategy().name().toLowerCase(Locale.ROOT));
+    if ("latest-offset".equals(options.get("scan.bounded.mode"))) {
+      props.setProperty("partition.discovery.interval.ms", "-1");
+    }
+    String groupId =
+        props.getProperty(org.apache.kafka.clients.consumer.ConsumerConfig.GROUP_ID_CONFIG);
+    if (groupId == null) {
+      props.setProperty("commit.offsets.on.checkpoint", "false");
+      props.putIfAbsent("client.id.prefix", "StreamFusionKafkaSource");
+    } else {
+      props.putIfAbsent("client.id.prefix", groupId);
+    }
+    return props;
+  }
+
+  private static KafkaSource<byte[]> buildBytesSource(
+      Map<String, String> options, Properties props) {
     // A keyed table's edge carries both byte arrays per record as one frame element.
     KafkaRecordDeserializationSchema<byte[]> deserializer =
         options.containsKey(NativeFormatOptions.KEYED_KEY_POSITION)
@@ -381,16 +409,30 @@ final class KafkaTables {
   }
 
   static RelNode substituteDecode(StreamPhysicalTableSourceScan scan, PlanContext ctx) {
-    Map<String, String> options = FilesystemTables.options(scan);
-    if (options.containsKey("key.format")) {
-      // The gate resolved the keyed composition; the markers ride the options into the exec node,
-      // the format-option lines, and the native decoder.
-      options =
-          KeyedDecodeSpec.resolve(options, FilesystemTables.physicalRowType(scan))
-              .optionsWithMarkers();
-    }
+    Map<String, String> options = decodeOptions(scan);
     return new StreamPhysicalNativeKafkaDecode(
-        scan.getCluster(), scan.getTraitSet(), scan.getRowType(), options);
+        scan.getCluster(),
+        scan.getTraitSet(),
+        scan.getRowType(),
+        options,
+        ScanWatermarkSpec.of(scan),
+        ctx.repeatedKafkaDecode(decodeSharingKey(scan)));
+  }
+
+  static String decodeSharingKey(StreamPhysicalTableSourceScan scan) {
+    return StreamPhysicalNativeKafkaDecode.sharingKey(
+        decodeOptions(scan), scan.getRowType(), scan.getRowType(), ScanWatermarkSpec.of(scan));
+  }
+
+  private static Map<String, String> decodeOptions(StreamPhysicalTableSourceScan scan) {
+    Map<String, String> options = FilesystemTables.options(scan);
+    if (!options.containsKey("key.format")) {
+      return options;
+    }
+    // The gate resolved the keyed composition; the markers ride the options into the exec node,
+    // the sharing key, the format-option lines, and the native decoder.
+    return KeyedDecodeSpec.resolve(options, FilesystemTables.physicalRowType(scan))
+        .optionsWithMarkers();
   }
 
   static RelNode reportCdcWatermark(RelNode node, PlanContext ctx) {

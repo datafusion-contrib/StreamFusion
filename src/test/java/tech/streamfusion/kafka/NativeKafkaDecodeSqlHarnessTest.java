@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.table.api.ExplainDetail;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.CloseableIterator;
@@ -68,6 +69,56 @@ class NativeKafkaDecodeSqlHarnessTest {
         assertTrue(ids.contains(i), "missing id " + i);
       }
     }
+  }
+
+  @Test
+  void differentlyProjectedSelfJoinReadsAndDecodesTheTopicOnce() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      produceCsv(brokers, MESSAGES);
+
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+      tEnv.executeSql(csvTable("k", brokers));
+      PhysicalPlanScan scan = NativePlanner.install(tEnv);
+      String query =
+          "SELECT l.name AS lname, r.score AS rscore FROM"
+              + " (SELECT name, id / 2 AS pair FROM k WHERE MOD(id, 2) = 0) l JOIN"
+              + " (SELECT score, id / 2 AS pair FROM k WHERE MOD(id, 2) = 1) r"
+              + " ON l.pair = r.pair";
+
+      String plan = tEnv.explainSql(query, ExplainDetail.JSON_EXECUTION_PLAN);
+      assertTrue(plan.contains("NativeShare(consumers=[2])"), "share point missing:\n" + plan);
+      assertEquals(
+          1,
+          count(plan, "\"contents\" : \"Source: native-kafka-source\""),
+          "expected exactly one Kafka source in the stream graph:\n" + plan);
+
+      Set<String> joined = new HashSet<>();
+      try (CloseableIterator<Row> iterator = tEnv.executeSql(query).collect()) {
+        while (joined.size() < MESSAGES / 2 && iterator.hasNext()) {
+          Row row = iterator.next();
+          joined.add(row.getField("lname") + "|" + row.getField("rscore"));
+        }
+      }
+      assertTrue(scan.substitutions() >= 1, "self-join did not route to native");
+      assertEquals(MESSAGES / 2, joined.size(), "expected one pairing per even id");
+      for (long pair = 0; pair < MESSAGES / 2; pair++) {
+        String expected = "row-" + (2 * pair) + "|" + ((2 * pair + 1) % 100) + ".5";
+        assertTrue(joined.contains(expected), "missing pairing " + expected);
+      }
+    }
+  }
+
+  private static int count(String haystack, String needle) {
+    int occurrences = 0;
+    for (int at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1)) {
+      occurrences++;
+    }
+    return occurrences;
   }
 
   private static String csvTable(String name, String brokers) {

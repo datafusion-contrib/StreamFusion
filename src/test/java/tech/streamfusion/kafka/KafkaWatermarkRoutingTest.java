@@ -1,6 +1,7 @@
 package tech.streamfusion.kafka;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import tech.streamfusion.planner.NativePlanner;
@@ -16,21 +17,33 @@ import org.junit.jupiter.api.Test;
 class KafkaWatermarkRoutingTest {
 
   @Test
-  void watermarkedTableStaysEntirelyOnFlink() {
+  void supportedWatermarkedTableUsesNativeDecode() {
     StreamTableEnvironment tEnv = env();
     tEnv.executeSql(watermarkedTable("json"));
-    String plan = NativePlanner.explain(tEnv, "SELECT id, price FROM events");
-    assertTrue(!plan.contains("NativeKafkaDecode"), plan);
-    assertTrue(plan.contains("native decoding runs downstream of Flink's source"), plan);
+    PhysicalPlanScan scan = NativePlanner.install(tEnv);
+    String plan = tEnv.explainSql("SELECT id, price FROM events");
+    assertEquals(0, scan.fallbackReasons().size(), scan.explainSummary());
+    assertTrue(plan.contains("NativeKafkaDecode"), plan);
   }
 
   @Test
-  void watermarkedCdcTableStaysEntirelyOnFlink() {
+  void watermarkedCdcTableStaysOnFlink() {
     StreamTableEnvironment tEnv = env();
     tEnv.executeSql(watermarkedTable("debezium-json"));
     String plan = NativePlanner.explain(tEnv, "SELECT id, price FROM events");
-    assertTrue(!plan.contains("NativeKafkaDecode"), plan);
-    assertTrue(plan.contains("the CDC decode runs downstream of the source"), plan);
+    assertFalse(plan.contains("NativeKafkaDecode"), plan);
+    assertTrue(plan.contains("not supported on the CDC changelog path"), plan);
+  }
+
+  @Test
+  void unsupportedWatermarkEmissionPolicyStaysOnFlink() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        watermarkedTable("json")
+            .replace("'format' = 'json'", "'format' = 'json', 'scan.watermark.emit.strategy' = 'on-event'"));
+    String plan = NativePlanner.explain(tEnv, "SELECT id, price FROM events");
+    assertFalse(plan.contains("NativeKafkaDecode"), plan);
+    assertTrue(plan.contains("outside the native bounded-out-of-orderness contract"), plan);
   }
 
   @Test

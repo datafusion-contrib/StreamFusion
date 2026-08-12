@@ -592,11 +592,15 @@ pub(crate) struct StructJsonAppender {
     fields: Fields,
     env: JsonEnv,
     children: Vec<Box<dyn JsonAppend>>,
-    /// Name→child lookup above a linear-scan threshold (arrow-json's heuristic: a map only pays for
-    /// itself on wide structs).
+    /// Name→child lookup above the profiled linear-scan threshold.
     index: Option<HashMap<String, usize>>,
     nulls: NullBufferBuilder,
 }
+
+// Nexmark's source rows sit in the medium-width range where repeated linear name scans show up in
+// profiles. Below this point the compact scan still beats hashing; at and above it both append and
+// drift detection use a schema-compiled lookup.
+const HASH_LOOKUP_FIELDS: usize = 6;
 
 impl StructJsonAppender {
     fn new(fields: &Fields, capacity: usize, env: JsonEnv) -> StructJsonAppender {
@@ -604,7 +608,7 @@ impl StructJsonAppender {
             .iter()
             .map(|f| make_json_appender(f.data_type(), capacity, env))
             .collect();
-        let index = (fields.len() >= 16).then(|| {
+        let index = (fields.len() >= HASH_LOOKUP_FIELDS).then(|| {
             let mut map = HashMap::with_capacity_and_hasher(fields.len(), Default::default());
             for (i, field) in fields.iter().enumerate() {
                 map.entry(field.name().clone()).or_insert(i);
@@ -627,6 +631,15 @@ impl StructJsonAppender {
         }
     }
 
+    #[inline]
+    fn field_index_from(&self, name: &str, expected: usize) -> Option<usize> {
+        self.fields
+            .get(expected)
+            .filter(|field| field.name() == name)
+            .map(|_| expected)
+            .or_else(|| self.field_index(name))
+    }
+
     /// Collects the last value per field first, then appends one value per child so every column
     /// stays row-aligned. Key matching follows the env's duplicate-key mode: on the parser path
     /// (`JsonParserToRowDataConverters.createRowConverter`, plain `json`) every matched key
@@ -635,19 +648,18 @@ impl StructJsonAppender {
     /// value; on the tree path (the CDC dialects) the last occurrence wins unconditionally.
     /// Unknown keys are ignored and never advance the counter.
     fn append_object(&mut self, object: &simd_json::tape::Object<'_, '_>) {
-        let appended = self.try_append_object(object, false);
+        let appended = self.try_append_object(object, None);
         debug_assert!(appended, "cursor drift is cleared at the message root");
     }
 
-    /// Like [`Self::append_object`], but when `check_drift` is set and a collected slot would make
-    /// Flink's pull-parser cursor drift ([`value_needs_token_walk`]), nothing is appended and `false`
-    /// returns — the caller re-decodes the whole message through the Jackson-faithful walk. The
-    /// check rides the collected slots, so a drift-free scalar row (the common case) pays one
-    /// token-type test per slot; only container-valued slots re-walk their subtree.
+    /// Like [`Self::append_object`], but when `drift` is supplied and a collected slot would make
+    /// Flink's pull-parser cursor drift, nothing is appended and `false` returns — the caller
+    /// re-decodes the whole message through the Jackson-faithful walk. The check rides the slots
+    /// already resolved by the append lookup, avoiding a second root-object field-name scan.
     fn try_append_object(
         &mut self,
         object: &simd_json::tape::Object<'_, '_>,
-        check_drift: bool,
+        drift: Option<&StructDriftDetector>,
     ) -> bool {
         const STACK_FIELDS: usize = 32;
         let count = self.children.len();
@@ -660,22 +672,20 @@ impl StructJsonAppender {
             &mut heap
         };
         let mut matched = 0;
+        let mut expected = 0;
         for (key, value) in object {
             if matched == count {
                 break;
             }
-            if let Some(i) = self.field_index(key) {
+            if let Some(i) = self.field_index_from(key, expected) {
                 slots[i] = Some(value);
+                expected = i + 1;
                 if !self.env.tree_duplicates {
                     matched += 1;
                 }
             }
         }
-        if check_drift
-            && self.fields.iter().zip(slots.iter()).any(|(field, slot)| {
-                slot.is_some_and(|value| value_needs_token_walk(field.data_type(), value))
-            })
-        {
+        if drift.is_some_and(|detector| detector.slots_need_token_walk(slots)) {
             return false;
         }
         for (child, slot) in self.children.iter_mut().zip(slots.iter()) {
@@ -960,62 +970,154 @@ pub(crate) fn make_json_appender(
     }
 }
 
-/// Whether converting this value faithfully needs the Jackson-faithful token walk. Two causes:
-///
-/// - **Cursor drift.** A container token under a scalar (non-STRING) column coerces `getText`
-///   ("{" / "[") WITHOUT consuming the container, and a container of the wrong kind throws with
-///   the cursor still on its start token — either way the enclosing walk's `nextToken` then steps
-///   INTO the container and the remaining fields convert from drifted positions, which the tree
-///   walk cannot reproduce. STRING columns are safe (`convertToString` consumes a container
-///   subtree cleanly), as are scalar tokens under container columns (the converter throws without
-///   having consumed anything).
-/// - **A FLOAT column needs its raw literal.** The tape parses number tokens f64-first, and
-///   narrowing re-rounds; that equals Jackson's direct-to-float literal parse for every value
-///   EXCEPT an f64 landing exactly on an f32 rounding midpoint, where the literal's true value
-///   decides the side ([`f32_parse_ambiguous`]). The token walk re-parses the literal at float
-///   width.
-fn value_needs_token_walk(data_type: &DataType, value: simd_json::tape::Value<'_, '_>) -> bool {
-    use simd_json::prelude::*;
-    use simd_json::ValueType;
-    let token = value.value_type();
-    match data_type {
-        DataType::Utf8 => false,
-        DataType::Float32 => match token {
-            ValueType::F64 => f32_parse_ambiguous(value.as_f64().expect("f64 node")),
-            _ => matches!(token, ValueType::Object | ValueType::Array),
-        },
-        DataType::Struct(fields) => match token {
-            ValueType::Object => {
-                object_needs_token_walk(fields, &value.as_object().expect("object node"))
+/// A schema-compiled cursor-drift check. Struct field names and nested type dispatch are resolved
+/// once when the decoder is built instead of through repeated `Fields` scans for every message.
+enum DriftDetector {
+    Utf8,
+    Float32,
+    Struct(StructDriftDetector),
+    List(Box<DriftDetector>),
+    Map(Box<DriftDetector>),
+    Scalar,
+}
+
+struct StructDriftDetector {
+    fields: Vec<(String, DriftDetector)>,
+    index: Option<HashMap<String, usize>>,
+}
+
+impl StructDriftDetector {
+    fn new(fields: &Fields) -> Self {
+        let compiled = fields
+            .iter()
+            .map(|field| (field.name().clone(), DriftDetector::new(field.data_type())))
+            .collect::<Vec<_>>();
+        let index = (fields.len() >= HASH_LOOKUP_FIELDS).then(|| {
+            let mut map = HashMap::with_capacity_and_hasher(fields.len(), Default::default());
+            for (i, field) in fields.iter().enumerate() {
+                map.entry(field.name().clone()).or_insert(i);
             }
-            ValueType::Array => true,
-            _ => false,
-        },
-        DataType::List(field) => match token {
-            ValueType::Array => value
-                .as_array()
-                .expect("array node")
-                .iter()
-                .any(|element| value_needs_token_walk(field.data_type(), element)),
-            ValueType::Object => true,
-            _ => false,
-        },
-        DataType::Map(entries, _) => match token {
-            ValueType::Object => {
+            map
+        });
+        Self {
+            fields: compiled,
+            index,
+        }
+    }
+
+    fn field_index(&self, name: &str) -> Option<usize> {
+        match &self.index {
+            Some(map) => map.get(name).copied(),
+            None => self.fields.iter().position(|(field, _)| field == name),
+        }
+    }
+
+    #[inline]
+    fn field_index_from(&self, name: &str, expected: usize) -> Option<usize> {
+        self.fields
+            .get(expected)
+            .filter(|(field, _)| field == name)
+            .map(|_| expected)
+            .or_else(|| self.field_index(name))
+    }
+
+    fn slots_need_token_walk(&self, slots: &[Option<simd_json::tape::Value<'_, '_>>]) -> bool {
+        debug_assert_eq!(self.fields.len(), slots.len());
+        self.fields.iter().zip(slots).any(|((_, detector), slot)| {
+            slot.is_some_and(|value| detector.value_needs_token_walk(value))
+        })
+    }
+
+    /// Match the append path's saturating field counter: unknown keys and keys after saturation
+    /// are skipped cleanly and therefore cannot cause cursor drift.
+    fn object_needs_token_walk(&self, object: &simd_json::tape::Object<'_, '_>) -> bool {
+        let mut matched = 0;
+        let mut expected = 0;
+        for (key, value) in object {
+            if matched == self.fields.len() {
+                break;
+            }
+            if let Some(index) = self.field_index_from(key, expected) {
+                matched += 1;
+                expected = index + 1;
+                if self.fields[index].1.value_needs_token_walk(value) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
+impl DriftDetector {
+    fn new(data_type: &DataType) -> Self {
+        match data_type {
+            DataType::Utf8 => Self::Utf8,
+            DataType::Float32 => Self::Float32,
+            DataType::Struct(fields) => Self::Struct(StructDriftDetector::new(fields)),
+            DataType::List(field) => Self::List(Box::new(Self::new(field.data_type()))),
+            DataType::Map(entries, _) => {
                 let value_type = match entries.data_type() {
                     DataType::Struct(kv) if kv.len() == 2 => kv[1].data_type(),
                     other => panic!("MAP entries must be a two-field struct, got {other}"),
                 };
-                value
+                Self::Map(Box::new(Self::new(value_type)))
+            }
+            _ => Self::Scalar,
+        }
+    }
+
+    /// Whether converting this value faithfully needs the Jackson-faithful token walk. Two causes:
+    ///
+    /// - **Cursor drift.** A container token under a scalar (non-STRING) column coerces `getText`
+    ///   ("{" / "[") WITHOUT consuming the container, and a container of the wrong kind throws with
+    ///   the cursor still on its start token — either way the enclosing walk's `nextToken` then steps
+    ///   INTO the container and the remaining fields convert from drifted positions, which the tree
+    ///   walk cannot reproduce. STRING columns are safe (`convertToString` consumes a container
+    ///   subtree cleanly), as are scalar tokens under container columns (the converter throws without
+    ///   having consumed anything).
+    /// - **A FLOAT column needs its raw literal.** The tape parses number tokens f64-first, and
+    ///   narrowing re-rounds; that equals Jackson's direct-to-float literal parse for every value
+    ///   EXCEPT an f64 landing exactly on an f32 rounding midpoint, where the literal's true value
+    ///   decides the side ([`f32_parse_ambiguous`]). The token walk re-parses the literal at float
+    ///   width.
+    fn value_needs_token_walk(&self, value: simd_json::tape::Value<'_, '_>) -> bool {
+        use simd_json::prelude::*;
+        use simd_json::ValueType;
+        let token = value.value_type();
+        match self {
+            Self::Utf8 => false,
+            Self::Float32 => match token {
+                ValueType::F64 => f32_parse_ambiguous(value.as_f64().expect("f64 node")),
+                _ => matches!(token, ValueType::Object | ValueType::Array),
+            },
+            Self::Struct(fields) => match token {
+                ValueType::Object => {
+                    fields.object_needs_token_walk(&value.as_object().expect("object node"))
+                }
+                ValueType::Array => true,
+                _ => false,
+            },
+            Self::List(element) => match token {
+                ValueType::Array => value
+                    .as_array()
+                    .expect("array node")
+                    .iter()
+                    .any(|value| element.value_needs_token_walk(value)),
+                ValueType::Object => true,
+                _ => false,
+            },
+            Self::Map(entry) => match token {
+                ValueType::Object => value
                     .as_object()
                     .expect("object node")
                     .iter()
-                    .any(|(_, entry)| value_needs_token_walk(value_type, entry))
-            }
-            ValueType::Array => true,
-            _ => false,
-        },
-        _ => matches!(token, ValueType::Object | ValueType::Array),
+                    .any(|(_, value)| entry.value_needs_token_walk(value)),
+                ValueType::Array => true,
+                _ => false,
+            },
+            Self::Scalar => matches!(token, ValueType::Object | ValueType::Array),
+        }
     }
 }
 
@@ -1043,25 +1145,6 @@ fn f32_parse_ambiguous(value: f64) -> bool {
         return value.abs() == overflow_midpoint;
     }
     value == (below as f64 + above as f64) / 2.0
-}
-
-/// The nested-row drift scan, matching keys with the same saturating field counter as the append:
-/// a value Flink's walk would SKIP (unknown key, or any key after saturation) is consumed cleanly
-/// by `skipToNextField` and never drifts.
-fn object_needs_token_walk(fields: &Fields, object: &simd_json::tape::Object<'_, '_>) -> bool {
-    let mut matched = 0;
-    for (key, value) in object {
-        if matched == fields.len() {
-            break;
-        }
-        if let Some(field) = fields.iter().find(|f| f.name() == key) {
-            matched += 1;
-            if value_needs_token_walk(field.data_type(), value) {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 /// Whether any (nested) leaf is DECIMAL. simd-json's tape parses numbers eagerly to i64/f64 and
@@ -1124,17 +1207,19 @@ fn skip_blank_body(bytes: &[u8], lenient: bool) -> bool {
 /// (a bad *value* inside a decoded object stays the appenders' per-field null, exactly as for a
 /// single-object body). simd-json parses in place, so each body is copied into a reused scratch
 /// buffer — the copy is part of the measured win over arrow-json.
-pub(crate) fn decode_json_bodies_simd(
+fn decode_json_bodies_simd(
     schema: &SchemaRef,
     bodies: &RecordBatch,
     env: JsonEnv,
     array_roots: ArrayRootPolicy,
+    drift: &StructDriftDetector,
+    root: &mut StructJsonAppender,
+    scratch: &mut Vec<u8>,
+    buffers: &mut simd_json::Buffers,
+    reusable_tape: &mut Option<simd_json::tape::Tape<'static>>,
 ) -> RecordBatch {
     use simd_json::prelude::*;
     let column = bodies.column(0);
-    let mut root = StructJsonAppender::new(schema.fields(), bodies.num_rows(), env);
-    let mut scratch: Vec<u8> = Vec::new();
-    let mut buffers = simd_json::Buffers::default();
     let scan_binary = env.lenient
         && schema
             .fields()
@@ -1153,23 +1238,34 @@ pub(crate) fn decode_json_bodies_simd(
         }
         scratch.clear();
         scratch.extend_from_slice(bytes);
+        let mut tape = reusable_tape
+            .take()
+            .unwrap_or_else(simd_json::tape::Tape::null)
+            .reset();
         // A structurally bad document (or a root that is neither object nor fanned-out array)
         // fails the job like Flink's deserializer; under ignore-parse-errors it drops the whole
         // message (the value-level skips inside a good document are the appenders' per-field
         // nulls).
-        let tape = match simd_json::to_tape_with_buffers(&mut scratch, &mut buffers) {
-            Ok(tape) => tape,
+        match simd_json::fill_tape(scratch, buffers, &mut tape) {
+            Ok(()) => {}
             // simd-json is spec-strict where Jackson tokenizes more: out-of-range number
             // literals, raw control characters inside strings, content trailing the root
             // document. Retryable messages re-decode through the Jackson-faithful walk, which
             // rewrites them into sanitized rows this fast path appends.
             Err(_) if retryable => {
-                append_rewritten(&mut root, bytes, schema.fields(), env, scan_binary);
+                *reusable_tape = Some(tape.reset());
+                append_rewritten(root, bytes, schema.fields(), env, scan_binary);
                 continue;
             }
-            Err(_) if env.lenient => continue,
-            Err(e) => panic!("failed to decode JSON record: {e}"),
-        };
+            Err(_) if env.lenient => {
+                *reusable_tape = Some(tape.reset());
+                continue;
+            }
+            Err(e) => {
+                *reusable_tape = Some(tape.reset());
+                panic!("failed to decode JSON record: {e}")
+            }
+        }
         let value = tape.as_value();
         match value.value_type() {
             simd_json::ValueType::Array if array_roots == ArrayRootPolicy::FanOut => {
@@ -1178,21 +1274,21 @@ pub(crate) fn decode_json_bodies_simd(
                 // boundaries (a nested-array element drifts the element loop itself).
                 if array
                     .iter()
-                    .any(|element| element_needs_token_walk(schema.fields(), element))
+                    .any(|element| element_needs_token_walk(drift, element))
                 {
-                    append_rewritten(&mut root, bytes, schema.fields(), env, scan_binary);
-                    continue;
-                }
-                for element in &array {
-                    match element.as_object() {
-                        Some(object) => {
-                            append_checked(&mut root, &object, schema.fields(), scan_binary)
+                    append_rewritten(root, bytes, schema.fields(), env, scan_binary);
+                } else {
+                    for element in &array {
+                        match element.as_object() {
+                            Some(object) => {
+                                append_checked(root, &object, schema.fields(), scan_binary)
+                            }
+                            None if env.lenient => {}
+                            None => panic!(
+                                "JSON array element was not an object: {:?}",
+                                element.value_type()
+                            ),
                         }
-                        None if env.lenient => {}
-                        None => panic!(
-                            "JSON array element was not an object: {:?}",
-                            element.value_type()
-                        ),
                     }
                 }
             }
@@ -1201,14 +1297,14 @@ pub(crate) fn decode_json_bodies_simd(
                 if env.lenient {
                     let mut objects = array.iter().filter_map(|element| element.as_object());
                     if let (Some(object), None) = (objects.next(), objects.next()) {
-                        append_checked(&mut root, &object, schema.fields(), scan_binary);
+                        append_checked(root, &object, schema.fields(), scan_binary);
                     }
                     // else: 0 or 2+ decodable envelopes — the whole message drops.
                 } else {
                     let mut elements = array.iter();
                     match (elements.next().and_then(|e| e.as_object()), elements.next()) {
                         (Some(object), None) => {
-                            append_checked(&mut root, &object, schema.fields(), scan_binary)
+                            append_checked(root, &object, schema.fields(), scan_binary)
                         }
                         _ => panic!("CDC message array root did not hold exactly one envelope"),
                     }
@@ -1216,17 +1312,17 @@ pub(crate) fn decode_json_bodies_simd(
             }
             _ => match value.as_object() {
                 Some(object) => {
-                    if scan_binary && object_poisoned(schema.fields(), &object) {
-                        continue;
-                    }
-                    if !root.try_append_object(&object, retryable) {
-                        append_rewritten(&mut root, bytes, schema.fields(), env, scan_binary);
+                    if !(scan_binary && object_poisoned(schema.fields(), &object))
+                        && !root.try_append_object(&object, retryable.then_some(drift))
+                    {
+                        append_rewritten(root, bytes, schema.fields(), env, scan_binary);
                     }
                 }
-                None if env.lenient => continue,
+                None if env.lenient => {}
                 None => panic!("JSON body was not a single object"),
             },
         }
+        *reusable_tape = Some(tape.reset());
     }
     RecordBatch::try_new(schema.clone(), root.finish_columns()).expect("failed to build JSON batch")
 }
@@ -1270,12 +1366,15 @@ fn append_rewritten(
 
 /// A fanned-out element's cursor-drift check: a nested-array element makes Flink's element loop
 /// itself drift into the array; scalar and null elements are consumed cleanly.
-fn element_needs_token_walk(fields: &Fields, element: simd_json::tape::Value<'_, '_>) -> bool {
+fn element_needs_token_walk(
+    drift: &StructDriftDetector,
+    element: simd_json::tape::Value<'_, '_>,
+) -> bool {
     use simd_json::prelude::*;
     match element.value_type() {
         simd_json::ValueType::Array => true,
         simd_json::ValueType::Object => {
-            object_needs_token_walk(fields, &element.as_object().expect("object node"))
+            drift.object_needs_token_walk(&element.as_object().expect("object node"))
         }
         _ => false,
     }
@@ -1351,6 +1450,16 @@ pub(crate) struct JsonDecoder {
     /// never fan out — an array root is corrupt outright, or unwrapped when it holds exactly one
     /// envelope (see [`ArrayRootPolicy`]).
     array_roots: ArrayRootPolicy,
+    /// Schema-compiled cursor-drift checks shared across all decoded batches.
+    drift: StructDriftDetector,
+    /// Schema-compiled appender tree. Its builders reset after each finished batch, while the
+    /// recursive dispatch and field-name maps remain task-local instead of being rebuilt per poll.
+    root: Option<std::cell::RefCell<StructJsonAppender>>,
+    /// simd-json's aligned input/string/structural buffers, parsed tape, and the compatibility
+    /// scratch input are retained at the decoder handle for amortized allocation-free parsing.
+    buffers: std::cell::RefCell<simd_json::Buffers>,
+    scratch: std::cell::RefCell<Vec<u8>>,
+    tape: std::cell::RefCell<Option<simd_json::tape::Tape<'static>>>,
 }
 
 impl JsonDecoder {
@@ -1373,11 +1482,19 @@ impl JsonDecoder {
             .fields()
             .iter()
             .any(|f| json_needs_raw_number_literals(f.data_type()));
+        let drift = StructDriftDetector::new(schema.fields());
+        let root = (!raw_literals)
+            .then(|| std::cell::RefCell::new(StructJsonAppender::new(schema.fields(), 0, env)));
         JsonDecoder {
             schema,
             raw_literals,
             env,
             array_roots,
+            drift,
+            root,
+            buffers: std::cell::RefCell::new(simd_json::Buffers::default()),
+            scratch: std::cell::RefCell::new(Vec::new()),
+            tape: std::cell::RefCell::new(Some(simd_json::tape::Tape::null())),
         }
     }
 
@@ -1388,7 +1505,25 @@ impl JsonDecoder {
         if self.raw_literals {
             return self.decode_raw_literals(bodies);
         }
-        decode_json_bodies_simd(&self.schema, bodies, self.env, self.array_roots)
+        let mut root = self
+            .root
+            .as_ref()
+            .expect("simd JSON decoder has no appender plan")
+            .borrow_mut();
+        let mut buffers = self.buffers.borrow_mut();
+        let mut scratch = self.scratch.borrow_mut();
+        let mut tape = self.tape.borrow_mut();
+        decode_json_bodies_simd(
+            &self.schema,
+            bodies,
+            self.env,
+            self.array_roots,
+            &self.drift,
+            &mut root,
+            &mut scratch,
+            &mut buffers,
+            &mut tape,
+        )
     }
 
     /// The arrow-json path for decimal-bearing schemas: its tape keeps each number's raw literal.

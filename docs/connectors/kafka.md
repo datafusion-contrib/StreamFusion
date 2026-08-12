@@ -15,9 +15,16 @@ must both be installed. A missing extension is a planner fallback, never a linka
 
 ## Source: Flink consumption, native decode
 
-Flink's `KafkaSource<byte[]>` consumes records. For keyed tables the source edge carries both key
-and value bytes. A downstream native operator decodes those bytes directly into Arrow batches,
-avoiding Flink's format-to-`RowData` materialization while leaving Kafka I/O unchanged.
+Flink continues to own topic enumeration, split assignment, offsets, checkpoints, authentication,
+and the Kafka client. Its task-side split reader groups each partition's raw key/value bytes into
+batches and decodes them directly to Arrow in Rust, avoiding Flink's format-to-`RowData`
+materialization without losing the Kafka split identity.
+
+For JSON, the split reader copies one poll into a reusable direct `[keys][values]` byte slab and
+passes only its address plus row lengths to the task-local native decoder. It does not construct,
+export, or re-import Arrow binary input vectors. The decoded output still crosses the Arrow C Data
+Interface, while the parser buffers, schema lookup plan, and recursive appenders remain attached to
+the decoder handle across polls.
 
 Native value decoding covers insert-only [JSON](formats/json.md), [CSV](formats/csv.md),
 [raw](formats/raw.md), bare [Avro](formats/avro.md), [Avro Confluent](formats/avro-confluent.md),
@@ -31,8 +38,11 @@ available because Flink constructs and runs the source. No Kafka property transl
 ### Source fallbacks
 
 - A metadata column falls back because connector metadata is not present in the message value.
-- A pushed `WATERMARK` table falls back entirely. The native decode operator runs downstream of
-  the source and cannot regenerate a watermark Flink pushed into its table source.
+- Pushed periodic bounded-out-of-orderness watermarks (`rowtime` or `rowtime - INTERVAL constant`)
+  are regenerated from each partition's decoded Arrow batches, including the common
+  `TO_TIMESTAMP_LTZ(epoch_millis, 3)` rowtime form. Flink runs one generator per Kafka split and
+  combines them with its normal minimum/idleness logic. On-event emission, watermark alignment,
+  connector-defined source watermarks, CDC changelog tables, and other expressions stay on Flink.
 - Keyed native decoding currently requires a single raw key field over a supported insert-only
   value format. Other key formats/shapes stay on Flink.
 - Unsupported format options or logical types stay on Flink as documented by the format page.
@@ -42,6 +52,9 @@ available because Flink constructs and runs the source. No Kafka property transl
 The native serialization operator imports one Arrow batch and emits the final heap `byte[]` key
 and value records. Those pre-serialized records feed Flink's unmodified `KafkaSink` for every
 delivery guarantee: `none`, `at-least-once`, and `exactly-once`.
+
+The operator creates one native encoder plan at `open`: format options, logical types, field names,
+and key/value projections cross JNI and are parsed once rather than once per Arrow batch.
 
 Consequently Flink owns producer construction, partitioning, batching, compression, callbacks,
 metrics, transaction naming, checkpoint preparation, commit, abort, and restore. Producer
@@ -64,7 +77,8 @@ resolved independently.
 
 ## Copy cost
 
-The source necessarily copies Kafka payloads into JVM byte arrays before the batch JNI decode, and
+The source necessarily receives Kafka payloads as JVM byte arrays and copies them once into its
+reusable direct batch slab before JNI decode, and
 the sink materializes one final JVM byte array per encoded key/value because kafka-clients consumes
 that representation. For structured JSON/Avro/Protobuf/CSV workloads, parsing, validation, type
 conversion, and serialization are generally the larger costs; raw or very small records are the

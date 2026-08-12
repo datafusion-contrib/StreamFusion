@@ -1,5 +1,6 @@
 package tech.streamfusion.planner;
 
+import java.util.Set;
 import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExchange;
 
@@ -14,10 +15,13 @@ final class PlanContext {
 
   private final PhysicalPlanScan scan;
   private final boolean kafkaExtension;
+  private final Set<String> repeatedKafkaDecodes;
 
-  PlanContext(PhysicalPlanScan scan, boolean kafkaExtension) {
+  PlanContext(
+      PhysicalPlanScan scan, boolean kafkaExtension, Set<String> repeatedKafkaDecodes) {
     this.scan = scan;
     this.kafkaExtension = kafkaExtension;
+    this.repeatedKafkaDecodes = repeatedKafkaDecodes;
   }
 
   /** Counts one host node replaced by a native one. */
@@ -37,6 +41,10 @@ final class PlanContext {
    */
   boolean kafkaExtension() {
     return kafkaExtension;
+  }
+
+  boolean repeatedKafkaDecode(String sharingKey) {
+    return repeatedKafkaDecodes.contains(sharingKey);
   }
 
   /**
