@@ -74,8 +74,9 @@ import org.testcontainers.utility.DockerImageName;
  * <p>Opt-in (millions of rows, Docker for Testcontainers Kafka, the {@code kafka} cargo feature for the
  * native source): {@code SF_BENCHMARK=true mvn test -Pbench -Dnative.cargo.args="build --release
  * --features kafka" -Dtest=NexmarkMatrixBenchmark}. {@code SF_ROWS} overrides the event count (default
- * 500,000), {@code SF_PARALLELISM} the Kafka-fed runs' job parallelism (default 4; both engines, with a
- * matching corpus partition count), {@code SF_MATRIX_QUERIES} a comma-separated query subset (e.g. {@code q0,q7,q15}), {@code
+ * 500,000), {@code SF_PARALLELISM} the Kafka-fed runs' job parallelism (default 4; both engines),
+ * {@code SF_KAFKA_PARTITIONS} an optional corpus partition count (default: job parallelism; useful
+ * for multi-split source tests), {@code SF_MATRIX_QUERIES} a comma-separated query subset (e.g. {@code q0,q7,q15}), {@code
  * SF_LADDER_FORMATS} the Kafka formats (default {@code json,avro,protobuf}), {@code SF_MATRIX_GENERATOR}
  * ({@code false} to skip the generator column), {@code SF_MATRIX_PARQUET} ({@code false} to skip the
  * Parquet column), {@code SF_MATRIX_KAFKA} ({@code false} to skip Kafka), {@code SF_MATRIX_FLUSS}
@@ -90,6 +91,15 @@ class NexmarkMatrixBenchmark {
   // corpus topic is created with one partition per subtask so every source instance has a split.
   private static final int PARALLELISM =
       System.getenv("SF_PARALLELISM") != null ? Integer.parseInt(System.getenv("SF_PARALLELISM")) : 4;
+  private static final int KAFKA_PARTITIONS =
+      System.getenv("SF_KAFKA_PARTITIONS") != null
+          ? Integer.parseInt(System.getenv("SF_KAFKA_PARTITIONS"))
+          : PARALLELISM;
+  // Front-page sink tuning, shared byte-for-byte by the Flink and StreamFusion cells. Kafka 4.2's
+  // 16 KiB / 5 ms defaults force the task and sender threads to contend over tiny accumulator
+  // batches; one partition's share of an 8192-row source batch fits comfortably in 512 KiB.
+  private static final int KAFKA_PRODUCER_BATCH_BYTES = 512 * 1024;
+  private static final int KAFKA_PRODUCER_LINGER_MS = 20;
   // Headline discipline: one warmup, best of two. SF_WARMUP/SF_RUNS override for quick
   // iteration passes (SF_RUNS=1 SF_WARMUP=0 measures every cell once, ~3x faster and noisier).
   private static final int WARMUP =
@@ -592,7 +602,7 @@ class NexmarkMatrixBenchmark {
             new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
           kafka.start();
           String brokers = kafka.getBootstrapServers();
-          NexmarkKafkaBenchmark.produce(brokers, "nexmark", format, ROWS, PARALLELISM);
+          NexmarkKafkaBenchmark.produce(brokers, "nexmark", format, ROWS, KAFKA_PARTITIONS);
           for (Query q : queries) {
             double flink = kafkaBest(brokers, format, Rung.FLINK, q, null);
             report.get(q.label).add(kafkaCell(brokers, format, q, flink, null, null));
@@ -732,6 +742,16 @@ class NexmarkMatrixBenchmark {
   @Test
   @EnabledIfEnvironmentVariable(named = "SF_MATRIX_KAFKA_SINK", matches = "true")
   void exactlyOnceKafkaSinkModeComparison() throws Exception {
+    String requestedModes =
+        System.getenv("SF_MATRIX_KAFKA_SINK_MODES") == null
+            ? "both"
+            : System.getenv("SF_MATRIX_KAFKA_SINK_MODES");
+    if (!Set.of("off", "on", "both").contains(requestedModes)) {
+      throw new IllegalArgumentException(
+          "SF_MATRIX_KAFKA_SINK_MODES must be off, on, or both: " + requestedModes);
+    }
+    boolean runOff = !"on".equals(requestedModes);
+    boolean runOn = !"off".equals(requestedModes);
     Map<String, String> miniBatch =
         Map.of(
             "table.exec.mini-batch.enabled", "true",
@@ -748,16 +768,24 @@ class NexmarkMatrixBenchmark {
             .withEnv("KAFKA_LOG_SEGMENT_DELETE_DELAY_MS", "0")) {
       kafka.start();
       String brokers = kafka.getBootstrapServers();
-      NexmarkKafkaBenchmark.produce(brokers, "nexmark", "json", ROWS, PARALLELISM);
+      NexmarkKafkaBenchmark.produce(brokers, "nexmark", "json", ROWS, KAFKA_PARTITIONS);
       StringBuilder out =
           new StringBuilder(
-              "\n##### NEXMARK EXACTLY-ONCE KAFKA MODE COMPARISON ("
+              "\n##### NEXMARK EXACTLY-ONCE KAFKA "
+                  + (runOff && runOn
+                      ? "MODE COMPARISON"
+                      : "MINI-BATCH " + requestedModes.toUpperCase())
+                  + " ("
                   + ROWS
                   + " events, best of "
                   + RUNS
                   + ") #####\n");
-      out.append(
-          "query  Flink off  Native off  SF/Flink off  Flink on  Native on  SF/Flink on  Flink on/off  SF on/off\n");
+      if (runOff && runOn) {
+        out.append(
+            "query  Flink off  Native off  SF/Flink off  Flink on  Native on  SF/Flink on  Flink on/off  SF on/off\n");
+      } else {
+        out.append("query  Flink s      ev/s  StreamFusion s      ev/s  SF/Flink\n");
+      }
 
       for (int i = 0; i < queries.length; i++) {
         Query q = queries[i];
@@ -767,34 +795,52 @@ class NexmarkMatrixBenchmark {
         // re-run the marked queries alone via SF_MATRIX_QUERIES. Rows also print as they land so
         // a later fatal cannot erase what completed.
         try {
-          double flinkOff;
-          double nativeOff;
-          double flinkOn;
-          double nativeOn;
-          if ((i & 1) == 0) {
-            flinkOff = kafkaSinkBest(brokers, q, false, Map.of());
-            nativeOff = kafkaSinkBest(brokers, q, true, Map.of());
-            flinkOn = kafkaSinkBest(brokers, q, false, miniBatch);
-            nativeOn = kafkaSinkBest(brokers, q, true, miniBatch);
+          if (runOff && runOn) {
+            double flinkOff;
+            double nativeOff;
+            double flinkOn;
+            double nativeOn;
+            if ((i & 1) == 0) {
+              flinkOff = kafkaSinkBest(brokers, q, false, Map.of());
+              nativeOff = kafkaSinkBest(brokers, q, true, Map.of());
+              flinkOn = kafkaSinkBest(brokers, q, false, miniBatch);
+              nativeOn = kafkaSinkBest(brokers, q, true, miniBatch);
+            } else {
+              flinkOn = kafkaSinkBest(brokers, q, false, miniBatch);
+              nativeOn = kafkaSinkBest(brokers, q, true, miniBatch);
+              flinkOff = kafkaSinkBest(brokers, q, false, Map.of());
+              nativeOff = kafkaSinkBest(brokers, q, true, Map.of());
+            }
+            row =
+                String.format(
+                    "%4s  %9.3f  %10.3f  %12.2fx  %8.3f  %9.3f  %11.2fx  %12.2fx  %9.2fx%n",
+                    q.label,
+                    ROWS / flinkOff / 1_000_000.0,
+                    ROWS / nativeOff / 1_000_000.0,
+                    flinkOff / nativeOff,
+                    ROWS / flinkOn / 1_000_000.0,
+                    ROWS / nativeOn / 1_000_000.0,
+                    flinkOn / nativeOn,
+                    flinkOff / flinkOn,
+                    nativeOff / nativeOn);
           } else {
-            flinkOn = kafkaSinkBest(brokers, q, false, miniBatch);
-            nativeOn = kafkaSinkBest(brokers, q, true, miniBatch);
-            flinkOff = kafkaSinkBest(brokers, q, false, Map.of());
-            nativeOff = kafkaSinkBest(brokers, q, true, Map.of());
+            Map<String, String> config = runOn ? miniBatch : Map.of();
+            double flink = kafkaSinkBest(brokers, q, false, config);
+            double nativeRun = kafkaSinkBest(brokers, q, true, config);
+            row =
+                String.format(
+                    "%4s  %7.3f  %8.0f  %14.3f  %8.0f  %8.2fx%n",
+                    q.label,
+                    flink,
+                    ROWS / flink,
+                    nativeRun,
+                    ROWS / nativeRun,
+                    flink / nativeRun);
           }
-          row =
-              String.format(
-                  "%4s  %9.3f  %10.3f  %12.2fx  %8.3f  %9.3f  %11.2fx  %12.2fx  %9.2fx%n",
-                  q.label,
-                  ROWS / flinkOff / 1_000_000.0,
-                  ROWS / nativeOff / 1_000_000.0,
-                  flinkOff / nativeOff,
-                  ROWS / flinkOn / 1_000_000.0,
-                  ROWS / nativeOn / 1_000_000.0,
-                  flinkOn / nativeOn,
-                  flinkOff / flinkOn,
-                  nativeOff / nativeOn);
         } catch (Exception failure) {
+          if ("true".equals(System.getenv("SF_BENCHMARK_STACKTRACE"))) {
+            failure.printStackTrace(System.out);
+          }
           row = String.format("%4s  FAILED: %s%n", q.label, rootCause(failure));
           if (rootCause(failure).contains("createTopics")) {
             // The broker itself is gone — every further cell would burn the same timeout.
@@ -842,7 +888,7 @@ class NexmarkMatrixBenchmark {
             .withEnv("KAFKA_LOG_SEGMENT_DELETE_DELAY_MS", "0")) {
       kafka.start();
       String brokers = kafka.getBootstrapServers();
-      NexmarkKafkaBenchmark.produce(brokers, "nexmark", "json", ROWS, PARALLELISM);
+      NexmarkKafkaBenchmark.produce(brokers, "nexmark", "json", ROWS, KAFKA_PARTITIONS);
       boolean preflighted = false;
       for (boolean miniBatch : modes) {
         Path rocksDir = Files.createTempDirectory("nexmark-rocksdb");
@@ -1010,10 +1056,11 @@ class NexmarkMatrixBenchmark {
       int warmup,
       int runs)
       throws Exception {
-    Map<String, String> properties =
-        nativeRun
-            ? Map.of("streamfusion.native.enabled", "true")
-            : Map.of("streamfusion.native.enabled", "false");
+    Map<String, String> properties = new LinkedHashMap<>();
+    properties.put("streamfusion.native.enabled", Boolean.toString(nativeRun));
+    if (nativeRun && q.nativeVariantProps != null) {
+      properties.putAll(q.nativeVariantProps);
+    }
     Map<String, String> previous = new LinkedHashMap<>();
     properties.forEach((key, value) -> previous.put(key, System.getProperty(key)));
     properties.forEach(System::setProperty);
@@ -1071,11 +1118,23 @@ class NexmarkMatrixBenchmark {
     long executed = System.nanoTime();
     // The exec-node and transformation names pin native serialization feeding Flink's KafkaSink.
     if (nativeRun
-        && (!plan.contains("NativeKafkaSink")
+        && (!plan.contains("NativeKafkaDecode")
+            || !plan.contains("native-kafka-source")
+            || plan.contains("RowDataToArrow")
+            || !plan.contains("NativeKafkaSink")
             || !plan.contains("flink-kafka-sink")
+            || ("q3".equals(q.label)
+                && (!plan.contains("NativeShare(consumers=[2])")
+                    || countOccurrences(
+                            plan, "\"contents\" : \"Source: native-kafka-source\"")
+                        != 1))
             || scan.substitutions() < 2)) {
       throw new IllegalStateException(
-          q.label + ": native Kafka decode/serialization did not engage. " + scan.explainSummary());
+          q.label
+              + ": the required split-aware bytes-to-Arrow source and native Kafka serialization"
+              + " path did not"
+              + " engage. "
+              + scan.explainSummary());
     }
     try (Admin admin =
         Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokers))) {
@@ -1097,6 +1156,14 @@ class NexmarkMatrixBenchmark {
     return seconds;
   }
 
+  private static int countOccurrences(String text, String needle) {
+    int count = 0;
+    for (int at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) {
+      count++;
+    }
+    return count;
+  }
+
   private static String kafkaSinkDdl(Query q, String brokers, String topic) {
     String ddl =
         q.sinkDdl.replace("%TS%", "TIMESTAMP_LTZ(3)").replace("%WTS%", "TIMESTAMP(3)");
@@ -1105,13 +1172,21 @@ class NexmarkMatrixBenchmark {
       ddl = ddl.replace(") WITH", ", PRIMARY KEY (" + key + ") NOT ENFORCED) WITH");
     }
     String transactionalId = "nexmark-" + topic;
+    String producerBatching =
+        "'properties.batch.size' = '"
+            + KAFKA_PRODUCER_BATCH_BYTES
+            + "', 'properties.linger.ms' = '"
+            + KAFKA_PRODUCER_LINGER_MS
+            + "', ";
     String options =
         key == null
             ? "WITH ('connector' = 'kafka', 'topic' = '"
                 + topic
                 + "', 'properties.bootstrap.servers' = '"
                 + brokers
-                + "', 'format' = 'json', 'sink.delivery-guarantee' = 'exactly-once', "
+                + "', "
+                + producerBatching
+                + "'format' = 'json', 'sink.delivery-guarantee' = 'exactly-once', "
                 + "'sink.transactional-id-prefix' = '"
                 + transactionalId
                 + "')"
@@ -1119,7 +1194,9 @@ class NexmarkMatrixBenchmark {
                 + topic
                 + "', 'properties.bootstrap.servers' = '"
                 + brokers
-                + "', 'key.format' = 'json', 'value.format' = 'json', "
+                + "', "
+                + producerBatching
+                + "'key.format' = 'json', 'value.format' = 'json', "
                 + "'sink.delivery-guarantee' = 'exactly-once', "
                 + "'sink.transactional-id-prefix' = '"
                 + transactionalId
@@ -1219,7 +1296,7 @@ class NexmarkMatrixBenchmark {
             .withEnv("KAFKA_LOG_SEGMENT_DELETE_DELAY_MS", "0")) {
       kafka.start();
       String brokers = kafka.getBootstrapServers();
-      NexmarkKafkaBenchmark.produce(brokers, "nexmark", "json", ROWS, PARALLELISM);
+      NexmarkKafkaBenchmark.produce(brokers, "nexmark", "json", ROWS, KAFKA_PARTITIONS);
       long deadline = System.currentTimeMillis() + Long.getLong("profile.seconds", 60L) * 1000L;
       long iterations = 0;
       do {
@@ -1232,6 +1309,60 @@ class NexmarkMatrixBenchmark {
               + label
               + " iterations: "
               + iterations);
+    }
+  }
+
+  /**
+   * Captures one matched async-profiler CPU recording for every selected exactly-once Kafka query
+   * and engine while reusing one broker and one input corpus. Each cell gets one unprofiled warmup
+   * followed by one profiled run. This keeps the profile matrix faithful to the front-page benchmark
+   * without paying broker startup and corpus generation once per recording.
+   */
+  @Test
+  @EnabledIfEnvironmentVariable(named = "SF_PROFILE_ALL_KAFKA_SINK", matches = "true")
+  void exactlyOnceKafkaSinkProfileAll() throws Exception {
+    Path outputDir =
+        Path.of(System.getProperty("profile.outputDir", "target/profiles/nexmark-memory-off"))
+            .toAbsolutePath();
+    Files.createDirectories(outputDir);
+    String asprof = System.getProperty("profile.asprof", "asprof");
+    String pid = Long.toString(ProcessHandle.current().pid());
+    Map<String, String> config = Map.of();
+
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
+            .withEnv("KAFKA_TRANSACTION_MAX_TIMEOUT_MS", "7200000")
+            .withEnv("KAFKA_LOG_SEGMENT_DELETE_DELAY_MS", "0")) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      NexmarkKafkaBenchmark.produce(brokers, "nexmark", "json", ROWS, KAFKA_PARTITIONS);
+      for (Query q : selectQueries()) {
+        for (boolean nativeRun : new boolean[] {false, true}) {
+          String engine = nativeRun ? "streamfusion" : "flink";
+          kafkaSinkBest(brokers, q, nativeRun, config, 0, 1);
+          Path recording = outputDir.resolve(engine + "-" + q.label + ".jfr");
+          runProfiler(asprof, "start", "-e", "cpu", "-i", "1ms", "-f", recording.toString(), pid);
+          double seconds;
+          try {
+            seconds = kafkaSinkBest(brokers, q, nativeRun, config, 0, 1);
+          } finally {
+            runProfiler(asprof, "stop", pid);
+          }
+          System.out.printf(
+              "[profile-all] %-12s %-4s %.3f s -> %s%n", engine, q.label, seconds, recording);
+        }
+      }
+    }
+  }
+
+  private static void runProfiler(String executable, String... args) throws Exception {
+    List<String> command = new ArrayList<>();
+    command.add(executable);
+    command.addAll(List.of(args));
+    Process process = new ProcessBuilder(command).inheritIO().start();
+    int exitCode = process.waitFor();
+    if (exitCode != 0) {
+      throw new IllegalStateException("async-profiler exited " + exitCode + ": " + command);
     }
   }
 
@@ -1729,7 +1860,8 @@ class NexmarkMatrixBenchmark {
             + " WATERMARK FOR rowtime AS rowtime - INTERVAL '4' SECOND"
             + ") WITH ('connector' = 'kafka', 'topic' = 'nexmark', 'properties.bootstrap.servers' = '"
             + brokers
-            + "', 'properties.group.id' = 'nexmark', 'scan.startup.mode' = 'earliest-offset',"
+            + "', 'properties.group.id' = 'nexmark', 'properties.max.poll.records' = '8192',"
+            + " 'scan.startup.mode' = 'earliest-offset',"
             + " 'scan.bounded.mode' = 'latest-offset', 'format' = '"
             + format
             + "'"

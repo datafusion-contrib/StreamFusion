@@ -9,17 +9,18 @@
   Append-only queries use `kafka`; updating queries use `upsert-kafka` with the result's actual
   primary key. Each timed run includes source consumption, query execution, the keyed shuffle,
   serialization, Kafka writes, checkpoints, and the bounded job's final transaction commit. q6 is
-  omitted because Flink SQL itself cannot run it.
+  omitted because Flink SQL itself cannot run it. Both engines receive the same
+  `properties.max.poll.records=8192` source setting and the same producer settings:
+  `batch.size=524288` and `linger.ms=20`.
 - **Local shuffle handles are disabled.** The `bench` Maven profile sets
   `streamfusion.exchange.zeroCopyLocal=false`, so StreamFusion serializes columnar shuffle records
   with Arrow IPC just as it would across TaskManagers. Stock Flink likewise serializes records on
   same-JVM network edges; neither side receives a process-local object-handoff advantage.
-- **Both perimeter transposes stay in the measured path.** Nexmark's own source emits Flink
-  `RowData` (not a columnar source) and sinks to a rowwise consumer, so a native island pays a
-  RowData→Arrow transpose at the source and an Arrow→RowData transpose at the sink — the same cost
-  a real rowwise-fed deployment pays. The benchmark harness is never modified to dodge this; an
-  operator StreamFusion can't run natively shows up as an honest fallback or a slower number, which
-  is the signal to fix the engine, not the harness.
+- **The native Kafka boundaries are asserted.** Stock Flink uses its normal rowwise format decode.
+  StreamFusion retains Flink's Kafka enumerator, partition assignment, offsets, checkpointing, and
+  client, but its split-aware reader batches Kafka bytes and decodes them directly to Arrow in Rust.
+  Sink key/value/tombstone encoding is likewise Rust, feeding Flink's exactly-once KafkaSink. An
+  unsupported shape falls back explicitly rather than being credited as native.
 - **Every cell asserts the plan shape.** The native plan — including Kafka poll/decode, every
   supported operator, and sink key/value/tombstone serialization — is asserted for every cell, so a
   silent fallback can't masquerade as a native number.
@@ -85,3 +86,10 @@ SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench
 runs the end-to-end suites (`ThroughputBenchmark`, `NexmarkBenchmark`, `NexmarkKafkaBenchmark`,
 `NexmarkMatrixBenchmark`); the `-Pbench` profile is required. The Criterion micro-benchmarks run
 independently with `cd native && cargo bench`.
+
+To capture matched async-profiler CPU recordings for every exactly-once Kafka query with the memory
+backend and mini-batching disabled, run `exactlyOnceKafkaSinkProfileAll` with
+`SF_PROFILE_ALL_KAFKA_SINK=true`. The harness reuses one broker and input corpus, performs one warmup
+per engine/query, and writes `flink-q*.jfr` and `streamfusion-q*.jfr` under
+`-Dprofile.outputDir=...`. It invokes `asprof` from `PATH` by default; override that executable with
+`-Dprofile.asprof=...`.
