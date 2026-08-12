@@ -59,7 +59,9 @@ final class CalcMatcher {
       // makes the decoder build only the read columns/fields straight from the bytes, so a wide
       // record's unread fields are never decoded. Only for decoders that honor a pruned schema.
       StreamPhysicalNativeKafkaDecode decode = (StreamPhysicalNativeKafkaDecode) input;
-      if (KafkaTables.decodeHonorsProjection(decode.options())) {
+      if (decode.allowsProjectionPushdown()
+          && KafkaTables.decodeHonorsProjection(decode.options())
+          && decode.supportsProjection(pruned.inputType)) {
         return new StreamPhysicalNativeCalc(
             calc.getCluster(),
             calc.getTraitSet(),

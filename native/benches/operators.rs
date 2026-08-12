@@ -4,7 +4,10 @@
 
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, BooleanArray, Int64Array, Int8Array, RecordBatch, StringArray};
+use arrow::array::{
+    Array, ArrayRef, BooleanArray, Int64Array, Int8Array, RecordBatch, StringArray, StructArray,
+};
+use arrow::compute::filter_record_batch;
 use arrow::datatypes::{DataType, Field, Schema};
 use criterion::{
     black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,
@@ -45,6 +48,111 @@ fn bench_filter(c: &mut Criterion) {
     group.throughput(Throughput::Elements(ROWS as u64));
     group.bench_function("gt_literal", |b| {
         b.iter(|| black_box(filter.run(black_box(batch.clone()))))
+    });
+    group.finish();
+}
+
+// Q3 shares one wide decoded event batch between selective person and auction Calcs. Compare the
+// former full-schema filter against Flink-style projection-input pruning before the same Arrow
+// filter kernel. Batch construction is outside the timed loop.
+fn bench_calc_projection_before_filter(c: &mut Criterion) {
+    let strings = || -> ArrayRef {
+        Arc::new(StringArray::from_iter_values(
+            (0..ROWS).map(|i| format!("value-{i}")),
+        ))
+    };
+    let integers = || -> ArrayRef { Arc::new(Int64Array::from_iter_values(0..ROWS as i64)) };
+    let person = StructArray::from(vec![
+        (
+            Arc::new(Field::new("id", DataType::Int64, true)),
+            integers(),
+        ),
+        (
+            Arc::new(Field::new("name", DataType::Utf8, true)),
+            strings(),
+        ),
+        (
+            Arc::new(Field::new("email", DataType::Utf8, true)),
+            strings(),
+        ),
+        (
+            Arc::new(Field::new("city", DataType::Utf8, true)),
+            strings(),
+        ),
+        (
+            Arc::new(Field::new("state", DataType::Utf8, true)),
+            strings(),
+        ),
+    ]);
+    let auction = StructArray::from(vec![
+        (
+            Arc::new(Field::new("id", DataType::Int64, true)),
+            integers(),
+        ),
+        (
+            Arc::new(Field::new("item", DataType::Utf8, true)),
+            strings(),
+        ),
+        (
+            Arc::new(Field::new("description", DataType::Utf8, true)),
+            strings(),
+        ),
+        (
+            Arc::new(Field::new("seller", DataType::Int64, true)),
+            integers(),
+        ),
+        (
+            Arc::new(Field::new("category", DataType::Int64, true)),
+            integers(),
+        ),
+    ]);
+    let bid = StructArray::from(vec![
+        (
+            Arc::new(Field::new("auction", DataType::Int64, true)),
+            integers(),
+        ),
+        (
+            Arc::new(Field::new("bidder", DataType::Int64, true)),
+            integers(),
+        ),
+        (
+            Arc::new(Field::new("price", DataType::Int64, true)),
+            integers(),
+        ),
+        (
+            Arc::new(Field::new("channel", DataType::Utf8, true)),
+            strings(),
+        ),
+        (Arc::new(Field::new("url", DataType::Utf8, true)), strings()),
+    ]);
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("event_type", DataType::Int64, false),
+            Field::new("person", person.data_type().clone(), true),
+            Field::new("auction", auction.data_type().clone(), true),
+            Field::new("bid", bid.data_type().clone(), true),
+            Field::new("dateTime", DataType::Int64, false),
+        ])),
+        vec![
+            integers(),
+            Arc::new(person),
+            Arc::new(auction),
+            Arc::new(bid),
+            integers(),
+        ],
+    )
+    .unwrap();
+    // Roughly Q3-auction selectivity; both cases consume the identical selection vector.
+    let mask = BooleanArray::from((0..ROWS).map(|row| row % 100 == 10).collect::<Vec<_>>());
+    let projected = batch.project(&[2]).unwrap();
+
+    let mut group = c.benchmark_group("calc_projection_before_filter");
+    group.throughput(Throughput::Elements(ROWS as u64));
+    group.bench_function("full_schema", |b| {
+        b.iter(|| black_box(filter_record_batch(black_box(&batch), black_box(&mask)).unwrap()))
+    });
+    group.bench_function("projection_inputs", |b| {
+        b.iter(|| black_box(filter_record_batch(black_box(&projected), black_box(&mask)).unwrap()))
     });
     group.finish();
 }
@@ -1145,6 +1253,7 @@ fn bench_date_format(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_filter,
+    bench_calc_projection_before_filter,
     bench_tumbling,
     bench_tumbling_keyed,
     bench_group_by_string_key,

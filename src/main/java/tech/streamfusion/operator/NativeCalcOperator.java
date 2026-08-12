@@ -36,6 +36,7 @@ public class NativeCalcOperator extends AbstractStreamOperator<ArrowBatch>
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long calc;
+  private transient boolean inputSchemaEstablished;
 
   public NativeCalcOperator(
       int[] kinds,
@@ -100,17 +101,25 @@ public class NativeCalcOperator extends AbstractStreamOperator<ArrowBatch>
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
     VectorSchemaRoot out;
     try (ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
-        ArrowSchema inSchema = ArrowSchema.allocateNew(inAllocator);
         ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
       try {
-        Native.calcExpression(
-            calc,
-            inArray.memoryAddress(),
-            inSchema.memoryAddress(),
-            outArray.memoryAddress(),
-            outSchema.memoryAddress());
+        if (inputSchemaEstablished) {
+          Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray);
+          Native.calcExpressionArray(
+              calc, inArray.memoryAddress(), outArray.memoryAddress(), outSchema.memoryAddress());
+        } else {
+          try (ArrowSchema inSchema = ArrowSchema.allocateNew(inAllocator)) {
+            Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
+            Native.calcExpression(
+                calc,
+                inArray.memoryAddress(),
+                inSchema.memoryAddress(),
+                outArray.memoryAddress(),
+                outSchema.memoryAddress());
+            inputSchemaEstablished = true;
+          }
+        }
       } catch (tech.streamfusion.NativeException e) {
         throw NativeUdf.propagateUpcallFailure(e);
       }

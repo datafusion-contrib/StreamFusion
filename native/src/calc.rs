@@ -1,4 +1,6 @@
 use crate::*;
+use datafusion::common::tree_node::{Transformed, TransformedResult, TreeNode};
+use datafusion::physical_expr::utils::collect_columns;
 
 /// Runs a filter as a full DataFusion plan over a batch from the JVM, keeping rows whose int32
 /// column exceeds `threshold`, and exports the surviving column back.
@@ -195,6 +197,35 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeFilterExpression<'loca
 pub(crate) struct CompiledCalc {
     condition: Option<Arc<dyn PhysicalExpr>>,
     projections: Vec<Arc<dyn PhysicalExpr>>,
+    pub(crate) projection_input_indices: Vec<usize>,
+    input_schema: SchemaRef,
+}
+
+fn remap_projection_columns(
+    projection: Arc<dyn PhysicalExpr>,
+    input_indices: &[usize],
+) -> Arc<dyn PhysicalExpr> {
+    let remap: HashMap<usize, usize> = input_indices
+        .iter()
+        .enumerate()
+        .map(|(projected, &original)| (original, projected))
+        .collect();
+    projection
+        .transform_down(|expr| {
+            if let Some(column) = expr.downcast_ref::<Column>() {
+                let projected = remap
+                    .get(&column.index())
+                    .copied()
+                    .expect("projection input column was not retained");
+                return Ok(Transformed::yes(Arc::new(Column::new(
+                    column.name(),
+                    projected,
+                ))));
+            }
+            Ok(Transformed::no(expr))
+        })
+        .data()
+        .expect("failed to remap Calc projection columns")
 }
 
 /// A compiled Calc held across batches: an optional condition and a list of projection expressions
@@ -235,19 +266,56 @@ impl CalcExpression {
             };
             let condition =
                 (self.condition_root >= 0).then(|| compile(self.condition_root as usize));
-            let projections = self.projection_roots.iter().map(|&r| compile(r)).collect();
+            let projections: Vec<_> = self.projection_roots.iter().map(|&r| compile(r)).collect();
+            let mut projection_input_indices: Vec<_> = projections
+                .iter()
+                .flat_map(collect_columns)
+                .map(|column| column.index())
+                .collect();
+            if let Ok(row_kind) = schema.index_of(ROW_KIND_COLUMN) {
+                projection_input_indices.push(row_kind);
+            }
+            projection_input_indices.sort_unstable();
+            projection_input_indices.dedup();
+            let projections = projections
+                .into_iter()
+                .map(|projection| remap_projection_columns(projection, &projection_input_indices))
+                .collect();
             self.compiled = Some(CompiledCalc {
                 condition,
                 projections,
+                projection_input_indices,
+                input_schema: schema.clone(),
             });
         }
         self.compiled.as_ref().unwrap()
     }
 
     pub(crate) fn evaluate(&mut self, batch: RecordBatch) -> RecordBatch {
-        let (condition, projections) = {
+        let (condition, projections, projection_input_indices) = {
             let compiled = self.compiled(&batch.schema());
-            (compiled.condition.clone(), compiled.projections.clone())
+            (
+                compiled.condition.clone(),
+                compiled.projections.clone(),
+                compiled.projection_input_indices.clone(),
+            )
+        };
+        // Flink's generated Calc evaluates its condition first and constructs only the projected
+        // row when it passes. Mirror that for a columnar batch: narrow to the projection's input
+        // columns before applying the selection, instead of copying every column through
+        // filter_record_batch and immediately discarding most of them.
+        let projected = if projection_input_indices.is_empty() {
+            RecordBatch::try_new_with_options(
+                Arc::new(Schema::empty()),
+                Vec::new(),
+                &arrow::record_batch::RecordBatchOptions::new()
+                    .with_row_count(Some(batch.num_rows())),
+            )
+            .expect("failed to preserve Calc row count without projection inputs")
+        } else {
+            batch
+                .project(&projection_input_indices)
+                .expect("failed to prune Calc projection inputs")
         };
         let filtered = match condition {
             Some(predicate) => {
@@ -260,9 +328,13 @@ impl CalcExpression {
                     .as_any()
                     .downcast_ref::<BooleanArray>()
                     .expect("condition must be boolean");
-                filter_record_batch(&batch, mask).expect("failed to filter batch")
+                if mask.true_count() == mask.len() {
+                    projected
+                } else {
+                    filter_record_batch(&projected, mask).expect("failed to filter batch")
+                }
             }
-            None => batch,
+            None => projected,
         };
         let rows = filtered.num_rows();
         let mut columns: Vec<ArrayRef> = Vec::with_capacity(projections.len());
@@ -347,6 +419,31 @@ pub extern "system" fn Java_tech_streamfusion_Native_calcExpression<'local>(
     crate::bridge::jni_guard(env, move |_env| {
         let expression = unsafe { &mut *(handle as *mut CalcExpression) };
         let batch = import_record_batch(in_array_address, in_schema_address);
+        let result = expression.evaluate(batch);
+        export_record_batch(result, out_array_address, out_schema_address);
+    })
+}
+
+/// Runs a later batch through a Calc after the first call established its immutable input schema.
+/// Only the ArrowArray crosses the boundary; the compiled handle supplies the cached struct type.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_calcExpressionArray<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| {
+        let expression = unsafe { &mut *(handle as *mut CalcExpression) };
+        let schema = expression
+            .compiled
+            .as_ref()
+            .expect("Calc schema must be established by the first batch")
+            .input_schema
+            .clone();
+        let batch = import_record_batch_with_schema(in_array_address, &schema);
         let result = expression.evaluate(batch);
         export_record_batch(result, out_array_address, out_schema_address);
     })

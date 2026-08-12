@@ -36,10 +36,7 @@ pub(crate) static FORCE_LINK_MIMALLOC: unsafe extern "C" fn(*mut std::os::raw::c
 // whose larger static link otherwise leaves sf_realloc undefined on Linux.
 #[cfg(feature = "mimalloc")]
 extern "C" {
-    fn sf_realloc(
-        pointer: *mut std::os::raw::c_void,
-        size: usize,
-    ) -> *mut std::os::raw::c_void;
+    fn sf_realloc(pointer: *mut std::os::raw::c_void, size: usize) -> *mut std::os::raw::c_void;
 }
 
 #[cfg(feature = "mimalloc")]
@@ -211,6 +208,27 @@ pub(crate) fn import_record_batch(array_address: jlong, schema_address: jlong) -
     };
     let mut data =
         unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow batch");
+    data.align_buffers();
+    RecordBatch::from(StructArray::from(data))
+}
+
+/// Takes ownership of a batch whose schema was imported on an earlier call. Arrow's C Data array
+/// carries buffers and child layout but deliberately not field names or logical metadata; the
+/// cached struct type supplies that immutable information without rebuilding an `ArrowSchema` for
+/// every batch.
+pub(crate) fn import_record_batch_with_schema(
+    array_address: jlong,
+    schema: &SchemaRef,
+) -> RecordBatch {
+    let ffi_array = unsafe {
+        std::ptr::replace(
+            array_address as *mut FFI_ArrowArray,
+            FFI_ArrowArray::empty(),
+        )
+    };
+    let data_type = DataType::Struct(schema.fields().clone());
+    let mut data = unsafe { from_ffi_and_data_type(ffi_array, data_type) }
+        .expect("failed to import Arrow batch with cached schema");
     data.align_buffers();
     RecordBatch::from(StructArray::from(data))
 }
