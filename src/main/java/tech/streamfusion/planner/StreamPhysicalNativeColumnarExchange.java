@@ -14,9 +14,9 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
  * A columnar keyed exchange: it stands in for a {@link
  * org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExchange} whose downstream
  * is a native columnar operator, carrying Arrow batches across the shuffle instead of transposing to
- * rows. It splits each batch by Flink's BinaryRow key hash into per-key-group sub-batches and routes
- * them, co-locating every row of a key on one channel. Its key-group tag therefore agrees with the
- * raw keyed-state layout used for rescaling. Schema- and watermark-transparent ({@link
+ * rows. It splits each batch by Flink's BinaryRow key hash into one sub-batch per destination and
+ * routes them, co-locating every row of a key on one channel. Its representative key-group tag
+ * agrees with that channel's raw keyed-state range. Schema- and watermark-transparent ({@link
  * ColumnarInput} and {@link ColumnarOutput}); the watermark flows through the partition
  * transformation as usual.
  */

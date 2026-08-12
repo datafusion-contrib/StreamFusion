@@ -8,9 +8,9 @@
 
 The columnar exchange projects the logical key columns into Flink's `BinaryRowData` layout in Rust.
 For every Arrow row it calculates the same BinaryRow hash Flink would calculate for the projected
-`RowData` key, mixes that hash with `MathUtils.murmurHash`, and emits one Arrow record per non-empty
-key group. The Flink partitioner maps that stable group tag to the downstream channel at the current
-parallelism. `TIMESTAMP` precision is supplied by the planner,
+`RowData` key, mixes that hash with `MathUtils.murmurHash`, and gathers rows into one Arrow record
+per non-empty destination channel. The Flink partitioner maps a representative group tag from that
+channel's range back to the same destination. `TIMESTAMP` precision is supplied by the planner,
 because Arrow's timestamp type does not retain it.
 
 This replaces the former `DefaultHasher` over Arrow row-encoding bytes. That internal hash was only
@@ -22,14 +22,11 @@ agree exactly for rescaling to be correct.
 
 - Equal join keys on both inputs receive the same BinaryRow/key-group assignment, including NULL
   keys and the supported scalar key types.
-- The exchange still keeps the data plane columnar: it gathers homogeneous Arrow sub-batches and
-  ships them through `ArrowBatchSerializer`. Unlike Arroyo's destination-server batching, Flink's
-  unaligned channel-state recovery requires each serialized record to remain independently
-  reroutable after a parallelism change, so the record granularity is one key group rather than one
-  old-topology destination.
-- The serializer persists each batch's key-group tag. Flink's standard `RANGE` record filter and
-  configurable partitioner can then keep/drop and reroute whole Arrow records during recovery; no
-  row decoding or custom recovery-input hook is needed.
+- The exchange follows Arroyo's destination-server batching shape while retaining Flink's key hash
+  and channel mapping. Rows keep their original order within each destination.
+- Flink cannot split a recovered network record after rescaling, so the columnar exchange disables
+  unaligned checkpoints on its edge. Alignment drains destination batches before checkpointing;
+  restored producers repartition subsequent batches using the new parallelism.
 - Flink's configured `pipeline.max-parallelism` is the authoritative key-group count for every
   native keyed transformation and exchange. Deriving it again from restored parallelism would make
   checkpoints incompatible when a rescale crosses Flink's default-max-parallelism thresholds.

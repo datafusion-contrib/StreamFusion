@@ -40,7 +40,7 @@ public final class ArrowBatch {
   static final long NO_HANDLE_OWNER = 0;
 
   private final VectorSchemaRoot root;
-  // The Flink key group for a key-partitioned batch (the columnar shuffle); -1 when unrouted.
+  // A Flink key group owned by this key-partitioned batch's destination; -1 when unrouted.
   private final int keyGroup;
   // The producing split subtask whose failure cleanup owns a parked zero-copy handle.
   private final long handleOwner;

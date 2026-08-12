@@ -73,12 +73,13 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
         keyColumns.length == 0
             ? 1
             : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), numChannels);
-    // Split each batch into topology-independent, per-key-group sub-batches...
+    // Split each batch into at most one order-preserving sub-batch per destination channel...
     Transformation<ArrowBatch> split =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
-            new SplitByKeyGroupOperator(keyColumns, timestampPrecisions, maxParallelism),
+            new SplitByKeyGroupOperator(
+                keyColumns, timestampPrecisions, maxParallelism, numChannels),
             NativeConfig.zeroCopyExchange(planner.getExecEnv())
                 ? ArrowBatchTypeInformation.ZERO_COPY
                 : ArrowBatchTypeInformation.INSTANCE,

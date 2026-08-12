@@ -5,9 +5,9 @@ changelog normalizer
 
 ## The problem
 
-The columnar exchange splits every source batch into non-empty per-key-group sub-batches, so a
-keyed operator can see batches much smaller than the source emitted — and a changelog operator
-feeding another keyed operator compounds the fragmentation: in the 2M/p=4 q4 pipeline the second
+The columnar exchange splits every source batch into at most one sub-batch per destination channel.
+A changelog operator feeding another keyed operator can still compound fragmentation: in the
+2M/p=4 q4 pipeline the second
 aggregate processed 26-row batches at ~71× the p=1 batch count. The per-batch fixed cost (JNI
 crossings, per-call setup, per-batch emission) dominated wall time, and every task thread sat
 starved (see [Benchmarks](../benchmarks.md), "Why the off-mode changelog shapes stop scaling").

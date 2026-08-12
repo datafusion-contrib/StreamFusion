@@ -352,6 +352,7 @@ pub fn split_by_key(
         key_columns,
         &vec![-1; key_columns.len()],
         max_parallelism,
+        max_parallelism.min(4),
     )
 }
 

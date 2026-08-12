@@ -13,10 +13,10 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.metrics.Counter;
 
 /**
- * Splits each incoming Arrow batch into per-key-group sub-batches. Paired with {@link
+ * Splits each incoming Arrow batch into per-destination-channel sub-batches. Paired with {@link
  * tech.streamfusion.planner.ColumnarKeyGroupPartitioner}, the stable key-group tag lets Flink route
- * the whole record both normally and while filtering channel state after unaligned-checkpoint
- * rescaling. Every emitted record is independently reroutable under a new parallelism.
+ * the whole record normally. The exchange uses aligned checkpoints because one emitted record can
+ * contain several key groups that would have different owners after rescaling.
  */
 public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
@@ -24,6 +24,7 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
   private final int[] keyColumns;
   private final int[] timestampPrecisions;
   private final int maxParallelism;
+  private final int parallelism;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
@@ -35,10 +36,11 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
   private transient Counter inputBatches;
 
   public SplitByKeyGroupOperator(
-      int[] keyColumns, int[] timestampPrecisions, int maxParallelism) {
+      int[] keyColumns, int[] timestampPrecisions, int maxParallelism, int parallelism) {
     this.keyColumns = keyColumns;
     this.timestampPrecisions = timestampPrecisions;
     this.maxParallelism = maxParallelism;
+    this.parallelism = parallelism;
   }
 
   @Override
@@ -84,7 +86,8 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
               inSchema.memoryAddress(),
               keyColumns,
               timestampPrecisions,
-              maxParallelism);
+              maxParallelism,
+              parallelism);
       repartTime.inc(System.nanoTime() - repartStarted);
     } finally {
       in.close(); // the input batch is consumed by the split

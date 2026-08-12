@@ -12,7 +12,7 @@ per batch (schema re-encoded every batch, buffers copied out and rebuilt on the 
 
 ## How it works
 
-Because the split operator emits key-group-homogeneous sub-batches and the partitioner routes
+Because the split operator emits one sub-batch per non-empty destination and the partitioner routes
 each to exactly one channel, a batch has exactly one consumer, and a same-process edge can move it
 by ownership transfer: the serializer parks the batch in a process-global handle table and writes a
 28-byte token-guarded handle; the deserializer claims it back, buffers untouched.

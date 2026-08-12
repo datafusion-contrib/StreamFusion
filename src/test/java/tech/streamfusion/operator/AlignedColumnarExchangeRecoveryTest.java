@@ -35,7 +35,7 @@ import org.apache.flink.table.types.logical.RowType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class UnalignedColumnarExchangeRecoveryTest {
+class AlignedColumnarExchangeRecoveryTest {
 
   private static final int ROWS = 12_000;
   private static final int MAX_PARALLELISM = 257;
@@ -44,7 +44,7 @@ class UnalignedColumnarExchangeRecoveryTest {
       RowType.of(new LogicalType[] {new BigIntType(), new BigIntType()}, new String[] {"k", "id"});
 
   @Test
-  void restoresInFlightKeyGroupBatchesAfterUnalignedRescale(
+  void restoresAfterAlignedExchangeCheckpointAndRescale(
       @TempDir Path checkpoints, @TempDir Path output) throws Exception {
     FAILED_ONCE.set(false);
     try {
@@ -64,11 +64,11 @@ class UnalignedColumnarExchangeRecoveryTest {
                     operator.getOperatorName().orElse("").contains("key-group-split")
                         || operator.getOperatorName().orElse("").contains("arrow-to-row"))
             .flatMap(operator -> operator.getStates().stream())
-            .anyMatch(
+            .noneMatch(
                 state ->
                     !state.getInputChannelState().isEmpty()
                         || !state.getResultSubpartitionState().isEmpty()),
-        "checkpoint did not capture in-flight state on the Arrow exchange");
+        "aligned Arrow exchange retained topology-specific channel state");
 
     runJob(3, checkpoints, output, retained);
 
@@ -88,7 +88,7 @@ class UnalignedColumnarExchangeRecoveryTest {
                   })
               .toList();
     }
-    assertEquals(ROWS, lines.size(), "unaligned restore lost or duplicated rows");
+    assertEquals(ROWS, lines.size(), "aligned restore lost or duplicated rows");
     Set<String> unique = new HashSet<>(lines);
     assertEquals(ROWS, unique.size(), "every source id must appear exactly once");
     for (int id = 0; id < ROWS; id++) {
@@ -117,24 +117,25 @@ class UnalignedColumnarExchangeRecoveryTest {
 
     DataStream<RowData> rows =
         env.fromSequence(0, ROWS - 1)
-            .uid("unaligned-source")
+            .uid("aligned-source")
             .map(value -> (RowData) GenericRowData.of(value % 97, value))
             .returns(InternalTypeInfo.of(ROW_TYPE))
-            .uid("unaligned-rows");
+            .uid("aligned-rows");
     DataStream<ArrowBatch> columnar =
         rows.transform(
                 "row-to-arrow",
                 ArrowBatchTypeInformation.INSTANCE,
                 new RowDataToArrowOperator(ROW_TYPE, 64, false, null))
-            .uid("unaligned-row-to-arrow")
+            .uid("aligned-row-to-arrow")
             .setMaxParallelism(MAX_PARALLELISM);
     DataStream<ArrowBatch> split =
         columnar
             .transform(
                 "key-group-split",
                 ArrowBatchTypeInformation.INSTANCE,
-                new SplitByKeyGroupOperator(new int[] {0}, new int[] {-1}, MAX_PARALLELISM))
-            .uid("unaligned-key-group-split")
+                new SplitByKeyGroupOperator(
+                    new int[] {0}, new int[] {-1}, MAX_PARALLELISM, parallelism))
+            .uid("aligned-key-group-split")
             .setMaxParallelism(MAX_PARALLELISM);
     PartitionTransformation<ArrowBatch> partition =
         new PartitionTransformation<>(
@@ -149,7 +150,7 @@ class UnalignedColumnarExchangeRecoveryTest {
                 "arrow-to-row",
                 InternalTypeInfo.of(ROW_TYPE),
                 new ArrowToRowDataOperator(ROW_TYPE))
-            .uid("unaligned-arrow-to-row")
+            .uid("aligned-arrow-to-row")
             .setMaxParallelism(MAX_PARALLELISM);
 
     FileSink<String> sink =
@@ -160,10 +161,10 @@ class UnalignedColumnarExchangeRecoveryTest {
             .build();
     restoredRows
         .map(new SlowCheckpointFailingMap())
-        .uid("unaligned-failing-map")
+        .uid("aligned-failing-map")
         .sinkTo(sink)
-        .uid("unaligned-file-sink");
-    env.execute("unaligned-columnar-exchange-recovery");
+        .uid("aligned-file-sink");
+    env.execute("aligned-columnar-exchange-recovery");
   }
 
   private static Path latestRetainedCheckpoint(Path checkpoints) throws Exception {
@@ -195,7 +196,7 @@ class UnalignedColumnarExchangeRecoveryTest {
     @Override
     public void notifyCheckpointComplete(long checkpointId) {
       if (seen >= 100 && FAILED_ONCE.compareAndSet(false, true)) {
-        throw new RuntimeException("intentional failure after unaligned checkpoint " + checkpointId);
+        throw new RuntimeException("intentional failure after aligned checkpoint " + checkpointId);
       }
     }
   }

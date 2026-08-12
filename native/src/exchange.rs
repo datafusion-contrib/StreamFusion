@@ -1,31 +1,32 @@
 use crate::*;
 
-/// Splits a batch into contiguous, single-key-group sub-batches using
-/// `BinaryRowData.hashCode()` → `MathUtils.murmurHash`. Each sub-batch keeps the full input schema
-/// and carries a topology-independent key-group id. Flink can therefore rerun the partitioner on
-/// an in-flight sub-batch restored from an unaligned checkpoint after the downstream parallelism
-/// changes; a destination-channel batch would not be independently reroutable. Contiguous runs,
-/// rather than one gathered batch per key group, preserve Flink's per-channel input order when
-/// several key groups have the same owner.
+/// Splits a batch into one order-preserving sub-batch per destination channel using
+/// `BinaryRowData.hashCode()` → `MathUtils.murmurHash` → Flink's key-group range assignment.
+/// Each sub-batch carries one representative key group owned by that channel, which lets Flink's
+/// ordinary partitioner route the whole Arrow batch. The exchange requires aligned checkpoints:
+/// after rescaling a retained multi-key-group batch could span several new channels, while Flink's
+/// channel-state recovery can only keep or discard a whole record.
 pub(crate) fn partition_batch(
     batch: &RecordBatch,
     key_columns: &[usize],
     timestamp_precisions: &[i32],
     max_parallelism: usize,
+    parallelism: usize,
 ) -> Vec<(usize, RecordBatch)> {
     // The precision sidecar is a pre-order type tree, so a nested key contributes more than one
     // descriptor; the encoder validates that it is consumed exactly.
-    let mut runs: Vec<(usize, Vec<u32>)> = Vec::new();
+    let mut channels: Vec<Option<(usize, Vec<u32>)>> = vec![None; parallelism];
     let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, timestamp_precisions);
     for row in 0..batch.num_rows() {
         let key_group = flink_key_group(encoder.hash(row), max_parallelism);
-        if runs.last().is_none_or(|(group, _)| *group != key_group) {
-            runs.push((key_group, Vec::new()));
-        }
-        runs.last_mut().unwrap().1.push(row as u32);
+        let channel = key_group * parallelism / max_parallelism;
+        channels[channel]
+            .get_or_insert_with(|| (key_group, Vec::new()))
+            .1
+            .push(row as u32);
     }
-    let mut out = Vec::with_capacity(runs.len());
-    for (key_group, rows) in runs {
+    let mut out = Vec::with_capacity(parallelism.min(batch.num_rows()));
+    for (key_group, rows) in channels.into_iter().flatten() {
         let indices = UInt32Array::from(rows);
         let columns: Vec<ArrayRef> = batch
             .columns()
@@ -40,14 +41,14 @@ pub(crate) fn partition_batch(
     out
 }
 
-/// Holds the single-key-group sub-batches of one split, pulled out one at a time by the JVM.
+/// Holds the destination-channel sub-batches of one split, pulled out one at a time by the JVM.
 pub(crate) struct SplitState {
     key_groups: Vec<(usize, RecordBatch)>,
     cursor: usize,
 }
 
-/// Splits a batch from the JVM by key into per-key-group sub-batches and returns a handle to pull
-/// them with `nextSplit`; released with `closeSplit`.
+/// Splits a batch from the JVM by key into destination-channel sub-batches and returns a handle to
+/// pull them with `nextSplit`; released with `closeSplit`.
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
     env: JNIEnv<'local>,
@@ -57,6 +58,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
     key_columns: JIntArray<'local>,
     timestamp_precisions: JIntArray<'local>,
     max_parallelism: jint,
+    parallelism: jint,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |env| {
         let batch = import_record_batch(in_array_address, in_schema_address);
@@ -65,7 +67,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
             .map(|k| k as usize)
             .collect();
         let precisions = read_i32_array(&env, &timestamp_precisions);
-        let key_groups = partition_batch(&batch, &keys, &precisions, max_parallelism as usize);
+        let key_groups = partition_batch(
+            &batch,
+            &keys,
+            &precisions,
+            max_parallelism as usize,
+            parallelism as usize,
+        );
         into_handle(SplitState {
             key_groups,
             cursor: 0,
