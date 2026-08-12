@@ -2051,6 +2051,44 @@ fn json_decode_duplicate_row_keys_saturate_flinks_field_counter() {
     assert_eq!((a.value(0), b.value(0)), (1, 2));
 }
 
+// Nexmark normally writes fields in schema order, but the ordered-dispatch fast path must retain
+// the compiled lookup for reordered and unknown keys on schemas wide enough to use the hash map.
+#[test]
+fn json_decode_schema_order_fast_path_falls_back_for_reordered_fields() {
+    let schema: SchemaRef = Arc::new(Schema::new(
+        (0..8)
+            .map(|i| Field::new(format!("f{i}"), DataType::Int64, true))
+            .collect::<Vec<_>>(),
+    ));
+    let out =
+        JsonDecoder::new(schema, crate::json::JsonEnv::default()).decode(&bodies(vec![Some(
+            br#"{"f7": 70, "unknown": 99, "f0": 0, "f3": 30, "f1": 10, "f6": 60}"#,
+        )]));
+    for (index, expected) in [
+        Some(0),
+        Some(10),
+        None,
+        Some(30),
+        None,
+        None,
+        Some(60),
+        Some(70),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let column = out
+            .column(index)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        match expected {
+            Some(value) => assert_eq!(column.value(0), value),
+            None => assert!(column.is_null(0)),
+        }
+    }
+}
+
 // simd-json rejects documents Jackson tokenizes fine: out-of-range number literals, raw control
 // characters inside strings (Flink enables ALLOW_UNESCAPED_CONTROL_CHARS), and content trailing
 // the root document (which Flink's pull parser never reads). Those messages retry through the
@@ -6184,6 +6222,14 @@ fn changelog_join_batch(k: Vec<i64>, v: Vec<i64>, kinds: Vec<i8>) -> RecordBatch
     .unwrap()
 }
 
+fn append_join_batch(k: Vec<i64>, v: Vec<i64>) -> RecordBatch {
+    RecordBatch::try_new(
+        kv_schema(),
+        vec![Arc::new(Int64Array::from(k)), Arc::new(Int64Array::from(v))],
+    )
+    .unwrap()
+}
+
 // INNER updating join on column 0: a matched pair is emitted when the second side's row arrives,
 // carrying the arriving row's kind; the output is left columns then right columns.
 #[test]
@@ -6244,6 +6290,28 @@ fn unique_updating_join_replays_only_each_sides_final_bundle_change() {
     assert_eq!(row_kinds(&out), vec![0]);
     assert_eq!(values(&out, 1), vec![20]);
     assert_eq!(values(&out, 3), vec![100]);
+}
+
+#[test]
+fn append_only_updating_join_buffers_both_sides_without_losing_multiplicity() {
+    let mut joiner = inner_joiner().with_mini_batch(true);
+    joiner
+        .push(&append_join_batch(vec![1, 1], vec![10, 20]), true, 0)
+        .unwrap();
+    joiner
+        .push(&append_join_batch(vec![1], vec![100]), false, 0)
+        .unwrap();
+    assert_eq!(joiner.staged_records(true), 2);
+    assert_eq!(joiner.staged_records(false), 1);
+
+    let out = joiner.flush_mini_batch().unwrap();
+    assert_eq!(row_kinds(&out), vec![0, 0]);
+    let mut left_values = values(&out, 1);
+    left_values.sort();
+    assert_eq!(left_values, vec![10, 20]);
+    assert_eq!(values(&out, 3), vec![100, 100]);
+    assert_eq!(joiner.staged_records(true), 0);
+    assert_eq!(joiner.staged_records(false), 0);
 }
 
 #[test]
@@ -8210,6 +8278,92 @@ fn calc_filters_then_projects() {
     );
 }
 
+// Flink's generated Calc evaluates the condition first and materializes only projection inputs for
+// passing rows. A condition-only column and an unrelated wide column must therefore stay out of the
+// batch filtered for the projection.
+#[test]
+fn calc_prunes_condition_only_and_unused_columns_before_filtering() {
+    let event_type: ArrayRef = Arc::new(Int64Array::from(vec![0, 1, 2]));
+    let id: ArrayRef = Arc::new(Int64Array::from(vec![100, 101, 102]));
+    let name: ArrayRef = Arc::new(StringArray::from(vec!["a", "b", "c"]));
+    let auction = StructArray::from(vec![
+        (Arc::new(Field::new("id", DataType::Int64, true)), id),
+        (Arc::new(Field::new("name", DataType::Utf8, true)), name),
+    ]);
+    let unused: ArrayRef = Arc::new(StringArray::from(vec!["wide-0", "wide-1", "wide-2"]));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("event_type", DataType::Int64, true),
+            Field::new("auction", auction.data_type().clone(), true),
+            Field::new("unused", DataType::Utf8, true),
+        ])),
+        vec![event_type, Arc::new(auction), unused],
+    )
+    .unwrap();
+    let mut calc = CalcExpression {
+        // condition: event_type = 1; projection: auction.id
+        kinds: vec![6, 0, 7, 13, 0],
+        payload: vec![14, 0, 0, 0, 1],
+        child_counts: vec![2, 0, 0, 1, 0],
+        longs: vec![1],
+        doubles: vec![],
+        strings: vec![Some("id".to_string())],
+        projection_roots: vec![3],
+        condition_root: 0,
+        output_names: vec!["id".to_string()],
+        compiled: None,
+    };
+
+    let out = calc.evaluate(batch);
+    assert_eq!(out.num_rows(), 1);
+    assert_eq!(
+        out.column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .values(),
+        &[101]
+    );
+    assert_eq!(
+        calc.compiled.as_ref().unwrap().projection_input_indices,
+        vec![1]
+    );
+}
+
+#[test]
+fn calc_filtered_literal_projection_preserves_selected_row_count() {
+    let mut calc = CalcExpression {
+        // condition: a > 1; projection: literal 7 (there are no projection input columns).
+        kinds: vec![6, 0, 7, 7],
+        payload: vec![10, 0, 0, 1],
+        child_counts: vec![2, 0, 0, 0],
+        longs: vec![1, 7],
+        doubles: vec![],
+        strings: vec![],
+        projection_roots: vec![3],
+        condition_root: 0,
+        output_names: vec!["seven".to_string()],
+        compiled: None,
+    };
+
+    let out = calc.evaluate(ab_batch());
+    assert_eq!(out.num_rows(), 2);
+    assert_eq!(
+        out.column(0)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap()
+            .values(),
+        &[7, 7]
+    );
+    assert!(calc
+        .compiled
+        .as_ref()
+        .unwrap()
+        .projection_input_indices
+        .is_empty());
+}
+
 // A Calc projects a field pulled out of a ROW/struct column (kind 13 → get_field), the Nexmark
 // view shape (`bid.price`).
 #[test]
@@ -8538,7 +8692,7 @@ fn calc_timestamp_minus_interval() {
     assert!(col.is_null(1));
 }
 
-// The by-key split emits each row in a sub-batch tagged with its exact Flink key group.
+// The by-key split emits at most one order-preserving sub-batch per destination channel.
 #[test]
 fn partitions_a_batch_by_key() {
     use std::collections::HashMap;
@@ -8556,30 +8710,36 @@ fn partitions_a_batch_by_key() {
     )
     .unwrap();
 
-    for max_parallelism in [1usize, 3, 8] {
-        let parts = partition_batch(&batch, &[0], &[-1], max_parallelism);
+    for (max_parallelism, parallelism) in [(1usize, 1usize), (3, 3), (128, 4)] {
+        let parts = partition_batch(&batch, &[0], &[-1], max_parallelism, parallelism);
         let mut rows = 0usize;
-        let mut values_in_output_order = Vec::new();
+        let mut values_by_channel = vec![Vec::new(); parallelism];
+        let mut expected_by_channel = vec![Vec::new(); parallelism];
         let mut key_to_group: HashMap<i64, usize> = HashMap::default();
-        for (key_group, sub) in &parts {
-            assert!(*key_group < max_parallelism);
+        let mut expected_encoder = BinaryRowBatchEncoder::new(&batch, &[0], &[-1]);
+        for row in 0..batch.num_rows() {
+            let key_group = flink_key_group(expected_encoder.hash(row), max_parallelism);
+            expected_by_channel[key_group * parallelism / max_parallelism].push(row as i64);
+        }
+        assert!(parts.len() <= parallelism);
+        for (representative_group, sub) in &parts {
+            assert!(*representative_group < max_parallelism);
+            let channel = representative_group * parallelism / max_parallelism;
             let keys = sub.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
             let values = sub.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
             for i in 0..sub.num_rows() {
-                values_in_output_order.push(values.value(i));
+                values_by_channel[channel].push(values.value(i));
                 let single = RecordBatch::try_new(
                     Arc::new(Schema::new(vec![Field::new("k", DataType::Int64, true)])),
                     vec![Arc::new(Int64Array::from(vec![keys.value(i)]))],
                 )
                 .unwrap();
                 let mut encoder = BinaryRowBatchEncoder::new(&single, &[0], &[-1]);
-                assert_eq!(
-                    flink_key_group(encoder.hash(0), max_parallelism),
-                    *key_group
-                );
-                let prev = key_to_group.insert(keys.value(i), *key_group);
+                let key_group = flink_key_group(encoder.hash(0), max_parallelism);
+                assert_eq!(key_group * parallelism / max_parallelism, channel);
+                let prev = key_to_group.insert(keys.value(i), key_group);
                 if let Some(p) = prev {
-                    assert_eq!(p, *key_group, "key {} split across groups", keys.value(i));
+                    assert_eq!(p, key_group, "key {} split across groups", keys.value(i));
                 }
             }
             rows += sub.num_rows();
@@ -8588,11 +8748,7 @@ fn partitions_a_batch_by_key() {
             rows, n,
             "all rows preserved for max parallelism {max_parallelism}"
         );
-        assert_eq!(
-            values_in_output_order,
-            (0..n as i64).collect::<Vec<_>>(),
-            "splitting must preserve input order within an output channel"
-        );
+        assert_eq!(values_by_channel, expected_by_channel);
     }
 }
 
