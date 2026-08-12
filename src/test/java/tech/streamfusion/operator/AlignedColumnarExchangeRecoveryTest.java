@@ -48,7 +48,7 @@ class AlignedColumnarExchangeRecoveryTest {
       @TempDir Path checkpoints, @TempDir Path output) throws Exception {
     FAILED_ONCE.set(false);
     try {
-      runJob(2, checkpoints, output, null);
+      runJob(2, checkpoints, output, null, false);
     } catch (Exception expectedFailure) {
       // Restart is disabled so the intentional post-checkpoint failure leaves a retained checkpoint.
     }
@@ -70,7 +70,7 @@ class AlignedColumnarExchangeRecoveryTest {
                         || !state.getResultSubpartitionState().isEmpty()),
         "aligned Arrow exchange retained topology-specific channel state");
 
-    runJob(3, checkpoints, output, retained);
+    runJob(3, checkpoints, output, retained, false);
 
     List<String> lines;
     try (var paths = Files.walk(output)) {
@@ -96,7 +96,54 @@ class AlignedColumnarExchangeRecoveryTest {
     }
   }
 
-  private static void runJob(int parallelism, Path checkpoints, Path output, Path restoreFrom)
+  @Test
+  void restoresCapturedArrowChannelStateAfterUnalignedRescale(
+      @TempDir Path checkpoints, @TempDir Path output) throws Exception {
+    assertUnalignedRestore(2, 3, checkpoints, output);
+  }
+
+  @Test
+  void restoresCapturedArrowChannelStateAfterUnalignedDownscale(
+      @TempDir Path checkpoints, @TempDir Path output) throws Exception {
+    assertUnalignedRestore(3, 2, checkpoints, output);
+  }
+
+  private static void assertUnalignedRestore(
+      int beforeParallelism, int afterParallelism, Path checkpoints, Path output) throws Exception {
+    FAILED_ONCE.set(false);
+    try {
+      runJob(beforeParallelism, checkpoints, output, null, true);
+    } catch (Exception expectedFailure) {
+      // The completed externalized checkpoint is the restore input below.
+    }
+    assertTrue(FAILED_ONCE.get(), "first job never failed after a completed checkpoint");
+
+    Path retained = latestRetainedCheckpoint(checkpoints);
+    CheckpointMetadata metadata =
+        org.apache.flink.test.util.TestUtils.loadCheckpointMetadata(retained.toString());
+    assertTrue(
+        metadata.getOperatorStates().stream()
+            .filter(
+                operator ->
+                    operator.getOperatorName().orElse("").contains("key-group-split")
+                        || operator.getOperatorName().orElse("").contains("key-group-reassemble"))
+            .flatMap(operator -> operator.getStates().stream())
+            .anyMatch(
+                state ->
+                    !state.getInputChannelState().isEmpty()
+                        || !state.getResultSubpartitionState().isEmpty()),
+        "unaligned checkpoint did not capture Arrow exchange channel state");
+
+    runJob(afterParallelism, checkpoints, output, retained, true);
+    assertExactlyOnceOutput(output, "unaligned restore");
+  }
+
+  private static void runJob(
+      int parallelism,
+      Path checkpoints,
+      Path output,
+      Path restoreFrom,
+      boolean recoverable)
       throws Exception {
     Configuration configuration = new Configuration();
     configuration.set(RestartStrategyOptions.RESTART_STRATEGY, "disable");
@@ -134,18 +181,33 @@ class AlignedColumnarExchangeRecoveryTest {
                 "key-group-split",
                 ArrowBatchTypeInformation.INSTANCE,
                 new SplitByKeyGroupOperator(
-                    new int[] {0}, new int[] {-1}, MAX_PARALLELISM, parallelism))
+                    new int[] {0},
+                    new int[] {-1},
+                    MAX_PARALLELISM,
+                    parallelism,
+                    recoverable))
             .uid("aligned-key-group-split")
             .setMaxParallelism(MAX_PARALLELISM);
     PartitionTransformation<ArrowBatch> partition =
         new PartitionTransformation<>(
             split.getTransformation(),
-            new ColumnarKeyGroupPartitioner(MAX_PARALLELISM),
+            new ColumnarKeyGroupPartitioner(MAX_PARALLELISM, recoverable),
             StreamExchangeMode.PIPELINED);
     partition.setParallelism(parallelism);
     partition.setMaxParallelism(MAX_PARALLELISM);
+    DataStream<ArrowBatch> shuffled = new DataStream<>(env, partition);
+    if (recoverable) {
+      shuffled =
+          shuffled
+              .transform(
+                  "key-group-reassemble",
+                  ArrowBatchTypeInformation.INSTANCE,
+                  new OrderedKeyGroupReassembler(MAX_PARALLELISM))
+              .uid("aligned-key-group-reassemble")
+              .setMaxParallelism(MAX_PARALLELISM);
+    }
     DataStream<RowData> restoredRows =
-        new DataStream<>(env, partition)
+        shuffled
             .transform(
                 "arrow-to-row",
                 InternalTypeInfo.of(ROW_TYPE),
@@ -165,6 +227,31 @@ class AlignedColumnarExchangeRecoveryTest {
         .sinkTo(sink)
         .uid("aligned-file-sink");
     env.execute("aligned-columnar-exchange-recovery");
+  }
+
+  private static void assertExactlyOnceOutput(Path output, String message) throws Exception {
+    List<String> lines;
+    try (var paths = Files.walk(output)) {
+      lines =
+          paths
+              .filter(Files::isRegularFile)
+              .filter(path -> !path.getFileName().toString().startsWith("."))
+              .flatMap(
+                  path -> {
+                    try {
+                      return Files.readAllLines(path).stream();
+                    } catch (java.io.IOException e) {
+                      throw new java.io.UncheckedIOException(e);
+                    }
+                  })
+              .toList();
+    }
+    assertEquals(ROWS, lines.size(), message + " lost or duplicated rows");
+    Set<String> unique = new HashSet<>(lines);
+    assertEquals(ROWS, unique.size(), "every source id must appear exactly once");
+    for (int id = 0; id < ROWS; id++) {
+      assertTrue(unique.contains(Integer.toString(id)), "missing id " + id);
+    }
   }
 
   private static Path latestRetainedCheckpoint(Path checkpoints) throws Exception {

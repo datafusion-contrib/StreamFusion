@@ -1,22 +1,22 @@
 package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
+import java.util.UUID;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.metrics.Counter;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
-import org.apache.flink.metrics.Counter;
 
 /**
- * Splits each incoming Arrow batch into per-destination-channel sub-batches. Paired with {@link
- * tech.streamfusion.planner.ColumnarKeyGroupPartitioner}, the stable key-group tag lets Flink route
- * the whole record normally. The exchange uses aligned checkpoints because one emitted record can
- * contain several key groups that would have different owners after rescaling.
+ * Splits each incoming Arrow batch for a keyed shuffle. Aligned-only jobs emit one sub-batch per
+ * destination channel. Unaligned-enabled jobs emit one independently recoverable fragment per key
+ * group with the metadata {@link OrderedKeyGroupReassembler} needs to restore parent order.
  */
 public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
@@ -25,6 +25,7 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
   private final int[] timestampPrecisions;
   private final int maxParallelism;
   private final int parallelism;
+  private final boolean recoverable;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
@@ -34,13 +35,26 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
   private transient Counter encodeTime;
   private transient Counter decodeTime;
   private transient Counter inputBatches;
+  private transient long parentEpochHigh;
+  private transient long parentEpochLow;
+  private transient long parentSequence;
 
   public SplitByKeyGroupOperator(
       int[] keyColumns, int[] timestampPrecisions, int maxParallelism, int parallelism) {
+    this(keyColumns, timestampPrecisions, maxParallelism, parallelism, false);
+  }
+
+  public SplitByKeyGroupOperator(
+      int[] keyColumns,
+      int[] timestampPrecisions,
+      int maxParallelism,
+      int parallelism,
+      boolean recoverable) {
     this.keyColumns = keyColumns;
     this.timestampPrecisions = timestampPrecisions;
     this.maxParallelism = maxParallelism;
     this.parallelism = parallelism;
+    this.recoverable = recoverable;
   }
 
   @Override
@@ -57,6 +71,10 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
     getMetricGroup().counter("spill_count");
     getMetricGroup().counter("spilled_bytes");
     inputBatches = getMetricGroup().counter("input_batches");
+    UUID epoch = UUID.randomUUID();
+    parentEpochHigh = epoch.getMostSignificantBits();
+    parentEpochLow = epoch.getLeastSignificantBits();
+    parentSequence = 0;
   }
 
   @Override
@@ -87,12 +105,14 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
               keyColumns,
               timestampPrecisions,
               maxParallelism,
-              parallelism);
+              parallelism,
+              recoverable);
       repartTime.inc(System.nanoTime() - repartStarted);
     } finally {
       in.close(); // the input batch is consumed by the split
     }
     try {
+      long sequence = parentSequence++;
       while (true) {
         try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
             ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
@@ -108,7 +128,18 @@ public class SplitByKeyGroupOperator extends AbstractStreamOperator<ArrowBatch>
           ColumnarRecordMetrics.emit(
               output,
               getMetricGroup(),
-              new ArrowBatch(sub, keyGroup, handleOwner, encodeTime::inc));
+              recoverable
+                  ? new ArrowBatch(
+                      sub,
+                      keyGroup,
+                      handleOwner,
+                      encodeTime::inc,
+                      parentEpochHigh,
+                      parentEpochLow,
+                      sequence,
+                      Native.currentSplitOrdinals(handle),
+                      Native.currentSplitKeyGroups(handle))
+                  : new ArrowBatch(sub, keyGroup, handleOwner, encodeTime::inc));
         }
       }
     } finally {

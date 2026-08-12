@@ -8752,6 +8752,31 @@ fn partitions_a_batch_by_key() {
     }
 }
 
+#[test]
+fn partitions_one_ordered_batch_per_key_group_for_recovery() {
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("k", DataType::Int64, false),
+            Field::new("v", DataType::Int64, false),
+        ])),
+        vec![
+            Arc::new(Int64Array::from(vec![1, 2, 1, 3, 2])),
+            Arc::new(Int64Array::from(vec![0, 1, 2, 3, 4])),
+        ],
+    )
+    .unwrap();
+    let parts = partition_batch_by_key_group(&batch, &[0], &[-1], 128);
+    let mut seen = HashSet::default();
+    let mut rows = 0;
+    for (key_group, ordinals, part) in parts {
+        assert!(seen.insert(key_group), "one fragment per key group");
+        assert_eq!(ordinals.len(), part.num_rows());
+        assert!(ordinals.windows(2).all(|pair| pair[0] < pair[1]));
+        rows += part.num_rows();
+    }
+    assert_eq!(5, rows);
+}
+
 // The compiled predicate is cached after the first batch and reused.
 #[test]
 fn compiles_once_and_reuses() {

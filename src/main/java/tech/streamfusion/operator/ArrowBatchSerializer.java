@@ -37,6 +37,7 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
   // Keep the existing wire tag: only the meaning of its integer changes from channel to key group.
   private static final int KEY_GROUP_TAG = 0xD5A5_0001;
   private static final int ZERO_COPY_TAG = 0xD5A5_0002;
+  private static final int ORDERED_KEY_GROUP_TAG = 0xD5A5_0003;
 
   private final boolean zeroCopy;
 
@@ -108,8 +109,15 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
       root.close();
     }
     byte[] encoded = bytes.toByteArray();
-    target.writeInt(KEY_GROUP_TAG);
+    target.writeInt(batch.isOrderedKeyGroupFragment() ? ORDERED_KEY_GROUP_TAG : KEY_GROUP_TAG);
     target.writeInt(batch.keyGroup());
+    if (batch.isOrderedKeyGroupFragment()) {
+      target.writeLong(batch.parentEpochHigh());
+      target.writeLong(batch.parentEpochLow());
+      target.writeLong(batch.parentSequence());
+      writeInts(target, batch.rowOrdinals());
+      writeInts(target, batch.parentKeyGroups());
+    }
     target.writeInt(encoded.length);
     target.write(encoded);
     batch.recordEncodeNanos(System.nanoTime() - started);
@@ -121,8 +129,15 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
     if (tagOrLength == ZERO_COPY_TAG) {
       return ArrowBatchHandles.claim(source.readLong(), source.readLong(), source.readLong());
     }
-    int keyGroup = tagOrLength == KEY_GROUP_TAG ? source.readInt() : -1;
-    int length = tagOrLength == KEY_GROUP_TAG ? source.readInt() : tagOrLength;
+    boolean ordered = tagOrLength == ORDERED_KEY_GROUP_TAG;
+    boolean tagged = tagOrLength == KEY_GROUP_TAG || ordered;
+    int keyGroup = tagged ? source.readInt() : -1;
+    long epochHigh = ordered ? source.readLong() : 0;
+    long epochLow = ordered ? source.readLong() : 0;
+    long sequence = ordered ? source.readLong() : -1;
+    int[] ordinals = ordered ? readInts(source) : null;
+    int[] parentKeyGroups = ordered ? readInts(source) : null;
+    int length = tagged ? source.readInt() : tagOrLength;
     byte[] encoded = new byte[length];
     source.readFully(encoded);
     try (ArrowStreamReader reader =
@@ -139,7 +154,18 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
       }
       VectorSchemaRoot root = new VectorSchemaRoot(transferred);
       root.setRowCount(read.getRowCount());
-      return new ArrowBatch(root, keyGroup);
+      return ordered
+          ? new ArrowBatch(
+              root,
+              keyGroup,
+              ArrowBatch.NO_HANDLE_OWNER,
+              null,
+              epochHigh,
+              epochLow,
+              sequence,
+              ordinals,
+              parentKeyGroups)
+          : new ArrowBatch(root, keyGroup);
     }
   }
 
@@ -158,14 +184,43 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
       target.writeLong(source.readLong());
       return;
     }
-    int keyGroup = tagOrLength == KEY_GROUP_TAG ? source.readInt() : -1;
-    int length = tagOrLength == KEY_GROUP_TAG ? source.readInt() : tagOrLength;
+    boolean ordered = tagOrLength == ORDERED_KEY_GROUP_TAG;
+    boolean tagged = tagOrLength == KEY_GROUP_TAG || ordered;
+    int keyGroup = tagged ? source.readInt() : -1;
+    long epochHigh = ordered ? source.readLong() : 0;
+    long epochLow = ordered ? source.readLong() : 0;
+    long sequence = ordered ? source.readLong() : -1;
+    int[] ordinals = ordered ? readInts(source) : null;
+    int[] parentKeyGroups = ordered ? readInts(source) : null;
+    int length = tagged ? source.readInt() : tagOrLength;
     byte[] encoded = new byte[length];
     source.readFully(encoded);
-    target.writeInt(KEY_GROUP_TAG);
+    target.writeInt(ordered ? ORDERED_KEY_GROUP_TAG : KEY_GROUP_TAG);
     target.writeInt(keyGroup);
+    if (ordered) {
+      target.writeLong(epochHigh);
+      target.writeLong(epochLow);
+      target.writeLong(sequence);
+      writeInts(target, ordinals);
+      writeInts(target, parentKeyGroups);
+    }
     target.writeInt(length);
     target.write(encoded);
+  }
+
+  private static void writeInts(DataOutputView target, int[] values) throws IOException {
+    target.writeInt(values.length);
+    for (int value : values) {
+      target.writeInt(value);
+    }
+  }
+
+  private static int[] readInts(DataInputView source) throws IOException {
+    int[] values = new int[source.readInt()];
+    for (int i = 0; i < values.length; i++) {
+      values[i] = source.readInt();
+    }
+    return values;
   }
 
   @Override

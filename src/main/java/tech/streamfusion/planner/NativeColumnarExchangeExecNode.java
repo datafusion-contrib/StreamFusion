@@ -2,6 +2,7 @@ package tech.streamfusion.planner;
 
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.OrderedKeyGroupReassembler;
 import tech.streamfusion.operator.SplitByKeyGroupOperator;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
@@ -73,13 +74,15 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
         keyColumns.length == 0
             ? 1
             : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), numChannels);
-    // Split each batch into at most one order-preserving sub-batch per destination channel...
+    boolean recoverable = planner.getExecEnv().getCheckpointConfig().isUnalignedCheckpointsEnabled();
+    // Aligned jobs keep destination batching. Unaligned-enabled jobs use independently recoverable
+    // key-group fragments because any checkpoint can capture the already-buffered network records.
     Transformation<ArrowBatch> split =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
             new SplitByKeyGroupOperator(
-                keyColumns, timestampPrecisions, maxParallelism, numChannels),
+                keyColumns, timestampPrecisions, maxParallelism, numChannels, recoverable),
             NativeConfig.zeroCopyExchange(planner.getExecEnv())
                 ? ArrowBatchTypeInformation.ZERO_COPY
                 : ArrowBatchTypeInformation.INSTANCE,
@@ -88,9 +91,23 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
     // ...then route each whole sub-batch to its current owner. Pipelined so watermarks flow.
     PartitionTransformation<ArrowBatch> partition =
         new PartitionTransformation<>(
-            split, new ColumnarKeyGroupPartitioner(maxParallelism), StreamExchangeMode.PIPELINED);
+            split,
+            new ColumnarKeyGroupPartitioner(maxParallelism, recoverable),
+            StreamExchangeMode.PIPELINED);
     partition.setParallelism(numChannels);
     partition.setMaxParallelism(maxParallelism);
-    return partition;
+    if (!recoverable) {
+      return partition;
+    }
+    Transformation<ArrowBatch> reassembled =
+        ExecNodeUtil.createOneInputTransformation(
+            partition,
+            createTransformationMeta("native-columnar-exchange-reassemble", config),
+            new OrderedKeyGroupReassembler(maxParallelism),
+            ArrowBatchTypeInformation.INSTANCE,
+            numChannels,
+            false);
+    reassembled.setMaxParallelism(maxParallelism);
+    return reassembled;
   }
 }

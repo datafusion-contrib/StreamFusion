@@ -41,14 +41,60 @@ pub(crate) fn partition_batch(
     out
 }
 
-/// Holds the destination-channel sub-batches of one split, pulled out one at a time by the JVM.
+/// Splits a batch into one order-preserving sub-batch per non-empty key group. Unlike destination
+/// batching, every output record remains independently routable when Flink restores unaligned
+/// channel state at a different parallelism. Row ordinals let the receiver reconstruct the exact
+/// destination-local order of the parent batch after the shuffle.
+pub(crate) fn partition_batch_by_key_group(
+    batch: &RecordBatch,
+    key_columns: &[usize],
+    timestamp_precisions: &[i32],
+    max_parallelism: usize,
+) -> Vec<(usize, Vec<i32>, RecordBatch)> {
+    let mut rows_by_key_group: Vec<Vec<u32>> = vec![Vec::new(); max_parallelism];
+    let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, timestamp_precisions);
+    for row in 0..batch.num_rows() {
+        let key_group = flink_key_group(encoder.hash(row), max_parallelism);
+        rows_by_key_group[key_group].push(row as u32);
+    }
+    rows_by_key_group
+        .into_iter()
+        .enumerate()
+        .filter_map(|(key_group, rows)| {
+            if rows.is_empty() {
+                return None;
+            }
+            let ordinals = rows.iter().map(|row| *row as i32).collect();
+            let indices = UInt32Array::from(rows);
+            let columns: Vec<ArrayRef> = batch
+                .columns()
+                .iter()
+                .map(|column| take(column, &indices, None).expect("take"))
+                .collect();
+            Some((
+                key_group,
+                ordinals,
+                RecordBatch::try_new(batch.schema(), columns).expect("key-group sub-batch"),
+            ))
+        })
+        .collect()
+}
+
+struct SplitPart {
+    key_group: usize,
+    ordinals: Vec<i32>,
+    batch: RecordBatch,
+}
+
+/// Holds the sub-batches of one split, pulled out one at a time by the JVM.
 pub(crate) struct SplitState {
-    key_groups: Vec<(usize, RecordBatch)>,
+    parts: Vec<SplitPart>,
+    key_groups: Vec<i32>,
     cursor: usize,
 }
 
-/// Splits a batch from the JVM by key into destination-channel sub-batches and returns a handle to
-/// pull them with `nextSplit`; released with `closeSplit`.
+/// Splits a batch from the JVM by key and returns a handle to pull the resulting destination or
+/// key-group sub-batches with `nextSplit`; released with `closeSplit`.
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
     env: JNIEnv<'local>,
@@ -59,6 +105,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
     timestamp_precisions: JIntArray<'local>,
     max_parallelism: jint,
     parallelism: jint,
+    recoverable: jboolean,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |env| {
         let batch = import_record_batch(in_array_address, in_schema_address);
@@ -67,14 +114,38 @@ pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
             .map(|k| k as usize)
             .collect();
         let precisions = read_i32_array(&env, &timestamp_precisions);
-        let key_groups = partition_batch(
-            &batch,
-            &keys,
-            &precisions,
-            max_parallelism as usize,
-            parallelism as usize,
-        );
+        let parts: Vec<SplitPart> = if recoverable != 0 {
+            partition_batch_by_key_group(&batch, &keys, &precisions, max_parallelism as usize)
+                .into_iter()
+                .map(|(key_group, ordinals, batch)| SplitPart {
+                    key_group,
+                    ordinals,
+                    batch,
+                })
+                .collect()
+        } else {
+            partition_batch(
+                &batch,
+                &keys,
+                &precisions,
+                max_parallelism as usize,
+                parallelism as usize,
+            )
+            .into_iter()
+            .map(|(key_group, batch)| SplitPart {
+                key_group,
+                ordinals: Vec::new(),
+                batch,
+            })
+            .collect()
+        };
+        let key_groups = if recoverable != 0 {
+            parts.iter().map(|part| part.key_group as i32).collect()
+        } else {
+            Vec::new()
+        };
         into_handle(SplitState {
+            parts,
             key_groups,
             cursor: 0,
         })
@@ -93,13 +164,48 @@ pub extern "system" fn Java_tech_streamfusion_Native_nextSplit<'local>(
 ) -> jint {
     crate::bridge::jni_guard(env, move |_env| {
         let state = unsafe { &mut *(handle as *mut SplitState) };
-        if state.cursor >= state.key_groups.len() {
+        if state.cursor >= state.parts.len() {
             return -1;
         }
-        let (key_group, batch) = state.key_groups[state.cursor].clone();
+        let part = &state.parts[state.cursor];
         state.cursor += 1;
-        export_record_batch(batch, out_array_address, out_schema_address);
-        key_group as jint
+        export_record_batch(part.batch.clone(), out_array_address, out_schema_address);
+        part.key_group as jint
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_currentSplitKeyGroups<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jni::sys::jintArray {
+    crate::bridge::jni_guard(env, move |env| {
+        let state = unsafe { &*(handle as *const SplitState) };
+        let output = env
+            .new_int_array(state.key_groups.len() as i32)
+            .expect("allocate parent key groups");
+        env.set_int_array_region(&output, 0, &state.key_groups)
+            .expect("write parent key groups");
+        output.into_raw()
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_currentSplitOrdinals<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jni::sys::jintArray {
+    crate::bridge::jni_guard(env, move |env| {
+        let state = unsafe { &*(handle as *const SplitState) };
+        let ordinals = &state.parts[state.cursor - 1].ordinals;
+        let output = env
+            .new_int_array(ordinals.len() as i32)
+            .expect("allocate row ordinals");
+        env.set_int_array_region(&output, 0, ordinals)
+            .expect("write row ordinals");
+        output.into_raw()
     })
 }
 

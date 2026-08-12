@@ -498,13 +498,20 @@ public final class Native {
       int[] keyColumns,
       int[] timestampPrecisions,
       int maxParallelism,
-      int parallelism);
+      int parallelism,
+      boolean recoverable);
 
   /**
    * Exports the next sub-batch of a split into the consumer-allocated C structs and returns its key
    * group, or -1 once the split is exhausted.
    */
   public static native int nextSplit(long handle, long outArrayAddress, long outSchemaAddress);
+
+  /** Non-empty key groups in the current fragment's parent batch. */
+  public static native int[] currentSplitKeyGroups(long handle);
+
+  /** Original parent-batch row positions for the fragment returned by the latest {@link #nextSplit}. */
+  public static native int[] currentSplitOrdinals(long handle);
 
   /** Releases a split handle. */
   public static native void closeSplit(long handle);

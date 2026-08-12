@@ -58,6 +58,40 @@ class ArrowBatchSerializerTest {
   }
 
   @Test
+  void roundTripsOrderedRecoveryMetadataAndBufferCopy() throws Exception {
+    ArrowBatchSerializer serializer = new ArrowBatchSerializer();
+    try (BufferAllocator allocator = new RootAllocator()) {
+      VectorSchemaRoot root =
+          RowDataArrowConverter.write(List.of(row(1L, 10), row(1L, 30)), SCHEMA, allocator);
+      ArrowBatch fragment =
+          new ArrowBatch(
+              root,
+              7,
+              ArrowBatch.NO_HANDLE_OWNER,
+              null,
+              11,
+              12,
+              13,
+              new int[] {0, 2},
+              new int[] {7, 9});
+      DataOutputSerializer encoded = new DataOutputSerializer(256);
+      serializer.serialize(fragment, encoded);
+      DataOutputSerializer copied = new DataOutputSerializer(256);
+      serializer.copy(new DataInputDeserializer(encoded.getCopyOfBuffer()), copied);
+      ArrowBatch restored =
+          serializer.deserialize(new DataInputDeserializer(copied.getCopyOfBuffer()));
+      assertEquals(7, restored.keyGroup());
+      assertEquals(11, restored.parentEpochHigh());
+      assertEquals(12, restored.parentEpochLow());
+      assertEquals(13, restored.parentSequence());
+      assertEquals(List.of(0, 2), java.util.Arrays.stream(restored.rowOrdinals()).boxed().toList());
+      assertEquals(
+          List.of(7, 9), java.util.Arrays.stream(restored.parentKeyGroups()).boxed().toList());
+      restored.root().close();
+    }
+  }
+
+  @Test
   void zeroCopyHandsTheSameBatchAcrossTheWire() throws Exception {
     ArrowBatchSerializer serializer = new ArrowBatchSerializer(true);
     try (BufferAllocator allocator = new RootAllocator()) {

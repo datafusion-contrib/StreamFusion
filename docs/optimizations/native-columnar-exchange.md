@@ -15,13 +15,26 @@ Each serialized Arrow record carries a representative key group from its destina
 random-key 8192-row input therefore produces at most the downstream parallelism in network records,
 instead of nearly one IPC stream per row. Rows retain their original order within every destination.
 
-The exchange disables unaligned checkpoints on its edge. An in-flight destination batch can contain
-key groups that separate after rescaling, while Flink's recovery API can only keep or discard a
-whole record. Alignment drains those topology-specific records before the checkpoint; restored
-producers then repartition new batches at the restored parallelism. Native keyed operators honor Flink's
-`pipeline.max-parallelism` setting as the stable key-group count; when it is unset they use Flink's
-normal parallelism-derived default.
+The planner selects the wire shape from Flink's checkpoint configuration. With unaligned
+checkpoints disabled (Flink's default), the exchange keeps the fast destination batches above and
+forces that edge aligned. With unaligned checkpoints enabled, every parent batch instead emits one
+record per non-empty key group. Each fragment carries a parent epoch/sequence, its original row
+ordinals, and the parent's non-empty key groups. Flink's ordinary `RANGE` channel-state filter can
+therefore reroute every whole fragment after rescaling. During normal execution a checkpointed
+reassembler uses that compact manifest to identify its destination-local siblings and restores
+their original row order with a k-way merge of the already-sorted ordinal streams.
+After recovery it delivers old-attempt fragments independently: some sibling groups may already
+have been applied before the checkpoint and now live in downstream operator state. The restored
+producer uses a fresh epoch, so newly produced parents immediately resume ordered reassembly.
 
-The recovery integration test enables unaligned checkpoints globally, verifies that the columnar
-edge retained no channel state, fails the job, and restores the aligned checkpoint from parallelism
-2 to 3. Its checkpointed file sink receives every source id exactly once.
+The recovery-safe representation is used for the whole execution because Flink may start a
+checkpoint aligned and switch it to unaligned after its alignment timeout; records already buffered
+when that happens must be independently recoverable. Process-local handle-table transfer stays off
+in this mode because its handles cannot survive restore. Native keyed operators honor Flink's
+`pipeline.max-parallelism` setting as the stable key-group count.
+
+Recovery tests cover both protocols. The aligned test proves that destination batches leave no
+Arrow channel state. The unaligned test creates backpressure, proves that the checkpoint captured
+Arrow channel state, fails the job, restores from parallelism 2 to 3, and verifies every source id
+exactly once. Operator-harness tests separately restore a partially assembled parent and hold a
+watermark until all of its key-group fragments arrive.

@@ -42,6 +42,11 @@ public final class ArrowBatch {
   private final VectorSchemaRoot root;
   // A Flink key group owned by this key-partitioned batch's destination; -1 when unrouted.
   private final int keyGroup;
+  private final long parentEpochHigh;
+  private final long parentEpochLow;
+  private final long parentSequence;
+  private final int[] rowOrdinals;
+  private final int[] parentKeyGroups;
   // The producing split subtask whose failure cleanup owns a parked zero-copy handle.
   private final long handleOwner;
   private final Backstop backstop;
@@ -51,24 +56,47 @@ public final class ArrowBatch {
   private final NativeScanMetrics nativeScanMetrics;
 
   public ArrowBatch(VectorSchemaRoot root) {
-    this(root, -1, NO_HANDLE_OWNER, null, null);
+    this(root, -1, NO_HANDLE_OWNER, null, null, 0, 0, -1, null, null);
   }
 
   public ArrowBatch(VectorSchemaRoot root, int keyGroup) {
-    this(root, keyGroup, NO_HANDLE_OWNER, null, null);
+    this(root, keyGroup, NO_HANDLE_OWNER, null, null, 0, 0, -1, null, null);
   }
 
   ArrowBatch(VectorSchemaRoot root, int keyGroup, long handleOwner) {
-    this(root, keyGroup, handleOwner, null, null);
+    this(root, keyGroup, handleOwner, null, null, 0, 0, -1, null, null);
   }
 
   ArrowBatch(
       VectorSchemaRoot root, int keyGroup, long handleOwner, LongConsumer encodeTiming) {
-    this(root, keyGroup, handleOwner, encodeTiming, null);
+    this(root, keyGroup, handleOwner, encodeTiming, null, 0, 0, -1, null, null);
   }
 
   ArrowBatch(VectorSchemaRoot root, NativeScanMetrics nativeScanMetrics) {
-    this(root, -1, NO_HANDLE_OWNER, null, nativeScanMetrics);
+    this(root, -1, NO_HANDLE_OWNER, null, nativeScanMetrics, 0, 0, -1, null, null);
+  }
+
+  ArrowBatch(
+      VectorSchemaRoot root,
+      int keyGroup,
+      long handleOwner,
+      LongConsumer encodeTiming,
+      long parentEpochHigh,
+      long parentEpochLow,
+      long parentSequence,
+      int[] rowOrdinals,
+      int[] parentKeyGroups) {
+    this(
+        root,
+        keyGroup,
+        handleOwner,
+        encodeTiming,
+        null,
+        parentEpochHigh,
+        parentEpochLow,
+        parentSequence,
+        rowOrdinals,
+        parentKeyGroups);
   }
 
   private ArrowBatch(
@@ -76,12 +104,22 @@ public final class ArrowBatch {
       int keyGroup,
       long handleOwner,
       LongConsumer encodeTiming,
-      NativeScanMetrics nativeScanMetrics) {
+      NativeScanMetrics nativeScanMetrics,
+      long parentEpochHigh,
+      long parentEpochLow,
+      long parentSequence,
+      int[] rowOrdinals,
+      int[] parentKeyGroups) {
     this.root = root;
     this.keyGroup = keyGroup;
     this.handleOwner = handleOwner;
     this.encodeTiming = encodeTiming;
     this.nativeScanMetrics = nativeScanMetrics;
+    this.parentEpochHigh = parentEpochHigh;
+    this.parentEpochLow = parentEpochLow;
+    this.parentSequence = parentSequence;
+    this.rowOrdinals = rowOrdinals;
+    this.parentKeyGroups = parentKeyGroups;
     this.backstop = new Backstop(root);
     ABANDONED.register(this, backstop);
   }
@@ -121,6 +159,43 @@ public final class ArrowBatch {
 
   public int keyGroup() {
     return keyGroup;
+  }
+
+  public boolean isOrderedKeyGroupFragment() {
+    return parentSequence >= 0;
+  }
+
+  long parentEpochHigh() {
+    return parentEpochHigh;
+  }
+
+  long parentEpochLow() {
+    return parentEpochLow;
+  }
+
+  long parentSequence() {
+    return parentSequence;
+  }
+
+  int[] rowOrdinals() {
+    return rowOrdinals;
+  }
+
+  int[] parentKeyGroups() {
+    return parentKeyGroups;
+  }
+
+  ArrowBatch retainedCopy() {
+    return new ArrowBatch(
+        retainedView(),
+        keyGroup,
+        NO_HANDLE_OWNER,
+        null,
+        parentEpochHigh,
+        parentEpochLow,
+        parentSequence,
+        rowOrdinals,
+        parentKeyGroups);
   }
 
   /** Compatibility alias for callers that treat the routing tag as an opaque integer. */

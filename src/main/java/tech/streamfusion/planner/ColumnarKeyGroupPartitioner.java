@@ -9,9 +9,9 @@ import org.apache.flink.streaming.runtime.partitioner.StreamPartitioner;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
 /**
- * Routes a destination-batched Arrow record using a representative key group owned by that channel.
- * This partitioner disables unaligned checkpoints because a retained record can contain several key
- * groups that acquire different owners after rescaling.
+ * Routes an Arrow shuffle record using its key-group tag. Destination-batched records force the
+ * edge aligned; recovery-mode records contain exactly one key group and support Flink's ordinary
+ * unaligned {@link SubtaskStateMapper#RANGE} filtering after rescaling.
  */
 public class ColumnarKeyGroupPartitioner extends StreamPartitioner<ArrowBatch>
     implements ConfigurableStreamPartitioner {
@@ -19,10 +19,18 @@ public class ColumnarKeyGroupPartitioner extends StreamPartitioner<ArrowBatch>
   private static final long serialVersionUID = 1L;
 
   private int maxParallelism;
+  private final boolean recoverable;
 
   public ColumnarKeyGroupPartitioner(int maxParallelism) {
+    this(maxParallelism, false);
+  }
+
+  public ColumnarKeyGroupPartitioner(int maxParallelism, boolean recoverable) {
+    this.recoverable = recoverable;
     configure(maxParallelism);
-    disableUnalignedCheckpoints();
+    if (!recoverable) {
+      disableUnalignedCheckpoints();
+    }
   }
 
   @Override
@@ -41,7 +49,7 @@ public class ColumnarKeyGroupPartitioner extends StreamPartitioner<ArrowBatch>
 
   @Override
   public StreamPartitioner<ArrowBatch> copy() {
-    return new ColumnarKeyGroupPartitioner(maxParallelism);
+    return new ColumnarKeyGroupPartitioner(maxParallelism, recoverable);
   }
 
   @Override

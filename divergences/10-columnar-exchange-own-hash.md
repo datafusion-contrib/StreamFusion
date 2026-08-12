@@ -22,11 +22,17 @@ agree exactly for rescaling to be correct.
 
 - Equal join keys on both inputs receive the same BinaryRow/key-group assignment, including NULL
   keys and the supported scalar key types.
-- The exchange follows Arroyo's destination-server batching shape while retaining Flink's key hash
-  and channel mapping. Rows keep their original order within each destination.
-- Flink cannot split a recovered network record after rescaling, so the columnar exchange disables
-  unaligned checkpoints on its edge. Alignment drains destination batches before checkpointing;
-  restored producers repartition subsequent batches using the new parallelism.
+- Aligned-only jobs follow Arroyo's destination-server batching shape while retaining Flink's key
+  hash and channel mapping. Rows keep their original order within each destination.
+- When unaligned checkpoints are enabled, StreamFusion deliberately uses a finer recovery wire
+  shape: one gathered Arrow fragment per key group, tagged with parent sequence, row ordinals, and a
+  compact non-empty-key-group manifest. Flink can keep/drop those records with its existing `RANGE`
+  recovery filter; a checkpointed receiver reassembles destination-local parent order during normal
+  execution by merging the fragments' already-sorted ordinal streams. Old attempt fragments remain
+  independent on restore because siblings already processed before the checkpoint live in downstream
+  operator state; the new attempt resumes reassembly under a fresh epoch. This avoids both
+  topology-specific channel records and contiguous-run fragmentation without changing Flink's
+  recovery API.
 - Flink's configured `pipeline.max-parallelism` is the authoritative key-group count for every
   native keyed transformation and exchange. Deriving it again from restored parallelism would make
   checkpoints incompatible when a rescale crosses Flink's default-max-parallelism thresholds.

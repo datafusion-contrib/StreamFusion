@@ -128,6 +128,48 @@ class SplitByKeyGroupOperatorTest {
   }
 
   @Test
+  @SuppressWarnings("unchecked")
+  void recoverableSplitEmitsOneOrderedFragmentPerKeyGroup() throws Exception {
+    int channels = 2;
+    int maxParallelism = 128;
+    try (BufferAllocator allocator = new RootAllocator();
+        OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
+            new OneInputStreamOperatorTestHarness<>(
+                new SplitByKeyGroupOperator(
+                    new int[] {0}, new int[] {-1}, maxParallelism, channels, true),
+                new ArrowBatchSerializer())) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      List<RowData> rows = List.of(row(1, 0), row(2, 1), row(1, 2), row(3, 3), row(2, 4));
+      harness.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(RowDataArrowConverter.write(rows, SCHEMA, allocator))));
+
+      Map<Integer, ArrowBatch> fragments = new HashMap<>();
+      int total = 0;
+      for (Object item : harness.getOutput()) {
+        if (item instanceof StreamRecord<?>) {
+          ArrowBatch fragment = ((StreamRecord<ArrowBatch>) item).getValue();
+          assertTrue(fragment.isOrderedKeyGroupFragment());
+          assertEquals(null, fragments.put(fragment.keyGroup(), fragment));
+          assertEquals(fragment.rowCount(), fragment.rowOrdinals().length);
+          total += fragment.rowCount();
+        }
+      }
+      assertEquals(rows.size(), total);
+      List<Integer> parentKeyGroups = fragments.keySet().stream().sorted().toList();
+      for (ArrowBatch fragment : fragments.values()) {
+        assertEquals(
+            parentKeyGroups,
+            java.util.Arrays.stream(fragment.parentKeyGroups()).boxed().sorted().toList());
+      }
+      for (ArrowBatch fragment : fragments.values()) {
+        fragment.root().close();
+      }
+    }
+  }
+
+  @Test
   void partitionerReroutesAKeyGroupAtRestoredParallelism() {
     int maxParallelism = 128;
     int keyGroup = 70;
@@ -164,6 +206,14 @@ class SplitByKeyGroupOperatorTest {
   }
 
   @Test
+  void recoverablePartitionerSupportsUnalignedRangeChannelState() {
+    ColumnarKeyGroupPartitioner partitioner = new ColumnarKeyGroupPartitioner(128, true);
+    assertEquals(SubtaskStateMapper.RANGE, partitioner.getDownstreamSubtaskStateMapper());
+    assertTrue(partitioner.isSupportsUnalignedCheckpoint());
+    assertTrue(partitioner.copy().isSupportsUnalignedCheckpoint());
+  }
+
+  @Test
   void streamGraphForcesAlignedColumnarExchange() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.enableCheckpointing(10);
@@ -186,6 +236,30 @@ class SplitByKeyGroupOperatorTest {
             .toList();
     assertEquals(1, columnarEdges.size());
     assertFalse(columnarEdges.get(0).supportsUnalignedCheckpoints());
+  }
+
+  @Test
+  void streamGraphAllowsRecoverableColumnarExchangeChannelState() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.enableCheckpointing(10);
+    env.getCheckpointConfig().enableUnalignedCheckpoints();
+    DataStream<ArrowBatch> input =
+        env.fromData(1)
+            .map(ignored -> (ArrowBatch) null)
+            .returns(ArrowBatchTypeInformation.INSTANCE);
+    PartitionTransformation<ArrowBatch> partition =
+        new PartitionTransformation<>(
+            input.getTransformation(),
+            new ColumnarKeyGroupPartitioner(128, true),
+            StreamExchangeMode.PIPELINED);
+    new DataStream<>(env, partition).sinkTo(new DiscardingSink<>());
+    StreamEdge edge =
+        env.getStreamGraph().getStreamNodes().stream()
+            .flatMap(node -> node.getOutEdges().stream())
+            .filter(candidate -> candidate.getPartitioner() instanceof ColumnarKeyGroupPartitioner)
+            .findFirst()
+            .orElseThrow();
+    assertTrue(edge.supportsUnalignedCheckpoints());
   }
 
   @Test

@@ -58,6 +58,13 @@ class FlinkColumnarShuffleParallelismTest {
     NativeParity.assertParity(() -> readEnvironment(input, "TWO_PHASE", true), WINDOW_QUERY);
   }
 
+  @Test
+  void plannerSelectedUnalignedShuffleMatchesHostAtParallelismTwo() throws Exception {
+    Path input = Files.createTempDirectory("cshuffle-p2-unaligned-in");
+    writeInput(input);
+    NativeParity.assertParity(() -> readUnalignedEnvironment(input), WINDOW_QUERY);
+  }
+
   /**
    * A changelog aggregate at parallelism 2: the keyed exchange fragments every source batch into
    * per-key-group sub-batches, and the post-exchange coalescer must reassemble processing-sized
@@ -94,6 +101,22 @@ class FlinkColumnarShuffleParallelismTest {
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
     tEnv.executeSql(
         "CREATE TABLE t (k BIGINT, v BIGINT) WITH ('connector' = 'filesystem', 'path' = '"
+            + directory.toUri()
+            + "', 'format' = 'parquet')");
+    return tEnv;
+  }
+
+  private static TableEnvironment readUnalignedEnvironment(Path directory) {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(2);
+    env.enableCheckpointing(100);
+    env.getCheckpointConfig().enableUnalignedCheckpoints();
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+    tEnv.executeSql(
+        "CREATE TABLE t (k BIGINT, v BIGINT, rt TIMESTAMP_LTZ(3), "
+            + "WATERMARK FOR rt AS rt - INTERVAL '10' SECOND) WITH ('connector' = 'filesystem', "
+            + "'path' = '"
             + directory.toUri()
             + "', 'format' = 'parquet')");
     return tEnv;
