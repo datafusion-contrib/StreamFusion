@@ -7,6 +7,7 @@ import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.core.fs.CloseableRegistry;
 import org.apache.flink.runtime.checkpoint.CheckpointOptions;
+import org.apache.flink.runtime.state.AbstractKeyedStateBackend;
 import org.apache.flink.runtime.state.CheckpointStreamFactory;
 import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
 import org.apache.flink.runtime.state.KeyGroupRange;
@@ -225,6 +226,15 @@ public final class RocksDBNativeKeyedStateBackend<K>
   @Override
   public K getCurrentKey() {
     return delegate.getCurrentKey();
+  }
+
+  int getCurrentKeyGroupIndex() {
+    if (delegate instanceof AbstractKeyedStateBackend) {
+      return ((AbstractKeyedStateBackend<?>) delegate).getCurrentKeyGroupIndex();
+    }
+    throw new IllegalStateException(
+        "wrapped keyed backend does not expose its current key group: "
+            + delegate.getClass().getName());
   }
 
   @Override

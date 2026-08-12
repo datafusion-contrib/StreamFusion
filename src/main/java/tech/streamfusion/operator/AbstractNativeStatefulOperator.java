@@ -86,6 +86,12 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
     return snapshotRawPartitions();
   }
 
+  /** Captures immutable state for asynchronous backend serialization when an operator supports it. */
+  protected boolean writeAsyncMemorySnapshot(
+      CheckpointableKeyedStateBackend<?> backend, long timerDeadline) throws Exception {
+    return false;
+  }
+
   /** Releases the native handle. */
   protected abstract void closeHandle();
 
@@ -269,13 +275,16 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
     if (rocksdbState) {
       return;
     }
-    CanonicalNativeState.write(
-        (CheckpointableKeyedStateBackend<?>) getKeyedStateBackend(),
-        snapshotCanonicalPartitions(),
-        stateLabel,
+    CheckpointableKeyedStateBackend<?> backend =
+        (CheckpointableKeyedStateBackend<?>) getKeyedStateBackend();
+    long timerDeadline =
         carriesProcessingTimeTimer()
             ? processingTimeTimerDeadlineForSnapshot()
-            : Long.MIN_VALUE);
+            : Long.MIN_VALUE;
+    if (!writeAsyncMemorySnapshot(backend, timerDeadline)) {
+      CanonicalNativeState.write(
+          backend, snapshotCanonicalPartitions(), stateLabel, timerDeadline);
+    }
   }
 
   @Override

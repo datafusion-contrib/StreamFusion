@@ -139,6 +139,7 @@ impl TopNConverters {
 /// rank and a `+U` at the next); sharing it makes those emits refcount bumps rather than a byte-buffer
 /// clone each — the allocator churn a differential profile pinned as the Top-N's cost over Flink (which
 /// reuses `BinaryRowData`). The decode back to Arrow still happens once per emitted row, on flush.
+#[derive(Clone)]
 pub(crate) struct TopNRow {
     pub(crate) sort: OwnedRow,
     pub(crate) payload: Arc<OwnedRow>,
@@ -782,15 +783,36 @@ fn raw_topn_snapshot_groups(
     let Some(schema) = schema else {
         return BTreeMap::new();
     };
-    let mut builders: BTreeMap<i32, (BinaryBuilder, BinaryBuilder, BinaryBuilder, Int64Builder)> =
-        BTreeMap::new();
+    let mut partitions: BTreeMap<i32, Vec<(&ByteKey, &Vec<TopNRow>)>> = BTreeMap::new();
     for (key, buffer) in groups.iter() {
         if buffer.is_empty() {
             continue;
         }
         let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
-        let (keys, sorts, rows, write_timestamps) = builders.entry(group).or_default();
-        for entry in buffer.iter() {
+        partitions.entry(group).or_default().push((key, buffer));
+    }
+    partitions
+        .into_iter()
+        .map(|(group, entries)| {
+            (
+                group,
+                write_raw_topn_snapshot_partition(entries.into_iter(), schema, ttl_on),
+            )
+        })
+        .collect()
+}
+
+fn write_raw_topn_snapshot_partition<'a>(
+    entries: impl Iterator<Item = (&'a ByteKey, &'a Vec<TopNRow>)>,
+    schema: &SchemaRef,
+    ttl_on: bool,
+) -> Vec<u8> {
+    let mut keys = BinaryBuilder::new();
+    let mut sorts = BinaryBuilder::new();
+    let mut rows = BinaryBuilder::new();
+    let mut write_timestamps = Int64Builder::new();
+    for (key, buffer) in entries {
+        for entry in buffer {
             keys.append_value(&key.0);
             sorts.append_value(entry.sort.row().data());
             rows.append_value(entry.payload.row().data());
@@ -812,24 +834,56 @@ fn raw_topn_snapshot_groups(
             encode_schema_metadata(schema),
         )]),
     ));
-    builders
-        .into_iter()
-        .map(
-            |(group, (mut keys, mut sorts, mut rows, mut write_timestamps))| {
-                let mut columns: Vec<ArrayRef> = vec![
-                    Arc::new(keys.finish()),
-                    Arc::new(sorts.finish()),
-                    Arc::new(rows.finish()),
-                ];
-                if ttl_on {
-                    columns.push(Arc::new(write_timestamps.finish()));
-                }
-                let batch = RecordBatch::try_new(raw_schema.clone(), columns)
-                    .expect("raw top-n snapshot batch");
-                (group, write_ipc(&batch))
-            },
-        )
-        .collect()
+    let mut columns: Vec<ArrayRef> = vec![
+        Arc::new(keys.finish()),
+        Arc::new(sorts.finish()),
+        Arc::new(rows.finish()),
+    ];
+    if ttl_on {
+        columns.push(Arc::new(write_timestamps.finish()));
+    }
+    let batch = RecordBatch::try_new(raw_schema, columns).expect("raw top-n snapshot batch");
+    write_ipc(&batch)
+}
+
+/// Immutable append-only Top-N view captured at an aligned checkpoint barrier. Payload rows are
+/// shared through their existing Arcs; only the small partition and sort keys are copied. IPC is
+/// deliberately deferred until Flink's heap-state serializer runs on the async checkpoint thread.
+struct AppendTopNSnapshot {
+    schema: SchemaRef,
+    ttl_on: bool,
+    partitions: BTreeMap<i32, Vec<(ByteKey, Vec<TopNRow>)>>,
+}
+
+impl AppendTopNSnapshot {
+    fn capture(ranker: &TopNRanker, max_parallelism: usize) -> Option<Self> {
+        let schema = ranker.schema.clone()?;
+        let mut partitions: BTreeMap<i32, Vec<(ByteKey, Vec<TopNRow>)>> = BTreeMap::new();
+        for (key, buffer) in ranker.groups.iter() {
+            if buffer.is_empty() {
+                continue;
+            }
+            let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
+            partitions
+                .entry(group)
+                .or_default()
+                .push((key.clone(), buffer.clone()));
+        }
+        Some(Self {
+            schema,
+            ttl_on: ranker.ttl_ms > 0,
+            partitions,
+        })
+    }
+
+    fn encode(&self, key_group: i32) -> Option<Vec<u8>> {
+        let entries = self.partitions.get(&key_group)?;
+        Some(write_raw_topn_snapshot_partition(
+            entries.iter().map(|(key, rows)| (key, rows)),
+            &self.schema,
+            self.ttl_on,
+        ))
+    }
 }
 
 /// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
@@ -2470,6 +2524,13 @@ impl TopNHandle {
         }
     }
 
+    fn capture_append_snapshot(&self, max_parallelism: usize) -> Option<AppendTopNSnapshot> {
+        match self {
+            TopNHandle::Append(ranker) => AppendTopNSnapshot::capture(ranker, max_parallelism),
+            TopNHandle::Retract(_) | TopNHandle::UpdateFast(_) => None,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn restore_partitions(
         partition_columns: Vec<usize>,
@@ -3212,6 +3273,70 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotTopNRankerPartition
             ranker.snapshot_partitions(max_parallelism as usize),
             "top-n",
         )
+    })
+}
+
+/// Captures an immutable append-only Top-N checkpoint view. A zero return asks Java to use the
+/// synchronous compatibility path (empty/uninitialized state or a non-append ranker).
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_captureTopNRankerSnapshot<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    max_parallelism: jint,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let ranker = unsafe { &*(handle as *const TopNHandle) };
+        ranker
+            .capture_append_snapshot(max_parallelism as usize)
+            .map_or(0, |snapshot| Box::into_raw(Box::new(snapshot)) as jlong)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_topNRankerSnapshotKeyGroups<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    snapshot_handle: jlong,
+) -> jni::sys::jintArray {
+    crate::bridge::jni_guard(env, move |env| {
+        let snapshot = unsafe { &*(snapshot_handle as *const AppendTopNSnapshot) };
+        let groups: Vec<jint> = snapshot.partitions.keys().copied().collect();
+        let output = env
+            .new_int_array(groups.len() as i32)
+            .expect("allocate top-n snapshot key groups");
+        env.set_int_array_region(&output, 0, &groups)
+            .expect("write top-n snapshot key groups");
+        output.into_raw()
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_encodeTopNRankerSnapshotPartition<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    snapshot_handle: jlong,
+    key_group: jint,
+) -> jbyteArray {
+    crate::bridge::jni_guard(env, move |env| {
+        let snapshot = unsafe { &*(snapshot_handle as *const AppendTopNSnapshot) };
+        let payload = snapshot
+            .encode(key_group)
+            .unwrap_or_else(|| panic!("top-n snapshot has no key group {key_group}"));
+        env.byte_array_from_slice(&payload)
+            .expect("allocate encoded top-n snapshot partition")
+            .into_raw()
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closeTopNRankerSnapshot<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    snapshot_handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<AppendTopNSnapshot>(snapshot_handle));
     })
 }
 

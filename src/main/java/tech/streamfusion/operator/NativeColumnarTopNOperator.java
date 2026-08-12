@@ -3,11 +3,13 @@ package tech.streamfusion.operator;
 import tech.streamfusion.Native;
 import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.CanonicalNativeState;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
@@ -157,6 +159,16 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
   @Override
   protected byte[][] snapshotRawPartitions() {
     return Native.snapshotTopNRankerPartitions(handle, maxParallelism(), keyTimestampPrecisions());
+  }
+
+  @Override
+  protected boolean writeAsyncMemorySnapshot(
+      CheckpointableKeyedStateBackend<?> backend, long timerDeadline) throws Exception {
+    if (!NativeConfig.asyncMemorySnapshotsEnabled()) {
+      return false;
+    }
+    return CanonicalNativeState.captureAndWriteAsyncTopN(
+        backend, handle, maxParallelism(), "top-n", timerDeadline);
   }
 
   @Override
