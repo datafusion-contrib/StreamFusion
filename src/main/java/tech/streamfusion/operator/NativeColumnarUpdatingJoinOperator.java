@@ -304,19 +304,29 @@ public class NativeColumnarUpdatingJoinOperator
   }
 
   @Override
-  public void processWatermark(Watermark mark) throws Exception {
+  public void processWatermark1(Watermark mark) throws Exception {
+    flushBeforeInputWatermark();
+    super.processWatermark1(mark);
+  }
+
+  @Override
+  public void processWatermark2(Watermark mark) throws Exception {
+    flushBeforeInputWatermark();
+    super.processWatermark2(mark);
+  }
+
+  private void flushBeforeInputWatermark() {
     flushCoalescers();
-    if (miniBatch) {
+    if (miniBatch && hasBufferedBundle()) {
       flushBundle(FlushReason.WATERMARK);
       publishStateBytes();
     }
-    super.processWatermark(mark);
   }
 
   @Override
   public void prepareSnapshotPreBarrier(long checkpointId) throws Exception {
     flushCoalescers();
-    if (miniBatch) {
+    if (miniBatch && hasBufferedBundle()) {
       flushBundle(FlushReason.CHECKPOINT);
     }
     super.prepareSnapshotPreBarrier(checkpointId);
@@ -325,7 +335,7 @@ public class NativeColumnarUpdatingJoinOperator
   @Override
   public void finish() throws Exception {
     flushCoalescers();
-    if (miniBatch) {
+    if (miniBatch && hasBufferedBundle()) {
       flushBundle(FlushReason.FINISH);
     }
     super.finish();
@@ -336,6 +346,10 @@ public class NativeColumnarUpdatingJoinOperator
       leftCoalescer.flush();
       rightCoalescer.flush();
     }
+  }
+
+  private boolean hasBufferedBundle() {
+    return leftBundleRows != 0 || rightBundleRows != 0;
   }
 
   private void flushBundle(FlushReason reason) {

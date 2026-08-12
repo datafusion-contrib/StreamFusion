@@ -125,7 +125,7 @@ class NativeColumnarUpdatingJoinOperatorTest {
   }
 
   @Test
-  void uniqueInputsFlushBeforeTheCombinedWatermark() throws Exception {
+  void miniBatchFlushesOnEitherInputWatermarkLikeFlink() throws Exception {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch> harness =
             new KeyedTwoInputStreamOperatorTestHarness<>(
@@ -143,9 +143,38 @@ class NativeColumnarUpdatingJoinOperatorTest {
       harness.processElement1(
           new StreamRecord<>(batch(allocator, LEFT, row(RowKind.INSERT, 1, 20))));
       harness.processWatermark1(new Watermark(5));
-      assertEquals(List.of(), collect(harness));
-      harness.processWatermark2(new Watermark(5));
       assertEquals(List.of(change(RowKind.INSERT, 1, 20, 1, 100)), collect(harness));
+      harness.processWatermark2(new Watermark(5));
+      assertEquals(List.of(), collect(harness));
+    }
+  }
+
+  @Test
+  void appendOnlyMiniBatchRetainsMultiplicityUntilTheSharedBoundary() throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch> harness =
+            new KeyedTwoInputStreamOperatorTestHarness<>(
+                rawKeyedOperator(true, 4),
+                batch -> 0,
+                batch -> 0,
+                Types.INT,
+                MAX_PARALLELISM,
+                1,
+                0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement1(
+          new StreamRecord<>(
+              appendBatch(allocator, LEFT, row(RowKind.INSERT, 1, 10), row(RowKind.INSERT, 1, 11))));
+      harness.processElement2(
+          new StreamRecord<>(appendBatch(allocator, RIGHT, row(RowKind.INSERT, 1, 100))));
+      assertEquals(List.of(), collect(harness));
+
+      harness.processElement1(
+          new StreamRecord<>(appendBatch(allocator, LEFT, row(RowKind.INSERT, 2, 20))));
+      assertEquals(
+          List.of(change(RowKind.INSERT, 1, 10, 1, 100), change(RowKind.INSERT, 1, 11, 1, 100)),
+          collect(harness));
     }
   }
 
@@ -282,6 +311,11 @@ class NativeColumnarUpdatingJoinOperatorTest {
   private static ArrowBatch batch(BufferAllocator allocator, RowType schema, RowData... rows) {
     // Carry the kind: the inputs are changelogs (the join consumes -D/-U).
     return new ArrowBatch(RowDataArrowConverter.write(List.of(rows), schema, allocator, true));
+  }
+
+  private static ArrowBatch appendBatch(
+      BufferAllocator allocator, RowType schema, RowData... rows) {
+    return new ArrowBatch(RowDataArrowConverter.write(List.of(rows), schema, allocator, false));
   }
 
   private static List<Object> change(RowKind kind, long lk, long lv, long rk, long rv) {

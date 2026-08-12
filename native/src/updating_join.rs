@@ -37,6 +37,13 @@ pub(crate) struct UpdatingJoiner<S: KeyedStateStore<JoinBucket> = MemoryJoinStor
     mini_batch: bool,
     left_staged: MiniBatchChanges<ByteKey, ByteKey>,
     right_staged: MiniBatchChanges<ByteKey, ByteKey>,
+    // Insert-only inputs need no changelog folding. Retain their Arrow batches until the logical
+    // boundary, then run one side at a time in Flink's bundle order. This avoids encoding every row
+    // into the unique-key staging representation only to decode it again at flush.
+    left_append_batches: Vec<RecordBatch>,
+    right_append_batches: Vec<RecordBatch>,
+    left_append_bytes: usize,
+    right_append_bytes: usize,
     pub(crate) memory: OperatorMemory,
 }
 
@@ -127,6 +134,10 @@ impl UpdatingJoiner {
             mini_batch: false,
             left_staged: MiniBatchChanges::default(),
             right_staged: MiniBatchChanges::default(),
+            left_append_batches: Vec::new(),
+            right_append_batches: Vec::new(),
+            left_append_bytes: 0,
+            right_append_bytes: 0,
             memory: OperatorMemory::unaccounted(),
         }
     }
@@ -172,6 +183,10 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             mini_batch: self.mini_batch,
             left_staged: self.left_staged,
             right_staged: self.right_staged,
+            left_append_batches: self.left_append_batches,
+            right_append_batches: self.right_append_batches,
+            left_append_bytes: self.left_append_bytes,
+            right_append_bytes: self.right_append_bytes,
             memory: self.memory,
         }
     }
@@ -301,7 +316,11 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         let Some(&period) = enabled.iter().min() else {
             return;
         };
-        if self.left_staged.touched_keys() + self.right_staged.touched_keys() > 0
+        if self.left_staged.touched_keys()
+            + self.right_staged.touched_keys()
+            + self.left_append_batches.len()
+            + self.right_append_batches.len()
+            > 0
             || now_ms < self.last_sweep_ms + period
         {
             return;
@@ -678,18 +697,42 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
     }
 
     pub(crate) fn staging_bytes(&self) -> usize {
-        Self::staged_bytes_for(&self.left_staged) + Self::staged_bytes_for(&self.right_staged)
+        Self::staged_bytes_for(&self.left_staged)
+            + Self::staged_bytes_for(&self.right_staged)
+            + self.left_append_bytes
+            + self.right_append_bytes
     }
 
     pub(crate) fn staged_keys(&self) -> usize {
-        self.left_staged.touched_keys() + self.right_staged.touched_keys()
+        self.left_staged.touched_keys()
+            + self.right_staged.touched_keys()
+            + self
+                .left_append_batches
+                .iter()
+                .map(RecordBatch::num_rows)
+                .sum::<usize>()
+            + self
+                .right_append_batches
+                .iter()
+                .map(RecordBatch::num_rows)
+                .sum::<usize>()
     }
 
     pub(crate) fn staged_records(&self, left: bool) -> usize {
         if left {
             self.left_staged.effective_records()
+                + self
+                    .left_append_batches
+                    .iter()
+                    .map(RecordBatch::num_rows)
+                    .sum::<usize>()
         } else {
             self.right_staged.effective_records()
+                + self
+                    .right_append_batches
+                    .iter()
+                    .map(RecordBatch::num_rows)
+                    .sum::<usize>()
         }
     }
 
@@ -701,6 +744,24 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         is_left: bool,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        // An insert-only edge has no `$row_kind$` column. Flink's three regular-join bundle shapes
+        // cannot cancel or replace any valid row on such an edge, so retaining the Arrow batches is
+        // the exact reduced bundle and is substantially cheaper than row encoding plus re-decoding.
+        if row_kind_column(batch).is_none() {
+            let bytes = batch.get_array_memory_size();
+            if is_left {
+                self.left_append_batches.push(batch.clone());
+                self.left_append_bytes += bytes;
+            } else {
+                self.right_append_batches.push(batch.clone());
+                self.right_append_bytes += bytes;
+            }
+            if self.memory.tracking() {
+                self.memory.record(bytes as isize);
+            }
+            self.memory.account()?;
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
+        }
         let arity = data_arity(batch);
         let key_indices: &[usize] = if is_left {
             &self.left_keys
@@ -832,22 +893,54 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         };
         let left = self.left_staged.drain();
         let right = self.right_staged.drain();
+        let left_append = std::mem::take(&mut self.left_append_batches);
+        let right_append = std::mem::take(&mut self.right_append_batches);
+        let append_bundle = !left_append.is_empty() || !right_append.is_empty();
+        self.left_append_bytes = 0;
+        self.right_append_bytes = 0;
         self.memory.forget(staged_bytes);
         self.memory.account_shrink();
 
-        let left_batch = self.staged_batch(left, true);
-        let right_batch = self.staged_batch(right, false);
+        let left_batch = if left_append.is_empty() {
+            self.staged_batch(left, true)
+        } else {
+            debug_assert!(
+                left.is_empty(),
+                "one input cannot mix append and changelog batches"
+            );
+            Some(
+                concat_batches(&left_append[0].schema(), left_append.iter())
+                    .map_err(DataFusionError::from)?,
+            )
+        };
+        let right_batch = if right_append.is_empty() {
+            self.staged_batch(right, false)
+        } else {
+            debug_assert!(
+                right.is_empty(),
+                "one input cannot mix append and changelog batches"
+            );
+            Some(
+                concat_batches(&right_append[0].schema(), right_append.iter())
+                    .map_err(DataFusionError::from)?,
+            )
+        };
         let mut outputs = Vec::new();
-        if let Some(batch) = left_batch {
-            let out = self.push_immediate(&batch, true, self.clock_ms)?;
-            if out.num_rows() > 0 {
-                outputs.push(out);
-            }
-        }
-        if let Some(batch) = right_batch {
-            let out = self.push_immediate(&batch, false, self.clock_ms)?;
-            if out.num_rows() > 0 {
-                outputs.push(out);
+        // Flink processes right first for INNER/LEFT/FULL and left first for RIGHT. Besides being
+        // observable for outer-join changelogs, processing the dimension-like side first is the Q3
+        // win: all person rows become resident before the auction bundle probes them.
+        let right_first = append_bundle && !matches!(self.kind, JoinKind::RightOuter);
+        let ordered = if right_first {
+            [(right_batch, false), (left_batch, true)]
+        } else {
+            [(left_batch, true), (right_batch, false)]
+        };
+        for (batch, is_left) in ordered {
+            if let Some(batch) = batch {
+                let out = self.push_immediate(&batch, is_left, self.clock_ms)?;
+                if out.num_rows() > 0 {
+                    outputs.push(out);
+                }
             }
         }
         if outputs.is_empty() {
@@ -1391,57 +1484,37 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
     }
 }
 
-/// Builders for one key group's raw snapshot batch. The TTL timestamps ride a trailing column
-/// only while the side's TTL is on, so a TTL-off snapshot stays byte-identical to the pre-TTL
-/// format (and disabling TTL sheds the timestamps).
-struct RawSnapshotColumns {
-    keys: BinaryBuilder,
-    rows: BinaryBuilder,
-    counts: Int64Builder,
-    assocs: Int32Builder,
-    ttl_ts: Option<Int64Builder>,
+const COMPACT_JOIN_SNAPSHOT_MAGIC: &[u8; 4] = b"SFJ2";
+const COMPACT_JOIN_SNAPSHOT_TTL: u8 = 1;
+
+fn snapshot_put_u32(out: &mut Vec<u8>, value: usize) {
+    out.extend_from_slice(
+        &(u32::try_from(value).expect("updating-join snapshot field exceeds 4GiB")).to_le_bytes(),
+    );
 }
 
-impl RawSnapshotColumns {
-    fn new(with_ttl: bool) -> Self {
-        RawSnapshotColumns {
-            keys: BinaryBuilder::new(),
-            rows: BinaryBuilder::new(),
-            counts: Int64Builder::new(),
-            assocs: Int32Builder::new(),
-            ttl_ts: with_ttl.then(Int64Builder::new),
-        }
-    }
+fn snapshot_take<'a>(input: &mut &'a [u8], len: usize) -> &'a [u8] {
+    assert!(
+        input.len() >= len,
+        "truncated compact updating-join snapshot"
+    );
+    let (value, rest) = input.split_at(len);
+    *input = rest;
+    value
+}
 
-    fn finish(mut self) -> RecordBatch {
-        let mut fields = vec![
-            Field::new(RAW_SNAPSHOT_KEY, DataType::Binary, false),
-            Field::new(RAW_SNAPSHOT_ROW, DataType::Binary, false),
-            Field::new("__count__", DataType::Int64, false),
-            Field::new("__assoc__", DataType::Int32, false),
-        ];
-        let mut columns: Vec<ArrayRef> = vec![
-            Arc::new(self.keys.finish()),
-            Arc::new(self.rows.finish()),
-            Arc::new(self.counts.finish()),
-            Arc::new(self.assocs.finish()),
-        ];
-        if let Some(mut ttl_ts) = self.ttl_ts {
-            fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
-            columns.push(Arc::new(ttl_ts.finish()));
-        }
-        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("raw join snapshot batch")
-    }
+fn snapshot_take_u32(input: &mut &[u8]) -> usize {
+    u32::from_le_bytes(snapshot_take(input, 4).try_into().unwrap()) as usize
 }
 
 /// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
 /// store checkpoints through its own commit path instead of materializing the key space.
 impl UpdatingJoiner {
-    /// One side's multiset as raw state bytes, one IPC blob per key group: the stored
-    /// Flink-BinaryRow key and arrow-row payload of every live row, verbatim. Snapshotting
-    /// neither decodes rows nor re-encodes keys — the bucket key's bytes ARE the hash input
-    /// Flink's key-group routing takes, so the group is one hash of bytes per bucket.
+    /// One side's multiset as raw state bytes, one compact blob per key group. A bucket writes its
+    /// Flink-BinaryRow key once followed by its arrow-row payloads and metadata. The previous Arrow
+    /// IPC format repeated the key for every row and made a synchronous checkpoint build Arrow
+    /// arrays only to serialize them immediately; Q9 spends its barrier critical path doing those
+    /// copies. Restore still accepts that format below so existing checkpoints remain readable.
     fn side_snapshot_groups(
         &self,
         is_left: bool,
@@ -1457,26 +1530,33 @@ impl UpdatingJoiner {
         } else {
             self.right_ttl_ms
         }) > 0;
-        let mut groups: BTreeMap<i32, RawSnapshotColumns> = BTreeMap::new();
+        let mut groups: BTreeMap<i32, Vec<u8>> = BTreeMap::new();
         for (key, bucket) in state.iter() {
             let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
-            let columns = groups
-                .entry(group)
-                .or_insert_with(|| RawSnapshotColumns::new(with_ttl));
+            let out = groups.entry(group).or_insert_with(|| {
+                let mut out = Vec::with_capacity(4096);
+                out.extend_from_slice(COMPACT_JOIN_SNAPSHOT_MAGIC);
+                out.push(if with_ttl {
+                    COMPACT_JOIN_SNAPSHOT_TTL
+                } else {
+                    0
+                });
+                out
+            });
+            snapshot_put_u32(out, key.0.len());
+            out.extend_from_slice(&key.0);
+            snapshot_put_u32(out, bucket.len());
             for (row, meta) in bucket.iter() {
-                columns.keys.append_value(&key.0);
-                columns.rows.append_value(&row.0);
-                columns.counts.append_value(meta.count);
-                columns.assocs.append_value(meta.num_assoc);
-                if let Some(ttl_ts) = &mut columns.ttl_ts {
-                    ttl_ts.append_value(meta.last_write_ms);
+                snapshot_put_u32(out, row.0.len());
+                out.extend_from_slice(&row.0);
+                out.extend_from_slice(&meta.count.to_le_bytes());
+                out.extend_from_slice(&meta.num_assoc.to_le_bytes());
+                if with_ttl {
+                    out.extend_from_slice(&meta.last_write_ms.to_le_bytes());
                 }
             }
         }
         groups
-            .into_iter()
-            .map(|(group, columns)| (group, write_ipc(&columns.finish())))
-            .collect()
     }
 
     #[cfg(test)]
@@ -1591,11 +1671,59 @@ impl UpdatingJoiner {
     }
 
     fn load_side(&mut self, is_left: bool, bytes: &[u8], restored_at_ms: i64) {
+        if bytes.starts_with(COMPACT_JOIN_SNAPSHOT_MAGIC) {
+            self.load_side_compact(is_left, bytes, restored_at_ms);
+            return;
+        }
         for batch in read_ipc_if_present(bytes) {
             if batch.schema_ref().field(0).name() == RAW_SNAPSHOT_KEY {
                 self.load_side_raw(is_left, &batch, restored_at_ms);
             } else {
                 self.load_side_decoded(is_left, &batch, restored_at_ms);
+            }
+        }
+    }
+
+    fn load_side_compact(&mut self, is_left: bool, bytes: &[u8], restored_at_ms: i64) {
+        let mut input = &bytes[COMPACT_JOIN_SNAPSHOT_MAGIC.len()..];
+        let flags = snapshot_take(&mut input, 1)[0];
+        assert_eq!(
+            flags & !COMPACT_JOIN_SNAPSHOT_TTL,
+            0,
+            "unknown compact updating-join snapshot flags"
+        );
+        let with_ttl = flags & COMPACT_JOIN_SNAPSHOT_TTL != 0;
+        let state = if is_left {
+            &mut self.left_state
+        } else {
+            &mut self.right_state
+        };
+        while !input.is_empty() {
+            let key_len = snapshot_take_u32(&mut input);
+            let key = ByteKey::from(snapshot_take(&mut input, key_len));
+            let rows = snapshot_take_u32(&mut input);
+            let mut restored_bucket = JoinBucket::default();
+            restored_bucket.reserve(rows);
+            let bucket = state.insert(key, restored_bucket);
+            for _ in 0..rows {
+                let row_len = snapshot_take_u32(&mut input);
+                let row = ByteKey::from(snapshot_take(&mut input, row_len));
+                let count = i64::from_le_bytes(snapshot_take(&mut input, 8).try_into().unwrap());
+                let num_assoc =
+                    i32::from_le_bytes(snapshot_take(&mut input, 4).try_into().unwrap());
+                let last_write_ms = if with_ttl {
+                    i64::from_le_bytes(snapshot_take(&mut input, 8).try_into().unwrap())
+                } else {
+                    restored_at_ms
+                };
+                bucket.insert(
+                    row,
+                    RowMeta {
+                        count,
+                        num_assoc,
+                        last_write_ms,
+                    },
+                );
             }
         }
     }

@@ -140,6 +140,16 @@ class NativeColumnarGroupAggregateOperatorTest {
   }
 
   @Test
+  void idleSubtaskCanCheckpointBeforeReceivingItsFirstBatch() throws Exception {
+    try (KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+        harness(4, 0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.snapshot(1L, 1L);
+    }
+  }
+
+  @Test
   void coalescesGroupsAcrossPhysicalBatchesAtTheLogicalBoundary() throws Exception {
     int[] stateKeys = FlinkKeyGroupUtils.stateKeysForSubtasks(MAX_PARALLELISM, 1);
     try (BufferAllocator allocator = new RootAllocator();

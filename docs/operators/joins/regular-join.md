@@ -22,11 +22,21 @@ than repeating it.
 
 ## Mini-batch coalescing
 
-Under mini-batch execution, a regular join coalesces replacement events (multiple updates to the
-same output row folded into one) only when Flink's planner metadata **proves both join keys contain
-an input upsert key** — i.e. each key value identifies at most one live row per side. Any join that
-isn't provably unique on both keys (a one-to-many or many-to-many join) retains the immediate,
-per-row changelog path with no coalescing.
+Under mini-batch execution, a regular INNER/outer join uses one shared count boundary across both
+inputs and drains before either input watermark, a checkpoint, or end of input, matching Flink's
+two-input bundle contract. Two input shapes are native:
+
+- For two insert-only inputs, the operator retains the physical Arrow batches by reference and
+  replays the complete right-side bundle before the left side (left first for RIGHT joins). No row
+  can be cancelled in an append-only bundle, so this preserves multiplicity without staging rows in
+  an encoded changelog map.
+- When planner metadata **proves both join keys contain an input upsert key**, replacement events
+  are folded to the first preimage and final postimage per join key before replay.
+
+Flink also reduces a changelog input whose upsert key is not contained in the join key, and cancels
+equal opposing records for a changelog input with no unique key. Those two non-unique changelog
+bundle shapes remain on StreamFusion's immediate path; they are not silently given the unique-key
+contract. SEMI and ANTI joins also remain immediate, as in Flink's regular-join translation.
 
 ## Idle-state TTL
 

@@ -25,6 +25,8 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends StreamPhysicalNati
   private final RexExpression predicate;
   private final boolean leftJoinKeyUnique;
   private final boolean rightJoinKeyUnique;
+  private final boolean leftInsertOnly;
+  private final boolean rightInsertOnly;
   // Per-side TTLs from a STATE_TTL hint on the host join (-1 = no hint for that side); the exec
   // node resolves each against table.exec.state.ttl at translate time, hint winning.
   private final long leftStateTtlHintMillis;
@@ -42,6 +44,8 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends StreamPhysicalNati
       RexExpression predicate,
       boolean leftJoinKeyUnique,
       boolean rightJoinKeyUnique,
+      boolean leftInsertOnly,
+      boolean rightInsertOnly,
       long leftStateTtlHintMillis,
       long rightStateTtlHintMillis) {
     super(cluster, traitSet, left, right, outputRowType);
@@ -51,6 +55,8 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends StreamPhysicalNati
     this.predicate = predicate;
     this.leftJoinKeyUnique = leftJoinKeyUnique;
     this.rightJoinKeyUnique = rightJoinKeyUnique;
+    this.leftInsertOnly = leftInsertOnly;
+    this.rightInsertOnly = rightInsertOnly;
     this.leftStateTtlHintMillis = leftStateTtlHintMillis;
     this.rightStateTtlHintMillis = rightStateTtlHintMillis;
   }
@@ -74,6 +80,8 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends StreamPhysicalNati
         predicate,
         leftJoinKeyUnique,
         rightJoinKeyUnique,
+        leftInsertOnly,
+        rightInsertOnly,
         leftStateTtlHintMillis,
         rightStateTtlHintMillis);
   }
@@ -95,6 +103,8 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends StreamPhysicalNati
         FlinkKeyGroupUtils.timestampPrecisions(getLeft().getRowType(), leftKeys),
         leftJoinKeyUnique,
         rightJoinKeyUnique,
+        leftInsertOnly,
+        rightInsertOnly,
         leftStateTtlHintMillis,
         rightStateTtlHintMillis);
   }

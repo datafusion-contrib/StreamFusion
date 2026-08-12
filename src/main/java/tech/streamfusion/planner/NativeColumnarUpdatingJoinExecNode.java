@@ -40,6 +40,8 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] keyTimestampPrecisions;
   private final boolean leftJoinKeyUnique;
   private final boolean rightJoinKeyUnique;
+  private final boolean leftInsertOnly;
+  private final boolean rightInsertOnly;
   // Per-side TTLs from a STATE_TTL hint on the join (-1 = no hint for that side); each resolves
   // against the job-wide table.exec.state.ttl at translate time, hint winning — Flink's
   // StateMetadata rule, which carries the join's retention per input.
@@ -61,6 +63,8 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
       int[] keyTimestampPrecisions,
       boolean leftJoinKeyUnique,
       boolean rightJoinKeyUnique,
+      boolean leftInsertOnly,
+      boolean rightInsertOnly,
       long leftStateTtlHintMillis,
       long rightStateTtlHintMillis) {
     super(
@@ -79,6 +83,8 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
     this.keyTimestampPrecisions = keyTimestampPrecisions;
     this.leftJoinKeyUnique = leftJoinKeyUnique;
     this.rightJoinKeyUnique = rightJoinKeyUnique;
+    this.leftInsertOnly = leftInsertOnly;
+    this.rightInsertOnly = rightInsertOnly;
     this.leftStateTtlHintMillis = leftStateTtlHintMillis;
     this.rightStateTtlHintMillis = rightStateTtlHintMillis;
   }
@@ -94,7 +100,9 @@ public class NativeColumnarUpdatingJoinExecNode extends ExecNodeBase<ArrowBatch>
     int maxParallelism =
         FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), left.getParallelism());
     boolean miniBatch =
-        leftJoinKeyUnique && rightJoinKeyUnique
+        joinType <= 3
+            && (leftJoinKeyUnique && rightJoinKeyUnique
+                || leftInsertOnly && rightInsertOnly)
             && config.get(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED);
     long miniBatchSize = config.get(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE);
     long leftStateTtlMillis =

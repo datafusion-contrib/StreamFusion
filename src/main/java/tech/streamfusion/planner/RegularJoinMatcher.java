@@ -13,6 +13,8 @@ import org.apache.flink.table.planner.plan.nodes.exec.spec.JoinSpec;
 import org.apache.flink.table.planner.plan.nodes.physical.common.CommonPhysicalJoin;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalJoin;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGroupAggregateBase;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
+import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.flink.table.runtime.operators.join.FlinkJoinType;
 
 /**
@@ -163,6 +165,10 @@ final class RegularJoinMatcher {
     // multiset join state. A join key containing the proven upsert key is replacement state.
     boolean leftJoinKeyUnique = RegularJoinMatcher.joinKeyIsUnique(join, 0);
     boolean rightJoinKeyUnique = RegularJoinMatcher.joinKeyIsUnique(join, 1);
+    boolean leftInsertOnly =
+        ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) join.getLeft());
+    boolean rightInsertOnly =
+        ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) join.getRight());
     // A STATE_TTL hint sets each side's retention independently (0 = left, 1 = right —
     // Flink's FlinkHints.LEFT_INPUT convention), overriding the job-wide retention for that
     // side alone; -1 means no hint, resolved at translate time.
@@ -181,6 +187,8 @@ final class RegularJoinMatcher {
         RegularJoinMatcher.nonEquiPredicate(join),
         leftJoinKeyUnique,
         rightJoinKeyUnique,
+        leftInsertOnly,
+        rightInsertOnly,
         hintTtls.getOrDefault(0, -1L),
         hintTtls.getOrDefault(1, -1L));
   }

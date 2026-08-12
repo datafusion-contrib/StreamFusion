@@ -1,7 +1,8 @@
 # Logical mini-batches, decoupled from physical Arrow batches
 
 **Applies to:** the two-phase local aggregate, changelog normalize, keep-last dedup, single-phase
-GROUP BY, unique-key updating joins, and retracting [Top-N](../operators/top-n.md). Gated by
+GROUP BY, append-only and unique-key updating joins, and retracting
+[Top-N](../operators/top-n.md). Gated by
 `table.exec.mini-batch.enabled` — with mini-batch off, each operator keeps its original per-row
 (or per-physical-batch) changelog behavior byte-for-byte.
 
@@ -79,21 +80,39 @@ to finalization; key gathering itself is negligible. The push path therefore ski
 empty key/result arrays and leaves the remaining frontier in `BinaryRow` encode/probe and
 accumulator fold.
 
-## Unique-key updating joins: fold both inputs to net transitions
+## Updating joins: retain append-only Arrow batches or fold net transitions
+
+For an append-only regular INNER/outer join, there is no valid reduction inside either input
+bundle: duplicate rows must retain their multiplicity. StreamFusion therefore clones only the
+Arrow batch references until the logical boundary, then processes Flink's side order (right before
+left for INNER/LEFT/FULL, left before right for RIGHT). This avoids the otherwise pointless
+Arrow-row encode/decode staging round trip while giving a dimension-like side the complete bundle
+to become resident before the other side probes it.
+
+On Q3 at 2 million events (best of two), the production-shaped Kafka JSON to exactly-once Kafka
+JSON run improves from **1.044 M to 1.200 M events/s** with mini-batching, a **1.15x** gain; stock
+Flink improves from 0.600 M to 1.076 M events/s in the same adjacent run, leaving StreamFusion
+**1.12x faster** with mini-batching enabled. The generator-only isolation improves from 0.608 M to
+0.658 M events/s (**1.08x**). Its remaining engine gap is not the join: a 4,346-sample CPU profile
+attributes only 35 inclusive samples to join ingestion and one to Arrow bundle concatenation, while
+the generator's RowData-to-Arrow perimeter accounts for 1,415 inclusive samples. The Kafka
+front-page path decodes directly to Arrow and does not pay that generator-only transpose.
 
 When Flink metadata proves that each side's join key contains an upsert key, the two-input updating
 join operator shares one exact row-count boundary and retains the durable preimage/final postimage
 per side and key. At flush it replays only those compact transitions through the existing
-INNER/outer/semi/anti state machine, preserving predicate and degree semantics; non-unique joins
-remain immediate.
+INNER/outer join state machine, preserving predicate and degree semantics; non-unique changelog,
+SEMI, and ANTI joins remain immediate.
 
 A 4,096-row replacement storm over 64 joined keys measures **27.69 M** input rows/s for one logical
 bundle versus **8.98 M** immediate and **7.57 M** with 256-row physical flushes — **3.08x** and
 **3.66x** faster. Release profiling initially found owned-key allocation/free on every staged
 replacement; probing the transition frontier by borrowed encoded key — the same discipline as
 [borrowed key probes](borrowed-key-probes.md) — improved the logical path from 15.03 to
-27.69 M rows/s. Staged keys and rows are charged to task off-heap memory, and count, aligned-watermark,
-checkpoint, and finish boundaries drain both sides.
+27.69 M rows/s. Staged keys, rows, and retained append-only Arrow buffers are charged to task
+off-heap memory. Count, either input watermark, checkpoint, and finish boundaries drain both sides.
+Flink's two remaining changelog bundle shapes (an upsert key outside the join key, and no unique
+key) are not yet native and retain immediate execution.
 
 Retracting [Top-N](../operators/top-n.md) applies the same first-preimage/final-postimage algebra
 to its ranked buffer; its own numbers and the append-only ranker's distinct-row emit optimization
