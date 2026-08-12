@@ -108,6 +108,8 @@ nav:
       - Zero-copy local shuffle: optimizations/zero-copy-local-shuffle.md
       - Columnar changelog operators: optimizations/columnar-changelog-operators.md
       - Expression compile-once: optimizations/expression-compile-once.md
+      - Calc projection before filtering: optimizations/calc-projection-before-filter.md
+      - Export Calc schemas once: optimizations/calc-schema-once-c-data.md
       - Shared FFI allocator: optimizations/shared-ffi-allocator.md
       - DataFusion hash joins: optimizations/datafusion-hash-joins.md
       - Row-major transpose: optimizations/row-major-transpose.md
@@ -127,6 +129,7 @@ nav:
       - Allocation discipline: optimizations/allocation-discipline.md
       - Memory accounting off the hot path: optimizations/memory-accounting-off-hot-path.md
       - Checkpoint partitioning in one pass: optimizations/checkpoint-partition-in-one-pass.md
+      - Asynchronous Top-N memory checkpoints: optimizations/async-topn-memory-checkpoints.md
       - Sub-plan reuse digest barriers: optimizations/subplan-reuse-digest-barriers.md
       - UDFs via columnar upcall: optimizations/udf-columnar-upcall.md
       - Host-exact builtins via upcall: optimizations/host-exact-builtins-upcall.md
