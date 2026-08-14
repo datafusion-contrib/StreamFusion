@@ -2,6 +2,8 @@ package tech.streamfusion.planner;
 
 import org.apache.flink.table.api.TableConfig;
 import org.apache.flink.table.api.TableEnvironment;
+import org.apache.flink.table.api.PlannerConfig;
+import org.apache.flink.table.planner.calcite.CalciteConfig;
 import org.apache.flink.table.planner.calcite.CalciteConfig$;
 import org.apache.flink.table.planner.plan.optimize.program.FlinkChainedProgram;
 import org.apache.flink.table.planner.plan.optimize.program.FlinkStreamProgram;
@@ -13,6 +15,8 @@ import org.apache.flink.table.planner.plan.optimize.program.StreamOptimizeContex
  * at the end, and installs the result as the configured planner program before any query runs.
  */
 public final class NativePlanner {
+
+  private static final String PROGRAM_NAME = "streamfusion_native";
 
   private NativePlanner() {}
 
@@ -28,11 +32,30 @@ public final class NativePlanner {
     // native sources — the substitution stage merges them itself under an explicit share node
     // whose declared consumer count makes every branch take a retained view (PhysicalPlanScan's
     // share pass), so a multi-view query reads and decodes its topic once on the native path too.
-    FlinkChainedProgram<StreamOptimizeContext> program = FlinkStreamProgram.buildProgram(config);
+    PlannerConfig plannerConfig = config.getPlannerConfig();
+    CalciteConfig calciteConfig =
+        plannerConfig instanceof CalciteConfig
+            ? (CalciteConfig) plannerConfig
+            : CalciteConfig$.MODULE$.DEFAULT();
+    FlinkChainedProgram<StreamOptimizeContext> program =
+        calciteConfig.getStreamProgram().isDefined()
+            ? calciteConfig.getStreamProgram().get()
+            : FlinkStreamProgram.buildProgram(config);
+    if (program.get(PROGRAM_NAME).isDefined()) {
+      Object installed = program.get(PROGRAM_NAME).get();
+      if (installed instanceof PhysicalPlanScan) {
+        return (PhysicalPlanScan) installed;
+      }
+      throw new IllegalStateException(
+          "Planner program name '" + PROGRAM_NAME + "' is already owned by " + installed.getClass());
+    }
     PhysicalPlanScan scan = new PhysicalPlanScan();
-    program.addLast("streamfusion_native", scan);
+    program.addLast(PROGRAM_NAME, scan);
     config.setPlannerConfig(
-        CalciteConfig$.MODULE$.createBuilder().replaceStreamProgram(program).build());
+        CalciteConfig$.MODULE$
+            .createBuilder(calciteConfig)
+            .replaceStreamProgram(program)
+            .build());
     return scan;
   }
 

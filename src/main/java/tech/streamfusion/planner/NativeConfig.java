@@ -1,20 +1,61 @@
 package tech.streamfusion.planner;
 
 import java.util.Locale;
+import java.util.Optional;
+import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.DeploymentOptions;
+import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
 /**
- * Opt-in configuration for the native planner, read from JVM system properties (like {@code
- * -Dstreamfusion.logFallbackReasons}). Mirrors DataFusion Comet's {@code allowIncompatible} surface:
- * some native expressions are known to diverge from the host (locale-sensitive case folding,
- * {@code BigDecimal} rounding, last-ULP transcendental math). They fall back by default; a user who
- * accepts the divergence — typically because their data avoids the edge — can enable them per
- * function or all at once.
+ * Opt-in configuration for the native planner. Planning reads the current job's Flink
+ * configuration, with same-named JVM system properties as a compatibility fallback; task-runtime
+ * calls use the JVM properties until their values are serialized into operator specs. Mirrors
+ * DataFusion Comet's {@code allowIncompatible} surface: some native expressions are known to
+ * diverge from the host (locale-sensitive case folding, {@code BigDecimal} rounding, last-ULP
+ * transcendental math). They fall back by default; a user who accepts the divergence — typically
+ * because their data avoids the edge — can enable them per function or all at once.
  */
 public final class NativeConfig {
 
+  private static final ThreadLocal<ReadableConfig> PLANNER_CONFIG = new ThreadLocal<>();
+
   private NativeConfig() {}
+
+  /** Scopes planner option reads to one job without leaking configuration across concurrent jobs. */
+  static Scope usePlannerConfig(ReadableConfig config) {
+    ReadableConfig previous = PLANNER_CONFIG.get();
+    PLANNER_CONFIG.set(config);
+    return () -> {
+      if (previous == null) {
+        PLANNER_CONFIG.remove();
+      } else {
+        PLANNER_CONFIG.set(previous);
+      }
+    };
+  }
+
+  @FunctionalInterface
+  interface Scope extends AutoCloseable {
+    @Override
+    void close();
+  }
+
+  private static String value(String key, String defaultValue) {
+    ReadableConfig config = PLANNER_CONFIG.get();
+    if (config != null) {
+      Optional<String> configured =
+          config.getOptional(ConfigOptions.key(key).stringType().noDefaultValue());
+      if (configured.isPresent()) {
+        return configured.get();
+      }
+    }
+    return System.getProperty(key, defaultValue);
+  }
+
+  private static boolean booleanValue(String key, boolean defaultValue) {
+    return Boolean.parseBoolean(value(key, Boolean.toString(defaultValue)));
+  }
 
   /**
    * Whether an expression whose native result may differ from the host is allowed to run natively.
@@ -22,11 +63,12 @@ public final class NativeConfig {
    * the blanket {@code streamfusion.expression.allowIncompatible}.
    */
   public static boolean allowsIncompatible(String functionName) {
-    return Boolean.getBoolean("streamfusion.expression.allowIncompatible")
-        || Boolean.getBoolean(
+    return booleanValue("streamfusion.expression.allowIncompatible", false)
+        || booleanValue(
             "streamfusion.expression."
                 + functionName.toUpperCase(Locale.ROOT)
-                + ".allowIncompatible");
+                + ".allowIncompatible",
+            false);
   }
 
   /**
@@ -34,13 +76,12 @@ public final class NativeConfig {
    * When false the planner substitutes nothing and the query runs entirely on the host.
    */
   public static boolean nativeEnabled() {
-    return Boolean.parseBoolean(System.getProperty("streamfusion.native.enabled", "true"));
+    return booleanValue("streamfusion.native.enabled", true);
   }
 
   /** Diagnostic escape hatch for comparing the legacy synchronous memory-checkpoint path. */
   public static boolean asyncMemorySnapshotsEnabled() {
-    return Boolean.parseBoolean(
-        System.getProperty("streamfusion.state.asyncMemorySnapshots.enabled", "true"));
+    return booleanValue("streamfusion.state.asyncMemorySnapshots.enabled", true);
   }
 
   /**
@@ -50,8 +91,7 @@ public final class NativeConfig {
    * spark.comet.exec.<op>.enabled}. All operators default on.
    */
   public static boolean operatorEnabled(String operator) {
-    return Boolean.parseBoolean(
-        System.getProperty("streamfusion.operator." + operator + ".enabled", "true"));
+    return booleanValue("streamfusion.operator." + operator + ".enabled", true);
   }
 
   /**
@@ -64,7 +104,7 @@ public final class NativeConfig {
    * persist in-flight records whose handles would be dead on restore.
    */
   public static boolean zeroCopyExchange(StreamExecutionEnvironment env) {
-    String mode = System.getProperty("streamfusion.exchange.zeroCopyLocal", "auto");
+    String mode = value("streamfusion.exchange.zeroCopyLocal", "auto");
     if ("false".equals(mode)) {
       return false;
     }
@@ -88,7 +128,7 @@ public final class NativeConfig {
    * emits its cascade per record, and watermarks and checkpoint barriers always flush first.
    */
   public static int exchangeCoalesceRows() {
-    return Integer.getInteger("streamfusion.exchange.coalesceRows", 4096);
+    return Integer.parseInt(value("streamfusion.exchange.coalesceRows", "4096"));
   }
 
   /**
@@ -99,7 +139,7 @@ public final class NativeConfig {
    * bounds its bundles with {@code table.exec.mini-batch.allow-latency}.
    */
   public static long exchangeCoalesceLatencyMs() {
-    return Long.getLong("streamfusion.exchange.coalesceLatencyMs", 50L);
+    return Long.parseLong(value("streamfusion.exchange.coalesceLatencyMs", "50"));
   }
 
   /**
@@ -109,7 +149,7 @@ public final class NativeConfig {
    * watermark, and barrier flushes alone can otherwise retain a trickle stream indefinitely.
    */
   public static long transposeFlushLatencyMs() {
-    return Long.getLong("streamfusion.transpose.flushLatencyMs", 50L);
+    return Long.parseLong(value("streamfusion.transpose.flushLatencyMs", "50"));
   }
 
   /**
@@ -119,7 +159,12 @@ public final class NativeConfig {
    * each branch its own source, reading and decoding the topic once per branch.
    */
   public static boolean shareSources() {
-    return Boolean.parseBoolean(System.getProperty("streamfusion.plan.shareSources", "true"));
+    return booleanValue("streamfusion.plan.shareSources", true);
+  }
+
+  /** Whether planner fallback reasons should be logged individually. */
+  static boolean logFallbackReasons() {
+    return booleanValue("streamfusion.logFallbackReasons", false);
   }
 
   /**
@@ -127,7 +172,8 @@ public final class NativeConfig {
    * ({@code streamfusion.state.rocksdb.write-buffer-mb}, default 64).
    */
   public static long rocksDBWriteBufferBytes() {
-    return Math.max(1L, Long.getLong("streamfusion.state.rocksdb.write-buffer-mb", 64L)) << 20;
+    return Math.max(1L, Long.parseLong(value("streamfusion.state.rocksdb.write-buffer-mb", "64")))
+        << 20;
   }
 
 }

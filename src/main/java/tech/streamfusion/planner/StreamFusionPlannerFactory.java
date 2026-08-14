@@ -18,8 +18,6 @@ import org.apache.flink.table.planner.delegation.DefaultPlannerFactory;
  */
 public final class StreamFusionPlannerFactory implements PlannerFactory {
 
-  private static final String NATIVE_ENABLED = "streamfusion.native.enabled";
-
   private final DefaultPlannerFactory delegate = new DefaultPlannerFactory();
 
   @Override
@@ -39,15 +37,14 @@ public final class StreamFusionPlannerFactory implements PlannerFactory {
 
   @Override
   public Planner create(Context context) {
-    if (isNativeEnabled()
-        && context.getTableConfig().get(ExecutionOptions.RUNTIME_MODE)
-            == RuntimeExecutionMode.STREAMING) {
-      NativePlanner.install(context.getTableConfig());
+    try (NativeConfig.Scope ignored =
+        NativeConfig.usePlannerConfig(context.getTableConfig().getConfiguration())) {
+      if (NativeConfig.nativeEnabled()
+          && context.getTableConfig().get(ExecutionOptions.RUNTIME_MODE)
+              == RuntimeExecutionMode.STREAMING) {
+        NativePlanner.install(context.getTableConfig());
+      }
     }
     return delegate.create(context);
-  }
-
-  private static boolean isNativeEnabled() {
-    return Boolean.parseBoolean(System.getProperty(NATIVE_ENABLED, "true"));
   }
 }
