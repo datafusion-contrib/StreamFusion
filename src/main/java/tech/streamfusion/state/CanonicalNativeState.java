@@ -65,7 +65,7 @@ public final class CanonicalNativeState {
       String operatorId,
       long timerDeadline)
       throws Exception {
-    KeyContext previous = keyContext(backend);
+    SavedKeyContext previous = saveKeyContext(backend);
     boolean retained = false;
     try {
       for (int keyGroup : backend.getKeyGroupRange()) {
@@ -94,7 +94,7 @@ public final class CanonicalNativeState {
       String operatorId,
       long timerDeadline)
       throws Exception {
-    KeyContext previous = keyContext(backend);
+    SavedKeyContext previous = saveKeyContext(backend);
     try {
       for (int keyGroup : backend.getKeyGroupRange()) {
         ValueState<byte[]> headerState = stateForKeyGroup(backend, keyGroup, HEADER_DESCRIPTOR);
@@ -133,7 +133,7 @@ public final class CanonicalNativeState {
   public static Restore readAndClear(
       CheckpointableKeyedStateBackend<?> backend, String operatorId)
       throws Exception {
-    KeyContext previous = keyContext(backend);
+    SavedKeyContext previous = saveKeyContext(backend);
     List<byte[]> partitions = new ArrayList<>();
     long timerDeadline = Long.MIN_VALUE;
     boolean sawAsync = false;
@@ -230,14 +230,14 @@ public final class CanonicalNativeState {
   }
 
   @SuppressWarnings("null")
-  private static KeyContext keyContext(CheckpointableKeyedStateBackend<?> backend) {
+  private static SavedKeyContext saveKeyContext(CheckpointableKeyedStateBackend<?> backend) {
     if (backend instanceof AbstractKeyedStateBackend) {
       AbstractKeyedStateBackend<?> keyed = (AbstractKeyedStateBackend<?>) backend;
-      return new KeyContext(keyed.getCurrentKey(), keyed.getCurrentKeyGroupIndex());
+      return new SavedKeyContext(keyed.getCurrentKey(), keyed.getCurrentKeyGroupIndex());
     }
     if (backend instanceof RocksDBNativeKeyedStateBackend) {
       RocksDBNativeKeyedStateBackend<?> keyed = (RocksDBNativeKeyedStateBackend<?>) backend;
-      return new KeyContext(keyed.getCurrentKey(), keyed.getCurrentKeyGroupIndex());
+      return new SavedKeyContext(keyed.getCurrentKey(), keyed.getCurrentKeyGroupIndex());
     }
     throw new IllegalStateException(
         "unsupported keyed backend for canonical native state: " + backend.getClass().getName());
@@ -245,7 +245,7 @@ public final class CanonicalNativeState {
 
   @SuppressWarnings({"unchecked", "rawtypes"})
   private static void restoreKey(
-      CheckpointableKeyedStateBackend<?> backend, KeyContext previous) {
+      CheckpointableKeyedStateBackend<?> backend, SavedKeyContext previous) {
     if (previous.key == null) {
       clearCurrentKey(backend);
       return;
@@ -254,10 +254,9 @@ public final class CanonicalNativeState {
         .setCurrentKeyAndKeyGroup(previous.key, previous.keyGroup);
   }
 
-  @SuppressWarnings("null")
   private static void clearCurrentKey(CheckpointableKeyedStateBackend<?> backend) {
     if (backend instanceof AbstractKeyedStateBackend) {
-      ((AbstractKeyedStateBackend<?>) backend).getKeyContext().setCurrentKey(null);
+      clearKeyContext((AbstractKeyedStateBackend<?>) backend);
       return;
     }
     if (backend instanceof RocksDBNativeKeyedStateBackend) {
@@ -268,7 +267,22 @@ public final class CanonicalNativeState {
         "unsupported keyed backend for canonical native state: " + backend.getClass().getName());
   }
 
-  private record KeyContext(Object key, int keyGroup) {}
+  /**
+   * Returns the keyed context to its unset shape: no key, and the group index parked on the first
+   * owned key group so no synthetic group from the canonical iteration survives. Flink validates
+   * the index against the owned range, which makes its pristine default unrepresentable here.
+   */
+  @SuppressWarnings("null")
+  static void clearKeyContext(AbstractKeyedStateBackend<?> keyed) {
+    keyed.getKeyContext().setCurrentKey(null);
+    KeyGroupRange range = keyed.getKeyGroupRange();
+    if (range.getNumberOfKeyGroups() > 0) {
+      keyed.getKeyContext().setCurrentKeyGroupIndex(range.getStartKeyGroup());
+    }
+  }
+
+  private record SavedKeyContext(Object key, int keyGroup) {}
+
   private static byte[] header(String operatorId, long timerDeadline, int chunks, byte[] payload) {
     byte[] operator = operatorId.getBytes(StandardCharsets.UTF_8);
     ByteBuffer header = ByteBuffer.allocate(4 + 4 + 4 + operator.length + 8 + 4 + 4 + 4);

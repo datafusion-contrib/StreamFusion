@@ -237,10 +237,9 @@ public final class RocksDBNativeKeyedStateBackend<K>
             + delegate.getClass().getName());
   }
 
-  @SuppressWarnings("null")
   void clearCurrentKey() {
     if (delegate instanceof AbstractKeyedStateBackend) {
-      ((AbstractKeyedStateBackend<?>) delegate).getKeyContext().setCurrentKey(null);
+      CanonicalNativeState.clearKeyContext((AbstractKeyedStateBackend<?>) delegate);
       return;
     }
     throw new IllegalStateException(
