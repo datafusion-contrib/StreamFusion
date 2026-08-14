@@ -2,10 +2,15 @@ package tech.streamfusion.planner;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.ServiceLoader;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.TableResult;
@@ -14,6 +19,33 @@ import org.apache.flink.util.CloseableIterator;
 import org.junit.jupiter.api.Test;
 
 class NativePlannerTest {
+
+  @Test
+  void plannerOptionsUseJobConfiguration() {
+    Configuration config = new Configuration();
+    config.setString("streamfusion.native.enabled", "false");
+    try (NativeConfig.Scope ignored = NativeConfig.usePlannerConfig(config)) {
+      assertFalse(NativeConfig.nativeEnabled());
+    }
+    assertTrue(NativeConfig.nativeEnabled(), "the job-scoped value must not leak after planning");
+  }
+
+  @Test
+  void developmentRuntimeRegistersAllPlannerExtensions() {
+    Set<String> extensions =
+        ServiceLoader.load(NativePlannerExtension.class).stream()
+            .map(provider -> provider.type().getSimpleName())
+            .collect(Collectors.toSet());
+    assertEquals(
+        Set.of("KafkaPlannerExtension", "FlussPlannerExtension", "ParquetPlannerExtension"),
+        extensions);
+  }
+
+  @Test
+  void installingTwiceReusesTheSamePlannerStage() {
+    TableEnvironment tEnv = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
+    assertSame(NativePlanner.install(tEnv), NativePlanner.install(tEnv));
+  }
 
   @Test
   void hookScansOptimizedPhysicalPlan() throws Exception {

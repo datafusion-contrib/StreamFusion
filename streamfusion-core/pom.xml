@@ -7,24 +7,61 @@
     <parent>
         <groupId>tech.streamfusion</groupId>
         <artifactId>StreamFusion</artifactId>
-        <version>1.0-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>streamfusion-core</artifactId>
 
-    <dependencies>
-        <!-- The development runtime remains the source artifact for all extension bytecode. This
-             deployable variant filters every connector-specific class out before shading the core. -->
-        <dependency>
-            <groupId>tech.streamfusion</groupId>
-            <artifactId>streamfusion-runtime</artifactId>
-            <version>${project.version}</version>
-            <optional>true</optional>
-        </dependency>
-    </dependencies>
-
     <build>
+        <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <excludes>
+                        <exclude>tech/streamfusion/kafka/**</exclude>
+                        <exclude>tech/streamfusion/fluss/**</exclude>
+                        <exclude>tech/streamfusion/parquet/**</exclude>
+                        <exclude>tech/streamfusion/format/avro/**</exclude>
+                        <exclude>tech/streamfusion/format/avroconfluent/**</exclude>
+                        <exclude>tech/streamfusion/format/csv/**</exclude>
+                        <exclude>tech/streamfusion/format/json/**</exclude>
+                        <exclude>tech/streamfusion/format/protobuf/**</exclude>
+                        <exclude>tech/streamfusion/format/raw/**</exclude>
+                        <exclude>tech/streamfusion/operator/NativeFileArrowBulkFormat.java</exclude>
+                        <exclude>tech/streamfusion/operator/NativeParquetBulkWriterFactory.java</exclude>
+                        <exclude>tech/streamfusion/operator/NativeParquetMetricSource.java</exclude>
+                        <exclude>tech/streamfusion/operator/NativeParquetRollingPolicy.java</exclude>
+                        <exclude>tech/streamfusion/operator/ParquetArrowBulkFormat.java</exclude>
+                        <exclude>tech/streamfusion/operator/ParquetPartitionSplitOperator.java</exclude>
+                        <exclude>tech/streamfusion/operator/ParquetSourceTimestamps.java</exclude>
+                        <exclude>tech/streamfusion/planner/FlussPlannerExtension.java</exclude>
+                        <exclude>tech/streamfusion/planner/FlussTables.java</exclude>
+                        <exclude>tech/streamfusion/planner/KafkaPlannerExtension.java</exclude>
+                        <exclude>tech/streamfusion/planner/KafkaSinkMatcher.java</exclude>
+                        <exclude>tech/streamfusion/planner/KafkaSinkTranslator.java</exclude>
+                        <exclude>tech/streamfusion/planner/KafkaTables.java</exclude>
+                        <exclude>tech/streamfusion/planner/KeyedDecodeSpec.java</exclude>
+                        <exclude>tech/streamfusion/planner/NativeFlussSourceExecNode.java</exclude>
+                        <exclude>tech/streamfusion/planner/NativeKafkaDecodeExecNode.java</exclude>
+                        <exclude>tech/streamfusion/planner/NativeKafkaSinkExecNode.java</exclude>
+                        <exclude>tech/streamfusion/planner/NativeParquetSinkExecNode.java</exclude>
+                        <exclude>tech/streamfusion/planner/NativeParquetSourceExecNode.java</exclude>
+                        <exclude>tech/streamfusion/planner/ParquetPlannerExtension.java</exclude>
+                        <exclude>tech/streamfusion/planner/ParquetSinkMatcher.java</exclude>
+                        <exclude>tech/streamfusion/planner/ParquetSinkTranslator.java</exclude>
+                        <exclude>tech/streamfusion/planner/ParquetSourceMatcher.java</exclude>
+                        <exclude>tech/streamfusion/planner/ProtobufDescriptors.java</exclude>
+                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeFlussSource.java</exclude>
+                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode.java</exclude>
+                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaSink.java</exclude>
+                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeParquetSink.java</exclude>
+                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeParquetSource.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -45,53 +82,23 @@
                 <artifactId>maven-shade-plugin</artifactId>
                 <version>3.5.3</version>
                 <executions>
+                    <!-- Core replaces its main artifact with one shaded payload for the loader.
+                         Disable the parent's optional `runtime` attachment: shading this already
+                         shaded JAR a second time duplicates every Arrow/Jackson class. -->
                     <execution>
                         <id>attach-runtime-payload</id>
-                        <configuration><skip>true</skip></configuration>
+                        <phase>none</phase>
                     </execution>
                     <execution>
+                        <id>shade-core-payload</id>
                         <phase>process-classes</phase>
                         <goals>
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>runtime</shadedClassifierName>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
-                            <filters>
-                                <filter>
-                                    <artifact>tech.streamfusion:streamfusion-runtime</artifact>
-                                    <excludes>
-                                        <exclude>tech/streamfusion/kafka/**</exclude>
-                                        <exclude>tech/streamfusion/fluss/**</exclude>
-                                        <exclude>tech/streamfusion/parquet/**</exclude>
-                                        <exclude>tech/streamfusion/format/avro/**</exclude>
-                                        <exclude>tech/streamfusion/format/avroconfluent/**</exclude>
-                                        <exclude>tech/streamfusion/format/csv/**</exclude>
-                                        <exclude>tech/streamfusion/format/json/**</exclude>
-                                        <exclude>tech/streamfusion/format/protobuf/**</exclude>
-                                        <exclude>tech/streamfusion/format/raw/**</exclude>
-                                        <exclude>tech/streamfusion/operator/NativeFileArrowBulkFormat*.class</exclude>
-                                        <exclude>tech/streamfusion/operator/NativeParquetBulkWriterFactory*.class</exclude>
-                                        <exclude>tech/streamfusion/operator/NativeParquetRollingPolicy*.class</exclude>
-                                        <exclude>tech/streamfusion/operator/ParquetArrowBulkFormat*.class</exclude>
-                                        <exclude>tech/streamfusion/operator/ParquetPartitionSplitOperator*.class</exclude>
-                                        <exclude>tech/streamfusion/operator/ParquetSourceTimestamps*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/KafkaTables*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/ProtobufDescriptors*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/NativeKafkaDecodeExecNode*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/FlussTables*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/NativeFlussSourceExecNode*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeFlussSource*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/NativeParquetSinkExecNode*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/NativeParquetSourceExecNode*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/ParquetSinkMatcher*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/ParquetSinkTranslator*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/ParquetSourceMatcher*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeParquetSink*.class</exclude>
-                                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeParquetSource*.class</exclude>
-                                    </excludes>
-                                </filter>
-                            </filters>
                         </configuration>
                     </execution>
                 </executions>

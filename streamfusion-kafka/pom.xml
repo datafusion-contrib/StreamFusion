@@ -7,21 +7,24 @@
     <parent>
         <groupId>tech.streamfusion</groupId>
         <artifactId>StreamFusion</artifactId>
-        <version>1.0-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>streamfusion-kafka</artifactId>
 
+    <properties><native.test.resource.skip>true</native.test.resource.skip></properties>
+
     <dependencies>
         <dependency>
             <groupId>tech.streamfusion</groupId>
-            <artifactId>streamfusion-runtime</artifactId>
+            <artifactId>streamfusion-core</artifactId>
             <version>${project.version}</version>
-            <optional>true</optional>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 
     <build>
+        <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <resources combine.self="override">
             <resource>
                 <directory>${project.basedir}/src/main/resources</directory>
@@ -38,45 +41,22 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.3</version>
-                <executions>
-                    <execution>
-                        <id>attach-runtime-payload</id>
-                        <configuration><skip>true</skip></configuration>
-                    </execution>
-                    <execution>
-                        <phase>package</phase>
-                        <goals><goal>shade</goal></goals>
-                        <configuration>
-                            <createDependencyReducedPom>false</createDependencyReducedPom>
-                            <artifactSet>
-                                <includes>
-                                    <include>tech.streamfusion:streamfusion-runtime</include>
-                                </includes>
-                            </artifactSet>
-                            <filters>
-                                <filter>
-                                    <artifact>tech.streamfusion:streamfusion-runtime</artifact>
-                                    <includes>
-                                        <include>tech/streamfusion/kafka/**</include>
-                                        <include>tech/streamfusion/planner/KafkaTables*.class</include>
-                                        <include>tech/streamfusion/planner/KeyedDecodeSpec*.class</include>
-                                        <include>tech/streamfusion/planner/KafkaSinkMatcher*.class</include>
-                                        <include>tech/streamfusion/planner/KafkaSinkTranslator*.class</include>
-                                        <include>tech/streamfusion/planner/NativeKafkaDecodeExecNode*.class</include>
-                                        <include>tech/streamfusion/planner/NativeKafkaSinkExecNode*.class</include>
-                                        <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode*.class</include>
-                                        <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaSink*.class</include>
-                                    </includes>
-                                    <excludes>
-                                        <exclude>tech/streamfusion/kafka/ConfluentSchemaRegistry*.class</exclude>
-                                    </excludes>
-                                </filter>
-                            </filters>
-                        </configuration>
-                    </execution>
-                </executions>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration><includes>
+                    <include>tech/streamfusion/kafka/**/*.java</include>
+                    <include>tech/streamfusion/planner/KafkaPlannerExtension.java</include>
+                    <include>tech/streamfusion/planner/KafkaTables.java</include>
+                    <include>tech/streamfusion/planner/KeyedDecodeSpec.java</include>
+                    <include>tech/streamfusion/planner/KafkaSinkMatcher.java</include>
+                    <include>tech/streamfusion/planner/KafkaSinkTranslator.java</include>
+                    <include>tech/streamfusion/planner/NativeKafkaDecodeExecNode.java</include>
+                    <include>tech/streamfusion/planner/NativeKafkaSinkExecNode.java</include>
+                    <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode.java</include>
+                    <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaSink.java</include>
+                </includes><excludes>
+                    <exclude>tech/streamfusion/kafka/ConfluentSchemaRegistry.java</exclude>
+                </excludes></configuration>
             </plugin>
         </plugins>
     </build>

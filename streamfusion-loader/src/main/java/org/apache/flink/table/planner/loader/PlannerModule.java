@@ -29,7 +29,9 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.LinkedHashSet;
 import java.util.stream.Stream;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.configuration.Configuration;
@@ -56,7 +58,7 @@ import org.apache.flink.util.IOUtils;
 public class PlannerModule {
 
   static final String FLINK_TABLE_PLANNER_FAT_JAR = "flink-table-planner.jar";
-  private static final String SUPPORTED_FLINK_SERIES = "2.2.";
+  private static final Set<String> SUPPORTED_FLINK_VERSIONS = Set.of("2.2.0", "2.2.1");
   private static final String STREAMFUSION_PLANNER_JAR = "streamfusion-planner.jar";
   private static final String[] STREAMFUSION_EXTENSION_PREFIXES = {
     "streamfusion-kafka-",
@@ -164,10 +166,12 @@ public class PlannerModule {
   private static void verifyFlinkVersion() {
     Package flinkApiPackage = PlannerFactory.class.getPackage();
     String version = flinkApiPackage == null ? null : flinkApiPackage.getImplementationVersion();
-    if (version != null && !version.startsWith(SUPPORTED_FLINK_SERIES)) {
+    if (version == null || !SUPPORTED_FLINK_VERSIONS.contains(version)) {
       throw new TableException(
           String.format(
-              "StreamFusion's planner loader supports Flink 2.2.x, but found Flink %s.", version));
+              "StreamFusion's planner loader supports exactly Flink %s, but found %s."
+                  + " Refusing to cross an unverified planner ABI boundary.",
+              SUPPORTED_FLINK_VERSIONS, version == null ? "an unversioned Flink API" : "Flink " + version));
     }
   }
 
@@ -188,24 +192,36 @@ public class PlannerModule {
 
   /** Returns explicitly installed connector extensions, never arbitrary user or connector JARs. */
   private static List<URL> extensionJars() throws IOException {
+    LinkedHashSet<Path> installed = new LinkedHashSet<>();
     String flinkHome = System.getenv("FLINK_HOME");
-    if (flinkHome == null || flinkHome.isBlank()) {
-      return List.of();
+    if (flinkHome != null && !flinkHome.isBlank()) {
+      collectExtensions(Paths.get(flinkHome, "lib"), installed);
     }
-
-    Path libDirectory = Paths.get(flinkHome, "lib");
-    if (!Files.isDirectory(libDirectory)) {
-      return List.of();
+    // Embedded/local clients commonly start without FLINK_HOME. Respect extension artifacts that
+    // are actual classpath entries as well; directory trees and arbitrary connector JARs remain
+    // excluded.
+    for (String entry : System.getProperty("java.class.path", "").split(java.io.File.pathSeparator)) {
+      if (!entry.isBlank()) {
+        Path path = Paths.get(entry).toAbsolutePath().normalize();
+        if (Files.isRegularFile(path) && isExtensionJar(path.getFileName().toString())) {
+          installed.add(path);
+        }
+      }
     }
+    return installed.stream().sorted().map(PlannerModule::toUrl).toList();
+  }
 
-    try (Stream<Path> jars = Files.list(libDirectory)) {
-      return jars
+  private static void collectExtensions(Path directory, Set<Path> installed) throws IOException {
+    if (!Files.isDirectory(directory)) {
+      return;
+    }
+    try (Stream<Path> jars = Files.list(directory)) {
+      jars
           .filter(Files::isRegularFile)
           .filter(path -> isExtensionJar(path.getFileName().toString()))
           .filter(path -> path.getFileName().toString().endsWith(".jar"))
-          .sorted()
-          .map(path -> toUrl(path))
-          .toList();
+          .map(path -> path.toAbsolutePath().normalize())
+          .forEach(installed::add);
     }
   }
 

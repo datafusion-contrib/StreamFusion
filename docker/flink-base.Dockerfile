@@ -1,7 +1,9 @@
 ARG FLINK_IMAGE=flink:2.2.1-scala_2.12-java17
+ARG STREAMFUSION_VERSION=0.1.0-alpha.1
 FROM ${FLINK_IMAGE}
 
 ARG FLINK_IMAGE
+ARG STREAMFUSION_VERSION
 
 LABEL org.opencontainers.image.title="StreamFusion Flink base image" \
       org.opencontainers.image.description="Flink 2.2 with StreamFusion's native planner and runtime" \
@@ -19,7 +21,5 @@ ENV GLIBC_TUNABLES=glibc.rtld.optional_static_tls=131072 \
 
 # These are Flink runtime extensions, not user-job dependencies. Keep the loader first so its
 # PlannerModule shadow is resolved before Flink's stock planner loader.
-COPY streamfusion-loader/target/streamfusion-loader-1.0-SNAPSHOT.jar \
+COPY streamfusion-loader/target/streamfusion-loader-${STREAMFUSION_VERSION}.jar \
      /opt/flink/lib/00-streamfusion-loader.jar
-COPY streamfusion-core/target/streamfusion-core-1.0-SNAPSHOT.jar \
-     /opt/flink/lib/streamfusion-core.jar

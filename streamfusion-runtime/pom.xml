@@ -7,7 +7,7 @@
     <parent>
         <groupId>tech.streamfusion</groupId>
         <artifactId>StreamFusion</artifactId>
-        <version>1.0-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>streamfusion-runtime</artifactId>
@@ -16,6 +16,25 @@
     <build>
         <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <testSourceDirectory>${project.basedir}/../src/test/java</testSourceDirectory>
+        <resources combine.self="override">
+            <!-- The all-in-one development/test assembly exposes every optional planner provider.
+                 Deployable artifacts carry only their own provider file. -->
+            <resource>
+                <directory>${project.basedir}/src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${project.basedir}/../src/main/resources-filtered</directory>
+                <filtering>true</filtering>
+            </resource>
+            <resource>
+                <directory>${native.resource.directory}</directory>
+                <targetPath>tech/streamfusion/native</targetPath>
+                <includes>
+                    <include>libstreamfusion.so</include>
+                    <include>libstreamfusion.dylib</include>
+                </includes>
+            </resource>
+        </resources>
         <testResources>
             <testResource>
                 <directory>${project.basedir}/../src/test/resources</directory>

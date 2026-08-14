@@ -2,8 +2,8 @@
 
 set -eu
 
-if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "$1" != "--host-only" ]; }; then
-  echo "usage: $0 [--host-only]" >&2
+if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "$1" != "--host-only" ] && [ "$1" != "--linux-only" ]; }; then
+  echo "usage: $0 [--host-only | --linux-only]" >&2
   exit 64
 fi
 
@@ -12,9 +12,12 @@ repo_root=$(cd "$script_dir/.." && pwd)
 native_dir=$repo_root/native
 stage_dir=$native_dir/target/universal
 host_only=false
+linux_only=false
 
-if [ "$#" -eq 1 ]; then
+if [ "$#" -eq 1 ] && [ "$1" = "--host-only" ]; then
   host_only=true
+elif [ "$#" -eq 1 ]; then
+  linux_only=true
 fi
 
 host_platform() {
@@ -48,6 +51,45 @@ stage_host_library() {
   stage_native_library \
     "$extension" "$platform" "$architecture" \
     "$native_dir/target/release-staging/release/$library"
+}
+
+stage_darwin_library() {
+  extension=$1
+  features=$2
+  target=$3
+  architecture=$4
+  library=libstreamfusion.dylib
+
+  (cd "$native_dir" && cargo build --release --no-default-features --features "$features" \
+    --target "$target" --target-dir "$native_dir/target/release-staging")
+  stage_native_library \
+    "$extension" darwin "$architecture" \
+    "$native_dir/target/release-staging/$target/release/$library"
+}
+
+stage_darwin_libraries() {
+  [ "$(host_platform)" = darwin ] || {
+    echo "A universal release must be assembled on macOS so both Darwin and Linux payloads are deterministic; use --linux-only for a Linux deployment build." >&2
+    exit 69
+  }
+  command -v rustup >/dev/null 2>&1 || {
+    echo "rustup is required to install the two macOS release targets." >&2
+    exit 69
+  }
+  rustup target add aarch64-apple-darwin x86_64-apple-darwin
+  for target_and_architecture in aarch64-apple-darwin:aarch64 x86_64-apple-darwin:x86_64; do
+    target=${target_and_architecture%:*}
+    architecture=${target_and_architecture#*:}
+    stage_darwin_library core mimalloc,rocksdb-state "$target" "$architecture"
+    stage_darwin_library kafka mimalloc,kafka,csv,avro,protobuf,raw "$target" "$architecture"
+    stage_darwin_library json mimalloc,json "$target" "$architecture"
+    stage_darwin_library csv mimalloc,csv "$target" "$architecture"
+    stage_darwin_library raw mimalloc,raw "$target" "$architecture"
+    stage_darwin_library avro mimalloc,avro "$target" "$architecture"
+    stage_darwin_library protobuf mimalloc,protobuf "$target" "$architecture"
+    stage_darwin_library fluss mimalloc,fluss "$target" "$architecture"
+    stage_darwin_library parquet mimalloc,parquet "$target" "$architecture"
+  done
 }
 
 stage_linux_libraries() {
@@ -110,26 +152,28 @@ stage_native_library() {
 
 rm -rf "$stage_dir"
 mkdir -p "$stage_dir"
-stage_host_library core mimalloc,rocksdb-state
-# The sink encode dispatch lives in the connector library (JSON is compiled with the kafka
-# feature itself); the csv feature adds the CSV encode arm there. The decode-side CSV format
-# still ships as its own extension library below.
-stage_host_library kafka mimalloc,kafka,csv,avro,protobuf,raw
-stage_host_library json mimalloc,json
-stage_host_library csv mimalloc,csv
-stage_host_library raw mimalloc,raw
-stage_host_library avro mimalloc,avro
-stage_host_library protobuf mimalloc,protobuf
-stage_host_library fluss mimalloc,fluss
-stage_host_library parquet mimalloc,parquet
-
-if [ "$host_only" = false ]; then
+if [ "$host_only" = true ]; then
+  stage_host_library core mimalloc,rocksdb-state
+  stage_host_library kafka mimalloc,kafka,csv,avro,protobuf,raw
+  stage_host_library json mimalloc,json
+  stage_host_library csv mimalloc,csv
+  stage_host_library raw mimalloc,raw
+  stage_host_library avro mimalloc,avro
+  stage_host_library protobuf mimalloc,protobuf
+  stage_host_library fluss mimalloc,fluss
+  stage_host_library parquet mimalloc,parquet
+else
   command -v docker >/dev/null 2>&1 || {
     echo "Docker is required to build the Linux release libraries." >&2
     exit 69
   }
   stage_linux_libraries linux/amd64 x86_64
   stage_linux_libraries linux/arm64 aarch64
+  if [ "$linux_only" = false ]; then
+    stage_darwin_libraries
+  fi
 fi
 
-(cd "$repo_root" && mvn package -Pdist,universal -DskipTests)
+# Resource copying is additive, so a non-clean package can retain a native library from an older
+# platform build. A release always starts from empty Java output directories.
+(cd "$repo_root" && mvn clean package -Pdist,universal -DskipTests)

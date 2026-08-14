@@ -6,10 +6,15 @@ import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.function.Predicate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Discovers installed native format artifacts through the same provider pattern Flink uses. */
 public final class NativeFormatProviders {
+
+  private static final Logger LOG = LoggerFactory.getLogger(NativeFormatProviders.class);
 
   private NativeFormatProviders() {}
 
@@ -54,19 +59,32 @@ public final class NativeFormatProviders {
       String identifier,
       Predicate<NativeFormatProvider> accepts,
       Set<String> seen) {
-    try {
-      for (NativeFormatProvider provider : ServiceLoader.load(NativeFormatProvider.class, loader)) {
+    Iterator<NativeFormatProvider> providers =
+        ServiceLoader.load(NativeFormatProvider.class, loader).iterator();
+    while (true) {
+      final NativeFormatProvider provider;
+      try {
+        if (!providers.hasNext()) {
+          return Optional.empty();
+        }
+        provider = providers.next();
+      } catch (ServiceConfigurationError | LinkageError brokenProvider) {
+        LOG.warn("Ignoring an unusable optional StreamFusion format provider", brokenProvider);
+        continue;
+      }
+      try {
         if (!seen.add(provider.getClass().getName())) {
           continue;
         }
         if (identifier.equals(provider.formatIdentifier()) && accepts.test(provider)) {
           return Optional.of(provider);
         }
+      } catch (RuntimeException | LinkageError brokenProvider) {
+        LOG.warn(
+            "Ignoring unusable optional StreamFusion format provider {}",
+            provider.getClass().getName(),
+            brokenProvider);
       }
-    } catch (ServiceConfigurationError | LinkageError ignored) {
-      // Optional deployment artifacts can be incomplete or carry an unavailable transitive
-      // dependency. Treat that exactly like an absent native format and keep the table on Flink.
     }
-    return Optional.empty();
   }
 }

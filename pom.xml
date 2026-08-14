@@ -6,7 +6,7 @@
 
     <groupId>tech.streamfusion</groupId>
     <artifactId>StreamFusion</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>${revision}</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -26,11 +26,6 @@
 
     <licenses>
         <license>
-            <name>MIT License</name>
-            <url>https://opensource.org/licenses/MIT</url>
-            <distribution>repo</distribution>
-        </license>
-        <license>
             <name>Apache License, Version 2.0</name>
             <url>https://www.apache.org/licenses/LICENSE-2.0</url>
             <distribution>repo</distribution>
@@ -38,6 +33,7 @@
     </licenses>
 
     <properties>
+        <revision>0.1.0-alpha.1</revision>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -63,6 +59,7 @@
              bin/build-release.sh. -->
         <native.cargo.args>build --features kafka,parquet,json,csv,raw,avro,protobuf,rocksdb-state</native.cargo.args>
         <native.build.skip>false</native.build.skip>
+        <native.test.resource.skip>false</native.test.resource.skip>
         <native.resource.directory>${project.basedir}/../native/target/${native.profile}</native.resource.directory>
         <!-- Extra JVM args appended to the Surefire fork's argLine; empty by default. Used to attach a
              sampler to a profile-loop test, e.g. -Dsf.extraJvmArgs=-agentpath:.../libasyncProfiler.dylib=... -->
@@ -376,7 +373,6 @@
                 <includes>
                     <include>libstreamfusion.so</include>
                     <include>libstreamfusion.dylib</include>
-                    <include>streamfusion.dll</include>
                 </includes>
             </resource>
         </resources>
@@ -449,6 +445,7 @@
                             <goal>copy-resources</goal>
                         </goals>
                         <configuration>
+                            <skip>${native.test.resource.skip}</skip>
                             <outputDirectory>${project.build.outputDirectory}</outputDirectory>
                             <resources>
                                 <resource>
@@ -457,7 +454,6 @@
                                     <includes>
                                         <include>libstreamfusion.so</include>
                                         <include>libstreamfusion.dylib</include>
-                                        <include>streamfusion.dll</include>
                                     </includes>
                                 </resource>
                             </resources>

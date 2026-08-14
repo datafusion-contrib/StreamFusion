@@ -14,14 +14,11 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalE
 final class PlanContext {
 
   private final PhysicalPlanScan scan;
-  private final boolean kafkaExtension;
-  private final Set<String> repeatedKafkaDecodes;
+  private final Set<String> repeatedSources;
 
-  PlanContext(
-      PhysicalPlanScan scan, boolean kafkaExtension, Set<String> repeatedKafkaDecodes) {
+  PlanContext(PhysicalPlanScan scan, Set<String> repeatedSources) {
     this.scan = scan;
-    this.kafkaExtension = kafkaExtension;
-    this.repeatedKafkaDecodes = repeatedKafkaDecodes;
+    this.repeatedSources = repeatedSources;
   }
 
   /** Counts one host node replaced by a native one. */
@@ -34,17 +31,8 @@ final class PlanContext {
     scan.recordFallback(reason);
   }
 
-  /**
-   * Whether the optional Kafka extension is linked. Only the Calc's projection pushdown needs this:
-   * it inspects its input for native Kafka decode, and naming that class at all is
-   * unsafe without the connector on the classpath.
-   */
-  boolean kafkaExtension() {
-    return kafkaExtension;
-  }
-
-  boolean repeatedKafkaDecode(String sharingKey) {
-    return repeatedKafkaDecodes.contains(sharingKey);
+  boolean repeatedSource(String sharingKey) {
+    return repeatedSources.contains(sharingKey);
   }
 
   /**

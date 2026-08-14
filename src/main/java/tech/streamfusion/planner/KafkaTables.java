@@ -416,7 +416,7 @@ final class KafkaTables {
         scan.getRowType(),
         options,
         ScanWatermarkSpec.of(scan),
-        ctx.repeatedKafkaDecode(decodeSharingKey(scan)));
+        ctx.repeatedSource(KafkaPlannerExtension.class.getName() + '|' + decodeSharingKey(scan)));
   }
 
   static String decodeSharingKey(StreamPhysicalTableSourceScan scan) {

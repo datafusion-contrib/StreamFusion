@@ -1,6 +1,2 @@
-# The deployment version stamped into every native library this crate produces, surfaced through
-# the JNI version probes so the Java loader can refuse a library from a different StreamFusion
-# release. Must match the Maven project version in ../pom.xml; the Java suite asserts the loaded
-# library and the JARs agree, so bump the two together.
-[env]
-STREAMFUSION_VERSION = "1.0-SNAPSHOT"
+# Native libraries report Cargo's package version. Keep native/Cargo.toml aligned with the Maven
+# revision; the Java suite rejects any release whose JAR and native payload versions disagree.

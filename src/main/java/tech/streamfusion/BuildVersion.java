@@ -18,7 +18,7 @@ final class BuildVersion {
 
   private BuildVersion() {}
 
-  /** The version of the StreamFusion JARs, or null when no build stamp is on the classpath. */
+  /** The version of the StreamFusion JARs, or null for an unstamped development classpath. */
   static String jarVersion() {
     try (InputStream stream = BuildVersion.class.getResourceAsStream(RESOURCE)) {
       if (stream == null) {
@@ -40,10 +40,19 @@ final class BuildVersion {
 
   /**
    * Describes the disagreement between a loaded native library's version and the JAR's, or returns
-   * null when they agree (or when the JARs carry no stamp to compare against).
+   * null when they agree. An unstamped production JAR is rejected because it cannot prove that
+   * its JNI ABI matches the native library it is about to load.
    */
   static String mismatch(String libraryName, String loadedVersion, String jarVersion) {
-    if (jarVersion == null || jarVersion.equals(loadedVersion)) {
+    if (jarVersion == null) {
+      return developmentMode()
+          ? null
+          : "The StreamFusion JAR carrying native library '"
+              + libraryName
+              + "' has no readable build-version stamp. Use an official Maven-built artifact,"
+              + " or set -Dstreamfusion.native.development=true only for a source checkout.";
+    }
+    if (jarVersion.equals(loadedVersion)) {
       return null;
     }
     String loadedDescription =

@@ -22,7 +22,7 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
  * through collection, so Flink's normal per-split watermark machinery remains authoritative.
  */
 public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
-    implements StreamPhysicalRel, ColumnarOutput, ShareableScan {
+    implements StreamPhysicalRel, ColumnarOutput, ShareableScan, ProjectableNativeSource {
 
   private final RelDataType outputRowType;
   // The full record schema as written, kept when the output is pruned: JSON ignores it, but Avro needs
@@ -109,20 +109,13 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
                 + watermark.idleTimeoutMillis);
   }
 
-  boolean allowsProjectionPushdown() {
-    return !preserveFullSchemaForSharing;
-  }
-
-  Map<String, String> options() {
-    return options;
-  }
-
   /**
    * A copy that decodes only {@code projected}'s columns/fields (the planner's projection pushdown),
    * while remembering this decode's current type as the full writer schema (Avro resolution reads the
    * full record but builds only the projected fields; JSON just decodes the narrowed schema).
    */
-  StreamPhysicalNativeKafkaDecode withProjection(RelDataType projected) {
+  @Override
+  public StreamPhysicalNativeKafkaDecode withProjection(RelDataType projected) {
     ScanWatermarkSpec projectedWatermark = watermark;
     if (watermark != null) {
       int rowtimeIndex = projected.getFieldNames().indexOf(watermark.rowtimeFieldName);
@@ -143,8 +136,11 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
   }
 
   /** Whether decode projection preserves the physical column used by per-split watermarks. */
-  boolean supportsProjection(RelDataType projected) {
-    return watermark == null || projected.getFieldNames().contains(watermark.rowtimeFieldName);
+  @Override
+  public boolean supportsProjection(RelDataType projected) {
+    return !preserveFullSchemaForSharing
+        && KafkaTables.decodeHonorsProjection(options)
+        && (watermark == null || projected.getFieldNames().contains(watermark.rowtimeFieldName));
   }
 
   @Override

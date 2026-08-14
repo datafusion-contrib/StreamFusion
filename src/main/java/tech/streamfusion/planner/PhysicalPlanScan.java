@@ -6,6 +6,9 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Iterator;
+import java.util.ServiceConfigurationError;
+import java.util.ServiceLoader;
 import java.util.Set;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Calc;
@@ -28,9 +31,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalM
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalOverAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRank;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
-import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSortLimit;
-import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTemporalJoin;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTemporalSort;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalUnion;
@@ -69,36 +70,21 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   private final List<String> fallbackReasons = new ArrayList<>();
   private int substitutions;
 
-  // When set (-Dstreamfusion.logFallbackReasons=true), each fallback reason is logged at plan time,
-  // mirroring Comet's COMET_LOG_FALLBACK_REASONS. Reasons are always collected for fallbackReasons().
-  private static final boolean LOG_FALLBACK_REASONS =
-      Boolean.getBoolean("streamfusion.logFallbackReasons");
-
-  // The Flink distribution intentionally does not ship every connector or format. Connector-specific
-  // rewrites live in optional StreamFusion extension JARs and must never be linked by the core image.
-  private static final String KAFKA_EXTENSION =
-      "tech.streamfusion.planner.KafkaTables";
-  private static final String KAFKA_OFFSETS_INITIALIZER =
-      "org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer";
-  private static final String FLUSS_EXTENSION =
-      "tech.streamfusion.planner.FlussTables";
-  private static final String FLUSS_TABLE_SOURCE = "org.apache.fluss.flink.source.FlinkTableSource";
-  private static final String PARQUET_EXTENSION =
-      "tech.streamfusion.planner.ParquetSourceMatcher";
-
-  private static final boolean KAFKA_AVAILABLE =
-      extensionAvailable(KAFKA_EXTENSION, KAFKA_OFFSETS_INITIALIZER);
-  private static final boolean FLUSS_AVAILABLE =
-      extensionAvailable(FLUSS_EXTENSION, FLUSS_TABLE_SOURCE);
-  private static final boolean PARQUET_AVAILABLE = extensionAvailable(PARQUET_EXTENSION);
-
+  private static final List<NativePlannerExtension> EXTENSIONS = loadExtensions();
   private static final List<Substitution<?>> REGISTRY = buildRegistry();
 
   @Override
   public RelNode optimize(RelNode root, StreamOptimizeContext context) {
-    int operatorsBefore = operatorTypes.size();
-    int substitutionsBefore = substitutions;
-    int fallbacksBefore = fallbackReasons.size();
+    try (NativeConfig.Scope ignored =
+        NativeConfig.usePlannerConfig(ShortcutUtils.unwrapTableConfig(root).getConfiguration())) {
+      return optimizeConfigured(root);
+    }
+  }
+
+  private RelNode optimizeConfigured(RelNode root) {
+    operatorTypes.clear();
+    fallbackReasons.clear();
+    substitutions = 0;
     record(root);
     // Master switch: with native acceleration off, substitute nothing — the query runs on the host.
     if (!NativeConfig.nativeEnabled()) {
@@ -110,9 +96,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // reasons and explainSummary() carries them into explain output.
     LOG.info(
         "StreamFusion substituted {} of {} plan operators natively ({} fallback reason(s) recorded)",
-        Math.max(0, substitutions - substitutionsBefore),
-        operatorTypes.size() - operatorsBefore,
-        fallbackReasons.size() - fallbacksBefore);
+        substitutions,
+        operatorTypes.size(),
+        fallbackReasons.size());
     return optimized;
   }
 
@@ -122,10 +108,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         NativeConfig.shareSources()
             && ShortcutUtils.unwrapTableConfig(root)
                 .get(OptimizerConfigOptions.TABLE_OPTIMIZER_REUSE_SUB_PLAN_ENABLED);
-    Set<String> repeatedKafkaDecodes =
-        KAFKA_AVAILABLE && sourceSharingEnabled ? repeatedKafkaDecodeKeys(root) : Set.of();
+    Set<String> repeatedSources = sourceSharingEnabled ? repeatedSourceKeys(root) : Set.of();
     RelNode substituted =
-        rewrite(root, new PlanContext(this, KAFKA_AVAILABLE, repeatedKafkaDecodes));
+        rewrite(root, new PlanContext(this, repeatedSources));
     // Whole-query all-or-nothing: every native operator but a source/sink is Arrow → Arrow.
     // If any operator other than a source (a leaf) or the sink (the plan root) is still row-wise, the
     // query cannot run as one columnar island, so accelerate nothing — it runs as stock Flink. The only
@@ -141,9 +126,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     return shareIdenticalSources(insertTransitions(substituted));
   }
 
-  private static Set<String> repeatedKafkaDecodeKeys(RelNode root) {
+  private static Set<String> repeatedSourceKeys(RelNode root) {
     Map<String, Integer> counts = new LinkedHashMap<>();
-    collectKafkaDecodeKeys(root, counts);
+    collectSourceKeys(root, counts);
     Set<String> repeated = new HashSet<>();
     counts.forEach(
         (key, count) -> {
@@ -154,15 +139,16 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     return repeated;
   }
 
-  private static void collectKafkaDecodeKeys(RelNode node, Map<String, Integer> counts) {
-    if (node instanceof StreamPhysicalTableSourceScan
-        && KafkaTables.isNativeKafkaDecode(node)) {
-      String key = KafkaTables.decodeSharingKey((StreamPhysicalTableSourceScan) node);
-      counts.merge(key, 1, Integer::sum);
-      return;
+  private static void collectSourceKeys(RelNode node, Map<String, Integer> counts) {
+    for (NativePlannerExtension extension : EXTENSIONS) {
+      String key = extension.sourceSharingKey(node);
+      if (key != null) {
+        counts.merge(extension.getClass().getName() + '|' + key, 1, Integer::sum);
+        return;
+      }
     }
     for (RelNode input : node.getInputs()) {
-      collectKafkaDecodeKeys(input, counts);
+      collectSourceKeys(input, counts);
     }
   }
 
@@ -180,15 +166,6 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
    */
   private static List<Substitution<?>> buildRegistry() {
     List<Substitution<?>> entries = new ArrayList<>();
-
-    // A sink is terminal, so the changelog guard (which protects operator substitution within a
-    // stream) does not apply; it is eligible as long as its input is insert-only.
-    if (KAFKA_AVAILABLE) {
-      entries.add(kafkaSinkSubstitution());
-    }
-    if (PARQUET_AVAILABLE) {
-      entries.add(parquetSinkSubstitution());
-    }
 
     // A non-windowed GROUP BY both emits and consumes a changelog, so it is exempt from the
     // insert-only guard — its input may be insert-only or itself a changelog.
@@ -273,17 +250,6 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     entries.add(
         Substitution.of(StreamPhysicalLimit.class, LimitMatcher::substitute).changelogSafe());
 
-    // A CDC changelog source (Debezium/OGG) emits a changelog itself: the native decode operator turns
-    // each message into physical rows carrying their RowKind on $row_kind$ (an update fans out to
-    // UPDATE_BEFORE + UPDATE_AFTER), reproducing Flink's CDC source exactly. Like the GROUP BY/join/Top-N
-    // above, it is therefore exempt from the insert-only guard. (Append decode formats — JSON via
-    // the native source, CSV/raw via the insert-only decode branch below — are insert-only and handled
-    // after the guard.)
-    if (KAFKA_AVAILABLE) {
-      entries.add(cdcDecodeSubstitution());
-      entries.add(cdcWatermarkReport());
-    }
-
     // A Calc transforms each row independently — a per-row projection plus an optional deterministic
     // filter — and the native operator carries the `$row_kind$` tag through unchanged, so it is
     // changelog-safe and (like the GROUP BY/join/Top-N/CDC above) exempt from the insert-only guard:
@@ -345,17 +311,6 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             .changelogSafe());
 
     // ---- everything below the insert-only guard: native operators here emit insert-only rows ----
-
-    if (PARQUET_AVAILABLE) {
-      entries.add(parquetSourceSubstitution());
-    }
-    if (FLUSS_AVAILABLE) {
-      entries.add(flussSourceSubstitution());
-    }
-    if (KAFKA_AVAILABLE) {
-      entries.add(kafkaDecodeSubstitution());
-      entries.add(appendWatermarkReport());
-    }
 
     // Substitute a watermark assigner only when its (already-rewritten) input is columnar — i.e. it
     // sits on a native source/calc. Otherwise it is a pass-through that would be wrapped in two
@@ -520,6 +475,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             .matching(GlobalWindowAggregateMatcher::matches)
             .reason(GlobalWindowAggregateMatcher::unsupportedReason));
 
+    EXTENSIONS.forEach(extension -> extension.addSubstitutions(entries));
     return List.copyOf(entries);
   }
 
@@ -572,76 +528,6 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       }
     }
     return null;
-  }
-
-  // -------------------------------------------------------------------- optional-connector entries
-
-  private static Substitution<StreamPhysicalSink> kafkaSinkSubstitution() {
-    return Substitution.of(StreamPhysicalSink.class, "kafkaSink", KafkaSinkMatcher::substitute)
-        .matching(KafkaSinkMatcher::appliesTo)
-        .changelogSafe();
-  }
-
-  private static Substitution<StreamPhysicalSink> parquetSinkSubstitution() {
-    return Substitution.of(StreamPhysicalSink.class, ParquetSinkMatcher::substitute)
-        .matching(ParquetSinkMatcher::appliesTo)
-        .changelogSafe();
-  }
-
-  private static Substitution<StreamPhysicalTableSourceScan> parquetSourceSubstitution() {
-    return Substitution.of(
-            StreamPhysicalTableSourceScan.class, "parquetSource", ParquetSourceMatcher::substitute)
-        .matching(ParquetSourceMatcher::matches);
-  }
-
-  /**
-   * A Fluss scan the native source cannot serve yields rather than stopping: it records its reason
-   * and lets the remaining source entries look at the same scan.
-   */
-  private static Substitution<StreamPhysicalTableSourceScan> flussSourceSubstitution() {
-    return Substitution.of(StreamPhysicalTableSourceScan.class, FlussTables::substitute)
-        .matching(
-            scan -> {
-              Map<String, String> options = FilesystemTables.options(scan);
-              boolean connectorOption = options != null && "fluss".equals(options.get("connector"));
-              return (connectorOption || FlussTables.isFlussTableSource(scan))
-                  && NativeConfig.operatorEnabled("flussSource");
-            })
-        .yieldingOnDecline();
-  }
-
-  /**
-   * Native-decode path (the default for every value format): Flink owns Kafka partitions and offsets,
-   * while a split-aware reader decodes each partition's bytes to Arrow without RowData. JSON/CSV/raw/
-   * Avro and protobuf route here; CDC formats route to {@link #cdcDecodeSubstitution()}.
-   */
-  private static Substitution<StreamPhysicalTableSourceScan> kafkaDecodeSubstitution() {
-    return Substitution.of(StreamPhysicalTableSourceScan.class, KafkaTables::substituteDecode)
-        .matching(
-            scan ->
-                KafkaTables.isNativeKafkaDecode(scan)
-                    && NativeConfig.operatorEnabled("kafkaDecode"));
-  }
-
-  private static Substitution<StreamPhysicalTableSourceScan> cdcDecodeSubstitution() {
-    return Substitution.of(StreamPhysicalTableSourceScan.class, KafkaTables::substituteDecode)
-        .matching(
-            scan ->
-                KafkaTables.isCdcDecode(scan) && NativeConfig.operatorEnabled("kafkaDecode"))
-        .changelogSafe();
-  }
-
-  /** Reports a CDC watermark shape outside the native regeneration contract. */
-  private static Substitution<RelNode> cdcWatermarkReport() {
-    return Substitution.of(RelNode.class, KafkaTables::reportCdcWatermark)
-        .changelogSafe()
-        .yieldingOnDecline();
-  }
-
-  /** Reports an append-only watermark shape outside the native regeneration contract. */
-  private static Substitution<RelNode> appendWatermarkReport() {
-    return Substitution.of(RelNode.class, KafkaTables::reportAppendWatermark)
-        .yieldingOnDecline();
   }
 
   // ---------------------------------------------------------------------------- island composition
@@ -797,34 +683,31 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
 
   void recordFallback(String reason) {
     fallbackReasons.add(reason);
-    if (LOG_FALLBACK_REASONS) {
+    if (NativeConfig.logFallbackReasons()) {
       LOG.info("falls back to host — {}", reason);
     } else {
       LOG.debug("falls back to host — {}", reason);
     }
   }
 
-  // ------------------------------------------------------------------------- extension availability
+  // ------------------------------------------------------------------------- extension discovery
 
-  private static boolean extensionAvailable(String extensionClass, String... prerequisites) {
-    if (!classAvailable(extensionClass)) {
-      return false;
-    }
-    for (String prerequisite : prerequisites) {
-      if (!classAvailable(prerequisite)) {
-        return false;
+  private static List<NativePlannerExtension> loadExtensions() {
+    List<NativePlannerExtension> extensions = new ArrayList<>();
+    Iterator<NativePlannerExtension> providers =
+        ServiceLoader.load(NativePlannerExtension.class, PhysicalPlanScan.class.getClassLoader())
+            .iterator();
+    while (true) {
+      try {
+        if (!providers.hasNext()) {
+          break;
+        }
+        extensions.add(providers.next());
+      } catch (ServiceConfigurationError | LinkageError failure) {
+        LOG.warn("Ignoring a broken StreamFusion planner extension", failure);
       }
     }
-    return true;
-  }
-
-  private static boolean classAvailable(String className) {
-    try {
-      Class.forName(className, false, PhysicalPlanScan.class.getClassLoader());
-      return true;
-    } catch (ClassNotFoundException | LinkageError e) {
-      return false;
-    }
+    return List.copyOf(extensions);
   }
 
   private void record(RelNode node) {
@@ -836,7 +719,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
 
   /** Operator types seen in the optimized physical plans, in traversal order. */
   public List<String> operatorTypes() {
-    return operatorTypes;
+    return List.copyOf(operatorTypes);
   }
 
   /** Number of plan nodes replaced with native operators across optimization passes. */
@@ -850,13 +733,13 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
    * way Comet surfaces fallback reasons in extended explain (ticket 29).
    */
   public List<String> fallbackReasons() {
-    return fallbackReasons;
+    return List.copyOf(fallbackReasons);
   }
 
   /**
    * A native-acceleration section for appending to Flink's {@code explainSql} output: how many
    * operators ran natively and, for those that did not, why — Comet's flat "fallback reasons" explain
-   * format. Reflects the plans optimized since this scan was installed.
+   * format. Reflects the most recently optimized plan.
    */
   public String explainSummary() {
     StringBuilder out = new StringBuilder("== Native acceleration (StreamFusion) ==\n");

@@ -10,42 +10,42 @@
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-core</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <version>0.1.0-alpha.1</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-kafka</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <version>0.1.0-alpha.1</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-json</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <version>0.1.0-alpha.1</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-csv</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <version>0.1.0-alpha.1</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-raw</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <version>0.1.0-alpha.1</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-avro</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <version>0.1.0-alpha.1</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-avro-confluent-registry</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <version>0.1.0-alpha.1</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-protobuf</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <version>0.1.0-alpha.1</version>
         </dependency>
         <!-- Flink's source tests use the unshaded planner ABI. The production planner JAR normally
              bundles these classes, so connector and format modules do not declare them directly. -->

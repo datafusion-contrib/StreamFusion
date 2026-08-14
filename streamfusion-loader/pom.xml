@@ -6,14 +6,16 @@
 
     <groupId>tech.streamfusion</groupId>
     <artifactId>streamfusion-loader</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>${revision}</version>
 
     <properties>
+        <revision>0.1.0-alpha.1</revision>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- 2.2.0 is the latest 2.2 planner-loader artifact available from Maven Central. The
-             production payload is built against 2.2.1; this test confirms the supported 2.2.x seam. -->
+             production payload is built against 2.2.1, so the two sides exercise both explicitly
+             admitted planner ABI patch versions. -->
         <flink.loader.test.version>2.2.0</flink.loader.test.version>
         <flink.runtime.version>2.2.1</flink.runtime.version>
         <fluss.version>0.9.1-incubating</fluss.version>
@@ -122,11 +124,12 @@
                                     <groupId>tech.streamfusion</groupId>
                                     <artifactId>streamfusion-core</artifactId>
                                     <version>${project.version}</version>
+                                    <classifier>runtime</classifier>
                                     <destFileName>streamfusion-planner.jar</destFileName>
                                 </artifactItem>
                             </artifactItems>
                             <outputDirectory>${project.build.outputDirectory}</outputDirectory>
-                            <!-- The runtime is an attached SNAPSHOT built earlier in this reactor.
+                            <!-- The runtime classifier is attached earlier in this reactor.
                                  Always refresh the embedded payload on an incremental package. -->
                             <overWriteSnapshots>true</overWriteSnapshots>
                         </configuration>

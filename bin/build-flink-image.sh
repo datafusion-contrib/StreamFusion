@@ -67,12 +67,12 @@ command -v docker >/dev/null 2>&1 || {
 docker buildx version >/dev/null
 
 if [ "$skip_release_build" = false ]; then
-  "$repo_root/bin/build-release.sh"
+  "$repo_root/bin/build-release.sh" --linux-only
 fi
 
-loader_jar=$repo_root/streamfusion-loader/target/streamfusion-loader-1.0-SNAPSHOT.jar
-runtime_jar=$repo_root/streamfusion-core/target/streamfusion-core-1.0-SNAPSHOT.jar
-[ -f "$loader_jar" ] && [ -f "$runtime_jar" ] || {
+artifact_version=$(cd "$repo_root" && mvn -q -DforceStdout help:evaluate -Dexpression=project.version)
+loader_jar=$repo_root/streamfusion-loader/target/streamfusion-loader-$artifact_version.jar
+[ -f "$loader_jar" ] || {
   echo "StreamFusion release JARs are missing; run bin/build-release.sh first." >&2
   exit 66
 }
@@ -102,6 +102,7 @@ fi
 docker buildx build \
   --platform "$platforms" \
   --build-arg "FLINK_IMAGE=$flink_image" \
+  --build-arg "STREAMFUSION_VERSION=$artifact_version" \
   --tag "$image_tag" \
   --file "$repo_root/docker/flink-base.Dockerfile" \
   "$output" \
