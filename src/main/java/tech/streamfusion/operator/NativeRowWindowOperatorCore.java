@@ -1,9 +1,9 @@
 package tech.streamfusion.operator;
 
 import tech.streamfusion.arrow.ArrowConversion;
-import java.time.ZoneOffset;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -13,7 +13,6 @@ import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.TimeStampNanoTZVector;
 import org.apache.arrow.vector.TimeStampNanoVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
-import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
@@ -119,22 +118,26 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
         for (int a = 0; a < aggregates; a++) {
           copyColumn(flush.getVector("result" + a), out.getVector(keyCount + a), n);
         }
-        // Window properties follow the keys and aggregates: always window_start then window_end, and
-        // (legacy group-window only) a rowtime attribute (= window_end - 1 ms, the window's last
-        // instant) and a proctime attribute. Extra properties are present in the output schema but are
-        // projected away by the Calc above; their exact value is immaterial, so the proctime marker is
-        // filled with the window end. The TVF window aggregates carry only the two bound properties.
+        // Window properties follow the keys and aggregates. TVF aggregates carry start/end. Legacy
+        // group windows carry none, or start/end plus rowtime/proctime attributes in Flink's order.
         int properties = outputType.getFieldCount() - keyCount - aggregates;
         int base = keyCount + aggregates;
+        if (properties == 1) {
+          throw new IllegalStateException("window output cannot contain exactly one property");
+        }
         BigIntVector starts = (BigIntVector) flush.getVector("window_start");
         BigIntVector ends = (BigIntVector) flush.getVector("window_end");
-        fillLocalTimestamps(starts, out.getVector(base), isLtz(base), n);
-        fillLocalTimestamps(ends, out.getVector(base + 1), isLtz(base + 1), n);
-        if (properties >= 3) {
+        if (properties >= 2) {
+          fillLocalTimestamps(starts, out.getVector(base), isLtz(base), n);
+          fillLocalTimestamps(ends, out.getVector(base + 1), isLtz(base + 1), n);
+        }
+        if (properties >= 3 && isEventTimeWindow()) {
           fillLocalTimestamps(ends, out.getVector(base + 2), isLtz(base + 2), n, -1L);
+        } else if (properties >= 3) {
+          fillTimestampNulls(out.getVector(base + 2), n);
         }
         if (properties >= 4) {
-          fillLocalTimestamps(ends, out.getVector(base + 3), isLtz(base + 3), n, 0L);
+          fillTimestampNulls(out.getVector(base + 3), n);
         }
         out.setRowCount(n);
         ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
@@ -244,6 +247,12 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
       ((TimeStampNanoVector) target).setNull(i);
     } else {
       ((TimeStampNanoTZVector) target).setNull(i);
+    }
+  }
+
+  private static void fillTimestampNulls(FieldVector target, int n) {
+    for (int i = 0; i < n; i++) {
+      setTimestampNull(target, i);
     }
   }
 }

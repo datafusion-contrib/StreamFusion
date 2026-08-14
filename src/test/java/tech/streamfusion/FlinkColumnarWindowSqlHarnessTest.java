@@ -1,15 +1,25 @@
 package tech.streamfusion;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.planner.PhysicalPlanScan;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.ZoneId;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.DataTypes;
+import org.apache.flink.table.api.Expressions;
 import org.apache.flink.table.api.Schema;
+import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.TableEnvironment;
+import org.apache.flink.table.api.Tumble;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
+import org.apache.flink.util.CloseableIterator;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -192,10 +202,96 @@ class FlinkColumnarWindowSqlHarnessTest {
             + "GROUP BY window_start, window_end, k");
   }
 
+  @Test
+  void legacyProctimeTumbleWindowRoutesToNative() throws Exception {
+    NativeParity.assertRoutes(
+        FlinkColumnarWindowSqlHarnessTest::proctimeEnvironment,
+        "SELECT k, SUM(v) AS s, "
+            + "TUMBLE_START(pt, INTERVAL '5' SECOND) AS starttime, "
+            + "TUMBLE_END(pt, INTERVAL '5' SECOND) AS endtime "
+            + "FROM src GROUP BY k, TUMBLE(pt, INTERVAL '5' SECOND)");
+  }
+
+  @Test
+  void legacyProctimeHopWindowRoutesToNative() throws Exception {
+    NativeParity.assertRoutes(
+        FlinkColumnarWindowSqlHarnessTest::proctimeEnvironment,
+        "SELECT k, SUM(v) AS s, "
+            + "HOP_START(pt, INTERVAL '2' SECOND, INTERVAL '4' SECOND) AS starttime, "
+            + "HOP_END(pt, INTERVAL '2' SECOND, INTERVAL '4' SECOND) AS endtime "
+            + "FROM src GROUP BY k, HOP(pt, INTERVAL '2' SECOND, INTERVAL '4' SECOND)");
+  }
+
+  @Test
+  void nonDividingLegacyProctimeHopFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkColumnarWindowSqlHarnessTest::proctimeEnvironment,
+        "SELECT k, SUM(v) AS s FROM src "
+            + "GROUP BY k, HOP(pt, INTERVAL '3' SECOND, INTERVAL '10' SECOND)",
+        "processing-time HOP requires slide to divide size");
+  }
+
+  @Test
+  void legacyProctimeSessionFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkColumnarWindowSqlHarnessTest::proctimeEnvironment,
+        "SELECT k, SUM(v) AS s FROM src "
+            + "GROUP BY k, SESSION(pt, INTERVAL '1' HOUR)",
+        "processing-time SESSION is not native");
+  }
+
+  @Test
+  void legacyProctimePropertyMaterializesNonNull() throws Exception {
+    TableEnvironment tEnv = proctimeEnvironment();
+    PhysicalPlanScan scan = NativePlanner.install(tEnv);
+    String sql =
+        "SELECT k, SUM(v) AS s, "
+            + "TUMBLE_PROCTIME(pt, INTERVAL '5' SECOND) AS window_proctime "
+            + "FROM src GROUP BY k, TUMBLE(pt, INTERVAL '5' SECOND)";
+    try (CloseableIterator<Row> rows = tEnv.executeSql(sql).collect()) {
+      assertTrue(rows.hasNext());
+      while (rows.hasNext()) {
+        assertNotNull(rows.next().getField(2));
+      }
+    }
+    assertTrue(scan.substitutions() > 0, "legacy proctime window did not route");
+  }
+
+  @Test
+  void legacyProctimeWindowWithMisalignedSessionZoneFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkColumnarWindowSqlHarnessTest::proctimeKolkataEnvironment,
+        "SELECT k, SUM(v) AS s FROM src GROUP BY k, TUMBLE(pt, INTERVAL '1' HOUR)",
+        "session-zone offset to align with the window slide");
+  }
+
+  @Test
+  void legacyRowCountTumbleFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkColumnarWindowSqlHarnessTest::rowCountWindowEnvironment,
+        "SELECT * FROM row_count_window",
+        "window size and slide must be day-time intervals");
+  }
+
+  private static TableEnvironment rowCountWindowEnvironment() {
+    TableEnvironment tEnv = proctimeEnvironment();
+    Table result =
+        tEnv.from("src")
+            .window(
+                Tumble.over(Expressions.rowInterval(2L))
+                    .on(Expressions.$("pt"))
+                    .as("w"))
+            .groupBy(Expressions.$("w"), Expressions.$("k"))
+            .select(Expressions.$("k"), Expressions.$("v").sum().as("s"));
+    tEnv.createTemporaryView("row_count_window", result);
+    return tEnv;
+  }
+
   private static TableEnvironment proctimeEnvironment() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     DataStream<Row> source =
         env.fromData(
             Types.ROW_NAMED(new String[] {"k", "v"}, Types.LONG, Types.LONG),
@@ -210,6 +306,12 @@ class FlinkColumnarWindowSqlHarnessTest {
             .column("v", DataTypes.BIGINT())
             .columnByExpression("pt", "PROCTIME()")
             .build());
+    return tEnv;
+  }
+
+  private static TableEnvironment proctimeKolkataEnvironment() {
+    TableEnvironment tEnv = proctimeEnvironment();
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("Asia/Kolkata"));
     return tEnv;
   }
 

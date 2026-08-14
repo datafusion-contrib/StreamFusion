@@ -237,6 +237,17 @@ public final class RocksDBNativeKeyedStateBackend<K>
             + delegate.getClass().getName());
   }
 
+  @SuppressWarnings("null")
+  void clearCurrentKey() {
+    if (delegate instanceof AbstractKeyedStateBackend) {
+      ((AbstractKeyedStateBackend<?>) delegate).getKeyContext().setCurrentKey(null);
+      return;
+    }
+    throw new IllegalStateException(
+        "wrapped keyed backend does not expose its current key context: "
+            + delegate.getClass().getName());
+  }
+
   @Override
   public void setCurrentKeyAndKeyGroup(K newKey, int newKeyGroupIndex) {
     delegate.setCurrentKeyAndKeyGroup(newKey, newKeyGroupIndex);

@@ -1,6 +1,8 @@
 package tech.streamfusion.operator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import tech.streamfusion.planner.FlinkKeyGroupUtils;
 import java.util.ArrayList;
@@ -48,6 +50,30 @@ class NativeColumnarWindowAggregateOperatorTest {
           new LogicalType[] {new BigIntType(), new TimestampType(3), new TimestampType(3)},
           new String[] {"total", "window_start", "window_end"});
 
+  private static final RowType LEGACY_EVENT_OUTPUT =
+      RowType.of(
+          new LogicalType[] {
+            new BigIntType(),
+            new TimestampType(3),
+            new TimestampType(3),
+            new LocalZonedTimestampType(3),
+            new LocalZonedTimestampType(3)
+          },
+          new String[] {"total", "window_start", "window_end", "rowtime", "proctime"});
+
+  private static final RowType LEGACY_PROCTIME_OUTPUT =
+      RowType.of(
+          new LogicalType[] {
+            new BigIntType(),
+            new TimestampType(3),
+            new TimestampType(3),
+            new LocalZonedTimestampType(3)
+          },
+          new String[] {"total", "window_start", "window_end", "proctime"});
+
+  private static final RowType LEGACY_NO_PROPERTIES_OUTPUT =
+      RowType.of(new LogicalType[] {new BigIntType()}, new String[] {"total"});
+
   // [key BIGINT, value BIGINT, rt TIMESTAMP_LTZ(3)] / [key, total, window_start, window_end].
   private static final RowType KEYED_SCHEMA =
       RowType.of(
@@ -82,6 +108,87 @@ class NativeColumnarWindowAggregateOperatorTest {
       harness.processElement(new StreamRecord<>(batch(allocator, event(4, 1500), event(5, 2500))));
       harness.processWatermark(new Watermark(3000));
       assertEquals(List.of(row(7, 1000, 2000), row(5, 2000, 3000)), collect(harness));
+    }
+  }
+
+  @Test
+  void emitsLegacyEventTimeProperties() throws Exception {
+    NativeColumnarWindowAggregateOperator operator =
+        operator(LEGACY_EVENT_OUTPUT, false);
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            rawHarness(operator)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(new StreamRecord<>(batch(allocator, event(1, 0), event(2, 500))));
+      harness.processWatermark(new Watermark(1000));
+
+      try (VectorSchemaRoot root = outputRoot(harness)) {
+        RowData result = RowDataArrowConverter.read(root, LEGACY_EVENT_OUTPUT).get(0);
+        assertEquals(3L, result.getLong(0));
+        assertEquals(0L, result.getTimestamp(1, 3).getMillisecond());
+        assertEquals(1000L, result.getTimestamp(2, 3).getMillisecond());
+        assertEquals(999L, result.getTimestamp(3, 3).getMillisecond());
+        assertTrue(result.isNullAt(4));
+      }
+    }
+  }
+
+  @Test
+  void emitsLegacyProctimePropertyAsNull() throws Exception {
+    NativeColumnarWindowAggregateOperator operator =
+        new NativeColumnarWindowAggregateOperator(
+            false,
+            1000,
+            1000,
+            1,
+            new int[] {0},
+            new int[0],
+            new int[0],
+            new int[] {0},
+            new int[] {0},
+            "Asia/Kolkata",
+            true,
+            "Asia/Kolkata",
+            LEGACY_PROCTIME_OUTPUT,
+            true,
+            new int[0],
+            MAX_PARALLELISM);
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            rawHarness(operator)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.setProcessingTime(500);
+      harness.processElement(new StreamRecord<>(batch(allocator, event(3, 9000))));
+      harness.setProcessingTime(1000);
+
+      try (VectorSchemaRoot root = outputRoot(harness)) {
+        RowData result = RowDataArrowConverter.read(root, LEGACY_PROCTIME_OUTPUT).get(0);
+        assertEquals(3L, result.getLong(0));
+        assertEquals(19_800_000L, result.getTimestamp(1, 3).getMillisecond());
+        assertEquals(19_801_000L, result.getTimestamp(2, 3).getMillisecond());
+        assertTrue(result.isNullAt(3));
+      }
+    }
+  }
+
+  @Test
+  void emitsLegacyWindowWithoutProperties() throws Exception {
+    NativeColumnarWindowAggregateOperator operator =
+        operator(LEGACY_NO_PROPERTIES_OUTPUT, false);
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            rawHarness(operator)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(new StreamRecord<>(batch(allocator, event(4, 0))));
+      harness.processWatermark(new Watermark(1000));
+
+      try (VectorSchemaRoot root = outputRoot(harness)) {
+        RowData result = RowDataArrowConverter.read(root, LEGACY_NO_PROPERTIES_OUTPUT).get(0);
+        assertEquals(4L, result.getLong(0));
+      }
     }
   }
 
@@ -236,6 +343,19 @@ class NativeColumnarWindowAggregateOperatorTest {
     }
   }
 
+  @Test
+  void consecutiveCheckpointsPreserveUnsetNonzeroKeyGroupContext() throws Exception {
+    NativeColumnarWindowAggregateOperator operator = eventTimeOperator();
+    try (KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+        new KeyedOneInputStreamOperatorTestHarness<>(
+            operator, batch -> 0, Types.INT, MAX_PARALLELISM, 4, 1)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.snapshot(1L, 1L);
+      harness.snapshot(2L, 2L);
+    }
+  }
+
   /** Raw keyed window state must redistribute by BinaryRow/Flink key group across a rescale. */
   @Test
   void rawKeyedWindowStateRescalesAndContinuesAggregation() throws Exception {
@@ -295,6 +415,13 @@ class NativeColumnarWindowAggregateOperatorTest {
     return new NativeColumnarWindowAggregateOperator(
         false, 1000, 1000, 1, new int[] {0}, new int[0], new int[0], new int[] {0}, new int[] {0},
         "UTC", OUTPUT, false, new int[0], MAX_PARALLELISM);
+  }
+
+  private static NativeColumnarWindowAggregateOperator operator(
+      RowType outputType, boolean proctime) {
+    return new NativeColumnarWindowAggregateOperator(
+        false, 1000, 1000, 1, new int[] {0}, new int[0], new int[0], new int[] {0}, new int[] {0},
+        "UTC", outputType, proctime, new int[0], MAX_PARALLELISM);
   }
 
   private static RowData event(long value, long eventTimeMillis) {
@@ -404,6 +531,13 @@ class NativeColumnarWindowAggregateOperatorTest {
       }
     }
     return rows;
+  }
+
+  private static VectorSchemaRoot outputRoot(
+      OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness) {
+    Object event = harness.getOutput().poll();
+    StreamRecord<?> record = assertInstanceOf(StreamRecord.class, event);
+    return assertInstanceOf(ArrowBatch.class, record.getValue()).root();
   }
 
   private static List<List<Long>> keyedCollect(

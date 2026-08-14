@@ -3,15 +3,19 @@ package tech.streamfusion;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Objects;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.Schema;
+import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
+import org.apache.flink.table.connector.ChangelogMode;
 import org.apache.flink.types.Row;
+import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -88,10 +92,73 @@ class FlinkTimestampWindowSqlHarnessTest {
   }
 
   @Test
-  void perOperatorFlagKeepsLegacySessionOnHost() throws Exception {
-    // The legacy session group-window shares the windowAggregate kill switch with the TVF session it
-    // routes to. This is the shape Nexmark q11 is written in, so the switch is the only way to take
-    // it off the native path — worth pinning, since it is the one legacy group-window we accelerate.
+  void legacyTumbleGroupWindowMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkTimestampWindowSqlHarnessTest::environment,
+        "SELECT k, COUNT(*) AS c, "
+            + "TUMBLE_START(ts, INTERVAL '10' SECOND) AS starttime, "
+            + "TUMBLE_END(ts, INTERVAL '10' SECOND) AS endtime "
+            + "FROM src GROUP BY k, TUMBLE(ts, INTERVAL '10' SECOND)");
+  }
+
+  @Test
+  void legacyGlobalTumbleGroupWindowMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkTimestampWindowSqlHarnessTest::environment,
+        "SELECT COUNT(*) AS c, TUMBLE_START(ts, INTERVAL '10' SECOND) AS starttime "
+            + "FROM src GROUP BY TUMBLE(ts, INTERVAL '10' SECOND)");
+  }
+
+  @Test
+  void legacyZeroAggregateWindowedDistinctMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkTimestampWindowSqlHarnessTest::environment,
+        "SELECT k, TUMBLE_START(ts, INTERVAL '10' SECOND) AS starttime "
+            + "FROM src GROUP BY k, TUMBLE(ts, INTERVAL '10' SECOND)");
+  }
+
+  @Test
+  void legacyHopGroupWindowMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkTimestampWindowSqlHarnessTest::environment,
+        "SELECT k, SUM(`value`) AS s, "
+            + "HOP_START(ts, INTERVAL '3' SECOND, INTERVAL '10' SECOND) AS starttime, "
+            + "HOP_END(ts, INTERVAL '3' SECOND, INTERVAL '10' SECOND) AS endtime "
+            + "FROM src GROUP BY k, HOP(ts, INTERVAL '3' SECOND, INTERVAL '10' SECOND)");
+  }
+
+  @Test
+  void legacyGappedHopGroupWindowMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkTimestampWindowSqlHarnessTest::environment,
+        "SELECT k, SUM(`value`) AS s, "
+            + "HOP_START(ts, INTERVAL '5' SECOND, INTERVAL '2' SECOND) AS starttime, "
+            + "HOP_END(ts, INTERVAL '5' SECOND, INTERVAL '2' SECOND) AS endtime "
+            + "FROM src GROUP BY k, HOP(ts, INTERVAL '5' SECOND, INTERVAL '2' SECOND)");
+  }
+
+  @Test
+  void legacyTumbleWithoutWindowPropertiesMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkTimestampWindowSqlHarnessTest::environment,
+        "SELECT k, COUNT(*) AS c FROM src GROUP BY k, TUMBLE(ts, INTERVAL '10' SECOND)");
+  }
+
+  @Test
+  void legacyTumbleTimePropertiesMatchHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkTimestampWindowSqlHarnessTest::environment,
+        "SELECT k, COUNT(*) AS c, "
+            + "TUMBLE_START(ts, INTERVAL '10' SECOND) AS starttime, "
+            + "TUMBLE_END(ts, INTERVAL '10' SECOND) AS endtime, "
+            + "TUMBLE_ROWTIME(ts, INTERVAL '10' SECOND) AS rowtime "
+            + "FROM src GROUP BY k, TUMBLE(ts, INTERVAL '10' SECOND)");
+  }
+
+  @Test
+  void perOperatorFlagKeepsLegacyGroupWindowOnHost() throws Exception {
+    // Legacy fixed and session group windows share the windowAggregate kill switch with their TVF
+    // equivalents. Pin one legacy shape so registry changes cannot accidentally bypass the switch.
     System.setProperty("streamfusion.operator.windowAggregate.enabled", "false");
     try {
       NativeParity.assertFallbackReasonContains(
@@ -106,12 +173,88 @@ class FlinkTimestampWindowSqlHarnessTest {
     }
   }
 
+  @Test
+  void legacyEarlyFireWindowFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkTimestampWindowSqlHarnessTest::earlyFireEnvironment,
+        "SELECT k, COUNT(*) AS c, TUMBLE_START(ts, INTERVAL '10' SECOND) AS starttime "
+            + "FROM src GROUP BY k, TUMBLE(ts, INTERVAL '10' SECOND)",
+        "early/late firing");
+  }
+
+  @Test
+  void legacyLateFireWindowFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkTimestampWindowSqlHarnessTest::lateFireEnvironment,
+        "SELECT k, COUNT(*) AS c, TUMBLE_START(ts, INTERVAL '10' SECOND) AS starttime "
+            + "FROM src GROUP BY k, TUMBLE(ts, INTERVAL '10' SECOND)",
+        "early/late firing");
+  }
+
+  @Test
+  void legacyWindowOverRetractingInputFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkTimestampWindowSqlHarnessTest::retractingEnvironment,
+        "SELECT k, SUM(`value`) AS s, TUMBLE_START(ts, INTERVAL '10' SECOND) AS starttime "
+            + "FROM changes GROUP BY k, TUMBLE(ts, INTERVAL '10' SECOND)",
+        "retracting or updating input");
+  }
+
   private static TableEnvironment environment() {
     return build("ONE_PHASE");
   }
 
   private static TableEnvironment twoPhaseEnvironment() {
     return build("TWO_PHASE");
+  }
+
+  private static TableEnvironment earlyFireEnvironment() {
+    TableEnvironment tEnv = environment();
+    tEnv.getConfig().set("table.exec.emit.early-fire.enabled", "true");
+    tEnv.getConfig().set("table.exec.emit.early-fire.delay", "0 ms");
+    return tEnv;
+  }
+
+  private static TableEnvironment lateFireEnvironment() {
+    TableEnvironment tEnv = environment();
+    tEnv.getConfig().set("table.exec.emit.late-fire.enabled", "true");
+    tEnv.getConfig().set("table.exec.emit.late-fire.delay", "0 ms");
+    tEnv.getConfig().set("table.exec.emit.allow-lateness", "1 s");
+    return tEnv;
+  }
+
+  private static TableEnvironment retractingEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    DataStream<Row> source =
+        env.fromData(
+                Types.ROW_NAMED(
+                    new String[] {"k", "value", "ts"},
+                    Types.LONG,
+                    Types.LONG,
+                    Types.LOCAL_DATE_TIME),
+                Row.ofKind(
+                    RowKind.INSERT, 1L, 5L, LocalDateTime.of(2024, 6, 1, 12, 0, 1)),
+                Row.ofKind(
+                    RowKind.UPDATE_BEFORE, 1L, 5L, LocalDateTime.of(2024, 6, 1, 12, 0, 1)),
+                Row.ofKind(
+                    RowKind.UPDATE_AFTER, 1L, 7L, LocalDateTime.of(2024, 6, 1, 12, 0, 1)))
+            .assignTimestampsAndWatermarks(
+                WatermarkStrategy.<Row>forBoundedOutOfOrderness(Duration.ZERO)
+                    .withTimestampAssigner((row, timestamp) -> timestampMillis(row)));
+    Table table =
+        tEnv.fromChangelogStream(
+            source,
+            Schema.newBuilder()
+                .column("k", DataTypes.BIGINT())
+                .column("value", DataTypes.BIGINT())
+                .column("ts", DataTypes.TIMESTAMP(3))
+                .watermark("ts", "SOURCE_WATERMARK()")
+                .build(),
+            ChangelogMode.all());
+    tEnv.createTemporaryView("changes", table);
+    return tEnv;
   }
 
   private static TableEnvironment build(String phaseStrategy) {
@@ -135,9 +278,7 @@ class FlinkTimestampWindowSqlHarnessTest {
                 Row.of(2L, 8L, LocalDateTime.of(2024, 6, 1, 12, 0, 25)))
             .assignTimestampsAndWatermarks(
                 WatermarkStrategy.<Row>forBoundedOutOfOrderness(Duration.ofSeconds(2))
-                    .withTimestampAssigner(
-                        (row, ts) ->
-                            ((LocalDateTime) row.getField(2)).toInstant(ZoneOffset.UTC).toEpochMilli()));
+                    .withTimestampAssigner((row, timestamp) -> timestampMillis(row)));
     tEnv.createTemporaryView(
         "src",
         source,
@@ -148,5 +289,11 @@ class FlinkTimestampWindowSqlHarnessTest {
             .watermark("ts", "SOURCE_WATERMARK()")
             .build());
     return tEnv;
+  }
+
+  private static long timestampMillis(Row row) {
+    return ((LocalDateTime) Objects.requireNonNull(row.getField(2)))
+        .toInstant(ZoneOffset.UTC)
+        .toEpochMilli();
   }
 }
