@@ -23,3 +23,5 @@ ENV GLIBC_TUNABLES=glibc.rtld.optional_static_tls=131072 \
 # PlannerModule shadow is resolved before Flink's stock planner loader.
 COPY streamfusion-loader/target/streamfusion-loader-${STREAMFUSION_VERSION}.jar \
      /opt/flink/lib/00-streamfusion-loader.jar
+COPY streamfusion-core/target/streamfusion-core-${STREAMFUSION_VERSION}-runtime.jar \
+     /opt/flink/lib/streamfusion-core.jar

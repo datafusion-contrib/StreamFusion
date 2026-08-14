@@ -18,6 +18,10 @@ releases. The connector SPI currently exists to enforce artifact boundaries, not
 plugin compatibility promise.
 
 `streamfusion-runtime` is the all-in-one development and test assembly. Do not deploy or depend on
-it downstream. Deploy `streamfusion-loader` (which embeds `streamfusion-core`) and only the
-connector and format artifacts listed in [Deployment](deployment.md). In particular,
+it downstream. Deploy `streamfusion-loader`, the self-contained `streamfusion-core` runtime JAR,
+and only the connector and format artifacts listed in [Deployment](deployment.md). In particular,
 `streamfusion-avro-confluent-registry` depends on `streamfusion-avro` for its native codec.
+
+The loader embeds the self-contained core planner payload for Flink's isolated planner
+classloader. The separate core runtime JAR exposes serialized operators and their dependencies to
+the JobManager and TaskManager runtime classloaders; neither artifact replaces the other.

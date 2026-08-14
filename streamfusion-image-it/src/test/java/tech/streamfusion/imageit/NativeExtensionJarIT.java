@@ -68,10 +68,10 @@ class NativeExtensionJarIT {
       String extension = args[2];
       Path core = artifact(projectDirectory, "streamfusion-core", version);
       Path extensionJar = artifact(projectDirectory, "streamfusion-" + extension, version);
+      URL[] classpath = extensionClasspath(projectDirectory, version, extension, core, extensionJar);
       try (URLClassLoader loader =
           new URLClassLoader(
-              new URL[] {core.toUri().toURL(), extensionJar.toUri().toURL()},
-              ClassLoader.getPlatformClassLoader())) {
+              classpath, ClassLoader.getPlatformClassLoader())) {
         Class<?> facade = Class.forName(facadeClass(extension), true, loader);
         Object loaded = facade.getMethod("isLoaded").invoke(null);
         if (!Boolean.TRUE.equals(loaded)) {
@@ -82,6 +82,16 @@ class NativeExtensionJarIT {
           throw new IllegalStateException(extension + " did not register a provider for " + format);
         }
       }
+    }
+
+    private static URL[] extensionClasspath(
+        Path projectDirectory, String version, String extension, Path core, Path extensionJar)
+        throws IOException {
+      if ("avro-confluent-registry".equals(extension)) {
+        Path avro = artifact(projectDirectory, "streamfusion-avro", version);
+        return new URL[] {core.toUri().toURL(), avro.toUri().toURL(), extensionJar.toUri().toURL()};
+      }
+      return new URL[] {core.toUri().toURL(), extensionJar.toUri().toURL()};
     }
 
     private static Path artifact(Path projectDirectory, String module, String version) {

@@ -1,8 +1,8 @@
 # Deployment
 
 StreamFusion currently supports exactly **Flink 2.2.0 and 2.2.1**. The loader fails closed for an
-unknown or unversioned planner ABI. Install it into Flink's `lib` directory — never
-into a job JAR — and it accelerates ordinary streaming SQL jobs with no application-side
+unknown or unversioned planner ABI. Install the loader and core JARs into Flink's `lib` directory
+— never into a job JAR — and it accelerates ordinary streaming SQL jobs with no application-side
 `NativePlanner.install(...)` call and no query rewriting.
 
 ## Kubernetes or Docker
@@ -30,7 +30,8 @@ inside each pod automatically.
 
 ### Layering connectors and formats
 
-The base image is connector- and format-neutral: every optional connector or format is its own
+The base image contains the loader and self-contained core runtime JAR and remains connector- and
+format-neutral: every optional connector or format is its own
 `streamfusion-*` artifact, matching Flink's own connector/format module split. Derive a small image
 and install Flink's connector and format JARs, the matching StreamFusion connector JAR, and only
 the StreamFusion format JARs your jobs actually use into `/opt/flink/lib` — use that same image for

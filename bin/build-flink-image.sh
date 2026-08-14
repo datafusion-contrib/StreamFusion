@@ -72,7 +72,8 @@ fi
 
 artifact_version=$(cd "$repo_root" && mvn -q -DforceStdout help:evaluate -Dexpression=project.version)
 loader_jar=$repo_root/streamfusion-loader/target/streamfusion-loader-$artifact_version.jar
-[ -f "$loader_jar" ] || {
+core_jar=$repo_root/streamfusion-core/target/streamfusion-core-$artifact_version-runtime.jar
+[ -f "$loader_jar" ] && [ -f "$core_jar" ] || {
   echo "StreamFusion release JARs are missing; run bin/build-release.sh first." >&2
   exit 66
 }
