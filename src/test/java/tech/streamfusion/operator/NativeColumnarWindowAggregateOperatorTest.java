@@ -343,6 +343,19 @@ class NativeColumnarWindowAggregateOperatorTest {
     }
   }
 
+  @Test
+  void consecutiveCheckpointsPreserveUnsetNonzeroKeyGroupContext() throws Exception {
+    NativeColumnarWindowAggregateOperator operator = eventTimeOperator();
+    try (KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+        new KeyedOneInputStreamOperatorTestHarness<>(
+            operator, batch -> 0, Types.INT, MAX_PARALLELISM, 4, 1)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.snapshot(1L, 1L);
+      harness.snapshot(2L, 2L);
+    }
+  }
+
   /** Raw keyed window state must redistribute by BinaryRow/Flink key group across a rescale. */
   @Test
   void rawKeyedWindowStateRescalesAndContinuesAggregation() throws Exception {

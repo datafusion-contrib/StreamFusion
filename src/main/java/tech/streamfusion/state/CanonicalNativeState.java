@@ -65,8 +65,7 @@ public final class CanonicalNativeState {
       String operatorId,
       long timerDeadline)
       throws Exception {
-    Object previousKey = backend.getCurrentKey();
-    int previousKeyGroup = currentKeyGroup(backend, previousKey);
+    KeyContext previous = keyContext(backend);
     boolean retained = false;
     try {
       for (int keyGroup : backend.getKeyGroupRange()) {
@@ -82,7 +81,7 @@ public final class CanonicalNativeState {
         retained = true;
       }
     } finally {
-      restoreKey(backend, previousKey, previousKeyGroup);
+      restoreKey(backend, previous);
       if (!retained) {
         snapshot.close();
       }
@@ -95,14 +94,13 @@ public final class CanonicalNativeState {
       String operatorId,
       long timerDeadline)
       throws Exception {
-    Object previousKey = backend.getCurrentKey();
-    int previousKeyGroup = currentKeyGroup(backend, previousKey);
+    KeyContext previous = keyContext(backend);
     try {
       for (int keyGroup : backend.getKeyGroupRange()) {
         ValueState<byte[]> headerState = stateForKeyGroup(backend, keyGroup, HEADER_DESCRIPTOR);
-        byte[] previous = headerState.value();
-        if (previous != null) {
-          Header old = decodeHeader(previous, operatorId);
+        byte[] previousHeader = headerState.value();
+        if (previousHeader != null) {
+          Header old = decodeHeader(previousHeader, operatorId);
           for (int chunk = 0; chunk < old.chunks; chunk++) {
             stateForKeyGroup(backend, keyGroup, chunkDescriptor(chunk)).clear();
           }
@@ -128,15 +126,14 @@ public final class CanonicalNativeState {
         }
       }
     } finally {
-      restoreKey(backend, previousKey, previousKeyGroup);
+      restoreKey(backend, previous);
     }
   }
 
   public static Restore readAndClear(
       CheckpointableKeyedStateBackend<?> backend, String operatorId)
       throws Exception {
-    Object previousKey = backend.getCurrentKey();
-    int previousKeyGroup = currentKeyGroup(backend, previousKey);
+    KeyContext previous = keyContext(backend);
     List<byte[]> partitions = new ArrayList<>();
     long timerDeadline = Long.MIN_VALUE;
     boolean sawAsync = false;
@@ -206,7 +203,7 @@ public final class CanonicalNativeState {
         headerState.clear();
       }
     } finally {
-      restoreKey(backend, previousKey, previousKeyGroup);
+      restoreKey(backend, previous);
     }
     return new Restore(partitions, timerDeadline);
   }
@@ -232,30 +229,46 @@ public final class CanonicalNativeState {
     return new ValueStateDescriptor<>(name, BytePrimitiveArraySerializer.INSTANCE);
   }
 
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  private static void restoreKey(
-      CheckpointableKeyedStateBackend<?> backend, Object previousKey, int previousKeyGroup) {
-    if (previousKey != null) {
-      ((CheckpointableKeyedStateBackend) backend)
-          .setCurrentKeyAndKeyGroup(previousKey, previousKeyGroup);
-    }
-  }
-
-  private static int currentKeyGroup(
-      CheckpointableKeyedStateBackend<?> backend, Object currentKey) {
-    if (currentKey == null) {
-      return -1;
-    }
+  @SuppressWarnings("null")
+  private static KeyContext keyContext(CheckpointableKeyedStateBackend<?> backend) {
     if (backend instanceof AbstractKeyedStateBackend) {
-      return ((AbstractKeyedStateBackend<?>) backend).getCurrentKeyGroupIndex();
+      AbstractKeyedStateBackend<?> keyed = (AbstractKeyedStateBackend<?>) backend;
+      return new KeyContext(keyed.getCurrentKey(), keyed.getCurrentKeyGroupIndex());
     }
     if (backend instanceof RocksDBNativeKeyedStateBackend) {
-      return ((RocksDBNativeKeyedStateBackend<?>) backend).getCurrentKeyGroupIndex();
+      RocksDBNativeKeyedStateBackend<?> keyed = (RocksDBNativeKeyedStateBackend<?>) backend;
+      return new KeyContext(keyed.getCurrentKey(), keyed.getCurrentKeyGroupIndex());
     }
     throw new IllegalStateException(
-        "cannot preserve the current key group for " + backend.getClass().getName());
+        "unsupported keyed backend for canonical native state: " + backend.getClass().getName());
   }
 
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private static void restoreKey(
+      CheckpointableKeyedStateBackend<?> backend, KeyContext previous) {
+    if (previous.key == null) {
+      clearCurrentKey(backend);
+      return;
+    }
+    ((CheckpointableKeyedStateBackend) backend)
+        .setCurrentKeyAndKeyGroup(previous.key, previous.keyGroup);
+  }
+
+  @SuppressWarnings("null")
+  private static void clearCurrentKey(CheckpointableKeyedStateBackend<?> backend) {
+    if (backend instanceof AbstractKeyedStateBackend) {
+      ((AbstractKeyedStateBackend<?>) backend).getKeyContext().setCurrentKey(null);
+      return;
+    }
+    if (backend instanceof RocksDBNativeKeyedStateBackend) {
+      ((RocksDBNativeKeyedStateBackend<?>) backend).clearCurrentKey();
+      return;
+    }
+    throw new IllegalStateException(
+        "unsupported keyed backend for canonical native state: " + backend.getClass().getName());
+  }
+
+  private record KeyContext(Object key, int keyGroup) {}
   private static byte[] header(String operatorId, long timerDeadline, int chunks, byte[] payload) {
     byte[] operator = operatorId.getBytes(StandardCharsets.UTF_8);
     ByteBuffer header = ByteBuffer.allocate(4 + 4 + 4 + operator.length + 8 + 4 + 4 + 4);

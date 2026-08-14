@@ -25,6 +25,10 @@ produce and consume the same representation. Direct RocksDB aggregate state is d
 typed table only when a canonical savepoint is requested; ordinary checkpoints and native-format
 savepoints retain the incremental SST path.
 
+Reading or writing these reserved states temporarily selects each owned key group. The operation
+restores the hosting backend's exact active key and key-group context afterward, including an unset
+context, so repeated checkpoints cannot leak a synthetic partition key into normal keyed state.
+
 ## Compatibility contract
 
 Canonical savepoints can move a StreamFusion job between the memory and RocksDB backends and can be
