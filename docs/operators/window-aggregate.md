@@ -72,6 +72,8 @@ own pages for their admission conditions.
 - Legacy fixed-grid `TUMBLE`/`HOP` over `TIMESTAMP_LTZ` event-time or proctime unless the session
   zone has one fixed post-1970 offset that is an integral multiple of the window slide. Zones with
   post-1970 transitions fall back because Flink assigns and fires on a DST-aware local-time grid.
+- Legacy event-time `SESSION` over `TIMESTAMP_LTZ` when the session zone has a post-1970 transition;
+  changing offsets can alter gap connectivity and session merges.
 - Legacy processing-time `SESSION`.
 - Key type outside bigint/int/string/boolean/date/timestamp/decimal.
 - A value type/aggregate mismatch.

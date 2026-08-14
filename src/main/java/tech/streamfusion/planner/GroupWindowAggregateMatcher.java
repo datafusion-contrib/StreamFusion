@@ -12,6 +12,7 @@ import org.apache.flink.table.planner.plan.logical.LogicalWindow;
 import org.apache.flink.table.planner.plan.logical.SessionGroupWindow;
 import org.apache.flink.table.planner.plan.logical.SlidingGroupWindow;
 import org.apache.flink.table.planner.plan.logical.TumblingGroupWindow;
+import org.apache.flink.table.expressions.ValueLiteralExpression;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGroupWindowAggregate;
 import org.apache.flink.table.planner.plan.utils.AggregateUtil;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
@@ -79,7 +80,15 @@ final class GroupWindowAggregateMatcher {
     }
 
     if (session) {
-      return gap(agg) == null ? "legacy group-window: session gap must be a time interval" : null;
+      if (gap(agg) == null) {
+        return "legacy group-window: session gap must be a time interval";
+      }
+      if (timeType.getTypeRoot() == LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+          && !sessionZoneFixedAfterEpoch(agg)) {
+        return "legacy SESSION over TIMESTAMP_LTZ requires the session zone to remain fixed after"
+            + " 1970";
+      }
+      return null;
     }
     Duration size = size(agg);
     Duration slide = slide(agg);
@@ -105,9 +114,16 @@ final class GroupWindowAggregateMatcher {
   private static boolean sessionZoneAlignsWithSlide(
       StreamPhysicalGroupWindowAggregate agg, long slideMillis) {
     ZoneRules rules = ShortcutUtils.unwrapTableConfig(agg).getLocalTimeZone().getRules();
-    if (!offsetAligns(rules.getOffset(Instant.EPOCH), slideMillis)) {
-      return false;
-    }
+    return sessionZoneFixedAfterEpoch(rules)
+        && offsetAligns(rules.getOffset(Instant.EPOCH), slideMillis);
+  }
+
+  private static boolean sessionZoneFixedAfterEpoch(StreamPhysicalGroupWindowAggregate agg) {
+    return sessionZoneFixedAfterEpoch(
+        ShortcutUtils.unwrapTableConfig(agg).getLocalTimeZone().getRules());
+  }
+
+  private static boolean sessionZoneFixedAfterEpoch(ZoneRules rules) {
     for (ZoneOffsetTransition transition : rules.getTransitions()) {
       if (transition.getInstant().isBefore(Instant.EPOCH)) {
         continue;
@@ -154,25 +170,22 @@ final class GroupWindowAggregateMatcher {
   }
 
   private static Duration size(StreamPhysicalGroupWindowAggregate agg) {
-    if (agg.window() instanceof TumblingGroupWindow) {
-      TumblingGroupWindow window = (TumblingGroupWindow) agg.window();
-      return AggregateUtil.hasTimeIntervalType(window.size())
-          ? window.size().getValueAs(Duration.class).orElse(null)
-          : null;
+    if (agg.window() instanceof TumblingGroupWindow tumblingGroupWindow) {
+      return duration(tumblingGroupWindow.size());
     }
-    SlidingGroupWindow window = (SlidingGroupWindow) agg.window();
-    return AggregateUtil.hasTimeIntervalType(window.size())
-        ? window.size().getValueAs(Duration.class).orElse(null)
-        : null;
+    return duration(((SlidingGroupWindow) agg.window()).size());
   }
 
   private static Duration slide(StreamPhysicalGroupWindowAggregate agg) {
     if (agg.window() instanceof TumblingGroupWindow) {
       return size(agg);
     }
-    SlidingGroupWindow window = (SlidingGroupWindow) agg.window();
-    return AggregateUtil.hasTimeIntervalType(window.slide())
-        ? window.slide().getValueAs(Duration.class).orElse(null)
+    return duration(((SlidingGroupWindow) agg.window()).slide());
+  }
+
+  private static Duration duration(ValueLiteralExpression value) {
+    return AggregateUtil.hasTimeIntervalType(value)
+        ? value.getValueAs(Duration.class).orElse(null)
         : null;
   }
 

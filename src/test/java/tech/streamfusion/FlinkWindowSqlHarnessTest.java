@@ -172,20 +172,20 @@ class FlinkWindowSqlHarnessTest {
     NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentWithKolkataZone,
         "SELECT k, SUM(`value`) AS s, "
-        + "TUMBLE_START(rt, INTERVAL '1' SECOND) AS window_start, "
-        + "TUMBLE_END(rt, INTERVAL '1' SECOND) AS window_end, "
-        + "TUMBLE_ROWTIME(rt, INTERVAL '1' SECOND) AS window_rowtime "
-        + "FROM src GROUP BY k, TUMBLE(rt, INTERVAL '1' SECOND)");
-    }
+            + "TUMBLE_START(rt, INTERVAL '1' SECOND) AS window_start, "
+            + "TUMBLE_END(rt, INTERVAL '1' SECOND) AS window_end, "
+            + "TUMBLE_ROWTIME(rt, INTERVAL '1' SECOND) AS window_rowtime "
+            + "FROM src GROUP BY k, TUMBLE(rt, INTERVAL '1' SECOND)");
+  }
 
-    @Test
-    void legacyLtzWindowWithMisalignedSessionZoneFallsBack() throws Exception {
+  @Test
+  void legacyLtzWindowWithMisalignedSessionZoneFallsBack() throws Exception {
     NativeParity.assertFallbackReasonContains(
-      FlinkWindowSqlHarnessTest::environmentWithKolkataZone,
-      "SELECT k, SUM(`value`) AS s, "
-        + "TUMBLE_START(rt, INTERVAL '1' HOUR) AS window_start "
-        + "FROM src GROUP BY k, TUMBLE(rt, INTERVAL '1' HOUR)",
-      "session-zone offset to align with the window slide");
+        FlinkWindowSqlHarnessTest::environmentWithKolkataZone,
+        "SELECT k, SUM(`value`) AS s, "
+            + "TUMBLE_START(rt, INTERVAL '1' HOUR) AS window_start "
+            + "FROM src GROUP BY k, TUMBLE(rt, INTERVAL '1' HOUR)",
+        "session-zone offset to align with the window slide");
   }
 
   @Test
@@ -196,6 +196,25 @@ class FlinkWindowSqlHarnessTest {
             + "TUMBLE_START(rt, INTERVAL '1' SECOND) AS window_start "
             + "FROM src GROUP BY k, TUMBLE(rt, INTERVAL '1' SECOND)",
         "fixed after 1970");
+  }
+
+  @Test
+  void legacyLtzSessionMatchesHostInFixedOffsetZone() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithKolkataZone,
+        "SELECT k, SUM(`value`) AS s, "
+            + "SESSION_START(rt, INTERVAL '1' SECOND) AS window_start, "
+            + "SESSION_END(rt, INTERVAL '1' SECOND) AS window_end "
+            + "FROM src GROUP BY k, SESSION(rt, INTERVAL '1' SECOND)");
+  }
+
+  @Test
+  void legacyLtzSessionWithDstZoneFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkWindowSqlHarnessTest::environmentWithLosAngelesZone,
+        "SELECT k, SUM(`value`) AS s FROM src "
+            + "GROUP BY k, SESSION(rt, INTERVAL '1' SECOND)",
+        "legacy SESSION over TIMESTAMP_LTZ requires the session zone to remain fixed after 1970");
   }
 
   @Test
