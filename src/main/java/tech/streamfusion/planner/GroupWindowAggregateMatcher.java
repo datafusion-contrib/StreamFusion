@@ -2,9 +2,6 @@ package tech.streamfusion.planner;
 
 import tech.streamfusion.operator.RowDataArrowConverter;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.zone.ZoneOffsetTransition;
 import java.time.zone.ZoneRules;
 import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
@@ -113,28 +110,17 @@ final class GroupWindowAggregateMatcher {
 
   private static boolean sessionZoneAlignsWithSlide(
       StreamPhysicalGroupWindowAggregate agg, long slideMillis) {
-    ZoneRules rules = ShortcutUtils.unwrapTableConfig(agg).getLocalTimeZone().getRules();
-    return sessionZoneFixedAfterEpoch(rules)
-        && offsetAligns(rules.getOffset(Instant.EPOCH), slideMillis);
+    ZoneRules rules = sessionZoneRules(agg);
+    return WindowZoneGate.fixedAfterEpoch(rules)
+        && WindowZoneGate.offsetAligns(rules, slideMillis);
   }
 
   private static boolean sessionZoneFixedAfterEpoch(StreamPhysicalGroupWindowAggregate agg) {
-    return sessionZoneFixedAfterEpoch(
-        ShortcutUtils.unwrapTableConfig(agg).getLocalTimeZone().getRules());
+    return WindowZoneGate.fixedAfterEpoch(sessionZoneRules(agg));
   }
 
-  private static boolean sessionZoneFixedAfterEpoch(ZoneRules rules) {
-    for (ZoneOffsetTransition transition : rules.getTransitions()) {
-      if (transition.getInstant().isBefore(Instant.EPOCH)) {
-        continue;
-      }
-      return false;
-    }
-    return rules.getTransitionRules().isEmpty();
-  }
-
-  private static boolean offsetAligns(ZoneOffset offset, long slideMillis) {
-    return Math.floorMod(offset.getTotalSeconds() * 1000L, slideMillis) == 0;
+  private static ZoneRules sessionZoneRules(StreamPhysicalGroupWindowAggregate agg) {
+    return ShortcutUtils.unwrapTableConfig(agg).getLocalTimeZone().getRules();
   }
 
   private static boolean supportedTimeRoot(LogicalType type) {

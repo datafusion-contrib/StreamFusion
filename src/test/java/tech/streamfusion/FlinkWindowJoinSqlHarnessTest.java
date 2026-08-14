@@ -3,6 +3,7 @@ package tech.streamfusion;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.ZoneId;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -116,6 +117,7 @@ class FlinkWindowJoinSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     Schema proctimeSchema =
         Schema.newBuilder()
             .column("k", DataTypes.BIGINT())
@@ -139,6 +141,7 @@ class FlinkWindowJoinSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.createTemporaryView("A", stream(env), schema());
     tEnv.createTemporaryView("B", stream(env), schema());
     return tEnv;
@@ -178,6 +181,7 @@ class FlinkWindowJoinSqlHarnessTest {
     env.setParallelism(1);
     env.enableCheckpointing(100);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.executeSql(
         "CREATE TABLE in_write (k BIGINT, v BIGINT, rt TIMESTAMP_LTZ(3)) WITH ('connector' = "
             + "'filesystem', 'path' = '"
@@ -197,6 +201,7 @@ class FlinkWindowJoinSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     createParquetTable(tEnv, "A", left);
     createParquetTable(tEnv, "B", right);
     return tEnv;

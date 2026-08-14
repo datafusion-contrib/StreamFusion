@@ -40,6 +40,13 @@ final class GlobalWindowAggregateMatcher {
     if (!(windowing instanceof SliceAttachedWindowingStrategy) && !attached) {
       return "global window aggregate: requires a slice-attached or window-attached windowing";
     }
+    // The global re-buckets slices (or merges attached windows) on the raw epoch grid, so it holds
+    // the same session-zone requirement as the local that produced them — gating them together
+    // keeps the pair on the same side of the fallback.
+    String zoneReason = WindowZoneGate.unsupportedReason(aggregate, windowing);
+    if (zoneReason != null) {
+      return "global window aggregate: " + zoneReason;
+    }
     WindowSpec spec = windowing.getWindow();
     if (attached) {
       // No fan-out to bound; only the aggregate/key shape (checked below) matters.

@@ -1,6 +1,7 @@
 package tech.streamfusion;
 
 import java.time.Duration;
+import java.time.ZoneId;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -47,6 +48,7 @@ class FlinkHotItemsSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.createTemporaryView("bid", bids(env), schema());
     return tEnv;
   }

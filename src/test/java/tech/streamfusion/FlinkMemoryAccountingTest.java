@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
+import java.time.ZoneId;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.apache.flink.configuration.Configuration;
@@ -48,6 +49,7 @@ class FlinkMemoryAccountingTest {
     StreamExecutionEnvironment env = new StreamExecutionEnvironment(conf);
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     // Every row is a distinct group key, and the far-off watermark delay keeps the window open, so
     // the native state must grow well past the 1 MB task off-heap budget before anything closes it.
     tEnv.executeSql(
@@ -79,6 +81,7 @@ class FlinkMemoryAccountingTest {
     env.setParallelism(1);
     env.enableCheckpointing(100);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.executeSql(
         "CREATE TABLE gen (k BIGINT) WITH ('connector' = 'datagen', "
             + "'number-of-rows' = '"

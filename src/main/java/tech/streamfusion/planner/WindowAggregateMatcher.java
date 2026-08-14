@@ -41,10 +41,14 @@ final class WindowAggregateMatcher {
   private WindowAggregateMatcher() {}
 
   static boolean matches(
+      RelNode node,
       WindowingStrategy windowing,
       int[] grouping,
       scala.collection.Seq<AggregateCall> aggCalls,
       RelDataType inputType) {
+    if (!WindowZoneGate.admits(node, windowing)) {
+      return false;
+    }
     WindowSpec spec = windowing.getWindow();
     boolean aligned;
     if (spec instanceof TumblingWindowSpec) {
@@ -124,11 +128,15 @@ final class WindowAggregateMatcher {
    * nullable-sum buffer), so the value types are the single-phase set.
    */
   static boolean matchesHoppingLocal(
+      RelNode node,
       WindowingStrategy windowing,
       int[] grouping,
       scala.collection.Seq<AggregateCall> aggCalls,
       RelDataType inputType) {
     if (!(windowing.getWindow() instanceof HoppingWindowSpec)) {
+      return false;
+    }
+    if (!WindowZoneGate.admits(node, windowing)) {
       return false;
     }
     HoppingWindowSpec hop = (HoppingWindowSpec) windowing.getWindow();
@@ -148,11 +156,15 @@ final class WindowAggregateMatcher {
    * AVG, whose (sum, count) buffer spans two partial columns). Event-time only.
    */
   static boolean matchesAttachedLocal(
+      RelNode node,
       WindowingStrategy windowing,
       int[] grouping,
       scala.collection.Seq<AggregateCall> aggCalls,
       RelDataType inputType) {
     if (!(windowing instanceof WindowAttachedWindowingStrategy) || !windowing.isRowtime()) {
+      return false;
+    }
+    if (!WindowZoneGate.admits(node, windowing)) {
       return false;
     }
     return !containsAvg(aggCalls) && supportedAggregates(grouping, aggCalls, inputType);
@@ -206,11 +218,15 @@ final class WindowAggregateMatcher {
 
   /** A session-window aggregate the native operator handles (single-phase only by construction). */
   static boolean matchesSession(
+      RelNode node,
       WindowingStrategy windowing,
       int[] grouping,
       scala.collection.Seq<AggregateCall> aggCalls,
       RelDataType inputType) {
     if (!(windowing.getWindow() instanceof SessionWindowSpec)) {
+      return false;
+    }
+    if (!WindowZoneGate.admits(node, windowing)) {
       return false;
     }
     if (windowing.isProctime()) {
@@ -543,11 +559,11 @@ final class WindowAggregateMatcher {
   static LocalWindowVariant localWindowVariant(StreamPhysicalLocalWindowAggregate agg) {
     RelDataType input = agg.getInput().getRowType();
     if (WindowAggregateMatcher.matchesHoppingLocal(
-        agg.windowing(), agg.grouping(), agg.aggCalls(), input)) {
+        agg, agg.windowing(), agg.grouping(), agg.aggCalls(), input)) {
       return LocalWindowVariant.HOPPING;
     }
     boolean sliceable =
-        WindowAggregateMatcher.matches(agg.windowing(), agg.grouping(), agg.aggCalls(), input)
+        WindowAggregateMatcher.matches(agg, agg.windowing(), agg.grouping(), agg.aggCalls(), input)
             && !WindowAggregateMatcher.containsAvg(agg.aggCalls());
     if (sliceable && WindowAggregateMatcher.isTumbling(agg.windowing())) {
       return LocalWindowVariant.TUMBLING;
@@ -556,7 +572,7 @@ final class WindowAggregateMatcher {
       return LocalWindowVariant.CUMULATIVE;
     }
     if (WindowAggregateMatcher.matchesAttachedLocal(
-        agg.windowing(), agg.grouping(), agg.aggCalls(), input)) {
+        agg, agg.windowing(), agg.grouping(), agg.aggCalls(), input)) {
       return LocalWindowVariant.ATTACHED;
     }
     return null;
@@ -612,10 +628,15 @@ final class WindowAggregateMatcher {
 
   /**
    * The window-aggregate family matches several variants (tumbling/hopping/cumulative, local and
-   * global) with extra gates, so a precise per-condition reason would be unreliable; keep a coarse
+   * global) with extra gates, so a precise per-condition reason would be unreliable; report the
+   * session-zone gate when it is the blocker (it is decisive on its own), else a coarse
    * operator-level reason naming the requirements.
    */
-  static String unsupportedReason() {
+  static String unsupportedReason(RelNode node, WindowingStrategy windowing) {
+    String zoneReason = WindowZoneGate.unsupportedReason(node, windowing);
+    if (zoneReason != null) {
+      return "window aggregate: " + zoneReason;
+    }
     return "window aggregate: needs an event-time TUMBLE/HOP/CUMULATE (zero offset) over a"
         + " local-time-zone or plain TIMESTAMP rowtime, one value column whose type matches the"
         + " aggregate (bigint/int/double for SUM/AVG, also smallint/tinyint/float for"

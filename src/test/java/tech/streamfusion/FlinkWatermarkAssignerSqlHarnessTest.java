@@ -2,6 +2,7 @@ package tech.streamfusion;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.ZoneId;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
@@ -39,6 +40,7 @@ class FlinkWatermarkAssignerSqlHarnessTest {
     env.setParallelism(1);
     env.enableCheckpointing(100);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.executeSql(
         "CREATE TABLE in_write (k BIGINT, v BIGINT, rt TIMESTAMP_LTZ(3)) WITH ('connector' = "
             + "'filesystem', 'path' = '"
@@ -59,6 +61,7 @@ class FlinkWatermarkAssignerSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     tEnv.executeSql(
         "CREATE TABLE t (k BIGINT, v BIGINT, rt TIMESTAMP_LTZ(3), "

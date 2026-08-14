@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import tech.streamfusion.operator.ArrowBatchHandles;
 import tech.streamfusion.operator.BatchCoalescer;
+import java.time.ZoneId;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -99,6 +100,7 @@ class FlinkColumnarShuffleParallelismTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(2);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.executeSql(
         "CREATE TABLE t (k BIGINT, v BIGINT) WITH ('connector' = 'filesystem', 'path' = '"
             + directory.toUri()
@@ -112,6 +114,7 @@ class FlinkColumnarShuffleParallelismTest {
     env.enableCheckpointing(100);
     env.getCheckpointConfig().enableUnalignedCheckpoints();
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     tEnv.executeSql(
         "CREATE TABLE t (k BIGINT, v BIGINT, rt TIMESTAMP_LTZ(3), "
@@ -134,6 +137,7 @@ class FlinkColumnarShuffleParallelismTest {
     env.setParallelism(2);
     env.enableCheckpointing(100);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     // 48 rows: 8 keys, spread across a few 1-second windows.
     DataStream<Row> source =
         env.fromSequence(0, 47)
@@ -169,6 +173,7 @@ class FlinkColumnarShuffleParallelismTest {
       env.enableCheckpointing(100);
     }
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.getConfig().set("table.optimizer.agg-phase-strategy", aggPhaseStrategy);
     // Delay larger than the whole data span (~5.7s) so no window closes before end-of-input MAX —
     // keeps this test about the shuffle routing only, independent of watermark-driven late dropping

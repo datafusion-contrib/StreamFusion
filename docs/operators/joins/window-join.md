@@ -24,4 +24,7 @@ proctime window join closes it on a processing-time timer instead.
 - the key columns aren't null-dropping for a non-INNER join;
 - the equi-key type is outside the supported set;
 - the non-equi residual isn't expressible by the native expression engine;
-- the two sides' windowing doesn't share time semantics (one event-time, one proctime).
+- the two sides' windowing doesn't share time semantics (one event-time, one proctime);
+- either side's window rides a `TIMESTAMP_LTZ` time attribute in a session zone the
+  [window-assignment zone gate](../window-aggregate.md#matcher-declines) rejects (a post-1970
+  transition, or a fixed offset not aligned with the window slide).

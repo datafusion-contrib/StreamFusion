@@ -50,7 +50,10 @@ processing-time-timer model as the [window aggregate](window-aggregate.md) — t
 the size. As with the other proctime-driven window operators, this is non-deterministic, so it's
 tested for routing/execution but not byte-compared to the host.
 
-The one gap is a rank that doesn't start at 1 — i.e. an `OFFSET` on the window rank.
+The one shape gap is a rank that doesn't start at 1 — i.e. an `OFFSET` on the window rank. Both
+shapes also hold the [window-assignment zone gate](window-aggregate.md#matcher-declines): a
+`TIMESTAMP_LTZ` time attribute in a session zone with a post-1970 transition, or a fixed offset not
+aligned with the window slide, falls back together with the windowing TVF that feeds them.
 
 The `-Dstreamfusion.operator.windowRank.enabled` switch covers both shapes; window dedup reuses the
 window-rank operator rather than getting its own switch — see [Configuration](../configuration.md).

@@ -60,6 +60,13 @@ final class WindowJoinMatcher {
     if (join.leftWindowing().isProctime() != join.rightWindowing().isProctime()) {
       return "window join: both sides must use the same time semantics (event time or proctime)";
     }
+    String zoneReason = WindowZoneGate.unsupportedReason(join, join.leftWindowing());
+    if (zoneReason == null) {
+      zoneReason = WindowZoneGate.unsupportedReason(join, join.rightWindowing());
+    }
+    if (zoneReason != null) {
+      return "window join: " + zoneReason;
+    }
     RelDataType leftType = join.getLeft().getRowType();
     RelDataType rightType = join.getRight().getRowType();
     for (int i = 0; i < leftKeys.length; i++) {

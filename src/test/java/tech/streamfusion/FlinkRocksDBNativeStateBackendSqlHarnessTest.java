@@ -3,6 +3,7 @@ package tech.streamfusion;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.ZoneId;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
@@ -305,6 +306,7 @@ class FlinkRocksDBNativeStateBackendSqlHarnessTest {
     env.setParallelism(1);
     env.enableCheckpointing(50);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     WatermarkStrategy<Row> watermarks =
         WatermarkStrategy.<Row>forBoundedOutOfOrderness(Duration.ofSeconds(5))
             .withTimestampAssigner((row, ts) -> (Long) row.getField(2));
@@ -385,6 +387,7 @@ class FlinkRocksDBNativeStateBackendSqlHarnessTest {
     env.setParallelism(1);
     env.enableCheckpointing(50);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     DataStream<Row> source =
         env.fromData(
                 Types.ROW_NAMED(new String[] {"k", "v", "ts"}, Types.LONG, Types.LONG, Types.LONG),
@@ -417,6 +420,7 @@ class FlinkRocksDBNativeStateBackendSqlHarnessTest {
     env.setParallelism(1);
     env.enableCheckpointing(50);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     tEnv.executeSql(
         "CREATE TABLE t (k BIGINT, v BIGINT) WITH ('connector' = 'filesystem', 'path' = '"

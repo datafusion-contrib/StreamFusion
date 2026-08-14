@@ -218,6 +218,55 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
+  void tvfLtzTumbleMatchesHostInAlignedFixedOffsetZone() throws Exception {
+    NativeParity.assertParity(
+        FlinkWindowSqlHarnessTest::environmentWithKolkataZone,
+        "SELECT k, SUM(`value`) AS s, window_start, window_end "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end, k");
+  }
+
+  @Test
+  void tvfLtzTumbleWithMisalignedSessionZoneFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkWindowSqlHarnessTest::environmentWithKolkataZone,
+        "SELECT k, SUM(`value`) AS s "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' HOUR)) "
+            + "GROUP BY window_start, window_end, k",
+        "session-zone offset to align with the window slide");
+  }
+
+  @Test
+  void tvfLtzTumbleWithDstSessionZoneFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkWindowSqlHarnessTest::environmentWithLosAngelesZone,
+        "SELECT k, SUM(`value`) AS s "
+            + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end, k",
+        "fixed after 1970");
+  }
+
+  @Test
+  void tvfLtzSessionWithDstSessionZoneFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkWindowSqlHarnessTest::environmentWithLosAngelesZone,
+        "SELECT k, SUM(`value`) AS s, window_start, window_end "
+            + "FROM TABLE(SESSION(TABLE src PARTITION BY k, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+            + "GROUP BY window_start, window_end, k",
+        "TIMESTAMP_LTZ session windows require the session zone to remain fixed after 1970");
+  }
+
+  @Test
+  void twoPhaseLtzHopWithMisalignedSessionZoneFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkWindowSqlHarnessTest::twoPhaseEnvironmentWithKolkataZone,
+        "SELECT k, SUM(`value`) AS s "
+            + "FROM TABLE(HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '1' HOUR, INTERVAL '2' HOUR)) "
+            + "GROUP BY window_start, window_end, k",
+        "session-zone offset to align with the window slide");
+  }
+
+  @Test
   void keyedHoppingMultiAggregateMatchesHost() throws Exception {
     NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentWithSource,
@@ -765,6 +814,12 @@ class FlinkWindowSqlHarnessTest {
     return tEnv;
   }
 
+  private static TableEnvironment twoPhaseEnvironmentWithKolkataZone() {
+    TableEnvironment tEnv = buildEnvironment(false);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("Asia/Kolkata"));
+    return tEnv;
+  }
+
   private static TableEnvironment environmentWithUtcZone() {
     TableEnvironment tEnv = buildEnvironment(true);
     tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
@@ -781,6 +836,7 @@ class FlinkWindowSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
 
     // Out-of-order: the row at ts=700 arrives after the rows at 0 and 1500, which would otherwise
     // be separate sessions (gap 1s), and its [700, 1700) window bridges them into [0, 2500).
@@ -814,6 +870,7 @@ class FlinkWindowSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     // Single-phase: the native single-phase float SUM accumulator is what folds in float (the
     // intended behavior under test). Two-phase would split into a host global merge of float partials
     // and, under the all-or-nothing rule, fall back entirely — see twoPhaseFloatSumMatchesHost.
@@ -851,6 +908,7 @@ class FlinkWindowSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     // Single-phase: the native single-phase narrow SUM accumulator is what wraps at the input width
     // (the intended behavior under test). Two-phase would split into a host global merge of the narrow
     // partials and, under the all-or-nothing rule, fall back entirely — see twoPhaseNarrowSumMatchesHost.
@@ -883,6 +941,9 @@ class FlinkWindowSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    // Pin the session zone so LTZ windows admit natively regardless of the host machine's zone (a
+    // DST zone would otherwise fall back); the zone-specific environments override this afterwards.
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     if (onePhase) {
       tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     }
@@ -945,6 +1006,7 @@ class FlinkWindowSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
 
     // One in-range value per 1s slice; a 2s hopping window merges two slice partials and the merge
@@ -987,6 +1049,7 @@ class FlinkWindowSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.getConfig().set("table.optimizer.agg-phase-strategy", phaseStrategy);
 
     java.math.BigDecimal big = new java.math.BigDecimal("99000000000000000000000000000000000000");

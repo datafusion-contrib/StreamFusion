@@ -376,11 +376,12 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             .matching(
                 agg ->
                     WindowAggregateMatcher.matches(
+                        agg,
                         agg.windowing(),
                         agg.grouping(),
                         agg.aggCalls(),
                         agg.getInput().getRowType()))
-            .reason(agg -> WindowAggregateMatcher.unsupportedReason()));
+            .reason(agg -> WindowAggregateMatcher.unsupportedReason(agg, agg.windowing())));
     // A session is a window aggregate too, so it answers to the same kill switch — the way window
     // Top-N and window deduplication share `windowRank`, and the two GROUP BY halves share
     // `groupAggregate`.
@@ -392,6 +393,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             .matching(
                 agg ->
                     WindowAggregateMatcher.matchesSession(
+                        agg,
                         agg.windowing(),
                         agg.grouping(),
                         agg.aggCalls(),
@@ -425,7 +427,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
                 "localWindowAggregate",
                 WindowAggregateMatcher::substituteLocal)
             .matching(agg -> WindowAggregateMatcher.localWindowVariant(agg) != null)
-            .reason(agg -> WindowAggregateMatcher.unsupportedReason()));
+            .reason(agg -> WindowAggregateMatcher.unsupportedReason(agg, agg.windowing())));
 
     // OVER preserves an append-only input, but Flink's packaged planner reports bounded OVER nodes
     // as updating even though their input and emitted rows are append-only. Gate on the input

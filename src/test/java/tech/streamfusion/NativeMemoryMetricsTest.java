@@ -1,5 +1,6 @@
 package tech.streamfusion;
 
+import java.time.ZoneId;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import tech.streamfusion.planner.NativePlanner;
@@ -55,6 +56,7 @@ class NativeMemoryMetricsTest {
     try {
       StreamExecutionEnvironment env = new TestStreamEnvironment(cluster.getMiniCluster(), 1);
       StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
       DataStream<Row> source =
           env.fromSequence(0, 99_999)
               .map(i -> Row.of(i, 1L, i))

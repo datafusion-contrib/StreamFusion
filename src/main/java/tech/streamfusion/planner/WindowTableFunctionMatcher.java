@@ -24,11 +24,7 @@ final class WindowTableFunctionMatcher {
   private WindowTableFunctionMatcher() {}
 
   static boolean matches(StreamPhysicalWindowTableFunction tvf) {
-    return matches(tvf.windowing(), tvf.getInput().getRowType());
-  }
-
-  private static boolean matches(
-      WindowingStrategy windowing, org.apache.calcite.rel.type.RelDataType inputType) {
+    WindowingStrategy windowing = tvf.windowing();
     if (!(windowing instanceof TimeAttributeWindowingStrategy)) {
       return false;
     }
@@ -40,7 +36,11 @@ final class WindowTableFunctionMatcher {
         != LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
       return false;
     }
-    return aligned(windowing.getWindow()) && FilterCalcMatcher.convertibleRow(inputType);
+    if (!WindowZoneGate.admits(tvf, windowing)) {
+      return false;
+    }
+    return aligned(windowing.getWindow())
+        && FilterCalcMatcher.convertibleRow(tvf.getInput().getRowType());
   }
 
   static boolean isProctime(StreamPhysicalWindowTableFunction tvf) {
@@ -76,6 +76,10 @@ final class WindowTableFunctionMatcher {
   }
 
   static String unsupportedReason(StreamPhysicalWindowTableFunction tvf) {
+    String zoneReason = WindowZoneGate.unsupportedReason(tvf, tvf.windowing());
+    if (zoneReason != null) {
+      return "windowing table function: " + zoneReason;
+    }
     return "windowing table function: needs an event-time TUMBLE/HOP/CUMULATE (zero offset) over a"
         + " local-time-zone rowtime, with input columns the Arrow conversion supports";
   }

@@ -30,6 +30,9 @@ final class WindowDeduplicateMatcher {
     if (keepLastRow(dedup) == null) {
       return false; // cannot determine keep-first/keep-last → fall back
     }
+    if (!WindowZoneGate.admits(dedup, dedup.getWindowingStrategy())) {
+      return false;
+    }
     return RowDataArrowConverter.supports(
         FlinkTypeFactory$.MODULE$.toLogicalRowType(dedup.getRowType()));
   }
@@ -91,6 +94,13 @@ final class WindowDeduplicateMatcher {
   }
 
   static String unsupportedReason(StreamPhysicalWindowDeduplicate dedup) {
+    String zoneReason =
+        dedup.getWindowingStrategy() instanceof WindowAttachedWindowingStrategy
+            ? WindowZoneGate.unsupportedReason(dedup, dedup.getWindowingStrategy())
+            : null;
+    if (zoneReason != null) {
+      return "window deduplication: " + zoneReason;
+    }
     return "window deduplication: needs ROW_NUMBER() OVER (PARTITION BY window, key ORDER BY rowtime)"
         + " = 1 over a windowing-TVF input, with input columns the Arrow conversion supports";
   }

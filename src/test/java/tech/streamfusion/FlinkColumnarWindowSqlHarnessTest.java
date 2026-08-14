@@ -320,6 +320,7 @@ class FlinkColumnarWindowSqlHarnessTest {
     env.setParallelism(1);
     env.enableCheckpointing(100);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.executeSql(
         "CREATE TABLE in_write (k BIGINT, v BIGINT, rt TIMESTAMP_LTZ(3)) WITH ('connector' = "
             + "'filesystem', 'path' = '"
@@ -345,6 +346,7 @@ class FlinkColumnarWindowSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.getConfig().set("table.optimizer.agg-phase-strategy", phaseStrategy);
     tEnv.executeSql(
         "CREATE TABLE t (k BIGINT, v BIGINT, rt TIMESTAMP_LTZ(3), "
@@ -362,6 +364,7 @@ class FlinkColumnarWindowSqlHarnessTest {
     env.setParallelism(1);
     env.enableCheckpointing(100);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tEnv.executeSql(
         "CREATE TABLE in_write (k BIGINT, v BIGINT, rt TIMESTAMP_LTZ(3)) WITH ('connector' = "
             + "'filesystem', 'path' = '"

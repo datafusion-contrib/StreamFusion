@@ -34,6 +34,9 @@ final class WindowRankMatcher {
     if (!(rank.windowing() instanceof WindowAttachedWindowingStrategy)) {
       return false; // the window must be attached as columns (the windowing-TVF output)
     }
+    if (!WindowZoneGate.admits(rank, rank.windowing())) {
+      return false;
+    }
     return RowDataArrowConverter.supports(
         FlinkTypeFactory$.MODULE$.toLogicalRowType(rank.getRowType()));
   }
@@ -105,6 +108,13 @@ final class WindowRankMatcher {
   }
 
   static String unsupportedReason(StreamPhysicalWindowRank rank) {
+    String zoneReason =
+        rank.windowing() instanceof WindowAttachedWindowingStrategy
+            ? WindowZoneGate.unsupportedReason(rank, rank.windowing())
+            : null;
+    if (zoneReason != null) {
+      return "window Top-N: " + zoneReason;
+    }
     return "window Top-N: needs ROW_NUMBER() OVER (PARTITION BY window[, key] ORDER BY …) <= N over a"
         + " windowing-TVF input, with input columns the Arrow conversion supports";
   }

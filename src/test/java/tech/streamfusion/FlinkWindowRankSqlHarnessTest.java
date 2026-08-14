@@ -1,6 +1,7 @@
 package tech.streamfusion;
 
 import java.time.Duration;
+import java.time.ZoneId;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -85,6 +86,7 @@ class FlinkWindowRankSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     DataStream<Row> source =
         env.fromData(
             Types.ROW_NAMED(new String[] {"k", "v"}, Types.LONG, Types.LONG),
@@ -106,6 +108,7 @@ class FlinkWindowRankSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
 
     // Two 1s windows; distinct v per window so the rank order is unambiguous, and repeated k within a
     // window so deduplication has something to collapse.
