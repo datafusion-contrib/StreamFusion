@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.94.0
 
       # Keyed on Cargo.lock; also disables incremental compilation, which keeps the
       # debug target directory a fraction of a local dev build's size.
@@ -31,6 +31,10 @@ jobs:
       - name: Run native test suite
         working-directory: native
         run: cargo test --features kafka,parquet,rocksdb-state
+
+      - name: Check native formatting
+        working-directory: native
+        run: cargo fmt --all -- --check
 
   java-tests:
     name: Java tests (debug native build)
@@ -53,7 +57,7 @@ jobs:
           java-version: "17"
           cache: maven
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.94.0
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -85,7 +89,7 @@ jobs:
           java-version: "17"
           cache: maven
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.94.0
 
       # The host release builder compiles the optional Fluss DSO before it invokes the
       # cross-platform Docker builder. fluss-rs generates protobuf RPC bindings at build time.
@@ -101,15 +105,17 @@ jobs:
       - name: Build optimized core image
         run: |
           bin/build-release.sh --host-only
-          jar tf streamfusion-kafka/target/streamfusion-kafka-1.0-SNAPSHOT.jar | grep -q 'native/kafka/linux/x86_64/libstreamfusion_kafka.so'
-          jar tf streamfusion-json/target/streamfusion-json-1.0-SNAPSHOT.jar | grep -q 'native/json/linux/x86_64/libstreamfusion_json.so'
-          jar tf streamfusion-csv/target/streamfusion-csv-1.0-SNAPSHOT.jar | grep -q 'native/csv/linux/x86_64/libstreamfusion_csv.so'
-          jar tf streamfusion-raw/target/streamfusion-raw-1.0-SNAPSHOT.jar | grep -q 'native/raw/linux/x86_64/libstreamfusion_raw.so'
-          jar tf streamfusion-avro/target/streamfusion-avro-1.0-SNAPSHOT.jar | grep -q 'native/avro/linux/x86_64/libstreamfusion_avro.so'
-          jar tf streamfusion-avro-confluent-registry/target/streamfusion-avro-confluent-registry-1.0-SNAPSHOT.jar | grep -q 'native/avro/linux/x86_64/libstreamfusion_avro.so'
-          jar tf streamfusion-protobuf/target/streamfusion-protobuf-1.0-SNAPSHOT.jar | grep -q 'native/protobuf/linux/x86_64/libstreamfusion_protobuf.so'
-          jar tf streamfusion-fluss/target/streamfusion-fluss-1.0-SNAPSHOT.jar | grep -q 'native/fluss/linux/x86_64/libstreamfusion_fluss.so'
-          jar tf streamfusion-parquet/target/streamfusion-parquet-1.0-SNAPSHOT.jar | grep -q 'native/parquet/linux/x86_64/libstreamfusion_parquet.so'
+          version="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          jar tf "streamfusion-kafka/target/streamfusion-kafka-${version}.jar" | grep -q 'native/kafka/linux/x86_64/libstreamfusion_kafka.so'
+          jar tf "streamfusion-json/target/streamfusion-json-${version}.jar" | grep -q 'native/json/linux/x86_64/libstreamfusion_json.so'
+          jar tf "streamfusion-csv/target/streamfusion-csv-${version}.jar" | grep -q 'native/csv/linux/x86_64/libstreamfusion_csv.so'
+          jar tf "streamfusion-raw/target/streamfusion-raw-${version}.jar" | grep -q 'native/raw/linux/x86_64/libstreamfusion_raw.so'
+          jar tf "streamfusion-avro/target/streamfusion-avro-${version}.jar" | grep -q 'native/avro/linux/x86_64/libstreamfusion_avro.so'
+          ! jar tf "streamfusion-avro-confluent-registry/target/streamfusion-avro-confluent-registry-${version}.jar" | grep -q 'libstreamfusion_avro'
+          jar tf "streamfusion-protobuf/target/streamfusion-protobuf-${version}.jar" | grep -q 'native/protobuf/linux/x86_64/libstreamfusion_protobuf.so'
+          jar tf "streamfusion-fluss/target/streamfusion-fluss-${version}.jar" | grep -q 'native/fluss/linux/x86_64/libstreamfusion_fluss.so'
+          jar tf "streamfusion-parquet/target/streamfusion-parquet-${version}.jar" | grep -q 'native/parquet/linux/x86_64/libstreamfusion_parquet.so'
+          bin/check-artifacts.sh
           bin/build-flink-image.sh --tag streamfusion-flink:image-it --load --skip-release-build
 
       - name: Run Flink Session-cluster image smoke test
@@ -186,7 +192,7 @@ jobs:
           java-version: "17"
           cache: maven
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.94.0
 
       - name: Install protoc
         if: matrix.protoc

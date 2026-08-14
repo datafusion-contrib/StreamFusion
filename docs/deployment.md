@@ -1,6 +1,7 @@
 # Deployment
 
-StreamFusion currently supports **Flink 2.2.x**. Install it into Flink's `lib` directory — never
+StreamFusion currently supports exactly **Flink 2.2.0 and 2.2.1**. The loader fails closed for an
+unknown or unversioned planner ABI. Install it into Flink's `lib` directory — never
 into a job JAR — and it accelerates ordinary streaming SQL jobs with no application-side
 `NativePlanner.install(...)` call and no query rewriting.
 
@@ -39,14 +40,15 @@ the JobManager, TaskManagers, and submission client. For example, JSON on Kafka 
 FROM registry.example/streamfusion-flink:dev
 COPY flink-connector-kafka-5.0.0-2.2.jar /opt/flink/lib/
 COPY flink-json-2.2.1.jar /opt/flink/lib/
-COPY streamfusion-kafka/target/streamfusion-kafka-1.0-SNAPSHOT.jar /opt/flink/lib/
-COPY streamfusion-json/target/streamfusion-json-1.0-SNAPSHOT.jar /opt/flink/lib/
+COPY streamfusion-kafka/target/streamfusion-kafka-0.1.0-alpha.1.jar /opt/flink/lib/
+COPY streamfusion-json/target/streamfusion-json-0.1.0-alpha.1.jar /opt/flink/lib/
 ```
 
 Replace `streamfusion-json` with `streamfusion-csv`, `streamfusion-raw`, `streamfusion-avro`, or
 `streamfusion-protobuf` and add Flink's like-named format JAR — see [Connectors](connectors/index.md)
-for the full per-format breakdown. `avro-confluent` uses the standalone
-`streamfusion-avro-confluent-registry` JAR with Flink's `flink-avro-confluent-registry`. Use
+for the full per-format breakdown. `avro-confluent` uses both `streamfusion-avro` (the shared native
+Avro codec) and `streamfusion-avro-confluent-registry` with Flink's
+`flink-avro-confluent-registry`. Use
 `fluss-flink-2.2` with `streamfusion-fluss`, or `flink-parquet` with `streamfusion-parquet`, the
 same way. A missing optional module is always a normal planner fallback to stock Flink, never a
 linkage failure — the core image doesn't require any of them.

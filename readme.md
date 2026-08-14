@@ -162,8 +162,9 @@ bin/build-flink-image.sh --tag registry.example/streamfusion-flink:dev --push  #
 sh bin/install-flink.sh "$FLINK_HOME"                            # bare metal
 ```
 
-StreamFusion currently supports **Flink 2.2.x**, installs into Flink's `lib` directory (never the
-job JAR), and needs no application-side call to accelerate an ordinary streaming SQL job. The base
+StreamFusion currently supports exactly **Flink 2.2.0 and 2.2.1**, installs into Flink's `lib`
+directory (never the job JAR), and needs no application-side call to accelerate an ordinary
+streaming SQL job. The base
 image/install is connector- and format-neutral — you layer in only the `streamfusion-*` JARs your
 job's connectors and formats actually need, mirroring Flink's own module split. See
 **[Deployment](https://datafusion-contrib.github.io/StreamFusion/deployment/)** for the full

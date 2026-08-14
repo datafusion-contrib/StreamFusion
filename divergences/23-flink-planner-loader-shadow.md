@@ -27,6 +27,7 @@ than a planner fork: StreamFusion does not copy Flink's planner, execution nodes
 Flink still performs all standard planning and execution. The only injected behavior is the native
 scan stage, after which unsupported plan shapes retain their normal Flink nodes.
 
-The cost is a version-sensitive private-class seam. The shim supports Flink **2.2.x** only and
-rejects a packaged version from another series at startup. A public upstream planner-extension API
-would replace this file and remove the class-name shadow.
+The cost is a version-sensitive private-class seam. The shim supports exactly the tested Flink
+**2.2.0 and 2.2.1** planner ABIs and fails closed for unknown or unversioned artifacts. It
+rejects incompatible packaged versions at startup. A public upstream planner-extension API would
+replace this file and remove the class-name shadow.
