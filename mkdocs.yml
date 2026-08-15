@@ -52,6 +52,9 @@ extra:
 
 nav:
   - Introduction: index.md
+  - Blogs:
+      - blogs/index.md
+      - Streaming for the AI age: blogs/streaming-for-the-ai-age.md
   - Connectors:
       - connectors/index.md
       - Kafka: connectors/kafka.md
