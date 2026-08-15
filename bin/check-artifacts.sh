@@ -7,7 +7,40 @@ repo_root=$(cd "$script_dir/.." && pwd)
 version=$(cd "$repo_root" && mvn -q -DforceStdout help:evaluate -Dexpression=project.version)
 modules="core kafka json csv raw avro avro-confluent-registry protobuf fluss parquet"
 entries=$(mktemp)
-trap 'rm -f "$entries"' EXIT HUP INT TERM
+native_entries=$(mktemp)
+expected_native_entries=$(mktemp)
+trap 'rm -f "$entries" "$native_entries" "$expected_native_entries"' EXIT HUP INT TERM
+
+assert_native_payload() {
+  jar_file=$1
+  module=$2
+  library=$3
+  resource_directory=$4
+
+  jar tf "$jar_file" | awk '/^tech\/streamfusion\/native\/.*\.(so|dylib)$/ { print }' \
+    | sort >"$native_entries"
+  if [ -n "$resource_directory" ]; then
+    resource_directory="$resource_directory/"
+  fi
+  {
+    echo "tech/streamfusion/native/${resource_directory}linux/x86_64/$library.so"
+    echo "tech/streamfusion/native/${resource_directory}darwin/aarch64/$library.dylib"
+  } | sort >"$expected_native_entries"
+  if ! cmp -s "$expected_native_entries" "$native_entries"; then
+    echo "$module does not contain the exact supported native release matrix:" >&2
+    diff -u "$expected_native_entries" "$native_entries" >&2 || true
+    exit 1
+  fi
+}
+
+assert_no_native_payload() {
+  jar_file=$1
+  module=$2
+  if jar tf "$jar_file" | grep -Eq '^tech/streamfusion/native/.*\.(so|dylib)$'; then
+    echo "$module unexpectedly contains a loose native library" >&2
+    exit 1
+  fi
+}
 
 for suffix in $modules; do
   module="streamfusion-$suffix"
@@ -30,14 +63,34 @@ for suffix in $modules; do
 done
 
 core_jar="$repo_root/streamfusion-core/target/streamfusion-core-$version-runtime.jar"
+core_main_jar="$repo_root/streamfusion-core/target/streamfusion-core-$version.jar"
+assert_native_payload "$core_main_jar" streamfusion-core libstreamfusion ""
+assert_native_payload "$core_jar" streamfusion-core libstreamfusion ""
 if jar tf "$core_jar" | grep -Eq '^tech/streamfusion/(kafka|fluss|parquet|format/(json|csv|raw|avro|avroconfluent|protobuf))/'; then
   echo "streamfusion-core contains optional connector or format classes" >&2
   exit 1
 fi
 
+for suffix in kafka json csv raw avro protobuf fluss parquet; do
+  assert_native_payload \
+    "$repo_root/streamfusion-$suffix/target/streamfusion-$suffix-$version.jar" \
+    "streamfusion-$suffix" "libstreamfusion_$suffix" "$suffix"
+done
+
+assert_no_native_payload \
+  "$repo_root/streamfusion-runtime/target/streamfusion-runtime-$version.jar" \
+  streamfusion-runtime
+assert_no_native_payload \
+  "$repo_root/streamfusion-avro-confluent-registry/target/streamfusion-avro-confluent-registry-$version.jar" \
+  streamfusion-avro-confluent-registry
+
 loader_jar="$repo_root/streamfusion-loader/target/streamfusion-loader-$version.jar"
-if [ ! -f "$loader_jar" ] \
-    || ! unzip -p "$loader_jar" streamfusion-planner.jar | cmp -s - "$core_jar"; then
+if [ ! -f "$loader_jar" ]; then
+  echo "missing artifact: $loader_jar" >&2
+  exit 1
+fi
+assert_no_native_payload "$loader_jar" streamfusion-loader
+if ! unzip -p "$loader_jar" streamfusion-planner.jar | cmp -s - "$core_jar"; then
   echo "streamfusion-loader does not embed the exact core runtime payload" >&2
   exit 1
 fi
