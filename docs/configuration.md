@@ -3,7 +3,7 @@
 Planner settings use Flink's normal configuration surface and can be supplied in `flink-conf.yaml`,
 the SQL client, or `TableConfig` (for example, `SET 'streamfusion.native.enabled' = 'false'`). A
 same-named `-Dstreamfusion.*` system property remains a compatibility fallback. Task-runtime tuning
-settings are still JVM properties in this alpha; they are called out below and will become
+settings are still JVM properties before 1.0; they are called out below and will become
 serialized operator configuration rather than process-global state before a stable release.
 
 ## Acceleration control

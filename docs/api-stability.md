@@ -1,11 +1,11 @@
-# Alpha API and artifact boundaries
+# Pre-1.0 API and artifact boundaries
 
-The alpha JARs are Flink deployment components, not a general-purpose Java library. Installing the
+The pre-1.0 JARs are Flink deployment components, not a general-purpose Java library. Installing the
 loader and selected extension JARs is the supported integration path. Public Java visibility is
 sometimes required across Flink's isolated planner classloader and between the core and extension
 JARs; it does **not** by itself make a class a stable downstream API.
 
-The application-facing alpha surface is intentionally small:
+The application-facing pre-1.0 surface is intentionally small:
 
 - `NativePlanner.install(...)` and `NativePlanner.explain(...)` for embedded clients that cannot use
   the distribution loader;
@@ -13,7 +13,7 @@ The application-facing alpha surface is intentionally small:
 - the documented state-backend factory identifier.
 
 Everything else under `tech.streamfusion`, including JNI declarations, planner substitutions,
-operators, serializers, wire codes, and connector SPIs, is internal and may change between alpha
+operators, serializers, wire codes, and connector SPIs, is internal and may change between pre-1.0
 releases. The connector SPI currently exists to enforce artifact boundaries, not as a third-party
 plugin compatibility promise.
 

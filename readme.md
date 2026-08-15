@@ -4,6 +4,7 @@
 # StreamFusion
 
 [![CI](https://github.com/datafusion-contrib/StreamFusion/actions/workflows/ci.yml/badge.svg)](https://github.com/datafusion-contrib/StreamFusion/actions/workflows/ci.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/tech.streamfusion/streamfusion-loader.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/tech.streamfusion/streamfusion-loader)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/gCKHfb96Q)
 
 **[Read the docs](https://datafusion-contrib.github.io/StreamFusion/)** — connector/format
@@ -156,17 +157,21 @@ _Apple M1 Max; numbers are comparable only within a machine._
 ## Running and configuration
 
 ```sh
-bin/build-release.sh                                            # release artifacts (Rust + Java)
-bin/build-flink-image.sh --tag registry.example/streamfusion-flink:dev --push  # Kubernetes/Docker
-# — or, for a local Flink distribution —
-sh bin/install-flink.sh "$FLINK_HOME"                            # bare metal
+STREAMFUSION_VERSION=0.1.0-rc1
+curl --fail --location \
+  "https://repo1.maven.org/maven2/tech/streamfusion/streamfusion-loader/$STREAMFUSION_VERSION/streamfusion-loader-$STREAMFUSION_VERSION.jar" \
+  --output "$FLINK_HOME/lib/00-streamfusion-loader.jar"
+curl --fail --location \
+  "https://repo1.maven.org/maven2/tech/streamfusion/streamfusion-core/$STREAMFUSION_VERSION/streamfusion-core-$STREAMFUSION_VERSION-runtime.jar" \
+  --output "$FLINK_HOME/lib/streamfusion-core.jar"
 ```
 
 StreamFusion currently supports exactly **Flink 2.2.0 and 2.2.1**, installs into Flink's `lib`
 directory (never the job JAR), and needs no application-side call to accelerate an ordinary
-streaming SQL job. The base
-image/install is connector- and format-neutral — you layer in only the `streamfusion-*` JARs your
-job's connectors and formats actually need, mirroring Flink's own module split. See
+streaming SQL job. Release JARs come from Maven Central and already contain the runner-built Linux
+x86_64 and macOS Apple Silicon native libraries; users do not build Rust or Java from source. The
+base install is connector- and format-neutral — layer in only the `streamfusion-*` JARs your job's
+connectors and formats actually need, mirroring Flink's own module split. See
 **[Deployment](https://datafusion-contrib.github.io/StreamFusion/deployment/)** for the full
 Kubernetes/Docker/bare-metal walkthrough and the exact JAR list per connector/format.
 
