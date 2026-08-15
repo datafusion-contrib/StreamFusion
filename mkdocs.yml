@@ -94,6 +94,7 @@ nav:
       - RocksDB: backends/rocksdb.md
       - Canonical state format: backends/canonical-state.md
   - Deployment: deployment.md
+  - Releasing: releasing.md
   - Configuration: configuration.md
   - Alpha API stability: api-stability.md
   - Memory management: memory-management.md

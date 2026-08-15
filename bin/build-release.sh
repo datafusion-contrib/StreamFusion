@@ -7,7 +7,7 @@ if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "$1" != "--host-only" ] && [ "$1" != 
   exit 64
 fi
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(cd "$script_dir/.." && pwd)
 native_dir=$repo_root/native
 stage_dir=$native_dir/target/universal

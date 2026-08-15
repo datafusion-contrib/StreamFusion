@@ -8,8 +8,36 @@
     <artifactId>streamfusion-loader</artifactId>
     <version>${revision}</version>
 
+    <name>StreamFusion Loader</name>
+    <description>Flink planner loader for the StreamFusion native SQL accelerator.</description>
+    <url>https://streamfusion.tech/</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>Jordan Epstein</name>
+            <email>32082339+jordepic@users.noreply.github.com</email>
+            <organization>datafusion-contrib</organization>
+            <organizationUrl>https://github.com/datafusion-contrib</organizationUrl>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/datafusion-contrib/StreamFusion.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/datafusion-contrib/StreamFusion.git</developerConnection>
+        <url>https://github.com/datafusion-contrib/StreamFusion</url>
+        <tag>HEAD</tag>
+    </scm>
+
     <properties>
-        <revision>0.1.0-alpha.1</revision>
+        <revision>0.1.0-rc1</revision>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -146,4 +174,79 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- This module is intentionally standalone from the reactor parent because it executes in
+             Flink's isolated planner classloader. Repeat the release attachments it cannot inherit. -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>flatten-maven-plugin</artifactId>
+                        <version>1.6.0</version>
+                        <configuration>
+                            <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                            <updatePomFile>true</updatePomFile>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>flatten-release-pom</id>
+                                <phase>process-resources</phase>
+                                <goals><goal>flatten</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.3.1</version>
+                        <configuration>
+                            <excludeResources>true</excludeResources>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals><goal>jar-no-fork</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.11.2</version>
+                        <configuration>
+                            <doclint>none</doclint>
+                            <quiet>true</quiet>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals><goal>jar</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.8</version>
+                        <configuration>
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>sign-release-artifacts</id>
+                                <phase>verify</phase>
+                                <goals><goal>sign</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

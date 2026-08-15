@@ -9,6 +9,10 @@
     <version>${revision}</version>
     <packaging>pom</packaging>
 
+    <name>StreamFusion</name>
+    <description>Native Rust and Apache Arrow/DataFusion acceleration for Apache Flink SQL.</description>
+    <url>https://streamfusion.tech/</url>
+
     <modules>
         <module>streamfusion-runtime</module>
         <module>streamfusion-core</module>
@@ -32,8 +36,24 @@
         </license>
     </licenses>
 
+    <developers>
+        <developer>
+            <name>Jordan Epstein</name>
+            <email>32082339+jordepic@users.noreply.github.com</email>
+            <organization>datafusion-contrib</organization>
+            <organizationUrl>https://github.com/datafusion-contrib</organizationUrl>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/datafusion-contrib/StreamFusion.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/datafusion-contrib/StreamFusion.git</developerConnection>
+        <url>https://github.com/datafusion-contrib/StreamFusion</url>
+        <tag>HEAD</tag>
+    </scm>
+
     <properties>
-        <revision>0.1.0-alpha.1</revision>
+        <revision>0.1.0-rc1</revision>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -516,6 +536,98 @@
     </build>
 
     <profiles>
+        <!-- Central releases are deliberately opt-in. The tag-driven release workflow activates
+             this profile after assembling the universal native payload. -->
+        <profile>
+            <id>release</id>
+            <properties>
+                <!-- A dry-run tag overrides these defaults so Central validates the identical
+                     signed bundle but leaves it unpublished. -->
+                <central.autoPublish>true</central.autoPublish>
+                <central.waitUntil>published</central.waitUntil>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>flatten-maven-plugin</artifactId>
+                        <version>1.6.0</version>
+                        <configuration>
+                            <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                            <updatePomFile>true</updatePomFile>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>flatten-release-pom</id>
+                                <phase>process-resources</phase>
+                                <goals><goal>flatten</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.3.1</version>
+                        <configuration>
+                            <!-- Native libraries belong only in the executable JARs. Maven otherwise
+                                 copies the universal resource tree into every sources attachment. -->
+                            <excludeResources>true</excludeResources>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals><goal>jar-no-fork</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.11.2</version>
+                        <configuration>
+                            <doclint>none</doclint>
+                            <quiet>true</quiet>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals><goal>jar</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.8</version>
+                        <configuration>
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>sign-release-artifacts</id>
+                                <phase>verify</phase>
+                                <goals><goal>sign</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.11.0</version>
+                        <extensions>true</extensions>
+                        <inherited>false</inherited>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>${central.autoPublish}</autoPublish>
+                            <waitUntil>${central.waitUntil}</waitUntil>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!--
           Flink's source tree compiles the table planner against unshaded Calcite, while the
           published planner artifact bundles Calcite under relocated package names. The upstream

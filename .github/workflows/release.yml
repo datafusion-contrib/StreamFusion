@@ -1,0 +1,234 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "dry-run-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Validate release tag
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+      dry_run: ${{ steps.version.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - id: version
+        name: Match the tag to Maven and Cargo
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_NAME" == dry-run-v* ]]; then
+            version="${GITHUB_REF_NAME#dry-run-v}"
+            dry_run=true
+          else
+            version="${GITHUB_REF_NAME#v}"
+            dry_run=false
+          fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
+          maven_version="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          cargo_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' native/Cargo.toml | head -1)"
+          loader_version="$(mvn -q -f streamfusion-loader/pom.xml -DforceStdout help:evaluate -Dexpression=project.version)"
+          test "$version" = "$maven_version"
+          test "$version" = "$cargo_version"
+          test "$version" = "$loader_version"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+
+  linux-native:
+    name: Build native payload (Linux x86_64)
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+          df -h /
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - uses: dtolnay/rust-toolchain@1.94.0
+
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+
+      - name: Build release libraries on the runner
+        run: bin/build-release.sh --host-only
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-linux-x86_64-${{ needs.prepare.outputs.version }}
+          path: native/target/universal
+          if-no-files-found: error
+          retention-days: 1
+
+  darwin-native:
+    name: Build native payload (macOS Apple Silicon)
+    needs: prepare
+    runs-on: macos-14
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          architecture: aarch64
+          cache: maven
+
+      - uses: dtolnay/rust-toolchain@1.94.0
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+
+      - name: Install native build dependencies
+        run: brew install openssl protobuf
+
+      - name: Build release libraries on the runner
+        run: bin/build-release.sh --host-only
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-darwin-aarch64-${{ needs.prepare.outputs.version }}
+          path: native/target/universal
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Stage Maven artifacts and GitHub release
+    needs: [prepare, linux-native, darwin-native]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+          df -h /
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*-${{ needs.prepare.outputs.version }}
+          path: native/target/universal
+          merge-multiple: true
+
+      - name: Configure Java, Central credentials, and signing
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_USERNAME
+          server-password: CENTRAL_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Verify the universal deployment bundle
+        run: |
+          mvn -B -ntp clean package -Pdist,universal -DskipTests
+          bin/check-artifacts.sh
+
+      - id: central-status
+        name: Check whether this immutable coordinate already exists
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          url="https://repo1.maven.org/maven2/tech/streamfusion/StreamFusion/$VERSION/StreamFusion-$VERSION.pom"
+          if curl --fail --silent --head "$url" >/dev/null; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Reject a dry run for an already-published coordinate
+        if: needs.prepare.outputs.dry_run == 'true' && steps.central-status.outputs.published == 'true'
+        run: |
+          echo "${{ needs.prepare.outputs.version }} is already public in Maven Central" >&2
+          exit 1
+
+      - name: Upload and validate Maven artifacts without publishing
+        if: needs.prepare.outputs.dry_run == 'true'
+        run: >-
+          mvn -B -ntp deploy -Pdist,universal,release -DskipTests
+          -Dcentral.autoPublish=false -Dcentral.waitUntil=validated
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+
+      - name: Publish to Maven Central
+        if: needs.prepare.outputs.dry_run != 'true' && steps.central-status.outputs.published != 'true'
+        run: mvn -B -ntp deploy -Pdist,universal,release -DskipTests
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+
+      - name: Assemble GitHub release archive
+        run: bin/package-release.sh
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          prerelease=()
+          draft=()
+          title="StreamFusion $VERSION"
+          if [[ "$VERSION" == *-* ]]; then
+            prerelease+=(--prerelease)
+          fi
+          if [[ "${{ needs.prepare.outputs.dry_run }}" == true ]]; then
+            draft+=(--draft)
+            title="$title dry run"
+          fi
+          assets=(
+            target/release/streamfusion-"$VERSION"-bin.tar.gz
+            target/release/streamfusion-"$VERSION"-bin.tar.gz.sha256
+          )
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --generate-notes \
+              --verify-tag \
+              "${draft[@]}" \
+              "${prerelease[@]}"
+          fi
