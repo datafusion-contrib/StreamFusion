@@ -2,6 +2,26 @@
 
 set -eu
 
+if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "$1" != "--host-only" ]; }; then
+  echo "usage: $0 [--host-only]" >&2
+  exit 64
+fi
+
+host_only=false
+if [ "$#" -eq 1 ]; then
+  host_only=true
+  case "$(uname -s)" in
+    Linux) host_platform=linux; host_extension=so ;;
+    Darwin) host_platform=darwin; host_extension=dylib ;;
+    *) echo "unsupported host operating system: $(uname -s)" >&2; exit 69 ;;
+  esac
+  case "$(uname -m)" in
+    x86_64|amd64) host_architecture=x86_64 ;;
+    arm64|aarch64) host_architecture=aarch64 ;;
+    *) echo "unsupported host architecture: $(uname -m)" >&2; exit 69 ;;
+  esac
+fi
+
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(cd "$script_dir/.." && pwd)
 version=$(cd "$repo_root" && mvn -q -DforceStdout help:evaluate -Dexpression=project.version)
@@ -22,10 +42,15 @@ assert_native_payload() {
   if [ -n "$resource_directory" ]; then
     resource_directory="$resource_directory/"
   fi
-  {
-    echo "tech/streamfusion/native/${resource_directory}linux/x86_64/$library.so"
-    echo "tech/streamfusion/native/${resource_directory}darwin/aarch64/$library.dylib"
-  } | sort >"$expected_native_entries"
+  if [ "$host_only" = true ]; then
+    echo "tech/streamfusion/native/${resource_directory}$host_platform/$host_architecture/$library.$host_extension" \
+      >"$expected_native_entries"
+  else
+    {
+      echo "tech/streamfusion/native/${resource_directory}linux/x86_64/$library.so"
+      echo "tech/streamfusion/native/${resource_directory}darwin/aarch64/$library.dylib"
+    } | sort >"$expected_native_entries"
+  fi
   if ! cmp -s "$expected_native_entries" "$native_entries"; then
     echo "$module does not contain the exact supported native release matrix:" >&2
     diff -u "$expected_native_entries" "$native_entries" >&2 || true

@@ -115,7 +115,7 @@ jobs:
           jar tf "streamfusion-protobuf/target/streamfusion-protobuf-${version}.jar" | grep -q 'native/protobuf/linux/x86_64/libstreamfusion_protobuf.so'
           jar tf "streamfusion-fluss/target/streamfusion-fluss-${version}.jar" | grep -q 'native/fluss/linux/x86_64/libstreamfusion_fluss.so'
           jar tf "streamfusion-parquet/target/streamfusion-parquet-${version}.jar" | grep -q 'native/parquet/linux/x86_64/libstreamfusion_parquet.so'
-          bin/check-artifacts.sh
+          bin/check-artifacts.sh --host-only
           bin/build-flink-image.sh --tag streamfusion-flink:image-it --load --skip-release-build
 
       - name: Run Flink Session-cluster image smoke test

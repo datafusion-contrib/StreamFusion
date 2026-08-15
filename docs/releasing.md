@@ -36,7 +36,7 @@ classpath POM. Confirm there are no stale values and run the normal release gate
 rg '0\.1\.0-rc1'
 mvn test
 bin/build-release.sh --host-only
-bin/check-artifacts.sh
+bin/check-artifacts.sh --host-only
 ```
 
 ## Publish
