@@ -3,6 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <parent><groupId>tech.streamfusion</groupId><artifactId>StreamFusion</artifactId><version>${revision}</version></parent>
     <artifactId>streamfusion-raw</artifactId>
+    <name>StreamFusion Raw</name>
     <properties><native.test.resource.skip>true</native.test.resource.skip></properties>
     <dependencies><dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-core</artifactId><version>${project.version}</version><scope>provided</scope></dependency></dependencies>
     <build><sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory><resources combine.self="override"><resource><directory>${project.basedir}/src/main/resources</directory></resource><resource><directory>${project.basedir}/../native/target/universal/raw</directory><targetPath>tech/streamfusion/native/raw</targetPath><includes><include>**/libstreamfusion_raw.so</include><include>**/libstreamfusion_raw.dylib</include></includes></resource></resources><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version><configuration><includes><include>tech/streamfusion/format/raw/**/*.java</include></includes></configuration></plugin></plugins></build>

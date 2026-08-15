@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>streamfusion-fluss</artifactId>
+    <name>StreamFusion Fluss</name>
     <properties><native.test.resource.skip>true</native.test.resource.skip></properties>
 
     <dependencies>

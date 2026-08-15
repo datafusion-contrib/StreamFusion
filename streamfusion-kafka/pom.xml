@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>streamfusion-kafka</artifactId>
+    <name>StreamFusion Kafka</name>
 
     <properties><native.test.resource.skip>true</native.test.resource.skip></properties>
 

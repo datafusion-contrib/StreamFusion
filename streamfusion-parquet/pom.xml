@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>streamfusion-parquet</artifactId>
+    <name>StreamFusion Parquet</name>
     <properties><native.test.resource.skip>true</native.test.resource.skip></properties>
 
     <dependencies>

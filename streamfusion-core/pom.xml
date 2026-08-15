@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>streamfusion-core</artifactId>
+    <name>StreamFusion Core</name>
 
     <build>
         <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>

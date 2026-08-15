@@ -3,6 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <parent><groupId>tech.streamfusion</groupId><artifactId>StreamFusion</artifactId><version>${revision}</version></parent>
     <artifactId>streamfusion-avro-confluent-registry</artifactId>
+    <name>StreamFusion Avro Confluent Registry</name>
     <properties><native.test.resource.skip>true</native.test.resource.skip></properties>
     <dependencies>
         <dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-core</artifactId><version>${project.version}</version><scope>provided</scope></dependency>

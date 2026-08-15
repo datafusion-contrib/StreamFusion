@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>streamfusion-runtime</artifactId>
+    <name>StreamFusion Runtime</name>
 
     <!-- Keep the repository layout stable while exposing a conventional runtime Maven module. -->
     <build>
