@@ -1,7 +1,8 @@
 use crate::*;
+use jni::objects::JObject;
 
-/// Writes one batch to a Parquet file at `path` with default settings — a test fixture helper for
-/// the source-side tests (the sink writes through `ParquetEncoder`, never to a path).
+/// Writes one batch to a Parquet file at `path` with default settings for native test fixtures (the
+/// sink writes through `ParquetEncoder`, never directly to a path).
 #[cfg(test)]
 pub(crate) fn write_parquet(batch: &RecordBatch, path: &str) {
     let file = std::fs::File::create(path).expect("failed to create parquet file");
@@ -11,21 +12,22 @@ pub(crate) fn write_parquet(batch: &RecordBatch, path: &str) {
     writer.close().expect("failed to close parquet writer");
 }
 
-/// In-memory landing zone for encoded Parquet bytes. The `ArrowWriter` owns one clone as its sink
-/// and the encoder keeps another to drain, so encoded row groups become visible to the JVM without
-/// closing the writer (Arroyo's SharedBuffer shape). A read offset defers reclaiming consumed bytes
-/// until the buffer fully drains, so repeated partial drains never memmove the tail.
+/// In-memory landing zone used by encoder tests. Production writes use [`JniParquetOutput`] so
+/// encoded column chunks flow into Flink's recoverable stream while the row group is being closed.
 #[derive(Clone, Default)]
+#[cfg(test)]
 pub(crate) struct SharedBuffer {
     inner: Arc<Mutex<DrainableBuffer>>,
 }
 
 #[derive(Default)]
+#[cfg(test)]
 struct DrainableBuffer {
     bytes: Vec<u8>,
     read: usize,
 }
 
+#[cfg(test)]
 impl std::io::Write for SharedBuffer {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.inner.lock().unwrap().bytes.extend_from_slice(buf);
@@ -37,6 +39,7 @@ impl std::io::Write for SharedBuffer {
     }
 }
 
+#[cfg(test)]
 impl SharedBuffer {
     /// Copies up to `out.len()` buffered bytes into `out` and returns the count; 0 means drained.
     pub(crate) fn drain_into(&self, out: &mut [u8]) -> usize {
@@ -50,6 +53,88 @@ impl SharedBuffer {
             inner.read = 0;
         }
         n
+    }
+}
+
+/// Bounded bridge from parquet-rs' synchronous [`Write`] API to the Flink-owned output stream.
+///
+/// parquet-rs' low-level writer appends one encoded column chunk at a time. This adapter forwards
+/// those bytes through a reusable Java array as soon as one MiB is available, so the output bridge
+/// never adds a second complete compressed row group to parquet-rs' encoder working set.
+struct JniParquetOutput {
+    vm: jni::JavaVM,
+    output: jni::objects::GlobalRef,
+    chunk: jni::objects::GlobalRef,
+    buffered: Vec<u8>,
+}
+
+impl JniParquetOutput {
+    const CHUNK_BYTES: usize = 1024 * 1024;
+
+    fn new(env: &mut JNIEnv, output: JObject, chunk: JByteArray) -> jni::errors::Result<Self> {
+        let vm = env.get_java_vm()?;
+        let output = env.new_global_ref(output)?;
+        let chunk = env.new_global_ref(JObject::from(chunk))?;
+        Ok(Self {
+            vm,
+            output,
+            chunk,
+            buffered: Vec::with_capacity(Self::CHUNK_BYTES),
+        })
+    }
+
+    fn emit(&mut self) -> std::io::Result<()> {
+        if self.buffered.is_empty() {
+            return Ok(());
+        }
+        let mut env = self
+            .vm
+            .get_env()
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        // JByteArray is repr(transparent) over JObject. Borrow the GlobalRef's object instead of
+        // manufacturing a second owned wrapper for the same JNI reference.
+        let array: &JByteArray = self.chunk.as_obj().into();
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                self.buffered.as_ptr() as *const jni::sys::jbyte,
+                self.buffered.len(),
+            )
+        };
+        env.set_byte_array_region(array, 0, bytes)
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        env.call_method(
+            self.output.as_obj(),
+            "write",
+            "([BII)V",
+            &[
+                jni::objects::JValue::Object(array.as_ref()),
+                jni::objects::JValue::Int(0),
+                jni::objects::JValue::Int(self.buffered.len() as i32),
+            ],
+        )
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+        self.buffered.clear();
+        Ok(())
+    }
+}
+
+impl std::io::Write for JniParquetOutput {
+    fn write(&mut self, mut bytes: &[u8]) -> std::io::Result<usize> {
+        let written = bytes.len();
+        while !bytes.is_empty() {
+            let available = Self::CHUNK_BYTES - self.buffered.len();
+            let take = available.min(bytes.len());
+            self.buffered.extend_from_slice(&bytes[..take]);
+            bytes = &bytes[take..];
+            if self.buffered.len() == Self::CHUNK_BYTES {
+                self.emit()?;
+            }
+        }
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.emit()
     }
 }
 
@@ -316,26 +401,30 @@ fn flink_parquet_leaf(field: &Field) -> parquet::schema::types::Type {
         .expect("failed to build parquet leaf")
 }
 
-/// Encodes Arrow batches into Parquet bytes in memory; the JVM drains the bytes into whatever
-/// Flink output stream the part file lives behind. Owning only the encoding — never the IO or the
-/// file lifecycle — is what lets the host reuse Flink's filesystems, rolling, and exactly-once
-/// commit unchanged.
-pub(crate) struct ParquetEncoder {
-    writer: Option<parquet::arrow::ArrowWriter<SharedBuffer>>,
-    buffer: SharedBuffer,
+/// Encodes Arrow batches one row group at a time, closing and appending each column chunk
+/// independently. The output still belongs to Flink: production supplies a [`JniParquetOutput`]
+/// backed by the recoverable stream for the current part file.
+pub(crate) struct ParquetEncoder<W: std::io::Write + Send> {
+    writer: Option<parquet::file::writer::SerializedFileWriter<W>>,
+    row_group_factory: parquet::arrow::arrow_writer::ArrowRowGroupWriterFactory,
+    column_writers: Vec<parquet::arrow::arrow_writer::ArrowColumnWriter>,
+    row_group_index: usize,
+    buffered_rows: usize,
+    max_row_group_bytes: usize,
     write_schema: SchemaRef,
     /// Indices of the written (non-partition) columns in the incoming full-row batches; partition
     /// values live in the directory path, so their columns are projected out (zero-copy).
     projection: Vec<usize>,
 }
 
-impl ParquetEncoder {
+impl<W: std::io::Write + Send> ParquetEncoder<W> {
     pub(crate) fn new(
+        output: W,
         full_schema: SchemaRef,
         partition_columns: &[usize],
         config_keys: &[String],
         config_values: &[String],
-    ) -> ParquetEncoder {
+    ) -> ParquetEncoder<W> {
         let config = EncoderConfig::parse(config_keys, config_values);
         let projection: Vec<usize> = (0..full_schema.fields().len())
             .filter(|index| !partition_columns.contains(index))
@@ -365,23 +454,27 @@ impl ParquetEncoder {
             .expect("failed to build parquet schema");
         let descriptor = parquet::schema::types::SchemaDescriptor::new(Arc::new(root));
 
-        let buffer = SharedBuffer::default();
-        let options = parquet::arrow::arrow_writer::ArrowWriterOptions::new()
-            .with_properties(config.writer_properties())
-            .with_parquet_schema(descriptor)
-            // Flink files carry no embedded Arrow schema, and ours must not either: the forced
-            // descriptor diverges from what the arrow-rs converter would emit, so an embedded
-            // schema would contradict the physical layout for readers that trust it.
-            .with_skip_arrow_metadata(true);
-        let writer = parquet::arrow::ArrowWriter::try_new_with_options(
-            buffer.clone(),
-            write_schema.clone(),
-            options,
+        let properties = Arc::new(config.writer_properties());
+        let writer = parquet::file::writer::SerializedFileWriter::new(
+            output,
+            descriptor.root_schema_ptr(),
+            properties,
         )
         .expect("failed to create parquet encoder");
+        let row_group_factory = parquet::arrow::arrow_writer::ArrowRowGroupWriterFactory::new(
+            &writer,
+            write_schema.clone(),
+        );
+        let column_writers = row_group_factory
+            .create_column_writers(0)
+            .expect("failed to create parquet column writers");
         ParquetEncoder {
             writer: Some(writer),
-            buffer,
+            row_group_factory,
+            column_writers,
+            row_group_index: 0,
+            buffered_rows: 0,
+            max_row_group_bytes: config.block_size,
             write_schema,
             projection,
         }
@@ -396,24 +489,103 @@ impl ParquetEncoder {
             .collect();
         let batch = RecordBatch::try_new(self.write_schema.clone(), columns)
             .expect("write batch did not match the write schema");
-        self.writer
-            .as_mut()
-            .expect("parquet encoder already finished")
-            .write(&batch)
-            .expect("failed to encode batch");
+        self.write_sized(&batch);
     }
 
-    /// Writes the footer into the buffer; the handle stays alive so the JVM can drain it.
+    fn write_sized(&mut self, batch: &RecordBatch) {
+        if batch.num_rows() == 0 {
+            return;
+        }
+        let current_bytes = self.in_progress_size();
+        if self.buffered_rows > 0 {
+            if current_bytes >= self.max_row_group_bytes {
+                self.flush_row_group();
+                self.write_sized(batch);
+                return;
+            }
+            let average_row_bytes = current_bytes / self.buffered_rows;
+            if average_row_bytes > 0 {
+                let rows_that_fit = (self.max_row_group_bytes - current_bytes) / average_row_bytes;
+                if batch.num_rows() > rows_that_fit {
+                    if rows_that_fit == 0 {
+                        self.flush_row_group();
+                        self.write_sized(batch);
+                    } else {
+                        self.write_sized(&batch.slice(0, rows_that_fit));
+                        self.write_sized(
+                            &batch.slice(rows_that_fit, batch.num_rows() - rows_that_fit),
+                        );
+                    }
+                    return;
+                }
+            }
+        }
+
+        let mut writers = self.column_writers.iter_mut();
+        for (field, column) in self.write_schema.fields().iter().zip(batch.columns()) {
+            for leaf in parquet::arrow::arrow_writer::compute_leaves(field, column)
+                .expect("failed to compute parquet column levels")
+            {
+                writers
+                    .next()
+                    .expect("parquet column writer count did not match schema")
+                    .write(&leaf)
+                    .expect("failed to encode parquet column");
+            }
+        }
+        assert!(writers.next().is_none(), "unused parquet column writer");
+        self.buffered_rows += batch.num_rows();
+        if self.in_progress_size() >= self.max_row_group_bytes {
+            self.flush_row_group();
+        }
+    }
+
+    fn in_progress_size(&self) -> usize {
+        self.column_writers
+            .iter()
+            .map(|writer| writer.get_estimated_total_bytes())
+            .sum()
+    }
+
+    fn flush_row_group(&mut self) {
+        if self.buffered_rows == 0 {
+            return;
+        }
+        let columns = std::mem::take(&mut self.column_writers);
+        let writer = self
+            .writer
+            .as_mut()
+            .expect("parquet encoder already finished");
+        let mut row_group = writer
+            .next_row_group()
+            .expect("failed to create parquet row group");
+        for column in columns {
+            column
+                .close()
+                .expect("failed to close parquet column")
+                .append_to_row_group(&mut row_group)
+                .expect("failed to append parquet column chunk");
+        }
+        row_group
+            .close()
+            .expect("failed to close parquet row group");
+        writer.flush().expect("failed to flush parquet row group");
+        self.row_group_index += 1;
+        self.column_writers = self
+            .row_group_factory
+            .create_column_writers(self.row_group_index)
+            .expect("failed to create parquet column writers");
+        self.buffered_rows = 0;
+    }
+
+    /// Flushes the last row group and writes the footer into Flink's output stream.
     pub(crate) fn finish(&mut self) {
+        self.flush_row_group();
         self.writer
             .take()
             .expect("parquet encoder already finished")
             .close()
             .expect("failed to finish parquet file");
-    }
-
-    pub(crate) fn drain_into(&self, out: &mut [u8]) -> usize {
-        self.buffer.drain_into(out)
     }
 }
 
@@ -436,13 +608,18 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_createParque
     partition_columns: JIntArray<'local>,
     config_keys: JObjectArray<'local>,
     config_values: JObjectArray<'local>,
+    output: JObject<'local>,
+    chunk: JByteArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let schema = import_schema(schema_address);
         let partition_columns = read_columns(&env, &partition_columns);
         let keys = required_strings(&mut env, &config_keys);
         let values = required_strings(&mut env, &config_values);
+        let output = JniParquetOutput::new(&mut env, output, chunk)
+            .expect("failed to create Flink parquet output bridge");
         into_handle(ParquetEncoder::new(
+            output,
             schema,
             &partition_columns,
             &keys,
@@ -468,38 +645,13 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncod
     in_schema_address: jlong,
 ) {
     crate::bridge::jni_guard(env, move |_env| {
-        let encoder = unsafe { &mut *(handle as *mut ParquetEncoder) };
+        let encoder = unsafe { &mut *(handle as *mut ParquetEncoder<JniParquetOutput>) };
         let batch = import_record_batch(in_array_address, in_schema_address);
         encoder.write(&batch);
     })
 }
 
-/// Copies buffered encoded bytes into `chunk`, returning the count (0 = drained). The chunk is
-/// pinned critically for the duration of one memcpy — the only copy between the encoder's buffer
-/// and the Flink output stream the JVM writes it to.
-#[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncoderDrain<'local>(
-    env: JNIEnv<'local>,
-    _class: JClass<'local>,
-    handle: jlong,
-    chunk: JByteArray<'local>,
-) -> jint {
-    crate::bridge::jni_guard(env, move |env| {
-        use jni::objects::ReleaseMode;
-
-        let encoder = unsafe { &*(handle as *const ParquetEncoder) };
-        let mut elements =
-            unsafe { env.get_array_elements_critical(&chunk, ReleaseMode::CopyBack) }
-                .expect("failed to pin drain chunk");
-        let out = unsafe {
-            std::slice::from_raw_parts_mut(elements.as_mut_ptr() as *mut u8, elements.len())
-        };
-        encoder.drain_into(out) as jint
-    })
-}
-
-/// Writes the Parquet footer into the buffer. The handle stays open so the JVM can drain the
-/// remaining bytes; release it with `closeParquetEncoder`.
+/// Flushes the last row group and writes the Parquet footer.
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncoderFinish<'local>(
     env: JNIEnv<'local>,
@@ -507,7 +659,7 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncod
     handle: jlong,
 ) {
     crate::bridge::jni_guard(env, move |_env| {
-        let encoder = unsafe { &mut *(handle as *mut ParquetEncoder) };
+        let encoder = unsafe { &mut *(handle as *mut ParquetEncoder<JniParquetOutput>) };
         encoder.finish();
     })
 }
@@ -520,7 +672,7 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_closeParquet
     handle: jlong,
 ) {
     crate::bridge::jni_guard(env, move |_env| unsafe {
-        drop(from_handle::<ParquetEncoder>(handle));
+        drop(from_handle::<ParquetEncoder<JniParquetOutput>>(handle));
     })
 }
 
@@ -653,158 +805,6 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_closePartiti
     })
 }
 
-/// Reorders/selects a batch's columns to match the requested projection (by name); identity when no
-/// projection was requested. Shared by the file sources so projection pushdown behaves identically.
-/// A native source the JVM pulls one Arrow batch at a time, until the split is exhausted. The concrete
-/// reader is hidden behind this trait so the file formats share one open/next/close bridge — the bytes
-/// are read and decoded directly in the engine, never crossing into the row world.
-pub(crate) trait BatchSource {
-    fn next_batch(&mut self) -> Option<RecordBatch>;
-}
-
-/// A scan of one file split, driven by DataFusion's file-scan execution — the same path
-/// datafusion-comet uses. DataFusion selects the row groups whose start falls in the split's byte
-/// range, pushes the projection into the decode (only the wanted columns are read), and yields Arrow
-/// batches, which we pull synchronously on the shared runtime. File formats differ only in the
-/// `FileSource` constructed.
-pub(crate) struct FileScan {
-    stream: datafusion::physical_plan::SendableRecordBatchStream,
-}
-
-impl FileScan {
-    fn open(
-        file_source: Arc<dyn datafusion::datasource::physical_plan::FileSource>,
-        path: &str,
-        schema: SchemaRef,
-        projection: &[String],
-        range_start: i64,
-        range_length: i64,
-    ) -> FileScan {
-        use datafusion::datasource::listing::PartitionedFile;
-        use datafusion::datasource::physical_plan::FileScanConfigBuilder;
-        use datafusion::datasource::source::DataSourceExec;
-        use datafusion::execution::object_store::ObjectStoreUrl;
-        use datafusion::physical_plan::ExecutionPlan;
-
-        let size = std::fs::metadata(path)
-            .expect("failed to stat source file")
-            .len();
-        let file = PartitionedFile::new_with_range(
-            path.to_string(),
-            size,
-            range_start,
-            range_start + range_length,
-        );
-        // Projection as column indices in plan order; an empty projection reads every column.
-        let indices: Vec<usize> = if projection.is_empty() {
-            (0..schema.fields().len()).collect()
-        } else {
-            projection
-                .iter()
-                .map(|name| {
-                    schema
-                        .index_of(name)
-                        .expect("projected column not in source file")
-                })
-                .collect()
-        };
-        let config = FileScanConfigBuilder::new(ObjectStoreUrl::local_filesystem(), file_source)
-            .with_file(file)
-            .with_projection_indices(Some(indices))
-            .expect("failed to set scan projection")
-            .build();
-        let stream = DataSourceExec::from_data_source(config)
-            .execute(0, SessionContext::new().task_ctx())
-            .expect("failed to start file scan");
-        FileScan { stream }
-    }
-}
-
-impl BatchSource for FileScan {
-    fn next_batch(&mut self) -> Option<RecordBatch> {
-        runtime()
-            .block_on(async { self.stream.next().await })
-            .map(|batch| batch.expect("failed to read file batch"))
-    }
-}
-
-/// The Arrow schema of a Parquet file, read from its footer to build the scan's file source.
-pub(crate) fn parquet_file_schema(path: &str) -> SchemaRef {
-    let file = std::fs::File::open(path).expect("failed to open parquet file");
-    parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(file)
-        .expect("failed to read parquet metadata")
-        .schema()
-        .clone()
-}
-
-/// Opens one Parquet split — the row groups of `path` within `[range_start, range_start +
-/// range_length)` — and returns an opaque handle, released with `closeSource`.
-#[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_openParquet<'local>(
-    env: JNIEnv<'local>,
-    _class: JClass<'local>,
-    path: JString<'local>,
-    projection: JObjectArray<'local>,
-    range_start: jlong,
-    range_length: jlong,
-) -> jlong {
-    crate::bridge::jni_guard(env, move |mut env| {
-        let path: String = env.get_string(&path).expect("failed to read path").into();
-        let projection = read_strings(&mut env, &projection)
-            .into_iter()
-            .map(|name| name.expect("projection column name was null"))
-            .collect::<Vec<_>>();
-        let schema = parquet_file_schema(&path);
-        let file_source = Arc::new(datafusion::datasource::physical_plan::ParquetSource::new(
-            schema.clone(),
-        )) as Arc<dyn datafusion::datasource::physical_plan::FileSource>;
-        let source: Box<dyn BatchSource> = Box::new(FileScan::open(
-            file_source,
-            &path,
-            schema,
-            &projection,
-            range_start,
-            range_length,
-        ));
-        into_handle(source)
-    })
-}
-
-/// Exports the next Arrow batch from the source into the consumer-allocated C structs, returning
-/// true if a batch was produced and false once the directory is exhausted. Shared by every native
-/// file source.
-#[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_nextBatch<'local>(
-    env: JNIEnv<'local>,
-    _class: JClass<'local>,
-    handle: jlong,
-    out_array_address: jlong,
-    out_schema_address: jlong,
-) -> jboolean {
-    crate::bridge::jni_guard(env, move |_env| {
-        let source = unsafe { &mut *(handle as *mut Box<dyn BatchSource>) };
-        match source.next_batch() {
-            Some(batch) => {
-                export_record_batch(batch, out_array_address, out_schema_address);
-                1
-            }
-            None => 0,
-        }
-    })
-}
-
-/// Releases a native file source handle.
-#[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_closeSource<'local>(
-    env: JNIEnv<'local>,
-    _class: JClass<'local>,
-    handle: jlong,
-) {
-    crate::bridge::jni_guard(env, move |_env| unsafe {
-        drop(from_handle::<Box<dyn BatchSource>>(handle));
-    })
-}
-
 #[cfg(test)]
 mod parquet_encoder_tests {
     use super::*;
@@ -812,8 +812,7 @@ mod parquet_encoder_tests {
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
     use parquet::basic::{ConvertedType, LogicalType, Repetition, Type as PhysicalType};
 
-    /// Runs batches through an encoder and returns the complete encoded file, draining through a
-    /// deliberately small chunk to exercise the partial-drain path the JVM uses.
+    /// Runs batches through an encoder and returns the complete encoded file.
     fn encode(
         schema: SchemaRef,
         partition_columns: &[usize],
@@ -822,22 +821,17 @@ mod parquet_encoder_tests {
     ) -> Vec<u8> {
         let keys: Vec<String> = config.iter().map(|(k, _)| k.to_string()).collect();
         let values: Vec<String> = config.iter().map(|(_, v)| v.to_string()).collect();
-        let mut encoder = ParquetEncoder::new(schema, partition_columns, &keys, &values);
-        let mut file = Vec::new();
-        let mut chunk = [0u8; 61];
+        let output = SharedBuffer::default();
+        let mut encoder =
+            ParquetEncoder::new(output.clone(), schema, partition_columns, &keys, &values);
         for batch in batches {
             encoder.write(batch);
-            loop {
-                let n = encoder.drain_into(&mut chunk);
-                if n == 0 {
-                    break;
-                }
-                file.extend_from_slice(&chunk[..n]);
-            }
         }
         encoder.finish();
+        let mut file = Vec::new();
+        let mut chunk = [0u8; 61];
         loop {
-            let n = encoder.drain_into(&mut chunk);
+            let n = output.drain_into(&mut chunk);
             if n == 0 {
                 break;
             }
@@ -1371,13 +1365,14 @@ mod partition_split_tests {
         // whose rows are exactly the group's, proving the slice survives the encoder path.
         let source = batch(vec![Some("b"), Some("a"), Some("b")], vec![1, 2, 3]);
         let slices = split_by_partition_columns(&source, &[0]);
-        let mut encoder = ParquetEncoder::new(source.schema(), &[0], &[], &[]);
+        let output = SharedBuffer::default();
+        let mut encoder = ParquetEncoder::new(output.clone(), source.schema(), &[0], &[], &[]);
         encoder.write(&slices[1]);
         encoder.finish();
         let mut file = Vec::new();
         let mut chunk = [0u8; 4096];
         loop {
-            let n = encoder.drain_into(&mut chunk);
+            let n = output.drain_into(&mut chunk);
             if n == 0 {
                 break;
             }

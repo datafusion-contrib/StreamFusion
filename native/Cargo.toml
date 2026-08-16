@@ -31,8 +31,7 @@ log = "0.4"
 # intermediate needs integers wider than i128/i256 in the worst case. Already in the tree
 # transitively via datafusion; pinned here for direct use.
 num-bigint = "0.4"
-# Native Parquet reader, driven through DataFusion's file-scan execution (projection pushdown,
-# row-group range selection) via datafusion's built-in Parquet source.
+# Native Parquet sink encoding and test-fixture decoding.
 parquet = { version = "58", features = ["arrow"], optional = true }
 # Native Avro decode incl. the Confluent Schema Registry wire format (magic byte + 4-byte schema id +
 # Avro body), resolved against a local SchemaStore keyed by integer id. Used by the Kafka source.
@@ -48,8 +47,7 @@ prost-reflect = "0.16"
 prost = "0.14"
 prost-types = "0.14"
 ptars = "0.0.18"
-# Keep DataFusion's expression/physical-plan surface in core, but do not enable its Parquet
-# datasource there. The native Parquet extension turns that feature on with its own DSO.
+# Keep DataFusion's expression/physical-plan surface in core.
 datafusion = { version = "54.0.0", default-features = false, features = [
   "nested_expressions",
   "crypto_expressions",
@@ -110,7 +108,7 @@ cc = "1"
 default = []
 kafka = []
 fluss = ["dep:fluss_rs"]
-parquet = ["dep:parquet", "datafusion/parquet"]
+parquet = ["dep:parquet"]
 json = []
 csv = []
 raw = []

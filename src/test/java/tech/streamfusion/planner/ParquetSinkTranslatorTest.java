@@ -62,8 +62,12 @@ class ParquetSinkTranslatorTest {
   void defaultsResolveToFlinkEffectiveSettings() {
     Map<String, String> config = encoderConfig(baseOptions(), SIMPLE, List.of());
     assertEquals("SNAPPY", config.get("compression"));
-    // Everything else stays on the encoder's parquet-mr-matched defaults.
-    assertEquals(1, config.size());
+    assertEquals("134217728", config.get("block.size"));
+    assertEquals("1048576", config.get("page.size"));
+    assertEquals("1048576", config.get("dictionary.page.size"));
+    assertEquals("true", config.get("enable.dictionary"));
+    assertEquals("1", config.get("writer.version"));
+    assertEquals("micros", config.get("timestamp.unit"));
   }
 
   @Test
@@ -103,8 +107,9 @@ class ParquetSinkTranslatorTest {
     options.put("parquet.statistics.truncate.length", "16");
     options.put("parquet.writer.max-padding", "0");
     options.put("parquet.batch-size", "1024");
-    Map<String, String> config = encoderConfig(options, SIMPLE, List.of());
-    assertEquals(1, config.size());
+    assertEquals(
+        encoderConfig(baseOptions(), SIMPLE, List.of()),
+        encoderConfig(options, SIMPLE, List.of()));
   }
 
   @Test
@@ -163,6 +168,14 @@ class ParquetSinkTranslatorTest {
             new String[] {"id", "ts"});
     assertTrue(
         ParquetSinkTranslator.translate(baseOptions(), rowType, List.of("ts")).fallbackReason == null);
+  }
+
+  @Test
+  void partitionOnlySchemaFallsBack() {
+    RowType rowType =
+        RowType.of(new LogicalType[] {new IntType()}, new String[] {"partition_col"});
+    assertTrue(
+        fallback(baseOptions(), rowType, List.of("partition_col")).contains("zero-column"));
   }
 
   @Test
@@ -243,9 +256,70 @@ class ParquetSinkTranslatorTest {
   }
 
   @Test
+  void unrecognizedParquetOptionFallsBack() {
+    Map<String, String> options = baseOptions();
+    options.put("parquet.future-writer-setting", "on");
+    assertTrue(fallback(options, SIMPLE, List.of()).contains("future-writer-setting"));
+  }
+
+  @Test
+  void clusterHadoopValuesArePartOfTheEffectiveConfiguration() {
+    Map<String, String> cluster =
+        Map.of(
+            "parquet.compression", "ZSTD",
+            "parquet.compression.codec.zstd.level", "9",
+            "parquet.block.size", "67108864",
+            "parquet.page.size", "524288",
+            "parquet.dictionary.page.size", "262144",
+            "parquet.enable.dictionary", "false",
+            "parquet.writer.version", "PARQUET_2_0",
+            "parquet.timestamp.time.unit", "nanos");
+    ParquetSinkTranslator.Result result =
+        ParquetSinkTranslator.translate(
+            baseOptions(), SIMPLE, List.of(), cluster::get);
+    assertTrue(result.fallbackReason == null, result.fallbackReason);
+    Map<String, String> config = new HashMap<>();
+    String[] keys = result.encoderKeys();
+    String[] values = result.encoderValues();
+    for (int i = 0; i < keys.length; i++) {
+      config.put(keys[i], values[i]);
+    }
+    assertEquals("ZSTD", config.get("compression"));
+    assertEquals("9", config.get("compression.zstd.level"));
+    assertEquals("67108864", config.get("block.size"));
+    assertEquals("524288", config.get("page.size"));
+    assertEquals("262144", config.get("dictionary.page.size"));
+    assertEquals("false", config.get("enable.dictionary"));
+    assertEquals("2", config.get("writer.version"));
+    assertEquals("nanos", config.get("timestamp.unit"));
+  }
+
+  @Test
+  void unsupportedClusterWriterSettingFallsBack() {
+    ParquetSinkTranslator.Result result =
+        ParquetSinkTranslator.translate(
+            baseOptions(), SIMPLE, List.of(), key -> "parquet.validation".equals(key) ? "true" : null);
+    assertTrue(result.fallbackReason.contains("validation"), result.fallbackReason);
+  }
+
+  @Test
   void nonNumericSizeOptionFallsBack() {
     Map<String, String> options = baseOptions();
     options.put("parquet.block.size", "128MB");
-    assertTrue(fallback(options, SIMPLE, List.of()).contains("non-numeric"));
+    assertTrue(fallback(options, SIMPLE, List.of()).contains("positive"));
+
+    options = baseOptions();
+    options.put("parquet.page.size", "-1");
+    assertTrue(fallback(options, SIMPLE, List.of()).contains("positive"));
+  }
+
+  @Test
+  void malformedTimestampBooleansFallBackEvenWithoutTimestampColumns() {
+    for (String option :
+        new String[] {"parquet.write.int64.timestamp", "parquet.utc-timezone"}) {
+      Map<String, String> options = baseOptions();
+      options.put(option, "yes");
+      assertTrue(fallback(options, SIMPLE, List.of()).contains(option));
+    }
   }
 }

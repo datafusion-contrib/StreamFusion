@@ -11,9 +11,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * A windowed aggregate over a Parquet source carrying a {@code WATERMARK} clause. A filesystem
- * source does not push watermarks down, so the plan has a watermark-assigner node; fed by the native
- * (columnar) Parquet source, it routes to the native columnar assigner, and the whole query must
- * still match the host.
+ * source does not push watermarks down, so the plan has a watermark-assigner node. StreamFusion
+ * transposes Flink's source output at the native operator boundary, and the query must match the host.
  */
 class FlinkWatermarkAssignerSqlHarnessTest {
 
@@ -28,9 +27,8 @@ class FlinkWatermarkAssignerSqlHarnessTest {
     writeInput(input);
     // The 2-second watermark delay (see the DDL) keeps every window open until end-of-input MAX, so
     // no window closes mid-batch — the case where per-batch watermark assignment would diverge from
-    // the host's per-row dropping (divergences/09). This exercises the full columnar pipeline (native
-    // source → native watermark assigner → native window) at true parity, including the source's
-    // timestamp time-zone normalization.
+    // the host's per-row dropping (divergences/09). This exercises source-edge transpose → native
+    // watermark assigner → native window at true parity.
     NativeParity.assertParity(() -> readEnvironment(input), WINDOW_QUERY);
   }
 

@@ -7,7 +7,6 @@ import org.apache.flink.table.catalog.ContextResolvedTable;
 import org.apache.flink.table.catalog.ObjectIdentifier;
 import org.apache.flink.table.catalog.ResolvedCatalogBaseTable;
 import org.apache.flink.table.catalog.ResolvedCatalogTable;
-import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.abilities.sink.OverwriteSpec;
 import org.apache.flink.table.planner.plan.abilities.sink.PartitioningSpec;
 import org.apache.flink.table.planner.plan.abilities.sink.SinkAbilitySpec;
@@ -86,7 +85,11 @@ final class ParquetSinkMatcher {
       }
     }
 
-    RowType rowType = FlinkTypeFactory$.MODULE$.toLogicalRowType(sink.getRowType());
+    // Sink columns are matched positionally, so the input relation may carry unrelated names
+    // (Flink's upstream filesystem tests use f0..f4 for a sink partitioned by d). Partition routing
+    // and file-schema projection must use the catalog sink schema, just like stock Flink.
+    RowType rowType =
+        (RowType) table.getResolvedSchema().toPhysicalRowDataType().getLogicalType();
     List<String> partitionKeys = table.getPartitionKeys();
     ParquetSinkTranslator.Result translated =
         ParquetSinkTranslator.translate(options, rowType, partitionKeys);

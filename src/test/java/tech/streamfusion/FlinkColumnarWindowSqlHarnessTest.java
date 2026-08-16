@@ -23,9 +23,8 @@ import org.apache.flink.util.CloseableIterator;
 import org.junit.jupiter.api.Test;
 
 /**
- * The fully-columnar windowed pipeline: a native Parquet source feeds a native watermark assigner,
- * a native columnar exchange (keeping the keyed shuffle in Arrow), and a native columnar window —
- * no row transpose anywhere. Results must match the host. The rowtime is {@code TIMESTAMP_LTZ}
+ * Flink's Parquet source transposes once into a native watermark assigner, columnar exchange, and
+ * columnar window. Results must match the host. The rowtime is {@code TIMESTAMP_LTZ}
  * (what the window matcher admits), and the watermark delay keeps every window open until
  * end-of-input MAX so per-batch watermark assignment (divergences/09) does not affect the result.
  */
@@ -107,9 +106,8 @@ class FlinkColumnarWindowSqlHarnessTest {
   void keyedSessionOverColumnarSourceMatchesHost() throws Exception {
     Path input = Files.createTempDirectory("csession-in");
     writeInput(input);
-    // Fully-columnar session: native source → watermark assigner → columnar keyed exchange → columnar
-    // session aggregator, the gap-merged per-key windows folded from Arrow with no transpose at the
-    // input. Output rows match the host.
+    // After the source-edge transpose: watermark assigner → columnar keyed exchange → columnar
+    // session aggregator. Output rows match the host.
     NativeParity.assertParity(
         () -> readEnvironment(input, "ONE_PHASE"),
         "SELECT k, window_start, window_end, SUM(v) AS total "
@@ -121,8 +119,8 @@ class FlinkColumnarWindowSqlHarnessTest {
   void partitionedOverColumnarSourceMatchesHost() throws Exception {
     Path input = Files.createTempDirectory("cover-in");
     writeInput(input);
-    // Fully-columnar OVER: native source → watermark assigner → columnar keyed exchange → columnar
-    // OVER, the input columns passing through with the running SUM appended, no transpose anywhere.
+    // After the source-edge transpose: watermark assigner → columnar keyed exchange → columnar
+    // OVER, with the running SUM appended.
     NativeParity.assertParity(
         () -> readEnvironment(input, "ONE_PHASE"),
         "SELECT k, v, SUM(v) OVER (PARTITION BY k ORDER BY rt) AS total FROM t");
@@ -132,8 +130,7 @@ class FlinkColumnarWindowSqlHarnessTest {
   void rowNumberOverColumnarSourceMatchesHost() throws Exception {
     Path input = Files.createTempDirectory("crn-in");
     writeInput(input);
-    // ROW_NUMBER() rides the same columnar OVER path as the running aggregates: native source →
-    // watermark assigner → columnar exchange → columnar OVER, the per-partition counter appended.
+    // ROW_NUMBER() rides the same post-transpose columnar OVER path as the running aggregates.
     NativeParity.assertParity(
         () -> readEnvironment(input, "ONE_PHASE"),
         "SELECT k, v, ROW_NUMBER() OVER (PARTITION BY k ORDER BY rt) AS rn FROM t");

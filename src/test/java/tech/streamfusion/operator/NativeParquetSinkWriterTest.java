@@ -3,6 +3,7 @@ package tech.streamfusion.operator;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -12,6 +13,7 @@ import java.util.List;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.api.common.serialization.BulkWriter;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.file.table.stream.PartitionCommitInfo;
 import org.apache.flink.connector.file.table.stream.StreamingFileWriter;
@@ -104,6 +106,63 @@ class NativeParquetSinkWriterTest {
                 new org.apache.hadoop.conf.Configuration()))) {
       return reader.getRecordCount();
     }
+  }
+
+  @Test
+  void forwardsCompletedRowGroupsBeforeThePartFileFinishes() throws Exception {
+    NativeParquetBulkWriterFactory factory =
+        new NativeParquetBulkWriterFactory(
+            SCHEMA, new int[0], new String[] {"block.size"}, new String[] {"1"});
+    RecordingOutputStream output = new RecordingOutputStream();
+    try (BufferAllocator allocator = new RootAllocator()) {
+      BulkWriter<PartitionedArrowBatch> writer = factory.create(output);
+      writer.addElement(batch(allocator, "", row("a", 1), row("b", 2)));
+      assertTrue(output.getPos() > 4, "a completed row group should reach Flink before finish");
+      assertTrue(output.maxWrite <= 1 << 20, "the native bridge must stay bounded to one MiB");
+      writer.finish();
+    }
+    byte[] file = output.bytes.toByteArray();
+    assertEquals('P', file[0]);
+    assertEquals('A', file[1]);
+    assertEquals('R', file[2]);
+    assertEquals('1', file[3]);
+    assertEquals('P', file[file.length - 4]);
+    assertEquals('A', file[file.length - 3]);
+    assertEquals('R', file[file.length - 2]);
+    assertEquals('1', file[file.length - 1]);
+  }
+
+  private static final class RecordingOutputStream
+      extends org.apache.flink.core.fs.FSDataOutputStream {
+
+    private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    private int maxWrite;
+
+    @Override
+    public long getPos() {
+      return bytes.size();
+    }
+
+    @Override
+    public void write(int value) {
+      bytes.write(value);
+      maxWrite = Math.max(maxWrite, 1);
+    }
+
+    @Override
+    public void write(byte[] data, int offset, int length) {
+      bytes.write(data, offset, length);
+      maxWrite = Math.max(maxWrite, length);
+    }
+
+    @Override
+    public void flush() {}
+
+    @Override
+    public void sync() {}
+
+    @Override
+    public void close() {}
   }
 
   @Test

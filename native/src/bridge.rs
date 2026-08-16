@@ -293,8 +293,7 @@ pub(crate) unsafe fn from_handle<T>(handle: jlong) -> Box<T> {
     Box::from_raw(handle as *mut T)
 }
 
-/// `std::any::type_name` output with every module path stripped, so the breakdown reads
-/// `Box<dyn BatchSource>` rather than `alloc::boxed::Box<dyn streamfusion::BatchSource>`.
+/// `std::any::type_name` output with every module path stripped, so handle diagnostics stay compact.
 pub(crate) fn short_type_name(full: &str) -> String {
     let mut out = String::new();
     let mut ident = String::new();

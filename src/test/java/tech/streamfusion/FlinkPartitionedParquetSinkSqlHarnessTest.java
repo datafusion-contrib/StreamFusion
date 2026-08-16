@@ -79,7 +79,14 @@ class FlinkPartitionedParquetSinkSqlHarnessTest {
     DataStream<Row> source =
         env.fromData(
             Types.ROW_NAMED(
-                new String[] {"dt", "v", "price", "big", "dy", "ts"},
+                new String[] {
+                  "source_partition",
+                  "source_value",
+                  "source_price",
+                  "source_big",
+                  "source_date",
+                  "source_timestamp"
+                },
                 Types.STRING,
                 Types.INT,
                 Types.BIG_DEC,
@@ -115,12 +122,14 @@ class FlinkPartitionedParquetSinkSqlHarnessTest {
         "s",
         source,
         Schema.newBuilder()
-            .column("dt", DataTypes.STRING())
-            .column("v", DataTypes.INT())
-            .column("price", DataTypes.DECIMAL(10, 2))
-            .column("big", DataTypes.DECIMAL(38, 10))
-            .column("dy", DataTypes.DATE())
-            .column("ts", DataTypes.TIMESTAMP(6))
+            // Sink assignment is positional. Keep deliberately unrelated source names so partition
+            // lookup is proven to use the sink catalog schema rather than input relation aliases.
+            .column("source_partition", DataTypes.STRING())
+            .column("source_value", DataTypes.INT())
+            .column("source_price", DataTypes.DECIMAL(10, 2))
+            .column("source_big", DataTypes.DECIMAL(38, 10))
+            .column("source_date", DataTypes.DATE())
+            .column("source_timestamp", DataTypes.TIMESTAMP(6))
             .build());
 
     PhysicalPlanScan scan = useNative ? NativePlanner.install(tEnv) : null;

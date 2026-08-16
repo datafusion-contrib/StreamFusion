@@ -15,9 +15,8 @@ import org.junit.jupiter.api.Test;
  * 38-significant-digit quotient, then the rescale to {@code DECIMAL(38, max(6, s))} —
  * {@code findAvgAggType}'s type — both HALF_UP), so it too matches the host byte for byte.
  *
- * <p>The host and native Parquet source paths may read files in different orders. Group aggregates
- * therefore compare their collapsed changelogs: intermediate updates are order-dependent, while the
- * final materialized result is the deterministic SQL contract.
+ * <p>Group aggregates compare their collapsed changelogs: intermediate updates are order-dependent,
+ * while the final materialized result is the deterministic SQL contract.
  */
 class FlinkDecimalAggregateSqlHarnessTest {
 
@@ -34,9 +33,8 @@ class FlinkDecimalAggregateSqlHarnessTest {
     Path input = Files.createTempDirectory("dec-global-in");
     writeInput(input);
     // A global (no GROUP BY) running SUM emits a retract changelog whose intermediate values depend on
-    // input arrival order; the native and host source paths need not read the parquet in the same order,
-    // so the raw changelog is legitimately incomparable. The net materialized state is the contract —
-    // compare the collapsed changelog.
+    // input arrival order. The net materialized state is the contract, so compare the collapsed
+    // changelog.
     NativeParity.assertChangelogParity(() -> readEnvironment(input), "SELECT SUM(d) AS s FROM t");
   }
 

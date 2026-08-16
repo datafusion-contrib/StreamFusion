@@ -37,14 +37,13 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * The full Nexmark matrix: every query StreamFusion currently accelerates end-to-end, each run against
  * stock Flink and against native execution from every source it can be fed by — the generator (rowwise
- * RowData), a local Parquet file (a columnar file source read straight to Arrow, no ingest transpose),
+ * RowData), a local Parquet file read by Flink's stock source,
  * and Kafka json/avro/protobuf, the Kafka formats climbing the source→columnar ladder (JVM transpose,
  * Rust decode with a JVM poll, fully native Rust poll+decode). One table per query, a native cell per
  * source, each a speedup over the Flink baseline for that same source.
  *
- * <p>The Parquet source is the columnar-source case: the same wide event row is written once to a local
- * Parquet directory, then read back through the native {@code filesystem}/{@code parquet} scan — the
- * rows never become {@code RowData} at ingest, so a fully native pipeline pays only the sink transpose.
+ * <p>The Parquet case writes the same wide event row once to a local directory, then reads it through
+ * Flink's {@code filesystem}/{@code parquet} source; native operators pay the normal entry transpose.
  * Its rowtime is a plain {@code TIMESTAMP(3)} (unlike the Kafka {@code TIMESTAMP_LTZ}), so the {@code
  * DATE_FORMAT}/{@code HOUR} queries that are generator-only on Kafka run here too.
  *

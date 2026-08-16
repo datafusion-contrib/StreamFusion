@@ -184,6 +184,7 @@ pub(crate) use protobuf_encode::*;
 pub(crate) use raw_encode::*;
 
 #[cfg(feature = "parquet")]
+#[allow(unused_imports)]
 pub(crate) use files::*;
 
 #[cfg(feature = "fluss")]

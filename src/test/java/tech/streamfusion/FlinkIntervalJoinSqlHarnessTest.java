@@ -90,9 +90,8 @@ class FlinkIntervalJoinSqlHarnessTest {
     Path right = Files.createTempDirectory("ijoin-right");
     writeRows(left);
     writeRows(right);
-    // Fully columnar: each native Parquet source feeds a native watermark assigner and a native
-    // columnar exchange (keyed by the join key), and the native interval join emits Arrow pairs —
-    // no row transpose anywhere.
+    // Each stock Parquet source transposes at its native boundary, then feeds a native watermark
+    // assigner, columnar keyed exchange, and native interval join.
     NativeParity.assertParity(() -> parquetEnvironment(left, right), JOIN);
   }
 

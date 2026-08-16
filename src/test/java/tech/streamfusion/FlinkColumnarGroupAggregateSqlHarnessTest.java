@@ -8,11 +8,9 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.junit.jupiter.api.Test;
 
 /**
- * A non-windowed {@code GROUP BY} fed by a native Parquet source keeps the keyed shuffle columnar (a
- * native exchange splits the Arrow batch by the grouping key) and runs the columnar aggregate, so the
- * input never transposes to rows — the changelog flows Arrow until the host edge. The materialized
- * result must match the host; the filesystem source may enumerate its Parquet records differently
- * across the two independent executions, so intermediate aggregate updates are not order-stable.
+ * A non-windowed {@code GROUP BY} fed by Flink's Parquet source transposes once at the native
+ * boundary, then keeps the keyed shuffle and aggregate columnar until the host edge. The materialized
+ * result must match the host.
  */
 class FlinkColumnarGroupAggregateSqlHarnessTest {
 

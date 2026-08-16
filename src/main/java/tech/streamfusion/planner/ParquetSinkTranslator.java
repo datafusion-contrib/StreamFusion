@@ -31,6 +31,11 @@ final class ParquetSinkTranslator {
 
   private ParquetSinkTranslator() {}
 
+  @FunctionalInterface
+  interface HadoopConfigLookup {
+    String get(String key);
+  }
+
   static final class Result {
     private final Map<String, String> encoderConfig;
     final String fallbackReason;
@@ -95,18 +100,65 @@ final class ParquetSinkTranslator {
           "source.report-statistics",
           "source.path.regex-pattern");
 
+  /** Writer keys whose effective values are either translated or explicitly declined. */
+  private static final Set<String> PARQUET_HANDLED =
+      Set.of(
+          "parquet.compression",
+          "parquet.compression.codec.zstd.level",
+          "parquet.compression.codec.zstd.workers",
+          "parquet.compression.codec.zstd.bufferPool.enabled",
+          "parquet.block.size",
+          "parquet.page.size",
+          "parquet.dictionary.page.size",
+          "parquet.enable.dictionary",
+          "parquet.writer.version",
+          "parquet.validation",
+          "parquet.write.int64.timestamp",
+          "parquet.utc-timezone",
+          "parquet.timestamp.time.unit");
+
+  /**
+   * Proven no-ops for Flink's streaming Parquet sink. The source batch size never reaches a sink;
+   * the remaining properties are not copied from Hadoop configuration into the
+   * {@code ParquetWriter.Builder}; max padding is inert because Flink's stream-backed
+   * {@code OutputFile.supportsBlockSize()} is false.
+   */
+  private static final Set<String> PARQUET_HOST_IGNORED =
+      Set.of(
+          "parquet.batch-size",
+          "parquet.bloom.filter.enabled",
+          "parquet.page.row.count.limit",
+          "parquet.statistics.truncate.length",
+          "parquet.writer.max-padding");
+
   static Result translate(
       Map<String, String> options, RowType physicalRowType, List<String> partitionKeys) {
+    return translate(
+        options,
+        physicalRowType,
+        partitionKeys,
+        ParquetSinkTranslator::clusterHadoopValue);
+  }
+
+  static Result translate(
+      Map<String, String> options,
+      RowType physicalRowType,
+      List<String> partitionKeys,
+      HadoopConfigLookup hadoopConfig) {
     if ("true".equalsIgnoreCase(options.get("auto-compaction"))) {
       return Result.fallback(
           "auto-compaction inserts Flink's compaction topology, which has no native counterpart");
     }
     for (String key : options.keySet()) {
-      if (!key.startsWith("parquet.")
+      if (!PARQUET_HANDLED.contains(key)
+          && !PARQUET_HOST_IGNORED.contains(key)
           && !HOST_HONORED.contains(key)
           && !HOST_IGNORED.contains(key)
           && !key.equals("auto-compaction")) {
-        return Result.fallback("unrecognized filesystem sink option " + key);
+        return Result.fallback(
+            key.startsWith("parquet.")
+                ? "unrecognized Parquet writer option " + key
+                : "unrecognized filesystem sink option " + key);
       }
     }
 
@@ -114,7 +166,7 @@ final class ParquetSinkTranslator {
     if (typeReason != null) {
       return Result.fallback(typeReason);
     }
-    return encoderConfig(options);
+    return encoderConfig(options, hadoopConfig);
   }
 
   /**
@@ -126,10 +178,12 @@ final class ParquetSinkTranslator {
   private static String unsupportedColumnReason(
       RowType rowType, List<String> partitionKeys, Map<String, String> options) {
     boolean hasTimestamp = false;
+    int writtenColumns = 0;
     for (int index = 0; index < rowType.getFieldCount(); index++) {
       if (partitionKeys.contains(rowType.getFieldNames().get(index))) {
         continue;
       }
+      writtenColumns++;
       LogicalType type = rowType.getTypeAt(index);
       switch (type.getTypeRoot()) {
         case BOOLEAN:
@@ -157,6 +211,10 @@ final class ParquetSinkTranslator {
               + " is not yet verified against the host Parquet writer";
       }
     }
+    if (writtenColumns == 0) {
+      return "all columns are partition keys, leaving a zero-column Parquet file schema whose row"
+          + " count the native writer cannot preserve";
+    }
     if (hasTimestamp) {
       if (!"true".equalsIgnoreCase(options.get("parquet.write.int64.timestamp"))) {
         return "Flink writes timestamps as INT96 unless parquet.write.int64.timestamp=true, and the"
@@ -177,17 +235,27 @@ final class ParquetSinkTranslator {
    * keys the {@code CodecFactory} reads resolve to concrete levels; everything else under {@code
    * parquet.} is dead in the host writer and ignored identically.
    */
-  private static Result encoderConfig(Map<String, String> options) {
+  private static Result encoderConfig(
+      Map<String, String> options, HadoopConfigLookup hadoopConfig) {
     Map<String, String> config = new LinkedHashMap<>();
 
+    for (String booleanOption :
+        List.of("parquet.write.int64.timestamp", "parquet.utc-timezone")) {
+      String value = options.get(booleanOption);
+      if (value != null && !isBoolean(value)) {
+        return Result.fallback("invalid " + booleanOption + " " + value);
+      }
+    }
+
     String compression =
-        options.getOrDefault("parquet.compression", "SNAPPY").toUpperCase(Locale.ROOT);
+        effectiveValue(options, "parquet.compression", hadoopConfig, "SNAPPY")
+            .toUpperCase(Locale.ROOT);
     switch (compression) {
       case "UNCOMPRESSED":
       case "SNAPPY":
         break;
       case "GZIP":
-        String zlibLevel = clusterHadoopValue("zlib.compress.level");
+        String zlibLevel = hadoopConfig.get("zlib.compress.level");
         if (zlibLevel != null && !zlibLevel.equalsIgnoreCase("DEFAULT_COMPRESSION")) {
           return Result.fallback(
               "the cluster Hadoop configuration sets zlib.compress.level="
@@ -198,15 +266,20 @@ final class ParquetSinkTranslator {
         break;
       case "ZSTD":
         String workers =
-            effectiveValue(options, "parquet.compression.codec.zstd.workers");
-        if (workers != null && !workers.equals("0")) {
+            effectiveValue(
+                options, "parquet.compression.codec.zstd.workers", hadoopConfig, "0");
+        String parsedWorkers = validInt(workers);
+        if (parsedWorkers == null || Long.parseLong(parsedWorkers) != 0) {
           return Result.fallback(
               "multithreaded zstd (parquet.compression.codec.zstd.workers) changes the compressed"
                   + " frame layout, which the native writer does not reproduce");
         }
-        String level = effectiveValue(options, "parquet.compression.codec.zstd.level");
-        String parsedLevel = level == null ? "3" : validInt(level);
-        if (parsedLevel == null) {
+        String level =
+            effectiveValue(options, "parquet.compression.codec.zstd.level", hadoopConfig, "3");
+        String parsedLevel = validInt(level);
+        if (parsedLevel == null
+            || Long.parseLong(parsedLevel) < -131_072
+            || Long.parseLong(parsedLevel) > 22) {
           return Result.fallback("invalid parquet.compression.codec.zstd.level " + level);
         }
         config.put("compression.zstd.level", parsedLevel);
@@ -217,70 +290,111 @@ final class ParquetSinkTranslator {
     }
     config.put("compression", compression);
 
-    if (!copyNumeric(options, "parquet.block.size", "block.size", config)
-        || !copyNumeric(options, "parquet.page.size", "page.size", config)
-        || !copyNumeric(options, "parquet.dictionary.page.size", "dictionary.page.size", config)) {
-      return Result.fallback("a parquet size option has a non-numeric value");
+    if (!copyEffectiveSize(
+            options,
+            "parquet.block.size",
+            "block.size",
+            128 * 1024 * 1024,
+            hadoopConfig,
+            config)
+        || !copyEffectiveSize(
+            options,
+            "parquet.page.size",
+            "page.size",
+            1024 * 1024,
+            hadoopConfig,
+            config)
+        || !copyEffectiveSize(
+            options,
+            "parquet.dictionary.page.size",
+            "dictionary.page.size",
+            1024 * 1024,
+            hadoopConfig,
+            config)) {
+      return Result.fallback("a parquet size option is not a positive 32-bit integer");
     }
 
-    String dictionary = options.get("parquet.enable.dictionary");
-    if (dictionary != null) {
-      if (!dictionary.equalsIgnoreCase("true") && !dictionary.equalsIgnoreCase("false")) {
-        return Result.fallback("invalid parquet.enable.dictionary " + dictionary);
-      }
-      config.put("enable.dictionary", dictionary.toLowerCase(Locale.ROOT));
+    String dictionary =
+        effectiveValue(options, "parquet.enable.dictionary", hadoopConfig, "true");
+    if (!isBoolean(dictionary)) {
+      return Result.fallback("invalid parquet.enable.dictionary " + dictionary);
+    }
+    config.put("enable.dictionary", dictionary.toLowerCase(Locale.ROOT));
+
+    String version =
+        effectiveValue(options, "parquet.writer.version", hadoopConfig, "PARQUET_1_0");
+    switch (version.toUpperCase(Locale.ROOT)) {
+      case "V1":
+      case "PARQUET_1_0":
+        config.put("writer.version", "1");
+        break;
+      case "V2":
+      case "PARQUET_2_0":
+        config.put("writer.version", "2");
+        break;
+      default:
+        return Result.fallback("unrecognized parquet.writer.version " + version);
     }
 
-    String version = options.get("parquet.writer.version");
-    if (version != null) {
-      switch (version.toUpperCase(Locale.ROOT)) {
-        case "V1":
-        case "PARQUET_1_0":
-          config.put("writer.version", "1");
-          break;
-        case "V2":
-        case "PARQUET_2_0":
-          config.put("writer.version", "2");
-          break;
-        default:
-          return Result.fallback("unrecognized parquet.writer.version " + version);
-      }
+    String unit =
+        effectiveValue(options, "parquet.timestamp.time.unit", hadoopConfig, "micros");
+    switch (unit.toLowerCase(Locale.ROOT)) {
+      case "millis":
+      case "micros":
+      case "nanos":
+        config.put("timestamp.unit", unit.toLowerCase(Locale.ROOT));
+        break;
+      default:
+        return Result.fallback("unrecognized parquet.timestamp.time.unit " + unit);
     }
 
-    String unit = options.get("parquet.timestamp.time.unit");
-    if (unit != null) {
-      switch (unit.toLowerCase(Locale.ROOT)) {
-        case "millis":
-        case "micros":
-        case "nanos":
-          config.put("timestamp.unit", unit.toLowerCase(Locale.ROOT));
-          break;
-        default:
-          return Result.fallback("unrecognized parquet.timestamp.time.unit " + unit);
-      }
+    String validation =
+        effectiveValue(options, "parquet.validation", hadoopConfig, "false");
+    if (!isBoolean(validation)) {
+      return Result.fallback("invalid parquet.validation " + validation);
     }
-
-    if ("true".equalsIgnoreCase(options.get("parquet.validation"))) {
+    if (Boolean.parseBoolean(validation)) {
       return Result.fallback(
           "parquet.validation=true enables parquet-mr's record validation, which the native writer"
               + " does not replicate");
     }
 
+    String bufferPool =
+        effectiveValue(
+            options,
+            "parquet.compression.codec.zstd.bufferPool.enabled",
+            hadoopConfig,
+            "true");
+    if (!isBoolean(bufferPool)) {
+      return Result.fallback(
+          "invalid parquet.compression.codec.zstd.bufferPool.enabled " + bufferPool);
+    }
+
     return Result.translated(config);
   }
 
-  private static boolean copyNumeric(
-      Map<String, String> options, String option, String encoderKey, Map<String, String> config) {
-    String value = options.get(option);
-    if (value == null) {
-      return true;
-    }
+  private static boolean copyEffectiveSize(
+      Map<String, String> options,
+      String option,
+      String encoderKey,
+      int defaultValue,
+      HadoopConfigLookup hadoopConfig,
+      Map<String, String> config) {
+    String value = effectiveValue(options, option, hadoopConfig, Integer.toString(defaultValue));
     String parsed = validInt(value);
     if (parsed == null) {
       return false;
     }
+    long numeric = Long.parseLong(parsed);
+    if (numeric <= 0 || numeric > Integer.MAX_VALUE) {
+      return false;
+    }
     config.put(encoderKey, parsed);
     return true;
+  }
+
+  private static boolean isBoolean(String value) {
+    return "true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value);
   }
 
   private static String validInt(String value) {
@@ -292,9 +406,17 @@ final class ParquetSinkTranslator {
   }
 
   /** DDL over cluster Hadoop configuration — the same precedence the host writer resolves with. */
-  private static String effectiveValue(Map<String, String> options, String key) {
+  private static String effectiveValue(
+      Map<String, String> options,
+      String key,
+      HadoopConfigLookup hadoopConfig,
+      String defaultValue) {
     String ddl = options.get(key);
-    return ddl != null ? ddl : clusterHadoopValue(key);
+    if (ddl != null) {
+      return ddl;
+    }
+    String cluster = hadoopConfig.get(key);
+    return cluster != null ? cluster : defaultValue;
   }
 
   /**

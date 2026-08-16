@@ -168,15 +168,14 @@ class ThroughputBenchmark {
 
   @Test
   void windowedColumnarSourceThroughput() throws Exception {
-    // Fully-columnar windowed pipeline: native Parquet source → watermark assigner → columnar
-    // exchange → columnar window (two-phase by default). Compared against the host running the same
-    // query row-fed. Isolates the gain from never transposing to RowData in a stateful pipeline.
+    // Stock Parquet source → entry transpose → native watermark assigner → columnar exchange →
+    // columnar window (two-phase by default).
     Path input = Files.createTempDirectory("bench-window-in");
     writeWindowInput(input);
     double flink = bestOfWindow(input, false);
     double nativeRun = bestOfWindow(input, true);
     System.out.printf(
-        "%n[benchmark] Windowed aggregate over a columnar Parquet source (1s SUM) over %,d rows"
+        "%n[benchmark] Windowed aggregate over Flink's Parquet source (1s SUM) over %,d rows"
             + " (best of %d)%n",
         ROWS, RUNS);
     System.out.printf("[benchmark]   Flink : %6.3f s  (%,.0f rows/s)%n", flink, ROWS / flink);
@@ -192,7 +191,7 @@ class ThroughputBenchmark {
     double flink = bestOfLegacyWindow(input, false);
     double nativeRun = bestOfLegacyWindow(input, true);
     System.out.printf(
-        "%n[benchmark] Legacy TUMBLE over a columnar Parquet source (1s SUM) over %,d rows"
+        "%n[benchmark] Legacy TUMBLE over Flink's Parquet source (1s SUM) over %,d rows"
             + " (best of %d)%n",
         ROWS, RUNS);
     System.out.printf("[benchmark]   Flink : %6.3f s  (%,.0f rows/s)%n", flink, ROWS / flink);
@@ -203,15 +202,14 @@ class ThroughputBenchmark {
 
   @Test
   void groupByColumnarSourceThroughput() throws Exception {
-    // Non-windowed GROUP BY reading a native Parquet source through a native columnar keyed shuffle
-    // into a columnar aggregate — no input transpose, unlike the row-fed groupByThroughput. The
-    // changelog still transposes once at the host sink edge.
+    // Non-windowed GROUP BY reading Flink's Parquet source through one entry transpose, a native
+    // columnar keyed shuffle, and a columnar aggregate.
     Path input = Files.createTempDirectory("bench-cgrp-in");
     writeGroupInput(input);
     double flink = bestOfGroup(input, false);
     double nativeRun = bestOfGroup(input, true);
     System.out.printf(
-        "%n[benchmark] Non-windowed GROUP BY over a columnar Parquet source (SUM per key) over %,d"
+        "%n[benchmark] Non-windowed GROUP BY over Flink's Parquet source (SUM per key) over %,d"
             + " rows (best of %d)%n",
         ROWS, RUNS);
     System.out.printf("[benchmark]   Flink : %6.3f s  (%,.0f rows/s)%n", flink, ROWS / flink);

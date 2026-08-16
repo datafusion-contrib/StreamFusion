@@ -1053,7 +1053,6 @@ dependencies = [
  "datafusion-datasource-arrow",
  "datafusion-datasource-csv",
  "datafusion-datasource-json",
- "datafusion-datasource-parquet",
  "datafusion-execution",
  "datafusion-expr",
  "datafusion-expr-common",
@@ -1078,7 +1077,6 @@ dependencies = [
  "log",
  "object_store",
  "parking_lot",
- "parquet",
  "sqlparser",
  "tempfile",
  "tokio",
@@ -1153,7 +1151,6 @@ dependencies = [
  "libc",
  "log",
  "object_store",
- "parquet",
  "recursive",
  "sqlparser",
  "tokio",
@@ -1276,37 +1273,6 @@ dependencies = [
  "object_store",
  "tokio",
  "tokio-stream",
-]
-
-[[package]]
-name = "datafusion-datasource-parquet"
-version = "54.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffd2499c1bee0eeccf6a57156105700eeeb17bc701899ac719183c4e74231450"
-dependencies = [
- "arrow",
- "async-trait",
- "bytes",
- "datafusion-common",
- "datafusion-common-runtime",
- "datafusion-datasource",
- "datafusion-execution",
- "datafusion-expr",
- "datafusion-functions",
- "datafusion-functions-aggregate-common",
- "datafusion-physical-expr",
- "datafusion-physical-expr-adapter",
- "datafusion-physical-expr-common",
- "datafusion-physical-plan",
- "datafusion-pruning",
- "datafusion-session",
- "futures",
- "itertools 0.14.0",
- "log",
- "object_store",
- "parking_lot",
- "parquet",
- "tokio",
 ]
 
 [[package]]
@@ -3062,20 +3028,17 @@ dependencies = [
  "bytes",
  "chrono",
  "flate2",
- "futures",
  "half",
  "hashbrown 0.17.1",
  "lz4_flex",
  "num-bigint",
  "num-integer",
  "num-traits",
- "object_store",
  "paste",
  "seq-macro",
  "simdutf8",
  "snap",
  "thrift",
- "tokio",
  "twox-hash",
  "zstd",
 ]

@@ -1,8 +1,9 @@
 package tech.streamfusion.parquet;
 
+import org.apache.flink.core.fs.FSDataOutputStream;
 import tech.streamfusion.NativeExtensionLoader;
 
-/** JNI entry point for the optional native Parquet source and sink. */
+/** JNI entry point for the optional native Parquet sink. */
 public final class NativeParquet {
 
   static {
@@ -20,12 +21,15 @@ public final class NativeParquet {
   }
 
   public static native long createParquetEncoder(
-      long schemaAddress, int[] partitionColumns, String[] configKeys, String[] configValues);
+      long schemaAddress,
+      int[] partitionColumns,
+      String[] configKeys,
+      String[] configValues,
+      FSDataOutputStream output,
+      byte[] chunk);
 
   public static native void parquetEncoderWrite(
       long handle, long inArrayAddress, long inSchemaAddress);
-
-  public static native int parquetEncoderDrain(long handle, byte[] chunk);
 
   public static native void parquetEncoderFinish(long handle);
 
@@ -39,10 +43,4 @@ public final class NativeParquet {
 
   public static native void closePartitionSplit(long handle);
 
-  public static native long openParquet(
-      String path, String[] projection, long rangeStart, long rangeLength);
-
-  public static native boolean nextBatch(long handle, long outArrayAddress, long outSchemaAddress);
-
-  public static native void closeSource(long handle);
 }
