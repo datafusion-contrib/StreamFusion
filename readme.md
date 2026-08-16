@@ -32,9 +32,9 @@ Native coverage is broad — most of the streaming SQL surface:
   event-time temporal-table joins, and processing-time lookup joins (sync and async).
 - **Changelog:** non-windowed `GROUP BY`, streaming Top-N / `LIMIT`, deduplication, changelog
   normalization — all consuming and emitting a retract changelog.
-- **Connectors:** a Parquet file source (native Arrow scan, local paths) and a Parquet sink that
-  writes to any filesystem Flink supports (`s3:`/`gs:`/`abfs:`/`hdfs:`/…, `PARTITIONED BY` and
-  partition commit included — native encoding drained into Flink's own recoverable streams); Kafka
+- **Connectors:** a Parquet sink that writes to any filesystem Flink supports
+  (`s3:`/`gs:`/`abfs:`/`hdfs:`/…, `PARTITIONED BY` and partition commit included — native encoding
+  drained into Flink's own recoverable streams; Parquet reads use Flink's stock source); Kafka
   source ingest and sink output for JSON/CSV/raw/Avro/protobuf and supported CDC formats — Flink's
   unmodified Kafka clients own consumption, production, offsets, and transactions while Rust
   performs the format serialization/deserialization. Watermarked Kafka tables remain on Flink.

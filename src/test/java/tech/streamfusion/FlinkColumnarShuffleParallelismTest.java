@@ -21,11 +21,11 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Exercises the columnar keyed shuffle across multiple channels end to end at parallelism 2. The
- * input is written as several Parquet files; the native source shards them across two subtasks, and
- * a keyed window runs at parallelism 2, so the columnar exchange splits each batch by key and routes
- * the sub-batches to two downstream window subtasks. With eight keys spread across both channels,
- * this is the real cross-channel routing the p=1 pipeline never reaches — and it must still match
- * the host.
+ * input is written as several Parquet files; Flink's source shards them across two subtasks and
+ * transposes each source stream at the native boundary. A keyed window runs at parallelism 2, so
+ * the columnar exchange splits each batch by key and routes the sub-batches to two downstream
+ * window subtasks. With eight keys spread across both channels, this is the real cross-channel
+ * routing the p=1 pipeline never reaches — and it must still match the host.
  */
 class FlinkColumnarShuffleParallelismTest {
 

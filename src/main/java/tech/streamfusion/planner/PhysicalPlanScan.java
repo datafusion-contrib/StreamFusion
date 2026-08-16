@@ -312,9 +312,10 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
 
     // ---- everything below the insert-only guard: native operators here emit insert-only rows ----
 
-    // Substitute a watermark assigner only when its (already-rewritten) input is columnar — i.e. it
-    // sits on a native source/calc. Otherwise it is a pass-through that would be wrapped in two
-    // transposes for no gain, so leave it on the host.
+    // A watermark assigner is the first native operator above a rowwise source after the generic
+    // source-edge transpose. It therefore has to be eligible before the transition pass inserts
+    // that transpose; requiring its already-rewritten input to be columnar would make every
+    // event-time native island depend on a connector-specific columnar source.
     entries.add(
         Substitution.of(
                 StreamPhysicalWatermarkAssigner.class,
@@ -322,7 +323,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
                 WatermarkAssignerMatcher::substitute)
             .matching(
                 wm ->
-                    wm.getInputs().get(0) instanceof ColumnarOutput
+                    (wm.getInputs().get(0) instanceof ColumnarOutput
+                            || wm.getInputs().get(0).getInputs().isEmpty())
                         && WatermarkAssignerMatcher.matches(wm)));
 
     // Event-time sort (ORDER BY rowtime): buffer rows, release them in rowtime order as the watermark
