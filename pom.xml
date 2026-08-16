@@ -662,6 +662,32 @@
                     <scope>provided</scope>
                 </dependency>
             </dependencies>
+            <build>
+                <plugins>
+                    <!-- The source-suite harness installs StreamFusion into an isolated Maven
+                         repository, then resolves it from a standalone classpath POM. Publish
+                         resolved CI-friendly versions there so ${revision} does not leak into
+                         the installed parent relationship. -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>flatten-maven-plugin</artifactId>
+                        <version>1.6.0</version>
+                        <configuration>
+                            <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                            <updatePomFile>true</updatePomFile>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>flatten-flink-source-suite-pom</id>
+                                <phase>process-resources</phase>
+                                <goals>
+                                    <goal>flatten</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
         <!-- Build and load the production native library. The allocator feature is part of the
              measured default: it removes the cross-thread allocation bottleneck in the native

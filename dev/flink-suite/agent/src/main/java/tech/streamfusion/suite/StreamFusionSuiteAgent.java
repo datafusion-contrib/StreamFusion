@@ -25,10 +25,13 @@ public final class StreamFusionSuiteAgent {
       "org.apache.flink.streaming.api.environment.StreamExecutionEnvironment";
   private static final String NATIVE_STATEFUL_OPERATOR =
       "tech.streamfusion.operator.AbstractNativeStatefulOperator";
+  private static final String NATIVE_PARQUET_WRITER_FACTORY =
+      "tech.streamfusion.operator.NativeParquetBulkWriterFactory";
   private static final AtomicBoolean ACTIVATION_REPORTED = new AtomicBoolean();
   private static final AtomicBoolean HEAP_STATE_REPORTED = new AtomicBoolean();
   private static final AtomicBoolean NATIVE_MEMORY_STATE_REPORTED = new AtomicBoolean();
   private static final AtomicBoolean ROCKSDB_STATE_REPORTED = new AtomicBoolean();
+  private static final AtomicBoolean NATIVE_PARQUET_WRITER_REPORTED = new AtomicBoolean();
   private static final Set<Object> INSTALLED_CONFIGS =
       Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
   private static final ThreadLocal<Boolean> UNMODIFIED_PLAN_SETUP = new ThreadLocal<>();
@@ -70,6 +73,12 @@ public final class StreamFusionSuiteAgent {
                 builder.visit(
                     Advice.to(ReportNativeMemoryState.class)
                         .on(named("initializeState").and(takesArguments(1)))))
+        .type(named(NATIVE_PARQUET_WRITER_FACTORY))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(
+                    Advice.to(ReportNativeParquetWriter.class)
+                        .on(named("create").and(takesArguments(1)))))
         .installOn(instrumentation);
   }
 
@@ -87,6 +96,10 @@ public final class StreamFusionSuiteAgent {
 
   public static boolean reportNativeMemoryState() {
     return NATIVE_MEMORY_STATE_REPORTED.compareAndSet(false, true);
+  }
+
+  public static boolean reportNativeParquetWriter() {
+    return NATIVE_PARQUET_WRITER_REPORTED.compareAndSet(false, true);
   }
 
   public static boolean markConfigForInstallation(Object tableConfig) {
@@ -247,6 +260,20 @@ public final class StreamFusionSuiteAgent {
       if (!rocksdbState && StreamFusionSuiteAgent.reportNativeMemoryState()) {
         System.err.println(
             "StreamFusion upstream state suite initialized native memory backend");
+      }
+    }
+  }
+
+  /** Proves that an untouched upstream Flink test instantiated the native Parquet data plane. */
+  public static final class ReportNativeParquetWriter {
+
+    private ReportNativeParquetWriter() {}
+
+    @Advice.OnMethodEnter
+    static void enter() {
+      if (StreamFusionSuiteAgent.reportNativeParquetWriter()) {
+        System.err.println(
+            "StreamFusion upstream Parquet suite created native Parquet sink writer");
       }
     }
   }

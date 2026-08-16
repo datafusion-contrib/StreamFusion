@@ -47,6 +47,19 @@
             <artifactId>streamfusion-protobuf</artifactId>
             <version>0.1.0-rc1</version>
         </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-parquet</artifactId>
+            <version>0.1.0-rc1</version>
+        </dependency>
+        <!-- StreamFusion discovers connector planner extensions at startup. Connector APIs are
+             provided-scope in the production modules, so make Kafka's API explicit in this
+             all-extensions test JVM even when the selected upstream suite is a file format. -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-kafka</artifactId>
+            <version>5.0.0-2.2</version>
+        </dependency>
         <!-- Flink's source tests use the unshaded planner ABI. The production planner JAR normally
              bundles these classes, so connector and format modules do not declare them directly. -->
         <dependency>

@@ -16,16 +16,19 @@ unchanged table SQL integration tests:
 
 ```bash
 bin/flink-suite.sh formats
+bin/flink-suite.sh parquet
 bin/flink-suite.sh kafka
 bin/flink-suite.sh all
 ```
 
 `formats` covers Flink's JSON (including Debezium and Ogg CDC), CSV, Avro, and Protobuf integration
 tests and compiles the Confluent Avro module (the pinned release contains no integration test in
-that module). `kafka` covers `DynamicKafkaTableITCase`, `KafkaChangelogTableITCase`,
+that module). `parquet` runs Flink's unchanged `ParquetFsStreamingSinkITCase` and
+`ParquetTimestampITCase`, and fails unless the suite proves that a native Parquet writer was
+created. `kafka` covers `DynamicKafkaTableITCase`, `KafkaChangelogTableITCase`,
 `KafkaTableITCase`, and `UpsertKafkaTableITCase` from the pinned Kafka connector release. The Kafka
 suite starts broker containers and therefore requires a working Docker daemon. `all` runs formats,
-the planner runtime suite, and Kafka in that order.
+Parquet, the planner runtime suite, and Kafka in that order.
 
 The runner clones Flink `release-2.2.1` and Kafka connector `v5.0.0` under `.flink-suite`, verifies
 that each checkout is clean, builds and installs StreamFusion and its supported format/connector
@@ -68,8 +71,8 @@ During development, select one or more Surefire test classes without changing th
 FLINK_SUITE_TEST='org.apache.flink.table.planner.runtime.stream.sql.CalcITCase,org.apache.flink.table.planner.runtime.stream.table.CalcITCase' bin/flink-suite.sh
 ```
 
-The same `FLINK_SUITE_TEST` and `FLINK_SUITE_REUSE_BUILD=true` controls apply to `formats` and
-`kafka`. Reuse mode requires that the selected mode has been built once normally.
+The same `FLINK_SUITE_TEST` and `FLINK_SUITE_REUSE_BUILD=true` controls apply to `formats`,
+`parquet`, and `kafka`. Reuse mode requires that the selected mode has been built once normally.
 
 The Flink checkout remains byte-for-byte unchanged. A scheduled and manually dispatchable GitHub
 Actions workflow runs the same command, keeping the full compatibility suite out of the pull-request
@@ -78,4 +81,5 @@ critical path while still detecting upstream-contract regressions.
 The validated Flink 2.2.1 baseline is 8,619 tests: 8,570 passed, 48 skipped by Flink, zero unexpected
 failures or errors, and the one independently reproduced `CURRENT_DATE` xfail described above.
 The format baseline is 185 tests: 175 passed and 10 skipped by Flink. The Kafka SQL baseline is 86
-tests, all passed.
+tests, all passed. The Parquet sink baseline is 8 tests, all passed, including the suite's explicit
+proof that Flink instantiated the native Parquet writer.

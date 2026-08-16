@@ -25,9 +25,12 @@ readonly UNSHADED_SQL_PARSER_POM="${SUITE_ROOT}/flink-sql-parser-${FLINK_VERSION
 readonly SUITE_MODE="${1:-runtime}"
 readonly FLINK_MODULE_CONFIG="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED -Djunit.platform.reflection.search.useLegacySemantics=true -javaagent:${AGENT_JAR}"
 readonly FORMAT_MODULES="flink-formats/flink-json,flink-formats/flink-csv,flink-formats/flink-avro,flink-formats/flink-avro-confluent-registry,flink-formats/flink-protobuf"
+readonly PARQUET_MODULE="flink-formats/flink-parquet"
+readonly PARQUET_SINK_TESTS="org.apache.flink.formats.parquet.ParquetFsStreamingSinkITCase,org.apache.flink.formats.parquet.ParquetTimestampITCase"
 readonly KAFKA_SQL_TESTS="org.apache.flink.streaming.connectors.kafka.table.DynamicKafkaTableITCase,org.apache.flink.streaming.connectors.kafka.table.KafkaChangelogTableITCase,org.apache.flink.streaming.connectors.kafka.table.KafkaTableITCase,org.apache.flink.streaming.connectors.kafka.table.UpsertKafkaTableITCase"
 readonly ROCKSDB_STATE_SQL_TESTS="org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase,org.apache.flink.table.planner.runtime.stream.sql.DeduplicateITCase,org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase,org.apache.flink.table.planner.runtime.stream.sql.IntervalJoinITCase,org.apache.flink.table.planner.runtime.stream.sql.JoinITCase,org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase,org.apache.flink.table.planner.runtime.stream.sql.RankITCase,org.apache.flink.table.planner.runtime.stream.sql.TemporalJoinITCase,org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase,org.apache.flink.table.planner.runtime.stream.sql.WindowDeduplicateITCase,org.apache.flink.table.planner.runtime.stream.sql.WindowJoinITCase,org.apache.flink.table.planner.runtime.stream.sql.WindowRankITCase,org.apache.flink.table.planner.runtime.stream.table.AggregateITCase,org.apache.flink.table.planner.runtime.stream.table.JoinITCase,org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase,org.apache.flink.table.planner.runtime.stream.table.RetractionITCase"
 TEST_SELECTOR_ARGS=()
+FORMAT_COMPILE_MODULES=""
 if [[ -n "${FLINK_SUITE_TEST:-}" ]]; then
   TEST_SELECTOR_ARGS=("-Dtest=${FLINK_SUITE_TEST}")
 fi
@@ -54,7 +57,17 @@ case "${SUITE_MODE}" in
   formats)
     TEST_GOAL="surefire:test@integration-tests"
     TEST_MODULES="${FORMAT_MODULES}"
+    FORMAT_COMPILE_MODULES="${FORMAT_MODULES},${PARQUET_MODULE}"
     REPORT_ROOT="${FLINK_ROOT}/flink-formats"
+    ;;
+  parquet)
+    TEST_GOAL="surefire:test@integration-tests"
+    TEST_MODULES="${PARQUET_MODULE}"
+    FORMAT_COMPILE_MODULES="${PARQUET_MODULE}"
+    REPORT_ROOT="${FLINK_ROOT}/flink-formats/flink-parquet/target/surefire-reports"
+    if [[ -z "${FLINK_SUITE_TEST:-}" ]]; then
+      TEST_SELECTOR_ARGS=("-Dtest=${PARQUET_SINK_TESTS}")
+    fi
     ;;
   kafka)
     TEST_GOAL="surefire:test@integration-tests"
@@ -66,12 +79,13 @@ case "${SUITE_MODE}" in
     ;;
   all)
     "${BASH_SOURCE[0]}" formats || exit $?
+    FLINK_SUITE_REUSE_BUILD=true "${BASH_SOURCE[0]}" parquet || exit $?
     FLINK_SUITE_REUSE_BUILD=true "${BASH_SOURCE[0]}" runtime || exit $?
     "${BASH_SOURCE[0]}" kafka
     exit $?
     ;;
   *)
-    echo "Usage: $0 [runtime|diagnostic|state|formats|kafka|all]" >&2
+    echo "Usage: $0 [runtime|diagnostic|state|formats|parquet|kafka|all]" >&2
     exit 2
     ;;
 esac
@@ -109,6 +123,12 @@ if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" == "true" ]]; then
   if [[ "${SUITE_MODE}" == "formats" ]] \
       && [[ ! -f "${FLINK_ROOT}/flink-formats/flink-csv/target/test-classes/org/apache/flink/formats/csv/TableCsvFormatITCase.class" ]]; then
     echo "Cannot reuse the format-suite build; run bin/flink-suite.sh formats once without FLINK_SUITE_REUSE_BUILD." >&2
+    exit 2
+  fi
+  if [[ "${SUITE_MODE}" == "parquet" ]] \
+      && { [[ ! -f "${FLINK_ROOT}/flink-formats/flink-parquet/target/test-classes/org/apache/flink/formats/parquet/ParquetFsStreamingSinkITCase.class" ]] \
+        || ! grep -q 'streamfusion-parquet' "${CLASSPATH_FILE}"; }; then
+    echo "Cannot reuse the Parquet-suite build; run bin/flink-suite.sh parquet once without FLINK_SUITE_REUSE_BUILD." >&2
     exit 2
   fi
   if [[ "${SUITE_MODE}" == "kafka" ]] \
@@ -166,21 +186,31 @@ else
     --exclude='target' \
     "${REPO_ROOT}/" "${STREAMFUSION_BUILD_ROOT}/" || exit $?
 
+  # Connector modules do not bind the runtime module's Maven-side Cargo execution. Build the
+  # development DSO explicitly so the suite cannot accidentally package or load an excluded,
+  # stale native/target left by an earlier run.
+  echo "Building the StreamFusion development native library for the source suite..."
+  (
+    cd "${STREAMFUSION_BUILD_ROOT}/native" &&
+      cargo build --features kafka,parquet,json,csv,raw,avro,protobuf,rocksdb-state
+  ) || exit $?
+
   echo "Building and installing StreamFusion and its supported connector/format modules against the source-suite planner..."
   mvn -B -ntp -s "${MAVEN_SETTINGS}" -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
     -Dstreamfusion.flink-source-suite \
     -f "${STREAMFUSION_BUILD_ROOT}/pom.xml" \
-    -pl :streamfusion-core,:streamfusion-kafka,:streamfusion-json,:streamfusion-csv,:streamfusion-raw,:streamfusion-avro,:streamfusion-avro-confluent-registry,:streamfusion-protobuf \
+    -pl :streamfusion-core,:streamfusion-kafka,:streamfusion-json,:streamfusion-csv,:streamfusion-raw,:streamfusion-avro,:streamfusion-avro-confluent-registry,:streamfusion-protobuf,:streamfusion-parquet \
     -am -DskipTests clean install || exit $?
   mvn -B -ntp -s "${MAVEN_SETTINGS}" -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
     -f "${REPO_ROOT}/dev/flink-suite/classpath-pom.xml" \
     dependency:build-classpath -Dmdep.outputFile="${CLASSPATH_FILE}" || exit $?
 
-  if [[ "${SUITE_MODE}" == "formats" ]]; then
+  if [[ "${SUITE_MODE}" == "formats" || "${SUITE_MODE}" == "parquet" ]]; then
     echo "Compiling the untouched upstream Flink format integration tests..."
     "${FLINK_ROOT}/mvnw" -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
       -Dmaven.repo.local="${SUITE_MAVEN_REPO}" -Didea.version=streamfusion-suite \
-      -pl "${FORMAT_MODULES}" -am -Dfast -DskipTests process-test-classes || exit $?
+      -pl "${FORMAT_COMPILE_MODULES}" \
+      -am -Dfast -DskipTests process-test-classes || exit $?
   fi
 
   if [[ "${SUITE_MODE}" == "kafka" ]]; then
@@ -229,7 +259,7 @@ else
 fi
 if [[ ${#TEST_SELECTOR_ARGS[@]} -gt 0 ]]; then
   MAVEN_TEST_ARGS+=("${TEST_SELECTOR_ARGS[@]}")
-  if [[ "${SUITE_MODE}" == "formats" ]]; then
+  if [[ "${SUITE_MODE}" == "formats" || "${SUITE_MODE}" == "parquet" ]]; then
     MAVEN_TEST_ARGS+=("-Dsurefire.failIfNoSpecifiedTests=false")
   fi
 fi
@@ -252,6 +282,14 @@ if [[ "${SUITE_MODE}" == "state" && ${TEST_STATUS} -eq 0 ]]; then
       exit 1
     fi
   done
+fi
+
+if [[ "${SUITE_MODE}" == "parquet" && ${TEST_STATUS} -eq 0 ]]; then
+  readonly PARQUET_MARKER="StreamFusion upstream Parquet suite created native Parquet sink writer"
+  if ! grep -RqsF "${PARQUET_MARKER}" "${REPORT_ROOT}"; then
+    echo "The upstream Parquet suite did not prove: ${PARQUET_MARKER}" >&2
+    exit 1
+  fi
 fi
 
 SUMMARY_ARGS=("${REPORT_ROOT}")
