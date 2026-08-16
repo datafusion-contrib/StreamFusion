@@ -63,26 +63,20 @@ rename Flink's `bundleSize` and `bundleRatio` gauges.
 | RowData to Arrow | `CometSparkToColumnarExec` | `numInputRows`, `numOutputBatches`, `conversionTime` | **Complete** |
 | Arrow to RowData | `CometNativeColumnarToRowExec` | `numInputBatches`, `numOutputRows`, `convertTime` | **Complete** |
 | Columnar key-group exchange | Comet native shuffle writer | `elapsed_compute`, `repart_time`, `encode_time`, `decode_time`, `spill_count`, `spilled_bytes`, `input_batches` | **Complete** for the current non-spilling exchange. Encode time is measured by the network serializer; spill metrics correctly remain zero because this path cannot spill |
-| Native Parquet scan | Comet native scan | Complete 31-name native scan surface | **Partial**: output rows and opening/first-data/total/processing/metadata timings are live. Predicate, statistics, bloom, page-index, cache, error, and byte counters are registered at zero until the DataFusion execution metrics cross JNI |
 | Native Parquet write | `CometNativeWriteExec` | `files_written`, `bytes_written`, `rows_written` | **Partial**: rows are live. Files and bytes are surface-only because Flink's legacy `StreamingFileSink` creates and writes part files below the bulk-writer factory without exposing an operator metric context |
 
-The Parquet zero-valued counters are intentional capability markers, not estimates. A dashboard can
-use one schema across Comet and StreamFusion without being told that unsupported pruning or byte
-accounting occurred.
+The Parquet write zero-valued counters are intentional capability markers, not estimates.
 
 ## Work remaining for exact parity
 
-1. Export DataFusion `ExecutionPlan::metrics()` from each Parquet scan handle and delta-merge those
-   values in the source reader. This makes bytes, row-group statistics, page-index, bloom-filter,
-   predicate-cache, and error metrics live without reimplementing their semantics in Java.
-2. Move the Parquet sink to a metric-aware Sink V2 writer (or add a metric context to the current
+1. Move the Parquet sink to a metric-aware Sink V2 writer (or add a metric context to the current
    legacy writer boundary) so part-file completion can update `files_written`, `bytes_written`, and
    the sink operator's own logical standard counters.
-3. Add request/hit probes to every Top-N store and report Flink's cache-shaped size (`cached
+2. Add request/hit probes to every Top-N store and report Flink's cache-shaped size (`cached
    partitions * N`, or the configured update-fast cache size) rather than native resident rows.
-4. Replace the batch-scoped async lookup admission model with Flink's key-accounting queue if exact
+3. Replace the batch-scoped async lookup admission model with Flink's key-accounting queue if exact
    blocking/finished controller behavior is required, then drive the three `aec_*` gauges from it.
-5. Translate the dynamic Fluss client registry. It is a catalog rather than a
+4. Translate the dynamic Fluss client registry. It is a catalog rather than a
    fixed handful of operator metrics, so parity tests must compare discovered metric identifiers as
    well as values.
 
@@ -91,6 +85,6 @@ accounting occurred.
 Metric parity tests should assert metric identifier, metric kind (counter, gauge, or meter), and
 value after a deterministic trace. The minimum traces are: multi-row Arrow batches for standard I/O,
 count and watermark mini-batch flushes, late and null-rowtime records, left/right join lateness,
-Top-N cache access, ordered async lookup completion, Parquet scan/write, Kafka source/sink, and Fluss
+Top-N cache access, ordered async lookup completion, Parquet write, Kafka source/sink, and Fluss
 split progress. Connector catalog tests need the corresponding broker/service and belong in their
 integration-test modules; operator surfaces belong in the core harness tests.

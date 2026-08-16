@@ -125,7 +125,6 @@ nav:
       - Batched native decode: optimizations/batched-native-decode.md
       - Decoder projection pushdown: optimizations/decoder-projection-pushdown.md
       - SIMD JSON decode: optimizations/simd-json-decode.md
-      - DataFusion file scans: optimizations/datafusion-file-scans.md
       - Arrow-row byte state: optimizations/arrow-row-state.md
       - Borrowed key probes: optimizations/borrowed-key-probes.md
       - Mini-batch logical boundary: optimizations/mini-batch-logical-boundary.md
@@ -142,6 +141,7 @@ nav:
       - Lookup joins kept in the island: optimizations/lookup-join-in-island.md
       - Identity expression passthroughs: optimizations/identity-expression-passthroughs.md
       - Parquet sink file coalescing: optimizations/parquet-sink-file-coalescing.md
+      - Parquet column-chunk streaming: optimizations/parquet-column-chunk-streaming.md
       - Batch-native Kafka JSON serialization: optimizations/batch-native-kafka-json-serialization.md
       - DATE_FORMAT pattern cache: optimizations/date-format-pattern-cache.md
       - Kafka timestamps as fixed JSON syntax: optimizations/kafka-timestamp-fixed-json.md

@@ -9,13 +9,15 @@ resolution, and per-scheme quirks (R2 equal part sizes, local temp-file rename) 
 
 ## What we do instead
 
-Only the byte encoding is native. The Rust side is a `parquet ArrowWriter` over a drainable
-in-memory buffer (Arroyo's `SharedBuffer` shape survives) plus the batch partition-splitter
-(Arroyo's `partitioning.rs` shape). Everything else is Flink's own machinery, reused verbatim:
+Only the byte encoding is native. The Rust side uses parquet-rs' lower-level column writers and
+appends one completed column chunk at a time through a bounded one-MiB JNI bridge, plus the batch
+partition-splitter (Arroyo's `partitioning.rs` shape). It does not stage a complete compressed row
+group again in the output bridge before Flink can consume the bytes. Everything else is Flink's own
+machinery, reused verbatim:
 `StreamingFileWriter`/`Buckets` for rolling and the pending-file exactly-once commit,
 `RecoverableWriter` streams over Flink's FileSystem plugins for the actual IO, and
-`PartitionCommitter` for partition commit and `_SUCCESS` files. The drain crosses JNI with one
-memcpy into a critically-pinned reusable array; partition paths are named by Flink's own
+`PartitionCommitter` for partition commit and `_SUCCESS` files. The bridge crosses JNI with one
+copy into a reusable array; partition paths are named by Flink's own
 `RowDataPartitionComputer` reading each single-key group's first row.
 
 ## Why deviate
@@ -34,7 +36,7 @@ distinction bites:
   partition-time commit, `_SUCCESS` files, and custom commit policies — a subsystem Arroyo simply
   does not have and we would otherwise have to rebuild and keep in lockstep with Flink.
 
-The cost is one memcpy of already-compressed bytes per drain chunk (the floor for Flink's
+The cost is one memcpy of already-compressed bytes per bridge chunk (the floor for Flink's
 `byte[]`-only stream API; the host's own writer pays equivalent internal copies), and local disk
 staging on S3 (Flink's recoverable writer stages parts on disk — Arroyo holds full parts in RAM
 instead). A from-first-principles native IO writer (object_store multipart, no host stream in the
