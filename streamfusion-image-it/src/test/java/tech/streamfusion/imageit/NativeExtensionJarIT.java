@@ -91,6 +91,14 @@ class NativeExtensionJarIT {
         Path avro = artifact(projectDirectory, "streamfusion-avro", version);
         return new URL[] {core.toUri().toURL(), avro.toUri().toURL(), extensionJar.toUri().toURL()};
       }
+      if ("parquet".equals(extension)) {
+        URL flinkCore =
+            org.apache.flink.core.fs.FSDataOutputStream.class
+                .getProtectionDomain()
+                .getCodeSource()
+                .getLocation();
+        return new URL[] {core.toUri().toURL(), extensionJar.toUri().toURL(), flinkCore};
+      }
       return new URL[] {core.toUri().toURL(), extensionJar.toUri().toURL()};
     }
 
