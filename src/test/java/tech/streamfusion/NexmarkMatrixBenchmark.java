@@ -856,6 +856,123 @@ class NexmarkMatrixBenchmark {
   }
 
   /**
+   * The readme's memory-state, Kafka-input comparison with the output boundary changed to Parquet.
+   * Every physical change is appended with its RowKind, so updating queries remain auditable rather
+   * than being collapsed or rejected by the normal append-only filesystem sink. Mini-batching is
+   * explicitly disabled. Each sink subtask writes independent part files below the printed root.
+   */
+  @Test
+  @EnabledIfEnvironmentVariable(named = "SF_MATRIX_PARQUET_SINK", matches = "true")
+  void changelogParquetSinkComparison() throws Exception {
+    Query[] queries = selectQueries();
+    Path outputRoot =
+        System.getenv("SF_PARQUET_OUTPUT") == null
+            ? Files.createTempDirectory("nexmark-changelog-parquet")
+            : Path.of(System.getenv("SF_PARQUET_OUTPUT"));
+    Files.createDirectories(outputRoot);
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      NexmarkKafkaBenchmark.produce(brokers, "nexmark", "json", ROWS, KAFKA_PARTITIONS);
+      StringBuilder out =
+          new StringBuilder(
+              "\n##### NEXMARK CHANGELOG PARQUET (memory state, mini-batch off; "
+                  + ROWS
+                  + " events, best of "
+                  + RUNS
+                  + ") #####\n"
+                  + "output: "
+                  + outputRoot.toAbsolutePath()
+                  + "\nquery  Flink s      ev/s  StreamFusion s      ev/s  SF/Flink\n");
+      for (Query q : queries) {
+        String row;
+        try {
+          double flink = parquetSinkBest(brokers, outputRoot, q, false);
+          double nativeRun = parquetSinkBest(brokers, outputRoot, q, true);
+          row =
+              String.format(
+                  "%4s  %7.3f  %8.0f  %14.3f  %8.0f  %8.2fx%n",
+                  q.label, flink, ROWS / flink, nativeRun, ROWS / nativeRun, flink / nativeRun);
+        } catch (Exception failure) {
+          if ("true".equals(System.getenv("SF_BENCHMARK_STACKTRACE"))) {
+            failure.printStackTrace(System.out);
+          }
+          row = String.format("%4s  FAILED: %s%n", q.label, rootCause(failure));
+        }
+        out.append(row);
+        System.out.print(row);
+      }
+      System.out.println(out);
+    }
+  }
+
+  private static double parquetSinkBest(
+      String brokers, Path outputRoot, Query q, boolean nativeRun) throws Exception {
+    String property = "streamfusion.native.enabled";
+    String previous = System.getProperty(property);
+    System.setProperty(property, Boolean.toString(nativeRun));
+    try {
+      double best = Double.MAX_VALUE;
+      for (int run = 0; run < WARMUP + RUNS; run++) {
+        Path output =
+            outputRoot.resolve(
+                q.label
+                    + "/"
+                    + (nativeRun ? "streamfusion" : "flink")
+                    + "/run-"
+                    + run);
+        double seconds = runParquetSinkOnce(brokers, output, q, nativeRun);
+        if (run >= WARMUP) {
+          best = Math.min(best, seconds);
+        }
+      }
+      return best;
+    } finally {
+      if (previous == null) {
+        System.clearProperty(property);
+      } else {
+        System.setProperty(property, previous);
+      }
+    }
+  }
+
+  private static double runParquetSinkOnce(
+      String brokers, Path output, Query q, boolean nativeRun) throws Exception {
+    StreamTableEnvironment tEnv = kafkaEnvironment(brokers, "json");
+    tEnv.getConfig().getConfiguration().setString("execution.checkpointing.interval", "1 s");
+    tEnv.getConfig().getConfiguration().setString("table.exec.mini-batch.enabled", "false");
+    runSetup(tEnv, q);
+    PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
+    tEnv.executeSql(changelogParquetSinkDdl(q, output));
+    String plan =
+        tEnv.explainSql(q.insertSql, org.apache.flink.table.api.ExplainDetail.JSON_EXECUTION_PLAN);
+    long start = System.nanoTime();
+    tEnv.executeSql(q.insertSql).await();
+    double seconds = (System.nanoTime() - start) / 1e9;
+    if (nativeRun
+        && (!plan.contains("NativeKafkaDecode")
+            || !plan.contains("native-kafka-source")
+            || plan.contains("RowDataToArrow")
+            || !plan.contains("Changelog Parquet files")
+            || scan.substitutions() < 2)) {
+      throw new IllegalStateException(
+          q.label + ": the native Kafka-to-query path or changelog Parquet sink did not engage. "
+              + scan.explainSummary());
+    }
+    return seconds;
+  }
+
+  private static String changelogParquetSinkDdl(Query q, Path output) {
+    String ddl = q.sinkDdl.replace("%TS%", "TIMESTAMP_LTZ(3)").replace("%WTS%", "TIMESTAMP(3)");
+    String options =
+        "WITH ('connector' = 'changelog-parquet', 'path' = '"
+            + output.toUri()
+            + "')";
+    return ddl.replace("WITH ('connector' = 'blackhole')", options);
+  }
+
+  /**
    * The persistent-state-backend comparison on the readme's exactly-once Kafka pipeline: stock
    * Flink on RocksDB versus the native engine on the native RocksDB state backend, mini-batching off —
    * the same corpus, one-second checkpoints, exactly-once delivery, and best-of rule as {@link

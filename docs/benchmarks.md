@@ -88,3 +88,22 @@ backend and mini-batching disabled, run `exactlyOnceKafkaSinkProfileAll` with
 per engine/query, and writes `flink-q*.jfr` and `streamfusion-q*.jfr` under
 `-Dprofile.outputDir=...`. It invokes `asprof` from `PATH` by default; override that executable with
 `-Dprofile.asprof=...`.
+
+For a disk-output diagnostic using the same Kafka input, memory state, parallelism, and one-second
+checkpoints, set `SF_MATRIX_PARQUET_SINK=true` and run
+`NexmarkMatrixBenchmark#changelogParquetSinkComparison`. This mode always disables Flink logical
+mini-batching. The normal filesystem/Parquet table sink is append-only, so the harness uses a
+benchmark-only checkpoint-aware file sink that writes every physical change and prepends
+`_row_kind` (`+I`, `-U`, `+U`, or `-D`) to the Parquet schema. Each sink subtask produces its own
+part files. Set `SF_PARQUET_OUTPUT` to retain them at a chosen path; otherwise the harness prints its
+temporary output root. These results are intentionally separate from the headline Kafka table:
+they measure local Parquet IO and Flink's rowwise Parquet encoder, not StreamFusion's append-only
+native Parquet table sink.
+
+```sh
+SF_BENCHMARK=true SF_MATRIX_PARQUET_SINK=true SF_MATRIX_KAFKA=false \
+  SF_MATRIX_GENERATOR=false SF_MATRIX_PARQUET=false SF_MATRIX_QUERIES=q0,q4 \
+  SF_PARQUET_OUTPUT=/tmp/streamfusion-nexmark-parquet \
+  mvn -pl :streamfusion-runtime test -Pbench \
+  -Dtest='NexmarkMatrixBenchmark#changelogParquetSinkComparison'
+```
