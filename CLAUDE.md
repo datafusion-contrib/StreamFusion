@@ -36,6 +36,30 @@ never a linkage failure. When Flink already has distinct artifacts (for example 
 Avro-Confluent-Registry, Protobuf, Parquet, and ORC), mirror that split unless StreamFusion has no native
 implementation yet.
 
+### Connector acceleration admission
+
+Optimize sources and sinks with an explicit, whitelist-first admission policy. A connector path is
+accelerated only for combinations of table mode, changelog mode, physical format, data types,
+pushdowns, security/configuration, and runtime semantics that StreamFusion has positively verified.
+Everything else must fall back to the stock Flink connector at planning time; do not optimistically
+enter a native path and discover an unsupported case while the job is running.
+
+Prefer circumstances where the connector can hand StreamFusion an existing columnar representation
+(ideally owned Arrow buffers) or accept one without a rowwise round trip. Representation alone is not
+enough: the whitelist must also cover projection/filter/limit and metadata-column behavior, bounded
+versus unbounded reads, changelog row kinds, split and offset semantics, checkpoint/recovery, schema
+evolution, memory ownership, and every connector option that affects correctness. If any required
+contract cannot be preserved, keep Flink's source or sink and accelerate only a narrower proven
+boundary, such as native format decode/encode.
+
+Treat Fluss as the concrete model for this rule. A future Java-client Arrow source should initially
+admit only verified `ARROW` log scans whose table mode, projected top-level columns, schema, changelog,
+and client settings are covered end to end. Primary-key tables require the stored per-row change-type
+sidecar to remain aligned with Arrow rows. Projection support must be proven through the record-batch
+API rather than inferred from row polling; zero-column and nested projections stay outside the
+whitelist until explicitly supported. Snapshot and live-log phases may use different paths when only
+one phase has a verified Arrow contract.
+
 For each commit, I want small, targeted diffs with a clear purpose. Commit messages should be used as the sole source
 of truth for developer-facing documentation. They should be more architectural in nature - do not name specific
 classes that the average developer does not know off the top of their head, but instead concisely explain the "why"
