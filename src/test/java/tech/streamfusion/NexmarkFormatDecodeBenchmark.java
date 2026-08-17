@@ -11,6 +11,9 @@ import tech.streamfusion.format.protobuf.ProtobufFormatProvider;
 import tech.streamfusion.proto.NexmarkEvent;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -88,6 +91,59 @@ class NexmarkFormatDecodeBenchmark {
             1_000_000_000.0 / nativeRowsPerSecond,
             nativeRowsPerSecond / javaRowsPerSecond);
       }
+    }
+  }
+
+  @Test
+  @EnabledIfEnvironmentVariable(named = "SF_PROFILE_DECODE", matches = "true")
+  void profileDecode() throws Exception {
+    String format = System.getProperty("profile.format", "protobuf");
+    int seconds = Integer.getInteger("profile.seconds", 20);
+    Path outputDir =
+        Path.of(System.getProperty("profile.outputDir", "target/profiles/format-decode"))
+            .toAbsolutePath();
+    Files.createDirectories(outputDir);
+    String asprof = System.getProperty("profile.asprof", "asprof");
+    String pid = Long.toString(ProcessHandle.current().pid());
+    RowType rowType = NexmarkKafkaBenchmark.nexmarkRowType();
+    byte[][] messages = messages(format, rowType);
+    JavaDecoder javaDecoder = javaDecoder(format, rowType);
+    NativeFormatProvider provider = nativeProvider(format);
+    try (NativeBatchDecoder nativeDecoder =
+        new NativeBatchDecoder(rowType, messages, provider, nativeOptions(format))) {
+      for (boolean nativeRun : new boolean[] {false, true}) {
+        DecodeBatch decode =
+            nativeRun ? nativeDecoder::decode : () -> javaDecoder.decode(messages);
+        runFor(1, decode);
+        String engine = nativeRun ? "native-arrow" : "java-rowdata";
+        Path recording = outputDir.resolve(format + "-" + engine + ".jfr");
+        runProfiler(
+            asprof, "start", "-e", "cpu", "-i", "1ms", "-f", recording.toString(), pid);
+        double rowsPerSecond;
+        try {
+          rowsPerSecond = runFor(seconds, decode);
+        } finally {
+          runProfiler(asprof, "stop", pid);
+        }
+        System.out.printf(
+            Locale.ROOT,
+            "[profile-decode] %s/%s %.3f M rows/s -> %s%n",
+            format,
+            engine,
+            rowsPerSecond / 1_000_000.0,
+            recording);
+      }
+    }
+  }
+
+  private static void runProfiler(String executable, String... args) throws Exception {
+    List<String> command = new ArrayList<>();
+    command.add(executable);
+    command.addAll(List.of(args));
+    Process process = new ProcessBuilder(command).inheritIO().start();
+    int exitCode = process.waitFor();
+    if (exitCode != 0) {
+      throw new IllegalStateException("async-profiler exited " + exitCode + ": " + command);
     }
   }
 

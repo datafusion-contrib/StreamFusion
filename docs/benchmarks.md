@@ -48,6 +48,18 @@ TZ=UTC SF_BENCHMARK=true SF_DECODE_BATCH_ROWS=8192 \
   -Dtest=NexmarkFormatDecodeBenchmark
 ```
 
+For matched Java and native CPU flame graphs of one format, enable
+`NexmarkFormatDecodeBenchmark#profileDecode`. The harness warms both decoders, records them
+separately for `-Dprofile.seconds=20`, and writes JFR files below `-Dprofile.outputDir`.
+
+```sh
+TZ=UTC SF_BENCHMARK=true SF_PROFILE_DECODE=true \
+  mvn -pl :streamfusion-runtime test -Pbench \
+  -Dtest='NexmarkFormatDecodeBenchmark#profileDecode' \
+  -Dprofile.format=protobuf -Dprofile.seconds=20 \
+  -Dprofile.outputDir=target/profiles/protobuf-decode
+```
+
 ## Nexmark, parallelism 4
 
 Apple M1 Max, release + `mimalloc`, measured 2026-08-11 with one warmup and the best of three
