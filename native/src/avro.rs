@@ -144,7 +144,6 @@ impl AvroDecoder {
         // Built on the first surviving body: an all-tombstone batch must decode to zero rows even
         // before any writer schema has been registered (arrow-avro refuses an empty store).
         let mut decoder = None;
-        let mut framed = Vec::new();
         // A message framed with a different schema id than its predecessor makes the decoder stop
         // consuming until the rows decoded so far are flushed (it can't mix writer schemas in one
         // build), so decode in a loop, flushing whenever a frame is only partially consumed. With
@@ -166,9 +165,21 @@ impl AvroDecoder {
                 // fail the job; silently dropping it would diverge.
                 panic!("avro decode failed: empty message body");
             }
-            // Flink reads exactly one datum per message and ignores anything after it, so trim
-            // the message to its first frame before the streaming decoder sees it. A malformed
-            // datum overrunning the message fails the job like Flink's EOF does.
+            let decoder = decoder.get_or_insert_with(build);
+            if self.bare {
+                // Kafka already supplies the datum boundary. Decode one datum directly and ignore
+                // any trailing payload bytes, exactly like Flink's GenericDatumReader, without
+                // walking the schema once to measure the datum or copying it behind a synthetic
+                // Confluent header.
+                let consumed = decoder
+                    .decode_datum(column.value(i))
+                    .expect("avro decode failed");
+                assert!(consumed > 0, "avro decode stalled on a malformed message");
+                continue;
+            }
+            // Flink reads exactly one datum per Confluent-framed message and ignores anything after
+            // it, so trim the message to its first frame before the streaming decoder sees it. A
+            // malformed datum overrunning the message fails the job like Flink's EOF does.
             let (id, start) = self.frame_id(column.value(i));
             let skipper = match cached {
                 Some((cached_id, skipper)) if cached_id == id => skipper,
@@ -184,15 +195,7 @@ impl AvroDecoder {
             let end = skipper
                 .datum_end(column.value(i), start)
                 .unwrap_or_else(|error| panic!("avro decode failed: {error}"));
-            let bytes = if self.bare {
-                framed.clear();
-                framed.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00]); // id-0 Confluent header
-                framed.extend_from_slice(&column.value(i)[..end]);
-                &framed[..]
-            } else {
-                &column.value(i)[..end]
-            };
-            let decoder = decoder.get_or_insert_with(build);
+            let bytes = &column.value(i)[..end];
             let mut consumed = 0;
             while consumed < bytes.len() {
                 let n = decoder

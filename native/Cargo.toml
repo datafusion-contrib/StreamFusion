@@ -98,6 +98,14 @@ bytes = { version = "1", optional = true }
 # Opt-in mimalloc (see the `mimalloc` feature) for native operator allocation churn.
 libmimalloc-sys = { version = "0.1", optional = true }
 
+[patch.crates-io]
+# arrow-avro's streaming decoder has an internal one-record primitive, but its public API always
+# expects a framing prefix and continues looking for another framed record. Kafka already supplies
+# the message boundary and Flink's bare-Avro contract decodes exactly one datum from that boundary,
+# ignoring trailing bytes. This narrow vendored patch exposes the existing primitive so we avoid a
+# full schema walk plus a synthetic Confluent-header copy before decoding every message.
+arrow-avro = { path = "vendor/arrow-avro" }
+
 [build-dependencies]
 # Compiles the checked-free shim the mimalloc feature's symbol aliases route through (build.rs).
 cc = "1"
