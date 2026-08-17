@@ -25,6 +25,7 @@ public final class NativeParquet {
       int[] partitionColumns,
       String[] configKeys,
       String[] configValues,
+      boolean changelog,
       FSDataOutputStream output,
       byte[] chunk);
 

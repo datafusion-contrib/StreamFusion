@@ -95,7 +95,11 @@ public class NativeParquetSinkExecNode extends ExecNodeBase<Object>
             .toArray();
     NativeParquetBulkWriterFactory writerFactory =
         new NativeParquetBulkWriterFactory(
-            planned.rowType, partitionColumns, planned.encoderKeys, planned.encoderValues);
+            planned.rowType,
+            partitionColumns,
+            planned.encoderKeys,
+            planned.encoderValues,
+            planned.changelog);
     Path location = new Path(planned.path);
     StreamingFileSink.DefaultBulkFormatBuilder<PartitionedArrowBatch> buckets =
         StreamingFileSink.forBulkFormat(location, writerFactory)

@@ -17,5 +17,13 @@ This does not eliminate row-group memory: parquet-rs still retains encoded and n
 inside the active column writers until that row group closes. It eliminates the second row-group-
 sized output copy and releases completed column chunks to Flink one by one.
 
-The change is memory- and latency-oriented; no throughput claim is recorded without a release-build
-benchmark.
+Raw changelog output stays columnar too. The hidden native `i8` row-kind vector becomes the key
+buffer of a four-value Arrow dictionary (`+I`, `-U`, `+U`, `-D`) and parquet-rs consumes that
+dictionary directly. The writer therefore does not allocate or copy a two-byte string for every
+change; insert-only batches allocate only a compact zero-key vector.
+
+In the 2M-event q0 changelog-Parquet benchmark (parallelism 4, memory state, mini-batching off, one
+warmup and best of three), Flink's rowwise parquet-mr path took 1.532s and the native Arrow/parquet-rs
+path took 1.051s: **1.46x**. A matched 20-second CPU profile completed 19 native iterations versus 12
+Flink iterations. Only 9.0% of native CPU samples were below the Parquet writer boundary, and the
+JNI output adapter itself accounted for 0.03%; native JSON decode remained the largest leaf cost.

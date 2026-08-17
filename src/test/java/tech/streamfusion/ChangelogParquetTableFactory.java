@@ -80,7 +80,7 @@ public final class ChangelogParquetTableFactory implements DynamicTableSinkFacto
           FileSink.forBulkFormat(
                   new Path(path),
                   ParquetRowDataBuilder.createWriterFactory(
-                      outputType, new Configuration(), true))
+                      outputType, parquetConfiguration(), true))
               .build();
       return (DataStreamSinkProvider)
           (providerContext, input) -> {
@@ -108,6 +108,12 @@ public final class ChangelogParquetTableFactory implements DynamicTableSinkFacto
     public String asSummaryString() {
       return "ChangelogParquet";
     }
+  }
+
+  private static Configuration parquetConfiguration() {
+    Configuration configuration = new Configuration();
+    configuration.setBoolean("parquet.write.int64.timestamp", true);
+    return configuration;
   }
 
   private static RowType outputType(RowType inputType) {

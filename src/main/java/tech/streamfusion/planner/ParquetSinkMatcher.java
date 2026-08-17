@@ -1,5 +1,6 @@
 package tech.streamfusion.planner;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.calcite.rel.RelNode;
@@ -35,6 +36,7 @@ final class ParquetSinkMatcher {
     final ObjectIdentifier identifier;
     final String[] encoderKeys;
     final String[] encoderValues;
+    final boolean changelog;
     final String fallbackReason;
 
     private Planned(
@@ -45,6 +47,7 @@ final class ParquetSinkMatcher {
         ObjectIdentifier identifier,
         String[] encoderKeys,
         String[] encoderValues,
+        boolean changelog,
         String fallbackReason) {
       this.path = path;
       this.rowType = rowType;
@@ -53,26 +56,39 @@ final class ParquetSinkMatcher {
       this.identifier = identifier;
       this.encoderKeys = encoderKeys;
       this.encoderValues = encoderValues;
+      this.changelog = changelog;
       this.fallbackReason = fallbackReason;
     }
 
     private static Planned fallback(String reason) {
-      return new Planned(null, null, null, null, null, null, null, reason);
+      return new Planned(null, null, null, null, null, null, null, false, reason);
     }
   }
 
   /** True for a filesystem+Parquet catalog sink — the shape this matcher owns, honored or not. */
   static boolean appliesTo(StreamPhysicalSink sink) {
     Map<String, String> options = options(sink);
-    return options != null
-        && "filesystem".equals(options.get("connector"))
-        && "parquet".equals(options.get("format"));
+    if (options == null) {
+      return false;
+    }
+    return ("filesystem".equals(options.get("connector"))
+            && "parquet".equals(options.get("format")))
+        || "changelog-parquet".equals(options.get("connector"));
   }
 
   /** Plans the native sink, or names the option/type/spec the native path cannot honor. */
   static Planned plan(StreamPhysicalSink sink) {
     ResolvedCatalogTable table = table(sink);
-    Map<String, String> options = table.getOptions();
+    Map<String, String> catalogOptions = table.getOptions();
+    boolean changelog = "changelog-parquet".equals(catalogOptions.get("connector"));
+    Map<String, String> options = catalogOptions;
+    if (changelog) {
+      options = new LinkedHashMap<>(catalogOptions);
+      options.put("connector", "filesystem");
+      options.put("format", "parquet");
+      options.putIfAbsent("parquet.write.int64.timestamp", "true");
+      options.putIfAbsent("parquet.utc-timezone", "true");
+    }
     for (SinkAbilitySpec spec : sink.abilitySpecs()) {
       if (spec instanceof OverwriteSpec) {
         // Falling back reproduces the host's own error: streaming INSERT OVERWRITE is rejected.
@@ -104,6 +120,7 @@ final class ParquetSinkMatcher {
         sink.contextResolvedTable().getIdentifier(),
         translated.encoderKeys(),
         translated.encoderValues(),
+        changelog,
         null);
   }
 
@@ -130,7 +147,9 @@ final class ParquetSinkMatcher {
   }
 
   static RelNode substitute(StreamPhysicalSink sink, PlanContext ctx) {
-    if (!ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) sink.getInputs().get(0))) {
+    boolean changelogSink = "changelog-parquet".equals(options(sink).get("connector"));
+    if (!changelogSink
+        && !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) sink.getInputs().get(0))) {
       ctx.decline("parquet sink: the input is a changelog, not an insert-only stream");
       return null;
     }

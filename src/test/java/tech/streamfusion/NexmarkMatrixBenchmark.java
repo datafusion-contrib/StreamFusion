@@ -909,12 +909,23 @@ class NexmarkMatrixBenchmark {
 
   private static double parquetSinkBest(
       String brokers, Path outputRoot, Query q, boolean nativeRun) throws Exception {
+    return parquetSinkBest(brokers, outputRoot, q, nativeRun, WARMUP, RUNS);
+  }
+
+  private static double parquetSinkBest(
+      String brokers,
+      Path outputRoot,
+      Query q,
+      boolean nativeRun,
+      int warmup,
+      int runs)
+      throws Exception {
     String property = "streamfusion.native.enabled";
     String previous = System.getProperty(property);
     System.setProperty(property, Boolean.toString(nativeRun));
     try {
       double best = Double.MAX_VALUE;
-      for (int run = 0; run < WARMUP + RUNS; run++) {
+      for (int run = 0; run < warmup + runs; run++) {
         Path output =
             outputRoot.resolve(
                 q.label
@@ -923,7 +934,7 @@ class NexmarkMatrixBenchmark {
                     + "/run-"
                     + run);
         double seconds = runParquetSinkOnce(brokers, output, q, nativeRun);
-        if (run >= WARMUP) {
+        if (run >= warmup) {
           best = Math.min(best, seconds);
         }
       }
@@ -933,6 +944,58 @@ class NexmarkMatrixBenchmark {
         System.clearProperty(property);
       } else {
         System.setProperty(property, previous);
+      }
+    }
+  }
+
+  /** Captures matched steady-state CPU profiles of the q0 changelog Parquet sink boundary. */
+  @Test
+  @EnabledIfEnvironmentVariable(named = "SF_PROFILE_PARQUET_SINK", matches = "true")
+  void changelogParquetSinkProfile() throws Exception {
+    String label = System.getProperty("profile.query", "q0");
+    Query q =
+        Arrays.stream(ALL_QUERIES)
+            .filter(candidate -> candidate.label.equals(label))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("unknown profile.query: " + label));
+    Path outputDir =
+        Path.of(System.getProperty("profile.outputDir", "target/profiles/nexmark-parquet"))
+            .toAbsolutePath();
+    Files.createDirectories(outputDir);
+    String asprof = System.getProperty("profile.asprof", "asprof");
+    String pid = Long.toString(ProcessHandle.current().pid());
+    long profileMillis = Long.getLong("profile.seconds", 20L) * 1000L;
+
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      NexmarkKafkaBenchmark.produce(brokers, "nexmark", "json", ROWS, KAFKA_PARTITIONS);
+      for (boolean nativeRun : new boolean[] {false, true}) {
+        String engine = nativeRun ? "streamfusion" : "flink";
+        Path engineOutput = outputDir.resolve(engine + "-output");
+        parquetSinkBest(brokers, engineOutput.resolve("warmup"), q, nativeRun, 0, 1);
+        Path recording = outputDir.resolve(engine + "-" + q.label + ".jfr");
+        runProfiler(asprof, "start", "-e", "cpu", "-i", "1ms", "-f", recording.toString(), pid);
+        long deadline = System.currentTimeMillis() + profileMillis;
+        int iterations = 0;
+        try {
+          do {
+            parquetSinkBest(
+                brokers,
+                engineOutput.resolve("profile-" + iterations),
+                q,
+                nativeRun,
+                0,
+                1);
+            iterations++;
+          } while (System.currentTimeMillis() < deadline);
+        } finally {
+          runProfiler(asprof, "stop", pid);
+        }
+        System.out.printf(
+            "[profile-parquet] %-12s %-4s %d iterations -> %s%n",
+            engine, q.label, iterations, recording);
       }
     }
   }
@@ -954,8 +1017,9 @@ class NexmarkMatrixBenchmark {
         && (!plan.contains("NativeKafkaDecode")
             || !plan.contains("native-kafka-source")
             || plan.contains("RowDataToArrow")
-            || !plan.contains("Changelog Parquet files")
-            || scan.substitutions() < 2)) {
+            || plan.contains("ArrowToRowData")
+            || !plan.contains("native-parquet-partition-split")
+            || scan.substitutions() < 3)) {
       throw new IllegalStateException(
           q.label + ": the native Kafka-to-query path or changelog Parquet sink did not engage. "
               + scan.explainSummary());

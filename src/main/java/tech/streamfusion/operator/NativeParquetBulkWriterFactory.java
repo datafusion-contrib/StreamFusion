@@ -31,13 +31,24 @@ public final class NativeParquetBulkWriterFactory
   private final int[] partitionColumns;
   private final String[] configKeys;
   private final String[] configValues;
+  private final boolean changelog;
 
   public NativeParquetBulkWriterFactory(
       RowType rowType, int[] partitionColumns, String[] configKeys, String[] configValues) {
+    this(rowType, partitionColumns, configKeys, configValues, false);
+  }
+
+  public NativeParquetBulkWriterFactory(
+      RowType rowType,
+      int[] partitionColumns,
+      String[] configKeys,
+      String[] configValues,
+      boolean changelog) {
     this.rowType = rowType;
     this.partitionColumns = partitionColumns;
     this.configKeys = configKeys;
     this.configValues = configValues;
+    this.changelog = changelog;
   }
 
   @Override
@@ -50,7 +61,13 @@ public final class NativeParquetBulkWriterFactory
           allocator, ArrowConversion.toArrowSchema(rowType), NativeAllocator.DICTIONARIES, schema);
       encoder =
           NativeParquet.createParquetEncoder(
-              schema.memoryAddress(), partitionColumns, configKeys, configValues, out, chunk);
+              schema.memoryAddress(),
+              partitionColumns,
+              configKeys,
+              configValues,
+              changelog,
+              out,
+              chunk);
     }
     return new NativeParquetBulkWriter(encoder);
   }

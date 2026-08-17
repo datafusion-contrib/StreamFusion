@@ -34,6 +34,8 @@ Falls back to Flink on:
 - `'auto-compaction' = 'true'`.
 - Unsupported compression codecs, or multithreaded zstd.
 - `INSERT OVERWRITE`.
-- A changelog (retracting) input.
+- A changelog (retracting) input through the standard filesystem connector. The benchmark-only
+  `changelog-parquet` connector can persist the raw physical change stream with a native
+  `_row_kind` column; it is not a materialized-table sink.
 
 See [Deployment](../deployment.md) for the JARs a Parquet sink needs.

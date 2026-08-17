@@ -15,11 +15,17 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.CloseableIterator;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.planner.PhysicalPlanScan;
 
 class ChangelogParquetTableFactoryTest {
 
   @Test
-  void persistsEveryPhysicalChangeWithItsRowKind() throws Exception {
+  void nativeSinkPersistsTheSamePhysicalChangelogAsFlink() throws Exception {
+    assertEquals(writeAndRead(false), writeAndRead(true));
+  }
+
+  private static List<String> writeAndRead(boolean nativeSink) throws Exception {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(2);
     env.enableCheckpointing(100);
@@ -37,6 +43,7 @@ class ChangelogParquetTableFactoryTest {
             .build());
 
     Path output = Files.createTempDirectory("changelog-parquet-sink");
+    PhysicalPlanScan scan = nativeSink ? NativePlanner.install(tEnv) : null;
     tEnv.executeSql(
         "CREATE TABLE changes (k BIGINT, total BIGINT) WITH "
             + "('connector' = 'changelog-parquet', 'path' = '"
@@ -45,6 +52,9 @@ class ChangelogParquetTableFactoryTest {
     tEnv.executeSql(
             "INSERT INTO changes SELECT k, SUM(v) AS total FROM input_rows GROUP BY k")
         .await();
+    if (nativeSink) {
+      assertTrue(scan.substitutions() >= 2, scan::explainSummary);
+    }
 
     tEnv.executeSql(
         "CREATE TABLE persisted (_row_kind STRING, k BIGINT, total BIGINT) WITH "
@@ -65,5 +75,7 @@ class ChangelogParquetTableFactoryTest {
     assertTrue(rows.contains("-U:1:10"));
     assertTrue(rows.contains("+U:1:30"));
     assertTrue(rows.contains("+I:2:5"));
+    rows.sort(String::compareTo);
+    return rows;
   }
 }

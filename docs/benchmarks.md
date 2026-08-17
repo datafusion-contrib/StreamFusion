@@ -93,12 +93,14 @@ For a disk-output diagnostic using the same Kafka input, memory state, paralleli
 checkpoints, set `SF_MATRIX_PARQUET_SINK=true` and run
 `NexmarkMatrixBenchmark#changelogParquetSinkComparison`. This mode always disables Flink logical
 mini-batching. The normal filesystem/Parquet table sink is append-only, so the harness uses a
-benchmark-only checkpoint-aware file sink that writes every physical change and prepends
-`_row_kind` (`+I`, `-U`, `+U`, or `-D`) to the Parquet schema. Each sink subtask produces its own
-part files. Set `SF_PARQUET_OUTPUT` to retain them at a chosen path; otherwise the harness prints its
-temporary output root. These results are intentionally separate from the headline Kafka table:
-they measure local Parquet IO and Flink's rowwise Parquet encoder, not StreamFusion's append-only
-native Parquet table sink.
+benchmark-only changelog connector that writes every physical change and prepends `_row_kind`
+(`+I`, `-U`, `+U`, or `-D`) to the Parquet schema. The Flink baseline maps each change to a row and
+uses parquet-mr; StreamFusion keeps the query output as Arrow, materializes the four-value row-kind
+column natively, and feeds the batch directly to parquet-rs. Both paths retain Flink's
+checkpoint-aware filesystem writer and each sink subtask produces its own part files. Set
+`SF_PARQUET_OUTPUT` to retain them at a chosen path; otherwise the harness prints its temporary
+output root. These results are intentionally separate from the headline Kafka table because they
+measure local Parquet IO rather than Kafka IO.
 
 ```sh
 SF_BENCHMARK=true SF_MATRIX_PARQUET_SINK=true SF_MATRIX_KAFKA=false \
@@ -107,3 +109,8 @@ SF_BENCHMARK=true SF_MATRIX_PARQUET_SINK=true SF_MATRIX_KAFKA=false \
   mvn -pl :streamfusion-runtime test -Pbench \
   -Dtest='NexmarkMatrixBenchmark#changelogParquetSinkComparison'
 ```
+
+Set `SF_PROFILE_PARQUET_SINK=true` and run `changelogParquetSinkProfile` for matched q0 CPU
+recordings of the Flink and StreamFusion writers. The harness performs an unprofiled warmup, then
+loops each writer for `-Dprofile.seconds=20` by default and writes both JFR files below
+`-Dprofile.outputDir=...`.

@@ -328,7 +328,11 @@ fn flink_parquet_leaf(field: &Field) -> parquet::schema::types::Type {
     };
     use parquet::schema::types::Type as ParquetType;
 
-    let builder = match field.data_type() {
+    let data_type = match field.data_type() {
+        DataType::Dictionary(_, value) => value.as_ref(),
+        data_type => data_type,
+    };
+    let builder = match data_type {
         DataType::Boolean => {
             ParquetType::primitive_type_builder(field.name(), PhysicalType::BOOLEAN)
         }
@@ -415,6 +419,8 @@ pub(crate) struct ParquetEncoder<W: std::io::Write + Send> {
     /// Indices of the written (non-partition) columns in the incoming full-row batches; partition
     /// values live in the directory path, so their columns are projected out (zero-copy).
     projection: Vec<usize>,
+    changelog: bool,
+    changelog_values: Option<ArrayRef>,
 }
 
 impl<W: std::io::Write + Send> ParquetEncoder<W> {
@@ -424,12 +430,13 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
         partition_columns: &[usize],
         config_keys: &[String],
         config_values: &[String],
+        changelog: bool,
     ) -> ParquetEncoder<W> {
         let config = EncoderConfig::parse(config_keys, config_values);
         let projection: Vec<usize> = (0..full_schema.fields().len())
             .filter(|index| !partition_columns.contains(index))
             .collect();
-        let write_fields: Vec<Field> = projection
+        let data_fields = projection
             .iter()
             .map(|&index| {
                 let field = full_schema.field(index);
@@ -439,7 +446,18 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
                     field.is_nullable(),
                 )
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let write_fields: Vec<Field> = if changelog {
+            std::iter::once(Field::new(
+                "_row_kind",
+                DataType::Dictionary(Box::new(DataType::Int8), Box::new(DataType::Utf8)),
+                false,
+            ))
+            .chain(data_fields)
+            .collect()
+        } else {
+            data_fields
+        };
         let write_schema = Arc::new(Schema::new(write_fields));
 
         let root = parquet::schema::types::Type::group_type_builder("flink_schema")
@@ -477,16 +495,31 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
             max_row_group_bytes: config.block_size,
             write_schema,
             projection,
+            changelog,
+            changelog_values: changelog
+                .then(|| Arc::new(StringArray::from(vec!["+I", "-U", "+U", "-D"])) as ArrayRef),
         }
     }
 
     pub(crate) fn write(&mut self, batch: &RecordBatch) {
-        let columns: Vec<ArrayRef> = self
-            .projection
-            .iter()
-            .zip(self.write_schema.fields())
-            .map(|(&index, field)| convert_column(batch.column(index), field.data_type()))
-            .collect();
+        let mut columns = Vec::with_capacity(self.write_schema.fields().len());
+        if self.changelog {
+            columns.push(parquet_row_kinds(
+                batch,
+                self.changelog_values.as_ref().unwrap(),
+            ));
+        }
+        columns.extend(
+            self.projection
+                .iter()
+                .zip(
+                    self.write_schema
+                        .fields()
+                        .iter()
+                        .skip(usize::from(self.changelog)),
+                )
+                .map(|(&index, field)| convert_column(batch.column(index), field.data_type())),
+        );
         let batch = RecordBatch::try_new(self.write_schema.clone(), columns)
             .expect("write batch did not match the write schema");
         self.write_sized(&batch);
@@ -589,6 +622,19 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
     }
 }
 
+/// Materializes the four-value Flink changelog tag as the first Parquet column. The native stream
+/// carries it as a compact trailing i8 system column; an insert-only edge omits it entirely.
+fn parquet_row_kinds(batch: &RecordBatch, values: &ArrayRef) -> ArrayRef {
+    let keys = crate::changelog::row_kind_column(batch)
+        .cloned()
+        .unwrap_or_else(|| Int8Array::from(vec![0; batch.num_rows()]));
+    assert!(
+        keys.iter().flatten().all(|kind| (0..=3).contains(&kind)),
+        "unsupported Flink row kind"
+    );
+    Arc::new(DictionaryArray::<Int8Type>::new(keys, values.clone()))
+}
+
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_nativeBuildVersion<'local>(
     env: JNIEnv<'local>,
@@ -608,6 +654,7 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_createParque
     partition_columns: JIntArray<'local>,
     config_keys: JObjectArray<'local>,
     config_values: JObjectArray<'local>,
+    changelog: jboolean,
     output: JObject<'local>,
     chunk: JByteArray<'local>,
 ) -> jlong {
@@ -624,6 +671,7 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_createParque
             &partition_columns,
             &keys,
             &values,
+            changelog != 0,
         ))
     })
 }
@@ -822,8 +870,14 @@ mod parquet_encoder_tests {
         let keys: Vec<String> = config.iter().map(|(k, _)| k.to_string()).collect();
         let values: Vec<String> = config.iter().map(|(_, v)| v.to_string()).collect();
         let output = SharedBuffer::default();
-        let mut encoder =
-            ParquetEncoder::new(output.clone(), schema, partition_columns, &keys, &values);
+        let mut encoder = ParquetEncoder::new(
+            output.clone(),
+            schema,
+            partition_columns,
+            &keys,
+            &values,
+            false,
+        );
         for batch in batches {
             encoder.write(batch);
         }
@@ -850,6 +904,52 @@ mod parquet_encoder_tests {
             .collect::<Result<Vec<_>, _>>()
             .expect("failed to read batches back");
         (batches, metadata)
+    }
+
+    #[test]
+    fn changelog_encoder_prepends_flink_row_kinds() {
+        let data_schema = Arc::new(Schema::new(vec![Field::new(
+            "value",
+            DataType::Int64,
+            false,
+        )]));
+        let batch_schema = Arc::new(Schema::new(vec![
+            Field::new("value", DataType::Int64, false),
+            Field::new(crate::changelog::ROW_KIND_COLUMN, DataType::Int8, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            batch_schema,
+            vec![
+                Arc::new(Int64Array::from(vec![10, 20, 30, 40])),
+                Arc::new(Int8Array::from(vec![0, 1, 2, 3])),
+            ],
+        )
+        .unwrap();
+        let output = SharedBuffer::default();
+        let mut encoder = ParquetEncoder::new(output.clone(), data_schema, &[], &[], &[], true);
+        encoder.write(&batch);
+        encoder.finish();
+        let mut file = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            let n = output.drain_into(&mut chunk);
+            if n == 0 {
+                break;
+            }
+            file.extend_from_slice(&chunk[..n]);
+        }
+
+        let (batches, _) = read_back(file);
+        assert_eq!(batches[0].schema().field(0).name(), "_row_kind");
+        let kinds = batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert_eq!(
+            kinds.iter().collect::<Vec<_>>(),
+            vec![Some("+I"), Some("-U"), Some("+U"), Some("-D"),]
+        );
     }
 
     #[test]
@@ -1366,7 +1466,8 @@ mod partition_split_tests {
         let source = batch(vec![Some("b"), Some("a"), Some("b")], vec![1, 2, 3]);
         let slices = split_by_partition_columns(&source, &[0]);
         let output = SharedBuffer::default();
-        let mut encoder = ParquetEncoder::new(output.clone(), source.schema(), &[0], &[], &[]);
+        let mut encoder =
+            ParquetEncoder::new(output.clone(), source.schema(), &[0], &[], &[], false);
         encoder.write(&slices[1]);
         encoder.finish();
         let mut file = Vec::new();
