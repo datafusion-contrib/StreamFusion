@@ -279,7 +279,7 @@ class NexmarkKafkaBenchmark {
   }
 
   /** One wide event as JSON, the inactive structs null — the Nexmark person/auction/bid mix. */
-  private static String event(long i) {
+  static String event(long i) {
     long block = i / BLOCK;
     int pos = (int) (i % BLOCK);
     long ts = block * 1000L + pos * 10L;
@@ -308,7 +308,7 @@ class NexmarkKafkaBenchmark {
   }
 
   /** The same wide event as a protobuf {@link NexmarkEvent}; the inactive nested messages stay unset. */
-  private static NexmarkEvent protobufEvent(long i) {
+  static NexmarkEvent protobufEvent(long i) {
     long block = i / BLOCK;
     int pos = (int) (i % BLOCK);
     long ts = block * 1000L + pos * 10L;
@@ -359,7 +359,7 @@ class NexmarkKafkaBenchmark {
   }
 
   /** The same wide event as an Avro {@link GenericRecord}, inactive structs left null. */
-  private static GenericRecord avroEvent(long i, Schema schema) {
+  static GenericRecord avroEvent(long i, Schema schema) {
     long block = i / BLOCK;
     int pos = (int) (i % BLOCK);
     long ts = block * 1000L + pos * 10L;
@@ -419,7 +419,7 @@ class NexmarkKafkaBenchmark {
   }
 
   /** The wide event row type, mirroring {@link #SCHEMA}, for deriving the Avro schema. */
-  private static RowType nexmarkRowType() {
+  static RowType nexmarkRowType() {
     return (RowType)
         DataTypes.ROW(
                 DataTypes.FIELD("event_type", DataTypes.INT()),

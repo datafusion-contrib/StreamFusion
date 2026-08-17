@@ -34,6 +34,20 @@
   bridge and Flink's scheduling — these are what the entries in [Optimizations](optimizations/index.md)
   cite for a specific technique's speedup.
 
+The format-decode microbenchmark compares the exact Nexmark Kafka value payloads across JSON, bare
+Avro, and protobuf. It times only bytes to the engine's destination representation: Flink's format
+decoder materializes one `RowData` per message, while the StreamFusion format decoder materializes
+one Arrow batch per 8,192 messages. Corpus construction, Kafka polling, SQL operators, checkpoints,
+and sinks are outside the timed region. Each decoder is warmed independently, every trial processes
+whole batches for a fixed wall-clock interval, and the best trial is reported in rows/s and ns/row.
+
+```sh
+TZ=UTC SF_BENCHMARK=true SF_DECODE_BATCH_ROWS=8192 \
+  SF_DECODE_WARMUP_SECONDS=1 SF_DECODE_SECONDS=3 SF_DECODE_RUNS=3 \
+  mvn -pl :streamfusion-runtime test -Pbench \
+  -Dtest=NexmarkFormatDecodeBenchmark
+```
+
 ## Nexmark, parallelism 4
 
 Apple M1 Max, release + `mimalloc`, measured 2026-08-11 with one warmup and the best of three
