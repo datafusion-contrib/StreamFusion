@@ -201,6 +201,8 @@ dependencies = [
 [[package]]
 name = "arrow-avro"
 version = "58.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "049230728cd6e093088c8d231b4beede184e35cad7777c1505c0d5a8571f4376"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
