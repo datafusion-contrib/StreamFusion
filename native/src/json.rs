@@ -16,6 +16,11 @@ use crate::*;
 /// in divergences/21.
 pub(crate) trait JsonAppend {
     fn append(&mut self, value: Option<simd_json::tape::Value<'_, '_>>);
+    fn append_nulls(&mut self, count: usize) {
+        for _ in 0..count {
+            self.append(None);
+        }
+    }
     /// Appends a JSON object key (always a raw string): scalar targets parse it exactly like a
     /// string-positioned value. Only map key columns reach this.
     fn append_key(&mut self, key: &str);
@@ -116,6 +121,10 @@ where
         }
     }
 
+    fn append_nulls(&mut self, count: usize) {
+        self.builder.append_nulls(count);
+    }
+
     fn finish(&mut self) -> ArrayRef {
         Arc::new(self.builder.finish())
     }
@@ -189,6 +198,10 @@ where
         }
     }
 
+    fn append_nulls(&mut self, count: usize) {
+        self.builder.append_nulls(count);
+    }
+
     fn finish(&mut self) -> ArrayRef {
         Arc::new(self.builder.finish())
     }
@@ -223,6 +236,10 @@ impl JsonAppend for DateJsonAppender {
             None if self.env.lenient => self.builder.append_null(),
             None => panic!("failed to parse \"{key}\" as DATE"),
         }
+    }
+
+    fn append_nulls(&mut self, count: usize) {
+        self.builder.append_nulls(count);
     }
 
     fn finish(&mut self) -> ArrayRef {
@@ -272,6 +289,10 @@ impl JsonAppend for TimestampJsonAppender {
             None if self.env.lenient => self.builder.append_null(),
             None => panic!("failed to parse \"{key}\" as {}", self.data_type),
         }
+    }
+
+    fn append_nulls(&mut self, count: usize) {
+        self.builder.append_nulls(count);
     }
 
     fn finish(&mut self) -> ArrayRef {
@@ -336,6 +357,10 @@ where
         }
     }
 
+    fn append_nulls(&mut self, count: usize) {
+        self.builder.append_nulls(count);
+    }
+
     fn finish(&mut self) -> ArrayRef {
         Arc::new(self.builder.finish())
     }
@@ -375,6 +400,10 @@ impl JsonAppend for BinaryJsonAppender {
         }
     }
 
+    fn append_nulls(&mut self, count: usize) {
+        self.builder.append_nulls(count);
+    }
+
     fn finish(&mut self) -> ArrayRef {
         Arc::new(self.builder.finish())
     }
@@ -411,6 +440,10 @@ impl JsonAppend for BooleanJsonAppender {
     fn append_key(&mut self, key: &str) {
         self.builder
             .append_value(flink_text::parse_java_boolean(key.trim()));
+    }
+
+    fn append_nulls(&mut self, count: usize) {
+        self.builder.append_nulls(count);
     }
 
     fn finish(&mut self) -> ArrayRef {
@@ -476,6 +509,10 @@ impl JsonAppend for StringJsonAppender {
 
     fn append_key(&mut self, key: &str) {
         self.builder.append_value(key);
+    }
+
+    fn append_nulls(&mut self, count: usize) {
+        self.builder.append_nulls(count);
     }
 
     fn finish(&mut self) -> ArrayRef {
@@ -595,6 +632,7 @@ pub(crate) struct StructJsonAppender {
     /// Name→child lookup above the profiled linear-scan threshold.
     index: Option<HashMap<String, usize>>,
     nulls: NullBufferBuilder,
+    pending_nulls: usize,
 }
 
 // Nexmark's source rows sit in the medium-width range where repeated linear name scans show up in
@@ -621,6 +659,7 @@ impl StructJsonAppender {
             children,
             index,
             nulls: NullBufferBuilder::new(capacity),
+            pending_nulls: 0,
         }
     }
 
@@ -695,7 +734,18 @@ impl StructJsonAppender {
     }
 
     fn finish_columns(&mut self) -> Vec<ArrayRef> {
+        self.flush_pending_nulls();
         self.children.iter_mut().map(|c| c.finish()).collect()
+    }
+
+    fn flush_pending_nulls(&mut self) {
+        let pending = std::mem::take(&mut self.pending_nulls);
+        if pending == 0 {
+            return;
+        }
+        for child in &mut self.children {
+            child.append_nulls(pending);
+        }
     }
 }
 
@@ -713,12 +763,11 @@ impl JsonAppend for StructJsonAppender {
         match object {
             None => {
                 self.nulls.append_null();
-                for child in &mut self.children {
-                    child.append(None);
-                }
+                self.pending_nulls += 1;
             }
             Some(object) => {
                 self.nulls.append_non_null();
+                self.flush_pending_nulls();
                 self.append_object(&object);
             }
         }
@@ -726,6 +775,11 @@ impl JsonAppend for StructJsonAppender {
 
     fn append_key(&mut self, key: &str) {
         panic!("failed to parse map key \"{key}\" as ROW");
+    }
+
+    fn append_nulls(&mut self, count: usize) {
+        self.nulls.append_n_nulls(count);
+        self.pending_nulls += count;
     }
 
     fn finish(&mut self) -> ArrayRef {
@@ -785,6 +839,12 @@ impl JsonAppend for ListJsonAppender {
 
     fn append_key(&mut self, key: &str) {
         panic!("failed to parse map key \"{key}\" as ARRAY");
+    }
+
+    fn append_nulls(&mut self, count: usize) {
+        let end = *self.offsets.last().expect("non-empty offsets");
+        self.offsets.resize(self.offsets.len() + count, end);
+        self.nulls.append_n_nulls(count);
     }
 
     fn finish(&mut self) -> ArrayRef {
@@ -872,6 +932,12 @@ impl JsonAppend for MapJsonAppender {
 
     fn append_key(&mut self, key: &str) {
         panic!("failed to parse map key \"{key}\" as MAP");
+    }
+
+    fn append_nulls(&mut self, count: usize) {
+        let end = *self.offsets.last().expect("non-empty offsets");
+        self.offsets.resize(self.offsets.len() + count, end);
+        self.nulls.append_n_nulls(count);
     }
 
     fn finish(&mut self) -> ArrayRef {

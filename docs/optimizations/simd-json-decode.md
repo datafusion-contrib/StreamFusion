@@ -26,6 +26,11 @@ path's coercions.
   into one reused scratch `Vec`. Its internal `Buffers` and parsed `Tape` storage are both retained
   across documents; `fill_tape` clears and refills the existing nodes instead of allocating a tape
   vector for every Kafka record. The input copy is included in the measured win below.
+- **Deferred nested nulls** — sparse nested rows record consecutive null parents without walking
+  every child builder for every input row. When the next non-null parent arrives (or the batch
+  finishes), each child receives the whole null run in one bulk append. This is especially useful
+  for Nexmark's `person`/`auction`/`bid` union, where two of the three nested records are null on
+  every event.
 
 ## Pinned semantics, one carve-out
 
@@ -55,3 +60,11 @@ the same 8192-document Criterion median from 4.614 ms to 4.413 ms (**4.35% less 
 2M-event Q3 run improved to 1.084 s for StreamFusion versus 1.157 s for Flink (**1.07x**). A proposed
 uninitialized slot array plus presence bitmap was rejected after its isolated overhead erased the
 entire tape-reuse gain; the existing stack `Option<Value>` slots remain.
+
+The next matched profile showed that sparse nested rows still paid recursively for null values in
+every child column. Deferring and bulk-appending those child nulls reduced the same 8192-document
+Criterion median from 4.535 ms to 4.034 ms (**11.1% less time**, **12.4% more throughput**). The
+production JNI benchmark measured 2.226 million rows/s (449 ns/row), **1.45x** Flink's Java RowData
+decoder. A follow-up profile confirmed that the former per-row binary/time null appenders fell from
+7.8% of decode samples combined to bulk string/timestamp null appends at 2.1% combined; field
+matching, compatibility checking, and simd-json string parsing are now the main native costs.

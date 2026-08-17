@@ -1964,6 +1964,67 @@ fn json_decode_tolerates_missing_fields_and_null_bodies() {
     assert!(out.column(1).is_null(0));
 }
 
+#[test]
+fn json_decode_preserves_nested_values_around_null_runs() {
+    let nested = DataType::Struct(Fields::from(vec![
+        Field::new("id", DataType::Int64, true),
+        Field::new("name", DataType::Utf8, true),
+        Field::new(
+            "tags",
+            DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
+            true,
+        ),
+    ]));
+    let schema = Arc::new(Schema::new(vec![Field::new("event", nested, true)]));
+    let batch = bodies(vec![
+        Some(br#"{"event":null}"#),
+        Some(br#"{"event":null}"#),
+        Some(br#"{"event":{"id":7,"name":"a","tags":["x","y"]}}"#),
+        Some(br#"{"event":null}"#),
+        Some(br#"{"event":{"id":8,"name":"b","tags":[]}}"#),
+        Some(br#"{"event":null}"#),
+        Some(br#"{"event":null}"#),
+    ]);
+
+    let out = JsonDecoder::new(schema, crate::json::JsonEnv::default()).decode(&batch);
+    let events = out
+        .column(0)
+        .as_any()
+        .downcast_ref::<StructArray>()
+        .unwrap();
+    assert_eq!(events.len(), 7);
+    for row in [0, 1, 3, 5, 6] {
+        assert!(events.is_null(row));
+    }
+    assert!(events.is_valid(2));
+    assert!(events.is_valid(4));
+
+    let ids = events
+        .column_by_name("id")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+    assert_eq!((ids.value(2), ids.value(4)), (7, 8));
+    for row in [0, 1, 3, 5, 6] {
+        assert!(ids.is_null(row));
+    }
+
+    let tags = events
+        .column_by_name("tags")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .unwrap();
+    let first_tags = tags.value(2);
+    let first_tags = first_tags.as_any().downcast_ref::<StringArray>().unwrap();
+    assert_eq!((first_tags.value(0), first_tags.value(1)), ("x", "y"));
+    assert_eq!(tags.value_length(4), 0);
+    for row in [0, 1, 3, 5, 6] {
+        assert!(tags.is_null(row));
+    }
+}
+
 // Flink's deserialize skips only a null or ZERO-LENGTH body before parsing; an all-whitespace
 // document reaches Jackson and fails ("no content to map due to end-of-input") — the job dies in
 // strict mode, the message drops under ignore-parse-errors. Both native subpaths (simd and the
