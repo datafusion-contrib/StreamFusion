@@ -1,13 +1,17 @@
 package tech.streamfusion;
 
-import tech.streamfusion.proto.Complex;
-import tech.streamfusion.proto.Row;
-import tech.streamfusion.proto.Scalars;
-import tech.streamfusion.proto.WithNested;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.function.Supplier;
+import tech.streamfusion.proto.Complex;
+import tech.streamfusion.proto.BroadTypes;
+import tech.streamfusion.proto.EventColor;
+import tech.streamfusion.proto.Row;
+import tech.streamfusion.proto.Scalars;
+import tech.streamfusion.proto.WithNested;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
@@ -24,17 +28,14 @@ import org.testcontainers.utility.DockerImageName;
  * End-to-end parity tests for the protobuf native-decode path: a {@code CREATE TABLE ...
  * 'connector'='kafka', 'format'='protobuf'} with a {@code protobuf.message-class-name} routes through
  * the planner to {@link tech.streamfusion.planner.StreamPhysicalNativeKafkaDecode} — Flink
- * consumes the raw messages and a native operator decodes them straight to Arrow against the descriptor
- * reflectively extracted from the generated class — or falls back when a field type isn't reproduced
- * identically (enum, unsigned/fixed int, bytes, well-known type).
+ * consumes the raw messages and a native operator decodes them straight to Arrow against the
+ * descriptor reflectively extracted from the generated class.
  *
  * <p>Each case uses {@link NativeParity#assertParity} to compare the native decode against Flink's own
  * {@code protobuf} format. Covered: a flat scalar message, a nested message (ROW column), and a message
- * with repeated and map fields (ARRAY/MAP columns) — the complex shapes the row boundary now carries.
- * The complex columns are read through extracting projections ({@code nested.id}, {@code nums[1]},
- * {@code tags['a']}) so the compared values are scalars (Flink's {@code collect()} surfaces ARRAY as a
- * Java array, which compares by identity); the projection itself runs on the host over the natively
- * decoded column, exercising the column across the boundary.
+ * with repeated and map fields (ARRAY/MAP columns), plus unsigned/fixed values, bytes, enums, and a
+ * well-known Timestamp represented as Flink's nested ROW. Complex columns are read through scalar
+ * projections so Flink and native results can be compared directly.
  *
  * <p>All fields are set to non-default values, so proto3's missing-field semantics don't enter. Opt-in
  * via {@code SF_BENCHMARK=true} (Docker for Testcontainers Kafka).
@@ -87,7 +88,7 @@ class NativeProtobufDecodeSqlHarnessTest {
   @Test
   void nestedProjectionPrunesDecodedColumns() throws Exception {
     // Read one nested field of a wider message: the planner prunes the protobuf descriptor to id +
-    // nested.score, so ptars builds only those columns and skips nested.id/name on the wire. Must still
+    // nested.score, so the wire reader builds only those columns and skips nested.id/name. Must still
     // match Flink's full decode + calc.
     try (KafkaContainer kafka =
         new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
@@ -101,6 +102,66 @@ class NativeProtobufDecodeSqlHarnessTest {
               "id BIGINT, nested ROW<id BIGINT, name STRING, score DOUBLE>",
               PKG + ".WithNested"),
           "SELECT nested.score FROM t WHERE id > 5");
+    }
+  }
+
+  @Test
+  void everyFlinkProtobufTypeMappingDecodesNatively() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      produce(brokers, "pb-broad-string", broadMessages());
+      produce(brokers, "pb-broad-number", broadMessages());
+      String columns =
+          "u32 INT, fixed32_value INT, u64 BIGINT, fixed64_value BIGINT, payload VARBINARY, "
+              + "color %s, uints ARRAY<INT>, blobs MAP<INT, VARBINARY>, "
+              + "`timestamp` ROW<seconds BIGINT, nanos INT>";
+      String query =
+          "SELECT u32, fixed32_value, u64, fixed64_value, payload, color, "
+              + "uints[1], blobs[1], `timestamp`.seconds, `timestamp`.nanos FROM t";
+      NativeParity.assertParity(
+          environment(
+              brokers,
+              "pb-broad-string",
+              String.format(columns, "STRING"),
+              PKG + ".BroadTypes"),
+          query);
+      NativeParity.assertParity(
+          environment(
+              brokers,
+              "pb-broad-number",
+              String.format(columns, "INT"),
+              PKG + ".BroadTypes"),
+          query);
+    }
+  }
+
+  @Test
+  void generatedNexmarkDecoderMatchesFlink() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      List<byte[]> messages = new ArrayList<>(MESSAGES);
+      for (int i = 0; i < MESSAGES; i++) {
+        messages.add(NexmarkKafkaBenchmark.protobufEvent(i).toByteArray());
+      }
+      produce(brokers, "pb-generated-nexmark", messages);
+      NativeParity.assertParity(
+          environment(
+              brokers,
+              "pb-generated-nexmark",
+              "event_type INT, "
+                  + "person ROW<id BIGINT, name STRING, emailAddress STRING, creditCard STRING, "
+                  + "city STRING, state STRING, `dateTime` BIGINT, extra STRING>, "
+                  + "auction ROW<id BIGINT, itemName STRING, description STRING, initialBid BIGINT, "
+                  + "reserve BIGINT, `dateTime` BIGINT, expires BIGINT, seller BIGINT, category BIGINT, "
+                  + "extra STRING>, "
+                  + "bid ROW<auction BIGINT, bidder BIGINT, price BIGINT, channel STRING, url STRING, "
+                  + "`dateTime` BIGINT, extra STRING>, `dateTime` BIGINT",
+              PKG + ".NexmarkEvent"),
+          "SELECT * FROM t");
     }
   }
 
@@ -147,6 +208,26 @@ class NativeProtobufDecodeSqlHarnessTest {
               .putTags("a", i + 1L)
               .putTags("b", i + 2L)
               .setNested(Row.newBuilder().setId(i).setName("n-" + i).setScore(i + 0.5).build())
+              .build()
+              .toByteArray());
+    }
+    return values;
+  }
+
+  private static List<byte[]> broadMessages() {
+    List<byte[]> values = new ArrayList<>(MESSAGES);
+    for (int i = 0; i < MESSAGES; i++) {
+      values.add(
+          BroadTypes.newBuilder()
+              .setU32(-1 - i)
+              .setFixed32Value(Integer.MIN_VALUE + i)
+              .setU64(-1L - i)
+              .setFixed64Value(Long.MIN_VALUE + i)
+              .setPayload(ByteString.copyFromUtf8("payload-" + i))
+              .setColor(i % 2 == 0 ? EventColor.EVENT_COLOR_RED : EventColor.EVENT_COLOR_BLUE)
+              .addUints(-1 - i)
+              .putBlobs(1, ByteString.copyFromUtf8("blob-" + i))
+              .setTimestamp(Timestamp.newBuilder().setSeconds(1000L + i).setNanos(i).build())
               .build()
               .toByteArray());
     }

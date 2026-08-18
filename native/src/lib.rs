@@ -139,6 +139,8 @@ mod mini_batch;
 mod normalizer;
 mod over_agg;
 #[cfg(any(feature = "protobuf", test))]
+mod protobuf_decode;
+#[cfg(any(feature = "protobuf", test))]
 mod protobuf_encode;
 #[cfg(any(feature = "raw", test))]
 mod raw_encode;

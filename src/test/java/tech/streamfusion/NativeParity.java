@@ -8,6 +8,7 @@ import tech.streamfusion.planner.PhysicalPlanScan;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -73,7 +74,7 @@ final class NativeParity {
         List<Object> fields = new ArrayList<>(row.getArity() + 1);
         fields.add(row.getKind().shortString());
         for (int i = 0; i < row.getArity(); i++) {
-          fields.add(row.getField(i));
+          fields.add(comparableValue(row.getField(i)));
         }
         rows.add(fields);
       }
@@ -113,7 +114,7 @@ final class NativeParity {
         Row row = iterator.next();
         List<Object> fields = new ArrayList<>(row.getArity());
         for (int i = 0; i < row.getArity(); i++) {
-          fields.add(row.getField(i));
+          fields.add(comparableValue(row.getField(i)));
         }
         long delta =
             row.getKind() == RowKind.DELETE || row.getKind() == RowKind.UPDATE_BEFORE ? -1 : 1;
@@ -179,7 +180,7 @@ final class NativeParity {
         Row row = iterator.next();
         List<Object> fields = new ArrayList<>(row.getArity());
         for (int i = 0; i < row.getArity(); i++) {
-          fields.add(row.getField(i));
+          fields.add(comparableValue(row.getField(i)));
         }
         rows.add(fields);
       }
@@ -190,5 +191,10 @@ final class NativeParity {
   private static List<List<Object>> sorted(List<List<Object>> rows) {
     rows.sort(Comparator.comparing(Object::toString));
     return rows;
+  }
+
+  /** Java arrays compare by identity; turn binary SQL values into a stable value representation. */
+  private static Object comparableValue(Object value) {
+    return value instanceof byte[] bytes ? HexFormat.of().formatHex(bytes) : value;
   }
 }

@@ -1,5 +1,8 @@
 package tech.streamfusion.format.protobuf;
 
+import java.io.Serial;
+import java.util.Base64;
+import java.util.Map;
 import tech.streamfusion.format.EncodeFormat;
 import tech.streamfusion.format.FormatCodes;
 import tech.streamfusion.format.NativeFormatContext;
@@ -8,8 +11,6 @@ import tech.streamfusion.format.NativeMessageDecoder;
 import tech.streamfusion.format.NativeMessageDecoderFactory;
 import tech.streamfusion.format.NativeSchemaMessageDecoder;
 import tech.streamfusion.planner.ProtobufDescriptors;
-import java.util.Base64;
-import java.util.Map;
 
 /** Native provider for Flink's protobuf value format. */
 public final class ProtobufFormatProvider implements NativeFormatProvider {
@@ -32,20 +33,26 @@ public final class ProtobufFormatProvider implements NativeFormatProvider {
   @Override
   public boolean supports(NativeFormatContext context) {
     String messageClass = context.options().get("protobuf.message-class-name");
-    // read-default-values=true makes Flink materialize default instances for unset message /
-    // repeated / map fields where the native decode (and Flink's own default mode) yields NULL.
+    boolean readDefaults =
+        Boolean.parseBoolean(context.options().get("protobuf.read-default-values"));
     return !context.ignoreParseErrors()
-        && !Boolean.parseBoolean(context.options().get("protobuf.read-default-values"))
         && messageClass != null
+        && (!readDefaults || ProtobufDescriptors.isProto3Message(messageClass))
         && ProtobufDescriptors.isSupportedMessage(messageClass);
   }
 
   @Override
   public NativeMessageDecoderFactory createDecoder(NativeFormatContext context) {
     String messageClass = context.options().get("protobuf.message-class-name");
-    return () ->
-        new Decoder(
-            ProtobufDescriptors.descriptorSet(messageClass), ProtobufDescriptors.messageName(messageClass));
+    // This method runs while Flink translates the physical plan. Resolve the user-supplied generated
+    // class here, while the planner's user-code classloader is authoritative, and put only portable
+    // data in the Source that Flink serializes to TaskManagers.
+    ProtobufDecoderPlan plan =
+        new ProtobufDecoderPlan(
+            ProtobufDescriptors.descriptorSet(messageClass),
+            ProtobufDescriptors.messageName(messageClass),
+            Boolean.parseBoolean(context.options().get("protobuf.read-default-values")));
+    return new DecoderFactory(plan);
   }
 
   /** The sink seam hands prefix-stripped options; {@code read-default-values} is decode-only (the
@@ -79,15 +86,18 @@ public final class ProtobufFormatProvider implements NativeFormatProvider {
   private static final class Decoder extends NativeSchemaMessageDecoder {
     private final byte[] descriptor;
     private final String messageName;
+    private final boolean readDefaults;
 
-    private Decoder(byte[] descriptor, String messageName) {
+    private Decoder(byte[] descriptor, String messageName, boolean readDefaults) {
       this.descriptor = descriptor;
       this.messageName = messageName;
+      this.readDefaults = readDefaults;
     }
 
     @Override
     protected long createHandle(long schemaArrayAddress, long schemaAddress) {
-      return NativeProtobufFormat.createDecoder(descriptor, messageName, schemaArrayAddress, schemaAddress);
+      return NativeProtobufFormat.createDecoder(
+          descriptor, messageName, readDefaults, schemaArrayAddress, schemaAddress);
     }
 
     @Override
@@ -106,6 +116,41 @@ public final class ProtobufFormatProvider implements NativeFormatProvider {
         NativeProtobufFormat.closeDecoder(handle);
         handle = 0;
       }
+    }
+  }
+
+  /** Serializable job-graph payload produced by the planner and consumed once per task decoder. */
+  private static final class ProtobufDecoderPlan implements java.io.Serializable {
+    @Serial private static final long serialVersionUID = 1L;
+
+    private final byte[] descriptor;
+    private final String messageName;
+    private final boolean readDefaults;
+
+    private ProtobufDecoderPlan(byte[] descriptor, String messageName, boolean readDefaults) {
+      this.descriptor = descriptor.clone();
+      this.messageName = messageName;
+      this.readDefaults = readDefaults;
+    }
+
+    private Decoder createDecoder() {
+      return new Decoder(descriptor, messageName, readDefaults);
+    }
+  }
+
+  /** Named rather than a lambda so accidental task-side descriptor generation cannot creep back in. */
+  private static final class DecoderFactory implements NativeMessageDecoderFactory {
+    @Serial private static final long serialVersionUID = 1L;
+
+    private final ProtobufDecoderPlan plan;
+
+    private DecoderFactory(ProtobufDecoderPlan plan) {
+      this.plan = plan;
+    }
+
+    @Override
+    public NativeMessageDecoder create() {
+      return plan.createDecoder();
     }
   }
 }

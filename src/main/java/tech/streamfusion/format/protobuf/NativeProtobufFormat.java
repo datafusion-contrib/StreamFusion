@@ -26,7 +26,11 @@ public final class NativeProtobufFormat {
   public static native long driverInitAddress();
 
   static native long createDecoder(
-      byte[] descriptor, String messageName, long schemaArrayAddress, long schemaAddress);
+      byte[] descriptor,
+      String messageName,
+      boolean readDefaults,
+      long schemaArrayAddress,
+      long schemaAddress);
 
   static native void decodeInto(
       long handle,

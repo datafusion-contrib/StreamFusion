@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "google/protobuf/timestamp.proto";
+
 // The message a `format = 'protobuf'` Kafka table names via message-class-name in the parity test.
 // java_multiple_files puts Row at the top level so the class name is simply ...proto.Row.
 package streamfusion.test;
@@ -13,9 +15,8 @@ message Row {
   double score = 3;
 }
 
-// Every scalar field type the native decode reproduces identically to Flink: signed ints, float,
-// double, bool, string. (uint/fixed map to unsigned in the Arrow decoder but signed in Flink, and
-// bytes/enum have no supported row-boundary type, so those are excluded and fall back.)
+// The scalar fields used by the original native protobuf parity case. BroadTypes below covers the
+// additional Flink mappings admitted by the owned decoder.
 message Scalars {
   int32 i32 = 1;
   int64 i64 = 2;
@@ -41,6 +42,27 @@ message Complex {
   repeated int64 nums = 2;
   map<string, int64> tags = 3;
   Row nested = 4;
+}
+
+enum EventColor {
+  EVENT_COLOR_UNSPECIFIED = 0;
+  EVENT_COLOR_RED = 1;
+  EVENT_COLOR_BLUE = 2;
+}
+
+// The remaining Flink-supported protobuf mappings: unsigned/fixed wire values use Java's signed
+// INT/BIGINT bit patterns, bytes map to VARBINARY, enums map according to the table column type, and
+// well-known messages remain ordinary nested rows.
+message BroadTypes {
+  uint32 u32 = 1;
+  fixed32 fixed32_value = 2;
+  uint64 u64 = 3;
+  fixed64 fixed64_value = 4;
+  bytes payload = 5;
+  EventColor color = 6;
+  repeated uint32 uints = 7;
+  map<int32, bytes> blobs = 8;
+  google.protobuf.Timestamp timestamp = 9;
 }
 
 // The wide Nexmark event (person/auction/bid mix) as protobuf — for the Kafka decode benchmark. Only

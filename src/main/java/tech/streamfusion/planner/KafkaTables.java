@@ -43,18 +43,19 @@ final class KafkaTables {
   }
 
   // Flink's own KafkaSource consumes raw value bytes, then a native
-  // operator decodes them to Arrow. Insert-only formats (JSON/CSV/raw/bare-Avro/Confluent-Avro/protobuf)
-  // route via isNativeKafkaDecode; CDC changelog formats (the JSON dialects and debezium-avro-confluent)
-  // route via isCdcDecode, gated to the cases reproduced identically to Flink.
+  // operator decodes them to Arrow. Insert-only formats
+  // (JSON/CSV/raw/bare-Avro/Confluent-Avro/protobuf) route via isNativeKafkaDecode; CDC changelog
+  // formats (the JSON dialects and debezium-avro-confluent) route via isCdcDecode, gated to the
+  // cases reproduced identically to Flink.
 
   /**
    * Whether this table's decoder honors a pruned output schema — decoding only the columns and nested
    * sub-fields the schema names. JSON (the decode is schema-driven and JSON self-describing, so a
    * narrowed schema skips the other keys), the Avro variants (the decode resolves the narrowed output
    * as the reader schema — bare Avro against the RowType-derived writer schema, Confluent against the
-   * registry-fetched one), and protobuf (the descriptor is pruned to the read fields; ptars builds a
-   * column per descriptor field and skips unmatched wire tags) do. CSV/raw are positional/scalar and
-   * decode in full.
+   * registry-fetched one), and protobuf (the descriptor is pruned to the read fields; the decoder
+   * builds a column per descriptor field and skips unmatched wire tags) do. CSV/raw are
+   * positional/scalar and decode in full.
    */
   static boolean decodeHonorsProjection(Map<String, String> options) {
     // A keyed table's projection would have to split across the key and value decodes and
@@ -88,8 +89,8 @@ final class KafkaTables {
   }
 
   /** Whether the native-decode path can run this scan for an <em>insert-only</em> value format
-   * (JSON/CSV/raw/bare-Avro/protobuf — codes 0/2/3/4/5): Flink consumes bytes, the native operator decodes
-   * them to Arrow. CDC changelog formats are handled separately by {@link #isCdcDecode}. */
+   * (JSON/CSV/raw/bare-Avro/protobuf — codes 0/2/3/4/5): Flink consumes bytes, the native operator
+   * decodes them to Arrow. CDC changelog formats are handled separately by {@link #isCdcDecode}. */
   static boolean isNativeKafkaDecode(RelNode node) {
     if (!(node instanceof StreamPhysicalTableSourceScan)) {
       return false;

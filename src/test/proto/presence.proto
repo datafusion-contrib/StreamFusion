@@ -1,8 +1,7 @@
 syntax = "proto3";
 
-// Field shapes with explicit presence, which the planner must decline: Flink force-reads proto3
-// primitive defaults even for unset `optional` scalars and oneof arms, while the native decoder
-// surfaces explicit absence as NULL.
+// Field shapes with explicit presence. Flink force-reads proto3 primitive defaults even for unset
+// optional scalars and oneof arms; the native decoder must do the same.
 package streamfusion.test;
 
 option java_package = "tech.streamfusion.proto";

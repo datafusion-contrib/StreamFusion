@@ -6,16 +6,20 @@ use crate::*;
 /// Decodes a binary "body" batch (one bare protobuf message per row) into typed Arrow, matching Flink's
 /// `protobuf` format: each message is the *whole* serialized protobuf (no Confluent framing), parsed
 /// against a descriptor the JVM serialized off the generated message class into a `FileDescriptorSet`.
-/// `prost-reflect` builds the descriptor pool at open time; `ptars` walks the wire format straight into
-/// Arrow arrays (no per-row `DynamicMessage`), deriving the batch schema from the message descriptor.
+/// `prost-reflect` builds the descriptor pool at open time; the owned decoder walks the wire format
+/// straight into Arrow arrays (no per-row `DynamicMessage`) and then reconciles those arrays with
+/// Flink's requested table schema.
 pub(crate) struct ProtobufDecoder {
     message: prost_reflect::MessageDescriptor,
-    config: ptars::PtarsConfig,
+    plan: crate::protobuf_decode::PreparedMessagePlan,
+    config: crate::protobuf_decode::PtarsConfig,
+    target_schema: Option<SchemaRef>,
+    read_defaults: bool,
 }
 
 /// Prunes a `FileDescriptorSet` so the root message — and, recursively, the nested message types its
 /// kept fields reference — declare only the fields named in `schema` (the query's projected columns).
-/// ptars builds one column per descriptor field and skips wire tags it has no field for, so decoding
+/// The decoder builds one column per descriptor field and skips wire tags it has no field for, so decoding
 /// against the pruned descriptor materializes only the read fields straight from the bytes; the unread
 /// ones are skipped on the wire. Fields are matched to the schema by name (Flink maps a proto field to
 /// the like-named column). An identity schema (the full row type) prunes nothing.
@@ -127,17 +131,35 @@ impl ProtobufDecoder {
     /// `descriptor_set` is an encoded protobuf `FileDescriptorSet` (the message's file + its transitive
     /// dependencies); `message_name` is the fully-qualified message type to decode each body as.
     pub(crate) fn new(descriptor_set: &[u8], message_name: &str) -> ProtobufDecoder {
+        Self::new_with_schema(descriptor_set, message_name, None, false)
+    }
+
+    pub(crate) fn new_with_schema(
+        descriptor_set: &[u8],
+        message_name: &str,
+        target_schema: Option<SchemaRef>,
+        read_defaults: bool,
+    ) -> ProtobufDecoder {
         let pool = prost_reflect::DescriptorPool::decode(descriptor_set)
             .expect("failed to decode protobuf FileDescriptorSet");
         let message = pool
             .get_message_by_name(message_name)
             .unwrap_or_else(|| panic!("protobuf message {message_name} not found in descriptor"));
+        let plan = crate::protobuf_decode::PreparedMessagePlan::new(&message);
         // ConfluentWirePolicy::Raw (the default) = bare protobuf bytes, which is what Flink's `protobuf`
         // format carries; the Confluent variant (strip magic+id+message-index) would set it here.
         ProtobufDecoder {
             message,
-            config: ptars::PtarsConfig::default(),
+            plan,
+            config: crate::protobuf_decode::PtarsConfig::default(),
+            target_schema,
+            read_defaults,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn plan_serial(&self) -> usize {
+        self.plan.serial()
     }
 
     /// Decodes the single binary body column into a typed batch (schema derived from the descriptor).
@@ -155,8 +177,25 @@ impl ProtobufDecoder {
             0,
             "protobuf cannot deserialize a null Kafka value"
         );
-        let batch = ptars::binary_array_to_record_batch_direct(column, &self.message, &self.config)
-            .expect("failed to decode protobuf batch");
+        let batch = crate::protobuf_decode::binary_array_to_record_batch_prepared(
+            column,
+            &self.plan,
+            &self.config,
+        )
+        .expect("failed to decode protobuf batch");
+        let batch = match &self.target_schema {
+            Some(target_schema) => crate::protobuf_decode::align_to_flink_schema(
+                &batch,
+                &self.message,
+                target_schema,
+                self.read_defaults,
+            )
+            .expect("failed to align protobuf batch to Flink schema"),
+            None => batch,
+        };
+        if self.read_defaults {
+            return batch;
+        }
         let columns = batch
             .columns()
             .iter()
@@ -174,14 +213,14 @@ impl ProtobufDecoder {
     }
 }
 
-/// Rewrites empty ARRAY/MAP values to NULL, recursively, to match Flink's protobuf decode. ptars
+/// Rewrites empty ARRAY/MAP values to NULL, recursively, to match Flink's protobuf decode. The wire reader
 /// materializes an absent repeated/map field as an empty container, but in proto3 an empty
 /// repeated/map field is indistinguishable from an absent one on the wire, and Flink's generated
 /// `getXCount() > 0` guard (with its default `read-default-values = false`, the only mode the planner
 /// routes natively) leaves the Flink field NULL in both cases — so NULL is the exact decode of every
 /// zero-length container, not an approximation. Recursion covers repeated/map fields inside nested
 /// messages and inside repeated-message elements. Rebuilt arrays carry the `nullable_containers`
-/// field shapes, since ptars declares repeated/map columns non-nullable.
+/// field shapes, since its direct Arrow schema declares repeated/map columns non-nullable.
 fn null_empty_containers(array: ArrayRef) -> ArrayRef {
     use arrow::array::{ListArray, MapArray, StructArray};
     use arrow::buffer::NullBuffer;
@@ -241,7 +280,7 @@ fn null_empty_containers(array: ArrayRef) -> ArrayRef {
 
 /// The field shape `null_empty_containers` produces: every ARRAY/MAP field in the tree marked
 /// nullable (they can now hold the NULLs standing in for absent proto fields), everything else as
-/// ptars declared it.
+/// the wire reader declared it.
 fn nullable_containers(field: &FieldRef) -> FieldRef {
     use arrow::datatypes::Fields;
     match field.data_type() {
@@ -1168,7 +1207,7 @@ impl AvroCdcDecoder {
 /// binary column — raw message bodies, one per row — into a typed Arrow batch. JSON goes through
 /// the simd-json tape walk (arrow-json for decimal-bearing schemas — see `JsonDecoder`), CSV
 /// through `arrow-csv`, Avro (bare or Confluent-framed) through `arrow-avro` against a
-/// local schema-id store, protobuf through `prost-reflect`/`ptars`, the CDC changelog formats through
+/// local schema-id store, protobuf through the owned `prost-reflect` descriptor-driven reader, the CDC changelog formats through
 /// `CdcJsonDecoder`, and `raw` is a passthrough. Flink polls bytes and the native decode operator
 /// hands those body batches to the same `MessageDecoder` used by every format artifact.
 ///
@@ -1659,14 +1698,15 @@ pub extern "system" fn Java_tech_streamfusion_Native_createDecoder<'local>(
 /// returns an opaque `MessageDecoder` handle, released with `closeDecoder` like any other decoder.
 /// `descriptor` is an encoded `FileDescriptorSet` the JVM serialized off the generated message class
 /// (the message's `.proto` file + transitive dependencies); `messageName` is the fully-qualified type
-/// to decode each body as. The Arrow batch schema is derived from the descriptor by ptars (no schema
-/// C-structs needed, unlike JSON).
+/// to decode each body as. When supplied, the imported Arrow schema narrows the descriptor and output
+/// columns to the projection selected by the planner; legacy callers may omit it with zero addresses.
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_createProtobufDecoder<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     descriptor: JByteArray<'local>,
     message_name: JString<'local>,
+    read_defaults: jboolean,
     schema_array_address: jlong,
     schema_address: jlong,
 ) -> jlong {
@@ -1678,16 +1718,26 @@ pub extern "system" fn Java_tech_streamfusion_Native_createProtobufDecoder<'loca
             .get_string(&message_name)
             .expect("failed to read message name")
             .into();
-        // When the planner pushed a projection into the decode, it exports the narrowed output schema (0/0
-        // otherwise): prune the descriptor to those fields so ptars builds only the read columns.
-        let descriptor = if schema_array_address != 0 {
-            let schema = import_record_batch(schema_array_address, schema_address).schema();
-            prune_descriptor_set(&descriptor, &message_name, &schema)
+        // When the planner pushed a projection into the decode, it exports the narrowed output
+        // schema (0/0 otherwise): prune the descriptor so the decoder builds only read columns.
+        let target_schema = if schema_array_address != 0 {
+            Some(import_record_batch(schema_array_address, schema_address).schema())
         } else {
-            descriptor
+            None
+        };
+        let descriptor = match &target_schema {
+            Some(schema) if !schema.fields().is_empty() => {
+                prune_descriptor_set(&descriptor, &message_name, schema)
+            }
+            _ => descriptor,
         };
         let decoder = MessageDecoder {
-            decoder: FormatDecoder::Protobuf(ProtobufDecoder::new(&descriptor, &message_name)),
+            decoder: FormatDecoder::Protobuf(ProtobufDecoder::new_with_schema(
+                &descriptor,
+                &message_name,
+                target_schema,
+                read_defaults != 0,
+            )),
             skip_errors: false,
         };
         into_handle(decoder)
@@ -2246,6 +2296,7 @@ pub extern "system" fn Java_tech_streamfusion_format_protobuf_NativeProtobufForm
     class: JClass<'local>,
     descriptor: JByteArray<'local>,
     message_name: JString<'local>,
+    read_defaults: jboolean,
     schema_array_address: jlong,
     schema_address: jlong,
 ) -> jlong {
@@ -2254,6 +2305,7 @@ pub extern "system" fn Java_tech_streamfusion_format_protobuf_NativeProtobufForm
         class,
         descriptor,
         message_name,
+        read_defaults,
         schema_array_address,
         schema_address,
     )

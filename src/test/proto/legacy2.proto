@@ -1,7 +1,7 @@
 syntax = "proto2";
 
-// A proto2 message, which the planner must decline: an unset proto2 scalar is NULL in Flink's
-// decode (no forced default-reading) but a proto3-semantics default in the native one.
+// Proto2 presence is native when read-default-values is false: unset scalars remain NULL like
+// Flink. The true setting stays on Flink because proto2 fields may declare arbitrary defaults.
 package streamfusion.test;
 
 option java_package = "tech.streamfusion.proto";

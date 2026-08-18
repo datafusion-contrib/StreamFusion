@@ -133,8 +133,47 @@ fn proto_descriptor_set() -> Vec<u8> {
     FileDescriptorSet { file: vec![file] }.encode_to_vec()
 }
 
-// Each body is one bare protobuf message (no framing); ptars decodes the wire format straight into
-// Arrow arrays, deriving the batch schema from the descriptor (columns named by proto field).
+fn proto_oneof_descriptor_set() -> Vec<u8> {
+    use prost_reflect::prost::Message;
+    use prost_reflect::prost_types::{
+        field_descriptor_proto::{Label, Type},
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
+    };
+    let member = |name: &str, number: i32, ty: Type| FieldDescriptorProto {
+        name: Some(name.to_string()),
+        number: Some(number),
+        label: Some(Label::Optional as i32),
+        r#type: Some(ty as i32),
+        oneof_index: Some(0),
+        ..Default::default()
+    };
+    let message = DescriptorProto {
+        name: Some("Choice".to_string()),
+        field: vec![
+            member("label", 1, Type::String),
+            member("number", 2, Type::Int64),
+        ],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("kind".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("choice.proto".to_string()),
+            package: Some("bench".to_string()),
+            message_type: vec![message],
+            syntax: Some("proto3".to_string()),
+            ..Default::default()
+        }],
+    }
+    .encode_to_vec()
+}
+
+// Each body is one bare protobuf message (no framing); the owned decoder reads the wire format
+// straight into Arrow arrays, deriving the batch schema from the descriptor.
 #[test]
 fn protobuf_decode_emits_one_row_per_message() {
     use prost_reflect::prost::Message;
@@ -180,6 +219,127 @@ fn protobuf_decode_emits_one_row_per_message() {
         .downcast_ref::<arrow::array::Float64Array>()
         .unwrap();
     assert_eq!(scores.values(), &[1.5, 2.5]);
+}
+
+#[test]
+fn protobuf_prepares_once_per_decoder_and_reuses_the_plan() {
+    use prost_reflect::prost::Message;
+    use prost_reflect::{DescriptorPool, DynamicMessage, Value};
+
+    let descriptor = proto_descriptor_set();
+    let message = DescriptorPool::decode(descriptor.as_ref())
+        .unwrap()
+        .get_message_by_name("bench.Row")
+        .unwrap();
+    let mut row = DynamicMessage::new(message);
+    row.set_field_by_name("id", Value::I64(42));
+    row.set_field_by_name("name", Value::String("prepared".to_string()));
+    row.set_field_by_name("score", Value::F64(3.5));
+    let bytes = row.encode_to_vec();
+    let input = bodies(vec![Some(&bytes)]);
+
+    let decoder = ProtobufDecoder::new(&descriptor, "bench.Row");
+    let serial = decoder.plan_serial();
+    let first = decoder.decode(&input);
+    let second = decoder.decode(&input);
+
+    assert_eq!(first, second);
+    assert_eq!(decoder.plan_serial(), serial);
+}
+
+#[test]
+fn protobuf_prepared_plan_matches_direct_decoder_for_complex_fields() {
+    use prost_reflect::prost::Message;
+    use prost_reflect::{DescriptorPool, DynamicMessage, MapKey, Value};
+
+    let descriptor = proto_complex_descriptor_set();
+    let pool = DescriptorPool::decode(descriptor.as_slice()).unwrap();
+    let mut nested = DynamicMessage::new(pool.get_message_by_name("bench.Row").unwrap());
+    nested.set_field_by_name("id", Value::I64(1));
+    nested.set_field_by_name("name", Value::String("nested".to_string()));
+    nested.set_field_by_name("score", Value::F64(2.5));
+    let mut message = DynamicMessage::new(pool.get_message_by_name("bench.Complex").unwrap());
+    message.set_field_by_name("id", Value::I64(7));
+    message.set_field_by_name("nums", Value::List(vec![Value::I64(3), Value::I64(4)]));
+    message.set_field_by_name(
+        "tags",
+        Value::Map([(MapKey::String("x".to_string()), Value::I64(9))].into()),
+    );
+    message.set_field_by_name("nested", Value::Message(nested));
+    let bytes = message.encode_to_vec();
+    let input = arrow::array::BinaryArray::from_vec(vec![bytes.as_slice()]);
+    let message = pool.get_message_by_name("bench.Complex").unwrap();
+    let config = crate::protobuf_decode::PtarsConfig::default();
+    let plan = crate::protobuf_decode::PreparedMessagePlan::new(&message);
+    let prepared =
+        crate::protobuf_decode::binary_array_to_record_batch_prepared(&input, &plan, &config)
+            .unwrap();
+    let direct =
+        crate::protobuf_decode::binary_array_to_record_batch_direct(&input, &message, &config)
+            .unwrap();
+
+    assert_eq!(prepared, direct);
+}
+
+#[test]
+fn protobuf_prepared_decoder_skips_unknown_fields() {
+    use prost_reflect::prost::Message;
+    use prost_reflect::{DescriptorPool, DynamicMessage, Value};
+
+    let descriptor = proto_descriptor_set();
+    let message = DescriptorPool::decode(descriptor.as_ref())
+        .unwrap()
+        .get_message_by_name("bench.Row")
+        .unwrap();
+    let mut row = DynamicMessage::new(message);
+    row.set_field_by_name("id", Value::I64(7));
+    let clean = row.encode_to_vec();
+    let mut bytes = clean.clone();
+    // Unknown field 99, varint wire type, value 12345.
+    bytes.extend_from_slice(&[0x98, 0x06, 0xb9, 0x60]);
+    let decoder = ProtobufDecoder::new(&descriptor, "bench.Row");
+    let unknown = decoder.decode(&bodies(vec![Some(&bytes)]));
+    let expected = decoder.decode(&bodies(vec![Some(&clean)]));
+
+    assert_eq!(unknown, expected);
+}
+
+#[test]
+fn protobuf_prepared_decoder_rejects_malformed_input() {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    let descriptor = proto_descriptor_set();
+    let decoder = ProtobufDecoder::new(&descriptor, "bench.Row");
+    for malformed in [&[0x80][..], &[0x00][..]] {
+        let input = bodies(vec![Some(malformed)]);
+        assert!(catch_unwind(AssertUnwindSafe(|| decoder.decode(&input))).is_err());
+    }
+}
+
+#[test]
+fn protobuf_oneof_keeps_only_the_last_wire_member() {
+    let descriptor = proto_oneof_descriptor_set();
+    let decoder = ProtobufDecoder::new(&descriptor, "bench.Choice");
+    // Each message deliberately contains both members. Generated protobuf decoders clear the
+    // earlier member when the later one appears, even though both remain present on the wire.
+    let number_last = [0x0a, 0x05, b'f', b'i', b'r', b's', b't', 0x10, 0x07];
+    let label_last = [0x10, 0x09, 0x0a, 0x04, b'l', b'a', b's', b't'];
+    let output = decoder.decode(&bodies(vec![Some(&number_last), Some(&label_last)]));
+    let labels = output
+        .column_by_name("label")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<arrow::array::StringArray>()
+        .unwrap();
+    let numbers = output
+        .column_by_name("number")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+
+    assert_eq!((labels.value(0), numbers.value(0)), ("", 7));
+    assert_eq!((labels.value(1), numbers.value(1)), ("last", 0));
 }
 
 #[test]

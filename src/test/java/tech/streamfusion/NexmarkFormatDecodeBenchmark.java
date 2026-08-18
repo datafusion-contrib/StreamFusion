@@ -70,7 +70,8 @@ class NexmarkFormatDecodeBenchmark {
         BATCH_ROWS, RUNS);
     System.out.println(
         "format    Java RowData M rows/s   ns/row   Native Arrow M rows/s   ns/row   Native/Java");
-    for (String format : List.of("json", "avro", "protobuf")) {
+    for (String format : System.getProperty("decode.formats", "json,avro,protobuf").split(",")) {
+      format = format.trim();
       byte[][] messages = messages(format, rowType);
       JavaDecoder javaDecoder = javaDecoder(format, rowType);
       NativeFormatProvider provider = nativeProvider(format);

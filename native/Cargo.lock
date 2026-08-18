@@ -3294,20 +3294,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ptars"
-version = "0.0.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8dcc3dd3552d91d41bec7db43e5825bc11532ef7a4f8b9f8f466258a493e8211"
-dependencies = [
- "arrow",
- "arrow-array",
- "arrow-schema",
- "chrono",
- "prost",
- "prost-reflect",
-]
-
-[[package]]
 name = "ptr_meta"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4102,7 +4088,6 @@ dependencies = [
  "prost",
  "prost-reflect",
  "prost-types",
- "ptars",
  "regex",
  "rocksdb",
  "serde",
