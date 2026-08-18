@@ -9,6 +9,7 @@ use crate::*;
 /// `prost-reflect` builds the descriptor pool at open time; the owned decoder walks the wire format
 /// straight into Arrow arrays (no per-row `DynamicMessage`) and then reconciles those arrays with
 /// Flink's requested table schema.
+#[cfg(any(feature = "protobuf", test))]
 pub(crate) struct ProtobufDecoder {
     message: prost_reflect::MessageDescriptor,
     plan: crate::protobuf_decode::PreparedMessagePlan,
@@ -23,6 +24,7 @@ pub(crate) struct ProtobufDecoder {
 /// against the pruned descriptor materializes only the read fields straight from the bytes; the unread
 /// ones are skipped on the wire. Fields are matched to the schema by name (Flink maps a proto field to
 /// the like-named column). An identity schema (the full row type) prunes nothing.
+#[cfg(any(feature = "protobuf", test))]
 pub(crate) fn prune_descriptor_set(bytes: &[u8], root_message: &str, schema: &Schema) -> Vec<u8> {
     use prost::Message as _;
     use prost_types::FileDescriptorSet;
@@ -70,6 +72,7 @@ pub(crate) fn prune_descriptor_set(bytes: &[u8], root_message: &str, schema: &Sc
 
 /// Retains only `keep`-listed fields of `message` (and recurses into nested message definitions); a
 /// message absent from `keep` is left whole (it is unreferenced after the root is pruned).
+#[cfg(any(feature = "protobuf", test))]
 pub(crate) fn prune_message(
     message: &mut prost_types::DescriptorProto,
     full_name: &str,
@@ -85,6 +88,7 @@ pub(crate) fn prune_message(
 }
 
 /// Finds a message by its fully-qualified name (package + nesting), searching top-level and nested types.
+#[cfg(any(feature = "protobuf", test))]
 pub(crate) fn find_message<'a>(
     set: &'a prost_types::FileDescriptorSet,
     full_name: &str,
@@ -102,6 +106,7 @@ pub(crate) fn find_message<'a>(
     None
 }
 
+#[cfg(any(feature = "protobuf", test))]
 pub(crate) fn find_message_in<'a>(
     message: &'a prost_types::DescriptorProto,
     message_full_name: &str,
@@ -119,6 +124,7 @@ pub(crate) fn find_message_in<'a>(
     None
 }
 
+#[cfg(any(feature = "protobuf", test))]
 pub(crate) fn qualify(prefix: &str, name: &str) -> String {
     if prefix.is_empty() {
         name.to_string()
@@ -127,6 +133,7 @@ pub(crate) fn qualify(prefix: &str, name: &str) -> String {
     }
 }
 
+#[cfg(any(feature = "protobuf", test))]
 impl ProtobufDecoder {
     /// `descriptor_set` is an encoded protobuf `FileDescriptorSet` (the message's file + its transitive
     /// dependencies); `message_name` is the fully-qualified message type to decode each body as.
@@ -221,6 +228,7 @@ impl ProtobufDecoder {
 /// zero-length container, not an approximation. Recursion covers repeated/map fields inside nested
 /// messages and inside repeated-message elements. Rebuilt arrays carry the `nullable_containers`
 /// field shapes, since its direct Arrow schema declares repeated/map columns non-nullable.
+#[cfg(any(feature = "protobuf", test))]
 fn null_empty_containers(array: ArrayRef) -> ArrayRef {
     use arrow::array::{ListArray, MapArray, StructArray};
     use arrow::buffer::NullBuffer;
@@ -281,6 +289,7 @@ fn null_empty_containers(array: ArrayRef) -> ArrayRef {
 /// The field shape `null_empty_containers` produces: every ARRAY/MAP field in the tree marked
 /// nullable (they can now hold the NULLs standing in for absent proto fields), everything else as
 /// the wire reader declared it.
+#[cfg(any(feature = "protobuf", test))]
 fn nullable_containers(field: &FieldRef) -> FieldRef {
     use arrow::datatypes::Fields;
     match field.data_type() {
@@ -1319,6 +1328,7 @@ pub(crate) enum FormatDecoder {
     Raw(RawDecoder),
     /// Avro, bare or Confluent-framed — see `avro::AvroDecoder`.
     Avro(crate::avro::AvroDecoder),
+    #[cfg(any(feature = "protobuf", test))]
     Protobuf(ProtobufDecoder),
     /// CDC changelog JSON (Debezium/OGG): envelope → physical rows + `$row_kind$`, fanning out updates.
     Cdc(CdcJsonDecoder),
@@ -1406,6 +1416,7 @@ impl FormatDecoder {
             FormatDecoder::Csv(decoder) => decoder.decode(body),
             FormatDecoder::Raw(decoder) => decoder.decode(body),
             FormatDecoder::Avro(decoder) => decoder.decode(body),
+            #[cfg(any(feature = "protobuf", test))]
             FormatDecoder::Protobuf(decoder) => decoder.decode(body),
             FormatDecoder::Cdc(decoder) => decoder.decode(body),
             FormatDecoder::AvroCdc(decoder) => decoder.decode(body),
@@ -1700,6 +1711,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createDecoder<'local>(
 /// (the message's `.proto` file + transitive dependencies); `messageName` is the fully-qualified type
 /// to decode each body as. When supplied, the imported Arrow schema narrows the descriptor and output
 /// columns to the projection selected by the planner; legacy callers may omit it with zero addresses.
+#[cfg(any(feature = "protobuf", test))]
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_createProtobufDecoder<'local>(
     env: JNIEnv<'local>,

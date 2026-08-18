@@ -141,6 +141,24 @@ class NativeKafkaProtobufEncoderTest {
   }
 
   @Test
+  void matchesFlinkForOptionalScalarPresence() throws Exception {
+    RowType rowType =
+        RowType.of(
+            new LogicalType[] {
+              new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH)
+            },
+            new String[] {"id", "maybe"});
+    List<RowData> rows =
+        List.of(
+            GenericRowData.of(1L, StringData.fromString("present")),
+            GenericRowData.of(2L, null),
+            GenericRowData.of(null, StringData.fromString("without-id")),
+            GenericRowData.of(null, null));
+
+    assertMatchesFlink(rows, rowType, PKG + ".WithOptionalScalar", Map.of());
+  }
+
+  @Test
   void gatesShapesFlinkWouldRejectOrDivergeOn() {
     RowType matching =
         RowType.of(new LogicalType[] {new BigIntType()}, new String[] {"id"});
@@ -156,8 +174,8 @@ class NativeKafkaProtobufEncoderTest {
         RowType.of(new LogicalType[] {new BigIntType()}, new String[] {"nope"});
     assertNull(
         EncodeFormat.of("protobuf", Map.of("message-class-name", PKG + ".Row"), unknown));
-    // Presence shapes the decode gate rejects stay rejected for encode (shared shape gate).
-    assertNull(
+    // Explicit presence is supported by the shared descriptor gate and verified byte-for-byte above.
+    assertNotNull(
         EncodeFormat.of(
             "protobuf",
             Map.of("message-class-name", PKG + ".WithOptionalScalar"),
