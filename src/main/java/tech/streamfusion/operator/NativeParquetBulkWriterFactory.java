@@ -94,11 +94,9 @@ public final class NativeParquetBulkWriterFactory
           batch.getFieldVectors().isEmpty()
               ? NativeAllocator.SHARED
               : batch.getFieldVectors().get(0).getAllocator();
-      try (ArrowArray array = ArrowArray.allocateNew(batchAllocator);
-          ArrowSchema schema = ArrowSchema.allocateNew(batchAllocator)) {
-        Data.exportVectorSchemaRoot(
-            batchAllocator, batch, NativeAllocator.DICTIONARIES, array, schema);
-        NativeParquet.parquetEncoderWrite(encoder, array.memoryAddress(), schema.memoryAddress());
+      try (ArrowArray array = ArrowArray.allocateNew(batchAllocator)) {
+        Data.exportVectorSchemaRoot(batchAllocator, batch, NativeAllocator.DICTIONARIES, array);
+        NativeParquet.parquetEncoderWrite(encoder, array.memoryAddress(), new int[0]);
       } finally {
         batch.close();
       }

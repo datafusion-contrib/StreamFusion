@@ -73,11 +73,6 @@ class FlinkParquetSinkFallbackTest {
         ", 'parquet.future-writer-setting' = 'on'", "v INT", "future-writer-setting");
   }
 
-  @Test
-  void nestedColumnsFallBack() {
-    assertFallsBack("", "v INT, tags ARRAY<INT>", "not yet verified");
-  }
-
   // A changelog (retracting) input never reaches the matcher: Flink itself rejects update changes
   // into the append-only filesystem sink during validation, so the planner's insert-only guard is
   // defense-in-depth with no SQL-reachable trigger.

@@ -19,17 +19,20 @@ letting Flink form object-store upload parts without retaining a second complete
 group in the native output bridge. The parquet-rs column writers still hold the current row group's
 encoding working set, as parquet-mr's writers do.
 
-Writer admission is whitelist-first. Supported scalar tables translate the effective DDL-over-
-Hadoop configuration for compression, row-group/page/dictionary sizes, dictionary encoding,
+Writer admission is whitelist-first. Supported tables translate the effective DDL-over-Hadoop
+configuration for compression, row-group/page/dictionary sizes, dictionary encoding,
 writer version, and timestamp unit. Known Flink no-op keys are ignored explicitly; an unknown
 `parquet.*` writer key falls back instead of being silently accepted. Flink still owns rolling,
-partition commit, and filesystem-specific options without translation.
+partition commit, and filesystem-specific options without translation. `ROW`, `ARRAY`, `MAP`, and
+`MULTISET` are encoded recursively with Flink's exact three-level Parquet list/map layout; nested
+dates, decimals, times, and timestamps use the same host-compatible leaf encoding as top-level
+columns.
 
 Falls back to Flink on:
 
 - Timestamp columns without `'parquet.write.int64.timestamp' = 'true'` or
   `'parquet.utc-timezone' = 'true'` set.
-- Nested written columns (`ARRAY`/`MAP`/`MULTISET`/`ROW`/`RAW`) — scalar columns are fully covered.
+- Unsupported leaf types such as `RAW` and intervals, including when nested.
 - Tables where every column is a partition key, leaving a zero-column file schema.
 - `'auto-compaction' = 'true'`.
 - Unsupported compression codecs, or multithreaded zstd.

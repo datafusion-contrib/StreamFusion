@@ -185,7 +185,31 @@ final class ParquetSinkTranslator {
       }
       writtenColumns++;
       LogicalType type = rowType.getTypeAt(index);
-      switch (type.getTypeRoot()) {
+      String unsupported = unsupportedType(type);
+      if (unsupported != null) {
+        return unsupported;
+      }
+      hasTimestamp |= containsTimestamp(type);
+    }
+    if (writtenColumns == 0) {
+      return "all columns are partition keys, leaving a zero-column Parquet file schema whose row"
+          + " count the native writer cannot preserve";
+    }
+    if (hasTimestamp) {
+      if (!"true".equalsIgnoreCase(options.get("parquet.write.int64.timestamp"))) {
+        return "Flink writes timestamps as INT96 unless parquet.write.int64.timestamp=true, and the"
+            + " native writer cannot produce INT96";
+      }
+      if (!"true".equalsIgnoreCase(options.get("parquet.utc-timezone"))) {
+        return "parquet.utc-timezone=false shifts timestamp values through the JVM local timezone,"
+            + " which the native writer does not reproduce";
+      }
+    }
+    return null;
+  }
+
+  private static String unsupportedType(LogicalType type) {
+    switch (type.getTypeRoot()) {
         case BOOLEAN:
         case TINYINT:
         case SMALLINT:
@@ -203,29 +227,33 @@ final class ParquetSinkTranslator {
           break;
         case TIMESTAMP_WITHOUT_TIME_ZONE:
         case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
-          hasTimestamp = true;
+          break;
+        case ARRAY:
+        case MAP:
+        case MULTISET:
+        case ROW:
+          for (LogicalType child : type.getChildren()) {
+            String unsupported = unsupportedType(child);
+            if (unsupported != null) {
+              return unsupported;
+            }
+          }
           break;
         default:
           return "column type "
               + type.asSummaryString()
               + " is not yet verified against the host Parquet writer";
-      }
-    }
-    if (writtenColumns == 0) {
-      return "all columns are partition keys, leaving a zero-column Parquet file schema whose row"
-          + " count the native writer cannot preserve";
-    }
-    if (hasTimestamp) {
-      if (!"true".equalsIgnoreCase(options.get("parquet.write.int64.timestamp"))) {
-        return "Flink writes timestamps as INT96 unless parquet.write.int64.timestamp=true, and the"
-            + " native writer cannot produce INT96";
-      }
-      if (!"true".equalsIgnoreCase(options.get("parquet.utc-timezone"))) {
-        return "parquet.utc-timezone=false shifts timestamp values through the JVM local timezone,"
-            + " which the native writer does not reproduce";
-      }
     }
     return null;
+  }
+
+  private static boolean containsTimestamp(LogicalType type) {
+    if (type.getTypeRoot() == org.apache.flink.table.types.logical.LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE
+        || type.getTypeRoot()
+            == org.apache.flink.table.types.logical.LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
+      return true;
+    }
+    return type.getChildren().stream().anyMatch(ParquetSinkTranslator::containsTimestamp);
   }
 
   /**

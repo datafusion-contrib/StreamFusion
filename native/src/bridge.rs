@@ -226,9 +226,15 @@ pub(crate) fn import_record_batch_with_schema(
             FFI_ArrowArray::empty(),
         )
     };
+    let array_children = ffi_array.num_children();
+    let array_buffers = ffi_array.num_buffers();
     let data_type = DataType::Struct(schema.fields().clone());
-    let mut data = unsafe { from_ffi_and_data_type(ffi_array, data_type) }
-        .expect("failed to import Arrow batch with cached schema");
+    let mut data = unsafe { from_ffi_and_data_type(ffi_array, data_type) }.unwrap_or_else(|error| {
+        panic!(
+            "failed to import Arrow batch with cached schema {schema:?} \
+             (array children={array_children}, buffers={array_buffers}): {error}"
+        )
+    });
     data.align_buffers();
     RecordBatch::from(StructArray::from(data))
 }

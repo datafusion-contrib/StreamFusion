@@ -179,12 +179,24 @@ class ParquetSinkTranslatorTest {
   }
 
   @Test
-  void nestedWrittenColumnsFallBack() {
+  void nestedWrittenColumnsAreSupported() {
     RowType rowType =
         RowType.of(
             new LogicalType[] {new ArrayType(new IntType())}, new String[] {"values"});
-    String reason = fallback(baseOptions(), rowType, List.of());
-    assertTrue(reason.contains("not yet verified"), reason);
+    assertTrue(
+        ParquetSinkTranslator.translate(baseOptions(), rowType, List.of()).fallbackReason == null);
+  }
+
+  @Test
+  void nestedTimestampStillRequiresTheFlinkInt64Settings() {
+    RowType nested =
+        RowType.of(
+            new LogicalType[] {new TimestampType(3)}, new String[] {"created"});
+    RowType rowType =
+        RowType.of(new LogicalType[] {nested}, new String[] {"details"});
+    Map<String, String> options = baseOptions();
+    options.remove("parquet.write.int64.timestamp");
+    assertTrue(fallback(options, rowType, List.of()).contains("INT96"));
   }
 
   @Test

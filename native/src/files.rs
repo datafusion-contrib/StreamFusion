@@ -56,7 +56,7 @@ impl SharedBuffer {
     }
 }
 
-/// Bounded bridge from parquet-rs' synchronous [`Write`] API to the Flink-owned output stream.
+/// Bounded bridge from parquet-rs' synchronous [`Write`] API to a JVM-owned output stream.
 ///
 /// parquet-rs' low-level writer appends one encoded column chunk at a time. This adapter forwards
 /// those bytes through a reusable Java array as soon as one MiB is available, so the output bridge
@@ -234,13 +234,42 @@ impl EncoderConfig {
 }
 
 /// The Flink type a written column takes on: timestamps land in the configured INT64 unit
-/// (`timestamp.time.unit`, always timezone-less) and TIME narrows to millisecond INT32, matching the
-/// host writer. Everything else is written as it arrives from the canonical Arrow encoding.
+/// (`timestamp.time.unit`) while retaining whether they represent an instant (Arrow timezone set,
+/// Parquet adjusted-to-UTC) or a local timestamp. TIME narrows to millisecond INT32. Everything
+/// else is written as it arrives from the canonical Arrow encoding.
 fn write_data_type(source: &DataType, timestamp_unit: arrow::datatypes::TimeUnit) -> DataType {
     use arrow::datatypes::TimeUnit;
     match source {
-        DataType::Timestamp(_, None) => DataType::Timestamp(timestamp_unit, None),
+        DataType::Timestamp(_, timezone) => DataType::Timestamp(timestamp_unit, timezone.clone()),
         DataType::Time32(_) | DataType::Time64(_) => DataType::Time32(TimeUnit::Millisecond),
+        DataType::Struct(fields) => DataType::Struct(
+            fields
+                .iter()
+                .map(|field| {
+                    Arc::new(
+                        field
+                            .as_ref()
+                            .clone()
+                            .with_data_type(write_data_type(field.data_type(), timestamp_unit)),
+                    )
+                })
+                .collect(),
+        ),
+        DataType::List(field) => DataType::List(Arc::new(
+            field
+                .as_ref()
+                .clone()
+                .with_data_type(write_data_type(field.data_type(), timestamp_unit)),
+        )),
+        DataType::Map(field, sorted) => DataType::Map(
+            Arc::new(
+                field
+                    .as_ref()
+                    .clone()
+                    .with_data_type(write_data_type(field.data_type(), timestamp_unit)),
+            ),
+            *sorted,
+        ),
         other => other.clone(),
     }
 }
@@ -249,7 +278,10 @@ fn write_data_type(source: &DataType, timestamp_unit: arrow::datatypes::TimeUnit
 /// keeps a non-negative sub-millisecond part, so its arithmetic floors too); a plain `/` would
 /// round pre-1970 values toward zero and diverge from the host by one unit.
 fn convert_column(column: &ArrayRef, target: &DataType) -> ArrayRef {
-    use arrow::array::{Time32SecondArray, Time64MicrosecondArray, Time64NanosecondArray};
+    use arrow::array::{
+        ListArray, MapArray, StructArray, Time32SecondArray, Time64MicrosecondArray,
+        Time64NanosecondArray,
+    };
     use arrow::compute::kernels::arity::unary;
     use arrow::datatypes::{
         Time32MillisecondType, TimeUnit, TimestampMicrosecondType, TimestampMillisecondType,
@@ -259,22 +291,76 @@ fn convert_column(column: &ArrayRef, target: &DataType) -> ArrayRef {
         return column.clone();
     }
     match (column.data_type(), target) {
-        (DataType::Timestamp(TimeUnit::Nanosecond, None), DataType::Timestamp(unit, None)) => {
+        (DataType::Struct(_), DataType::Struct(target_fields)) => {
+            let source = column
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .expect("struct column had the wrong Arrow representation");
+            let children = source
+                .columns()
+                .iter()
+                .zip(target_fields.iter())
+                .map(|(child, field)| convert_column(child, field.data_type()))
+                .collect();
+            Arc::new(StructArray::new(
+                target_fields.clone(),
+                children,
+                source.nulls().cloned(),
+            ))
+        }
+        (DataType::List(_), DataType::List(target_field)) => {
+            let source = column
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .expect("list column had the wrong Arrow representation");
+            Arc::new(ListArray::new(
+                target_field.clone(),
+                source.offsets().clone(),
+                convert_column(source.values(), target_field.data_type()),
+                source.nulls().cloned(),
+            ))
+        }
+        (DataType::Map(_, _), DataType::Map(target_field, sorted)) => {
+            let source = column
+                .as_any()
+                .downcast_ref::<MapArray>()
+                .expect("map column had the wrong Arrow representation");
+            let target_entries = match target_field.data_type() {
+                DataType::Struct(fields) => fields,
+                other => panic!("map entry field was not a struct: {other:?}"),
+            };
+            let entries = convert_column(
+                &(Arc::new(source.entries().clone()) as ArrayRef),
+                target_field.data_type(),
+            );
+            let entries = entries
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .expect("converted map entries were not a struct")
+                .clone();
+            debug_assert_eq!(entries.fields(), target_entries);
+            Arc::new(MapArray::new(
+                target_field.clone(),
+                source.offsets().clone(),
+                entries,
+                source.nulls().cloned(),
+                *sorted,
+            ))
+        }
+        (DataType::Timestamp(TimeUnit::Nanosecond, _), DataType::Timestamp(unit, timezone)) => {
             let nanos = column
                 .as_any()
                 .downcast_ref::<TimestampNanosecondArray>()
                 .expect("timestamp column was not nanosecond");
             match unit {
-                TimeUnit::Microsecond => {
-                    Arc::new(unary::<_, _, TimestampMicrosecondType>(nanos, |v| {
-                        v.div_euclid(1_000)
-                    }))
-                }
-                TimeUnit::Millisecond => {
-                    Arc::new(unary::<_, _, TimestampMillisecondType>(nanos, |v| {
-                        v.div_euclid(1_000_000)
-                    }))
-                }
+                TimeUnit::Microsecond => Arc::new(
+                    unary::<_, _, TimestampMicrosecondType>(nanos, |v| v.div_euclid(1_000))
+                        .with_timezone_opt(timezone.clone()),
+                ),
+                TimeUnit::Millisecond => Arc::new(
+                    unary::<_, _, TimestampMillisecondType>(nanos, |v| v.div_euclid(1_000_000))
+                        .with_timezone_opt(timezone.clone()),
+                ),
                 other => panic!("unsupported timestamp write unit {other:?}"),
             }
         }
@@ -322,7 +408,7 @@ fn decimal_min_bytes(precision: i32) -> i32 {
 /// the `ArrowWriter` as an explicit descriptor because the arrow-rs converter disagrees with Flink
 /// on decimals (INT32/INT64 for small precision where Flink always writes FIXED_LEN_BYTE_ARRAY)
 /// and on TIME's UTC-adjustment flag.
-fn flink_parquet_leaf(field: &Field) -> parquet::schema::types::Type {
+fn flink_parquet_type(field: &Field) -> parquet::schema::types::Type {
     use parquet::basic::{
         LogicalType, Repetition, TimeUnit as ParquetTimeUnit, Type as PhysicalType,
     };
@@ -331,6 +417,11 @@ fn flink_parquet_leaf(field: &Field) -> parquet::schema::types::Type {
     let data_type = match field.data_type() {
         DataType::Dictionary(_, value) => value.as_ref(),
         data_type => data_type,
+    };
+    let repetition = if field.is_nullable() {
+        Repetition::OPTIONAL
+    } else {
+        Repetition::REQUIRED
     };
     let builder = match data_type {
         DataType::Boolean => {
@@ -370,10 +461,10 @@ fn flink_parquet_leaf(field: &Field) -> parquet::schema::types::Type {
                     unit: ParquetTimeUnit::MILLIS,
                 }))
         }
-        DataType::Timestamp(unit, None) => {
+        DataType::Timestamp(unit, timezone) => {
             ParquetType::primitive_type_builder(field.name(), PhysicalType::INT64)
                 .with_logical_type(Some(LogicalType::Timestamp {
-                    is_adjusted_to_u_t_c: false,
+                    is_adjusted_to_u_t_c: timezone.is_some(),
                     unit: match unit {
                         arrow::datatypes::TimeUnit::Millisecond => ParquetTimeUnit::MILLIS,
                         arrow::datatypes::TimeUnit::Microsecond => ParquetTimeUnit::MICROS,
@@ -392,12 +483,63 @@ fn flink_parquet_leaf(field: &Field) -> parquet::schema::types::Type {
                 .with_scale(*scale as i32)
                 .with_length(decimal_min_bytes(*precision as i32))
         }
+        DataType::Struct(fields) => {
+            return ParquetType::group_type_builder(field.name())
+                .with_repetition(repetition)
+                .with_fields(
+                    fields
+                        .iter()
+                        .map(|child| Arc::new(flink_parquet_type(child)))
+                        .collect(),
+                )
+                .build()
+                .expect("failed to build parquet struct");
+        }
+        DataType::List(element) => {
+            let element = Field::new(
+                "element",
+                element.data_type().clone(),
+                element.is_nullable(),
+            );
+            let repeated = ParquetType::group_type_builder("list")
+                .with_repetition(Repetition::REPEATED)
+                .with_fields(vec![Arc::new(flink_parquet_type(&element))])
+                .build()
+                .expect("failed to build parquet list entries");
+            return ParquetType::group_type_builder(field.name())
+                .with_repetition(repetition)
+                .with_logical_type(Some(LogicalType::List))
+                .with_fields(vec![Arc::new(repeated)])
+                .build()
+                .expect("failed to build parquet list");
+        }
+        DataType::Map(entries, _) => {
+            let fields = match entries.data_type() {
+                DataType::Struct(fields) if fields.len() == 2 => fields,
+                other => panic!("map entries were not a key/value struct: {other:?}"),
+            };
+            let key = Field::new("key", fields[0].data_type().clone(), false);
+            let value = Field::new(
+                "value",
+                fields[1].data_type().clone(),
+                fields[1].is_nullable(),
+            );
+            let repeated = ParquetType::group_type_builder("key_value")
+                .with_repetition(Repetition::REPEATED)
+                .with_fields(vec![
+                    Arc::new(flink_parquet_type(&key)),
+                    Arc::new(flink_parquet_type(&value)),
+                ])
+                .build()
+                .expect("failed to build parquet map entries");
+            return ParquetType::group_type_builder(field.name())
+                .with_repetition(repetition)
+                .with_logical_type(Some(LogicalType::Map))
+                .with_fields(vec![Arc::new(repeated)])
+                .build()
+                .expect("failed to build parquet map");
+        }
         other => panic!("type {other:?} has no Flink parquet mapping"),
-    };
-    let repetition = if field.is_nullable() {
-        Repetition::OPTIONAL
-    } else {
-        Repetition::REQUIRED
     };
     builder
         .with_repetition(repetition)
@@ -415,6 +557,7 @@ pub(crate) struct ParquetEncoder<W: std::io::Write + Send> {
     row_group_index: usize,
     buffered_rows: usize,
     max_row_group_bytes: usize,
+    input_schema: SchemaRef,
     write_schema: SchemaRef,
     /// Indices of the written (non-partition) columns in the incoming full-row batches; partition
     /// values live in the directory path, so their columns are projected out (zero-copy).
@@ -459,13 +602,32 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
             data_fields
         };
         let write_schema = Arc::new(Schema::new(write_fields));
+        // The encoder is configured from the logical table schema, but a changelog batch carries
+        // one additional trailing system column. Cached-schema C Data imports must describe the
+        // physical array exactly even though that column is not part of the table projection.
+        let input_schema = if changelog {
+            Arc::new(Schema::new(
+                full_schema
+                    .fields()
+                    .iter()
+                    .cloned()
+                    .chain(std::iter::once(Arc::new(Field::new(
+                        crate::changelog::ROW_KIND_COLUMN,
+                        DataType::Int8,
+                        false,
+                    ))))
+                    .collect::<Vec<_>>(),
+            ))
+        } else {
+            full_schema.clone()
+        };
 
         let root = parquet::schema::types::Type::group_type_builder("flink_schema")
             .with_fields(
                 write_schema
                     .fields()
                     .iter()
-                    .map(|field| Arc::new(flink_parquet_leaf(field)))
+                    .map(|field| Arc::new(flink_parquet_type(field)))
                     .collect(),
             )
             .build()
@@ -493,6 +655,7 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
             row_group_index: 0,
             buffered_rows: 0,
             max_row_group_bytes: config.block_size,
+            input_schema,
             write_schema,
             projection,
             changelog,
@@ -523,6 +686,29 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
         let batch = RecordBatch::try_new(self.write_schema.clone(), columns)
             .expect("write batch did not match the write schema");
         self.write_sized(&batch);
+    }
+
+    pub(crate) fn write_selected(&mut self, batch: &RecordBatch, selected_rows: &[usize]) {
+        if selected_rows.is_empty() {
+            self.write(batch);
+            return;
+        }
+        let indices = UInt32Array::from(
+            selected_rows
+                .iter()
+                .map(|&index| u32::try_from(index).expect("selected Arrow row exceeded u32"))
+                .collect::<Vec<_>>(),
+        );
+        let columns = batch
+            .columns()
+            .iter()
+            .map(|column| {
+                take(column.as_ref(), &indices, None).expect("failed to gather Delta rows")
+            })
+            .collect();
+        let selected = RecordBatch::try_new(batch.schema(), columns)
+            .expect("selected Delta rows did not match the input schema");
+        self.write(&selected);
     }
 
     fn write_sized(&mut self, batch: &RecordBatch) {
@@ -614,11 +800,15 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
     /// Flushes the last row group and writes the footer into Flink's output stream.
     pub(crate) fn finish(&mut self) {
         self.flush_row_group();
-        self.writer
+        let mut writer = self
+            .writer
             .take()
-            .expect("parquet encoder already finished")
-            .close()
-            .expect("failed to finish parquet file");
+            .expect("parquet encoder already finished");
+        writer.finish().expect("failed to finish parquet file");
+        // SerializedFileWriter::finish flushes its tracked BufWriter today. Keep the bridge flush
+        // explicit as well: sub-MiB files otherwise depend on that implementation detail to emit
+        // the final JNI chunk, while larger files happen to emit as the bridge buffer fills.
+        std::io::Write::flush(writer.inner_mut()).expect("failed to flush finished parquet output");
     }
 }
 
@@ -664,7 +854,7 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_createParque
         let keys = required_strings(&mut env, &config_keys);
         let values = required_strings(&mut env, &config_values);
         let output = JniParquetOutput::new(&mut env, output, chunk)
-            .expect("failed to create Flink parquet output bridge");
+            .expect("failed to create parquet output bridge");
         into_handle(ParquetEncoder::new(
             output,
             schema,
@@ -690,12 +880,13 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncod
     _class: JClass<'local>,
     handle: jlong,
     in_array_address: jlong,
-    in_schema_address: jlong,
+    selected_rows: JIntArray<'local>,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
+    crate::bridge::jni_guard(env, move |env| {
         let encoder = unsafe { &mut *(handle as *mut ParquetEncoder<JniParquetOutput>) };
-        let batch = import_record_batch(in_array_address, in_schema_address);
-        encoder.write(&batch);
+        let batch = import_record_batch_with_schema(in_array_address, &encoder.input_schema);
+        let selected_rows = read_columns(&env, &selected_rows);
+        encoder.write_selected(&batch, &selected_rows);
     })
 }
 
@@ -927,6 +1118,7 @@ mod parquet_encoder_tests {
         .unwrap();
         let output = SharedBuffer::default();
         let mut encoder = ParquetEncoder::new(output.clone(), data_schema, &[], &[], &[], true);
+        assert_eq!(encoder.input_schema, batch.schema());
         encoder.write(&batch);
         encoder.finish();
         let mut file = Vec::new();
@@ -950,6 +1142,41 @@ mod parquet_encoder_tests {
             kinds.iter().collect::<Vec<_>>(),
             vec![Some("+I"), Some("-U"), Some("+U"), Some("-D"),]
         );
+    }
+
+    #[test]
+    fn selected_rows_are_gathered_once_in_native_order() {
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "value",
+            DataType::Int64,
+            false,
+        )]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(Int64Array::from(vec![10, 20, 30]))],
+        )
+        .unwrap();
+        let output = SharedBuffer::default();
+        let mut encoder = ParquetEncoder::new(output.clone(), schema, &[], &[], &[], false);
+        encoder.write_selected(&batch, &[2, 0, 2]);
+        encoder.finish();
+        let mut file = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            let n = output.drain_into(&mut chunk);
+            if n == 0 {
+                break;
+            }
+            file.extend_from_slice(&chunk[..n]);
+        }
+
+        let (batches, _) = read_back(file);
+        let values = batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        assert_eq!(values.values(), &[30, 10, 30]);
     }
 
     #[test]
@@ -1068,6 +1295,130 @@ mod parquet_encoder_tests {
                 unit: parquet::basic::TimeUnit::MICROS
             })
         );
+    }
+
+    #[test]
+    fn timestamp_timezone_controls_parquet_utc_adjustment() {
+        let instant = flink_parquet_type(&Field::new(
+            "instant",
+            DataType::Timestamp(arrow::datatypes::TimeUnit::Microsecond, Some("UTC".into())),
+            true,
+        ));
+        let local = flink_parquet_type(&Field::new(
+            "local",
+            DataType::Timestamp(arrow::datatypes::TimeUnit::Microsecond, None),
+            true,
+        ));
+        assert_eq!(
+            instant.get_basic_info().logical_type_ref(),
+            Some(&LogicalType::Timestamp {
+                is_adjusted_to_u_t_c: true,
+                unit: parquet::basic::TimeUnit::MICROS,
+            })
+        );
+        assert_eq!(
+            local.get_basic_info().logical_type_ref(),
+            Some(&LogicalType::Timestamp {
+                is_adjusted_to_u_t_c: false,
+                unit: parquet::basic::TimeUnit::MICROS,
+            })
+        );
+    }
+
+    #[test]
+    fn nested_struct_list_and_map_roundtrip_with_flink_schema() {
+        use arrow::array::{ListArray, MapArray, StructArray};
+
+        let timestamp = DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None);
+        let struct_fields = vec![
+            Arc::new(Field::new("name", DataType::Utf8, true)),
+            Arc::new(Field::new("created", timestamp.clone(), true)),
+        ];
+        let list_element = Arc::new(Field::new("element", DataType::Int32, true));
+        let map_entry_fields = vec![
+            Arc::new(Field::new("key", DataType::Utf8, false)),
+            Arc::new(Field::new("value", timestamp.clone(), true)),
+        ];
+        let map_entry = Arc::new(Field::new(
+            "entries",
+            DataType::Struct(map_entry_fields.clone().into()),
+            false,
+        ));
+        let schema = Arc::new(Schema::new(vec![
+            Field::new(
+                "details",
+                DataType::Struct(struct_fields.clone().into()),
+                true,
+            ),
+            Field::new("values", DataType::List(list_element.clone()), true),
+            Field::new("times", DataType::Map(map_entry.clone(), false), true),
+        ]));
+
+        let details = StructArray::new(
+            struct_fields.into(),
+            vec![
+                Arc::new(StringArray::from(vec![Some("first"), None])) as ArrayRef,
+                Arc::new(TimestampNanosecondArray::from(vec![
+                    Some(-1_500),
+                    Some(2_500),
+                ])) as ArrayRef,
+            ],
+            None,
+        );
+        let values = ListArray::new(
+            list_element,
+            OffsetBuffer::new(vec![0, 2, 3].into()),
+            Arc::new(Int32Array::from(vec![Some(1), None, Some(3)])),
+            None,
+        );
+        let entries = StructArray::new(
+            map_entry_fields.into(),
+            vec![
+                Arc::new(StringArray::from(vec!["a", "b"])) as ArrayRef,
+                Arc::new(TimestampNanosecondArray::from(vec![
+                    Some(-1_500),
+                    Some(2_500),
+                ])) as ArrayRef,
+            ],
+            None,
+        );
+        let times = MapArray::new(
+            map_entry,
+            OffsetBuffer::new(vec![0, 1, 2].into()),
+            entries,
+            None,
+            false,
+        );
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(details), Arc::new(values), Arc::new(times)],
+        )
+        .unwrap();
+
+        let file = encode(schema, &[], &[("timestamp.unit", "micros")], &[batch]);
+        let (read, metadata) = read_back(file);
+        let descriptor = metadata.file_metadata().schema_descr();
+        assert_eq!(descriptor.num_columns(), 5);
+        assert_eq!(descriptor.column(0).path().string(), "details.name");
+        assert_eq!(descriptor.column(1).path().string(), "details.created");
+        assert_eq!(descriptor.column(2).path().string(), "values.list.element");
+        assert_eq!(descriptor.column(3).path().string(), "times.key_value.key");
+        assert_eq!(
+            descriptor.column(4).path().string(),
+            "times.key_value.value"
+        );
+
+        let details = read[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        let created = details
+            .column(1)
+            .as_any()
+            .downcast_ref::<arrow::array::TimestampMicrosecondArray>()
+            .unwrap();
+        assert_eq!(created.values(), &[-2, 2]);
     }
 
     #[test]
