@@ -69,6 +69,7 @@
         <zookeeper.version>3.8.3</zookeeper.version>
         <!-- Matches the protobuf runtime Flink's protobuf format generates code against. -->
         <protobuf.version>4.32.1</protobuf.version>
+        <delta.version>4.4.0-SNAPSHOT</delta.version>
         <!-- Native build: debug by default for a fast correctness loop. The `bench` profile flips
              both of these to a release build, which benchmarks must use (debug Rust is far slower). -->
         <native.profile>debug</native.profile>
@@ -740,6 +741,15 @@
             <id>image-it</id>
             <modules>
                 <module>streamfusion-image-it</module>
+            </modules>
+        </profile>
+        <!-- Delta's Flink connector is still an unpublished private build. Keep its optional
+             acceleration module out of the default reactor until the normal connector artifact is
+             publicly resolvable; local Delta development enables it with -Pdelta after publishM2. -->
+        <profile>
+            <id>delta</id>
+            <modules>
+                <module>streamfusion-delta</module>
             </modules>
         </profile>
     </profiles>

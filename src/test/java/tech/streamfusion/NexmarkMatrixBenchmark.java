@@ -121,6 +121,36 @@ class NexmarkMatrixBenchmark {
           "q18", "bidder, auction",
           "q19", "auction, rank_number");
 
+  // Delta's merge-on-read writer requires a key for every table. Queries that already produce an
+  // updating changelog retain the same result identity as upsert-kafka. For append-only queries,
+  // use the smallest stable identity exposed by the published result schema; q5 does not expose its
+  // window boundaries, so its complete two-column result is the only available identity.
+  private static final Map<String, String> DELTA_UPSERT_KEYS =
+      Map.ofEntries(
+          Map.entry("q0", "auction, bidder, `dateTime`"),
+          Map.entry("q1", "auction, bidder, `dateTime`"),
+          Map.entry("q2", "auction, price"),
+          Map.entry("q3", "id"),
+          Map.entry("q4", "id"),
+          Map.entry("q5", "auction, num"),
+          Map.entry("q7", "auction, bidder, `dateTime`"),
+          Map.entry("q8", "id, stime"),
+          Map.entry("q9", "id"),
+          Map.entry("q10", "auction, bidder, `dateTime`"),
+          Map.entry("q11", "bidder, starttime"),
+          Map.entry("q12", "bidder, starttime"),
+          Map.entry("q13", "auction, price, val"),
+          Map.entry("q14", "auction, bidder, `dateTime`"),
+          Map.entry("q15", "`day`"),
+          Map.entry("q16", "channel, `day`"),
+          Map.entry("q17", "auction, `day`"),
+          Map.entry("q18", "bidder, auction"),
+          Map.entry("q19", "auction, rank_number"),
+          Map.entry("q20", "auction, bidder, bid_dateTime"),
+          Map.entry("q21", "auction, bidder, price, channel"),
+          Map.entry("q22", "auction, bidder, price, channel"),
+          Map.entry("q23", "auction, bidder, price"));
+
   // The opt-in native path for DATE_FORMAT/EXTRACT over TIMESTAMP_LTZ (chrono-tz in Rust instead of the
   // byte-parity JVM upcall) — reported as a second "incompatible" row for the datetime queries, exactly
   // as q21 reports its native-regex path. Divergence surface: tzdb-version skew, DST beyond ~2100, deep
@@ -904,6 +934,269 @@ class NexmarkMatrixBenchmark {
         System.out.print(row);
       }
       System.out.println(out);
+    }
+  }
+
+  /**
+   * Runs the readme's Kafka JSON, memory-state, mini-batch-off matrix against fresh Delta
+   * merge-on-read upsert tables. Invoked from the optional Delta module so the default runtime test
+   * artifact remains connector-neutral.
+   */
+  static void runDeltaMergeOnReadSinkComparison() throws Exception {
+    Query[] queries = selectQueries();
+    boolean retainOutput = System.getenv("SF_DELTA_OUTPUT") != null;
+    Path outputRoot =
+        retainOutput
+            ? Path.of(System.getenv("SF_DELTA_OUTPUT"))
+            : Files.createTempDirectory("nexmark-delta-mor");
+    Files.createDirectories(outputRoot);
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      NexmarkKafkaBenchmark.produce(brokers, "nexmark", "json", ROWS, KAFKA_PARTITIONS);
+      StringBuilder out =
+          new StringBuilder(
+              "\n##### NEXMARK DELTA MERGE-ON-READ UPSERT "
+                  + "(Kafka JSON, memory state, mini-batch off; "
+                  + ROWS
+                  + " events, best of "
+                  + RUNS
+                  + ") #####\n"
+                  + "output: "
+                  + outputRoot.toAbsolutePath()
+                  + (retainOutput ? " (retained)\n" : " (temporary)\n")
+                  + "query  Flink s      ev/s  StreamFusion s      ev/s  SF/Flink\n");
+      double logSpeedupSum = 0.0;
+      int completed = 0;
+      for (Query q : queries) {
+        String row;
+        try {
+          double flink = deltaSinkBest(brokers, outputRoot, q, false, retainOutput);
+          double nativeRun = deltaSinkBest(brokers, outputRoot, q, true, retainOutput);
+          double speedup = flink / nativeRun;
+          logSpeedupSum += Math.log(speedup);
+          completed++;
+          row =
+              String.format(
+                  "%4s  %7.3f  %8.0f  %14.3f  %8.0f  %8.2fx%n",
+                  q.label, flink, ROWS / flink, nativeRun, ROWS / nativeRun, speedup);
+        } catch (Exception failure) {
+          if ("true".equals(System.getenv("SF_BENCHMARK_STACKTRACE"))) {
+            failure.printStackTrace(System.out);
+          }
+          row = String.format("%4s  FAILED: %s%n", q.label, rootCause(failure));
+        }
+        out.append(row);
+        System.out.print(row);
+      }
+      if (completed > 0) {
+        out.append(
+            String.format(
+                "geomean (%d/%d completed): %.2fx%n",
+                completed, queries.length, Math.exp(logSpeedupSum / completed)));
+      }
+      System.out.println(out);
+    } finally {
+      if (!retainOutput) {
+        deleteTree(outputRoot);
+      }
+    }
+  }
+
+  private static double deltaSinkBest(
+      String brokers, Path outputRoot, Query q, boolean nativeRun, boolean retainOutput)
+      throws Exception {
+    return deltaSinkBest(brokers, outputRoot, q, nativeRun, retainOutput, WARMUP, RUNS);
+  }
+
+  private static double deltaSinkBest(
+      String brokers,
+      Path outputRoot,
+      Query q,
+      boolean nativeRun,
+      boolean retainOutput,
+      int warmups,
+      int runs)
+      throws Exception {
+    Map<String, String> properties = new LinkedHashMap<>();
+    properties.put("streamfusion.native.enabled", Boolean.toString(nativeRun));
+    if (nativeRun && q.nativeVariantProps != null) {
+      properties.putAll(q.nativeVariantProps);
+    }
+    Map<String, String> previous = new LinkedHashMap<>();
+    properties.forEach((key, value) -> previous.put(key, System.getProperty(key)));
+    properties.forEach(System::setProperty);
+    try {
+      double best = Double.MAX_VALUE;
+      for (int run = 0; run < warmups + runs; run++) {
+        Path output =
+            outputRoot.resolve(
+                q.label + "/" + (nativeRun ? "streamfusion" : "flink") + "/run-" + run);
+        System.out.printf(
+            "  %s %s run %d/%d%s%n",
+            q.label,
+            nativeRun ? "StreamFusion" : "Flink",
+            run + 1,
+            warmups + runs,
+            run < warmups ? " (warmup)" : "");
+        double seconds = runDeltaSinkOnce(brokers, output, q, nativeRun);
+        System.out.printf("    completed in %.3f s%n", seconds);
+        if (run >= warmups) {
+          best = Math.min(best, seconds);
+        }
+        if (!retainOutput) {
+          deleteTree(output);
+        }
+        // Every cell is a fully closed bounded Flink job with a fresh Delta table. Force the test
+        // JVM to reclaim the previous MiniCluster/job graph before starting the next repetition;
+        // otherwise several q10-sized cells can leave enough unreachable heap committed for macOS
+        // to kill the fork before G1's next pressure-triggered collection.
+        System.gc();
+        System.runFinalization();
+      }
+      return best;
+    } finally {
+      previous.forEach(
+          (key, value) -> {
+            if (value == null) {
+              System.clearProperty(key);
+            } else {
+              System.setProperty(key, value);
+            }
+          });
+    }
+  }
+
+  /** Captures matched CPU and wall-clock profiles of one Kafka JSON to Delta MOR query. */
+  static void runDeltaMergeOnReadSinkProfile() throws Exception {
+    String label = System.getProperty("profile.query", "q19");
+    Query q =
+        Arrays.stream(ALL_QUERIES)
+            .filter(candidate -> candidate.label.equals(label))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("unknown profile.query: " + label));
+    Path outputDir =
+        Path.of(System.getProperty("profile.outputDir", "target/profiles/nexmark-delta"))
+            .toAbsolutePath();
+    Files.createDirectories(outputDir);
+    String asprof = System.getProperty("profile.asprof", "asprof");
+    String pid = Long.toString(ProcessHandle.current().pid());
+
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      NexmarkKafkaBenchmark.produce(brokers, "nexmark", "json", ROWS, KAFKA_PARTITIONS);
+      for (boolean nativeRun : new boolean[] {false, true}) {
+        String engine = nativeRun ? "streamfusion" : "flink";
+        Path engineOutput = outputDir.resolve(engine + "-output");
+        deltaSinkBest(brokers, engineOutput, q, nativeRun, false, 1, 1);
+        String[] profileEvents =
+            System.getProperty("profile.events", "cpu,wall").split(",");
+        for (String event : profileEvents) {
+          if (!Set.of("cpu", "wall", "alloc").contains(event)) {
+            throw new IllegalArgumentException("unsupported profile event: " + event);
+          }
+          Path recording = outputDir.resolve(engine + "-" + q.label + "-" + event + ".jfr");
+          List<String> startArgs =
+              new ArrayList<>(
+                  List.of(
+                      "start",
+                      "-e",
+                      event,
+                      "-i",
+                      "1ms",
+                      "-f",
+                      recording.toString()));
+          if (event.equals("wall")) {
+            startArgs.add("-t");
+          }
+          startArgs.add(pid);
+          runProfiler(asprof, startArgs.toArray(String[]::new));
+          double seconds;
+          try {
+            seconds = deltaSinkBest(brokers, engineOutput, q, nativeRun, false, 0, 1);
+          } finally {
+            runProfiler(asprof, "stop", pid);
+          }
+          System.out.printf(
+              "[profile-delta] %-12s %-4s %-4s %.3f s -> %s%n",
+              engine, q.label, event, seconds, recording);
+        }
+      }
+    }
+  }
+
+  private static double runDeltaSinkOnce(
+      String brokers, Path output, Query q, boolean nativeRun) throws Exception {
+    StreamTableEnvironment tEnv = kafkaEnvironment(brokers, "json");
+    tEnv.getConfig().getConfiguration().setString("execution.checkpointing.interval", "1 s");
+    tEnv.getConfig().getConfiguration().setString("table.exec.mini-batch.enabled", "false");
+    runSetup(tEnv, q);
+    PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
+    tEnv.executeSql(deltaSinkDdl(q, output));
+    String plan =
+        tEnv.explainSql(q.insertSql, org.apache.flink.table.api.ExplainDetail.JSON_EXECUTION_PLAN);
+    long start = System.nanoTime();
+    tEnv.executeSql(q.insertSql).await();
+    double seconds = (System.nanoTime() - start) / 1e9;
+    if (nativeRun
+        && (!plan.contains("NativeKafkaDecode")
+            || !plan.contains("native-kafka-source")
+            || plan.contains("RowDataToArrow")
+            || plan.contains("ArrowToRowData")
+            || scan.substitutions() < 3)) {
+      throw new IllegalStateException(
+          q.label
+              + ": the native Kafka-to-Delta path did not engage (decode="
+              + plan.contains("NativeKafkaDecode")
+              + ", source="
+              + plan.contains("native-kafka-source")
+              + ", row-to-arrow="
+              + plan.contains("RowDataToArrow")
+              + ", arrow-to-row="
+              + plan.contains("ArrowToRowData")
+              + ", substitutions="
+              + scan.substitutions()
+              + "). "
+              + scan.explainSummary());
+    }
+    return seconds;
+  }
+
+  private static String deltaSinkDdl(Query q, Path output) {
+    String ddl = q.sinkDdl.replace("%TS%", "TIMESTAMP_LTZ(3)").replace("%WTS%", "TIMESTAMP(3)");
+    String key = DELTA_UPSERT_KEYS.get(q.label);
+    if (key == null) {
+      throw new IllegalArgumentException("No Delta upsert key for " + q.label);
+    }
+    ddl = ddl.replace(") WITH", ", PRIMARY KEY (" + key + ") NOT ENFORCED) WITH");
+    String options =
+        "WITH ('connector' = 'delta', 'table_path' = '"
+            + output.toUri()
+            + "', 'write.mode' = 'upsert', 'delta.enableDeletionVectors' = 'true')";
+    return ddl.replace("WITH ('connector' = 'blackhole')", options);
+  }
+
+  private static void deleteTree(Path root) throws Exception {
+    for (int attempt = 0; attempt < 10 && Files.exists(root); attempt++) {
+      try (java.util.stream.Stream<Path> paths = Files.walk(root)) {
+        for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+          try {
+            Files.deleteIfExists(path);
+          } catch (java.nio.file.DirectoryNotEmptyException concurrentDeltaMaintenance) {
+            // Delta's post-commit maintenance may finish creating a log artifact just after the
+            // bounded job terminates. Re-walk below so benchmark cleanup does not fail a valid run.
+          }
+        }
+      }
+      if (Files.exists(root)) {
+        Thread.sleep(100L);
+      }
+    }
+    if (Files.exists(root)) {
+      throw new java.nio.file.DirectoryNotEmptyException(root.toString());
     }
   }
 
@@ -2031,7 +2324,9 @@ class NexmarkMatrixBenchmark {
   private static StreamTableEnvironment kafkaEnvironment(String brokers, String format) {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(PARALLELISM);
-    env.getConfig().enableObjectReuse();
+    if (!"false".equals(System.getenv("SF_OBJECT_REUSE"))) {
+      env.getConfig().enableObjectReuse();
+    }
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
     tEnv.executeSql(
         "CREATE TABLE src ("

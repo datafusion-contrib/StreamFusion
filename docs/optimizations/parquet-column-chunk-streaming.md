@@ -22,6 +22,21 @@ buffer of a four-value Arrow dictionary (`+I`, `-U`, `+U`, `-D`) and parquet-rs 
 dictionary directly. The writer therefore does not allocate or copy a two-byte string for every
 change; insert-only batches allocate only a compact zero-key vector.
 
+Delta merge-on-read output uses the same encoder without rebuilding a schema for every batch. The
+schema is imported once when a data file opens; later C Data Interface calls carry arrays only.
+Non-contiguous row selections remain indices over retained Arrow buffers until parquet-rs performs
+one native gather per column. File-level Delta statistics are then read from the native Parquet
+footer through Delta Kernel's standard typed statistics reader, so the transaction-log values keep
+the connector's existing semantics. The retained row view implements Flink's getters directly over
+that batch, avoiding a second Java row-view allocation, and each qualified output directory is
+initialized only once per handler instead of once per checkpoint file.
+
+On the exact 2M-event Delta q0 comparison, those two Java-side changes reduced StreamFusion from
+2.962 to 2.710 seconds while the matched Flink result remained effectively flat (4.233 versus 4.195
+seconds), improving speedup from **1.43x** to **1.55x**. Allocation profiles before and after showed
+the `ColumnarRowData` allocation disappear; total allocation remained dominated by Delta's shared
+stream, string, and hash-table bookkeeping.
+
 In the 2M-event q0 changelog-Parquet benchmark (parallelism 4, memory state, mini-batching off, one
 warmup and best of three), Flink's rowwise parquet-mr path took 1.532s and the native Arrow/parquet-rs
 path took 1.051s: **1.46x**. A matched 20-second CPU profile completed 19 native iterations versus 12

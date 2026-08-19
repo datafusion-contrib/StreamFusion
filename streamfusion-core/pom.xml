@@ -25,6 +25,7 @@
                         <exclude>tech/streamfusion/kafka/**</exclude>
                         <exclude>tech/streamfusion/fluss/**</exclude>
                         <exclude>tech/streamfusion/parquet/**</exclude>
+                        <exclude>tech/streamfusion/delta/**</exclude>
                         <exclude>tech/streamfusion/format/avro/**</exclude>
                         <exclude>tech/streamfusion/format/avroconfluent/**</exclude>
                         <exclude>tech/streamfusion/format/csv/**</exclude>
@@ -45,6 +46,9 @@
                         <exclude>tech/streamfusion/planner/NativeKafkaDecodeExecNode.java</exclude>
                         <exclude>tech/streamfusion/planner/NativeKafkaSinkExecNode.java</exclude>
                         <exclude>tech/streamfusion/planner/NativeParquetSinkExecNode.java</exclude>
+                        <exclude>tech/streamfusion/planner/DeltaPlannerExtension.java</exclude>
+                        <exclude>tech/streamfusion/planner/DeltaSinkMatcher.java</exclude>
+                        <exclude>tech/streamfusion/planner/NativeDeltaSinkExecNode.java</exclude>
                         <exclude>tech/streamfusion/planner/ParquetPlannerExtension.java</exclude>
                         <exclude>tech/streamfusion/planner/ParquetSinkMatcher.java</exclude>
                         <exclude>tech/streamfusion/planner/ParquetSinkTranslator.java</exclude>
@@ -53,6 +57,7 @@
                         <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode.java</exclude>
                         <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaSink.java</exclude>
                         <exclude>tech/streamfusion/planner/StreamPhysicalNativeParquetSink.java</exclude>
+                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeDeltaSink.java</exclude>
                     </excludes>
                 </configuration>
             </plugin>

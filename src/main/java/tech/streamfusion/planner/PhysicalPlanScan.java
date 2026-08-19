@@ -641,8 +641,10 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       // Carry RowKind across the transpose only on a changelog edge; an insert-only producer needs
       // no per-row tag (the native consumer reads an absent column as all-INSERT).
       boolean carryRowKind =
-          producer instanceof StreamPhysicalRel
-              && !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) producer);
+          (consumer instanceof RequiresRowKind
+                  && ((RequiresRowKind) consumer).requiresRowKind())
+              || (producer instanceof StreamPhysicalRel
+                  && !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) producer));
       return new StreamPhysicalRowDataToArrow(
           producer.getCluster(), producer.getTraitSet(), producer, carryRowKind);
     }
