@@ -558,6 +558,7 @@ pub(crate) struct ParquetEncoder<W: std::io::Write + Send> {
     buffered_rows: usize,
     max_row_group_bytes: usize,
     input_schema: SchemaRef,
+    changelog_input_schema: Option<SchemaRef>,
     write_schema: SchemaRef,
     /// Indices of the written (non-partition) columns in the incoming full-row batches; partition
     /// values live in the directory path, so their columns are projected out (zero-copy).
@@ -605,7 +606,7 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
         // The encoder is configured from the logical table schema, but a changelog batch carries
         // one additional trailing system column. Cached-schema C Data imports must describe the
         // physical array exactly even though that column is not part of the table projection.
-        let input_schema = if changelog {
+        let changelog_input_schema = changelog.then(|| {
             Arc::new(Schema::new(
                 full_schema
                     .fields()
@@ -618,9 +619,8 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
                     ))))
                     .collect::<Vec<_>>(),
             ))
-        } else {
-            full_schema.clone()
-        };
+        });
+        let input_schema = full_schema.clone();
 
         let root = parquet::schema::types::Type::group_type_builder("flink_schema")
             .with_fields(
@@ -656,12 +656,32 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
             buffered_rows: 0,
             max_row_group_bytes: config.block_size,
             input_schema,
+            changelog_input_schema,
             write_schema,
             projection,
             changelog,
             changelog_values: changelog
                 .then(|| Arc::new(StringArray::from(vec!["+I", "-U", "+U", "-D"])) as ArrayRef),
         }
+    }
+
+    fn input_schema_for_columns(&self, columns: usize) -> &SchemaRef {
+        if columns == self.input_schema.fields().len() {
+            return &self.input_schema;
+        }
+        if let Some(changelog_schema) = &self.changelog_input_schema {
+            if columns == changelog_schema.fields().len() {
+                return changelog_schema;
+            }
+        }
+        panic!(
+            "Parquet input has {columns} columns; expected {}{}",
+            self.input_schema.fields().len(),
+            self.changelog_input_schema
+                .as_ref()
+                .map(|schema| format!(" or {} with row kind", schema.fields().len()))
+                .unwrap_or_default()
+        );
     }
 
     pub(crate) fn write(&mut self, batch: &RecordBatch) {
@@ -884,7 +904,11 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncod
 ) {
     crate::bridge::jni_guard(env, move |env| {
         let encoder = unsafe { &mut *(handle as *mut ParquetEncoder<JniParquetOutput>) };
-        let batch = import_record_batch_with_schema(in_array_address, &encoder.input_schema);
+        let columns = crate::bridge::record_batch_column_count(in_array_address);
+        let batch = import_record_batch_with_schema(
+            in_array_address,
+            encoder.input_schema_for_columns(columns),
+        );
         let selected_rows = read_columns(&env, &selected_rows);
         encoder.write_selected(&batch, &selected_rows);
     })
@@ -1118,7 +1142,7 @@ mod parquet_encoder_tests {
         .unwrap();
         let output = SharedBuffer::default();
         let mut encoder = ParquetEncoder::new(output.clone(), data_schema, &[], &[], &[], true);
-        assert_eq!(encoder.input_schema, batch.schema());
+        assert_eq!(encoder.input_schema_for_columns(2), &batch.schema());
         encoder.write(&batch);
         encoder.finish();
         let mut file = Vec::new();
@@ -1141,6 +1165,45 @@ mod parquet_encoder_tests {
         assert_eq!(
             kinds.iter().collect::<Vec<_>>(),
             vec![Some("+I"), Some("-U"), Some("+U"), Some("-D"),]
+        );
+    }
+
+    #[test]
+    fn changelog_encoder_accepts_insert_only_physical_batches() {
+        let data_schema = Arc::new(Schema::new(vec![Field::new(
+            "value",
+            DataType::Int64,
+            false,
+        )]));
+        let batch = RecordBatch::try_new(
+            data_schema.clone(),
+            vec![Arc::new(Int64Array::from(vec![10, 20]))],
+        )
+        .unwrap();
+        let output = SharedBuffer::default();
+        let mut encoder = ParquetEncoder::new(output.clone(), data_schema, &[], &[], &[], true);
+        assert_eq!(encoder.input_schema_for_columns(1), &batch.schema());
+        encoder.write(&batch);
+        encoder.finish();
+        let mut file = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            let n = output.drain_into(&mut chunk);
+            if n == 0 {
+                break;
+            }
+            file.extend_from_slice(&chunk[..n]);
+        }
+
+        let (batches, _) = read_back(file);
+        let kinds = batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert_eq!(
+            kinds.iter().collect::<Vec<_>>(),
+            vec![Some("+I"), Some("+I")]
         );
     }
 

@@ -14,6 +14,7 @@ import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.table.api.DataTypes;
+import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
@@ -45,6 +46,11 @@ class ArrowKernelRowsTest {
           new ArrowKernelRows(root, rowType, Conversions.FlinkToDelta.schema(rowType));
       ArrowBuf idData = ids.getDataBuffer();
 
+      assertEquals(2, rows.rowCount());
+      RowData cursor = rows.rowView(0);
+      assertSame(cursor, rows.rowView(1), "batch inspection must reuse one non-retained cursor");
+      assertEquals(20L, cursor.getLong(0));
+
       KernelBatchRowData first = rows.row(0, RowKind.INSERT);
       KernelBatchRowData second = rows.row(1, RowKind.UPDATE_AFTER);
       assertSame(first.batchIdentity(), second.batchIdentity());
@@ -59,6 +65,8 @@ class ArrowKernelRowsTest {
       first.close();
       assertTrue(idData.getReferenceManager().getRefCount() > 0);
       second.close();
+      assertTrue(idData.getReferenceManager().getRefCount() > 0);
+      rows.close();
       assertEquals(0, idData.getReferenceManager().getRefCount());
     }
   }

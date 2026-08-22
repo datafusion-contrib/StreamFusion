@@ -240,6 +240,13 @@ pub(crate) fn import_record_batch_with_schema(
     RecordBatch::from(StructArray::from(data))
 }
 
+/// Reads only the top-level child count from a still JVM-owned C Data array. Callers use this to
+/// select an already-cached physical schema before [`import_record_batch_with_schema`] takes
+/// ownership of the array and replaces its C struct with a released placeholder.
+pub(crate) fn record_batch_column_count(array_address: jlong) -> usize {
+    unsafe { (&*(array_address as *const FFI_ArrowArray)).num_children() }
+}
+
 /// Takes ownership of a schema the JVM exported through the C Data Interface (schema only, no data),
 /// swapping in a released placeholder so the producer's release callback fires once.
 pub(crate) fn import_schema(schema_address: jlong) -> SchemaRef {

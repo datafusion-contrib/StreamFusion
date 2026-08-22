@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.util.TransferPair;
 import org.apache.flink.table.data.*;
@@ -17,14 +18,16 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
 import org.apache.flink.types.variant.Variant;
 import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Retained row views used only for Delta changelog and primary-key bookkeeping. */
-public final class ArrowKernelRows {
+public final class ArrowKernelRows implements KernelBatchRowData.Batch {
 
   private final VectorSchemaRoot root;
   private final StructType deltaSchema;
   private final VectorizedColumnBatch flinkBatch;
-  private final AtomicInteger remaining;
+  private final AtomicInteger references = new AtomicInteger(1);
+  private final Row cursor;
 
   public ArrowKernelRows(VectorSchemaRoot root, RowType flinkType, StructType deltaSchema) {
     this.root = root;
@@ -32,11 +35,32 @@ public final class ArrowKernelRows {
     this.flinkBatch =
         new VectorizedColumnBatch(
             ArrowConversion.createArrowReader(root, flinkType).getColumnVectors());
-    this.remaining = new AtomicInteger(root.getRowCount());
+    this.cursor = new Row(this, 0, RowKind.INSERT, false);
   }
 
   public KernelBatchRowData row(int rowId, RowKind kind) {
-    return new Row(this, rowId, kind);
+    references.incrementAndGet();
+    return new Row(this, rowId, kind, true);
+  }
+
+  @Override public int rowCount() { return root.getRowCount(); }
+
+  @Override
+  public RowData rowView(int rowId) {
+    cursor.rowId = rowId;
+    cursor.rowKind = rowKind(rowId);
+    return cursor;
+  }
+
+  @Override
+  public KernelBatchRowData retainRow(int rowId) {
+    return row(rowId, rowKind(rowId));
+  }
+
+  private RowKind rowKind(int rowId) {
+    TinyIntVector kinds =
+        (TinyIntVector) root.getVector(RowDataArrowConverter.ROW_KIND_COLUMN);
+    return kinds == null ? RowKind.INSERT : RowKind.fromByteValue(kinds.get(rowId));
   }
 
   private FilteredColumnarBatch select(int[] rowIds) {
@@ -59,21 +83,50 @@ public final class ArrowKernelRows {
   }
 
   private void release() {
-    if (remaining.decrementAndGet() == 0) {
+    if (references.decrementAndGet() == 0) {
       root.close();
     }
   }
 
+  @Override public void close() { release(); }
+
+  private UnsupportedOperationException batchCarrier() {
+    return new UnsupportedOperationException("ArrowKernelRows batch carrier has no current row");
+  }
+
+  @Override public RowKind getRowKind() { throw batchCarrier(); }
+  @Override public void setRowKind(RowKind kind) { throw batchCarrier(); }
+  @Override public int getArity() { return flinkBatch.getArity(); }
+  @Override public boolean isNullAt(int pos) { throw batchCarrier(); }
+  @Override public boolean getBoolean(int pos) { throw batchCarrier(); }
+  @Override public byte getByte(int pos) { throw batchCarrier(); }
+  @Override public short getShort(int pos) { throw batchCarrier(); }
+  @Override public int getInt(int pos) { throw batchCarrier(); }
+  @Override public long getLong(int pos) { throw batchCarrier(); }
+  @Override public float getFloat(int pos) { throw batchCarrier(); }
+  @Override public double getDouble(int pos) { throw batchCarrier(); }
+  @Override public StringData getString(int pos) { throw batchCarrier(); }
+  @Override public DecimalData getDecimal(int pos, int precision, int scale) { throw batchCarrier(); }
+  @Override public TimestampData getTimestamp(int pos, int precision) { throw batchCarrier(); }
+  @Override public <T> RawValueData<T> getRawValue(int pos) { throw batchCarrier(); }
+  @Override public byte[] getBinary(int pos) { throw batchCarrier(); }
+  @Override public RowData getRow(int pos, int numFields) { throw batchCarrier(); }
+  @Override public ArrayData getArray(int pos) { throw batchCarrier(); }
+  @Override public MapData getMap(int pos) { throw batchCarrier(); }
+  @Override public Variant getVariant(int pos) { throw batchCarrier(); }
+
   private static final class Row implements KernelBatchRowData {
     private final ArrowKernelRows owner;
-    private final int rowId;
+    private int rowId;
     private RowKind rowKind;
+    private final boolean retained;
     private boolean closed;
 
-    private Row(ArrowKernelRows owner, int rowId, RowKind kind) {
+    private Row(ArrowKernelRows owner, int rowId, RowKind kind, boolean retained) {
       this.owner = owner;
       this.rowId = rowId;
       this.rowKind = kind;
+      this.retained = retained;
     }
 
     @Override public Object batchIdentity() { return owner; }
@@ -111,7 +164,7 @@ public final class ArrowKernelRows {
 
     @Override
     public void close() {
-      if (!closed) {
+      if (retained && !closed) {
         closed = true;
         owner.release();
       }

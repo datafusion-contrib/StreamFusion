@@ -25,6 +25,53 @@ class ChangelogParquetTableFactoryTest {
     assertEquals(writeAndRead(false), writeAndRead(true));
   }
 
+  @Test
+  void nativeSinkSynthesizesInsertRowKindsWhenTheArrowBatchOmitsThem() throws Exception {
+    List<String> rows = writeInsertOnlyAndRead();
+    assertEquals(List.of("+I:1:10", "+I:2:20"), rows);
+  }
+
+  private static List<String> writeInsertOnlyAndRead() throws Exception {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    env.enableCheckpointing(100);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.createTemporaryView(
+        "insert_rows",
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"k", "v"}, Types.LONG, Types.LONG),
+            Row.of(1L, 10L),
+            Row.of(2L, 20L)),
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("v", DataTypes.BIGINT())
+            .build());
+
+    Path output = Files.createTempDirectory("insert-only-changelog-parquet");
+    PhysicalPlanScan scan = NativePlanner.install(tEnv);
+    tEnv.executeSql(
+        "CREATE TABLE changes (k BIGINT, v BIGINT) WITH "
+            + "('connector' = 'changelog-parquet', 'path' = '"
+            + output.toUri()
+            + "')");
+    tEnv.executeSql("INSERT INTO changes SELECT * FROM insert_rows").await();
+    assertTrue(scan.substitutions() >= 1, scan::explainSummary);
+
+    tEnv.executeSql(
+        "CREATE TABLE persisted (_row_kind STRING, k BIGINT, v BIGINT) WITH "
+            + "('connector' = 'filesystem', 'path' = '"
+            + output.toUri()
+            + "', 'format' = 'parquet')");
+    List<String> rows = new ArrayList<>();
+    try (CloseableIterator<Row> iterator =
+        tEnv.executeSql("SELECT _row_kind, k, v FROM persisted").collect()) {
+      iterator.forEachRemaining(
+          row -> rows.add(row.getField(0) + ":" + row.getField(1) + ":" + row.getField(2)));
+    }
+    rows.sort(String::compareTo);
+    return rows;
+  }
+
   private static List<String> writeAndRead(boolean nativeSink) throws Exception {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(2);

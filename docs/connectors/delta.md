@@ -34,10 +34,12 @@ sources. For S3-compatible stores, the usual `fs.s3a.access.key`, `fs.s3a.secret
 SSL, credentials-provider, and path-style settings can instead be supplied as table options.
 
 In the partitioned path, Arrow batches are split by partition and exchanged between
-tasks while they are still Arrow. After the exchange, the connector receives lightweight `RowData`
-views over the same Arrow buffers for changelog and primary-key bookkeeping; the rows are not
-materialized or transposed back into independent objects. The data-file writer consumes those Arrow
-buffers directly. When merge-on-read selects a non-contiguous set of rows, the Java side retains
+tasks while they are still Arrow. After the exchange, one ownership-carrying batch record enters
+the Delta writer instead of one Flink `StreamRecord` and Java wrapper per row. Delta inspects
+changelog keys through one reusable cursor and retains lightweight immutable views only for rows
+that will reach a data file; ignored update-before and key-only delete records are never allocated
+as retained objects. The data-file writer consumes those Arrow buffers directly. When merge-on-read
+selects a non-contiguous set of rows, the Java side retains
 views of the original vectors and passes only the selected row numbers to native code. The native
 writer gathers each column once, immediately before encoding, instead of copying every selected
 value through Java vectors. Each retained row now implements the Flink getters directly over the

@@ -48,6 +48,30 @@ final class NativeDeltaParquetHandler implements ParquetHandler {
       CloseableIterator<FilteredColumnarBatch> data,
       List<Column> statisticsColumns)
       throws IOException {
+    if (!data.hasNext()) {
+      data.close();
+      return io.delta.kernel.internal.util.Utils.toCloseableIterator(
+          Collections.<DataFileStatus>emptyIterator());
+    }
+    FilteredColumnarBatch first = data.next();
+    CloseableIterator<FilteredColumnarBatch> replay = prepend(first, data);
+    if (first.getData() instanceof ArrowKernelBatch
+        && ((ArrowKernelBatch) first.getData()).hasSparseSelection()) {
+      // Kernel's writer is substantially faster for MOR's sparse selections: the native writer
+      // must export every full source vector before gathering the selected rows. Kernel does not
+      // own StreamFusion's Arrow batches, so close each one immediately after it is consumed.
+      try (CloseableIterator<FilteredColumnarBatch> owned = closeConsumedArrowBatches(replay)) {
+        return delegate.writeParquetFiles(directory, owned, statisticsColumns);
+      }
+    }
+    return writeNativeParquetFiles(directory, replay, statisticsColumns);
+  }
+
+  private CloseableIterator<DataFileStatus> writeNativeParquetFiles(
+      String directory,
+      CloseableIterator<FilteredColumnarBatch> data,
+      List<Column> statisticsColumns)
+      throws IOException {
     Path target = new Path(directory, UUID.randomUUID() + ".parquet");
     FileSystem fs = target.getFileSystem(configuration);
     ensureDirectory(fs, target.getParent());
@@ -68,8 +92,8 @@ final class NativeDeltaParquetHandler implements ParquetHandler {
                   + filtered.getSelectionVector().isPresent());
         }
         ArrowKernelBatch batch = (ArrowKernelBatch) filtered.getData();
-        try (VectorSchemaRoot root = batch.retainedRoot();
-            ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED)) {
+        VectorSchemaRoot root = batch.borrowedRoot();
+        try (ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED)) {
           dataSchema = batch.getSchema();
           if (encoder == 0) {
             try (org.apache.arrow.c.ArrowSchema encoderSchema =
@@ -140,6 +164,75 @@ final class NativeDeltaParquetHandler implements ParquetHandler {
                     status.getModificationTime(),
                     Optional.of(statistics)))
             .iterator());
+  }
+
+  private static CloseableIterator<FilteredColumnarBatch> prepend(
+      FilteredColumnarBatch first, CloseableIterator<FilteredColumnarBatch> rest) {
+    return new CloseableIterator<>() {
+      private boolean firstPending = true;
+
+      @Override
+      public boolean hasNext() {
+        return firstPending || rest.hasNext();
+      }
+
+      @Override
+      public FilteredColumnarBatch next() {
+        if (firstPending) {
+          firstPending = false;
+          return first;
+        }
+        return rest.next();
+      }
+
+      @Override
+      public void close() throws IOException {
+        rest.close();
+      }
+    };
+  }
+
+  private static CloseableIterator<FilteredColumnarBatch> closeConsumedArrowBatches(
+      CloseableIterator<FilteredColumnarBatch> input) {
+    return new CloseableIterator<>() {
+      private ArrowKernelBatch current;
+      private boolean closed;
+
+      private void closeCurrent() {
+        if (current != null) {
+          current.close();
+          current = null;
+        }
+      }
+
+      @Override
+      public boolean hasNext() {
+        boolean hasNext = input.hasNext();
+        if (!hasNext) {
+          closeCurrent();
+        }
+        return hasNext;
+      }
+
+      @Override
+      public FilteredColumnarBatch next() {
+        closeCurrent();
+        FilteredColumnarBatch next = input.next();
+        if (next.getData() instanceof ArrowKernelBatch) {
+          current = (ArrowKernelBatch) next.getData();
+        }
+        return next;
+      }
+
+      @Override
+      public void close() throws IOException {
+        if (!closed) {
+          closed = true;
+          closeCurrent();
+          input.close();
+        }
+      }
+    };
   }
 
   private synchronized void ensureDirectory(FileSystem fs, Path directory) throws IOException {

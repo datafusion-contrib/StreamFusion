@@ -118,16 +118,35 @@ public final class ArrowKernelBatch implements ColumnarBatch, AutoCloseable {
     List<Field> fields = new ArrayList<>(vectors.size());
     for (ArrowKernelVector vector : vectors) {
       TransferPair transfer = vector.vector.getTransferPair(vector.vector.getAllocator());
-      transfer.splitAndTransfer(vector.offset, vector.size);
+      // A selected batch remains a view until Rust performs one gather for every column. Retain
+      // the full top-level vector here: truncating it to selectedRows.length makes a sparse source
+      // index (for example row 9 in a two-row selection) point beyond the exported array.
+      int retainedRows = selectedRows == null ? vector.size : vector.vector.getValueCount();
+      transfer.splitAndTransfer(vector.offset, retainedRows);
       retained.add((FieldVector) transfer.getTo());
       fields.add(deltaTimestampMetadata(vector.vector.getField(), vector.type));
     }
     return new VectorSchemaRoot(fields, retained, root.getRowCount());
   }
 
+  /** Returns a synchronous-use view in Kernel column order; the batch remains its owner. */
+  VectorSchemaRoot borrowedRoot() {
+    List<FieldVector> borrowed = new ArrayList<>(vectors.size());
+    List<Field> fields = new ArrayList<>(vectors.size());
+    for (ArrowKernelVector vector : vectors) {
+      borrowed.add(vector.vector);
+      fields.add(deltaTimestampMetadata(vector.vector.getField(), vector.type));
+    }
+    return new VectorSchemaRoot(fields, borrowed, root.getRowCount());
+  }
+
   /** Row permutation gathered by the native writer; empty means the full exported batch. */
   public int[] selectedRows() {
     return selectedRows == null ? new int[0] : selectedRows;
+  }
+
+  boolean hasSparseSelection() {
+    return selectedRows != null && selectedRows.length < root.getRowCount();
   }
 
   /** Restore the timezone distinction that Flink's internal Arrow representation intentionally loses. */

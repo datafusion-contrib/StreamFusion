@@ -1,7 +1,9 @@
 package tech.streamfusion.delta;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.delta.kernel.types.StructType;
 import io.delta.kernel.types.LongType;
@@ -38,8 +40,34 @@ class ArrowKernelBatchTest {
         assertEquals(10, batch.getColumnVector(0).getLong(1));
         assertEquals(30, batch.getColumnVector(0).getLong(2));
         assertEquals(3, retained.getRowCount(), "the Java side retains buffers without gathering");
+        assertFalse(batch.hasSparseSelection());
         org.junit.jupiter.api.Assertions.assertArrayEquals(
             new int[] {2, 0, 2}, batch.selectedRows());
+      }
+    }
+  }
+
+  @Test
+  void sparseSelectedRowsRetainTheirHighestSourceIndex() {
+    try (RootAllocator allocator = new RootAllocator();
+        BigIntVector values = new BigIntVector("value", allocator)) {
+      values.allocateNew(10);
+      for (int row = 0; row < 10; row++) {
+        values.setSafe(row, row * 10L);
+      }
+      values.setValueCount(10);
+      VectorSchemaRoot source = new VectorSchemaRoot(List.of(values));
+      source.setRowCount(10);
+
+      try (ArrowKernelBatch batch =
+              new ArrowKernelBatch(
+                  source, new StructType().add("value", LongType.LONG), new int[] {9, 0});
+          VectorSchemaRoot retained = batch.retainedRoot()) {
+        assertEquals(2, batch.getSize());
+        assertTrue(batch.hasSparseSelection());
+        assertEquals(90, batch.getColumnVector(0).getLong(0));
+        assertEquals(10, retained.getRowCount(), "Rust must receive the full source before gather");
+        assertEquals(90, ((BigIntVector) retained.getVector(0)).get(9));
       }
     }
   }
