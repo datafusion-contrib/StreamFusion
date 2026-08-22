@@ -766,6 +766,14 @@ final class RexExpression {
     }
     SqlTypeName source = sourceType.getSqlTypeName();
     SqlTypeName targetType = resultType.getSqlTypeName();
+    // Arrow timestamps use nanoseconds at the columnar boundary regardless of the declared Flink
+    // precision. Widening the declared precision therefore changes neither values nor buffers; it
+    // only permits additional fractional digits that the source cannot contain.
+    if ((source == SqlTypeName.TIMESTAMP || source == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE)
+        && source == targetType
+        && resultType.getPrecision() >= sourceType.getPrecision()) {
+      return emit(call.getOperands().get(0));
+    }
     // A non-narrowing cast to VARCHAR from a CHAR or VARCHAR source (target length ≥ source). Flink
     // stores both as unpadded StringData and neither pads nor truncates a widening string cast, so the
     // value is unchanged — emit the operand as a passthrough. This covers a bounded computed string

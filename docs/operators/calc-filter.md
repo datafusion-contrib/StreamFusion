@@ -33,6 +33,8 @@ Native, unconditionally, with no host involvement:
   cast kernel can't do this — it errors on overflow instead of wrapping/saturating.
 - **`CHAR`/`VARCHAR` → `VARCHAR`** when the target length is ≥ the source length — an unpadded
   no-op (e.g. the common `COALESCE(s, 'x')` pattern).
+- **Widening timestamp precision** within `TIMESTAMP` or within `TIMESTAMP_LTZ` — Arrow stores both
+  at nanosecond precision at the columnar boundary, so widening the Flink declaration is a no-op.
 - **`→ DECIMAL` from an exact source** — a `DECIMAL` or integer input, rescaled `HALF_UP`.
 
 ### The host-exact JVM upcall

@@ -2,6 +2,7 @@ package tech.streamfusion;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Instant;
 import tech.streamfusion.planner.NativePlanner;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -69,6 +70,13 @@ class FlinkCalcSqlHarnessTest {
   @Test
   void wideningCastMatchesHost() throws Exception {
     NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT CAST(v AS BIGINT) FROM f");
+  }
+
+  @Test
+  void wideningTimestampPrecisionCastMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::timestampEnvironment,
+        "SELECT CAST(ts AS TIMESTAMP_LTZ(6)) FROM timestamps");
   }
 
   @Test
@@ -479,6 +487,22 @@ class FlinkCalcSqlHarnessTest {
             .column("v", DataTypes.INT())
             .column("s", DataTypes.STRING())
             .build());
+    return tEnv;
+  }
+
+  private static TableEnvironment timestampEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    DataStream<Row> source =
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"ts"}, Types.INSTANT),
+            Row.of(Instant.parse("2026-08-21T12:34:56.789Z")),
+            Row.of(Instant.parse("1969-12-31T23:59:59.001Z")));
+    tEnv.createTemporaryView(
+        "timestamps",
+        source,
+        Schema.newBuilder().column("ts", DataTypes.TIMESTAMP_LTZ(3)).build());
     return tEnv;
   }
 
