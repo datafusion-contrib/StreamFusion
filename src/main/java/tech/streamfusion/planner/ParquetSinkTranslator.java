@@ -397,6 +397,11 @@ final class ParquetSinkTranslator {
       return Result.fallback(
           "invalid parquet.compression.codec.zstd.bufferPool.enabled " + bufferPool);
     }
+    if (!Boolean.parseBoolean(bufferPool)) {
+      return Result.fallback(
+          "parquet.compression.codec.zstd.bufferPool.enabled=false is not reproduced by the"
+              + " native writer");
+    }
 
     return Result.translated(config);
   }

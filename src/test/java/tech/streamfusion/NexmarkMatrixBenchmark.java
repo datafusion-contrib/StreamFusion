@@ -1090,7 +1090,8 @@ class NexmarkMatrixBenchmark {
     String options =
         "WITH ('connector' = 'delta', 'table_path' = '"
             + output.toUri()
-            + "', 'write.mode' = 'upsert', 'delta.enableDeletionVectors' = 'true')";
+            + "', 'write.mode' = 'upsert', 'delta.enableDeletionVectors' = 'true', "
+            + "'file_rolling.strategy' = 'count', 'file_rolling.count' = '-1')";
     return ddl.replace("WITH ('connector' = 'blackhole')", options);
   }
 

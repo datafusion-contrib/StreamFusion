@@ -243,6 +243,14 @@ class ParquetSinkTranslatorTest {
   }
 
   @Test
+  void disabledZstdBufferPoolFallsBack() {
+    Map<String, String> options = baseOptions();
+    options.put("parquet.compression", "ZSTD");
+    options.put("parquet.compression.codec.zstd.bufferPool.enabled", "false");
+    assertTrue(fallback(options, SIMPLE, List.of()).contains("bufferPool"));
+  }
+
+  @Test
   void parquetValidationFallsBack() {
     Map<String, String> options = baseOptions();
     options.put("parquet.validation", "true");

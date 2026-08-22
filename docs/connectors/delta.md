@@ -25,6 +25,8 @@ WITH (
   'connector' = 'delta',
   'table_path' = 's3a://my-bucket/events',
   'partitions' = 'dt',
+  'file_rolling.strategy' = 'count',
+  'file_rolling.count' = '-1',
   'fs.s3a.endpoint' = 'https://s3.us-east-1.amazonaws.com',
   'fs.s3a.path.style.access' = 'false'
 );
@@ -57,6 +59,15 @@ binary, date, timestamp, `ROW`, `ARRAY`, and `MAP` columns recursively. Schema e
 `INSERT OVERWRITE`, intervals, and types the Delta connector itself cannot write stay on the stock
 connector path. Delta Lake data files remain Parquet: the transaction log and deletion-vector
 sidecars are protocol files, not alternative table data formats.
+
+The native path must be selected with file rolling disabled, for example
+`'file_rolling.strategy'='count', 'file_rolling.count'='-1'`. Enabled size- or count-based rolling
+uses the stock Delta sink because the native batch writer cannot reproduce its exact file
+boundaries. The native data-file writer honors Delta's `delta.parquet.compression.codec` table
+property and the standard Hadoop `parquet.compression`, block/page sizes, dictionary setting, and
+writer version. Unsupported codecs or writer behavior (validation, custom padding, multithreaded
+Zstandard, disabled Zstandard buffer pooling, or a custom Delta Kernel target file size) delegates
+the data-file write to Delta Kernel's stock Parquet handler.
 
 Build with the `delta` Maven profile and deploy `streamfusion-delta`, `streamfusion-parquet`, and
 published `io.delta:delta-flink_2.2:4.4.0` together. The module has no snapshot, local-Maven, path, or

@@ -79,6 +79,32 @@ final class DeltaSinkMatcher {
     if (!"no".equalsIgnoreCase(options.getOrDefault("schema_evolution.mode", "no"))) {
       return Planned.fallback("schema evolution is enabled");
     }
+    String rollingStrategy =
+        options.getOrDefault(DeltaSinkConf.FILE_ROLLING_STRATEGY.key(), "size");
+    try {
+      if ("count".equalsIgnoreCase(rollingStrategy)) {
+        int count =
+            Integer.parseInt(options.getOrDefault(DeltaSinkConf.FILE_ROLLING_COUNT.key(), "-1"));
+        if (count >= 0) {
+          return Planned.fallback(
+              "file_rolling.count is enabled; the native writer does not yet reproduce Delta's"
+                  + " row-count file boundaries");
+        }
+      } else if ("size".equalsIgnoreCase(rollingStrategy)) {
+        long size =
+            Long.parseLong(
+                options.getOrDefault(DeltaSinkConf.FILE_ROLLING_SIZE.key(), "104857600"));
+        if (size >= 0) {
+          return Planned.fallback(
+              "file_rolling.size is enabled; the native writer does not yet reproduce Delta's"
+                  + " RowData-size file boundaries");
+        }
+      } else {
+        return Planned.fallback("unsupported Delta file rolling strategy " + rollingStrategy);
+      }
+    } catch (NumberFormatException invalidRollingLimit) {
+      return Planned.fallback("invalid Delta file rolling limit");
+    }
     List<String> partitions =
         Arrays.stream(options.getOrDefault("partitions", "").split(","))
             .map(String::trim)

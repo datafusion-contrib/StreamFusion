@@ -55,6 +55,9 @@ import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.types.RowKind;
+import org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.parquet.hadoop.metadata.CompressionCodecName;
+import org.apache.parquet.hadoop.util.HadoopInputFile;
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
 import tech.streamfusion.operator.NativeAllocator;
@@ -85,6 +88,56 @@ class DeltaSinkParityTest {
     assertTrue(commits.contains("\\\"minValues\\\":{\\\"id\\\":"), commits);
     assertTrue(commits.contains("\\\"maxValues\\\":{\\\"id\\\":"), commits);
     assertTrue(commits.contains("\\\"nullCount\\\":{\\\"id\\\":0"), commits);
+  }
+
+  @org.junit.jupiter.api.Test
+  void deltaTableCompressionPropertyReachesNativeParquetFiles() throws Exception {
+    Path nativePath = Files.createTempDirectory("delta-native-gzip");
+    HadoopTable table =
+        new HadoopTable(
+            nativePath.toUri(),
+            Map.of("delta.parquet.compression.codec", "gzip"),
+            DELTA_SCHEMA,
+            List.of("dt"));
+    table.open();
+
+    runAppend(nativePath, true);
+
+    Path parquet;
+    try (java.util.stream.Stream<Path> files = Files.walk(nativePath)) {
+      parquet =
+          files.filter(path -> path.toString().endsWith(".parquet")).findFirst().orElseThrow();
+    }
+    try (ParquetFileReader reader =
+        ParquetFileReader.open(
+            HadoopInputFile.fromPath(
+                new org.apache.hadoop.fs.Path(parquet.toUri()),
+                new org.apache.hadoop.conf.Configuration()))) {
+      assertTrue(
+          reader.getFooter().getBlocks().stream()
+              .flatMap(block -> block.getColumns().stream())
+              .allMatch(column -> column.getCodec() == CompressionCodecName.GZIP));
+    }
+  }
+
+  @org.junit.jupiter.api.Test
+  void enabledDeltaFileRollingStaysOnStockSink() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tableEnv = StreamTableEnvironment.create(env);
+    tableEnv.executeSql("CREATE TEMPORARY TABLE src (id BIGINT) WITH ('connector'='datagen')");
+    tableEnv.executeSql(
+        "CREATE TEMPORARY TABLE sink (id BIGINT) WITH ('connector'='delta', "
+            + "'table_path'='file:///tmp/streamfusion-delta-rolling-plan', "
+            + "'file_rolling.strategy'='count', 'file_rolling.count'='100')");
+    PhysicalPlanScan scan = NativePlanner.install(tableEnv);
+
+    tableEnv.explainSql("INSERT INTO sink SELECT * FROM src");
+
+    assertEquals(0, scan.substitutions());
+    assertTrue(
+        scan.fallbackReasons().stream().anyMatch(reason -> reason.contains("file_rolling.count")),
+        scan.fallbackReasons().toString());
   }
 
   @org.junit.jupiter.api.Test
@@ -194,7 +247,7 @@ class DeltaSinkParityTest {
             + "', 'table_path'='"
             + path.toUri()
             + "', 'partitions'='dt', 'file_rolling.strategy'='count', "
-            + "'file_rolling.count'='1000')");
+            + "'file_rolling.count'='-1')");
     PhysicalPlanScan scan = nativeWriter ? NativePlanner.install(tableEnv) : null;
     tableEnv.executeSql("INSERT INTO sink SELECT * FROM nested_changes").await();
     assertAccelerated(scan);
@@ -373,7 +426,7 @@ class DeltaSinkParityTest {
             + ", 'write.mode'='"
             + mode
             + "'"
-            + ", 'file_rolling.strategy'='count', 'file_rolling.count'='1000')");
+            + ", 'file_rolling.strategy'='count', 'file_rolling.count'='-1')");
   }
 
   private static void assertAccelerated(PhysicalPlanScan scan) {

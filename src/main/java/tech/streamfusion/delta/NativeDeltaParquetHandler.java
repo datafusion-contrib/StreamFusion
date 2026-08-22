@@ -26,11 +26,19 @@ final class NativeDeltaParquetHandler implements ParquetHandler {
 
   private final ParquetHandler delegate;
   private final Configuration configuration;
+  private final String[] encoderKeys;
+  private final String[] encoderValues;
   private final Set<String> initializedDirectories = new HashSet<>();
 
-  NativeDeltaParquetHandler(ParquetHandler delegate, Configuration configuration) {
+  NativeDeltaParquetHandler(
+      ParquetHandler delegate,
+      Configuration configuration,
+      String[] encoderKeys,
+      String[] encoderValues) {
     this.delegate = delegate;
     this.configuration = configuration;
+    this.encoderKeys = encoderKeys.clone();
+    this.encoderValues = encoderValues.clone();
   }
 
   @Override
@@ -114,8 +122,8 @@ final class NativeDeltaParquetHandler implements ParquetHandler {
                   NativeParquet.createParquetEncoder(
                       encoderSchema.memoryAddress(),
                       new int[0],
-                      new String[0],
-                      new String[0],
+                      encoderKeys,
+                      encoderValues,
                       false,
                       output,
                       chunk);
