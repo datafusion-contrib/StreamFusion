@@ -71,6 +71,11 @@ of truth for developer-facing documentation. They should be more architectural i
 classes that the average developer does not know off the top of their head, but instead concisely explain the "why"
 of the change and the reasons for our architecture.
 
+Keep the repository documentation current with the code. Every change to behavior, supported coverage,
+configuration, architecture, deployment, or benchmark methodology/results must update the corresponding `docs/`
+page in the same commit. Documentation that describes removed or changed behavior must be corrected or removed;
+never knowingly leave stale documentation for a later cleanup.
+
 When reviewing code, make sure that it follows the existing principles of codebases which we will take influence from:
 - Flink (see ~/data/flink for code)
 - DataFusion (see ~/data/datafusion for code)
