@@ -51,5 +51,6 @@ Each of the following is caught at plan time, before the job starts:
   path has no Java charset machinery to fall back on for anything else;
 - a **`RAW<T>` column** — its bytes belong to a Java `TypeSerializer`, not a wire encoding (see the
   type-level `RAW` exclusion);
-- a **fixed-length `BINARY` column** — Flink passes any message length through verbatim, while
-  Arrow's fixed-size binary type enforces the declared length exactly.
+- a **fixed-length `BINARY` column on decode** — Flink passes any message length through verbatim,
+  while Arrow's fixed-size binary type enforces the declared length exactly. Fixed-length BINARY
+  remains native on encode.

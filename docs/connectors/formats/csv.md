@@ -11,15 +11,17 @@ Records are split with csv-core and fields converted with Flink-exact text parse
 `field-delimiter` (including `\t`/`\uXXXX` escaped forms), `quote-character`,
 `disable-quote-character`, `allow-comments`, and `null-literal` natively.
 
-Decode covers the **scalar column family only** — no nested ARRAY/ROW.
+Decode supports BOOLEAN, integer and floating-point types, CHAR/VARCHAR, DATE, TIMESTAMP,
+TIMESTAMP_LTZ, and DECIMAL. It does not admit TIME, binary, or container types.
 
 | Fallback condition | Why |
 |---|---|
 | `escape-character` | Jackson unescapes an escape character in unquoted fields; csv-core can't. |
 | A non-ASCII delimiter or quote character | Not representable in the native decode. |
 | `null-literal` containing a newline | Not representable in the native decode. |
-| An **ARRAY/ROW** column | Needs Jackson's `array-element-delimiter` layer, which decode doesn't implement. |
-| Any other non-scalar (non-boundary) type | Outside the natively-converted set. |
+| A **TIME**, **BINARY**, or **VARBINARY** column | Outside the native CSV decode converter set. |
+| An **ARRAY/ROW/MAP/MULTISET** column | Needs conversion or Jackson's nested `array-element-delimiter` layer, which decode doesn't implement. |
+| Any other type outside the list above | Outside the natively-converted set. |
 
 ## Encode (Kafka sink)
 
@@ -66,5 +68,5 @@ scalars-only coverage.
 | A FLOAT/DOUBLE column when the runtime JDK float-spelling probe fails | Shared with JSON — see [JSON](json.md#sink-fallbacks-specific-to-json). FLOAT/DOUBLE otherwise spells raw and unquoted (NaN/Infinity included) under the same probe. |
 
 General sink-shape fallbacks that apply to every value format (an upsert-materialized sink, a
-keyed table, `sink.parallelism` on a changelog input, and so on) are covered on the
+keyed ordinary `kafka` table, `sink.parallelism` on a changelog input, and so on) are covered on the
 [Kafka](../kafka.md) page, not repeated here.

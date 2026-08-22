@@ -7,9 +7,10 @@ how the `protobuf` value format combines with the rest of the connector's key/va
 
 ## Encode
 
-On write, the provider reruns the same row↔descriptor mapping that Flink's own submission
-validation performs — a mismatched column type or name is caught at plan time, so the table falls
-back and Flink raises its own error rather than StreamFusion diverging on a bad mapping.
+Native encode admits protobuf `bool`, `float`, `double`, `string`, the signed 32-bit integer
+families mapped to Flink INT, and the signed 64-bit integer families mapped to BIGINT. It supports
+those recursively through messages/ROW, repeated fields/ARRAY, and maps. Every table field must
+name a descriptor field of the matching shape; extra descriptor fields remain unset.
 
 - A `NULL` column leaves the corresponding proto field unset.
 - A `NULL` nested inside a container (message/repeated/map field) is written as that field's type
@@ -17,6 +18,12 @@ back and Flink raises its own error rather than StreamFusion diverging on a bad 
 - The wire bytes match protobuf-java's exact serialization shape — including the map-entry fields
   protobuf-java always writes even at their default values, which prost would omit.
 - `protobuf.read-default-values` is decode-only in Flink and is ignored on write, matching Flink.
+
+Encode stays on Flink for protobuf bytes, enums, unsigned integers (`uint32`/`uint64`), unsigned
+fixed integers (`fixed32`/`fixed64`), any other row↔descriptor mapping outside the admitted set, a
+recursive message or deprecated proto2 group, or a `protobuf.write-null-string-literal` containing
+a line break that the native plan cannot represent. Flink then performs its normal validation and
+serialization.
 
 ## Decode
 

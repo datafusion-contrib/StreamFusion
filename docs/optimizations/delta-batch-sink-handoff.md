@@ -12,9 +12,9 @@ Previously the boundary emitted one `StreamRecord<RowData>` per Arrow row. Delta
 wrappers, grouped them by their original batch, and reconstructed columnar selections before the
 native Parquet write. The current handoff preserves the original Arrow ownership throughout. Dense
 selections enter the same native encoder as the plain Parquet sink; sparse merge-on-read selections
-stay as Kernel columnar batches and use the released Kernel writer without passing through Flink
-rows.
+carry row positions into Rust, gather each Arrow column once, and then enter the same standard
+parquet-rs `ArrowWriter`. Neither path transposes the data-file payload through Flink rows.
 
-This adapter uses published `delta-flink` merge and commit APIs. Earlier measurements depended on an
-unpublished connector build and are intentionally not carried forward; the released-only path must
-be benchmarked independently.
+This adapter uses published `delta-flink` merge and commit APIs. The current released-only 2M-event
+Nexmark sink diagnostic completed all 23 supported queries at a **1.522×** suite geomean over the
+stock Delta writer; see [Benchmarks](../benchmarks.md#parquet-and-delta-sink-diagnostics).

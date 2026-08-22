@@ -123,6 +123,7 @@ nav:
       - String copy reduction: optimizations/string-copy-reduction.md
       - Projection pruning into the transpose: optimizations/projection-pruning-transpose.md
       - Batched native decode: optimizations/batched-native-decode.md
+      - Direct Protobuf-to-Arrow decode: optimizations/direct-protobuf-to-arrow.md
       - Decoder projection pushdown: optimizations/decoder-projection-pushdown.md
       - SIMD JSON decode: optimizations/simd-json-decode.md
       - Arrow-row byte state: optimizations/arrow-row-state.md
@@ -141,6 +142,7 @@ nav:
       - Lookup joins kept in the island: optimizations/lookup-join-in-island.md
       - Identity expression passthroughs: optimizations/identity-expression-passthroughs.md
       - Parquet sink file coalescing: optimizations/parquet-sink-file-coalescing.md
+      - Delta batch sink handoff: optimizations/delta-batch-sink-handoff.md
       - Batch-native Kafka JSON serialization: optimizations/batch-native-kafka-json-serialization.md
       - DATE_FORMAT pattern cache: optimizations/date-format-pattern-cache.md
       - Kafka timestamps as fixed JSON syntax: optimizations/kafka-timestamp-fixed-json.md

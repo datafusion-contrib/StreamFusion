@@ -34,10 +34,12 @@ Native coverage is broad — most of the streaming SQL surface:
   normalization — all consuming and emitting a retract changelog.
 - **Connectors:** a Parquet sink that writes to any filesystem Flink supports
   (`s3:`/`gs:`/`abfs:`/`hdfs:`/…, `PARTITIONED BY` and partition commit included — native encoding
-  drained into Flink's own recoverable streams; Parquet reads use Flink's stock source); Kafka
-  source ingest and sink output for JSON/CSV/raw/Avro/protobuf and supported CDC formats — Flink's
-  unmodified Kafka clients own consumption, production, offsets, and transactions while Rust
-  performs the format serialization/deserialization. Watermarked Kafka tables remain on Flink.
+  drained into Flink's own recoverable streams; Parquet reads use Flink's stock source); Delta Lake
+  append and merge-on-read sinks, with Delta 4.4 owning table semantics and Rust writing Parquet
+  bytes; and Kafka source ingest and sink output for JSON/CSV/raw/Avro/protobuf and supported CDC
+  formats. Flink's Kafka clients own consumption, production, offsets, and transactions while Rust
+  performs the format serialization/deserialization; supported periodic source watermarks retain
+  Flink's per-partition watermark semantics.
 - **UDFs:** a Flink `ScalarFunction` the expression engine can't implement itself is invoked over
   Arrow columns by a native→JVM upcall (Comet's `JvmScalarUdfExpr` pattern), one JNI crossing per
   batch, so the pipeline stays native *through* the UDF and the result is byte-identical.

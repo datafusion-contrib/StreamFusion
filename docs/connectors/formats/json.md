@@ -35,10 +35,9 @@ VARBINARY.
 | A column (or nested leaf) of an **INTERVAL** type | Outside the natively-converted type set. |
 | A MAP/MULTISET key type outside CHAR/VARCHAR | Defensive only — Flink's own JSON format rejects a non-string map key at planning, so this can't reach substitution. |
 
-All Kafka startup modes (earliest/latest/group-offsets/timestamp/specific-offsets), `topic` lists,
-and `topic-pattern` are supported regardless of format. Discovery and offset resolution run in
-Flink's enumerator; latest/group-offset startup retains Flink's reader with native decode, while
-the other supported modes may use the fused native source.
+Kafka discovery, startup offsets, and boundedness remain connector-owned; see
+[Kafka](../kafka.md#source-flink-consumption-native-decode). Native JSON decoding runs after
+Flink's partition split reader for every admitted source shape.
 
 ## Encode (Kafka sink)
 
@@ -90,5 +89,5 @@ a mismatch keeps the column on the host rather than silently diverging. Decode i
 19+)`.
 
 General sink-shape fallbacks that apply to every value format (an upsert-materialized sink, a
-keyed table, `sink.parallelism` on a changelog input, and so on) are covered on the
+keyed ordinary `kafka` table, `sink.parallelism` on a changelog input, and so on) are covered on the
 [Kafka](../kafka.md) page, not repeated here.

@@ -1,7 +1,7 @@
 # Kafka
 
 **Status:** Partial. StreamFusion accelerates Kafka value/key serialization and deserialization;
-Apache Flink's unmodified Kafka source and sink own every broker interaction.
+Flink's Kafka enumerator, partition split reader/client, and sink own every broker interaction.
 
 This boundary is intentional. It gives an accelerated job the same Kafka client, defaults,
 properties, security plugins, partition discovery, offset/checkpoint behavior, producer batching,
@@ -16,9 +16,10 @@ must both be installed. A missing extension is a planner fallback, never a linka
 ## Source: Flink consumption, native decode
 
 Flink continues to own topic enumeration, split assignment, offsets, checkpoints, authentication,
-and the Kafka client. Its task-side split reader groups each partition's raw key/value bytes into
-batches and decodes them directly to Arrow in Rust, avoiding Flink's format-to-`RowData`
-materialization without losing the Kafka split identity.
+and the Kafka client. StreamFusion wraps Flink's source and delegates enumeration and split-state
+serialization to it. At the task, Flink's partition split reader groups raw key/value bytes into
+batches that StreamFusion decodes directly to Arrow in Rust, avoiding Flink's
+format-to-`RowData` materialization without losing the Kafka split identity.
 
 For JSON, the split reader copies one poll into a reusable direct `[keys][values]` byte slab and
 passes only its address plus row lengths to the task-local native decoder. It does not construct,
@@ -31,13 +32,20 @@ Native value decoding covers insert-only [JSON](formats/json.md), [CSV](formats/
 and [Protobuf](formats/protobuf.md), plus the supported [CDC JSON](formats/cdc-json.md) envelopes
 and `debezium-avro-confluent`. Format-specific type and option gaps are listed on those pages.
 
-All Flink Kafka startup modes, bounded modes, consumer properties, authentication schemes,
-interceptors, partition discovery, group-offset behavior, and checkpoint offset commits remain
-available because Flink constructs and runs the source. No Kafka property translation gate exists.
+All Flink Kafka startup modes, consumer properties, authentication schemes, interceptors,
+partition discovery, group-offset behavior, and checkpoint offset commits remain available
+because Flink constructs and runs the source. The native source wrapper admits unbounded input and
+`scan.bounded.mode = 'latest-offset'`; other bounded modes use Flink's stock source path. No Kafka
+property translation gate exists.
 
-### Source fallbacks
+JSON, bare Avro, Avro Confluent, and Protobuf can push a physical-column projection into native
+decode. CSV and raw decode their complete positional record. A keyed table currently also decodes
+the full value record.
+
+### Source admission and fallbacks
 
 - A metadata column falls back because connector metadata is not present in the message value.
+- A source bounded by anything other than `latest-offset` stays on Flink's stock source path.
 - Pushed periodic bounded-out-of-orderness watermarks (`rowtime` or `rowtime - INTERVAL constant`)
   are regenerated from each partition's decoded Arrow batches, including the common
   `TO_TIMESTAMP_LTZ(epoch_millis, 3)` rowtime form. Flink runs one generator per Kafka split and
@@ -45,6 +53,7 @@ available because Flink constructs and runs the source. No Kafka property transl
   connector-defined source watermarks, CDC changelog tables, and other expressions stay on Flink.
 - Keyed native decoding currently requires a single raw key field over a supported insert-only
   value format. Other key formats/shapes stay on Flink.
+- CDC values combined with `key.format` stay on Flink.
 - Unsupported format options or logical types stay on Flink as documented by the format page.
 
 ## Sink: native encode, Flink production
@@ -63,12 +72,14 @@ metrics, transaction naming, checkpoint preparation, commit, abort, and restore.
 Flink connector remain Flink behavior.
 
 Native encoding covers plain insert-only Kafka values, supported CDC envelopes, and
-`upsert-kafka` key/value/tombstone output for the formats listed above. Key and value formats are
-resolved independently.
+`upsert-kafka` key/value/tombstone output using JSON, CSV, raw, Avro, Avro Confluent, or Protobuf.
+Key and value formats are resolved independently. Native sink substitution requires one fixed
+`topic`; topic patterns and multi-topic routing stay on Flink.
 
 ### Sink fallbacks
 
 - A keyed ordinary `kafka` sink; use `upsert-kafka` for key/value output.
+- A topic pattern, topic list, or other non-fixed-topic routing.
 - Explicit key/value projection, key prefix, or `EXCEPT_KEY` projection.
 - Non-default sink partitioners, sink-side buffer flushing, or writable metadata.
 - A changelog/parallelism shape whose host translation inserts ordering or materialization that

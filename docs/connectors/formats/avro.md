@@ -3,10 +3,10 @@
 **Status:** Native for both decode and encode. A short list of row-type and option gaps falls back
 to Flink's own Avro (de)serializer, listed below.
 
-This page covers the bare `avro` format — schema supplied inline via the format's own options, no
-schema registry. For the Confluent Schema Registry-framed variant, see
-[Avro Confluent](avro-confluent.md). For changelog envelopes (Debezium/OGG/Maxwell/Canal JSON), see
-[CDC JSON](cdc-json.md).
+This page covers the bare `avro` format. Flink derives its schema from the table row type; records
+carry neither a Confluent schema id nor registry framing. For the Confluent Schema Registry-framed
+variant, see [Avro Confluent](avro-confluent.md). For changelog envelopes
+(Debezium/OGG/Maxwell/Canal JSON), see [CDC JSON](cdc-json.md).
 
 ## Decode
 
