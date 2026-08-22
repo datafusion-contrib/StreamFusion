@@ -7,9 +7,10 @@ extension API and a distribution that enables Comet as one unit.
 
 ## StreamFusion decision
 
-StreamFusion's Flink base image ships only `streamfusion-core`. Kafka, Fluss, and Parquet each
-ship a Java extension and a same-named native library. The extension owns every JNI entry point and
-opaque handle for its source or sink; core never invokes an extension handle.
+StreamFusion's Flink base image ships only `streamfusion-core`. Native-bearing Kafka, Parquet, and
+format modules each ship a Java extension and a same-named native library. The Delta module is
+Java-only and reuses the Parquet extension for data-file bytes. Each native-bearing extension owns
+its JNI entry points and opaque handles; core never invokes an extension handle.
 
 This lets a Flink deployment install exactly the official connector and StreamFusion extension it
 uses, without pulling connector-specific native dependencies into the base image. It also makes a

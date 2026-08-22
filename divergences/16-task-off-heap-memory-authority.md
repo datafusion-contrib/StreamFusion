@@ -32,6 +32,6 @@ files durable, just as checkpointing a local-disk state backend is separate from
 
 ## Deliberate exclusions
 
-The Parquet and Fluss sources are not yet wired to this pool. Flink's Java Kafka client memory remains
-part of the JVM heap, not task off-heap. The cap is process-local, matching Flink's ordinary
+Parquet sink writer allocations are not yet wired to this pool. Flink's Java Kafka client memory
+remains part of the JVM heap, not task off-heap. The cap is process-local, matching Flink's ordinary
 one-TaskManager-per-process deployment model.

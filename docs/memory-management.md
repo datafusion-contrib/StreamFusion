@@ -22,11 +22,11 @@ released with their owner. Arrow allocations are charged and released at their a
 lifetime; operator and zero-copy batch handles also release ownership on normal close and task
 cancellation.
 
-Parquet and Fluss sources are not yet connected to this authority. Small allocations made inside
-native libraries, allocator metadata, thread stacks, loaded libraries, and other process overhead
-are also outside the reservation pool. The cap is therefore an allocation authority for the large
-StreamFusion-controlled consumers above, not an RSS or container hard limit. Leave process
-headroom for those costs and for the JVM.
+Parquet sink writer allocations are not yet connected to this authority. Small allocations made
+inside native libraries, allocator metadata, thread stacks, loaded libraries, and other process
+overhead are also outside the reservation pool. The cap is therefore an allocation authority for
+the large StreamFusion-controlled consumers above, not an RSS or container hard limit. Leave
+process headroom for those costs and for the JVM.
 
 ## Exhaustion and spilling
 

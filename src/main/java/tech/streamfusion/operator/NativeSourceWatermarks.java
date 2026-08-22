@@ -35,10 +35,9 @@ public final class NativeSourceWatermarks {
 
   /**
    * Max of a batch's rowtime column in epoch millis, or {@code Long.MIN_VALUE} when every value is
-   * null — the Java analog of the native {@code max_rowtime_millis}, for readers whose batches are
-   * already imported (the Kafka split reader reads the decoded root directly; Fluss computes it
-   * natively before export). The rowtime is either a timestamp column or a BIGINT already holding
-   * epoch millis (the {@code TO_TIMESTAMP_LTZ(col, 3)} computed-rowtime idiom).
+   * null — the Java analog of the native {@code max_rowtime_millis}. The Kafka split reader applies
+   * it directly to the decoded root. The rowtime is either a timestamp column or a BIGINT already
+   * holding epoch millis (the {@code TO_TIMESTAMP_LTZ(col, 3)} computed-rowtime idiom).
    */
   public static long maxRowtimeMillis(VectorSchemaRoot root, int index) {
     FieldVector vector = root.getVector(index);

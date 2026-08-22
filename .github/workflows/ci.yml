@@ -91,11 +91,6 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@1.94.0
 
-      # The host release builder compiles the optional Fluss DSO before it invokes the
-      # cross-platform Docker builder. fluss-rs generates protobuf RPC bindings at build time.
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
@@ -111,9 +106,10 @@ jobs:
           jar tf "streamfusion-csv/target/streamfusion-csv-${version}.jar" | grep -q 'native/csv/linux/x86_64/libstreamfusion_csv.so'
           jar tf "streamfusion-raw/target/streamfusion-raw-${version}.jar" | grep -q 'native/raw/linux/x86_64/libstreamfusion_raw.so'
           jar tf "streamfusion-avro/target/streamfusion-avro-${version}.jar" | grep -q 'native/avro/linux/x86_64/libstreamfusion_avro.so'
-          ! jar tf "streamfusion-avro-confluent-registry/target/streamfusion-avro-confluent-registry-${version}.jar" | grep -q 'libstreamfusion_avro'
+          if jar tf "streamfusion-avro-confluent-registry/target/streamfusion-avro-confluent-registry-${version}.jar" | grep -q 'libstreamfusion_avro'; then
+            exit 1
+          fi
           jar tf "streamfusion-protobuf/target/streamfusion-protobuf-${version}.jar" | grep -q 'native/protobuf/linux/x86_64/libstreamfusion_protobuf.so'
-          jar tf "streamfusion-fluss/target/streamfusion-fluss-${version}.jar" | grep -q 'native/fluss/linux/x86_64/libstreamfusion_fluss.so'
           jar tf "streamfusion-parquet/target/streamfusion-parquet-${version}.jar" | grep -q 'native/parquet/linux/x86_64/libstreamfusion_parquet.so'
           bin/check-artifacts.sh --host-only
           bin/build-flink-image.sh --tag streamfusion-flink:image-it --load --skip-release-build
@@ -136,48 +132,27 @@ jobs:
             # sink encode arms for natively encoded formats live in the kafka library.
             tag: streamfusion-kafka
             features: kafka,csv,avro,protobuf,raw
-            protoc: false
-            native-tests: false
           - name: JSON
             tag: streamfusion-json
             features: json
-            protoc: false
-            native-tests: false
           - name: CSV
             tag: streamfusion-csv
             features: csv
-            protoc: false
-            native-tests: false
           - name: RAW
             tag: streamfusion-raw
             features: raw
-            protoc: false
-            native-tests: false
           - name: Avro
             tag: streamfusion-avro
             features: avro
-            protoc: false
-            native-tests: false
           - name: Avro Confluent Registry
             tag: streamfusion-avro-confluent
             features: avro
-            protoc: false
-            native-tests: false
           - name: Protobuf
             tag: streamfusion-protobuf
             features: protobuf
-            protoc: false
-            native-tests: false
           - name: Parquet
             tag: streamfusion-parquet
             features: parquet
-            protoc: false
-            native-tests: false
-          - name: Fluss
-            tag: streamfusion-fluss
-            features: fluss,parquet
-            protoc: true
-            native-tests: true
     steps:
       - uses: actions/checkout@v6
 
@@ -194,18 +169,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@1.94.0
 
-      - name: Install protoc
-        if: matrix.protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-
-      - name: Run native test suite
-        if: matrix.native-tests
-        working-directory: native
-        run: cargo test --features fluss,parquet
 
       - name: Run tagged Java module suite
         run: >

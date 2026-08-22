@@ -22,11 +22,11 @@ import org.apache.flink.util.TimeUtils;
  * out-of-orderness ({@code rt} or {@code rt - INTERVAL const}) where the rowtime read from the scan is
  * either a physical timestamp column or {@code TO_TIMESTAMP_LTZ(bigintCol, 3)} (a computed rowtime
  * over epoch millis — the common Kafka-table idiom), periodic emit, no alignment. Flink pushes the
- * table's {@code WATERMARK} clause into a scan whose connector supports watermark push-down (Kafka
- * and Fluss both do), so no separate assigner node exists in the plan — whichever operator replaces the scan must
- * regenerate the watermarks or the query never fires its event-time timers. {@link #UNSUPPORTED} marks
- * a watermarked scan outside the reproducible shapes (any other computed rowtime, on-event emit,
- * alignment); the caller must then leave the whole scan on the host.
+ * table's {@code WATERMARK} clause into a scan whose connector supports watermark push-down (as
+ * Kafka does), so no separate assigner node exists in the plan — whichever operator replaces the
+ * scan must regenerate the watermarks or the query never fires its event-time timers. {@link
+ * #UNSUPPORTED} marks a watermarked scan outside the reproducible shapes (any other computed
+ * rowtime, on-event emit, alignment); the caller must then leave the whole scan on the host.
  */
 final class ScanWatermarkSpec {
 

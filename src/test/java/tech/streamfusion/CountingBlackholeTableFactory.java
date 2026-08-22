@@ -16,9 +16,8 @@ import org.apache.flink.table.factories.DynamicTableSinkFactory;
  * A blackhole that counts ({@code 'connector' = 'counting-blackhole'}): swallows {@link RowData}
  * exactly like the built-in {@code blackhole} — no external-`Row` conversion, so the sink perimeter
  * matches the other benchmark rungs' — while releasing a latch at a finish line the driver arms:
- * the Nth changelog row, or the first row whose column 0 equals a marker id (the Fluss rung's
- * poison-pair cancel for the queries with no deterministic row count). Static state, because Flink
- * serializes the sink into the task and instance fields could not signal the driver.
+ * the Nth changelog row, or the first row whose column 0 equals a marker id. Static state, because
+ * Flink serializes the sink into the task and instance fields could not signal the driver.
  */
 public class CountingBlackholeTableFactory implements DynamicTableSinkFactory {
 

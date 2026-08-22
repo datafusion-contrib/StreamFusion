@@ -8,7 +8,7 @@ value semantics match the reference. Merely registering the name is called out a
 All native `ArrowBatch` operators correct Flink's standard `numRecordsIn` and `numRecordsOut`
 counters from physical Arrow batches to logical rows. The correction applies on pass-through and
 fan-out paths too, including mini-batch assigners, watermark assigners, shared subplans, native
-shuffle partitions, Kafka serialization, Fluss, and Parquet partition routing.
+shuffle partitions, Kafka serialization, and Parquet partition routing.
 
 ## Flink peers
 
@@ -54,7 +54,6 @@ rename Flink's `bundleSize` and `bundleRatio` gauges.
 | Kafka source | Flink Kafka Source | Flink owns the source and exposes its complete standard and kafka-clients metric surface unchanged | **Complete** for connector metrics; native decode counters are additive |
 | Kafka serialization | Flink sink serialization | Standard logical input plus native batch/row/byte/time counters | No separate Flink operator metric surface exists; the counters are additive |
 | Kafka sink | Flink Kafka Sink V2 | Flink owns all delivery guarantees and exposes its standard and kafka-clients producer metrics unchanged | **Complete** for connector metrics; native serialization counters are additive |
-| Fluss source | Flink Fluss source | Standard logical input, per-table-bucket `currentOffset`, and `currentFetchEventTimeLag` are live through Fluss's own `FlinkSourceReaderMetrics` shape | **Partial**: bridge the full Fluss client `FlinkMetricRegistry` catalog |
 
 ## Native-only operators and Comet analogues
 
@@ -76,15 +75,12 @@ The Parquet write zero-valued counters are intentional capability markers, not e
    partitions * N`, or the configured update-fast cache size) rather than native resident rows.
 3. Replace the batch-scoped async lookup admission model with Flink's key-accounting queue if exact
    blocking/finished controller behavior is required, then drive the three `aec_*` gauges from it.
-4. Translate the dynamic Fluss client registry. It is a catalog rather than a
-   fixed handful of operator metrics, so parity tests must compare discovered metric identifiers as
-   well as values.
 
 ## Verification contract
 
 Metric parity tests should assert metric identifier, metric kind (counter, gauge, or meter), and
 value after a deterministic trace. The minimum traces are: multi-row Arrow batches for standard I/O,
 count and watermark mini-batch flushes, late and null-rowtime records, left/right join lateness,
-Top-N cache access, ordered async lookup completion, Parquet write, Kafka source/sink, and Fluss
-split progress. Connector catalog tests need the corresponding broker/service and belong in their
-integration-test modules; operator surfaces belong in the core harness tests.
+Top-N cache access, ordered async lookup completion, Parquet write, and Kafka source/sink. Connector
+catalog tests need the corresponding broker/service and belong in their integration-test modules;
+operator surfaces belong in the core harness tests.
