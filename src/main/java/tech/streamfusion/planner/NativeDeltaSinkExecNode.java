@@ -1,11 +1,11 @@
 package tech.streamfusion.planner;
 
 import io.delta.flink.sink.DeltaSinkConf;
-import io.delta.flink.sink.TableBuilder;
 import io.delta.flink.sink.sql.DeltaDynamicTableSinkFactory;
 import io.delta.flink.sink.sql.FlinkUnityCatalogFactory;
 import io.delta.flink.table.DeltaTable;
 import io.delta.kernel.types.StructType;
+import java.net.URI;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -27,7 +27,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTransl
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.delta.ArrowToDeltaRowsOperator;
-import tech.streamfusion.delta.NativeDeltaEngineDecorator;
+import tech.streamfusion.delta.NativeDeltaHadoopTable;
 import tech.streamfusion.delta.NativeDeltaSink;
 import tech.streamfusion.delta.PartitionedArrowToDeltaRowsOperator;
 import tech.streamfusion.delta.KernelBatchRowDataTypeInformation;
@@ -131,14 +131,12 @@ public final class NativeDeltaSinkExecNode extends ExecNodeBase<Object>
       }
     }
     DeltaTable table =
-        new TableBuilder()
-            .withConfigurations(tableOptions)
-            .withSchema(deltaSchema)
-            .withPartitionColNames(planned.partitionKeys)
-            .withEngineDecorator(new NativeDeltaEngineDecorator())
-            .build();
+        new NativeDeltaHadoopTable(
+            URI.create(planned.path), tableOptions, deltaSchema, planned.partitionKeys);
+    // DeltaTable's serializable table state is populated by open(). The sink and committer are
+    // serialized separately, so initialize that state before Flink snapshots the topology.
+    table.open();
     NativeDeltaSink sink = new NativeDeltaSink(table, sinkConf);
-    sink.initializeTable();
     String uid =
         planned.options.getOrDefault(
             DeltaDynamicTableSinkFactory.UID.key(), UUID.randomUUID().toString());

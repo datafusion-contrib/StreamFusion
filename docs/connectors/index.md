@@ -3,10 +3,9 @@
 **[Kafka](kafka.md)** is the only connector StreamFusion considers production-grade today, across
 every [format](#formats) Flink itself supports for it. It's covered in depth in this section.
 
-[Parquet](parquet.md) (a local file source, and a sink to any filesystem Flink supports),
-[Delta Lake](delta.md) (partitioned append and merge-on-read sinks), and
-[Fluss](fluss.md) (log-table source ingest) also have native paths, but none has seen the same
-production hardening as Kafka — treat them as experimental.
+[Parquet](parquet.md) (a local file source, and a sink to any filesystem Flink supports) and
+[Delta Lake](delta.md) (partitioned append and merge-on-read sinks) also have native paths, but they
+have not seen the same production hardening as Kafka — treat them as experimental.
 
 ## Formats
 

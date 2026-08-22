@@ -1,6 +1,5 @@
 package tech.streamfusion.delta;
 
-import io.delta.flink.sink.KernelBatchRowData;
 import io.delta.kernel.data.FilteredColumnarBatch;
 import io.delta.kernel.types.StructType;
 import java.util.ArrayList;
@@ -21,7 +20,7 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Retained row views used only for Delta changelog and primary-key bookkeeping. */
-public final class ArrowKernelRows implements KernelBatchRowData.Batch {
+public final class ArrowKernelRows implements RowData, AutoCloseable {
 
   private final VectorSchemaRoot root;
   private final StructType deltaSchema;
@@ -38,23 +37,29 @@ public final class ArrowKernelRows implements KernelBatchRowData.Batch {
     this.cursor = new Row(this, 0, RowKind.INSERT, false);
   }
 
-  public KernelBatchRowData row(int rowId, RowKind kind) {
+  RowData row(int rowId, RowKind kind) {
     references.incrementAndGet();
     return new Row(this, rowId, kind, true);
   }
 
-  @Override public int rowCount() { return root.getRowCount(); }
+  int rowCount() { return root.getRowCount(); }
 
-  @Override
-  public RowData rowView(int rowId) {
+  boolean hasRowKinds() {
+    return root.getVector(RowDataArrowConverter.ROW_KIND_COLUMN) != null;
+  }
+
+  RowData rowView(int rowId) {
     cursor.rowId = rowId;
     cursor.rowKind = rowKind(rowId);
     return cursor;
   }
 
-  @Override
-  public KernelBatchRowData retainRow(int rowId) {
+  RowData retainRow(int rowId) {
     return row(rowId, rowKind(rowId));
+  }
+
+  void retain() {
+    references.incrementAndGet();
   }
 
   private RowKind rowKind(int rowId) {
@@ -63,7 +68,7 @@ public final class ArrowKernelRows implements KernelBatchRowData.Batch {
     return kinds == null ? RowKind.INSERT : RowKind.fromByteValue(kinds.get(rowId));
   }
 
-  private FilteredColumnarBatch select(int[] rowIds) {
+  FilteredColumnarBatch selectRows(int[] rowIds) {
     List<FieldVector> retained = new ArrayList<>(deltaSchema.length());
     for (int column = 0; column < deltaSchema.length(); column++) {
       FieldVector source = root.getVector(column);
@@ -115,7 +120,7 @@ public final class ArrowKernelRows implements KernelBatchRowData.Batch {
   @Override public MapData getMap(int pos) { throw batchCarrier(); }
   @Override public Variant getVariant(int pos) { throw batchCarrier(); }
 
-  private static final class Row implements KernelBatchRowData {
+  private static final class Row implements RowData, AutoCloseable {
     private final ArrowKernelRows owner;
     private int rowId;
     private RowKind rowKind;
@@ -129,9 +134,6 @@ public final class ArrowKernelRows implements KernelBatchRowData.Batch {
       this.retained = retained;
     }
 
-    @Override public Object batchIdentity() { return owner; }
-    @Override public int rowId() { return rowId; }
-    @Override public FilteredColumnarBatch selectRows(int[] rowIds) { return owner.select(rowIds); }
     @Override public RowKind getRowKind() { return rowKind; }
     @Override public void setRowKind(RowKind kind) { rowKind = kind; }
     @Override public int getArity() { return owner.flinkBatch.getArity(); }

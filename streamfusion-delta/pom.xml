@@ -45,7 +45,7 @@
         </dependency>
         <dependency>
             <groupId>io.delta</groupId>
-            <artifactId>delta-flink</artifactId>
+            <artifactId>delta-flink_2.2</artifactId>
             <version>${delta.version}</version>
             <scope>provided</scope>
             <exclusions>

@@ -60,7 +60,6 @@ nav:
       - Kafka: connectors/kafka.md
       - Parquet: connectors/parquet.md
       - Delta Lake: connectors/delta.md
-      - Fluss: connectors/fluss.md
       - Formats:
           - JSON: connectors/formats/json.md
           - CSV: connectors/formats/csv.md

@@ -23,7 +23,6 @@
         <module>streamfusion-avro</module>
         <module>streamfusion-avro-confluent-registry</module>
         <module>streamfusion-protobuf</module>
-        <module>streamfusion-fluss</module>
         <module>streamfusion-parquet</module>
         <module>streamfusion-loader</module>
     </modules>
@@ -65,19 +64,14 @@
              silently overrides the connector's transitive client and changes producer semantics. -->
         <kafka.clients.version>4.2.0</kafka.clients.version>
         <scala.binary.version>2.12</scala.binary.version>
-        <fluss.version>0.9.1-incubating</fluss.version>
-        <zookeeper.version>3.8.3</zookeeper.version>
         <!-- Matches the protobuf runtime Flink's protobuf format generates code against. -->
         <protobuf.version>4.32.1</protobuf.version>
-        <delta.version>4.4.0-SNAPSHOT</delta.version>
+        <delta.version>4.4.0</delta.version>
         <!-- Native build: debug by default for a fast correctness loop. The `bench` profile flips
              both of these to a release build, which benchmarks must use (debug Rust is far slower). -->
         <native.profile>debug</native.profile>
-        <!-- The full Java test suite exercises Kafka. Fluss source tests are optional local-cluster
-             integration tests, enabled explicitly by adding the fluss feature to native.cargo.args.
-             Deployment packaging builds a
-             connector-free core and feature-specific extension DSOs separately in
-             bin/build-release.sh. -->
+        <!-- Deployment packaging builds a connector-free core and feature-specific extension DSOs
+             separately in bin/build-release.sh. -->
         <native.cargo.args>build --features kafka,parquet,json,csv,raw,avro,protobuf,rocksdb-state</native.cargo.args>
         <native.build.skip>false</native.build.skip>
         <native.test.resource.skip>false</native.test.resource.skip>
@@ -293,74 +287,6 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-s3-fs-hadoop</artifactId>
             <version>${flink.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <!-- Apache Fluss connector classes. Main code references the public split types for the native
-             proof seam; the dependency stays provided so StreamFusion does not bundle Fluss at runtime. -->
-        <dependency>
-            <groupId>org.apache.fluss</groupId>
-            <artifactId>fluss-flink-2.2</artifactId>
-            <version>${fluss.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.fluss</groupId>
-            <artifactId>fluss-server</artifactId>
-            <version>${fluss.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.fluss</groupId>
-            <artifactId>fluss-server</artifactId>
-            <version>${fluss.version}</version>
-            <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.fluss</groupId>
-            <artifactId>fluss-common</artifactId>
-            <version>${fluss.version}</version>
-            <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.fluss</groupId>
-            <artifactId>fluss-rpc</artifactId>
-            <version>${fluss.version}</version>
-            <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.fluss</groupId>
-            <artifactId>fluss-test-utils</artifactId>
-            <version>${fluss.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.curator</groupId>
-            <artifactId>curator-test</artifactId>
-            <version>5.4.0</version>
-            <scope>test</scope>
-            <exclusions>
-                <!-- Fluss 0.9.1 runs its ZooKeeper client stack at 3.8.3. Hadoop's test-only
-                     transitive otherwise wins with 3.5.6 and the embedded server drops Fluss's
-                     shaded client during coordinator startup. -->
-                <exclusion>
-                    <groupId>org.apache.zookeeper</groupId>
-                    <artifactId>zookeeper</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.zookeeper</groupId>
-            <artifactId>zookeeper</artifactId>
-            <version>${zookeeper.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.zookeeper</groupId>
-            <artifactId>zookeeper-jute</artifactId>
-            <version>${zookeeper.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -743,9 +669,8 @@
                 <module>streamfusion-image-it</module>
             </modules>
         </profile>
-        <!-- Delta's Flink connector is still an unpublished private build. Keep its optional
-             acceleration module out of the default reactor until the normal connector artifact is
-             publicly resolvable; local Delta development enables it with -Pdelta after publishM2. -->
+        <!-- Delta remains optional so deployments only install its connector and native extension
+             when they use Delta tables. The module resolves entirely from published artifacts. -->
         <profile>
             <id>delta</id>
             <modules>

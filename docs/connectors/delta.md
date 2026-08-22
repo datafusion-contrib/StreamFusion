@@ -4,11 +4,12 @@ The optional `streamfusion-delta` module accelerates data-file writes for Flink'
 Delta Kernel and the connector still own table metadata, optimistic commits, primary-key matching,
 and merge-on-read deletion vectors. StreamFusion replaces only the Parquet data-file encoder.
 
-Both unpartitioned and partitioned tables are supported in `append` and `upsert` write modes. This
-includes direct paths on every Hadoop filesystem supported by the Delta connector (local, HDFS,
-S3A, ABFS, and GCS), Unity Catalog path access, and catalog-managed Unity Catalog tables. The
-connector builds the table and retains its normal discovery, temporary-credential refresh, and
-commit-coordination behavior; StreamFusion decorates only the Kernel engine's data-file writer.
+Both unpartitioned and partitioned path tables are supported in `append` and `upsert` write modes.
+This includes direct paths on every Hadoop filesystem supported by the Delta connector (local,
+HDFS, S3A, ABFS, and GCS). Catalog-managed tables currently stay on the stock connector path because
+the published connector API does not expose a supported engine replacement for them. The released
+Delta connector retains its normal table and commit-coordination behavior; StreamFusion supplies
+the batch writer and replaces only the path table's Kernel data-file writer.
 SQL path tables accept connector-specific `fs.*` options such as S3A endpoints, credentials, and
 path-style access, or can use the normal ambient/core-site configuration.
 
@@ -35,11 +36,11 @@ SSL, credentials-provider, and path-style settings can instead be supplied as ta
 
 In the partitioned path, Arrow batches are split by partition and exchanged between
 tasks while they are still Arrow. After the exchange, one ownership-carrying batch record enters
-the Delta writer instead of one Flink `StreamRecord` and Java wrapper per row. Delta inspects
-changelog keys through one reusable cursor and retains lightweight immutable views only for rows
-that will reach a data file; ignored update-before and key-only delete records are never allocated
-as retained objects. The data-file writer consumes those Arrow buffers directly. When merge-on-read
-selects a non-contiguous set of rows, the Java side retains
+StreamFusion's Delta writer instead of one Flink `StreamRecord` and Java wrapper per row. The writer
+inspects changelog keys through one reusable cursor and records row positions for data-file output;
+ignored update-before and key-only delete records are never materialized. The data-file writer
+consumes those Arrow buffers directly. When merge-on-read selects a non-contiguous set of rows, the
+Java side retains
 views of the original vectors and passes only the selected row numbers to native code. The native
 writer gathers each column once, immediately before encoding, instead of copying every selected
 value through Java vectors. Each retained row now implements the Flink getters directly over the
@@ -57,18 +58,7 @@ binary, date, timestamp, `ROW`, `ARRAY`, and `MAP` columns recursively. Schema e
 connector path. Delta Lake data files remain Parquet: the transaction log and deletion-vector
 sidecars are protocol files, not alternative table data formats.
 
-Build with the `delta` Maven profile and deploy `streamfusion-delta`, `streamfusion-parquet`, and the
-matching Delta Flink connector together. The connector integration used by this module requires the
-matching Delta build because it provides the Arrow-batch write hook and decorated-engine support.
-
-For a differential performance check, q0 is the fair baseline: both engines execute the same query
-and connector configuration, object reuse is disabled for both, and retained Delta tables are
-compared with `EXCEPT ALL` in both directions. On the 2M-event Kafka JSON run with memory state and
-mini-batching disabled, the native path took 2.962 seconds versus 4.233 seconds for Flink
-(**1.43x**, one warmup and best of two). Caching successful data-directory initialization and
-removing the extra per-row delegate reduced the native result to 2.710 seconds versus 4.195 seconds
-for Flink (**1.55x**). Both tables contained 1,840,000 rows and both differences
-were empty. A smaller matched
-CPU profile showed the remaining native-side Java cost concentrated in Delta's shared per-row
-primary-key and merge bookkeeping, not schema export, Arrow row views, statistics extraction, or the
-native Parquet encoder.
+Build with the `delta` Maven profile and deploy `streamfusion-delta`, `streamfusion-parquet`, and
+published `io.delta:delta-flink_2.2:4.4.0` together. The module has no snapshot, local-Maven, path, or
+forked Delta dependency. Performance numbers measured with the former local connector build were
+removed and must be regenerated against this released-only path before they are reported again.

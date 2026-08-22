@@ -87,7 +87,6 @@ stage_darwin_libraries() {
     stage_darwin_library raw mimalloc,raw "$target" "$architecture"
     stage_darwin_library avro mimalloc,avro "$target" "$architecture"
     stage_darwin_library protobuf mimalloc,protobuf "$target" "$architecture"
-    stage_darwin_library fluss mimalloc,fluss "$target" "$architecture"
     stage_darwin_library parquet mimalloc,parquet "$target" "$architecture"
   done
 }
@@ -108,7 +107,7 @@ stage_linux_libraries() {
   docker build --platform "$platform" --tag "$image" \
     --file "$repo_root/docker/native-release.Dockerfile" "$native_dir"
   container=$(docker create --platform "$platform" "$image")
-  for extension in core kafka json csv raw avro protobuf fluss parquet; do
+  for extension in core kafka json csv raw avro protobuf parquet; do
     case "$extension" in
       core)
         destination_directory=$stage_dir/linux/$architecture
@@ -160,7 +159,6 @@ if [ "$host_only" = true ]; then
   stage_host_library raw mimalloc,raw
   stage_host_library avro mimalloc,avro
   stage_host_library protobuf mimalloc,protobuf
-  stage_host_library fluss mimalloc,fluss
   stage_host_library parquet mimalloc,parquet
 else
   command -v docker >/dev/null 2>&1 || {

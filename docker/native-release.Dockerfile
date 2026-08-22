@@ -31,9 +31,6 @@ RUN set -eux; \
     cargo build --release --no-default-features --features mimalloc,protobuf; \
     mkdir -p /workspace/out/protobuf; \
     cp target/release/libstreamfusion.so /workspace/out/protobuf/libstreamfusion_protobuf.so; \
-    cargo build --release --no-default-features --features mimalloc,fluss; \
-    mkdir -p /workspace/out/fluss; \
-    cp target/release/libstreamfusion.so /workspace/out/fluss/libstreamfusion_fluss.so; \
     cargo build --release --no-default-features --features mimalloc,parquet; \
     mkdir -p /workspace/out/parquet; \
     cp target/release/libstreamfusion.so /workspace/out/parquet/libstreamfusion_parquet.so

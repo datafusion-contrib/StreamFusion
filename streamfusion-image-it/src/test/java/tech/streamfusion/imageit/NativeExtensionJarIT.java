@@ -31,7 +31,6 @@ class NativeExtensionJarIT {
             "avro",
             "avro-confluent-registry",
             "protobuf",
-            "fluss",
             "parquet")) {
       Process process = extensionProcess(extension);
       assertTrue(
@@ -123,7 +122,6 @@ class NativeExtensionJarIT {
         case "avro" -> "tech.streamfusion.format.avro.NativeAvroFormat";
         case "avro-confluent-registry" -> "tech.streamfusion.format.avro.NativeAvroFormat";
         case "protobuf" -> "tech.streamfusion.format.protobuf.NativeProtobufFormat";
-        case "fluss" -> "tech.streamfusion.fluss.NativeFluss";
         case "parquet" -> "tech.streamfusion.parquet.NativeParquet";
         default -> throw new IllegalArgumentException("Unknown extension: " + extension);
       };

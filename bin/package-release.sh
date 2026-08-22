@@ -19,7 +19,7 @@ cp "$repo_root/LICENSE" "$repo_root/readme.md" "$bundle_dir/"
 cp "$repo_root/streamfusion-loader/target/streamfusion-loader-$version.jar" "$bundle_dir/"
 cp "$repo_root/streamfusion-core/target/streamfusion-core-$version-runtime.jar" "$bundle_dir/"
 
-for suffix in kafka json csv raw avro avro-confluent-registry protobuf fluss parquet; do
+for suffix in kafka json csv raw avro avro-confluent-registry protobuf parquet; do
   cp "$repo_root/streamfusion-$suffix/target/streamfusion-$suffix-$version.jar" "$bundle_dir/"
 done
 

@@ -61,7 +61,14 @@ final class NativeDeltaParquetHandler implements ParquetHandler {
       // must export every full source vector before gathering the selected rows. Kernel does not
       // own StreamFusion's Arrow batches, so close each one immediately after it is consumed.
       try (CloseableIterator<FilteredColumnarBatch> owned = closeConsumedArrowBatches(replay)) {
-        return delegate.writeParquetFiles(directory, owned, statisticsColumns);
+        if (delegate == null) {
+          throw new IllegalStateException("Sparse Delta writes require the stock Parquet handler");
+        }
+        try (CloseableIterator<DataFileStatus> files =
+            delegate.writeParquetFiles(directory, owned, statisticsColumns)) {
+          return io.delta.kernel.internal.util.Utils.toCloseableIterator(
+              files.toInMemoryList().iterator());
+        }
       }
     }
     return writeNativeParquetFiles(directory, replay, statisticsColumns);
@@ -249,6 +256,10 @@ final class NativeDeltaParquetHandler implements ParquetHandler {
   @Override
   public void writeParquetFileAtomically(
       String filePath, CloseableIterator<FilteredColumnarBatch> data) throws IOException {
+    if (delegate == null) {
+      throw new UnsupportedOperationException(
+          "The native data-file handler does not write Delta metadata files");
+    }
     delegate.writeParquetFileAtomically(filePath, data);
   }
 }

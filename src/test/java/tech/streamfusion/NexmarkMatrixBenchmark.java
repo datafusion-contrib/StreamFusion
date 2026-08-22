@@ -2,7 +2,6 @@ package tech.streamfusion;
 
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
-import tech.streamfusion.fluss.NativeFluss;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -11,13 +10,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
-import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.legacy.RichSinkFunction;
 import org.apache.flink.table.api.Table;
@@ -25,7 +19,6 @@ import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.CloseableIterator;
-import org.apache.fluss.server.testutils.FlussClusterExtension;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -47,18 +40,6 @@ import org.testcontainers.utility.DockerImageName;
  * Its rowtime is a plain {@code TIMESTAMP(3)} (unlike the Kafka {@code TIMESTAMP_LTZ}), so the {@code
  * DATE_FORMAT}/{@code HOUR} queries that are generator-only on Kafka run here too.
  *
- * <p>The optional Fluss rung ({@code SF_MATRIX_FLUSS=true}) preloads the same wide event row into a
- * local Fluss test cluster, then reads it back through both Fluss's stock Flink connector and the
- * native fluss-rs log-table source. Both engines run the identical SQL (no limit) in the same
- * default streaming environment the other rungs use; because the Fluss log table is unbounded, each
- * run counts changelog rows in the sink and cancels the job once the Nth row arrives, reporting
- * time-to-Nth-row. N is the query's full output cardinality over the preloaded events, measured once
- * per query with stock Flink on the bounded generator (the same rows the preload wrote) through its
- * watermarked event-time views — the Fluss table declares the identical watermark, and a preloaded
- * far-future sentinel event closes the final windows the generator's end-of-input flush closes — so
- * both engines are cancelled at the same row. Queries with no such deterministic N report a skip
- * cell instead — see {@link #flussSkipReason}.
- *
  * <p>The query set is every query StreamFusion accelerates: q0–q5, q7–q23 (q1's and q14's decimal are
  * exact and native by default; q21's REGEXP_EXTRACT/LOWER and q14's HOUR route through the host
  * implementation via the columnar JVM upcall; q13 is a synchronous lookup join against a bounded
@@ -78,8 +59,7 @@ import org.testcontainers.utility.DockerImageName;
  * for multi-split source tests), {@code SF_MATRIX_QUERIES} a comma-separated query subset (e.g. {@code q0,q7,q15}), {@code
  * SF_LADDER_FORMATS} the Kafka formats (default {@code json,avro,protobuf}), {@code SF_MATRIX_GENERATOR}
  * ({@code false} to skip the generator column), {@code SF_MATRIX_PARQUET} ({@code false} to skip the
- * Parquet column), {@code SF_MATRIX_KAFKA} ({@code false} to skip Kafka), {@code SF_MATRIX_FLUSS}
- * ({@code true} to include the first stock Flink-on-Fluss baseline).
+ * Parquet column), and {@code SF_MATRIX_KAFKA} ({@code false} to skip Kafka).
  */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class NexmarkMatrixBenchmark {
@@ -517,43 +497,15 @@ class NexmarkMatrixBenchmark {
           + " auction " + AUCTION_TYPE + ","
           + " bid " + BID_TYPE + ","
           + " `dateTime` TIMESTAMP(3)";
-  private static final String FLUSS_CATALOG = "fluss_catalog";
-  private static final String FLUSS_TABLE = FLUSS_CATALOG + ".fluss.nexmark_events";
-  // A second copy of the preload with a poison auction+bid pair appended after every real event:
-  // the pair's output row is the finish line for the queries whose changelog row count is not
-  // deterministic (q4/q9) or zero (q21) — in a parallelism-1 pipeline the marker's output is
-  // necessarily emitted after all real output, so time-to-marker measures the full drain without
-  // needing a row count. The ids are outside every real range (categories are 0..99; auction ids
-  // grow ~3 per 50-event block), and the bid's channel is 'apple' — the only row in the stream
-  // q21's filter selects, so its marker doubles as its first output.
-  private static final String FLUSS_TRACED_TABLE = FLUSS_CATALOG + ".fluss.nexmark_events_traced";
-  private static final long POISON_AUCTION_ID = 999_999_999L;
-  private static final long POISON_CATEGORY = 999L;
-  // Sink-row marker (column 0) per traced query: q4 emits its category, q9/q21 the auction id.
-  private static final Map<String, Long> FLUSS_MARKERS =
-      Map.of("q4", POISON_CATEGORY, "q9", POISON_AUCTION_ID, "q21", POISON_AUCTION_ID);
-  // How long a Fluss run may take to reach its Nth sink row before the benchmark fails loudly (the
-  // unbounded source never finishes on its own, so a wrong target must not hang the matrix
-  // forever). Healthy 500K-event cells finish in single-digit seconds, so two minutes is a stall,
-  // not a slow run.
-  private static final long FLUSS_NTH_ROW_TIMEOUT_SECONDS = 120L;
-
   @Test
   void matrix() throws Exception {
     Query[] queries = selectQueries();
     boolean runGenerator = !"false".equals(System.getenv("SF_MATRIX_GENERATOR"));
     boolean runParquet = !"false".equals(System.getenv("SF_MATRIX_PARQUET"));
     boolean runKafka = !"false".equals(System.getenv("SF_MATRIX_KAFKA"));
-    boolean runFluss = "true".equals(System.getenv("SF_MATRIX_FLUSS"));
     String formatsEnv = System.getenv("SF_LADDER_FORMATS");
     String[] formats =
         formatsEnv != null ? formatsEnv.split(",") : new String[] {"json", "avro", "protobuf"};
-    if (runFluss && !NativeFluss.isLoaded()) {
-      throw new IllegalArgumentException(
-          "SF_MATRIX_FLUSS=true now reports native Fluss vs stock Flink-on-Fluss, so the native "
-              + "library must be built with the fluss cargo feature.");
-    }
-
     // result[label] -> ordered cells (rendered at the end as one table).
     Map<String, List<String>> report = new LinkedHashMap<>();
     for (Query q : queries) {
@@ -585,43 +537,6 @@ class NexmarkMatrixBenchmark {
           double variant = parquetBest(dir, q, true, q.nativeVariantProps);
           report.get(q.label).add(variantCell("parquet", q.nativeVariantLabel, flink, variant));
         }
-      }
-    }
-
-    if (runFluss) {
-      FlussClusterExtension cluster = FlussClusterExtension.builder().setNumOfTabletServers(1).build();
-      cluster.start();
-      try {
-        String bootstrapServers = cluster.getBootstrapServers();
-        writeFlussSource(bootstrapServers);
-        if (Arrays.stream(queries).anyMatch(q -> FLUSS_MARKERS.containsKey(q.label))) {
-          writeFlussTracedSource(bootstrapServers);
-        }
-        for (Query q : queries) {
-          String skipReason = flussSkipReason(q);
-          if (skipReason != null) {
-            report.get(q.label).add(skipCell("fluss", skipReason));
-            continue;
-          }
-          // Marker queries cancel on the poison pair's output row, not a row count — no
-          // calibration run needed (and none possible: their counts are what's non-deterministic).
-          long targetRows = FLUSS_MARKERS.containsKey(q.label) ? -1 : flussTargetRows(q);
-          if (targetRows == 0) {
-            report
-                .get(q.label)
-                .add(skipCell("fluss", "query emits no rows over the preloaded events"));
-            continue;
-          }
-          double flink = flussBest(bootstrapServers, q, false, null, targetRows);
-          double nativeRun = flussBest(bootstrapServers, q, true, null, targetRows);
-          report.get(q.label).add(cell("fluss", flink, nativeRun));
-          if (q.nativeVariantProps != null) {
-            double variant = flussBest(bootstrapServers, q, true, q.nativeVariantProps, targetRows);
-            report.get(q.label).add(variantCell("fluss", q.nativeVariantLabel, flink, variant));
-          }
-        }
-      } finally {
-        cluster.close();
       }
     }
 
@@ -1839,46 +1754,6 @@ class NexmarkMatrixBenchmark {
     }
   }
 
-  /**
-   * Runs one query (default q0, override with {@code -Dprofile.query}) against a preloaded local
-   * Fluss cluster in a loop for {@code -Dprofile.seconds} (default 60), so an attached sampler
-   * sees the native fluss-rs source's steady state — poll, decode, FFI export, and whatever the
-   * query chains on top. {@code -Dprofile.native=false} profiles the stock Flink-on-Fluss path
-   * instead, for the differential read. Gated by {@code SF_PROFILE_FLUSS=true} on top of {@code
-   * SF_BENCHMARK}; attach async-profiler to the fork (see docs/benchmarks.md).
-   */
-  @Test
-  @EnabledIfEnvironmentVariable(named = "SF_PROFILE_FLUSS", matches = "true")
-  void flussNativeProfileLoop() throws Exception {
-    String label = System.getProperty("profile.query", "q0");
-    Query q =
-        Arrays.stream(ALL_QUERIES)
-            .filter(x -> x.label.equals(label))
-            .findFirst()
-            .orElseThrow(() -> new IllegalArgumentException("unknown profile.query: " + label));
-    boolean nativeRun = !"false".equals(System.getProperty("profile.native", "true"));
-    FlussClusterExtension cluster = FlussClusterExtension.builder().setNumOfTabletServers(1).build();
-    try {
-      cluster.start();
-      String bootstrapServers = cluster.getBootstrapServers();
-      writeFlussSource(bootstrapServers);
-      if (FLUSS_MARKERS.containsKey(label)) {
-        writeFlussTracedSource(bootstrapServers);
-      }
-      long targetRows = FLUSS_MARKERS.containsKey(label) ? -1 : flussTargetRows(q);
-      long deadline = System.currentTimeMillis() + Long.getLong("profile.seconds", 60L) * 1000L;
-      long iterations = 0;
-      while (System.currentTimeMillis() < deadline) {
-        withProps(q, nativeRun, null, () -> runFlussOnce(bootstrapServers, nativeRun, q, targetRows));
-        iterations++;
-      }
-      System.out.println(
-          "[profile] fluss " + (nativeRun ? "native " : "flink ") + label + " iterations: " + iterations);
-    } finally {
-      cluster.close();
-    }
-  }
-
   private static Query[] selectQueries() {
     String subset = System.getenv("SF_MATRIX_QUERIES");
     if (subset == null) {
@@ -1939,252 +1814,6 @@ class NexmarkMatrixBenchmark {
     runSetup(tEnv, q);
     PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
     return execute(tEnv, scan, q, nativeRun, "TIMESTAMP(3)");
-  }
-
-  // ----- Fluss source -----
-
-  /**
-   * Writes the wide event row to a local Fluss log table once; every Fluss query reads it back. The
-   * table declares the same 4s bounded-out-of-orderness WATERMARK the generator uses, so the
-   * windowed queries have a time attribute on both engines (the watermark runs natively as the
-   * columnar assigner above the native source). After the events, one sentinel row with a
-   * far-future rowtime and an
-   * event_type outside 0..2 is appended: it is filtered from every person/auction/bid view but
-   * advances the table's watermark past every real window end, so the unbounded Fluss runs emit
-   * exactly the rows the bounded generator calibration counted (whose end-of-input flush plays the
-   * same role).
-   */
-  private static void writeFlussSource(String bootstrapServers) throws Exception {
-    TableEnvironment tEnv = NexmarkBenchmark.environment(ROWS);
-    createFlussCatalog(tEnv, bootstrapServers);
-    tEnv.executeSql("DROP TABLE IF EXISTS " + FLUSS_TABLE);
-    tEnv.executeSql(
-        "CREATE TABLE "
-            + FLUSS_TABLE
-            + " ("
-            + PARQUET_SCHEMA
-            + ", WATERMARK FOR `dateTime` AS `dateTime` - INTERVAL '4' SECOND"
-            + ") WITH ('bucket.num' = '1')");
-    tEnv.executeSql(
-            "INSERT INTO "
-                + FLUSS_TABLE
-                + " SELECT event_type, person, auction, bid, `dateTime` FROM events")
-        .await();
-    // The Fluss sink rejects partial-column inserts on a non-PK table, so the sentinel spells out
-    // every column with NULL-cast structs.
-    tEnv.executeSql(
-            "INSERT INTO "
-                + FLUSS_TABLE
-                + " SELECT CAST(99 AS INT), CAST(NULL AS "
-                + PERSON_TYPE
-                + "), CAST(NULL AS "
-                + AUCTION_TYPE
-                + "), CAST(NULL AS "
-                + BID_TYPE
-                + "), TIMESTAMP '2100-01-01 00:00:00'")
-        .await();
-  }
-
-  /**
-   * The traced copy for the marker queries ({@link #FLUSS_MARKERS}): the same events plus a poison
-   * auction+bid pair appended last (2099, after every 2024 rowtime), whose output row is the
-   * cancel condition — no watermark sentinel needed, since nothing here waits on a window.
-   */
-  private static void writeFlussTracedSource(String bootstrapServers) throws Exception {
-    TableEnvironment tEnv = NexmarkBenchmark.environment(ROWS);
-    createFlussCatalog(tEnv, bootstrapServers);
-    tEnv.executeSql("DROP TABLE IF EXISTS " + FLUSS_TRACED_TABLE);
-    tEnv.executeSql(
-        "CREATE TABLE "
-            + FLUSS_TRACED_TABLE
-            + " ("
-            + PARQUET_SCHEMA
-            + ", WATERMARK FOR `dateTime` AS `dateTime` - INTERVAL '4' SECOND"
-            + ") WITH ('bucket.num' = '1')");
-    tEnv.executeSql(
-            "INSERT INTO "
-                + FLUSS_TRACED_TABLE
-                + " SELECT event_type, person, auction, bid, `dateTime` FROM events")
-        .await();
-    tEnv.executeSql(
-            "INSERT INTO "
-                + FLUSS_TRACED_TABLE
-                + " SELECT CAST(1 AS INT), CAST(NULL AS "
-                + PERSON_TYPE
-                + "), CAST(ROW("
-                + POISON_AUCTION_ID
-                + ", 'poison-item', 'poison', 1, 1, TIMESTAMP '2099-01-01 00:00:00',"
-                + " TIMESTAMP '2099-01-02 00:00:00', 1, "
-                + POISON_CATEGORY
-                + ", 'x') AS "
-                + AUCTION_TYPE
-                + "), CAST(NULL AS "
-                + BID_TYPE
-                + "), TIMESTAMP '2099-01-01 00:00:00'")
-        .await();
-    tEnv.executeSql(
-            "INSERT INTO "
-                + FLUSS_TRACED_TABLE
-                + " SELECT CAST(2 AS INT), CAST(NULL AS "
-                + PERSON_TYPE
-                + "), CAST(NULL AS "
-                + AUCTION_TYPE
-                + "), CAST(ROW("
-                + POISON_AUCTION_ID
-                + ", 1, 100, 'apple', 'https://nexmark.test/poison',"
-                + " TIMESTAMP '2099-01-01 00:00:01', 'x') AS "
-                + BID_TYPE
-                + "), TIMESTAMP '2099-01-01 00:00:01'")
-        .await();
-  }
-
-  private static double flussBest(
-      String bootstrapServers, Query q, boolean nativeRun, Map<String, String> extra, long targetRows)
-      throws Exception {
-    double best = Double.MAX_VALUE;
-    for (int run = 0; run < WARMUP + RUNS; run++) {
-      double seconds =
-          withProps(
-              q, nativeRun, extra, () -> runFlussOnce(bootstrapServers, nativeRun, q, targetRows));
-      if (run >= WARMUP) {
-        best = Math.min(best, seconds);
-      }
-    }
-    return best;
-  }
-
-  /**
-   * One Fluss run: both engines get the identical SQL over the unbounded log table in the same
-   * default streaming environment the other rungs use. The log table never reaches end-of-input, so
-   * instead of awaiting the insert the query streams into a {@link CountingSink} and the job is
-   * cancelled once the {@code targetRows}th changelog row arrives — the elapsed time-to-Nth-row is
-   * the measurement (submission and startup included, like the other rungs' await).
-   */
-  private static double runFlussOnce(
-      String bootstrapServers, boolean nativeRun, Query q, long targetRows) throws Exception {
-    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-    env.setParallelism(1);
-    env.getConfig().enableObjectReuse();
-    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
-    createFlussCatalog(tEnv, bootstrapServers);
-    Long marker = FLUSS_MARKERS.get(q.label);
-    tEnv.executeSql(
-        "CREATE TEMPORARY VIEW src AS SELECT * FROM "
-            + (marker != null ? FLUSS_TRACED_TABLE : FLUSS_TABLE));
-    createEventViews(tEnv);
-    tEnv.createTemporarySystemFunction("count_char", CountChar.class);
-    runSetup(tEnv, q);
-    PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
-    // The same INSERT INTO sink shape as every other rung, with the counting blackhole standing in
-    // for blackhole: the sink swallows raw RowData (no external-Row conversion — the previous
-    // toChangelogStream sink added one heavy enough to compress every ratio) while still giving the
-    // driver its finish line, the Nth changelog row or the poison marker's output row.
-    tEnv.executeSql(
-        q.sinkDdl
-            .replace("'connector' = 'blackhole'", "'connector' = 'counting-blackhole'")
-            .replace("%TS%", "TIMESTAMP(3)")
-            .replace("%WTS%", "TIMESTAMP(3)"));
-    CountingBlackholeTableFactory.arm(targetRows, marker);
-    long start = System.nanoTime();
-    JobClient job =
-        tEnv.executeSql(q.insertSql)
-            .getJobClient()
-            .orElseThrow(() -> new IllegalStateException("insert produced no job"));
-    try {
-      if (nativeRun && scan.substitutions() == 0) {
-        throw new IllegalStateException(
-            q.label + ": native island did not engage; comparison is moot. " + scan.fallbackReasons());
-      }
-      if (!CountingBlackholeTableFactory.targetReached.await(
-          FLUSS_NTH_ROW_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-        throw new TimeoutException(
-            q.label
-                + ": Fluss run saw "
-                + CountingBlackholeTableFactory.rowsSeen.get()
-                + " sink rows and no finish line ("
-                + (FLUSS_MARKERS.containsKey(q.label)
-                    ? "marker row " + FLUSS_MARKERS.get(q.label)
-                    : targetRows + " rows")
-                + ") within "
-                + FLUSS_NTH_ROW_TIMEOUT_SECONDS
-                + "s");
-      }
-      return (System.nanoTime() - start) / 1e9;
-    } finally {
-      try {
-        job.cancel().get();
-      } catch (Exception ignored) {
-        // The job may already be terminating (e.g. it failed before the Nth row); the exception
-        // propagating out of the try block is the interesting one, so cancellation noise stays here.
-      }
-      CountingBlackholeTableFactory.disarm();
-    }
-  }
-
-  /**
-   * The number of changelog rows {@code q} emits over the preloaded events — measured once per query
-   * with stock Flink on the bounded generator (the same rows the Fluss preload wrote) through its
-   * own watermarked event-time views (the Fluss table declares the identical 4s watermark), so both
-   * engines are cancelled at the same Nth sink row. The generator's end-of-input flush closes the
-   * final windows here; the preloaded sentinel row closes the same windows on the unbounded Fluss
-   * runs, so the counts line up.
-   */
-  private static long flussTargetRows(Query q) throws Exception {
-    TableEnvironment tEnv = NexmarkBenchmark.environment(ROWS);
-    tEnv.createTemporarySystemFunction("count_char", CountChar.class);
-    runSetup(tEnv, q);
-    long rows = 0;
-    try (CloseableIterator<Row> it =
-        tEnv.executeSql(q.insertSql.substring("INSERT INTO sink ".length())).collect()) {
-      while (it.hasNext()) {
-        it.next();
-        rows++;
-      }
-    }
-    return rows;
-  }
-
-  /** The person/auction/bid logical streams over a wide-event {@code src} with a plain TIMESTAMP. */
-  private static void createEventViews(TableEnvironment tEnv) {
-    tEnv.executeSql(
-        "CREATE TEMPORARY VIEW person AS SELECT person.id AS id, person.name AS name,"
-            + " person.emailAddress AS emailAddress, person.creditCard AS creditCard, person.city AS"
-            + " city, person.state AS state, `dateTime`, person.extra AS extra FROM src WHERE"
-            + " event_type = 0");
-    tEnv.executeSql(
-        "CREATE TEMPORARY VIEW auction AS SELECT auction.id AS id, auction.itemName AS itemName,"
-            + " auction.description AS description, auction.initialBid AS initialBid, auction.reserve"
-            + " AS reserve, `dateTime`, auction.expires AS expires, auction.seller AS seller,"
-            + " auction.category AS category, auction.extra AS extra FROM src WHERE event_type = 1");
-    tEnv.executeSql(
-        "CREATE TEMPORARY VIEW bid AS SELECT bid.auction AS auction, bid.bidder AS bidder, bid.price"
-            + " AS price, bid.channel AS channel, bid.url AS url, `dateTime`, bid.extra AS extra FROM"
-            + " src WHERE event_type = 2");
-  }
-
-  private static void createFlussCatalog(TableEnvironment tEnv, String bootstrapServers) {
-    tEnv.executeSql(
-        "CREATE CATALOG "
-            + FLUSS_CATALOG
-            + " WITH ('type' = 'fluss', 'bootstrap.servers' = '"
-            + bootstrapServers
-            + "')");
-  }
-
-  /**
-   * Why a query cannot run on the Fluss rung, or null when it can. Only q12 is out: a proctime
-   * window's output count is wall-clock-dependent, and any marker's own window would close ~10s
-   * (the window size) after the drain, so a finish line would time the window, not the engines.
-   * The queries whose changelog row count is not deterministic (q4/q9 — the join-input
-   * interleaving decides how many -U/+U pairs the update-collapsing aggregate/rank emits) or zero
-   * (q21) run against the traced table and cancel on the poison marker's output row instead of a
-   * row count ({@link #FLUSS_MARKERS}).
-   */
-  private static String flussSkipReason(Query q) {
-    if ("q12".equals(q.label)) {
-      return "proctime windows have no deterministic output count to cancel at";
-    }
-    return null;
   }
 
   // ----- parquet file source -----

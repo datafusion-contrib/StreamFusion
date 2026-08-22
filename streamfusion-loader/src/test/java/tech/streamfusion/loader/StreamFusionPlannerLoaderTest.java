@@ -24,8 +24,6 @@ class StreamFusionPlannerLoaderTest {
 
     assertMissing(plannerClassLoader, "tech.streamfusion.planner.KafkaTables");
     assertMissing(plannerClassLoader, "tech.streamfusion.kafka.NativeKafka");
-    assertMissing(plannerClassLoader, "tech.streamfusion.planner.FlussTables");
-    assertMissing(plannerClassLoader, "tech.streamfusion.fluss.NativeFluss");
     assertMissing(plannerClassLoader, "tech.streamfusion.planner.ParquetSourceMatcher");
     assertMissing(plannerClassLoader, "tech.streamfusion.parquet.NativeParquet");
   }

@@ -23,7 +23,6 @@
                 <configuration>
                     <excludes>
                         <exclude>tech/streamfusion/kafka/**</exclude>
-                        <exclude>tech/streamfusion/fluss/**</exclude>
                         <exclude>tech/streamfusion/parquet/**</exclude>
                         <exclude>tech/streamfusion/delta/**</exclude>
                         <exclude>tech/streamfusion/format/avro/**</exclude>
@@ -35,14 +34,11 @@
                         <exclude>tech/streamfusion/operator/NativeParquetBulkWriterFactory.java</exclude>
                         <exclude>tech/streamfusion/operator/NativeParquetRollingPolicy.java</exclude>
                         <exclude>tech/streamfusion/operator/ParquetPartitionSplitOperator.java</exclude>
-                        <exclude>tech/streamfusion/planner/FlussPlannerExtension.java</exclude>
-                        <exclude>tech/streamfusion/planner/FlussTables.java</exclude>
                         <exclude>tech/streamfusion/planner/KafkaPlannerExtension.java</exclude>
                         <exclude>tech/streamfusion/planner/KafkaSinkMatcher.java</exclude>
                         <exclude>tech/streamfusion/planner/KafkaSinkTranslator.java</exclude>
                         <exclude>tech/streamfusion/planner/KafkaTables.java</exclude>
                         <exclude>tech/streamfusion/planner/KeyedDecodeSpec.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativeFlussSourceExecNode.java</exclude>
                         <exclude>tech/streamfusion/planner/NativeKafkaDecodeExecNode.java</exclude>
                         <exclude>tech/streamfusion/planner/NativeKafkaSinkExecNode.java</exclude>
                         <exclude>tech/streamfusion/planner/NativeParquetSinkExecNode.java</exclude>
@@ -53,7 +49,6 @@
                         <exclude>tech/streamfusion/planner/ParquetSinkMatcher.java</exclude>
                         <exclude>tech/streamfusion/planner/ParquetSinkTranslator.java</exclude>
                         <exclude>tech/streamfusion/planner/ProtobufDescriptors.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeFlussSource.java</exclude>
                         <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode.java</exclude>
                         <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaSink.java</exclude>
                         <exclude>tech/streamfusion/planner/StreamPhysicalNativeParquetSink.java</exclude>

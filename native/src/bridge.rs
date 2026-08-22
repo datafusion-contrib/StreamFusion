@@ -147,7 +147,7 @@ pub(crate) fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 /// `java.io.IOException` the FLIP-27 split-reader contract expects — an explicit `Err` as-is, a
 /// panic prefixed with the connector's name. Same boundary discipline as `jni_guard`: no Rust
 /// panic may unwind through a JVM native frame.
-#[cfg(any(feature = "kafka", feature = "fluss"))]
+#[cfg(feature = "kafka")]
 pub(crate) fn connector_jni<T, F>(env: &mut JNIEnv, default: T, prefix: &str, f: F) -> T
 where
     F: FnOnce(&mut JNIEnv) -> Result<T, String>,
@@ -693,7 +693,7 @@ pub(crate) fn read_columns(env: &JNIEnv, columns: &JIntArray) -> Vec<usize> {
 }
 
 /// Reads a JVM String[] into a Vec<String>.
-#[cfg(any(feature = "kafka", feature = "fluss"))]
+#[cfg(feature = "kafka")]
 pub(crate) fn read_string_array(env: &mut JNIEnv, array: &JObjectArray) -> Vec<String> {
     let length = env
         .get_array_length(array)

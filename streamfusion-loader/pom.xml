@@ -48,7 +48,6 @@
              admitted planner ABI patch versions. -->
         <flink.loader.test.version>2.2.0</flink.loader.test.version>
         <flink.runtime.version>2.2.1</flink.runtime.version>
-        <fluss.version>0.9.1-incubating</fluss.version>
         <junit.version>5.10.2</junit.version>
     </properties>
 
@@ -119,12 +118,6 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-csv</artifactId>
             <version>${flink.runtime.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.fluss</groupId>
-            <artifactId>fluss-flink-2.2</artifactId>
-            <version>${fluss.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>

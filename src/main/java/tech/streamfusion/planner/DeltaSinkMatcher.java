@@ -60,6 +60,10 @@ final class DeltaSinkMatcher {
     Map<String, String> options = new LinkedHashMap<>(table.getOptions());
     String path = options.get("table_path");
     ObjectIdentifier identifier = sink.contextResolvedTable().getIdentifier();
+    if (path == null) {
+      return Planned.fallback(
+          "native Delta writes currently require a path-based table on the published connector API");
+    }
     for (SinkAbilitySpec ability : sink.abilitySpecs()) {
       if (ability instanceof OverwriteSpec) {
         return Planned.fallback("INSERT OVERWRITE is not supported");

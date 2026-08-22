@@ -67,7 +67,6 @@ public class PlannerModule {
     "streamfusion-raw-",
     "streamfusion-avro-",
     "streamfusion-protobuf-",
-    "streamfusion-fluss-",
     "streamfusion-parquet-"
   };
   private static final String STREAMFUSION_PLANNER_FACTORY =

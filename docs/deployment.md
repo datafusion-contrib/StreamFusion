@@ -76,7 +76,7 @@ Replace `streamfusion-json` with `streamfusion-csv`, `streamfusion-raw`, `stream
 for the full per-format breakdown. `avro-confluent` uses both `streamfusion-avro` (the shared native
 Avro codec) and `streamfusion-avro-confluent-registry` with Flink's
 `flink-avro-confluent-registry`. Use
-`fluss-flink-2.2` with `streamfusion-fluss`, or `flink-parquet` with `streamfusion-parquet`, the
+`flink-parquet` with `streamfusion-parquet`, the
 same way. A missing optional module is always a normal planner fallback to stock Flink, never a
 linkage failure — the core image doesn't require any of them.
 

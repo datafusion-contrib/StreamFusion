@@ -94,8 +94,6 @@ mod flink_key;
     test
 ))]
 mod flink_text;
-#[cfg(feature = "fluss")]
-mod fluss;
 mod format_abi;
 mod format_codes;
 #[cfg(any(
@@ -189,8 +187,6 @@ pub(crate) use raw_encode::*;
 #[allow(unused_imports)]
 pub(crate) use files::*;
 
-#[cfg(feature = "fluss")]
-pub(crate) use fluss::*;
 
 #[cfg(feature = "kafka")]
 pub(crate) use kafka::*;
