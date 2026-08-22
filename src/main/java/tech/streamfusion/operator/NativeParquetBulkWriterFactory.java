@@ -15,12 +15,10 @@ import tech.streamfusion.parquet.NativeParquet;
 
 /**
  * Creates the native Parquet writers behind the sink's part files. Each part file pairs a native
- * encoder (Arrow batches in, encoded Parquet column chunks out through a bounded bridge) with the
+ * parquet-rs Arrow writer with the
  * Flink {@link FSDataOutputStream} the bucket opened, so the bytes travel Flink's own
  * recoverable-stream path — any Flink filesystem, the host's exactly-once commit — while the
- * encoding never touches rows. The lower-level native writer appends one column chunk at a time and
- * forwards bytes through a reusable one-MiB array, so the bridge never stages a second complete
- * compressed row group before Flink can form filesystem upload parts.
+ * encoding never touches Java rows. Encoded bytes cross JNI through a reusable one-MiB array.
  */
 public final class NativeParquetBulkWriterFactory
     implements BulkWriter.Factory<PartitionedArrowBatch> {
@@ -96,7 +94,7 @@ public final class NativeParquetBulkWriterFactory
               : batch.getFieldVectors().get(0).getAllocator();
       try (ArrowArray array = ArrowArray.allocateNew(batchAllocator)) {
         Data.exportVectorSchemaRoot(batchAllocator, batch, NativeAllocator.DICTIONARIES, array);
-        NativeParquet.parquetEncoderWrite(encoder, array.memoryAddress(), new int[0]);
+        NativeParquet.parquetEncoderWrite(encoder, array.memoryAddress(), new int[0], 0, -1);
       } finally {
         batch.close();
       }
@@ -104,8 +102,7 @@ public final class NativeParquetBulkWriterFactory
 
     @Override
     public void flush() throws IOException {
-      // Completed row groups are forwarded while addElement runs; an incomplete row group has no
-      // valid bytes to flush without changing the file's row-group layout.
+      // ArrowWriter owns row-group finalization; Flink calls finish before publishing a part file.
     }
 
     @Override

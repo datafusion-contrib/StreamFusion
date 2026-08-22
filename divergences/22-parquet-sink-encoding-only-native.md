@@ -9,11 +9,9 @@ resolution, and per-scheme quirks (R2 equal part sizes, local temp-file rename) 
 
 ## What we do instead
 
-Only the byte encoding is native. The Rust side uses parquet-rs' lower-level column writers and
-appends one completed column chunk at a time through a bounded one-MiB JNI bridge, plus the batch
-partition-splitter (Arroyo's `partitioning.rs` shape). It does not stage a complete compressed row
-group again in the output bridge before Flink can consume the bytes. Everything else is Flink's own
-machinery, reused verbatim:
+Only the byte encoding is native. The Rust side uses parquet-rs' standard `ArrowWriter` through a
+bounded one-MiB JNI bridge, plus the batch partition-splitter (Arroyo's `partitioning.rs` shape).
+Everything else is Flink's own machinery, reused verbatim:
 `StreamingFileWriter`/`Buckets` for rolling and the pending-file exactly-once commit,
 `RecoverableWriter` streams over Flink's FileSystem plugins for the actual IO, and
 `PartitionCommitter` for partition commit and `_SUCCESS` files. The bridge crosses JNI with one

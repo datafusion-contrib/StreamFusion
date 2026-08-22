@@ -1,5 +1,6 @@
 package tech.streamfusion.delta;
 
+import io.delta.flink.sink.DeltaSinkConf;
 import io.delta.flink.table.HadoopTable;
 import io.delta.kernel.DataWriteContext;
 import io.delta.kernel.Transaction;
@@ -60,13 +61,36 @@ public final class NativeDeltaHadoopTable extends HadoopTable {
                       engine.getParquetHandler(),
                       configuration,
                       encoderConfig.keys,
-                      encoderConfig.values)
+                      encoderConfig.values,
+                      rollingStrategy(),
+                      rollingLimit())
                   .writeParquetFiles(
                       getTablePath().resolve(pathSuffix).toString(),
                       physicalData,
                       writeContext.getStatisticsColumns());
           return Transaction.generateAppendActions(engine, writeState, dataFiles, writeContext);
         });
+  }
+
+  private String rollingStrategy() {
+    return hadoopOptions
+        .getOrDefault(
+            DeltaSinkConf.FILE_ROLLING_STRATEGY.key(),
+            DeltaSinkConf.FILE_ROLLING_STRATEGY.defaultValue())
+        .toLowerCase(Locale.ROOT);
+  }
+
+  private long rollingLimit() {
+    if ("count".equals(rollingStrategy())) {
+      return Long.parseLong(
+          hadoopOptions.getOrDefault(
+              DeltaSinkConf.FILE_ROLLING_COUNT.key(),
+              Integer.toString(DeltaSinkConf.FILE_ROLLING_COUNT.defaultValue())));
+    }
+    return Long.parseLong(
+        hadoopOptions.getOrDefault(
+            DeltaSinkConf.FILE_ROLLING_SIZE.key(),
+            Long.toString(DeltaSinkConf.FILE_ROLLING_SIZE.defaultValue())));
   }
 
   /** Resolves every Parquet setting consumed by Delta Kernel's default data-file writer. */

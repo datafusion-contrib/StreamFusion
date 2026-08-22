@@ -14,10 +14,8 @@ the optional StreamFusion Parquet module now accelerates only sink encoding.
 The sink accepts **any filesystem Flink has a plugin for** (`file:`/`s3:`/`gs:`/`abfs:`/`hdfs:`/…).
 The native side only encodes Parquet bytes; Flink's own recoverable output streams do the I/O, so
 filesystem plugins, credentials, exactly-once commit, and partition commit all remain Flink's own
-code. Completed row groups are appended one column chunk at a time through a bounded one-MiB bridge,
-letting Flink form object-store upload parts without retaining a second complete compressed row
-group in the native output bridge. The parquet-rs column writers still hold the current row group's
-encoding working set, as parquet-mr's writers do.
+code. The standard parquet-rs `ArrowWriter` consumes Arrow batches and sends encoded bytes through a
+bounded one-MiB JNI bridge. StreamFusion does not maintain a separate low-level Parquet writer.
 
 Writer admission is whitelist-first. Supported tables translate the effective DDL-over-Hadoop
 configuration for compression, row-group/page/dictionary sizes, dictionary encoding,

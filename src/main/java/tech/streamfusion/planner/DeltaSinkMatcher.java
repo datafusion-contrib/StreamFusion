@@ -83,22 +83,10 @@ final class DeltaSinkMatcher {
         options.getOrDefault(DeltaSinkConf.FILE_ROLLING_STRATEGY.key(), "size");
     try {
       if ("count".equalsIgnoreCase(rollingStrategy)) {
-        int count =
-            Integer.parseInt(options.getOrDefault(DeltaSinkConf.FILE_ROLLING_COUNT.key(), "-1"));
-        if (count >= 0) {
-          return Planned.fallback(
-              "file_rolling.count is enabled; the native writer does not yet reproduce Delta's"
-                  + " row-count file boundaries");
-        }
+        Integer.parseInt(options.getOrDefault(DeltaSinkConf.FILE_ROLLING_COUNT.key(), "-1"));
       } else if ("size".equalsIgnoreCase(rollingStrategy)) {
-        long size =
-            Long.parseLong(
-                options.getOrDefault(DeltaSinkConf.FILE_ROLLING_SIZE.key(), "104857600"));
-        if (size >= 0) {
-          return Planned.fallback(
-              "file_rolling.size is enabled; the native writer does not yet reproduce Delta's"
-                  + " RowData-size file boundaries");
-        }
+        Long.parseLong(
+            options.getOrDefault(DeltaSinkConf.FILE_ROLLING_SIZE.key(), "104857600"));
       } else {
         return Planned.fallback("unsupported Delta file rolling strategy " + rollingStrategy);
       }

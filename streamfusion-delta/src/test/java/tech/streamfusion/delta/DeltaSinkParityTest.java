@@ -121,23 +121,47 @@ class DeltaSinkParityTest {
   }
 
   @org.junit.jupiter.api.Test
-  void enabledDeltaFileRollingStaysOnStockSink() {
+  void nativeDeltaWriterRollsAtCountBoundary() throws Exception {
+    Path path = Files.createTempDirectory("delta-native-count-rolling");
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tableEnv = StreamTableEnvironment.create(env);
-    tableEnv.executeSql("CREATE TEMPORARY TABLE src (id BIGINT) WITH ('connector'='datagen')");
+    DataStream<org.apache.flink.types.Row> source =
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"id"}, Types.LONG),
+            org.apache.flink.types.Row.of(1L),
+            org.apache.flink.types.Row.of(2L),
+            org.apache.flink.types.Row.of(3L));
+    tableEnv.createTemporaryView("rolling_changes", source);
     tableEnv.executeSql(
         "CREATE TEMPORARY TABLE sink (id BIGINT) WITH ('connector'='delta', "
-            + "'table_path'='file:///tmp/streamfusion-delta-rolling-plan', "
-            + "'file_rolling.strategy'='count', 'file_rolling.count'='100')");
+            + "'table_path'='"
+            + path.toUri()
+            + "', 'file_rolling.strategy'='count', 'file_rolling.count'='2')");
     PhysicalPlanScan scan = NativePlanner.install(tableEnv);
 
-    tableEnv.explainSql("INSERT INTO sink SELECT * FROM src");
+    tableEnv.executeSql("INSERT INTO sink SELECT * FROM rolling_changes").await();
 
-    assertEquals(0, scan.substitutions());
-    assertTrue(
-        scan.fallbackReasons().stream().anyMatch(reason -> reason.contains("file_rolling.count")),
-        scan.fallbackReasons().toString());
+    assertAccelerated(scan);
+    List<Path> parquetFiles;
+    try (java.util.stream.Stream<Path> files = Files.walk(path)) {
+      parquetFiles = files.filter(file -> file.toString().endsWith(".parquet")).toList();
+    }
+    assertEquals(2, parquetFiles.size());
+    long rows = 0;
+    for (Path parquet : parquetFiles) {
+      try (ParquetFileReader reader =
+          ParquetFileReader.open(
+              HadoopInputFile.fromPath(
+                  new org.apache.hadoop.fs.Path(parquet.toUri()),
+                  new org.apache.hadoop.conf.Configuration()))) {
+        rows +=
+            reader.getFooter().getBlocks().stream()
+                .mapToLong(block -> block.getRowCount())
+                .sum();
+      }
+    }
+    assertEquals(3, rows);
   }
 
   @org.junit.jupiter.api.Test

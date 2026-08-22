@@ -23,22 +23,29 @@ import tech.streamfusion.parquet.NativeParquet;
 /** Native implementation of Kernel's data-file write method; reads and metadata writes delegate. */
 final class NativeDeltaParquetHandler implements ParquetHandler {
   private static final int DRAIN_CHUNK_BYTES = 1 << 20;
+  private static final int SIZE_ROLLING_ROWS_PER_CHECK = 1024;
 
   private final ParquetHandler delegate;
   private final Configuration configuration;
   private final String[] encoderKeys;
   private final String[] encoderValues;
+  private final String rollingStrategy;
+  private final long rollingLimit;
   private final Set<String> initializedDirectories = new HashSet<>();
 
   NativeDeltaParquetHandler(
       ParquetHandler delegate,
       Configuration configuration,
       String[] encoderKeys,
-      String[] encoderValues) {
+      String[] encoderValues,
+      String rollingStrategy,
+      long rollingLimit) {
     this.delegate = delegate;
     this.configuration = configuration;
     this.encoderKeys = encoderKeys.clone();
     this.encoderValues = encoderValues.clone();
+    this.rollingStrategy = rollingStrategy;
+    this.rollingLimit = rollingLimit;
   }
 
   @Override
@@ -56,198 +63,199 @@ final class NativeDeltaParquetHandler implements ParquetHandler {
       CloseableIterator<FilteredColumnarBatch> data,
       List<Column> statisticsColumns)
       throws IOException {
-    if (!data.hasNext()) {
-      data.close();
-      return io.delta.kernel.internal.util.Utils.toCloseableIterator(
-          Collections.<DataFileStatus>emptyIterator());
-    }
-    FilteredColumnarBatch first = data.next();
-    CloseableIterator<FilteredColumnarBatch> replay = prepend(first, data);
-    if (first.getData() instanceof ArrowKernelBatch
-        && ((ArrowKernelBatch) first.getData()).hasSparseSelection()) {
-      // Kernel's writer is substantially faster for MOR's sparse selections: the native writer
-      // must export every full source vector before gathering the selected rows. Kernel does not
-      // own StreamFusion's Arrow batches, so close each one immediately after it is consumed.
-      try (CloseableIterator<FilteredColumnarBatch> owned = closeConsumedArrowBatches(replay)) {
-        if (delegate == null) {
-          throw new IllegalStateException("Sparse Delta writes require the stock Parquet handler");
-        }
-        try (CloseableIterator<DataFileStatus> files =
-            delegate.writeParquetFiles(directory, owned, statisticsColumns)) {
-          return io.delta.kernel.internal.util.Utils.toCloseableIterator(
-              files.toInMemoryList().iterator());
+    List<DataFileStatus> files = new ArrayList<>();
+    NativeFile file = null;
+    try (CloseableIterator<FilteredColumnarBatch> input = data) {
+      while (input.hasNext()) {
+        FilteredColumnarBatch filtered = input.next();
+        ArrowKernelBatch batch = null;
+        try {
+          if (filtered.getSelectionVector().isPresent()
+              || !(filtered.getData() instanceof ArrowKernelBatch)) {
+            throw new UnsupportedOperationException(
+                "The native Delta writer requires an Arrow-backed Kernel batch with its selection"
+                    + " applied; got "
+                    + filtered.getData().getClass().getName()
+                    + ", filtered="
+                    + filtered.getSelectionVector().isPresent());
+          }
+          batch = (ArrowKernelBatch) filtered.getData();
+          int logicalOffset = 0;
+          while (logicalOffset < batch.getSize()) {
+            if (file == null) {
+              file = openFile(directory, batch);
+            }
+            int rows = rowsForNextWrite(file, batch.getSize() - logicalOffset);
+            file.write(batch, logicalOffset, rows);
+            logicalOffset += rows;
+            if (shouldRoll(file)) {
+              files.add(file.finish(statisticsColumns));
+              file = null;
+            }
+          }
+        } finally {
+          if (batch != null) {
+            batch.close();
+          }
         }
       }
+      if (file != null) {
+        files.add(file.finish(statisticsColumns));
+        file = null;
+      }
+    } catch (RuntimeException | IOException failure) {
+      if (file != null) {
+        file.abort();
+      }
+      throw failure;
     }
-    return writeNativeParquetFiles(directory, replay, statisticsColumns);
+    return io.delta.kernel.internal.util.Utils.toCloseableIterator(
+        files.iterator());
   }
 
-  private CloseableIterator<DataFileStatus> writeNativeParquetFiles(
-      String directory,
-      CloseableIterator<FilteredColumnarBatch> data,
-      List<Column> statisticsColumns)
-      throws IOException {
+  private NativeFile openFile(String directory, ArrowKernelBatch batch) throws IOException {
     Path target = new Path(directory, UUID.randomUUID() + ".parquet");
     FileSystem fs = target.getFileSystem(configuration);
     ensureDirectory(fs, target.getParent());
-    long rows = 0;
-    long encoder = 0;
-    StructType dataSchema = null;
-    byte[] chunk = new byte[DRAIN_CHUNK_BYTES];
-    try (org.apache.hadoop.fs.FSDataOutputStream output = fs.create(target, false);
-        CloseableIterator<FilteredColumnarBatch> input = data) {
-      while (input.hasNext()) {
-        FilteredColumnarBatch filtered = input.next();
-        if (filtered.getSelectionVector().isPresent()
-            || !(filtered.getData() instanceof ArrowKernelBatch)) {
-          throw new UnsupportedOperationException(
-              "The native Delta writer requires an unfiltered Arrow-backed Kernel batch; got "
-                  + filtered.getData().getClass().getName()
-                  + ", filtered="
-                  + filtered.getSelectionVector().isPresent());
-        }
-        ArrowKernelBatch batch = (ArrowKernelBatch) filtered.getData();
-        VectorSchemaRoot root = batch.borrowedRoot();
-        try (ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED)) {
-          dataSchema = batch.getSchema();
-          if (encoder == 0) {
-            try (org.apache.arrow.c.ArrowSchema encoderSchema =
-                org.apache.arrow.c.ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-              Data.exportSchema(
-                  NativeAllocator.SHARED,
-                  root.getSchema(),
-                  NativeAllocator.DICTIONARIES,
-                  encoderSchema);
-              encoder =
-                  NativeParquet.createParquetEncoder(
-                      encoderSchema.memoryAddress(),
-                      new int[0],
-                      encoderKeys,
-                      encoderValues,
-                      false,
-                      output,
-                      chunk);
-            }
-          }
-          Data.exportVectorSchemaRoot(
-              NativeAllocator.SHARED,
-              root,
-              NativeAllocator.DICTIONARIES,
-              array);
-          NativeParquet.parquetEncoderWrite(
-              encoder, array.memoryAddress(), batch.selectedRows());
-          rows += batch.getSize();
-        } finally {
-          batch.close();
-        }
-      }
-      if (encoder == 0) {
+    return new NativeFile(fs, target, batch);
+  }
+
+  private int rowsForNextWrite(NativeFile file, int available) {
+    if (rollingLimit < 0) {
+      return available;
+    }
+    if ("count".equals(rollingStrategy)) {
+      long remaining = Math.max(1L, rollingLimit - file.rows());
+      return (int) Math.min(available, remaining);
+    }
+    return Math.min(available, SIZE_ROLLING_ROWS_PER_CHECK);
+  }
+
+  private boolean shouldRoll(NativeFile file) {
+    if (rollingLimit < 0) {
+      return false;
+    }
+    if ("count".equals(rollingStrategy)) {
+      return file.rows() >= Math.max(1L, rollingLimit);
+    }
+    return file.estimatedBytes() >= rollingLimit;
+  }
+
+  private final class NativeFile {
+    private final FileSystem fs;
+    private final Path target;
+    private final org.apache.hadoop.fs.FSDataOutputStream output;
+    private final StructType dataSchema;
+    private long encoder;
+    private long rows;
+    private boolean closed;
+
+    private NativeFile(FileSystem fs, Path target, ArrowKernelBatch batch) throws IOException {
+      this.fs = fs;
+      this.target = target;
+      this.dataSchema = batch.getSchema();
+      this.output = fs.create(target, false);
+      byte[] chunk = new byte[DRAIN_CHUNK_BYTES];
+      VectorSchemaRoot root = batch.borrowedRoot();
+      try (org.apache.arrow.c.ArrowSchema encoderSchema =
+          org.apache.arrow.c.ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+        Data.exportSchema(
+            NativeAllocator.SHARED,
+            root.getSchema(),
+            NativeAllocator.DICTIONARIES,
+            encoderSchema);
+        encoder =
+            NativeParquet.createParquetEncoder(
+                encoderSchema.memoryAddress(),
+                new int[0],
+                encoderKeys,
+                encoderValues,
+                false,
+                output,
+                chunk);
+      } catch (RuntimeException failure) {
+        output.close();
         fs.delete(target, false);
-        return io.delta.kernel.internal.util.Utils.toCloseableIterator(
-            Collections.<DataFileStatus>emptyIterator());
+        throw failure;
       }
+    }
+
+    private void write(ArrowKernelBatch batch, int logicalOffset, int rowCount) {
+      int[] selected = batch.selectedRows();
+      int[] selection =
+          selected.length == 0
+              ? selected
+              : Arrays.copyOfRange(selected, logicalOffset, logicalOffset + rowCount);
+      int physicalOffset = selected.length == 0 ? logicalOffset : 0;
+      VectorSchemaRoot root = batch.borrowedRoot();
+      try (ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED)) {
+        Data.exportVectorSchemaRoot(
+            NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array);
+        NativeParquet.parquetEncoderWrite(
+            encoder, array.memoryAddress(), selection, physicalOffset, rowCount);
+        rows += rowCount;
+      }
+    }
+
+    private long rows() {
+      return rows;
+    }
+
+    private long estimatedBytes() {
+      return NativeParquet.parquetEncoderEstimatedBytes(encoder);
+    }
+
+    private DataFileStatus finish(List<Column> statisticsColumns) throws IOException {
+      long rowCount = rows();
       NativeParquet.parquetEncoderFinish(encoder);
       output.hflush();
-    } catch (RuntimeException | IOException failure) {
-      fs.delete(target, false);
-      throw failure;
-    } finally {
-      if (encoder != 0) {
-        NativeParquet.closeParquetEncoder(encoder);
+      closeResources();
+      org.apache.hadoop.fs.FileStatus status = fs.getFileStatus(target);
+      DataFileStatistics statistics;
+      if (statisticsColumns.isEmpty()) {
+        statistics =
+            new DataFileStatistics(
+                rowCount,
+                Collections.emptyMap(),
+                Collections.emptyMap(),
+                Collections.emptyMap(),
+                Optional.empty());
+      } else {
+        statistics =
+            ParquetStatsReader.readDataFileStatistics(
+                new HadoopInputFile(fs, target, status.getLen()), dataSchema, statisticsColumns);
+      }
+      return new DataFileStatus(
+          target.toString(),
+          status.getLen(),
+          status.getModificationTime(),
+          Optional.of(statistics));
+    }
+
+    private void closeResources() throws IOException {
+      if (!closed) {
+        closed = true;
+        try {
+          NativeParquet.closeParquetEncoder(encoder);
+          encoder = 0;
+        } finally {
+          output.close();
+        }
       }
     }
-    org.apache.hadoop.fs.FileStatus status = fs.getFileStatus(target);
-    DataFileStatistics statistics;
-    if (statisticsColumns.isEmpty()) {
-      statistics =
-          new DataFileStatistics(
-              rows,
-              Collections.emptyMap(),
-              Collections.emptyMap(),
-              Collections.emptyMap(),
-              Optional.empty());
-    } else {
-      statistics =
-          ParquetStatsReader.readDataFileStatistics(
-              new HadoopInputFile(fs, target, status.getLen()), dataSchema, statisticsColumns);
+
+    private void abort() {
+      try {
+        closeResources();
+      } catch (IOException ignored) {
+        // Preserve the write failure.
+      }
+      try {
+        fs.delete(target, false);
+      } catch (IOException ignored) {
+        // Preserve the write failure.
+      }
     }
-    return io.delta.kernel.internal.util.Utils.toCloseableIterator(
-        Collections.singletonList(
-                new DataFileStatus(
-                    target.toString(),
-                    status.getLen(),
-                    status.getModificationTime(),
-                    Optional.of(statistics)))
-            .iterator());
-  }
-
-  private static CloseableIterator<FilteredColumnarBatch> prepend(
-      FilteredColumnarBatch first, CloseableIterator<FilteredColumnarBatch> rest) {
-    return new CloseableIterator<>() {
-      private boolean firstPending = true;
-
-      @Override
-      public boolean hasNext() {
-        return firstPending || rest.hasNext();
-      }
-
-      @Override
-      public FilteredColumnarBatch next() {
-        if (firstPending) {
-          firstPending = false;
-          return first;
-        }
-        return rest.next();
-      }
-
-      @Override
-      public void close() throws IOException {
-        rest.close();
-      }
-    };
-  }
-
-  private static CloseableIterator<FilteredColumnarBatch> closeConsumedArrowBatches(
-      CloseableIterator<FilteredColumnarBatch> input) {
-    return new CloseableIterator<>() {
-      private ArrowKernelBatch current;
-      private boolean closed;
-
-      private void closeCurrent() {
-        if (current != null) {
-          current.close();
-          current = null;
-        }
-      }
-
-      @Override
-      public boolean hasNext() {
-        boolean hasNext = input.hasNext();
-        if (!hasNext) {
-          closeCurrent();
-        }
-        return hasNext;
-      }
-
-      @Override
-      public FilteredColumnarBatch next() {
-        closeCurrent();
-        FilteredColumnarBatch next = input.next();
-        if (next.getData() instanceof ArrowKernelBatch) {
-          current = (ArrowKernelBatch) next.getData();
-        }
-        return next;
-      }
-
-      @Override
-      public void close() throws IOException {
-        if (!closed) {
-          closed = true;
-          closeCurrent();
-          input.close();
-        }
-      }
-    };
   }
 
   private synchronized void ensureDirectory(FileSystem fs, Path directory) throws IOException {

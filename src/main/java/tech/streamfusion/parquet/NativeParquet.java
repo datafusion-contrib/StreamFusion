@@ -29,7 +29,9 @@ public final class NativeParquet {
       byte[] chunk);
 
   public static native void parquetEncoderWrite(
-      long handle, long inArrayAddress, int[] selectedRows);
+      long handle, long inArrayAddress, int[] selectedRows, int rowOffset, int rowCount);
+
+  public static native long parquetEncoderEstimatedBytes(long handle);
 
   public static native void parquetEncoderFinish(long handle);
 

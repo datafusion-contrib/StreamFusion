@@ -60,10 +60,12 @@ binary, date, timestamp, `ROW`, `ARRAY`, and `MAP` columns recursively. Schema e
 connector path. Delta Lake data files remain Parquet: the transaction log and deletion-vector
 sidecars are protocol files, not alternative table data formats.
 
-The native path must be selected with file rolling disabled, for example
-`'file_rolling.strategy'='count', 'file_rolling.count'='-1'`. Enabled size- or count-based rolling
-uses the stock Delta sink because the native batch writer cannot reproduce its exact file
-boundaries. The native data-file writer honors Delta's `delta.parquet.compression.codec` table
+Count- and size-based file rolling remain on the native path. Count rolling uses exact row
+boundaries. Size rolling uses parquet-rs' encoded-byte estimate and checks it every 1,024 rows,
+matching delta-rs' approximate batching model; a file can therefore exceed the configured size by
+one check interval. Negative limits disable the selected strategy. Java still creates and closes
+each Hadoop stream, derives file statistics, and hands the resulting files to Delta Kernel for
+commit. The native data-file writer honors Delta's `delta.parquet.compression.codec` table
 property and the standard Hadoop `parquet.compression`, block/page sizes, dictionary setting, and
 writer version. Unsupported codecs or writer behavior (validation, custom padding, multithreaded
 Zstandard, disabled Zstandard buffer pooling, or a custom Delta Kernel target file size) delegates

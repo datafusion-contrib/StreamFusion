@@ -12,8 +12,7 @@ pub(crate) fn write_parquet(batch: &RecordBatch, path: &str) {
     writer.close().expect("failed to close parquet writer");
 }
 
-/// In-memory landing zone used by encoder tests. Production writes use [`JniParquetOutput`] so
-/// encoded column chunks flow into Flink's recoverable stream while the row group is being closed.
+/// In-memory landing zone used by encoder tests. Production writes use [`JniParquetOutput`].
 #[derive(Clone, Default)]
 #[cfg(test)]
 pub(crate) struct SharedBuffer {
@@ -58,9 +57,8 @@ impl SharedBuffer {
 
 /// Bounded bridge from parquet-rs' synchronous [`Write`] API to a JVM-owned output stream.
 ///
-/// parquet-rs' low-level writer appends one encoded column chunk at a time. This adapter forwards
-/// those bytes through a reusable Java array as soon as one MiB is available, so the output bridge
-/// never adds a second complete compressed row group to parquet-rs' encoder working set.
+/// This adapter forwards ArrowWriter's output through a reusable Java array as soon as one MiB is
+/// available. It bounds JNI transfer buffering without taking ownership of filesystem behavior.
 struct JniParquetOutput {
     vm: jni::JavaVM,
     output: jni::objects::GlobalRef,
@@ -547,16 +545,10 @@ fn flink_parquet_type(field: &Field) -> parquet::schema::types::Type {
         .expect("failed to build parquet leaf")
 }
 
-/// Encodes Arrow batches one row group at a time, closing and appending each column chunk
-/// independently. The output still belongs to Flink: production supplies a [`JniParquetOutput`]
-/// backed by the recoverable stream for the current part file.
+/// Encodes Arrow batches through parquet-rs' standard Arrow writer. The output still belongs to
+/// Flink: production supplies a [`JniParquetOutput`] backed by the current Java-owned part file.
 pub(crate) struct ParquetEncoder<W: std::io::Write + Send> {
-    writer: Option<parquet::file::writer::SerializedFileWriter<W>>,
-    row_group_factory: parquet::arrow::arrow_writer::ArrowRowGroupWriterFactory,
-    column_writers: Vec<parquet::arrow::arrow_writer::ArrowColumnWriter>,
-    row_group_index: usize,
-    buffered_rows: usize,
-    max_row_group_bytes: usize,
+    writer: Option<parquet::arrow::ArrowWriter<W>>,
     input_schema: SchemaRef,
     changelog_input_schema: Option<SchemaRef>,
     write_schema: SchemaRef,
@@ -634,27 +626,20 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
             .expect("failed to build parquet schema");
         let descriptor = parquet::schema::types::SchemaDescriptor::new(Arc::new(root));
 
-        let properties = Arc::new(config.writer_properties());
-        let writer = parquet::file::writer::SerializedFileWriter::new(
+        let options = parquet::arrow::arrow_writer::ArrowWriterOptions::new()
+            .with_properties(config.writer_properties())
+            .with_parquet_schema(descriptor)
+            // Flink files do not embed Arrow's schema metadata. The Parquet descriptor above is
+            // deliberately the reader-visible schema, including the changelog string column.
+            .with_skip_arrow_metadata(true);
+        let writer = parquet::arrow::ArrowWriter::try_new_with_options(
             output,
-            descriptor.root_schema_ptr(),
-            properties,
+            write_schema.clone(),
+            options,
         )
         .expect("failed to create parquet encoder");
-        let row_group_factory = parquet::arrow::arrow_writer::ArrowRowGroupWriterFactory::new(
-            &writer,
-            write_schema.clone(),
-        );
-        let column_writers = row_group_factory
-            .create_column_writers(0)
-            .expect("failed to create parquet column writers");
         ParquetEncoder {
             writer: Some(writer),
-            row_group_factory,
-            column_writers,
-            row_group_index: 0,
-            buffered_rows: 0,
-            max_row_group_bytes: config.block_size,
             input_schema,
             changelog_input_schema,
             write_schema,
@@ -705,7 +690,11 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
         );
         let batch = RecordBatch::try_new(self.write_schema.clone(), columns)
             .expect("write batch did not match the write schema");
-        self.write_sized(&batch);
+        self.writer
+            .as_mut()
+            .expect("parquet encoder already finished")
+            .write(&batch)
+            .expect("failed to write Arrow batch to parquet");
     }
 
     pub(crate) fn write_selected(&mut self, batch: &RecordBatch, selected_rows: &[usize]) {
@@ -731,103 +720,50 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
         self.write(&selected);
     }
 
-    fn write_sized(&mut self, batch: &RecordBatch) {
-        if batch.num_rows() == 0 {
+    fn write_selected_range(
+        &mut self,
+        batch: &RecordBatch,
+        selected_rows: &[usize],
+        row_offset: usize,
+        row_count: Option<usize>,
+    ) {
+        if !selected_rows.is_empty() {
+            assert_eq!(
+                row_offset, 0,
+                "selected Parquet writes cannot also carry an offset"
+            );
+            assert!(
+                row_count.is_none_or(|count| count == selected_rows.len()),
+                "selected Parquet row count did not match the selection"
+            );
+            self.write_selected(batch, selected_rows);
             return;
         }
-        let current_bytes = self.in_progress_size();
-        if self.buffered_rows > 0 {
-            if current_bytes >= self.max_row_group_bytes {
-                self.flush_row_group();
-                self.write_sized(batch);
-                return;
-            }
-            let average_row_bytes = current_bytes / self.buffered_rows;
-            if average_row_bytes > 0 {
-                let rows_that_fit = (self.max_row_group_bytes - current_bytes) / average_row_bytes;
-                if batch.num_rows() > rows_that_fit {
-                    if rows_that_fit == 0 {
-                        self.flush_row_group();
-                        self.write_sized(batch);
-                    } else {
-                        self.write_sized(&batch.slice(0, rows_that_fit));
-                        self.write_sized(
-                            &batch.slice(rows_that_fit, batch.num_rows() - rows_that_fit),
-                        );
-                    }
-                    return;
-                }
-            }
-        }
-
-        let mut writers = self.column_writers.iter_mut();
-        for (field, column) in self.write_schema.fields().iter().zip(batch.columns()) {
-            for leaf in parquet::arrow::arrow_writer::compute_leaves(field, column)
-                .expect("failed to compute parquet column levels")
-            {
-                writers
-                    .next()
-                    .expect("parquet column writer count did not match schema")
-                    .write(&leaf)
-                    .expect("failed to encode parquet column");
-            }
-        }
-        assert!(writers.next().is_none(), "unused parquet column writer");
-        self.buffered_rows += batch.num_rows();
-        if self.in_progress_size() >= self.max_row_group_bytes {
-            self.flush_row_group();
-        }
+        let count = row_count.unwrap_or_else(|| batch.num_rows() - row_offset);
+        assert!(
+            row_offset + count <= batch.num_rows(),
+            "Parquet row range exceeded the Arrow batch"
+        );
+        self.write(&batch.slice(row_offset, count));
     }
 
-    fn in_progress_size(&self) -> usize {
-        self.column_writers
-            .iter()
-            .map(|writer| writer.get_estimated_total_bytes())
-            .sum()
-    }
-
-    fn flush_row_group(&mut self) {
-        if self.buffered_rows == 0 {
-            return;
-        }
-        let columns = std::mem::take(&mut self.column_writers);
+    fn estimated_bytes(&self) -> usize {
         let writer = self
             .writer
-            .as_mut()
+            .as_ref()
             .expect("parquet encoder already finished");
-        let mut row_group = writer
-            .next_row_group()
-            .expect("failed to create parquet row group");
-        for column in columns {
-            column
-                .close()
-                .expect("failed to close parquet column")
-                .append_to_row_group(&mut row_group)
-                .expect("failed to append parquet column chunk");
-        }
-        row_group
-            .close()
-            .expect("failed to close parquet row group");
-        writer.flush().expect("failed to flush parquet row group");
-        self.row_group_index += 1;
-        self.column_writers = self
-            .row_group_factory
-            .create_column_writers(self.row_group_index)
-            .expect("failed to create parquet column writers");
-        self.buffered_rows = 0;
+        writer.bytes_written() + writer.in_progress_size()
     }
 
     /// Flushes the last row group and writes the footer into Flink's output stream.
     pub(crate) fn finish(&mut self) {
-        self.flush_row_group();
         let mut writer = self
             .writer
             .take()
             .expect("parquet encoder already finished");
         writer.finish().expect("failed to finish parquet file");
-        // SerializedFileWriter::finish flushes its tracked BufWriter today. Keep the bridge flush
-        // explicit as well: sub-MiB files otherwise depend on that implementation detail to emit
-        // the final JNI chunk, while larger files happen to emit as the bridge buffer fills.
+        // Keep the bridge flush explicit so sub-MiB files do not depend on ArrowWriter's internal
+        // buffering details to emit their final JNI chunk.
         std::io::Write::flush(writer.inner_mut()).expect("failed to flush finished parquet output");
     }
 }
@@ -901,6 +837,8 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncod
     handle: jlong,
     in_array_address: jlong,
     selected_rows: JIntArray<'local>,
+    row_offset: jint,
+    row_count: jint,
 ) {
     crate::bridge::jni_guard(env, move |env| {
         let encoder = unsafe { &mut *(handle as *mut ParquetEncoder<JniParquetOutput>) };
@@ -910,7 +848,25 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncod
             encoder.input_schema_for_columns(columns),
         );
         let selected_rows = read_columns(&env, &selected_rows);
-        encoder.write_selected(&batch, &selected_rows);
+        let row_offset = usize::try_from(row_offset).expect("negative Parquet row offset");
+        let row_count = (row_count >= 0)
+            .then(|| usize::try_from(row_count).expect("invalid Parquet row count"));
+        encoder.write_selected_range(&batch, &selected_rows, row_offset, row_count);
+    })
+}
+
+/// Returns the encoded bytes already written plus parquet-rs' estimate for the open row group.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncoderEstimatedBytes<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        let encoder = unsafe { &*(handle as *const ParquetEncoder<JniParquetOutput>) };
+        jlong::try_from(encoder.estimated_bytes()).expect("Parquet byte estimate exceeded jlong")
     })
 }
 
@@ -1119,6 +1075,39 @@ mod parquet_encoder_tests {
             .collect::<Result<Vec<_>, _>>()
             .expect("failed to read batches back");
         (batches, metadata)
+    }
+
+    #[test]
+    fn arrow_writer_accepts_ranges_and_reports_rolling_metrics() {
+        let schema = Arc::new(Schema::new(vec![Field::new("v", DataType::Int64, false)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(Int64Array::from(vec![10, 20, 30, 40]))],
+        )
+        .unwrap();
+        let output = SharedBuffer::default();
+        let mut encoder = ParquetEncoder::new(output.clone(), schema, &[], &[], &[], false);
+
+        encoder.write_selected_range(&batch, &[], 1, Some(2));
+
+        assert!(encoder.estimated_bytes() > 0);
+        encoder.finish();
+        let mut file = Vec::new();
+        let mut chunk = [0u8; 61];
+        loop {
+            let n = output.drain_into(&mut chunk);
+            if n == 0 {
+                break;
+            }
+            file.extend_from_slice(&chunk[..n]);
+        }
+        let (batches, _) = read_back(file);
+        let values = batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        assert_eq!(values.values(), &[20, 30]);
     }
 
     #[test]
