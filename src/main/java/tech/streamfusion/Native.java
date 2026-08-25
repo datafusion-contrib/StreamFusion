@@ -1367,7 +1367,9 @@ public final class Native {
       long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
 
   public static native String[] checkpointRocksDBWindowJoiner(
-      long handle, String snapshotDirectory);
+      long handle, long timerDeadline, String snapshotDirectory);
+
+  public static native long rocksdbWindowJoinerTimerDeadline(long handle);
 
   public static native long rocksdbWindowJoinerStateBytes(long handle);
 
@@ -1435,7 +1437,9 @@ public final class Native {
       long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
 
   public static native String[] checkpointRocksDBIntervalJoiner(
-      long handle, String snapshotDirectory);
+      long handle, long timerDeadline, String snapshotDirectory);
+
+  public static native long rocksdbIntervalJoinerTimerDeadline(long handle);
 
   /** Materializes direct RocksDB interval-join state as backend-independent key-group partitions. */
   public static native byte[][] snapshotRocksDBIntervalJoinerPartitions(long handle);
@@ -1590,7 +1594,9 @@ public final class Native {
       long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
 
   public static native String[] checkpointRocksDBWindowAggregator(
-      long handle, String snapshotDirectory);
+      long handle, long timerDeadline, String snapshotDirectory);
+
+  public static native long rocksdbWindowAggregatorTimerDeadline(long handle);
 
   /** Materializes direct RocksDB window state as backend-independent key-group partitions. */
   public static native byte[][] snapshotRocksDBWindowAggregatorPartitions(
@@ -1637,7 +1643,9 @@ public final class Native {
       long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
 
   public static native String[] checkpointRocksDBSessionAggregator(
-      long handle, String snapshotDirectory);
+      long handle, long timerDeadline, String snapshotDirectory);
+
+  public static native long rocksdbSessionAggregatorTimerDeadline(long handle);
 
   /** Materializes direct RocksDB session state as backend-independent key-group partitions. */
   public static native byte[][] snapshotRocksDBSessionAggregatorPartitions(
@@ -1826,7 +1834,10 @@ public final class Native {
   public static native void flushRocksDBWindowRanker(
       long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
 
-  public static native String[] checkpointRocksDBWindowRanker(long handle, String snapshotDirectory);
+  public static native String[] checkpointRocksDBWindowRanker(
+      long handle, long timerDeadline, String snapshotDirectory);
+
+  public static native long rocksdbWindowRankerTimerDeadline(long handle);
 
   /** Materializes direct RocksDB window-rank state as backend-independent key-group partitions. */
   public static native byte[][] snapshotRocksDBWindowRankerPartitions(long handle);

@@ -35,6 +35,43 @@ use std::sync::Arc;
 
 const SNAPSHOT_TIMER_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-timer";
 
+/// The operator's single processing-time timer deadline, persisted by a typed store at checkpoint
+/// under a reserved key whose leading bytes can never be a subtask's key group (the snapshot
+/// store's convention) — a proctime operator re-arms its firing timer from it after recovery.
+pub(super) const TIMER_DEADLINE_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-timer-deadline";
+
+/// Reads a store's persisted timer deadline; `i64::MIN` when none was written.
+pub(super) fn stored_timer_deadline(db: &DB) -> Result<i64, DataFusionError> {
+    Ok(db
+        .get(TIMER_DEADLINE_KEY)
+        .map_err(re)?
+        .filter(|bytes| bytes.len() == 8)
+        .map(|bytes| i64::from_be_bytes(bytes[..8].try_into().unwrap()))
+        .unwrap_or(i64::MIN))
+}
+
+/// Appends the timer deadline to a checkpoint's write batch (`i64::MIN` = no timer, not written —
+/// the snapshot store's convention, keeping timer-less checkpoints byte-identical).
+pub(super) fn write_timer_deadline(
+    writes: &mut FlinkWriteBatch,
+    timer_deadline: i64,
+) -> Result<(), DataFusionError> {
+    if timer_deadline != i64::MIN {
+        writes.put(TIMER_DEADLINE_KEY, timer_deadline.to_be_bytes())?;
+    }
+    Ok(())
+}
+
+/// Folds one merged source's copy of the timer deadline into the running max (the multi-source
+/// clip merge's convention for reserved keys).
+pub(super) fn merged_timer_deadline(current: i64, value: &[u8]) -> i64 {
+    if value.len() == 8 {
+        current.max(i64::from_be_bytes(value[..8].try_into().unwrap()))
+    } else {
+        current
+    }
+}
+
 pub(crate) trait RocksStateCodec {
     type Value;
     fn supported(&self) -> bool;

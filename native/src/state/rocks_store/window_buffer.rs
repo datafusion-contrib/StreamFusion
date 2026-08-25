@@ -1,6 +1,7 @@
 use super::{
-    checkpoint_files, copy_checkpoint_db, open_shared_db, re, FlinkWriteBatch, OpenedDb,
-    PAIR_FIRST_TABLE, PAIR_SECOND_TABLE,
+    checkpoint_files, copy_checkpoint_db, merged_timer_deadline, open_shared_db, re,
+    stored_timer_deadline, write_timer_deadline, FlinkWriteBatch, OpenedDb, PAIR_FIRST_TABLE,
+    PAIR_SECOND_TABLE, TIMER_DEADLINE_KEY,
 };
 use crate::*;
 use arrow::row::{RowConverter, SortField};
@@ -31,6 +32,7 @@ pub(crate) struct RocksWindowBuffer {
     max_parallelism: usize,
     converters: (RowConverter, RowConverter),
     next_seq: [u64; 2],
+    timer_deadline: i64,
     generation: i64,
     write_batch_size: usize,
 }
@@ -72,6 +74,7 @@ impl RocksWindowBuffer {
                     .map(|bytes| u64::from_be_bytes(bytes[..8].try_into().unwrap()))
                     .unwrap_or(0);
             }
+            buffer.timer_deadline = stored_timer_deadline(&buffer.db)?;
             return Ok(buffer);
         }
         let mut buffer = Self::create(config, left_schema, right_schema)?;
@@ -86,6 +89,8 @@ impl RocksWindowBuffer {
                         buffer.next_seq[table] = buffer.next_seq[table]
                             .max(u64::from_be_bytes(value[..8].try_into().unwrap()));
                     }
+                } else if key.as_ref() == TIMER_DEADLINE_KEY {
+                    buffer.timer_deadline = merged_timer_deadline(buffer.timer_deadline, &value);
                 } else if key.len() >= 4 {
                     let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
                     if key_groups.contains(&kg) {
@@ -94,6 +99,7 @@ impl RocksWindowBuffer {
                 }
             }
         }
+        write_timer_deadline(&mut writes, buffer.timer_deadline)?;
         writes.finish()?;
         Ok(buffer)
     }
@@ -120,6 +126,7 @@ impl RocksWindowBuffer {
             max_parallelism: config.max_parallelism,
             converters: (converter(&left_schema)?, converter(&right_schema)?),
             next_seq: [0, 0],
+            timer_deadline: i64::MIN,
             generation: 0,
             write_batch_size: opened.write_batch_size,
         })
@@ -253,18 +260,26 @@ impl RocksWindowBuffer {
     /// shared DB — rows were already written on arrival, so there is no working set to commit.
     pub(crate) fn checkpoint(
         &mut self,
+        timer_deadline: i64,
         snapshot_dir: &str,
     ) -> Result<RocksCheckpointManifest, DataFusionError> {
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (table, seq_key) in SEQ_KEYS.iter().enumerate() {
             writes.put(seq_key, self.next_seq[table].to_be_bytes())?;
         }
+        write_timer_deadline(&mut writes, timer_deadline)?;
         writes.finish()?;
+        self.timer_deadline = timer_deadline;
         if snapshot_dir.is_empty() {
             return Ok(RocksCheckpointManifest::absent());
         }
         self.generation += 1;
         checkpoint_files(&self.db, snapshot_dir, self.generation)
+    }
+
+    /// The processing-time timer deadline persisted by the checkpoint this store restored from.
+    pub(crate) fn timer_deadline(&self) -> i64 {
+        self.timer_deadline
     }
 
     fn table(left: bool) -> u8 {
@@ -406,7 +421,7 @@ mod tests {
                 &Int64Array::from(vec![100, 100]),
             )
             .unwrap();
-        let manifest = buffer.checkpoint(&snapshot).unwrap();
+        let manifest = buffer.checkpoint(i64::MIN, &snapshot).unwrap();
         drop(buffer);
 
         let mut restored = RocksWindowBuffer::open_merged(
@@ -448,7 +463,7 @@ mod tests {
                 &Int64Array::from(vec![100; keys.len()]),
             )
             .unwrap();
-        let manifest = buffer.checkpoint(&snapshot).unwrap();
+        let manifest = buffer.checkpoint(i64::MIN, &snapshot).unwrap();
         drop(buffer);
 
         let target = flink_key_group(binary_row_hash(&rows, &[0], 0, &[-1]), 128) as i32;

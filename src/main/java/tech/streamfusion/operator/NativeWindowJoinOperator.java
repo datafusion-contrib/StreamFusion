@@ -106,11 +106,12 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
     predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
   }
 
-  // A proctime join re-arms its cleanup timer from the snapshot-store deadline after recovery, so
-  // it stays on the generic snapshot store; the event-time join is purely watermark-driven.
+  // Proctime joins share the event-time state layout (windows are assigned upstream and both
+  // sides' buffers fire by timer instead of watermark); the firing deadline rides the typed
+  // store's reserved key, so both modes run on the direct store.
   @Override
   protected boolean usesDirectRocksDBState() {
-    return !proctime;
+    return true;
   }
 
   @Override
@@ -133,8 +134,14 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
   @Override
   protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
     return directRocksDBState()
-        ? Native.checkpointRocksDBWindowJoiner(handle, snapshotDirectory)
+        ? Native.checkpointRocksDBWindowJoiner(
+            handle, processingTimeTimerDeadlineForSnapshot(), snapshotDirectory)
         : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected long rocksdbTimerDeadline() {
+    return Native.rocksdbWindowJoinerTimerDeadline(handle);
   }
 
   @Override

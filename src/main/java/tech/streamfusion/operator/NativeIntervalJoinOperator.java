@@ -97,13 +97,13 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
     predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
   }
 
-  // A proctime interval join re-arms its cleanup timer from the snapshot-store deadline after
-  // recovery, so it stays on the generic snapshot store; the event-time join is purely
-  // watermark-driven.
+  // Proctime interval joins share the event-time state layout (rows buffer with clock
+  // timestamps and evict on the clock instead of the watermark — the direct push already carries
+  // both); the cleanup deadline rides the typed store's reserved key, so both modes run on the
+  // direct store.
   @Override
   protected boolean usesDirectRocksDBState() {
-    return !proctime
-        && withSchemas((l, r) -> Native.rocksdbIntervalJoinerSupported(l, r) ? 1L : 0L) != 0L;
+    return withSchemas((l, r) -> Native.rocksdbIntervalJoinerSupported(l, r) ? 1L : 0L) != 0L;
   }
 
   @Override
@@ -125,8 +125,14 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
   @Override
   protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
     return directRocksDBState()
-        ? Native.checkpointRocksDBIntervalJoiner(handle, snapshotDirectory)
+        ? Native.checkpointRocksDBIntervalJoiner(
+            handle, processingTimeTimerDeadlineForSnapshot(), snapshotDirectory)
         : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected long rocksdbTimerDeadline() {
+    return Native.rocksdbIntervalJoinerTimerDeadline(handle);
   }
 
   @Override

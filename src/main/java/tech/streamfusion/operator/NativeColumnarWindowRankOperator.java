@@ -102,15 +102,14 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
     return proctime ? maxOpenEnd : Long.MIN_VALUE;
   }
 
-  // A proctime window rank re-arms its firing timer from the snapshot-store deadline after
-  // recovery, so it stays on the generic snapshot store; the event-time rank is purely
-  // watermark-driven.
+  // Proctime ranks share the event-time state layout (windows are assigned upstream and buffers
+  // fire by timer instead of watermark); the firing deadline rides the typed store's reserved
+  // key, so both modes run on the direct store.
   @Override
   protected boolean usesDirectRocksDBState() {
-    return !proctime
-        && withRowSchema(
-                rowType, address -> Native.rocksdbWindowRankerSupported(address) ? 1L : 0L)
-            != 0L;
+    return withRowSchema(
+            rowType, address -> Native.rocksdbWindowRankerSupported(address) ? 1L : 0L)
+        != 0L;
   }
 
   @Override
@@ -131,8 +130,14 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   @Override
   protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
     return directRocksDBState()
-        ? Native.checkpointRocksDBWindowRanker(handle, snapshotDirectory)
+        ? Native.checkpointRocksDBWindowRanker(
+            handle, processingTimeTimerDeadlineForSnapshot(), snapshotDirectory)
         : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected long rocksdbTimerDeadline() {
+    return Native.rocksdbWindowRankerTimerDeadline(handle);
   }
 
   @Override

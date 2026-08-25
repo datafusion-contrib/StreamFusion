@@ -62,9 +62,10 @@ There are also deliberate implementation differences:
   aggregates stay on the snapshot path), event-time window rank, the event-time interval join
   (append-mostly sequence-keyed buffers carrying each row's matched flag), the temporal join
   (versioned build rows in byte-comparable version order), keep-first deduplicate, and the
-  temporal sort buffer. Every event-time operator now reads and writes RocksDB per key; only
-  proctime shapes — which re-arm timers from the snapshot store's persisted processing-time
-  deadline — and the over aggregate's gated variants above replace key-group snapshot payloads in
+  temporal sort buffer. Typed stores persist an operator's processing-time timer deadline under a
+  reserved key, so proctime windows, sessions, rank, and the window and interval joins run direct
+  too. Every such operator now reads and writes RocksDB per key; only the multiset group
+  aggregates and the over aggregate's gated variants above replace key-group snapshot payloads in
   RocksDB at each checkpoint;
 - the native stores' shared cache and write-buffer manager live in StreamFusion's own RocksDB
   library, sized by the same Flink options and formulas but leased separately from the delegate

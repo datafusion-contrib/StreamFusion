@@ -118,12 +118,12 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
     }
   }
 
-  // A proctime window re-arms its firing timer from the snapshot-store deadline after recovery,
-  // so it stays on the generic snapshot store; the event-time window is purely watermark-driven.
+  // Proctime windows share the event-time state layout (rows are stamped with the clock and fire
+  // by timer instead of watermark); the firing deadline rides the typed store's reserved key, so
+  // both modes run on the direct store.
   @Override
   protected boolean usesDirectRocksDBState() {
-    return !proctime
-        && Native.rocksdbWindowAggregatorSupported(valueTypes, aggregateKinds, keyTypes);
+    return Native.rocksdbWindowAggregatorSupported(valueTypes, aggregateKinds, keyTypes);
   }
 
   @Override

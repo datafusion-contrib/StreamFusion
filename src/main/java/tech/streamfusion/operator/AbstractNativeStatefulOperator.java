@@ -113,6 +113,15 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
     throw new UnsupportedOperationException("operator resolved RocksDB state without a create");
   }
 
+  /**
+   * The processing-time timer deadline the typed RocksDB store restored from its checkpoint —
+   * the direct-store analog of the snapshot store's deadline. A timer-carrying operator with a
+   * typed store overrides this with its handle's accessor.
+   */
+  protected long rocksdbTimerDeadline() {
+    return Long.MIN_VALUE;
+  }
+
   protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
     byte[][] partitions = snapshotRawPartitions();
     long deadline =
@@ -207,6 +216,9 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
       directRocksDBState = snapshots.isEmpty() && usesDirectRocksDBState();
       if (directRocksDBState) {
         handle = createRocksDBHandle(rocksdb);
+        if (carriesProcessingTimeTimer()) {
+          restoredProcessingTimeTimerDeadline = rocksdbTimerDeadline();
+        }
       } else {
         rocksdbSnapshotStoreHandle =
             Native.createRocksDBSnapshotStore(

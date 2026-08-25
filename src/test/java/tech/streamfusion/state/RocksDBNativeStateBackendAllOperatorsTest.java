@@ -12,6 +12,7 @@ import tech.streamfusion.operator.NativeColumnarGroupAggregateOperator;
 import tech.streamfusion.operator.NativeColumnarKeepLastDeduplicateOperator;
 import tech.streamfusion.operator.NativeColumnarTopNOperator;
 import tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator;
+import tech.streamfusion.operator.NativeColumnarWindowAggregateOperator;
 import tech.streamfusion.operator.NativeOverAggregateOperator;
 import tech.streamfusion.operator.NativeTemporalJoinOperator;
 import tech.streamfusion.operator.RowDataArrowConverter;
@@ -42,9 +43,12 @@ import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.KeyedTwoInputStreamOperatorTestHarness;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.logical.BigIntType;
+import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -91,6 +95,86 @@ class RocksDBNativeStateBackendAllOperatorsTest {
       RowType.of(
           new LogicalType[] {new BigIntType(), new BigIntType(), new BigIntType()},
           new String[] {"k", "v", "rt"});
+
+  private static final RowType WINDOW_INPUT =
+      RowType.of(
+          new LogicalType[] {new BigIntType(), new LocalZonedTimestampType(3)},
+          new String[] {"value", "rt"});
+
+  private static final RowType WINDOW_OUTPUT =
+      RowType.of(
+          new LogicalType[] {new BigIntType(), new TimestampType(3), new TimestampType(3)},
+          new String[] {"total", "window_start", "window_end"});
+
+  /**
+   * A proctime tumbling window keeps its direct RocksDB store: the firing deadline rides the typed
+   * store's reserved key, so after a checkpoint/restore cycle the restored deadline alone re-arms
+   * the processing-time timer that closes the window — no raw keyed state, no snapshot-store blob.
+   */
+  @Test
+  void proctimeWindowAggregateRearmsTimerFromTypedStore() throws Exception {
+    OperatorSubtaskState snapshot;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> before =
+            proctimeWindowHarness()) {
+      before.setStateBackend(backend());
+      before.setup(new ArrowBatchSerializer());
+      before.open();
+      before.setProcessingTime(500);
+      before.processElement(new StreamRecord<>(windowBatch(allocator, 6)));
+      snapshot = before.snapshot(1, 1);
+      rocksHandle(snapshot);
+      collectWindows(before);
+    }
+
+    try (KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> restored =
+        proctimeWindowHarness()) {
+      restored.setStateBackend(backend());
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(snapshot);
+      restored.open();
+      // No input after recovery: the typed store's restored deadline alone closes the window.
+      restored.setProcessingTime(1000);
+      assertEquals(List.of(List.of(6L, 0L, 1000L)), collectWindows(restored));
+    }
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      proctimeWindowHarness() throws Exception {
+    NativeColumnarWindowAggregateOperator operator =
+        new NativeColumnarWindowAggregateOperator(
+            false, 1000, 1000, 1, new int[] {0}, new int[0], new int[0], new int[] {0},
+            new int[] {0}, "UTC", WINDOW_OUTPUT, true, new int[0], MAX_PARALLELISM);
+    return new KeyedOneInputStreamOperatorTestHarness<>(
+        operator, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0);
+  }
+
+  private static ArrowBatch windowBatch(BufferAllocator allocator, long value) {
+    GenericRowData row = new GenericRowData(2);
+    row.setField(0, value);
+    row.setField(1, TimestampData.fromEpochMillis(0));
+    return new ArrowBatch(RowDataArrowConverter.write(List.of(row), WINDOW_INPUT, allocator));
+  }
+
+  private static List<List<Long>> collectWindows(
+      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness) {
+    List<List<Long>> rows = new ArrayList<>();
+    while (!harness.getOutput().isEmpty()) {
+      Object event = harness.getOutput().poll();
+      if (event instanceof StreamRecord) {
+        try (VectorSchemaRoot root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
+          for (RowData row : RowDataArrowConverter.read(root, WINDOW_OUTPUT)) {
+            rows.add(
+                List.of(
+                    row.getLong(0),
+                    row.getTimestamp(1, 3).getMillisecond(),
+                    row.getTimestamp(2, 3).getMillisecond()));
+          }
+        }
+      }
+    }
+    return rows;
+  }
 
   @Test
   void checkpointsIncrementallyAndRestores() throws Exception {

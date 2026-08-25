@@ -113,12 +113,12 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
     }
   }
 
-  // A proctime session re-arms its cleanup timer from the snapshot-store deadline after recovery,
-  // so it stays on the generic snapshot store; the event-time session is purely watermark-driven.
+  // Proctime sessions share the event-time state layout (rows are stamped with the clock and the
+  // gap closes by timer instead of watermark); the cleanup deadline rides the typed store's
+  // reserved key, so both modes run on the direct store.
   @Override
   protected boolean usesDirectRocksDBState() {
-    return !proctime
-        && Native.rocksdbSessionAggregatorSupported(valueTypes, aggregateKinds, keyTypes);
+    return Native.rocksdbSessionAggregatorSupported(valueTypes, aggregateKinds, keyTypes);
   }
 
   @Override
@@ -134,8 +134,14 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   @Override
   protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
     return directRocksDBState()
-        ? Native.checkpointRocksDBSessionAggregator(handle, snapshotDirectory)
+        ? Native.checkpointRocksDBSessionAggregator(
+            handle, processingTimeTimerDeadlineForSnapshot(), snapshotDirectory)
         : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected long rocksdbTimerDeadline() {
+    return Native.rocksdbSessionAggregatorTimerDeadline(handle);
   }
 
   @Override

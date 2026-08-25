@@ -1,4 +1,7 @@
-use super::{checkpoint_files, copy_checkpoint_db, open_shared_db, re, FlinkWriteBatch, OpenedDb};
+use super::{
+    checkpoint_files, copy_checkpoint_db, merged_timer_deadline, open_shared_db, re,
+    stored_timer_deadline, write_timer_deadline, FlinkWriteBatch, OpenedDb, TIMER_DEADLINE_KEY,
+};
 use crate::*;
 use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, Direction, IteratorMode, Options, DB};
@@ -47,6 +50,7 @@ pub(crate) struct RocksWindowAggStore {
     key_groups: std::ops::RangeInclusive<i32>,
     state_converter: RowConverter,
     watermark: i64,
+    timer_deadline: i64,
     generation: i64,
     write_batch_size: usize,
 }
@@ -87,6 +91,7 @@ impl RocksWindowAggStore {
                 .filter(|bytes| bytes.len() == 8)
                 .map(|bytes| i64::from_be_bytes(bytes[..8].try_into().unwrap()))
                 .unwrap_or(i64::MIN);
+            store.timer_deadline = stored_timer_deadline(&store.db)?;
             return Ok(store);
         }
         let mut store = Self::create(config, state_types, key_groups)?;
@@ -102,6 +107,8 @@ impl RocksWindowAggStore {
                             .watermark
                             .max(i64::from_be_bytes(value[..8].try_into().unwrap()));
                     }
+                } else if key.as_ref() == TIMER_DEADLINE_KEY {
+                    store.timer_deadline = merged_timer_deadline(store.timer_deadline, &value);
                 } else if key.len() >= 4 {
                     let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
                     if store.key_groups.contains(&kg) {
@@ -110,6 +117,7 @@ impl RocksWindowAggStore {
                 }
             }
         }
+        write_timer_deadline(&mut writes, store.timer_deadline)?;
         writes.finish()?;
         Ok(store)
     }
@@ -134,6 +142,7 @@ impl RocksWindowAggStore {
             key_groups,
             state_converter,
             watermark: i64::MIN,
+            timer_deadline: i64::MIN,
             generation: 0,
             write_batch_size: opened.write_batch_size,
         })
@@ -142,6 +151,11 @@ impl RocksWindowAggStore {
     /// The late-data watermark persisted by the checkpoint this store restored from.
     pub(crate) fn watermark(&self) -> i64 {
         self.watermark
+    }
+
+    /// The processing-time timer deadline persisted by the checkpoint this store restored from.
+    pub(crate) fn timer_deadline(&self) -> i64 {
+        self.timer_deadline
     }
 
     /// The Flink key group of a group key's BinaryRow hash — identical routing to the blob path's
@@ -250,7 +264,10 @@ impl RocksWindowAggStore {
         let mut groups: Vec<(i64, i64, Box<[u8]>, Box<[u8]>)> = Vec::new();
         for row in self.db.iterator(IteratorMode::Start) {
             let (key, value) = row.map_err(re)?;
-            if key.as_ref() == WATERMARK_KEY || key.len() < KEY_PREFIX_LEN {
+            if key.as_ref() == WATERMARK_KEY
+                || key.as_ref() == TIMER_DEADLINE_KEY
+                || key.len() < KEY_PREFIX_LEN
+            {
                 continue;
             }
             let end = window_end_from(&key[4..KEY_PREFIX_LEN]);
@@ -304,12 +321,15 @@ impl RocksWindowAggStore {
     pub(crate) fn checkpoint(
         &mut self,
         watermark: i64,
+        timer_deadline: i64,
         snapshot_dir: &str,
     ) -> Result<RocksCheckpointManifest, DataFusionError> {
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         writes.put(WATERMARK_KEY, watermark.to_be_bytes())?;
+        write_timer_deadline(&mut writes, timer_deadline)?;
         writes.finish()?;
         self.watermark = watermark;
+        self.timer_deadline = timer_deadline;
         if snapshot_dir.is_empty() {
             return Ok(RocksCheckpointManifest::absent());
         }
@@ -587,7 +607,7 @@ mod tests {
             .unwrap();
         let fired = before.flush(1000).unwrap();
         assert_eq!(fired.num_rows(), 1);
-        let manifest = before.checkpoint_store(&snapshot).unwrap();
+        let manifest = before.checkpoint_store(i64::MIN, &snapshot).unwrap();
         drop(before);
 
         let store = RocksWindowAggStore::open_merged(
@@ -625,7 +645,7 @@ mod tests {
         let snapshot = snapshot_dir("restore");
         let mut store = store("restore");
         put_groups(&mut store, &[(7, 100, 0, 1, 10), (9, 100, 0, 2, 20)]);
-        let manifest = store.checkpoint(5000, &snapshot).unwrap();
+        let manifest = store.checkpoint(5000, i64::MIN, &snapshot).unwrap();
         drop(store);
 
         let restored = RocksWindowAggStore::open_merged(
@@ -649,5 +669,40 @@ mod tests {
         .unwrap();
         assert_eq!(clipped.watermark(), 5000);
         assert_eq!(sums(&clipped.scan_all().unwrap()), vec![20]);
+    }
+
+    // A proctime operator's single processing-time deadline rides the checkpoint under its
+    // reserved key: an aligned restore reads it back, a clip merge takes it (rows are clipped by
+    // key group, the deadline is not), and scans never mistake it for a window group.
+    #[test]
+    fn checkpoint_persists_the_timer_deadline() {
+        let snapshot = snapshot_dir("deadline");
+        let mut store = store("deadline");
+        put_groups(&mut store, &[(7, 100, 0, 1, 10)]);
+        let manifest = store.checkpoint(5000, 7500, &snapshot).unwrap();
+        assert_eq!(store.timer_deadline(), 7500);
+        drop(store);
+
+        let restored = RocksWindowAggStore::open_merged(
+            test_config("deadline-aligned"),
+            &[DataType::Int64],
+            0..=127,
+            &[(snapshot.clone(), manifest.snapshot_id)],
+            true,
+        )
+        .unwrap();
+        assert_eq!(restored.timer_deadline(), 7500);
+        assert_eq!(sums(&restored.scan_all().unwrap()), vec![10]);
+
+        let clipped = RocksWindowAggStore::open_merged(
+            test_config("deadline-clipped"),
+            &[DataType::Int64],
+            0..=127,
+            &[(snapshot, manifest.snapshot_id)],
+            false,
+        )
+        .unwrap();
+        assert_eq!(clipped.timer_deadline(), 7500);
+        assert_eq!(sums(&clipped.scan_all().unwrap()), vec![10]);
     }
 }

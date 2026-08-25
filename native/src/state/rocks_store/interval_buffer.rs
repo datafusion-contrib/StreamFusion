@@ -1,6 +1,7 @@
 use super::{
-    checkpoint_files, copy_checkpoint_db, open_shared_db, re, FlinkWriteBatch, OpenedDb,
-    PAIR_FIRST_TABLE, PAIR_SECOND_TABLE,
+    checkpoint_files, copy_checkpoint_db, merged_timer_deadline, open_shared_db, re,
+    stored_timer_deadline, write_timer_deadline, FlinkWriteBatch, OpenedDb, PAIR_FIRST_TABLE,
+    PAIR_SECOND_TABLE, TIMER_DEADLINE_KEY,
 };
 use crate::*;
 use arrow::row::{RowConverter, SortField};
@@ -50,6 +51,7 @@ pub(crate) struct RocksIntervalBuffer {
     max_parallelism: usize,
     converters: (RowConverter, RowConverter),
     next_seq: [u64; 2],
+    timer_deadline: i64,
     generation: i64,
     write_batch_size: usize,
 }
@@ -109,6 +111,7 @@ impl RocksIntervalBuffer {
                     .map(|bytes| u64::from_be_bytes(bytes[..8].try_into().unwrap()))
                     .unwrap_or(0);
             }
+            buffer.timer_deadline = stored_timer_deadline(&buffer.db)?;
             return Ok(buffer);
         }
         let mut buffer = Self::create(config, left_schema, right_schema)?;
@@ -118,6 +121,10 @@ impl RocksIntervalBuffer {
                 DB::open_for_read_only(&Options::default(), source, false).map_err(re)?;
             for row in source_db.iterator(IteratorMode::Start) {
                 let (key, value) = row.map_err(re)?;
+                if key.as_ref() == TIMER_DEADLINE_KEY {
+                    buffer.timer_deadline = merged_timer_deadline(buffer.timer_deadline, &value);
+                    continue;
+                }
                 if key.len() != KEY_LEN {
                     continue;
                 }
@@ -133,6 +140,7 @@ impl RocksIntervalBuffer {
                 writes.put(new_key, value)?;
             }
         }
+        write_timer_deadline(&mut writes, buffer.timer_deadline)?;
         writes.finish()?;
         Ok(buffer)
     }
@@ -159,6 +167,7 @@ impl RocksIntervalBuffer {
             max_parallelism: config.max_parallelism,
             converters: (converter(&left_schema)?, converter(&right_schema)?),
             next_seq: [0, 0],
+            timer_deadline: i64::MIN,
             generation: 0,
             write_batch_size: opened.write_batch_size,
         })
@@ -321,18 +330,26 @@ impl RocksIntervalBuffer {
     /// rows were already written on arrival, so there is no working set to commit.
     pub(crate) fn checkpoint(
         &mut self,
+        timer_deadline: i64,
         snapshot_dir: &str,
     ) -> Result<RocksCheckpointManifest, DataFusionError> {
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (table, seq_key) in SEQ_KEYS.iter().enumerate() {
             writes.put(seq_key, self.next_seq[table].to_be_bytes())?;
         }
+        write_timer_deadline(&mut writes, timer_deadline)?;
         writes.finish()?;
+        self.timer_deadline = timer_deadline;
         if snapshot_dir.is_empty() {
             return Ok(RocksCheckpointManifest::absent());
         }
         self.generation += 1;
         checkpoint_files(&self.db, snapshot_dir, self.generation)
+    }
+
+    /// The processing-time timer deadline persisted by the checkpoint this store restored from.
+    pub(crate) fn timer_deadline(&self) -> i64 {
+        self.timer_deadline
     }
 
     fn buffered_row(key: &[u8], value: &[u8]) -> BufferedIntervalRow {
@@ -708,7 +725,7 @@ mod tests {
             .push_right(timed_batch(&[1], &[51], &[150]), None)
             .unwrap();
         assert_eq!(pairs.num_rows(), 1);
-        let manifest = before.store_mut().checkpoint(&snapshot).unwrap();
+        let manifest = before.store_mut().checkpoint(i64::MIN, &snapshot).unwrap();
         drop(before);
 
         let store = RocksIntervalBuffer::open_merged(
@@ -743,7 +760,7 @@ mod tests {
                 &[false, false],
             )
             .unwrap();
-        let manifest = store.checkpoint(&snapshot).unwrap();
+        let manifest = store.checkpoint(i64::MIN, &snapshot).unwrap();
         drop(store);
 
         let mut restored = RocksIntervalBuffer::open_merged(
@@ -792,7 +809,7 @@ mod tests {
                 &[false; 4],
             )
             .unwrap();
-        let manifest = store.checkpoint(&snapshot).unwrap();
+        let manifest = store.checkpoint(i64::MIN, &snapshot).unwrap();
         drop(store);
 
         let target = flink_key_group(

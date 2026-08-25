@@ -3096,13 +3096,21 @@ impl WindowRanker {
     #[cfg(feature = "rocksdb-state")]
     pub(crate) fn checkpoint_store(
         &mut self,
+        timer_deadline: i64,
         snapshot_dir: &str,
     ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
         let watermark = self.current_watermark;
         self.store
             .as_mut()
             .expect("window-rank rocksdb store")
-            .checkpoint(watermark, snapshot_dir)
+            .checkpoint(watermark, timer_deadline, snapshot_dir)
+    }
+
+    pub(crate) fn store_timer_deadline(&self) -> i64 {
+        self.store
+            .as_ref()
+            .expect("window-rank rocksdb store")
+            .timer_deadline()
     }
 
     /// Bounds the per-window buffers by the operator's task off-heap budget (negative =

@@ -1484,12 +1484,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBWindowJoin
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
+    timer_deadline: jlong,
     snapshot_directory: JString<'local>,
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
         let joiner = unsafe { &mut *(handle as *mut WindowJoiner) };
-        match joiner.store_mut().checkpoint(&snapshot_directory) {
+        match joiner
+            .store_mut()
+            .checkpoint(timer_deadline, &snapshot_directory)
+        {
             Ok(m) => manifest_array(&mut env, &m),
             Err(e) => {
                 let _ = env.throw_new(
@@ -1802,12 +1806,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBIntervalJo
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
+    timer_deadline: jlong,
     snapshot_directory: JString<'local>,
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
         let joiner = unsafe { &mut *(handle as *mut IntervalJoiner) };
-        match joiner.store_mut().checkpoint(&snapshot_directory) {
+        match joiner
+            .store_mut()
+            .checkpoint(timer_deadline, &snapshot_directory)
+        {
             Ok(m) => manifest_array(&mut env, &m),
             Err(e) => {
                 let _ = env.throw_new(
@@ -2568,12 +2576,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBWindowAggr
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
+    timer_deadline: jlong,
     snapshot_directory: JString<'local>,
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
         let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
-        match aggregator.checkpoint_store(&snapshot_directory) {
+        match aggregator.checkpoint_store(timer_deadline, &snapshot_directory) {
             Ok(m) => manifest_array(&mut env, &m),
             Err(e) => {
                 let _ = env.throw_new(
@@ -2795,12 +2804,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBSessionAgg
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
+    timer_deadline: jlong,
     snapshot_directory: JString<'local>,
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
         let aggregator = unsafe { &mut *(handle as *mut SessionAggregator) };
-        match aggregator.checkpoint_store(&snapshot_directory) {
+        match aggregator.checkpoint_store(timer_deadline, &snapshot_directory) {
             Ok(m) => manifest_array(&mut env, &m),
             Err(e) => {
                 let _ = env.throw_new(
@@ -3571,12 +3581,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBWindowRank
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
+    timer_deadline: jlong,
     snapshot_directory: JString<'local>,
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
         let ranker = unsafe { &mut *(handle as *mut WindowRanker) };
-        match ranker.checkpoint_store(&snapshot_directory) {
+        match ranker.checkpoint_store(timer_deadline, &snapshot_directory) {
             Ok(m) => manifest_array(&mut env, &m),
             Err(e) => {
                 let _ = env.throw_new(
@@ -3767,5 +3778,68 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBSnapshotStore<'
 ) {
     crate::bridge::jni_guard(env, move |_env| unsafe {
         drop(from_handle::<RocksSnapshotStore>(handle));
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbWindowAggregatorTimerDeadline<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const TumblingAggregator) }.store_timer_deadline() as jlong
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbSessionAggregatorTimerDeadline<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const SessionAggregator) }.store_timer_deadline() as jlong
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbWindowRankerTimerDeadline<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const WindowRanker) }.store_timer_deadline() as jlong
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbWindowJoinerTimerDeadline<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &mut *(handle as *mut WindowJoiner) }
+            .store_mut()
+            .timer_deadline() as jlong
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbIntervalJoinerTimerDeadline<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &mut *(handle as *mut IntervalJoiner) }
+            .store_mut()
+            .timer_deadline() as jlong
     })
 }

@@ -190,8 +190,14 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   @Override
   protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
     return directRocksDBState()
-        ? Native.checkpointRocksDBWindowAggregator(handle, snapshotDirectory)
+        ? Native.checkpointRocksDBWindowAggregator(
+            handle, processingTimeTimerDeadlineForSnapshot(), snapshotDirectory)
         : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected long rocksdbTimerDeadline() {
+    return Native.rocksdbWindowAggregatorTimerDeadline(handle);
   }
 
   @Override
