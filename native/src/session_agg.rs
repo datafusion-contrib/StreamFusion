@@ -35,10 +35,28 @@ pub(crate) struct SessionAggregator {
     key_types: Vec<DataType>,
     pub(crate) current_watermark: i64,
     pub(crate) late_drops: u64,
-    memory: OperatorMemory,
-    /// Persistent-state mode: committed sessions live in the persistent store; the decoded map holds
-    /// only this interval's touched keys (seeded on first touch, staged wholesale at the barrier).
+    pub(crate) memory: OperatorMemory,
     key_timestamp_precisions: Vec<i32>,
+    /// Persistent-state mode: committed sessions live in the persistent store; the `sessions` map
+    /// holds only the current bundle's touched keys (each hydrated wholesale on first touch —
+    /// merging needs the key's neighboring sessions — written through at the bundle boundary, then
+    /// dropped, so the map stays empty between bundles).
+    #[cfg(feature = "rocksdb-state")]
+    store: Option<crate::state::RocksSessionAggStore>,
+    /// The bundle's touched keys: their Flink key group and the committed starts hydration loaded,
+    /// so the write-through can tombstone exactly the starts a merge or firing consumed.
+    #[cfg(feature = "rocksdb-state")]
+    store_keys: HashMap<OwnedRow, StoreKeyResidency>,
+    #[cfg(feature = "rocksdb-state")]
+    store_state_types: Vec<DataType>,
+    #[cfg(feature = "rocksdb-state")]
+    store_field_counts: Vec<usize>,
+}
+
+#[cfg(feature = "rocksdb-state")]
+struct StoreKeyResidency {
+    key_group: i32,
+    committed_starts: Vec<i64>,
 }
 
 /// Estimated heap footprint of one open session (its accumulators plus the map entry).
@@ -58,6 +76,14 @@ impl SessionAggregator {
             late_drops: 0,
             memory: OperatorMemory::unaccounted(),
             key_timestamp_precisions: Vec::new(),
+            #[cfg(feature = "rocksdb-state")]
+            store: None,
+            #[cfg(feature = "rocksdb-state")]
+            store_keys: HashMap::default(),
+            #[cfg(feature = "rocksdb-state")]
+            store_state_types: Vec::new(),
+            #[cfg(feature = "rocksdb-state")]
+            store_field_counts: Vec::new(),
         }
     }
 
@@ -69,23 +95,55 @@ impl SessionAggregator {
         self
     }
 
+    /// Attaches the persistent session store, seeding the key codec from the declared key types
+    /// (a firing may need to decode keys before any batch arrives) and the late-data watermark
+    /// from the checkpoint the store restored.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_store(
+        mut self,
+        store: crate::state::RocksSessionAggStore,
+        key_types: Vec<DataType>,
+    ) -> Self {
+        self.current_watermark = store.watermark();
+        self.key_converter = Some(key_row_converter_from_types(&key_types));
+        self.key_types = key_types;
+        self.store_state_types = self
+            .aggregates
+            .iter()
+            .flat_map(WindowAggregate::state_fields)
+            .map(|field| field.data_type().clone())
+            .collect();
+        self.store_field_counts = self
+            .aggregates
+            .iter()
+            .map(|aggregate| aggregate.state_fields().len())
+            .collect();
+        self.store = Some(store);
+        self
+    }
+
     /// Attaches the task off-heap budget for a backend that starts with nothing resident.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_read_through_budget(
+        mut self,
+        budget_bytes: i64,
+    ) -> Result<Self, DataFusionError> {
+        self.memory.attach("session-aggregate", budget_bytes, 0)?;
+        Ok(self)
+    }
 
-    /// The key-field timestamp descriptors, defaulting to non-timestamp per key column — the
-    /// aggregator learns its key arity from batches, not at construction.
-
-    /// Persistent-state seeding: a key's first touch this interval reads its committed sessions
-    /// into the decoded map through the per-batch key probe, so merges and firings see state
-    /// written before the last barrier.
-
-    /// Reads committed (key, session) rows into the decoded map — the restore path's own
-    /// merge_batch round trip. Rows arrive only for keys whose map is absent or being seeded, so
-    /// inserts are unconditional (committed sessions are pairwise separated).
-
-    /// Persistent-state barrier: stages every open (key, session) as a whole-row rewrite plus a
-    /// tombstone per committed start a merge consumed, drops the decoded map, and commits the
-    /// region. Returns the manifest (the token is the plain snapshot id — the memory path
-    /// persists no watermark).
+    /// Persists the late-data watermark and takes the store's native checkpoint.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn checkpoint_store(
+        &mut self,
+        snapshot_dir: &str,
+    ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
+        let watermark = self.current_watermark;
+        self.store
+            .as_mut()
+            .expect("session-aggregate rocksdb store")
+            .checkpoint(watermark, snapshot_dir)
+    }
 
     /// Bounds this aggregator's state by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored sessions immediately.
@@ -126,6 +184,12 @@ impl SessionAggregator {
                 .entry(keys_encoded.row(row))
                 .or_default()
                 .push(row as u32);
+        }
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            let touched: Vec<(Row<'_>, u32)> =
+                by_key.iter().map(|(key, rows)| (*key, rows[0])).collect();
+            self.hydrate_store_keys(batch, &touched)?;
         }
         let track = self.memory.tracking();
         for (key, rows) in by_key {
@@ -241,7 +305,10 @@ impl SessionAggregator {
                 self.memory.record(delta);
             }
         }
-        self.memory.account()
+        self.memory.account()?;
+        #[cfg(feature = "rocksdb-state")]
+        self.write_through_store()?;
+        Ok(())
     }
 
     /// Finalizes and removes sessions the watermark has closed, emitting
@@ -249,9 +316,10 @@ impl SessionAggregator {
     /// not a fixed offset, so it travels as its own column.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         self.current_watermark = self.current_watermark.max(watermark);
-        // Persistent state: sessions committed at earlier barriers whose keys were untouched
-        // this interval still close now — hydrate them into the decoded map first.
-        let n = self.aggregates.len();
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.flush_store(watermark);
+        }
         let mut rows: Vec<(OwnedRow, i64, i64, Vec<ScalarValue>)> = Vec::new();
         let track = self.memory.tracking();
         let mut freed = 0usize;
@@ -274,13 +342,11 @@ impl SessionAggregator {
                 rows.push((key.clone(), start, session.end, results));
             }
         }
-        let mut emptied: Vec<OwnedRow> = Vec::new();
         self.sessions.retain(|key, map| {
             if map.is_empty() {
                 if track {
                     freed += owned_row_bytes(key);
                 }
-                emptied.push(key.clone());
                 return false;
             }
             true
@@ -290,11 +356,45 @@ impl SessionAggregator {
             self.memory.account_shrink();
         }
         rows.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
-        // Persistent state: every fired (key, start) leaves the store, and a key whose map
-        // emptied tombstones every committed start its seed loaded — a merge may have consumed a
-        // committed start whose session then fired under a different start, and once the key
-        // drops from the map the barrier diff can no longer see it.
+        Ok(self.emitted_batch(rows))
+    }
 
+    /// Persistent-state firing: the store removes and returns every closed session in the memory
+    /// path's (key, start) emission order — every fired session leaves the store, so a closed
+    /// session can never re-fire after a restore. Runs on an empty resident map (every bundle
+    /// wrote through), so the committed table is the whole state.
+    #[cfg(feature = "rocksdb-state")]
+    fn flush_store(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        let fired = self
+            .store
+            .as_mut()
+            .expect("session-aggregate rocksdb store")
+            .take_closed(watermark)?;
+        let converter = self
+            .key_converter
+            .as_ref()
+            .expect("session store key converter");
+        let parser = converter.parser();
+        let mut rows: Vec<(OwnedRow, i64, i64, Vec<ScalarValue>)> = Vec::with_capacity(fired.len());
+        for session in &fired {
+            let mut accumulators = self.accumulators_from_scalars(&session.state);
+            let results = accumulators
+                .iter_mut()
+                .map(|a| a.evaluate().expect("failed to finalize"))
+                .collect();
+            rows.push((
+                parser.parse(&session.key).owned(),
+                session.start,
+                session.end,
+                results,
+            ));
+        }
+        Ok(self.emitted_batch(rows))
+    }
+
+    /// The fired-session output batch `[key.., window_start, window_end, result0..]`.
+    fn emitted_batch(&self, rows: Vec<(OwnedRow, i64, i64, Vec<ScalarValue>)>) -> RecordBatch {
+        let n = self.aggregates.len();
         let keys: Vec<OwnedRow> = rows.iter().map(|(key, ..)| key.clone()).collect();
         let starts: Vec<i64> = rows.iter().map(|(_, start, ..)| *start).collect();
         let ends: Vec<i64> = rows.iter().map(|(_, _, end, _)| *end).collect();
@@ -313,8 +413,204 @@ impl SessionAggregator {
             ));
             columns.push(scalars_to_array(scalars, &self.aggregates[i].result_type()));
         }
-        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build result batch"))
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build result batch")
+    }
+
+    /// Persistent-state hydration: prefix-scans every touched key not yet resident this bundle —
+    /// the key's whole session list, since a candidate row may merge with any neighbor — and
+    /// rebuilds its accumulators from the stored state scalars in one columnar decode, so the fold
+    /// and the write-through see committed state. Every touched key's key-group routing (the blob
+    /// path's BinaryRow hash) and committed starts are recorded for the write-through.
+    #[cfg(feature = "rocksdb-state")]
+    fn hydrate_store_keys(
+        &mut self,
+        batch: &RecordBatch,
+        touched: &[(Row<'_>, u32)],
+    ) -> Result<(), DataFusionError> {
+        let key_columns = key_column_indices(batch);
+        let mut encoder =
+            BinaryRowBatchEncoder::new(batch, &key_columns, &self.key_timestamp_precisions);
+        let mut probes: Vec<OwnedRow> = Vec::new();
+        let mut prefixes: Vec<Vec<u8>> = Vec::new();
+        for &(key, row) in touched {
+            let key = key.owned();
+            if self.store_keys.contains_key(&key) {
+                continue;
+            }
+            let store = self
+                .store
+                .as_ref()
+                .expect("session-aggregate rocksdb store");
+            let key_group = store.key_group(encoder.hash(row as usize));
+            prefixes.push(store.key_prefix(key_group, key.row().data()));
+            self.store_keys.insert(
+                key.clone(),
+                StoreKeyResidency {
+                    key_group,
+                    committed_starts: Vec::new(),
+                },
+            );
+            probes.push(key);
+        }
+        if probes.is_empty() {
+            return Ok(());
+        }
+        let fetched = self
+            .store
+            .as_ref()
+            .expect("session-aggregate rocksdb store")
+            .sessions_for(&prefixes)?;
+        let track = self.memory.tracking();
+        for (key, sessions) in probes.into_iter().zip(fetched) {
+            if sessions.is_empty() {
+                continue;
+            }
+            let hydrated: Vec<(i64, i64, Vec<Box<dyn Accumulator>>)> = sessions
+                .into_iter()
+                .map(|(start, end, state)| (start, end, self.accumulators_from_scalars(&state)))
+                .collect();
+            let mut loaded = owned_row_bytes(&key);
+            let residency = self
+                .store_keys
+                .get_mut(&key)
+                .expect("hydrated key resident");
+            let map = self.sessions.entry(key).or_default();
+            for (start, end, accumulators) in hydrated {
+                residency.committed_starts.push(start);
+                let session = Session { end, accumulators };
+                loaded += session_bytes(&session);
+                map.insert(start, session);
+            }
+            if track {
+                self.memory.record(loaded as isize);
+            }
+        }
+        self.memory.account()
+    }
+
+    /// Persistent-state bundle boundary: writes every touched key's surviving sessions through in
+    /// one columnar encode, tombstones the committed starts merges consumed, then drops the
+    /// resident entries — the map stays empty between bundles and RocksDB owns durability and
+    /// memory.
+    #[cfg(feature = "rocksdb-state")]
+    fn write_through_store(&mut self) -> Result<(), DataFusionError> {
+        if self.store.is_none() {
+            return Ok(());
+        }
+        let track = self.memory.tracking();
+        let store_keys = std::mem::take(&mut self.store_keys);
+        let mut deletes: Vec<Vec<u8>> = Vec::new();
+        let mut entries: Vec<(Vec<u8>, i64)> = Vec::new();
+        let mut state_columns: Vec<Vec<ScalarValue>> =
+            vec![Vec::new(); self.store_state_types.len()];
+        for (key, residency) in store_keys {
+            let map = self.sessions.remove(&key).expect("touched key resident");
+            let store = self
+                .store
+                .as_ref()
+                .expect("session-aggregate rocksdb store");
+            for start in residency.committed_starts {
+                if !map.contains_key(&start) {
+                    deletes.push(store.db_key(residency.key_group, key.row().data(), start));
+                }
+            }
+            let mut freed = owned_row_bytes(&key);
+            for (start, mut session) in map {
+                freed += session_bytes(&session);
+                let mut column = 0;
+                for accumulator in session.accumulators.iter_mut() {
+                    for scalar in accumulator.state().expect("state") {
+                        state_columns[column].push(scalar);
+                        column += 1;
+                    }
+                }
+                entries.push((
+                    store.db_key(residency.key_group, key.row().data(), start),
+                    session.end,
+                ));
+            }
+            if track {
+                self.memory.forget(freed);
+            }
+        }
+        let arrays: Vec<ArrayRef> = state_columns
+            .into_iter()
+            .zip(&self.store_state_types)
+            .map(|(scalars, data_type)| scalars_to_array(scalars, data_type))
+            .collect();
+        self.store
+            .as_mut()
+            .expect("session-aggregate rocksdb store")
+            .write(&deletes, &entries, &arrays)?;
+        self.memory.account_shrink();
+        Ok(())
+    }
+
+    /// Rebuilds one session's accumulators from its stored state scalars — the restore path's own
+    /// state → merge_batch round trip, one field slice per aggregate.
+    #[cfg(feature = "rocksdb-state")]
+    fn accumulators_from_scalars(&self, scalars: &[ScalarValue]) -> Vec<Box<dyn Accumulator>> {
+        let mut column = 0;
+        self.aggregates
+            .iter()
+            .zip(&self.store_field_counts)
+            .map(|(aggregate, &count)| {
+                let mut accumulator = aggregate.create_accumulator();
+                let state: Vec<ArrayRef> = scalars[column..column + count]
+                    .iter()
+                    .map(|scalar| scalar.to_array().expect("state array"))
+                    .collect();
+                accumulator
+                    .merge_batch(&state)
+                    .expect("failed to restore session");
+                column += count;
+                accumulator
+            })
+            .collect()
+    }
+
+    /// Canonical savepoint from the persistent store: hydrates every committed session into the
+    /// resident map, reuses the memory path's raw keyed-snapshot encoding (so backend transitions
+    /// stay byte-compatible), then drops the map.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn canonical_partitions(
+        &mut self,
+        max_parallelism: usize,
+        timestamp_precisions: &[i32],
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let stored = self
+            .store
+            .as_ref()
+            .expect("session-aggregate rocksdb store")
+            .scan_all()?;
+        let hydrated: Vec<(OwnedRow, i64, i64, Vec<Box<dyn Accumulator>>)> = {
+            let converter = self
+                .key_converter
+                .as_ref()
+                .expect("session store key converter");
+            let parser = converter.parser();
+            stored
+                .into_iter()
+                .map(|session| {
+                    (
+                        parser.parse(&session.key).owned(),
+                        session.start,
+                        session.end,
+                        self.accumulators_from_scalars(&session.state),
+                    )
+                })
+                .collect()
+        };
+        for (key, start, end, accumulators) in hydrated {
+            self.sessions
+                .entry(key)
+                .or_default()
+                .insert(start, Session { end, accumulators });
+        }
+        let partitions = self.raw_snapshot_partitions(max_parallelism, timestamp_precisions);
+        self.sessions.clear();
+        Ok(partitions)
     }
 
     /// Serializes every open session (one row per (key, session): key, start, end, then each

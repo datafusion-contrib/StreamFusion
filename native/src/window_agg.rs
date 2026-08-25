@@ -156,7 +156,7 @@ pub(crate) fn assign_windows(
 /// The positions of a batch's `key0..key{n-1}` columns — the columns the persistent store's
 /// BinaryRow key-group routing hashes, wherever they sit in the batch's layout.
 #[cfg(feature = "rocksdb-state")]
-fn key_column_indices(batch: &RecordBatch) -> Vec<usize> {
+pub(crate) fn key_column_indices(batch: &RecordBatch) -> Vec<usize> {
     let schema = batch.schema();
     let mut indices = Vec::new();
     while let Some((index, _)) = schema.column_with_name(&format!("key{}", indices.len())) {

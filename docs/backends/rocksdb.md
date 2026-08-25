@@ -56,7 +56,8 @@ There are also deliberate implementation differences:
   (tumble/hop/cumulate, including the global two-phase half) perform per-key RocksDB reads and
   writes (a two-sided operator's tables share one database under table-prefixed keys; window
   buffers append sequence-keyed entries and windowed aggregate state keys by window end, so
-  watermarks fire with per-key-group range scans); the remaining native operators — session,
+  watermarks fire with per-key-group range scans); session aggregates join them with key-major
+  session lists that hydrate by prefix scan for merging. The remaining native operators —
   window rank, over aggregate, interval/temporal joins, keep-first dedup, temporal sort, and
   proctime windowed operators, which need the snapshot store's persisted processing-time
   deadline — replace one key-group snapshot payload in RocksDB at each checkpoint;

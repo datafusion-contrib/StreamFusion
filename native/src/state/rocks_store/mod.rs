@@ -7,8 +7,10 @@
 //! for a whole bundle's working set in one columnar conversion; a state-TTL value carries its
 //! last-write timestamp as a fixed 8-byte prefix so the compaction filter never parses the row.
 
+pub(crate) mod session_agg_store;
 pub(crate) mod window_agg_store;
 pub(crate) mod window_buffer;
+pub(crate) use session_agg_store::RocksSessionAggStore;
 pub(crate) use window_agg_store::RocksWindowAggStore;
 pub(crate) use window_buffer::RocksWindowBuffer;
 

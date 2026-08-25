@@ -1380,6 +1380,53 @@ public final class Native {
   public static native void closeRocksDBWindowAggregator(long handle);
 
   /**
+   * Whether the session-window aggregate's key and accumulator-state shapes are encodable by the
+   * direct RocksDB store's row codec; anything else stays on the snapshot-store compat path.
+   */
+  public static native boolean rocksdbSessionAggregatorSupported(
+      int[] valueTypes, int[] aggregateKinds, int[] keyTypes);
+
+  /**
+   * Creates a session-window aggregator whose open sessions live directly in a Rust-owned RocksDB
+   * instance, keyed by group key so a touched key's sessions hydrate as one range for merging. The
+   * declared key types build the key codec the persisted state is decoded with, so restored bytes
+   * parse before any batch arrives.
+   */
+  public static native long createRocksDBSessionAggregator(
+      long gapMillis,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      int[] keyTypes,
+      int[] keyTimestampPrecisions,
+      long memoryBudgetBytes,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  public static native void pushRocksDBSessionAggregator(
+      long handle, long inArrayAddress, long inSchemaAddress);
+
+  public static native void flushRocksDBSessionAggregator(
+      long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
+
+  public static native String[] checkpointRocksDBSessionAggregator(
+      long handle, String snapshotDirectory);
+
+  /** Materializes direct RocksDB session state as backend-independent key-group partitions. */
+  public static native byte[][] snapshotRocksDBSessionAggregatorPartitions(
+      long handle, int maxParallelism, int[] keyTimestampPrecisions);
+
+  public static native long rocksdbSessionAggregatorStateBytes(long handle);
+
+  public static native void closeRocksDBSessionAggregator(long handle);
+
+  /**
    * Creates an append-only or retracting Top-N ranker backed directly by a Rust-owned RocksDB
    * instance. The declared input schema builds the arrow-row converters the persisted state is
    * decoded with, so restored bytes parse before any batch arrives.

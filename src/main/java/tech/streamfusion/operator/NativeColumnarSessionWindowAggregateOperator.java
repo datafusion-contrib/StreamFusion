@@ -2,6 +2,7 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.operators.ProcessingTimeService.ProcessingTimeCallback;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
@@ -112,6 +113,39 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
     }
   }
 
+  // A proctime session re-arms its cleanup timer from the snapshot-store deadline after recovery,
+  // so it stays on the generic snapshot store; the event-time session is purely watermark-driven.
+  @Override
+  protected boolean usesDirectRocksDBState() {
+    return !proctime
+        && Native.rocksdbSessionAggregatorSupported(valueTypes, aggregateKinds, keyTypes);
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    return Native.createRocksDBSessionAggregator(
+        gapMillis, valueTypes, aggregateKinds, keyTypes, keyTimestampPrecisions(),
+        memoryBudgetBytes(), rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
+        rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
+        rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
+        rocksdb.aligned());
+  }
+
+  @Override
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
+    return directRocksDBState()
+        ? Native.checkpointRocksDBSessionAggregator(handle, snapshotDirectory)
+        : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected byte[][] snapshotCanonicalPartitions() {
+    return directRocksDBState()
+        ? Native.snapshotRocksDBSessionAggregatorPartitions(
+            handle, maxParallelism(), keyTimestampPrecisions())
+        : snapshotRawPartitions();
+  }
+
   @Override
   protected long createHandle() {
     return Native.createSessionAggregator(gapMillis, valueTypes, aggregateKinds, memoryBudgetBytes());
@@ -137,12 +171,20 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
 
   @Override
   protected void updateHandle(long arrayAddress, long schemaAddress) {
-    Native.updateSessionAggregator(handle, arrayAddress, schemaAddress);
+    if (directRocksDBState()) {
+      Native.pushRocksDBSessionAggregator(handle, arrayAddress, schemaAddress);
+    } else {
+      Native.updateSessionAggregator(handle, arrayAddress, schemaAddress);
+    }
   }
 
   @Override
   protected void flushHandle(long watermark, long arrayAddress, long schemaAddress) {
-    Native.flushSessionAggregator(handle, watermark, arrayAddress, schemaAddress);
+    if (directRocksDBState()) {
+      Native.flushRocksDBSessionAggregator(handle, watermark, arrayAddress, schemaAddress);
+    } else {
+      Native.flushSessionAggregator(handle, watermark, arrayAddress, schemaAddress);
+    }
   }
 
   @Override
@@ -152,12 +194,18 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
 
   @Override
   protected void closeHandle() {
-    Native.closeSessionAggregator(handle);
+    if (directRocksDBState()) {
+      Native.closeRocksDBSessionAggregator(handle);
+    } else {
+      Native.closeSessionAggregator(handle);
+    }
   }
 
   @Override
   protected long stateBytesHandle() {
-    return Native.sessionAggregatorStateBytes(handle);
+    return directRocksDBState()
+        ? Native.rocksdbSessionAggregatorStateBytes(handle)
+        : Native.sessionAggregatorStateBytes(handle);
   }
 
   @Override
