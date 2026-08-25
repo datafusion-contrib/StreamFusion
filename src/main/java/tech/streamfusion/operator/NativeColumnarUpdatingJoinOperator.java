@@ -3,6 +3,7 @@ package tech.streamfusion.operator;
 import tech.streamfusion.Native;
 import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -114,6 +115,42 @@ public class NativeColumnarUpdatingJoinOperator
   }
 
   @Override
+  protected boolean usesDirectRocksDBState() {
+    return true;
+  }
+
+  @Override
+  protected RocksDBNativeStateSupport resolveRocksDBState(boolean rawStateRestored) {
+    return resolveRocksDB(
+        rawStateRestored, () -> true, Math.max(leftStateTtlMillis, rightStateTtlMillis));
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    return withRowSchemas(
+        leftType,
+        rightType,
+        (left, right) ->
+            Native.createRocksDBUpdatingJoiner(
+                leftKeys, rightKeys, keyTimestampPrecisions(), joinType, left, right,
+                predKinds, predPayload, predChildCounts, boundPredLongs, predDoubles, predStrings,
+                leftJoinKeyUnique, rightJoinKeyUnique, miniBatch,
+                leftStateTtlMillis, rightStateTtlMillis,
+                getProcessingTimeService().getCurrentProcessingTime(), memoryBudgetBytes(),
+                rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
+                rocksdb.aligned()));
+  }
+
+  @Override
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
+    return directRocksDBState()
+        ? Native.checkpointRocksDBUpdatingJoiner(handle, snapshotDirectory)
+        : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
   protected long createHandle() {
     return withRowSchemas(
         leftType,
@@ -176,13 +213,26 @@ public class NativeColumnarUpdatingJoinOperator
   }
 
   @Override
+  protected byte[][] snapshotCanonicalPartitions() {
+    return directRocksDBState()
+        ? Native.snapshotRocksDBUpdatingJoinerPartitions(handle)
+        : snapshotRawPartitions();
+  }
+
+  @Override
   protected void closeHandle() {
-    Native.closeUpdatingJoiner(handle);
+    if (directRocksDBState()) {
+      Native.closeRocksDBUpdatingJoiner(handle);
+    } else {
+      Native.closeUpdatingJoiner(handle);
+    }
   }
 
   @Override
   protected long stateBytesHandle() {
-    return Native.updatingJoinerStateBytes(handle);
+    return directRocksDBState()
+        ? Native.rocksdbUpdatingJoinerStateBytes(handle)
+        : Native.updatingJoinerStateBytes(handle);
   }
 
   @Override
@@ -284,7 +334,17 @@ public class NativeColumnarUpdatingJoinOperator
       // Flink's TtlTimeProvider clock: the processing-time service is System.currentTimeMillis in
       // production and harness-controlled in tests, so expiry is deterministic to test.
       long now = getProcessingTimeService().getCurrentProcessingTime();
-      if (left) {
+      if (directRocksDBState()) {
+        if (left) {
+          Native.pushLeftRocksDBUpdatingJoiner(
+              handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
+              outArray.memoryAddress(), outSchema.memoryAddress());
+        } else {
+          Native.pushRightRocksDBUpdatingJoiner(
+              handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
+              outArray.memoryAddress(), outSchema.memoryAddress());
+        }
+      } else if (left) {
         Native.pushLeftUpdatingJoiner(
             handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
             outArray.memoryAddress(), outSchema.memoryAddress());
@@ -353,15 +413,33 @@ public class NativeColumnarUpdatingJoinOperator
   }
 
   private void flushBundle(FlushReason reason) {
-    long transientBytes = Native.updatingJoinerStagingBytes(handle);
-    long touchedKeys = Native.updatingJoinerStagedKeys(handle);
-    long leftRecords = Native.updatingJoinerStagedRecords(handle, true);
-    long rightRecords = Native.updatingJoinerStagedRecords(handle, false);
+    boolean direct = directRocksDBState();
+    long transientBytes =
+        direct
+            ? Native.rocksdbUpdatingJoinerStagingBytes(handle)
+            : Native.updatingJoinerStagingBytes(handle);
+    long touchedKeys =
+        direct
+            ? Native.rocksdbUpdatingJoinerStagedKeys(handle)
+            : Native.updatingJoinerStagedKeys(handle);
+    long leftRecords =
+        direct
+            ? Native.rocksdbUpdatingJoinerStagedRecords(handle, true)
+            : Native.updatingJoinerStagedRecords(handle, true);
+    long rightRecords =
+        direct
+            ? Native.rocksdbUpdatingJoinerStagedRecords(handle, false)
+            : Native.updatingJoinerStagedRecords(handle, false);
     leftBundleReducedSize = saturatedInt(Math.max(0, leftBundleRows - leftRecords));
     rightBundleReducedSize = saturatedInt(Math.max(0, rightBundleRows - rightRecords));
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushUpdatingJoiner(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      if (direct) {
+        Native.flushRocksDBUpdatingJoiner(
+            handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      } else {
+        Native.flushUpdatingJoiner(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       int outputRows = out.getRowCount();

@@ -56,6 +56,87 @@ pub(crate) type JoinBucket = ahash::HashMap<ByteKey, RowMeta>;
 /// The resident default backend for a join side (see `state/` for the seam).
 pub(crate) type MemoryJoinStore = MemoryStateStore<JoinBucket>;
 
+/// The join persistent backend: one store per side over one shared DB (see
+/// `RocksStore::create_pair`), each under the raw bucket codec.
+#[cfg(feature = "rocksdb-state")]
+pub(crate) type RocksJoinStore = crate::state::RocksStore<JoinStateCodec>;
+
+/// The join value codec for the persistent store: raw — one whole bucket per key, framed as
+/// `[u32 nrows]` then per row `[u32 rowlen][row bytes][i64 count][i32 num_assoc][i64
+/// last_write_ms]` (all LE, the compact snapshot's row framing). Per-row TTL is the join's
+/// semantic, so `last_write_ms` always rides in the bytes and the store-level timestamp is the
+/// bucket's newest write — the compaction filter drops a bucket only when every row expired,
+/// and the joiner's own lazy per-row expiry keeps working on hydrated buckets. Every payload
+/// shape round-trips as opaque bytes, so every join state shape is persistable.
+#[cfg(feature = "rocksdb-state")]
+pub(crate) struct JoinStateCodec;
+
+#[cfg(feature = "rocksdb-state")]
+impl crate::state::RocksStateCodec for JoinStateCodec {
+    type Value = JoinBucket;
+    fn supported(&self) -> bool {
+        true
+    }
+    fn value_fields(&self) -> Vec<(String, DataType)> {
+        vec![("bucket".to_string(), DataType::Binary)]
+    }
+    fn encode(&self, _value: &JoinBucket) -> Vec<ScalarValue> {
+        unreachable!("raw codec")
+    }
+    fn decode(&self, _scalars: &[ScalarValue]) -> JoinBucket {
+        unreachable!("raw codec")
+    }
+    fn value_bytes(&self, value: &JoinBucket) -> usize {
+        4 + value
+            .keys()
+            .map(|row| 4 + row.0.len() + 8 + 4 + 8)
+            .sum::<usize>()
+    }
+    fn write_ms(&self, value: &JoinBucket) -> i64 {
+        value
+            .values()
+            .map(|meta| meta.last_write_ms)
+            .max()
+            .unwrap_or(0)
+    }
+    fn raw(&self) -> bool {
+        true
+    }
+    fn raw_write(&self, value: &JoinBucket, out: &mut Vec<u8>) {
+        snapshot_put_u32(out, value.len());
+        for (row, meta) in value.iter() {
+            snapshot_put_u32(out, row.0.len());
+            out.extend_from_slice(&row.0);
+            out.extend_from_slice(&meta.count.to_le_bytes());
+            out.extend_from_slice(&meta.num_assoc.to_le_bytes());
+            out.extend_from_slice(&meta.last_write_ms.to_le_bytes());
+        }
+    }
+    fn from_raw(&self, bytes: &[u8]) -> JoinBucket {
+        let mut input = bytes;
+        let rows = snapshot_take_u32(&mut input);
+        let mut bucket = JoinBucket::default();
+        bucket.reserve(rows);
+        for _ in 0..rows {
+            let row_len = snapshot_take_u32(&mut input);
+            let row = ByteKey::from(snapshot_take(&mut input, row_len));
+            let count = i64::from_le_bytes(snapshot_take(&mut input, 8).try_into().unwrap());
+            let num_assoc = i32::from_le_bytes(snapshot_take(&mut input, 4).try_into().unwrap());
+            let last_write_ms =
+                i64::from_le_bytes(snapshot_take(&mut input, 8).try_into().unwrap());
+            bucket.insert(
+                row,
+                RowMeta {
+                    count,
+                    num_assoc,
+                    last_write_ms,
+                },
+            );
+        }
+        bucket
+    }
+}
+
 /// The joined `[left fields.., right fields..]` schema (columns named `c0..`) the non-equi
 /// predicate's input refs index into.
 pub(crate) fn joined_schema(left_schema: &SchemaRef, right_schema: &SchemaRef) -> SchemaRef {
@@ -1507,19 +1588,14 @@ fn snapshot_take_u32(input: &mut &[u8]) -> usize {
     u32::from_le_bytes(snapshot_take(input, 4).try_into().unwrap()) as usize
 }
 
-/// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
-/// store checkpoints through its own commit path instead of materializing the key space.
-impl UpdatingJoiner {
-    /// One side's multiset as raw state bytes, one compact blob per key group. A bucket writes its
-    /// Flink-BinaryRow key once followed by its arrow-row payloads and metadata. The previous Arrow
-    /// IPC format repeated the key for every row and made a synchronous checkpoint build Arrow
-    /// arrays only to serialize them immediately; Q9 spends its barrier critical path doing those
-    /// copies. Restore still accepts that format below so existing checkpoints remain readable.
-    fn side_snapshot_groups(
-        &self,
-        is_left: bool,
-        max_parallelism: usize,
-    ) -> BTreeMap<i32, Vec<u8>> {
+/// One side's compact raw snapshot encoding, built from any backend's resident view of the
+/// selected keys. A bucket writes its Flink-BinaryRow key once followed by its arrow-row payloads
+/// and metadata. The previous Arrow IPC format repeated the key for every row and made a
+/// synchronous checkpoint build Arrow arrays only to serialize them immediately; Q9 spends its
+/// barrier critical path doing those copies. Restore still accepts that format below so existing
+/// checkpoints remain readable.
+impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
+    fn side_snapshot_keys(&self, is_left: bool, selected: &[ByteKey]) -> Vec<u8> {
         let state = if is_left {
             &self.left_state
         } else {
@@ -1530,24 +1606,22 @@ impl UpdatingJoiner {
         } else {
             self.right_ttl_ms
         }) > 0;
-        let mut groups: BTreeMap<i32, Vec<u8>> = BTreeMap::new();
-        for (key, bucket) in state.iter() {
-            let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
-            let out = groups.entry(group).or_insert_with(|| {
-                let mut out = Vec::with_capacity(4096);
-                out.extend_from_slice(COMPACT_JOIN_SNAPSHOT_MAGIC);
-                out.push(if with_ttl {
-                    COMPACT_JOIN_SNAPSHOT_TTL
-                } else {
-                    0
-                });
-                out
-            });
-            snapshot_put_u32(out, key.0.len());
+        let mut out = Vec::with_capacity(4096);
+        out.extend_from_slice(COMPACT_JOIN_SNAPSHOT_MAGIC);
+        out.push(if with_ttl {
+            COMPACT_JOIN_SNAPSHOT_TTL
+        } else {
+            0
+        });
+        for key in selected {
+            let bucket = state
+                .get(&key.0)
+                .expect("snapshot key remains in join state");
+            snapshot_put_u32(&mut out, key.0.len());
             out.extend_from_slice(&key.0);
-            snapshot_put_u32(out, bucket.len());
+            snapshot_put_u32(&mut out, bucket.len());
             for (row, meta) in bucket.iter() {
-                snapshot_put_u32(out, row.0.len());
+                snapshot_put_u32(&mut out, row.0.len());
                 out.extend_from_slice(&row.0);
                 out.extend_from_slice(&meta.count.to_le_bytes());
                 out.extend_from_slice(&meta.num_assoc.to_le_bytes());
@@ -1556,20 +1630,7 @@ impl UpdatingJoiner {
                 }
             }
         }
-        groups
-    }
-
-    #[cfg(test)]
-    pub(crate) fn snapshot(&self) -> Vec<u8> {
-        let left = self
-            .side_snapshot_groups(true, 1)
-            .remove(&0)
-            .unwrap_or_default();
-        let right = self
-            .side_snapshot_groups(false, 1)
-            .remove(&0)
-            .unwrap_or_default();
-        Self::snapshot_parts(left, right)
+        out
     }
 
     fn snapshot_parts(left: Vec<u8>, right: Vec<u8>) -> Vec<u8> {
@@ -1579,9 +1640,10 @@ impl UpdatingJoiner {
         out
     }
 
-    pub(crate) fn snapshot_partitions(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
-        let mut left = self.side_snapshot_groups(true, max_parallelism);
-        let mut right = self.side_snapshot_groups(false, max_parallelism);
+    fn compose_partitions(
+        mut left: BTreeMap<i32, Vec<u8>>,
+        mut right: BTreeMap<i32, Vec<u8>>,
+    ) -> BTreeMap<i32, Vec<u8>> {
         let mut groups: Vec<i32> = left.keys().chain(right.keys()).copied().collect();
         groups.sort_unstable();
         groups.dedup();
@@ -1597,6 +1659,88 @@ impl UpdatingJoiner {
                 )
             })
             .collect()
+    }
+}
+
+/// Commits the persistent stores and exports the complete logical table in the same compact
+/// key-group encoding the memory snapshot writes, for backend-independent canonical savepoints:
+/// left and right sections composed exactly as the memory partitions are.
+#[cfg(feature = "rocksdb-state")]
+impl UpdatingJoiner<RocksJoinStore> {
+    pub(crate) fn canonical_partitions(
+        &mut self,
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let left = self.side_canonical_groups(true)?;
+        let right = self.side_canonical_groups(false)?;
+        Ok(Self::compose_partitions(left, right))
+    }
+
+    fn side_canonical_groups(
+        &mut self,
+        is_left: bool,
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let keys = if is_left {
+            self.left_state.canonical_keys_by_group()?
+        } else {
+            self.right_state.canonical_keys_by_group()?
+        };
+        let groups = keys
+            .iter()
+            .map(|(&group, selected)| (group, self.side_snapshot_keys(is_left, selected)))
+            .collect();
+        if is_left {
+            self.left_state.finish_canonical_scan();
+        } else {
+            self.right_state.finish_canonical_scan();
+        }
+        Ok(groups)
+    }
+}
+
+/// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
+/// store checkpoints through its own commit path instead of materializing the key space.
+impl UpdatingJoiner {
+    /// One side's multiset as raw state bytes, one compact blob per key group, the group one hash
+    /// of the stored key's bytes per entry (that encoding's hash IS Flink's key-group input).
+    fn side_snapshot_groups(
+        &self,
+        is_left: bool,
+        max_parallelism: usize,
+    ) -> BTreeMap<i32, Vec<u8>> {
+        let state = if is_left {
+            &self.left_state
+        } else {
+            &self.right_state
+        };
+        let mut keys_by_group: BTreeMap<i32, Vec<ByteKey>> = BTreeMap::new();
+        for (key, _) in state.iter() {
+            let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
+            keys_by_group.entry(group).or_default().push(key.clone());
+        }
+        keys_by_group
+            .iter()
+            .map(|(&group, selected)| (group, self.side_snapshot_keys(is_left, selected)))
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn snapshot(&self) -> Vec<u8> {
+        let left = self
+            .side_snapshot_groups(true, 1)
+            .remove(&0)
+            .unwrap_or_default();
+        let right = self
+            .side_snapshot_groups(false, 1)
+            .remove(&0)
+            .unwrap_or_default();
+        Self::snapshot_parts(left, right)
+    }
+
+    pub(crate) fn snapshot_partitions(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
+        Self::compose_partitions(
+            self.side_snapshot_groups(true, max_parallelism),
+            self.side_snapshot_groups(false, max_parallelism),
+        )
     }
 
     /// `restored_at_ms` stamps rows restored from a snapshot side that carries no TTL timestamps

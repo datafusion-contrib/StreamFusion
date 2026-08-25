@@ -1,7 +1,8 @@
 //! Rust-owned RocksDB state, on Flink's write path: dirty entries are written through to the
 //! RocksDB memtable at every bundle boundary, so RocksDB's own write buffers are the only write
 //! buffer and its background threads own all flushing and compaction. Committed entries are keyed
-//! by Flink key group plus BinaryRow bytes and are read directly through RocksDB without a
+//! by Flink key group (plus a table byte when two stores share one DB) plus BinaryRow bytes and
+//! are read directly through RocksDB without a
 //! Java/JNI data-plane round trip. Values travel as compact arrow-row bytes, encoded and decoded
 //! for a whole bundle's working set in one columnar conversion; a state-TTL value carries its
 //! last-write timestamp as a fixed 8-byte prefix so the compaction filter never parses the row.
@@ -162,10 +163,13 @@ impl<'a> FlinkWriteBatch<'a> {
 }
 
 pub(crate) struct RocksStore<C: RocksStateCodec> {
-    db: DB,
+    db: Arc<DB>,
     _cache: Option<Cache>,
     config: RocksStoreConfig,
     codec: C,
+    /// Table prefix byte after the key-group prefix, for stores sharing one DB (see
+    /// [`RocksStore::create_pair`]); `None` keeps the single-table layout `[key_group][key]`.
+    table: Option<u8>,
     value_fields: Vec<Field>,
     converter: RowConverter,
     now_ms: i64,
@@ -176,11 +180,159 @@ pub(crate) struct RocksStore<C: RocksStateCodec> {
     footprint: isize,
 }
 
+const PAIR_FIRST_TABLE: u8 = 0;
+const PAIR_SECOND_TABLE: u8 = 1;
+
+struct OpenedDb {
+    db: Arc<DB>,
+    cache: Option<Cache>,
+    clock: Arc<AtomicI64>,
+    write_batch_size: usize,
+}
+
+/// Opens one physical DB for the stores that will share it. `ttls` gives each table's TTL for the
+/// per-DB compaction filter (`None` table = every key, the single-table case); a table whose TTL
+/// is off never has its value parsed, matching that table's prefix-free value layout.
+fn open_shared_db(
+    config: &RocksStoreConfig,
+    ttls: &[(Option<u8>, i64)],
+) -> Result<OpenedDb, DataFusionError> {
+    std::fs::create_dir_all(&config.table_dir).map_err(ioe)?;
+    let resolved = crate::state::rocks_config::FlinkRocksOptions::from_json(&config.options_json)
+        .map_err(DataFusionError::Plan)?;
+    let (mut options, cache) = resolved.build(config.shared()).map_err(DataFusionError::Plan)?;
+    let write_batch_size = resolved.write_batch_size;
+    let clock = Arc::new(AtomicI64::new(0));
+    if ttls.iter().any(|&(_, ttl)| ttl > 0) {
+        let filter_clock = Arc::clone(&clock);
+        let table_ttls: Vec<(Option<u8>, i64)> = ttls.to_vec();
+        let refresh_after = resolved
+            .compaction_filter_query_time_after_num_entries
+            .max(1);
+        let mut remaining = 0u64;
+        let mut now = 0i64;
+        options.set_compaction_filter("streamfusion-state-ttl", move |_level, key, value| {
+            if remaining == 0 {
+                now = filter_clock.load(Ordering::Relaxed);
+                remaining = refresh_after;
+            }
+            remaining -= 1;
+            let ttl_ms = table_ttls
+                .iter()
+                .find(|(table, _)| table.map_or(true, |t| key.get(4) == Some(&t)))
+                .map_or(0, |&(_, ttl)| ttl);
+            if ttl_ms <= 0 {
+                return CompactionDecision::Keep;
+            }
+            match persisted_write_ms(value) {
+                Some(written) if now >= written.saturating_add(ttl_ms) => {
+                    CompactionDecision::Remove
+                }
+                _ => CompactionDecision::Keep,
+            }
+        });
+    }
+    let db = Arc::new(DB::open(&options, &config.table_dir).map_err(re)?);
+    Ok(OpenedDb {
+        db,
+        cache,
+        clock,
+        write_batch_size,
+    })
+}
+
 impl<C: RocksStateCodec> RocksStore<C> {
     const SLOT_OVERHEAD: usize = std::mem::size_of::<Slot<C::Value>>() + GROUP_ENTRY_OVERHEAD;
 
     pub(crate) fn create(config: RocksStoreConfig, codec: C) -> Result<Self, DataFusionError> {
         Self::open_db(config, codec)
+    }
+
+    /// Opens two stores over one shared DB — for an operator whose Flink analog keeps two named
+    /// states (the updating join's left and right sides) but checkpoints them as one table
+    /// directory. Each store keys as `[key_group i32 BE][table u8][key bytes]`; the key group
+    /// stays the first four bytes so rescale clipping is layout-agnostic. `config.ttl_ms` is the
+    /// first store's TTL, `second_ttl_ms` the second's; the shared compaction filter dispatches
+    /// on the table byte.
+    pub(crate) fn create_pair(
+        config: RocksStoreConfig,
+        second_ttl_ms: i64,
+        codecs: (C, C),
+    ) -> Result<(Self, Self), DataFusionError> {
+        Self::ensure_supported(&codecs.0)?;
+        Self::ensure_supported(&codecs.1)?;
+        let mut second_config = config.clone();
+        second_config.ttl_ms = second_ttl_ms;
+        let opened = open_shared_db(
+            &config,
+            &[
+                (Some(PAIR_FIRST_TABLE), config.ttl_ms),
+                (Some(PAIR_SECOND_TABLE), second_ttl_ms),
+            ],
+        )?;
+        let first = Self::attach(&opened, config, codecs.0, Some(PAIR_FIRST_TABLE))?;
+        let second = Self::attach(&opened, second_config, codecs.1, Some(PAIR_SECOND_TABLE))?;
+        Ok((first, second))
+    }
+
+    /// [`RocksStore::open_merged`] for a shared-DB pair: one physical restore serves both stores
+    /// (the table byte rides inside every copied key, and clipping still reads only the leading
+    /// key-group bytes).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn open_merged_pair(
+        config: RocksStoreConfig,
+        second_ttl_ms: i64,
+        codecs: (C, C),
+        sources: &[(String, i64)],
+        key_groups: std::ops::RangeInclusive<i32>,
+        aligned: bool,
+        now_ms: i64,
+    ) -> Result<(Self, Self), DataFusionError> {
+        if aligned && sources.len() == 1 {
+            copy_checkpoint_db(&sources[0].0, &config.table_dir)?;
+            let (mut first, mut second) = Self::create_pair(config, second_ttl_ms, codecs)?;
+            first.set_clock(now_ms);
+            second.set_clock(now_ms);
+            first.generation = sources[0].1;
+            return Ok((first, second));
+        }
+        let (mut first, mut second) = Self::create_pair(config, second_ttl_ms, codecs)?;
+        first.set_clock(now_ms);
+        second.set_clock(now_ms);
+        let mut writes = FlinkWriteBatch::new(&first.db, first.write_batch_size);
+        for (source, _) in sources {
+            let source_db =
+                DB::open_for_read_only(&Options::default(), source, false).map_err(re)?;
+            for row in source_db.iterator(IteratorMode::Start) {
+                let (key, value) = row.map_err(re)?;
+                if key.len() >= 4 {
+                    let kg = i32::from_be_bytes(key[0..4].try_into().expect("key group prefix"));
+                    if key_groups.contains(&kg) {
+                        writes.put(key, value)?;
+                    }
+                }
+            }
+        }
+        writes.finish()?;
+        Ok((first, second))
+    }
+
+    /// Commits both stores of a shared-DB pair and takes the single native checkpoint of their DB
+    /// — the pair analog of [`RocksStore::checkpoint`].
+    pub(crate) fn checkpoint_pair(
+        first: &mut Self,
+        second: &mut Self,
+        snapshot_dir: &str,
+    ) -> Result<RocksCheckpointManifest, DataFusionError> {
+        first.write_dirty()?;
+        first.working.clear();
+        second.write_dirty()?;
+        second.working.clear();
+        if snapshot_dir.is_empty() {
+            return Ok(RocksCheckpointManifest::absent());
+        }
+        first.generation += 1;
+        checkpoint_files(&first.db, snapshot_dir, first.generation)
     }
 
     pub(crate) fn open_merged(
@@ -219,42 +371,28 @@ impl<C: RocksStateCodec> RocksStore<C> {
         Ok(store)
     }
 
-    fn open_db(config: RocksStoreConfig, codec: C) -> Result<Self, DataFusionError> {
-        if !codec.supported() {
-            return Err(DataFusionError::Plan(
+    fn ensure_supported(codec: &C) -> Result<(), DataFusionError> {
+        if codec.supported() {
+            Ok(())
+        } else {
+            Err(DataFusionError::Plan(
                 "state shape not supported by RocksDB".into(),
-            ));
+            ))
         }
-        std::fs::create_dir_all(&config.table_dir).map_err(ioe)?;
-        let resolved =
-            crate::state::rocks_config::FlinkRocksOptions::from_json(&config.options_json)
-                .map_err(DataFusionError::Plan)?;
-        let (mut options, cache) = resolved.build(config.shared()).map_err(DataFusionError::Plan)?;
-        let write_batch_size = resolved.write_batch_size;
-        let clock = Arc::new(AtomicI64::new(0));
-        if config.ttl_ms > 0 {
-            let filter_clock = Arc::clone(&clock);
-            let ttl_ms = config.ttl_ms;
-            let refresh_after = resolved
-                .compaction_filter_query_time_after_num_entries
-                .max(1);
-            let mut remaining = 0u64;
-            let mut now = 0i64;
-            options.set_compaction_filter("streamfusion-state-ttl", move |_level, _key, value| {
-                if remaining == 0 {
-                    now = filter_clock.load(Ordering::Relaxed);
-                    remaining = refresh_after;
-                }
-                remaining -= 1;
-                match persisted_write_ms(value) {
-                    Some(written) if now >= written.saturating_add(ttl_ms) => {
-                        CompactionDecision::Remove
-                    }
-                    _ => CompactionDecision::Keep,
-                }
-            });
-        }
-        let db = DB::open(&options, &config.table_dir).map_err(re)?;
+    }
+
+    fn open_db(config: RocksStoreConfig, codec: C) -> Result<Self, DataFusionError> {
+        Self::ensure_supported(&codec)?;
+        let opened = open_shared_db(&config, &[(None, config.ttl_ms)])?;
+        Self::attach(&opened, config, codec, None)
+    }
+
+    fn attach(
+        opened: &OpenedDb,
+        config: RocksStoreConfig,
+        codec: C,
+        table: Option<u8>,
+    ) -> Result<Self, DataFusionError> {
         let value_fields: Vec<_> = codec
             .value_fields()
             .into_iter()
@@ -268,16 +406,17 @@ impl<C: RocksStateCodec> RocksStore<C> {
         )
         .map_err(|e| DataFusionError::External(Box::new(e)))?;
         Ok(Self {
-            db,
-            _cache: cache,
+            db: Arc::clone(&opened.db),
+            _cache: opened.cache.clone(),
             config,
             codec,
+            table,
             value_fields,
             converter,
             now_ms: 0,
-            clock,
+            clock: Arc::clone(&opened.clock),
             generation: 0,
-            write_batch_size,
+            write_batch_size: opened.write_batch_size,
             working: ahash::HashMap::default(),
             footprint: 0,
         })
@@ -298,12 +437,17 @@ impl<C: RocksStateCodec> RocksStore<C> {
     }
 
     fn db_key(&self, key: &[u8]) -> Vec<u8> {
-        let mut out = Vec::with_capacity(4 + key.len());
+        let mut out = Vec::with_capacity(self.key_prefix_len() + key.len());
         let key_group =
             flink_key_group(hash_bytes_by_words(key), self.config.max_parallelism) as i32;
         out.extend_from_slice(&key_group.to_be_bytes());
+        out.extend(self.table);
         out.extend_from_slice(key);
         out
+    }
+
+    fn key_prefix_len(&self) -> usize {
+        4 + usize::from(self.table.is_some())
     }
 
     /// The fixed prefix a persisted value carries ahead of its arrow-row bytes: the last-write
@@ -454,15 +598,19 @@ impl<C: RocksStateCodec> RocksStore<C> {
         &mut self,
     ) -> Result<std::collections::BTreeMap<i32, Vec<ByteKey>>, DataFusionError> {
         self.checkpoint("")?;
+        let prefix = self.key_prefix_len();
         let mut keys = std::collections::BTreeMap::<i32, Vec<ByteKey>>::new();
         for row in self.db.iterator(IteratorMode::Start) {
             let (db_key, value) = row.map_err(re)?;
-            if db_key.len() < 4 || db_key.as_ref() == SNAPSHOT_TIMER_KEY {
+            if db_key.len() < prefix || db_key.as_ref() == SNAPSHOT_TIMER_KEY {
+                continue;
+            }
+            if self.table.is_some_and(|table| db_key[4] != table) {
                 continue;
             }
             let key_group = i32::from_be_bytes(db_key[..4].try_into().unwrap());
             if let Some(state) = self.decode_value(&value)? {
-                let key = ByteKey::from(&db_key[4..]);
+                let key = ByteKey::from(&db_key[prefix..]);
                 self.working.insert(
                     key.clone(),
                     Slot::Present {

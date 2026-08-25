@@ -1213,6 +1213,72 @@ public final class Native {
 
   public static native void closeRocksDBKeepLastDeduplicator(long handle);
 
+  /** Creates an updating joiner backed directly by a Rust-owned RocksDB instance. */
+  public static native long createRocksDBUpdatingJoiner(
+      int[] leftKeys,
+      int[] rightKeys,
+      int[] keyTimestampPrecisions,
+      int joinType,
+      long leftSchemaAddress,
+      long rightSchemaAddress,
+      int[] predKinds,
+      int[] predPayload,
+      int[] predChildCounts,
+      long[] predLongs,
+      double[] predDoubles,
+      String[] predStrings,
+      boolean leftJoinKeyUnique,
+      boolean rightJoinKeyUnique,
+      boolean miniBatch,
+      long leftStateTtlMillis,
+      long rightStateTtlMillis,
+      long nowMillis,
+      long memoryBudgetBytes,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  /** Materializes direct RocksDB join state as backend-independent key-group partitions. */
+  public static native byte[][] snapshotRocksDBUpdatingJoinerPartitions(long handle);
+
+  public static native void pushLeftRocksDBUpdatingJoiner(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long nowMillis,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  public static native void pushRightRocksDBUpdatingJoiner(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long nowMillis,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  public static native void flushRocksDBUpdatingJoiner(
+      long handle, long outArrayAddress, long outSchemaAddress);
+
+  public static native String[] checkpointRocksDBUpdatingJoiner(
+      long handle, String snapshotDirectory);
+
+  public static native long rocksdbUpdatingJoinerStateBytes(long handle);
+
+  public static native long rocksdbUpdatingJoinerStagingBytes(long handle);
+
+  public static native long rocksdbUpdatingJoinerStagedKeys(long handle);
+
+  public static native long rocksdbUpdatingJoinerStagedRecords(long handle, boolean left);
+
+  public static native void closeRocksDBUpdatingJoiner(long handle);
+
   /** Generic RocksDB persistence for operators still using their key-group snapshot codec. */
   public static native long createRocksDBSnapshotStore(
       String databaseDirectory,
