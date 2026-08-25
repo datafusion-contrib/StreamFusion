@@ -12,6 +12,7 @@ import org.apache.flink.runtime.state.AbstractKeyedStateBackend;
 import org.apache.flink.runtime.state.CheckpointStreamFactory;
 import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
 import org.apache.flink.runtime.state.KeyGroupRange;
+import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
 import org.apache.flink.runtime.state.KeyGroupedInternalPriorityQueue;
 import org.apache.flink.runtime.state.Keyed;
 import org.apache.flink.runtime.state.KeyedStateFunction;
@@ -23,15 +24,15 @@ import org.apache.flink.runtime.state.SnapshotStrategyRunner;
 import org.apache.flink.runtime.state.StateSnapshotTransformer.StateSnapshotTransformFactory;
 import org.apache.flink.runtime.state.heap.HeapPriorityQueueElement;
 import org.apache.flink.util.FileUtils;
+import org.apache.flink.util.FlinkRuntimeException;
+import org.apache.flink.util.function.SupplierWithException;
 
 import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.RunnableFuture;
-import java.util.function.Function;
 import java.util.stream.Stream;
 
 import static org.apache.flink.runtime.state.SnapshotExecutionType.ASYNCHRONOUS;
@@ -43,6 +44,13 @@ import static org.apache.flink.runtime.state.SnapshotExecutionType.ASYNCHRONOUS;
  * {@code initializeState}, and from then on this backend's snapshot is the operator's RocksDB
  * commit, emitted as an {@link org.apache.flink.runtime.state.IncrementalRemoteKeyedStateHandle}.
  *
+ * <p>The delegate backend materializes lazily: a native-state operator that never touches JVM keyed
+ * state never pays for opening (and later deleting) an unused RocksDB instance. Metadata the
+ * wrapper owns — key-group range, key serializer, the current key — is answered locally until then;
+ * the first call that genuinely needs the delegate (state creation or access, timer queues,
+ * snapshot or savepoint without a native hook) creates it and replays the buffered key context.
+ * Restored JVM state forces eager materialization so it is re-snapshotted even when untouched.
+ *
  * <p>The two channels are exclusive by construction: an operator that registered a native hook
  * must not also create JVM keyed state (there is exactly one keyed-state handle per operator per
  * checkpoint), and this backend fails fast if both are used.
@@ -50,7 +58,6 @@ import static org.apache.flink.runtime.state.SnapshotExecutionType.ASYNCHRONOUS;
 public final class RocksDBNativeKeyedStateBackend<K>
     implements CheckpointableKeyedStateBackend<K>, CheckpointListener {
 
-  private final CheckpointableKeyedStateBackend<K> delegate;
   private final RocksDBNativeSnapshotStrategy snapshotStrategy;
   private final File workingDirectory;
   private final File tableDirectory;
@@ -58,24 +65,65 @@ public final class RocksDBNativeKeyedStateBackend<K>
   private final String optionsJson;
   private final OpaqueMemoryResource<NativeRocksSharedResources> sharedResources;
   private final CloseableRegistry cancelStreamRegistry = new CloseableRegistry();
+  private final KeyGroupRange keyGroupRange;
+  private final TypeSerializer<K> keySerializer;
+  private final int numberOfKeyGroups;
+
+  private SupplierWithException<CheckpointableKeyedStateBackend<K>, Exception> delegateSupplier;
+  private CheckpointableKeyedStateBackend<K> delegate;
+  private K bufferedKey;
+  private int bufferedKeyGroup;
 
   private boolean delegateStateUsed;
   private boolean sharedResourcesReleased;
 
   RocksDBNativeKeyedStateBackend(
-      CheckpointableKeyedStateBackend<K> delegate,
+      SupplierWithException<CheckpointableKeyedStateBackend<K>, Exception> delegateSupplier,
+      KeyGroupRange keyGroupRange,
+      TypeSerializer<K> keySerializer,
+      int numberOfKeyGroups,
       RocksDBNativeSnapshotStrategy snapshotStrategy,
       File workingDirectory,
       List<RocksDBRestoredSource> restoredSources,
       String optionsJson,
       OpaqueMemoryResource<NativeRocksSharedResources> sharedResources) {
-    this.delegate = delegate;
+    this.delegateSupplier = delegateSupplier;
+    this.keyGroupRange = keyGroupRange;
+    this.keySerializer = keySerializer;
+    this.numberOfKeyGroups = numberOfKeyGroups;
     this.snapshotStrategy = snapshotStrategy;
     this.workingDirectory = workingDirectory;
     this.tableDirectory = new File(workingDirectory, "db");
     this.restoredSources = restoredSources;
     this.optionsJson = optionsJson;
     this.sharedResources = sharedResources;
+    this.bufferedKeyGroup =
+        keyGroupRange.getNumberOfKeyGroups() > 0 ? keyGroupRange.getStartKeyGroup() : 0;
+  }
+
+  // ---- Delegate materialization -----------------------------------------------------------------
+
+  private CheckpointableKeyedStateBackend<K> delegate() throws Exception {
+    if (delegate == null) {
+      delegate = delegateSupplier.get();
+      delegateSupplier = null;
+      if (bufferedKey != null) {
+        delegate.setCurrentKeyAndKeyGroup(bufferedKey, bufferedKeyGroup);
+      }
+    }
+    return delegate;
+  }
+
+  private CheckpointableKeyedStateBackend<K> delegateUnchecked() {
+    try {
+      return delegate();
+    } catch (Exception failure) {
+      throw new FlinkRuntimeException("failed to create the delegate keyed state backend", failure);
+    }
+  }
+
+  void materializeDelegate() throws Exception {
+    delegate();
   }
 
   // ---- The native operator's surface -----------------------------------------------------------
@@ -116,8 +164,15 @@ public final class RocksDBNativeKeyedStateBackend<K>
     snapshotStrategy.registerNativeState(nativeState, stateTtlMillis);
   }
 
-  /** Reads and removes StreamFusion's reserved canonical state without claiming JVM state use. */
+  /**
+   * Reads and removes StreamFusion's reserved canonical state without claiming JVM state use. An
+   * unmaterialized delegate is provably empty (restored delegate state materializes eagerly), so
+   * this never opens the delegate just to find nothing.
+   */
   public CanonicalRestore restoreCanonicalState(String operatorId) throws Exception {
+    if (delegate == null) {
+      return new CanonicalRestore(List.of(), Long.MIN_VALUE);
+    }
     CanonicalNativeState.Restore restored = CanonicalNativeState.readAndClear(delegate, operatorId);
     return new CanonicalRestore(restored.partitions, restored.timerDeadline);
   }
@@ -133,7 +188,7 @@ public final class RocksDBNativeKeyedStateBackend<K>
       @Nonnull CheckpointOptions checkpointOptions)
       throws Exception {
     if (!snapshotStrategy.hasNativeState()) {
-      return delegate.snapshot(checkpointId, timestamp, streamFactory, checkpointOptions);
+      return delegate().snapshot(checkpointId, timestamp, streamFactory, checkpointOptions);
     }
     if (delegateStateUsed) {
       throw new IllegalStateException(
@@ -169,12 +224,12 @@ public final class RocksDBNativeKeyedStateBackend<K>
     if (snapshotStrategy.hasNativeState()) {
       RocksDBNativeState nativeState = snapshotStrategy.nativeState();
       CanonicalNativeState.write(
-          delegate,
+          delegate(),
           nativeState.canonicalPartitions(),
           nativeState.canonicalOperatorId(),
           nativeState.canonicalTimerDeadline());
     }
-    return delegate.savepoint();
+    return delegate().savepoint();
   }
 
   public static final class CanonicalRestore {
@@ -193,7 +248,9 @@ public final class RocksDBNativeKeyedStateBackend<K>
   public void dispose() {
     // Shaping first: its thread must be quiescent before the tables are deleted.
     snapshotStrategy.close();
-    delegate.dispose();
+    if (delegate != null) {
+      delegate.dispose();
+    }
     deleteWorkingDirectory();
     releaseSharedResources();
   }
@@ -202,7 +259,9 @@ public final class RocksDBNativeKeyedStateBackend<K>
   public void close() throws IOException {
     snapshotStrategy.close();
     cancelStreamRegistry.close();
-    delegate.close();
+    if (delegate != null) {
+      delegate.close();
+    }
     deleteWorkingDirectory();
     releaseSharedResources();
   }
@@ -227,24 +286,37 @@ public final class RocksDBNativeKeyedStateBackend<K>
     }
   }
 
-  // ---- Pure delegation --------------------------------------------------------------------------
+  // ---- Wrapper-owned metadata and key context ---------------------------------------------------
 
   @Override
   public KeyGroupRange getKeyGroupRange() {
-    return delegate.getKeyGroupRange();
+    return keyGroupRange;
+  }
+
+  @Override
+  public TypeSerializer<K> getKeySerializer() {
+    return delegate == null ? keySerializer : delegate.getKeySerializer();
   }
 
   @Override
   public void setCurrentKey(K newKey) {
+    if (delegate == null) {
+      bufferedKeyGroup = KeyGroupRangeAssignment.assignToKeyGroup(newKey, numberOfKeyGroups);
+      bufferedKey = newKey;
+      return;
+    }
     delegate.setCurrentKey(newKey);
   }
 
   @Override
   public K getCurrentKey() {
-    return delegate.getCurrentKey();
+    return delegate == null ? bufferedKey : delegate.getCurrentKey();
   }
 
   int getCurrentKeyGroupIndex() {
+    if (delegate == null) {
+      return bufferedKeyGroup;
+    }
     if (delegate instanceof AbstractKeyedStateBackend) {
       return ((AbstractKeyedStateBackend<?>) delegate).getCurrentKeyGroupIndex();
     }
@@ -254,6 +326,13 @@ public final class RocksDBNativeKeyedStateBackend<K>
   }
 
   void clearCurrentKey() {
+    if (delegate == null) {
+      bufferedKey = null;
+      if (keyGroupRange.getNumberOfKeyGroups() > 0) {
+        bufferedKeyGroup = keyGroupRange.getStartKeyGroup();
+      }
+      return;
+    }
     if (delegate instanceof AbstractKeyedStateBackend) {
       CanonicalNativeState.clearKeyContext((AbstractKeyedStateBackend<?>) delegate);
       return;
@@ -265,13 +344,15 @@ public final class RocksDBNativeKeyedStateBackend<K>
 
   @Override
   public void setCurrentKeyAndKeyGroup(K newKey, int newKeyGroupIndex) {
+    if (delegate == null) {
+      bufferedKey = newKey;
+      bufferedKeyGroup = newKeyGroupIndex;
+      return;
+    }
     delegate.setCurrentKeyAndKeyGroup(newKey, newKeyGroupIndex);
   }
 
-  @Override
-  public TypeSerializer<K> getKeySerializer() {
-    return delegate.getKeySerializer();
-  }
+  // ---- Delegate-materializing state access ------------------------------------------------------
 
   @Override
   public <N, S extends State, T> void applyToAllKeys(
@@ -281,22 +362,22 @@ public final class RocksDBNativeKeyedStateBackend<K>
       KeyedStateFunction<K, S> function)
       throws Exception {
     delegateStateUsed = true;
-    delegate.applyToAllKeys(namespace, namespaceSerializer, stateDescriptor, function);
+    delegate().applyToAllKeys(namespace, namespaceSerializer, stateDescriptor, function);
   }
 
   @Override
   public <N> Stream<K> getKeys(String state, N namespace) {
-    return delegate.getKeys(state, namespace);
+    return delegateUnchecked().getKeys(state, namespace);
   }
 
   @Override
   public <N> Stream<K> getKeys(List<String> states, N namespace) {
-    return delegate.getKeys(states, namespace);
+    return delegateUnchecked().getKeys(states, namespace);
   }
 
   @Override
   public <N> Stream<Tuple2<K, N>> getKeysAndNamespaces(String state) {
-    return delegate.getKeysAndNamespaces(state);
+    return delegateUnchecked().getKeysAndNamespaces(state);
   }
 
   @Override
@@ -304,7 +385,7 @@ public final class RocksDBNativeKeyedStateBackend<K>
       TypeSerializer<N> namespaceSerializer, StateDescriptor<S, T> stateDescriptor)
       throws Exception {
     delegateStateUsed = true;
-    return delegate.getOrCreateKeyedState(namespaceSerializer, stateDescriptor);
+    return delegate().getOrCreateKeyedState(namespaceSerializer, stateDescriptor);
   }
 
   @Override
@@ -312,17 +393,17 @@ public final class RocksDBNativeKeyedStateBackend<K>
       N namespace, TypeSerializer<N> namespaceSerializer, StateDescriptor<S, ?> stateDescriptor)
       throws Exception {
     delegateStateUsed = true;
-    return delegate.getPartitionedState(namespace, namespaceSerializer, stateDescriptor);
+    return delegate().getPartitionedState(namespace, namespaceSerializer, stateDescriptor);
   }
 
   @Override
   public void registerKeySelectionListener(KeySelectionListener<K> listener) {
-    delegate.registerKeySelectionListener(listener);
+    delegateUnchecked().registerKeySelectionListener(listener);
   }
 
   @Override
   public boolean deregisterKeySelectionListener(KeySelectionListener<K> listener) {
-    return delegate.deregisterKeySelectionListener(listener);
+    return delegate != null && delegate.deregisterKeySelectionListener(listener);
   }
 
   @Nonnull
@@ -333,7 +414,7 @@ public final class RocksDBNativeKeyedStateBackend<K>
       @Nonnull StateSnapshotTransformFactory<SEV> snapshotTransformFactory)
       throws Exception {
     delegateStateUsed = true;
-    return delegate.createOrUpdateInternalState(
+    return delegate().createOrUpdateInternalState(
         namespaceSerializer, stateDesc, snapshotTransformFactory);
   }
 
@@ -343,16 +424,16 @@ public final class RocksDBNativeKeyedStateBackend<K>
       KeyGroupedInternalPriorityQueue<T> create(
           @Nonnull String stateName, @Nonnull TypeSerializer<T> byteOrderedElementSerializer) {
     delegateStateUsed = true;
-    return delegate.create(stateName, byteOrderedElementSerializer);
+    return delegateUnchecked().create(stateName, byteOrderedElementSerializer);
   }
 
   @Override
   public boolean isSafeToReuseKVState() {
-    return delegate.isSafeToReuseKVState();
+    return delegateUnchecked().isSafeToReuseKVState();
   }
 
   @Override
   public String getBackendTypeIdentifier() {
-    return delegate.getBackendTypeIdentifier();
+    return delegateUnchecked().getBackendTypeIdentifier();
   }
 }

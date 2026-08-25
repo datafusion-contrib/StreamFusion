@@ -149,3 +149,4 @@ nav:
       - Post-exchange batch coalescing: optimizations/post-exchange-coalescing.md
       - Shared native sources: optimizations/shared-native-sources.md
       - RocksDB write-through: optimizations/rocksdb-write-through.md
+      - Lazy delegate state backend: optimizations/lazy-delegate-state-backend.md

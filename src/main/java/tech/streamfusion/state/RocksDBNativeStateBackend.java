@@ -124,9 +124,8 @@ public final class RocksDBNativeStateBackend implements StateBackend {
       }
     }
 
-    CheckpointableKeyedStateBackend<K> inner =
-        delegate.createKeyedStateBackend(
-            new KeyedStateBackendParametersImpl<>(parameters).setStateHandles(delegateHandles));
+    KeyedStateBackendParametersImpl<K> delegateParameters =
+        new KeyedStateBackendParametersImpl<>(parameters).setStateHandles(delegateHandles);
     File workingDirectory = workingDirectory(parameters);
     List<RocksDBRestoredSource> sources = new ArrayList<>();
     for (int i = 0; i < nativeHandles.size(); i++) {
@@ -148,13 +147,26 @@ public final class RocksDBNativeStateBackend implements StateBackend {
       IncrementalRemoteKeyedStateHandle restored = nativeHandles.get(0);
       strategy.seedRestored(restored.getCheckpointId(), restored.getSharedState());
     }
-    return new RocksDBNativeKeyedStateBackend<>(
-        inner,
-        strategy,
-        workingDirectory,
-        sources,
-        nativeOptions.json(),
-        leaseSharedResources(parameters));
+    RocksDBNativeKeyedStateBackend<K> backend =
+        new RocksDBNativeKeyedStateBackend<>(
+            () -> delegate.createKeyedStateBackend(delegateParameters),
+            parameters.getKeyGroupRange(),
+            parameters.getKeySerializer(),
+            parameters.getNumberOfKeyGroups(),
+            strategy,
+            workingDirectory,
+            sources,
+            nativeOptions.json(),
+            leaseSharedResources(parameters));
+    if (!delegateHandles.isEmpty()) {
+      try {
+        backend.materializeDelegate();
+      } catch (Exception failure) {
+        backend.dispose();
+        throw failure;
+      }
+    }
+    return backend;
   }
 
   private File workingDirectory(KeyedStateBackendParameters<?> parameters) {
