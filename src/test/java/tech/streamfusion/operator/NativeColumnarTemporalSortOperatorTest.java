@@ -87,7 +87,7 @@ class NativeColumnarTemporalSortOperatorTest {
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness()
       throws Exception {
     return new KeyedOneInputStreamOperatorTestHarness<>(
-        new NativeColumnarTemporalSortOperator(1), batch -> 0, Types.INT, 1, 1, 0);
+        new NativeColumnarTemporalSortOperator(1, SCHEMA), batch -> 0, Types.INT, 1, 1, 0);
   }
 
   private static RowData event(long v, long rtMillis) {

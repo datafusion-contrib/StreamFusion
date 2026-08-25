@@ -1213,6 +1213,52 @@ public final class Native {
 
   public static native void closeRocksDBKeepLastDeduplicator(long handle);
 
+  /**
+   * Whether the keep-first deduplicator's input row shape is encodable by the direct RocksDB
+   * store's row codec; anything else stays on the snapshot-store compat path.
+   */
+  public static native boolean rocksdbKeepFirstDeduplicatorSupported(long schemaAddress);
+
+  /**
+   * Creates a watermark-buffered keep-first deduplicator whose pending candidates and fired
+   * markers live directly in a Rust-owned RocksDB instance. The declared input schema builds the
+   * row codec the persisted rows are decoded with, so restored bytes parse before any batch
+   * arrives.
+   */
+  public static native long createRocksDBKeepFirstDeduplicator(
+      int[] partitionColumns,
+      int[] keyTimestampPrecisions,
+      int rowtimeColumn,
+      long stateTtlMillis,
+      long nowMillis,
+      long memoryBudgetBytes,
+      long schemaAddress,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  public static native void pushRocksDBKeepFirstDeduplicator(
+      long handle, long inArrayAddress, long inSchemaAddress, long nowMillis);
+
+  public static native void flushRocksDBKeepFirstDeduplicator(
+      long handle, long watermarkMillis, long nowMillis, long outArrayAddress, long outSchemaAddress);
+
+  public static native String[] checkpointRocksDBKeepFirstDeduplicator(
+      long handle, String snapshotDirectory);
+
+  /** Materializes direct RocksDB keep-first state as backend-independent key-group partitions. */
+  public static native byte[][] snapshotRocksDBKeepFirstDeduplicatorPartitions(long handle);
+
+  public static native long rocksdbKeepFirstDeduplicatorStateBytes(long handle);
+
+  public static native void closeRocksDBKeepFirstDeduplicator(long handle);
+
   /** Creates an updating joiner backed directly by a Rust-owned RocksDB instance. */
   public static native long createRocksDBUpdatingJoiner(
       int[] leftKeys,
@@ -1397,6 +1443,110 @@ public final class Native {
   public static native long rocksdbIntervalJoinerStateBytes(long handle);
 
   public static native void closeRocksDBIntervalJoiner(long handle);
+
+  /**
+   * Whether both temporal-join input row shapes (and their shared equi-key shape) are encodable by
+   * the direct RocksDB store's row codec; anything else stays on the snapshot-store compat path.
+   */
+  public static native boolean rocksdbTemporalJoinerSupported(
+      int[] leftKeys, int[] rightKeys, long leftSchemaAddress, long rightSchemaAddress);
+
+  /**
+   * Creates an event-time temporal joiner whose buffered probe rows, versioned build side, and
+   * cleanup deadlines live directly in a Rust-owned RocksDB instance. The declared input schemas
+   * build the row codecs the persisted rows are decoded with, so restored bytes parse before any
+   * batch arrives.
+   */
+  public static native long createRocksDBTemporalJoiner(
+      int[] leftKeys,
+      int[] rightKeys,
+      int[] keyTimestampPrecisions,
+      int leftTime,
+      int rightTime,
+      int joinType,
+      long leftSchemaAddress,
+      long rightSchemaAddress,
+      int[] predKinds,
+      int[] predPayload,
+      int[] predChildCounts,
+      long[] predLongs,
+      double[] predDoubles,
+      String[] predStrings,
+      long stateTtlMillis,
+      long nowMillis,
+      long memoryBudgetBytes,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  public static native void pushLeftRocksDBTemporalJoiner(
+      long handle, long inArrayAddress, long inSchemaAddress, long nowMillis);
+
+  public static native void pushRightRocksDBTemporalJoiner(
+      long handle, long inArrayAddress, long inSchemaAddress, long nowMillis);
+
+  public static native void advanceRocksDBTemporalJoiner(
+      long handle, long watermarkMillis, long nowMillis, long outArrayAddress, long outSchemaAddress);
+
+  public static native String[] checkpointRocksDBTemporalJoiner(
+      long handle, String snapshotDirectory);
+
+  /** Materializes direct RocksDB temporal-join state as backend-independent key-group partitions. */
+  public static native byte[][] snapshotRocksDBTemporalJoinerPartitions(long handle);
+
+  public static native long rocksdbTemporalJoinerStateBytes(long handle);
+
+  public static native void closeRocksDBTemporalJoiner(long handle);
+
+  /**
+   * Whether the temporal sort's input row shape is encodable by the direct RocksDB store's row
+   * codec; anything else stays on the snapshot-store compat path.
+   */
+  public static native boolean rocksdbTemporalSorterSupported(long schemaAddress);
+
+  /**
+   * Creates an event-time sorter whose buffered rows live directly in a Rust-owned RocksDB
+   * instance. The declared input schema builds the row codec the persisted rows are decoded with,
+   * so restored bytes parse before any batch arrives.
+   */
+  public static native long createRocksDBTemporalSorter(
+      int rtColumn,
+      long memoryBudgetBytes,
+      long schemaAddress,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  public static native void pushRocksDBTemporalSorter(
+      long handle, long inArrayAddress, long inSchemaAddress);
+
+  public static native void flushRocksDBTemporalSorter(
+      long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
+
+  public static native String[] checkpointRocksDBTemporalSorter(
+      long handle, String snapshotDirectory);
+
+  /**
+   * Serializes the direct RocksDB sort buffer as the memory snapshot's own plain-IPC blob; the
+   * host frames it into the singleton key group exactly as it frames the memory snapshot.
+   */
+  public static native byte[] snapshotRocksDBTemporalSorter(long handle);
+
+  public static native long rocksdbTemporalSorterStateBytes(long handle);
+
+  public static native void closeRocksDBTemporalSorter(long handle);
 
   /**
    * Whether the aligned-window aggregate's key and accumulator-state shapes are encodable by the

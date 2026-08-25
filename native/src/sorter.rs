@@ -10,6 +10,10 @@ pub(crate) struct TemporalSorter {
     rt_column: usize,
     buffered: Vec<RecordBatch>,
     input_schema: Option<SchemaRef>,
+    /// Persistent-state mode: the buffered rows live in the persistent store — the in-memory
+    /// buffer stays empty, and a watermark firing is a range read over the stored rowtimes.
+    #[cfg(feature = "rocksdb-state")]
+    store: Option<crate::state::RocksTemporalSortBuffer>,
     pub(crate) memory: OperatorMemory,
 }
 
@@ -19,8 +23,42 @@ impl TemporalSorter {
             rt_column,
             buffered: Vec::new(),
             input_schema: None,
+            #[cfg(feature = "rocksdb-state")]
+            store: None,
             memory: OperatorMemory::unaccounted(),
         }
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_store(mut self, store: crate::state::RocksTemporalSortBuffer) -> Self {
+        self.store = Some(store);
+        self
+    }
+
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_read_through_budget(
+        mut self,
+        budget_bytes: i64,
+    ) -> Result<Self, DataFusionError> {
+        self.memory.attach("temporal-sort", budget_bytes, 0)?;
+        Ok(self)
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn store_mut(&mut self) -> &mut crate::state::RocksTemporalSortBuffer {
+        self.store.as_mut().expect("temporal-sort rocksdb store")
+    }
+
+    /// The persistent buffer serialized as the memory snapshot's own plain-IPC blob (empty bytes
+    /// when nothing is buffered), for backend-independent canonical savepoints.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn store_snapshot(&self) -> Result<Vec<u8>, DataFusionError> {
+        let store = self.store.as_ref().expect("temporal-sort rocksdb store");
+        Ok(store
+            .scan_buffered()?
+            .map(|batch| write_ipc(&batch))
+            .unwrap_or_default())
     }
 
     /// Bounds the sort buffer by the operator's task off-heap budget (negative = unaccounted),
@@ -33,6 +71,11 @@ impl TemporalSorter {
 
     pub(crate) fn push(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
         self.input_schema = Some(batch.schema());
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            let rowtimes = rt_to_millis(batch.column(self.rt_column));
+            return self.store_mut().push(&batch, &rowtimes);
+        }
         if self.memory.tracking() {
             self.memory.record(batch.get_array_memory_size() as isize);
         }
@@ -41,8 +84,21 @@ impl TemporalSorter {
     }
 
     /// Emits the rows the watermark has completed, sorted ascending by rowtime, and keeps the rest
-    /// buffered. Returns an empty batch when nothing is complete.
-    pub(crate) fn flush(&mut self, watermark: i64) -> RecordBatch {
+    /// buffered. Returns an empty batch when nothing is complete. Fallible only in
+    /// persistent-state mode (the firing reads the committed table).
+    pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            let store = self.store.as_mut().expect("temporal-sort rocksdb store");
+            let schema = store.schema();
+            return Ok(store
+                .take_complete(watermark)?
+                .unwrap_or_else(|| RecordBatch::new_empty(schema)));
+        }
+        Ok(self.flush_memory(watermark))
+    }
+
+    fn flush_memory(&mut self, watermark: i64) -> RecordBatch {
         let schema = match &self.input_schema {
             Some(schema) => schema.clone(),
             None => return RecordBatch::new_empty(Arc::new(Schema::empty())),
@@ -101,7 +157,7 @@ impl TemporalSorter {
         }
     }
 
-    fn restore(rt_column: usize, bytes: &[u8]) -> Self {
+    pub(crate) fn restore(rt_column: usize, bytes: &[u8]) -> Self {
         let mut sorter = TemporalSorter::new(rt_column);
         if !bytes.is_empty() {
             let reader =
@@ -201,10 +257,12 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushTemporalSorter<'local>
     out_array_address: jlong,
     out_schema_address: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
+    crate::bridge::jni_guard(env, move |mut env| {
         let sorter = unsafe { &mut *(handle as *mut TemporalSorter) };
-        let result = sorter.flush(watermark_millis);
-        export_record_batch(result, out_array_address, out_schema_address);
+        match sorter.flush(watermark_millis) {
+            Ok(result) => export_record_batch(result, out_array_address, out_schema_address),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
     })
 }
 

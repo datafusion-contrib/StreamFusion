@@ -2,6 +2,7 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import java.util.function.LongBinaryOperator;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
@@ -75,6 +76,47 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
     predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
   }
 
+  // The event-time temporal join is purely watermark-driven (Flink rejects a processing-time
+  // temporal table join), so every supported row shape can take the typed RocksDB data plane.
+  @Override
+  protected boolean usesDirectRocksDBState() {
+    return withSchemas(
+            (l, r) -> Native.rocksdbTemporalJoinerSupported(leftKeys, rightKeys, l, r) ? 1L : 0L)
+        != 0L;
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    return withSchemas(
+        (l, r) ->
+            Native.createRocksDBTemporalJoiner(
+                leftKeys, rightKeys, keyTimestampPrecisions(),
+                leftTime, rightTime, joinType, l, r,
+                predicate.kinds, predicate.payload, predicate.childCounts,
+                predicate.boundLongs(), predicate.doubles, predicate.strings,
+                stateTtlMillis,
+                getProcessingTimeService().getCurrentProcessingTime(),
+                memoryBudgetBytes(),
+                rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
+                rocksdb.aligned()));
+  }
+
+  @Override
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
+    return directRocksDBState()
+        ? Native.checkpointRocksDBTemporalJoiner(handle, snapshotDirectory)
+        : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected byte[][] snapshotCanonicalPartitions() {
+    return directRocksDBState()
+        ? Native.snapshotRocksDBTemporalJoinerPartitions(handle)
+        : snapshotRawPartitions();
+  }
+
   @Override
   protected long createHandle() {
     return withSchemas(
@@ -129,12 +171,18 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
 
   @Override
   protected void closeHandle() {
-    Native.closeTemporalJoiner(handle);
+    if (directRocksDBState()) {
+      Native.closeRocksDBTemporalJoiner(handle);
+    } else {
+      Native.closeTemporalJoiner(handle);
+    }
   }
 
   @Override
   protected long stateBytesHandle() {
-    return Native.temporalJoinerStateBytes(handle);
+    return directRocksDBState()
+        ? Native.rocksdbTemporalJoinerStateBytes(handle)
+        : Native.temporalJoinerStateBytes(handle);
   }
 
   /**
@@ -176,7 +224,15 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
       // Flink's cleanup-timer clock: the processing-time service is System.currentTimeMillis in
       // production and harness-controlled in tests, so expiry is deterministic to test.
       long now = getProcessingTimeService().getCurrentProcessingTime();
-      if (left) {
+      if (directRocksDBState()) {
+        if (left) {
+          Native.pushLeftRocksDBTemporalJoiner(
+              handle, array.memoryAddress(), schema.memoryAddress(), now);
+        } else {
+          Native.pushRightRocksDBTemporalJoiner(
+              handle, array.memoryAddress(), schema.memoryAddress(), now);
+        }
+      } else if (left) {
         Native.pushLeftTemporalJoiner(handle, array.memoryAddress(), schema.memoryAddress(), now);
       } else {
         Native.pushRightTemporalJoiner(handle, array.memoryAddress(), schema.memoryAddress(), now);
@@ -203,12 +259,21 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
   private void advance(long watermark) {
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      Native.advanceTemporalJoiner(
-          handle,
-          watermark,
-          getProcessingTimeService().getCurrentProcessingTime(),
-          array.memoryAddress(),
-          schema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.advanceRocksDBTemporalJoiner(
+            handle,
+            watermark,
+            getProcessingTimeService().getCurrentProcessingTime(),
+            array.memoryAddress(),
+            schema.memoryAddress());
+      } else {
+        Native.advanceTemporalJoiner(
+            handle,
+            watermark,
+            getProcessingTimeService().getCurrentProcessingTime(),
+            array.memoryAddress(),
+            schema.memoryAddress());
+      }
       VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
       if (out.getRowCount() > 0) {
         ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));

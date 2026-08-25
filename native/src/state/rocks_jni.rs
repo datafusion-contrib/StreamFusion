@@ -805,6 +805,227 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBKeepLastDedupli
 }
 
 #[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbKeepFirstDeduplicatorSupported<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    schema_address: jlong,
+) -> jboolean {
+    crate::bridge::jni_guard(env, move |_env| {
+        let schema = import_schema(schema_address);
+        let row_types: Vec<DataType> = schema
+            .fields()
+            .iter()
+            .map(|field| field.data_type().clone())
+            .collect();
+        rocks_row_supported(&row_types) as jboolean
+    })
+}
+
+/// [`open_store`] for the keep-first deduplicator's two-table store: fresh when no restored
+/// sources exist, otherwise merged once with this subtask's key-group range.
+#[allow(clippy::too_many_arguments)]
+fn open_keep_first_dedup_store(
+    env: &mut JNIEnv,
+    config: RocksStoreConfig,
+    schema: SchemaRef,
+    partition_columns: &[usize],
+    source_directories: &JObjectArray,
+    source_snapshot_tokens: &JObjectArray,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> Result<RocksKeepFirstDedupStore, DataFusionError> {
+    let source_dirs: Vec<_> = read_strings(env, source_directories)
+        .into_iter()
+        .flatten()
+        .collect();
+    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
+        .into_iter()
+        .flatten()
+        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
+        .collect();
+    if source_dirs.is_empty() {
+        RocksKeepFirstDedupStore::create(config, schema, partition_columns)
+    } else {
+        RocksKeepFirstDedupStore::open_merged(
+            config,
+            schema,
+            partition_columns,
+            &source_dirs
+                .into_iter()
+                .zip(source_tokens)
+                .collect::<Vec<_>>(),
+            key_group_start..=key_group_end,
+            aligned != 0,
+        )
+    }
+}
+
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBKeepFirstDeduplicator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    partition_columns: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
+    rt_column: jint,
+    state_ttl_millis: jlong,
+    now_millis: jlong,
+    memory_budget_bytes: jlong,
+    schema_address: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    options_json: JString<'local>,
+    shared_resources: jlong,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let partitions = read_columns(&env, &partition_columns);
+        let schema = import_schema(schema_address);
+        let config = RocksStoreConfig {
+            table_dir: read_string(&mut env, &table_directory),
+            max_parallelism: max_parallelism as usize,
+            options_json: read_string(&mut env, &options_json),
+            ttl_ms: state_ttl_millis.max(0),
+            shared_resources,
+        };
+        let store = open_keep_first_dedup_store(
+            &mut env,
+            config,
+            schema,
+            &partitions,
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+        );
+        let dedup = store.and_then(|store| {
+            let mut dedup = KeepFirstDeduplicator::new(partitions, rt_column as usize)
+                .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
+                .with_state_ttl(state_ttl_millis)
+                .with_store(store);
+            dedup.adopt_store_ttl(now_millis)?;
+            dedup.with_read_through_budget(memory_budget_bytes)
+        });
+        boxed_or_throw(&mut env, dedup)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pushRocksDBKeepFirstDeduplicator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array: jlong,
+    in_schema: jlong,
+    now_millis: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let dedup = unsafe { &mut *(handle as *mut KeepFirstDeduplicator) };
+        // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+        let result = {
+            let batch = import_record_batch(in_array, in_schema);
+            dedup.push(&batch, now_millis)
+        };
+        if let Err(e) = result {
+            throw_memory_limit(&mut env, &e.to_string());
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBKeepFirstDeduplicator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark_millis: jlong,
+    now_millis: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let dedup = unsafe { &mut *(handle as *mut KeepFirstDeduplicator) };
+        match dedup.flush(watermark_millis, now_millis) {
+            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBKeepFirstDeduplicator<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    snapshot_directory: JString<'local>,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let snapshot_directory = read_string(&mut env, &snapshot_directory);
+        let dedup = unsafe { &mut *(handle as *mut KeepFirstDeduplicator) };
+        match dedup.store_mut().checkpoint(&snapshot_directory) {
+            Ok(m) => manifest_array(&mut env, &m),
+            Err(e) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB checkpoint failed: {e}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBKeepFirstDeduplicatorPartitions<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let dedup = unsafe { &*(handle as *const KeepFirstDeduplicator) };
+        match dedup.canonical_partitions() {
+            Ok(partitions) => {
+                keyed_state_partition_array(&mut env, partitions, "rocksdb-keep-first-dedup")
+            }
+            Err(error) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB canonical snapshot failed: {error}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_rocksdbKeepFirstDeduplicatorStateBytes,
+    KeepFirstDeduplicator
+);
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBKeepFirstDeduplicator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<KeepFirstDeduplicator>(handle));
+    })
+}
+
+#[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBUpdatingJoiner<'local>(
     env: JNIEnv<'local>,
@@ -1637,6 +1858,503 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBIntervalJoiner<
 ) {
     crate::bridge::jni_guard(env, move |_env| unsafe {
         drop(from_handle::<IntervalJoiner>(handle));
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbTemporalJoinerSupported<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    left_keys: JIntArray<'local>,
+    right_keys: JIntArray<'local>,
+    left_schema_address: jlong,
+    right_schema_address: jlong,
+) -> jboolean {
+    crate::bridge::jni_guard(env, move |env| {
+        let left_schema = import_schema(left_schema_address);
+        let right_schema = import_schema(right_schema_address);
+        let row_types = |schema: &SchemaRef| -> Vec<DataType> {
+            schema
+                .fields()
+                .iter()
+                .map(|field| field.data_type().clone())
+                .collect()
+        };
+        let key_types = |schema: &SchemaRef, keys: &[usize]| -> Vec<DataType> {
+            keys.iter()
+                .map(|&column| schema.field(column).data_type().clone())
+                .collect()
+        };
+        let left = read_columns(&env, &left_keys);
+        let right = read_columns(&env, &right_keys);
+        (rocks_row_supported(&row_types(&left_schema))
+            && rocks_row_supported(&row_types(&right_schema))
+            && key_types(&left_schema, &left) == key_types(&right_schema, &right))
+            as jboolean
+    })
+}
+
+/// [`open_store`] for the temporal join's three-table store: fresh when no restored sources
+/// exist, otherwise merged once with this subtask's key-group range.
+#[allow(clippy::too_many_arguments)]
+fn open_temporal_join_store(
+    env: &mut JNIEnv,
+    config: RocksStoreConfig,
+    left_schema: SchemaRef,
+    right_schema: SchemaRef,
+    left_keys: &[usize],
+    source_directories: &JObjectArray,
+    source_snapshot_tokens: &JObjectArray,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> Result<RocksTemporalJoinStore, DataFusionError> {
+    let source_dirs: Vec<_> = read_strings(env, source_directories)
+        .into_iter()
+        .flatten()
+        .collect();
+    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
+        .into_iter()
+        .flatten()
+        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
+        .collect();
+    if source_dirs.is_empty() {
+        RocksTemporalJoinStore::create(config, left_schema, right_schema, left_keys)
+    } else {
+        RocksTemporalJoinStore::open_merged(
+            config,
+            left_schema,
+            right_schema,
+            left_keys,
+            &source_dirs
+                .into_iter()
+                .zip(source_tokens)
+                .collect::<Vec<_>>(),
+            key_group_start..=key_group_end,
+            aligned != 0,
+        )
+    }
+}
+
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTemporalJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    left_keys: JIntArray<'local>,
+    right_keys: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
+    left_time: jint,
+    right_time: jint,
+    join_type: jint,
+    left_schema_address: jlong,
+    right_schema_address: jlong,
+    pred_kinds: JIntArray<'local>,
+    pred_payload: JIntArray<'local>,
+    pred_child_counts: JIntArray<'local>,
+    pred_longs: JLongArray<'local>,
+    pred_doubles: JDoubleArray<'local>,
+    pred_strings: JObjectArray<'local>,
+    state_ttl_millis: jlong,
+    now_millis: jlong,
+    memory_budget_bytes: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    options_json: JString<'local>,
+    shared_resources: jlong,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let config = RocksStoreConfig {
+            table_dir: read_string(&mut env, &table_directory),
+            max_parallelism: max_parallelism as usize,
+            options_json: read_string(&mut env, &options_json),
+            ttl_ms: 0,
+            shared_resources,
+        };
+        let left = read_columns(&env, &left_keys);
+        let right = read_columns(&env, &right_keys);
+        let left_schema = import_schema(left_schema_address);
+        let right_schema = import_schema(right_schema_address);
+        let store = open_temporal_join_store(
+            &mut env,
+            config,
+            left_schema.clone(),
+            right_schema.clone(),
+            &left,
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+        );
+        let joiner = store.and_then(|store| {
+            let predicate = read_join_predicate(
+                &mut env,
+                &pred_kinds,
+                &pred_payload,
+                &pred_child_counts,
+                &pred_longs,
+                &pred_doubles,
+                &pred_strings,
+            );
+            let mut joiner = TemporalJoiner::new(
+                left,
+                right,
+                left_time as usize,
+                right_time as usize,
+                JoinKind::from_code(join_type),
+                left_schema,
+                right_schema,
+                predicate,
+            )
+            .with_state_retention(state_ttl_millis)
+            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
+            .with_store(store);
+            joiner.adopt_store_retention(now_millis)?;
+            joiner.with_read_through_budget(memory_budget_bytes)
+        });
+        boxed_or_throw(&mut env, joiner)
+    })
+}
+
+fn push_rocksdb_temporal_joiner(
+    env: JNIEnv,
+    handle: jlong,
+    is_left: bool,
+    in_array: jlong,
+    in_schema: jlong,
+    now_millis: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let joiner = unsafe { &mut *(handle as *mut TemporalJoiner) };
+        // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+        let result = {
+            let batch = import_record_batch(in_array, in_schema);
+            if is_left {
+                joiner.push_left(&batch, now_millis)
+            } else {
+                joiner.push_right(&batch, now_millis)
+            }
+        };
+        if let Err(e) = result {
+            throw_memory_limit(&mut env, &e.to_string());
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pushLeftRocksDBTemporalJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array: jlong,
+    in_schema: jlong,
+    now_millis: jlong,
+) {
+    push_rocksdb_temporal_joiner(env, handle, true, in_array, in_schema, now_millis)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pushRightRocksDBTemporalJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array: jlong,
+    in_schema: jlong,
+    now_millis: jlong,
+) {
+    push_rocksdb_temporal_joiner(env, handle, false, in_array, in_schema, now_millis)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_advanceRocksDBTemporalJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark_millis: jlong,
+    now_millis: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let joiner = unsafe { &mut *(handle as *mut TemporalJoiner) };
+        match joiner.advance(watermark_millis, now_millis) {
+            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBTemporalJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    snapshot_directory: JString<'local>,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let snapshot_directory = read_string(&mut env, &snapshot_directory);
+        let joiner = unsafe { &mut *(handle as *mut TemporalJoiner) };
+        match joiner.store_mut().checkpoint(&snapshot_directory) {
+            Ok(m) => manifest_array(&mut env, &m),
+            Err(e) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB checkpoint failed: {e}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBTemporalJoinerPartitions<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let joiner = unsafe { &*(handle as *const TemporalJoiner) };
+        match joiner.canonical_partitions() {
+            Ok(partitions) => {
+                keyed_state_partition_array(&mut env, partitions, "rocksdb-temporal-join")
+            }
+            Err(error) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB canonical snapshot failed: {error}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_rocksdbTemporalJoinerStateBytes,
+    TemporalJoiner
+);
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBTemporalJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<TemporalJoiner>(handle));
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbTemporalSorterSupported<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    schema_address: jlong,
+) -> jboolean {
+    crate::bridge::jni_guard(env, move |_env| {
+        let schema = import_schema(schema_address);
+        let row_types: Vec<DataType> = schema
+            .fields()
+            .iter()
+            .map(|field| field.data_type().clone())
+            .collect();
+        rocks_row_supported(&row_types) as jboolean
+    })
+}
+
+/// [`open_store`] for the temporal sort's unkeyed row buffer: fresh when no restored sources
+/// exist, otherwise merged once with this subtask's key-group range (always group zero).
+#[allow(clippy::too_many_arguments)]
+fn open_temporal_sort_buffer(
+    env: &mut JNIEnv,
+    config: RocksStoreConfig,
+    schema: SchemaRef,
+    source_directories: &JObjectArray,
+    source_snapshot_tokens: &JObjectArray,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> Result<RocksTemporalSortBuffer, DataFusionError> {
+    let source_dirs: Vec<_> = read_strings(env, source_directories)
+        .into_iter()
+        .flatten()
+        .collect();
+    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
+        .into_iter()
+        .flatten()
+        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
+        .collect();
+    if source_dirs.is_empty() {
+        RocksTemporalSortBuffer::create(config, schema)
+    } else {
+        RocksTemporalSortBuffer::open_merged(
+            config,
+            schema,
+            &source_dirs
+                .into_iter()
+                .zip(source_tokens)
+                .collect::<Vec<_>>(),
+            key_group_start..=key_group_end,
+            aligned != 0,
+        )
+    }
+}
+
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTemporalSorter<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    rt_column: jint,
+    memory_budget_bytes: jlong,
+    schema_address: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    options_json: JString<'local>,
+    shared_resources: jlong,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let config = RocksStoreConfig {
+            table_dir: read_string(&mut env, &table_directory),
+            max_parallelism: max_parallelism as usize,
+            options_json: read_string(&mut env, &options_json),
+            ttl_ms: 0,
+            shared_resources,
+        };
+        let store = open_temporal_sort_buffer(
+            &mut env,
+            config,
+            import_schema(schema_address),
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+        );
+        let sorter = store.and_then(|store| {
+            TemporalSorter::new(rt_column as usize)
+                .with_store(store)
+                .with_read_through_budget(memory_budget_bytes)
+        });
+        boxed_or_throw(&mut env, sorter)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pushRocksDBTemporalSorter<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array: jlong,
+    in_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let sorter = unsafe { &mut *(handle as *mut TemporalSorter) };
+        // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+        let result = {
+            let batch = import_record_batch(in_array, in_schema);
+            sorter.push(batch)
+        };
+        if let Err(e) = result {
+            throw_memory_limit(&mut env, &e.to_string());
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBTemporalSorter<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark_millis: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let sorter = unsafe { &mut *(handle as *mut TemporalSorter) };
+        match sorter.flush(watermark_millis) {
+            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBTemporalSorter<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    snapshot_directory: JString<'local>,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let snapshot_directory = read_string(&mut env, &snapshot_directory);
+        let sorter = unsafe { &mut *(handle as *mut TemporalSorter) };
+        match sorter.store_mut().checkpoint(&snapshot_directory) {
+            Ok(m) => manifest_array(&mut env, &m),
+            Err(e) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB checkpoint failed: {e}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+/// The persistent buffer as the memory snapshot's own plain-IPC blob; the host frames it into its
+/// singleton key group exactly as it frames the memory snapshot.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBTemporalSorter<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jni::sys::jbyteArray {
+    crate::bridge::jni_guard(env, move |env| {
+        let sorter = unsafe { &*(handle as *const TemporalSorter) };
+        match sorter.store_snapshot() {
+            Ok(bytes) => env
+                .byte_array_from_slice(&bytes)
+                .expect("failed to allocate sort snapshot array")
+                .into_raw(),
+            Err(error) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB canonical snapshot failed: {error}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_rocksdbTemporalSorterStateBytes,
+    TemporalSorter
+);
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBTemporalSorter<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<TemporalSorter>(handle));
     })
 }
 

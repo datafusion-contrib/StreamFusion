@@ -8,14 +8,20 @@
 //! last-write timestamp as a fixed 8-byte prefix so the compaction filter never parses the row.
 
 pub(crate) mod interval_buffer;
+pub(crate) mod keep_first_dedup_store;
 pub(crate) mod over_agg_store;
 pub(crate) mod session_agg_store;
+pub(crate) mod temporal_join_store;
+pub(crate) mod temporal_sort_buffer;
 pub(crate) mod window_agg_store;
 pub(crate) mod window_buffer;
 pub(crate) mod window_rank_store;
 pub(crate) use interval_buffer::{BufferedIntervalRow, RocksIntervalBuffer};
+pub(crate) use keep_first_dedup_store::{RocksKeepFirstDedupStore, StoredCandidate};
 pub(crate) use over_agg_store::RocksOverAggStore;
 pub(crate) use session_agg_store::RocksSessionAggStore;
+pub(crate) use temporal_join_store::RocksTemporalJoinStore;
+pub(crate) use temporal_sort_buffer::RocksTemporalSortBuffer;
 pub(crate) use window_agg_store::RocksWindowAggStore;
 pub(crate) use window_buffer::RocksWindowBuffer;
 pub(crate) use window_rank_store::RocksWindowRankStore;

@@ -5039,7 +5039,7 @@ fn sort_buffer_over_budget_fails_and_flush_releases() {
         .push(join_batch(vec![1, 2], vec![10, 20], vec![0, 1000]))
         .unwrap();
     assert!(sorter.memory.state_bytes > 0);
-    sorter.flush(i64::MAX);
+    sorter.flush(i64::MAX).unwrap();
     assert_eq!(sorter.memory.state_bytes, 0); // everything emitted -> buffer released
 
     let mut tight = TemporalSorter::new(2).with_memory_budget(16).unwrap();

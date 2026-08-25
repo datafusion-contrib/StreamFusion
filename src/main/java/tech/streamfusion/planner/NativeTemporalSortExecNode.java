@@ -57,7 +57,7 @@ public class NativeTemporalSortExecNode extends ExecNodeBase<ArrowBatch>
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
-            new NativeColumnarTemporalSortOperator(rowtimeColumn),
+            new NativeColumnarTemporalSortOperator(rowtimeColumn, (RowType) getOutputType()),
             ArrowBatchTypeInformation.INSTANCE,
             1,
             false);

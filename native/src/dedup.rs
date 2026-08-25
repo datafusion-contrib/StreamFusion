@@ -39,6 +39,11 @@ pub(crate) struct KeepFirstDeduplicator {
     key_types: Vec<DataType>,
     schema: Option<SchemaRef>,
     snapshot_cache: Option<DedupSnapshotCache>,
+    /// Persistent-state mode: the pending candidates and fired markers live in the persistent
+    /// store; the in-memory batch and marker map stay empty, and the watermark firing is a range
+    /// read over the pending table.
+    #[cfg(feature = "rocksdb-state")]
+    store: Option<crate::state::RocksKeepFirstDedupStore>,
     pub(crate) memory: OperatorMemory,
 }
 
@@ -59,6 +64,8 @@ impl KeepFirstDeduplicator {
             key_types: Vec::new(),
             schema: None,
             snapshot_cache: None,
+            #[cfg(feature = "rocksdb-state")]
+            store: None,
             memory: OperatorMemory::unaccounted(),
         }
     }
@@ -86,6 +93,41 @@ impl KeepFirstDeduplicator {
     pub(crate) fn with_state_ttl(mut self, ttl_ms: i64) -> Self {
         self.ttl_ms = ttl_ms.max(0);
         self
+    }
+
+    /// Moves onto the persistent store, resuming the late-data watermark it persisted.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_store(mut self, store: crate::state::RocksKeepFirstDedupStore) -> Self {
+        self.current_watermark = store.watermark();
+        self.store = Some(store);
+        self
+    }
+
+    /// Attaches the task off-heap budget for a backend that starts with nothing resident.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_read_through_budget(
+        mut self,
+        budget_bytes: i64,
+    ) -> Result<Self, DataFusionError> {
+        self.memory
+            .attach("keep-first-deduplicate", budget_bytes, 0)?;
+        Ok(self)
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn store_mut(&mut self) -> &mut crate::state::RocksKeepFirstDedupStore {
+        self.store.as_mut().expect("keep-first dedup rocksdb store")
+    }
+
+    /// Restore-time enable-TTL migration for the persistent path, exactly as `restore` stamps a
+    /// raw snapshot: markers restored without a timestamp (a pre-TTL writer) are stamped the
+    /// restore time instead of expiring on first probe.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn adopt_store_ttl(&mut self, now_ms: i64) -> Result<(), DataFusionError> {
+        if self.ttl_ms > 0 {
+            self.store_mut().adopt_ttl(now_ms)?;
+        }
+        Ok(())
     }
 
     /// Reclaims every marker whose TTL elapsed with no further probe — the lazy per-probe expiry
@@ -131,6 +173,10 @@ impl KeepFirstDeduplicator {
             .collect();
         let live = filter_record_batch(batch, &live_mask).expect("dedup late filter");
         self.late_drops += (batch.num_rows() - live.num_rows()) as u64;
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.push_store(&live, now_ms);
+        }
         let ttl = StateTtl::new(self.ttl_ms, now_ms);
         // The sweep reclaims markers no later row ever probes. Once per TTL period bounds its
         // amortized cost at one map walk per period.
@@ -215,14 +261,79 @@ impl KeepFirstDeduplicator {
         RecordBatch::try_new(batch.schema(), columns).expect("dedup compacted batch")
     }
 
-    /// Persistent-state arrival path: the batch reduces to its per-key minimum-rowtime winners,
-    /// the store answers each winner's status in one batched committed probe, and only fresh keys
-    /// and strict improvements stage into the write buffer. Nothing is emitted here — emission is
-    /// watermark-driven (`flush`).
+    /// Persistent-state arrival path: the (already late-filtered) batch's touched keys probe the
+    /// committed markers and candidates with one multi_get per table — an expired marker deletes
+    /// on read and reads as absent, a live one drops the row — and only fresh keys and strict
+    /// rowtime improvements write through, each under a fresh sequence so a later firing
+    /// reproduces the memory path's emission order. Nothing is emitted here.
+    #[cfg(feature = "rocksdb-state")]
+    fn push_store(&mut self, live: &RecordBatch, now_ms: i64) -> Result<(), DataFusionError> {
+        let ttl = StateTtl::new(self.ttl_ms, now_ms);
+        let partition_columns = self.partition_columns.clone();
+        let precisions = self.key_timestamp_precisions.clone();
+        let store = self.store.as_mut().expect("keep-first dedup rocksdb store");
+        let keys = store.entry_keys(live, &partition_columns, &precisions);
+        let mut distinct = keys.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        let mut blocked: HashSet<ByteKey> = HashSet::default();
+        let mut expired: Vec<ByteKey> = Vec::new();
+        for (key, stamp) in store.markers(&distinct)? {
+            match stamp {
+                Some(stamp) if ttl.expired(stamp) => expired.push(key),
+                _ => {
+                    blocked.insert(key);
+                }
+            }
+        }
+        store.remove_markers(&expired)?;
+        let open: Vec<ByteKey> = distinct
+            .into_iter()
+            .filter(|key| !blocked.contains(key))
+            .collect();
+        let committed = store.candidates(&open)?;
+        let rt = rt_to_millis(live.column(self.rt_column));
+        let mut best: HashMap<&ByteKey, (i64, Option<usize>)> = HashMap::default();
+        for (key, (rowtime, _)) in &committed {
+            best.insert(key, (*rowtime, None));
+        }
+        for row in 0..live.num_rows() {
+            let key = &keys[row];
+            if blocked.contains(key) {
+                continue;
+            }
+            let rowtime = rt.value(row);
+            match best.get(key) {
+                Some((existing, _)) if *existing <= rowtime => {}
+                _ => {
+                    best.insert(key, (rowtime, Some(row)));
+                }
+            }
+        }
+        let mut winners: Vec<(usize, ByteKey, i64)> = best
+            .into_iter()
+            .filter_map(|(key, (rowtime, row))| row.map(|row| (row, key.clone(), rowtime)))
+            .collect();
+        winners.sort_unstable_by_key(|(row, _, _)| *row);
+        self.store_mut().put_candidates(live, &winners)
+    }
 
-    /// Persistent-state firing path: the store's overlay range read returns every candidate the
-    /// watermark released — committed and buffered — and stages their fired markers; the output
-    /// is those rows' payload columns.
+    /// Persistent-state firing path: the pending table's range read removes and returns every
+    /// candidate the watermark released in the memory path's emission order, stamping their fired
+    /// markers; the output is those rows' payload columns.
+    #[cfg(feature = "rocksdb-state")]
+    fn flush_store(&mut self, watermark: i64, now_ms: i64) -> Result<RecordBatch, DataFusionError> {
+        let ttl = StateTtl::new(self.ttl_ms, now_ms);
+        let stamp = ttl.enabled().then(|| ttl.now());
+        let store = self.store.as_mut().expect("keep-first dedup rocksdb store");
+        store.set_watermark(watermark);
+        let ready = store.take_ready(watermark, stamp)?;
+        if ready.is_empty() {
+            return Ok(self.empty());
+        }
+        let store = self.store.as_ref().expect("keep-first dedup rocksdb store");
+        store.decode(ready.iter().map(|candidate| candidate.row.as_ref()))
+    }
 
     /// Emits each pending key's candidate whose rowtime the watermark has now reached (insert-only),
     /// records those keys as emitted, and keeps the rest. Both partitions are columnar filters.
@@ -235,6 +346,10 @@ impl KeepFirstDeduplicator {
     ) -> Result<RecordBatch, DataFusionError> {
         self.snapshot_cache = None;
         self.current_watermark = watermark;
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.flush_store(watermark, now_ms);
+        }
         let Some(pending) = self.pending.take() else {
             return Ok(self.empty());
         };
@@ -508,6 +623,62 @@ impl KeepFirstDeduplicator {
         bytes.extend_from_slice(&pending);
         bytes.extend_from_slice(&emitted);
         KeepFirstDeduplicator::restore(partition_columns, rt_column, &bytes, restored_at_ms)
+    }
+}
+
+/// Exports the complete persistent state in the blob snapshot's per-key-group encoding
+/// (`[watermark][framed pending ipc][emitted ipc]`), for backend-independent canonical savepoints.
+#[cfg(feature = "rocksdb-state")]
+impl KeepFirstDeduplicator {
+    pub(crate) fn canonical_partitions(&self) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        use crate::state::{RocksKeepFirstDedupStore, StoredCandidate};
+        let store = self.store.as_ref().expect("keep-first dedup rocksdb store");
+        let pending = store.scan_pending()?;
+        let markers = store.scan_markers()?;
+        let mut pending_by_group: BTreeMap<i32, Vec<&StoredCandidate>> = BTreeMap::new();
+        for candidate in &pending {
+            pending_by_group
+                .entry(RocksKeepFirstDedupStore::key_group(&candidate.key))
+                .or_default()
+                .push(candidate);
+        }
+        let mut markers_by_group: BTreeMap<i32, Vec<(&ByteKey, i64)>> = BTreeMap::new();
+        for (key, stamp) in &markers {
+            markers_by_group
+                .entry(RocksKeepFirstDedupStore::key_group(key))
+                .or_default()
+                .push((key, stamp.unwrap_or(0)));
+        }
+        let mut groups: Vec<i32> = pending_by_group
+            .keys()
+            .chain(markers_by_group.keys())
+            .copied()
+            .collect();
+        groups.sort_unstable();
+        groups.dedup();
+        let mut snapshots = BTreeMap::new();
+        for group in groups {
+            let pending_part = match pending_by_group.get_mut(&group) {
+                Some(candidates) => {
+                    candidates.sort_unstable_by_key(|candidate| candidate.seq);
+                    Some(store.decode(candidates.iter().map(|candidate| candidate.row.as_ref()))?)
+                }
+                None => None,
+            };
+            let emitted_part = markers_by_group.get(&group).map(|entries| {
+                let keys: Vec<&ByteKey> = entries.iter().map(|(key, _)| *key).collect();
+                let mut fields = key_fields(store.key_types());
+                let mut columns = store.decode_key_columns(&keys);
+                if self.ttl_ms > 0 {
+                    let stamps: Vec<i64> = entries.iter().map(|(_, stamp)| *stamp).collect();
+                    fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
+                    columns.push(Arc::new(Int64Array::from(stamps)));
+                }
+                RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("dedup emitted")
+            });
+            snapshots.insert(group, self.snapshot_parts(pending_part, emitted_part));
+        }
+        Ok(snapshots)
     }
 }
 

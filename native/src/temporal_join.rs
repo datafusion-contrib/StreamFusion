@@ -62,15 +62,11 @@ pub(crate) struct TemporalJoiner {
     /// per min-retention period.
     last_sweep_ms: i64,
     pub(crate) memory: OperatorMemory,
-    /// Persistent-state mode: the probe rows and versioned build side live in the persistent store;
-    /// the in-memory maps stay empty, and firing rebuilds only the fired keys' version sets.
-    /// Persistent-state `cleanup_state`, keyed by the store's BinaryRow key so a fired deadline
-    /// addresses the same table rows. Resident in full and hydrated at restore — the hysteresis
-    /// re-arm is a read-modify-write on every element, so read-through would put a point read on
-    /// the push path — with every mutation written through to the `deadlines/` table.
-    /// Persistent-state buffered-probe-row counts per key (fed at push, drained at firing): the
-    /// post-fire re-registration needs "does the key still hold probe rows" without a store
-    /// read. Maintained only while cleaning; re-derived from the probe table at restore.
+    /// Persistent-state mode: the probe rows, the versioned build side, and the cleanup deadlines
+    /// live in the persistent store; the in-memory maps stay empty, and a watermark firing walks
+    /// the store's key-major tables instead.
+    #[cfg(feature = "rocksdb-state")]
+    store: Option<crate::state::RocksTemporalJoinStore>,
     key_timestamp_precisions: Vec<i32>,
 }
 
@@ -112,6 +108,8 @@ impl TemporalJoiner {
             cleanup_state: HashMap::default(),
             last_sweep_ms: 0,
             memory: OperatorMemory::unaccounted(),
+            #[cfg(feature = "rocksdb-state")]
+            store: None,
             key_timestamp_precisions: Vec::new(),
         }
     }
@@ -212,51 +210,38 @@ impl TemporalJoiner {
         self.last_sweep_ms = now_ms;
     }
 
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_store(mut self, store: crate::state::RocksTemporalJoinStore) -> Self {
+        self.store = Some(store);
+        self
+    }
+
     /// Attaches the task off-heap budget for a backend that starts with nothing resident.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_read_through_budget(
+        mut self,
+        budget_bytes: i64,
+    ) -> Result<Self, DataFusionError> {
+        self.memory.attach("temporal-join", budget_bytes, 0)?;
+        Ok(self)
+    }
 
-    /// Restore-time hydration of the persistent retention state: the resident deadline map from
-    /// the `deadlines/` table, the buffered-probe-row counts from the probe table, and — the
-    /// enable-flip migration, exactly as `restore` stamps the raw snapshot — every key holding
-    /// state on either side without a restored deadline is stamped `restored_at + max` (staged
-    /// so the stamp survives the next barrier).
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn store_mut(&mut self) -> &mut crate::state::RocksTemporalJoinStore {
+        self.store.as_mut().expect("temporal-join rocksdb store")
+    }
 
-    /// `register_cleanup` for the persistent path — same hysteresis over the resident map, with
-    /// a moved or created deadline written through to the deadlines table.
-
-    /// Whether the key's fired deadline makes its state observably gone at `now_ms`.
-
-    /// `clear_key` for the persistent path, batched: reads the keys' remaining rows on both
-    /// sides to address their primary keys — buffered probe rows INCLUDED, so an unfired left
-    /// row of a cleared key can never fire later — stages their tombstones, and drops the
-    /// deadline rows and the resident bookkeeping. Silent, like Flink's fired cleanup timer.
-
-    /// The lazy expiry check at a batch of key touches (the push paths): every touched key whose
-    /// deadline passed clears before the batch's rows stage, exactly as the memory path expires
-    /// per row before inserting it.
-
-    /// `maybe_sweep` for the persistent path: reclaims every key whose deadline passed with no
-    /// further touch, batch-reading its rows first to stage their tombstones.
-
-    /// The key-field timestamp descriptors, defaulting to non-timestamp per equi-key column.
-
-    /// The BinaryRow equi keys of a batch's rows, for the store's PK.
-
-    /// Persistent-state probe-side arrival: rows stage under their equi key with their event
-    /// time and changelog kind (packed as the trailing payload column). With cleaning on, a
-    /// touched key past its deadline clears first (as the memory path does per row), every key
-    /// re-arms under the hysteresis, and the rows join the buffered counts.
-
-    /// Persistent-state build-side arrival: one upsert per (key, version) — the deduplicate
-    /// merge engine IS Flink's last-write-wins per timestamp. Cleaning as on the probe side,
-    /// minus the buffered counts (versions never defer anything).
-
-    /// Persistent-state firing: the probe side's range read returns every buffered left row the
-    /// watermark passed (in arrival order, deletions staged); the fired keys pull their version
-    /// sets from the build side, each key rebuilding its ordered map for the valid-version
-    /// lookup; and a probed key's stale versions prune via staged deletions. With cleaning on, a
-    /// fired key whose deadline passed is decided BEFORE its rows resolve: Flink's timer fired
-    /// before this watermark arrived, so the key's state is gone and its rows emit NOTHING —
-    /// even for a LEFT join, exactly as the memory path skips the cleared key.
+    /// Restore-time enable-retention migration for the persistent path, exactly as `restore`
+    /// stamps a raw snapshot: every key holding state on either side without a restored deadline
+    /// is stamped a full max retention from the restore instead of expiring on first touch.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn adopt_store_retention(&mut self, now_ms: i64) -> Result<(), DataFusionError> {
+        if self.cleaning_enabled() {
+            let stamp = now_ms.saturating_add(self.max_retention_ms);
+            self.store_mut().adopt_retention(stamp)?;
+        }
+        Ok(())
+    }
 
     /// Bounds both sides' state by the operator's task off-heap budget (negative = unaccounted),
     /// accounting any restored state immediately.
@@ -309,6 +294,10 @@ impl TemporalJoiner {
         batch: &RecordBatch,
         now_ms: i64,
     ) -> Result<(), DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.push_store(batch, true, now_ms);
+        }
         let cleaning = self.cleaning_enabled();
         if cleaning {
             self.maybe_sweep(now_ms);
@@ -356,6 +345,10 @@ impl TemporalJoiner {
         batch: &RecordBatch,
         now_ms: i64,
     ) -> Result<(), DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.push_store(batch, false, now_ms);
+        }
         let cleaning = self.cleaning_enabled();
         if cleaning {
             self.maybe_sweep(now_ms);
@@ -409,11 +402,14 @@ impl TemporalJoiner {
         watermark: i64,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.advance_store(watermark, now_ms);
+        }
         let cleaning = self.cleaning_enabled();
         if cleaning {
             self.maybe_sweep(now_ms);
         }
-        let left_outer = self.join_type == JoinKind::LeftOuter;
         let has_pred = self.predicate.is_some();
 
         // Resolve each triggered left row to the build version valid at its time (an accumulate
@@ -485,9 +481,43 @@ impl TemporalJoiner {
             }
         }
 
+        // Drop versions older than the latest one still valid at the watermark; keep that one and all
+        // newer (Flink always keeps at least the latest version).
+        for versions in self.right_state.values_mut() {
+            if let Some((&keep_from, _)) = versions.range(..=watermark).next_back() {
+                let stale: Vec<i64> = versions.range(..keep_from).map(|(&t, _)| t).collect();
+                for t in stale {
+                    if let Some((old, _)) = versions.remove(&t) {
+                        if track {
+                            freed += right_version_bytes(&old);
+                        }
+                    }
+                }
+            }
+        }
+        if grew > 0 {
+            self.memory.record(grew);
+            self.memory.account()?;
+        }
+        self.memory.forget(freed);
+        self.memory.account_shrink();
+
+        Ok(self.finish_advance(decisions, pred_pairs, pred_idx))
+    }
+
+    /// The backend-independent tail of a watermark firing: the batched residual-predicate
+    /// evaluation over the resolved candidates, then the output batch — a matched pair, a
+    /// null-pad (LEFT), or nothing (INNER) per triggered probe row, each carrying its row's kind.
+    fn finish_advance(
+        &mut self,
+        mut decisions: Vec<(JoinRow, i8, Option<JoinRow>)>,
+        pred_pairs: Vec<JoinRow>,
+        pred_idx: Vec<usize>,
+    ) -> RecordBatch {
+        let left_outer = self.join_type == JoinKind::LeftOuter;
         // A candidate that fails the residual non-equi predicate is not a match (Flink's
         // `joinCondition.apply`), so it falls back to a null-pad (LEFT) or is dropped (INNER).
-        if has_pred && !pred_pairs.is_empty() {
+        if !pred_pairs.is_empty() {
             let joined = joined_schema(&self.left_schema, &self.right_schema);
             let mask = self
                 .predicate
@@ -521,30 +551,8 @@ impl TemporalJoiner {
                 None => {}
             }
         }
-
-        // Drop versions older than the latest one still valid at the watermark; keep that one and all
-        // newer (Flink always keeps at least the latest version).
-        for versions in self.right_state.values_mut() {
-            if let Some((&keep_from, _)) = versions.range(..=watermark).next_back() {
-                let stale: Vec<i64> = versions.range(..keep_from).map(|(&t, _)| t).collect();
-                for t in stale {
-                    if let Some((old, _)) = versions.remove(&t) {
-                        if track {
-                            freed += right_version_bytes(&old);
-                        }
-                    }
-                }
-            }
-        }
-        if grew > 0 {
-            self.memory.record(grew);
-            self.memory.account()?;
-        }
-        self.memory.forget(freed);
-        self.memory.account_shrink();
-
         if out_rows.is_empty() {
-            return Ok(empty_batch());
+            return empty_batch();
         }
         let types: Vec<DataType> = self
             .left_types()
@@ -559,8 +567,8 @@ impl TemporalJoiner {
             .collect();
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
         columns.push(Arc::new(Int8Array::from(out_kinds)));
-        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build temporal-join output batch"))
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build temporal-join output batch")
     }
 
     /// Serializes one side's buffered rows as `[data cols.., __time__, __kind__]` (empty when none).
@@ -916,6 +924,333 @@ impl TemporalJoiner {
             min_retention_ms,
             restored_at_ms,
         )
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl TemporalJoiner {
+    /// Persistent-state arrival path, shared by both sides: with cleaning on, every touched key
+    /// expires first if its deadline passed (as the memory path does per row) and re-arms under
+    /// the hysteresis; then probe rows append under fresh sequences and build rows upsert per
+    /// (key, version). Nothing is emitted here — emission is watermark-driven.
+    fn push_store(
+        &mut self,
+        batch: &RecordBatch,
+        left: bool,
+        now_ms: i64,
+    ) -> Result<(), DataFusionError> {
+        let cleaning = self.cleaning_enabled();
+        if cleaning {
+            self.store_sweep(now_ms)?;
+        }
+        let key_columns = if left {
+            self.left_keys.clone()
+        } else {
+            self.right_keys.clone()
+        };
+        let time = if left {
+            self.left_time
+        } else {
+            self.right_time
+        };
+        let times = rt_to_millis(batch.column(time));
+        let precisions = self.key_timestamp_precisions.clone();
+        let entry_keys = self
+            .store_mut()
+            .entry_keys(batch, &key_columns, &precisions);
+        if cleaning {
+            self.store_cleaning_touch(&entry_keys, now_ms)?;
+        }
+        let kinds = row_kind_column(batch);
+        let store = self.store.as_mut().expect("temporal-join rocksdb store");
+        if left {
+            store.push_left(batch, &entry_keys, &times, kinds)
+        } else {
+            store.push_right(batch, &entry_keys, &times, kinds)
+        }
+    }
+
+    /// The lazy expiry check plus re-arm at a batch of key touches. Every row of a batch shares
+    /// one clock reading, so per key only the first touch can expire and the re-arm is idempotent
+    /// within the batch — distinct keys once each is the memory path's per-row loop exactly.
+    fn store_cleaning_touch(
+        &mut self,
+        entry_keys: &[ByteKey],
+        now_ms: i64,
+    ) -> Result<(), DataFusionError> {
+        let mut seen: HashSet<ByteKey> = HashSet::default();
+        for key in entry_keys {
+            if !seen.insert(key.clone()) {
+                continue;
+            }
+            if self
+                .store_mut()
+                .deadline(key)
+                .is_some_and(|deadline| now_ms >= deadline)
+            {
+                self.store_mut().clear_key(key)?;
+            }
+            self.store_register_cleanup(key, now_ms)?;
+        }
+        Ok(())
+    }
+
+    /// `register_cleanup` for the persistent path — the same hysteresis over the store's resident
+    /// deadline map, with a moved or created deadline written through to the deadlines table.
+    fn store_register_cleanup(
+        &mut self,
+        key: &ByteKey,
+        now_ms: i64,
+    ) -> Result<(), DataFusionError> {
+        let min_retention_ms = self.min_retention_ms;
+        let max_retention_ms = self.max_retention_ms;
+        let store = self.store_mut();
+        match store.deadline(key) {
+            Some(deadline) if now_ms.saturating_add(min_retention_ms) <= deadline => Ok(()),
+            _ => store.set_deadline(key, now_ms.saturating_add(max_retention_ms)),
+        }
+    }
+
+    /// `maybe_sweep` for the persistent path: reclaims every key whose deadline passed with no
+    /// further touch. Silent, at most once per min-retention period.
+    fn store_sweep(&mut self, now_ms: i64) -> Result<(), DataFusionError> {
+        if now_ms < self.last_sweep_ms.saturating_add(self.min_retention_ms) {
+            return Ok(());
+        }
+        for key in self.store_mut().due_keys(now_ms) {
+            self.store_mut().clear_key(&key)?;
+        }
+        self.last_sweep_ms = now_ms;
+        Ok(())
+    }
+
+    /// Persistent-state firing: the probe table's key-major scan yields every buffered left row
+    /// per key in arrival order; each fired key resolves against its scanned version list (the
+    /// memory path's ordered lookup), fired rows delete, and every key's stale versions prune
+    /// under the exact memory-path bound. With cleaning on, a fired key whose deadline passed is
+    /// decided BEFORE its rows resolve: Flink's timer fired before this watermark arrived, so the
+    /// key's state is gone and its rows emit NOTHING — even for a LEFT join.
+    fn advance_store(
+        &mut self,
+        watermark: i64,
+        now_ms: i64,
+    ) -> Result<RecordBatch, DataFusionError> {
+        let cleaning = self.cleaning_enabled();
+        if cleaning {
+            self.store_sweep(now_ms)?;
+        }
+        let left = self.store_mut().scan_left()?;
+        let right = self.store_mut().scan_right()?;
+        let has_pred = self.predicate.is_some();
+        let mut fired_rows: Vec<(&[u8], i8)> = Vec::new();
+        let mut fired_versions: Vec<Option<&[u8]>> = Vec::new();
+        for (key, entries) in &left {
+            if cleaning
+                && self
+                    .store_mut()
+                    .deadline(key)
+                    .is_some_and(|deadline| now_ms >= deadline)
+            {
+                self.store_mut().clear_key(key)?;
+                continue;
+            }
+            let versions = right.get(key);
+            let mut fired_seqs: Vec<u64> = Vec::new();
+            let mut remaining = 0usize;
+            for entry in entries {
+                if entry.time > watermark {
+                    remaining += 1;
+                    continue;
+                }
+                fired_seqs.push(entry.seq);
+                let valid = versions.and_then(|versions| {
+                    let at = versions.partition_point(|version| version.ts <= entry.time);
+                    versions[..at].last().and_then(|version| {
+                        // Only an accumulate version (+I/+U) is a row; a -D/-U marks "no row here".
+                        (version.kind == 0 || version.kind == 2).then_some(version.row.as_ref())
+                    })
+                });
+                fired_rows.push((entry.row.as_ref(), entry.kind));
+                fired_versions.push(valid);
+            }
+            if fired_seqs.is_empty() {
+                continue;
+            }
+            self.store_mut().remove_left(key, &fired_seqs)?;
+            // Flink's `onEventTime` after emitting: state remaining on either side re-registers
+            // the key's cleanup deadline; a key left empty on both sides drops it. Version pruning
+            // below keeps at least the latest version, so checking the right side before pruning
+            // matches Flink's after-prune check.
+            if cleaning {
+                let right_live = versions.is_some_and(|versions| !versions.is_empty());
+                if remaining > 0 || right_live {
+                    self.store_register_cleanup(key, now_ms)?;
+                } else {
+                    self.store_mut().remove_deadline(key)?;
+                }
+            }
+        }
+
+        // Drop versions older than the latest one still valid at the watermark, on every key —
+        // the memory path prunes its whole map per advance. Resolution above already read the
+        // unpruned scan, as the memory path resolves before pruning.
+        for (key, versions) in &right {
+            let keep_from = versions.partition_point(|version| version.ts <= watermark);
+            if keep_from > 1 {
+                let stale: Vec<i64> = versions[..keep_from - 1]
+                    .iter()
+                    .map(|version| version.ts)
+                    .collect();
+                self.store_mut().remove_right(key, &stale)?;
+            }
+        }
+
+        let mut decisions: Vec<(JoinRow, i8, Option<JoinRow>)> =
+            Vec::with_capacity(fired_rows.len());
+        let mut pred_pairs: Vec<JoinRow> = Vec::new();
+        let mut pred_idx: Vec<usize> = Vec::new();
+        if !fired_rows.is_empty() {
+            let store = self.store.as_ref().expect("temporal-join rocksdb store");
+            let lefts = store.decode(
+                true,
+                &self.left_schema.clone(),
+                fired_rows.iter().map(|(row, _)| *row),
+            )?;
+            let rights = store.decode(
+                false,
+                &self.right_schema.clone(),
+                fired_versions.iter().flatten().copied(),
+            )?;
+            let mut right_row = 0usize;
+            for (index, (_, kind)) in fired_rows.iter().enumerate() {
+                let left_row: JoinRow = (0..lefts.num_columns())
+                    .map(|column| {
+                        ScalarValue::try_from_array(lefts.column(column), index)
+                            .expect("temporal left scalar")
+                    })
+                    .collect();
+                let valid: Option<JoinRow> = fired_versions[index].map(|_| {
+                    let row: JoinRow = (0..rights.num_columns())
+                        .map(|column| {
+                            ScalarValue::try_from_array(rights.column(column), right_row)
+                                .expect("temporal right scalar")
+                        })
+                        .collect();
+                    right_row += 1;
+                    row
+                });
+                let at = decisions.len();
+                if has_pred {
+                    if let Some(row) = &valid {
+                        pred_pairs.push(left_row.iter().chain(row).cloned().collect());
+                        pred_idx.push(at);
+                    }
+                }
+                decisions.push((left_row, *kind, valid));
+            }
+        }
+        Ok(self.finish_advance(decisions, pred_pairs, pred_idx))
+    }
+
+    /// The complete persistent state in the blob snapshot's per-key-group framed-section encoding
+    /// (probe rows, build versions, and — while cleaning is on — the deadline section), for
+    /// backend-independent canonical savepoints.
+    pub(crate) fn canonical_partitions(&self) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let store = self.store.as_ref().expect("temporal-join rocksdb store");
+        let left = store.scan_left()?;
+        let right = store.scan_right()?;
+        type Side<'a> = BTreeMap<i32, (Vec<&'a [u8]>, Vec<i64>, Vec<i8>)>;
+        let mut left_by_group: Side = BTreeMap::new();
+        for (key, entries) in &left {
+            let slot = left_by_group
+                .entry(crate::state::RocksTemporalJoinStore::key_group(key))
+                .or_default();
+            for entry in entries {
+                slot.0.push(&entry.row);
+                slot.1.push(entry.time);
+                slot.2.push(entry.kind);
+            }
+        }
+        let mut right_by_group: Side = BTreeMap::new();
+        for (key, versions) in &right {
+            let slot = right_by_group
+                .entry(crate::state::RocksTemporalJoinStore::key_group(key))
+                .or_default();
+            for version in versions {
+                slot.0.push(&version.row);
+                slot.1.push(version.ts);
+                slot.2.push(version.kind);
+            }
+        }
+        let cleaning = self.cleaning_enabled();
+        let mut cleanup_by_group: BTreeMap<i32, Vec<(&ByteKey, i64)>> = BTreeMap::new();
+        if cleaning {
+            for (key, &deadline) in store.all_deadlines() {
+                cleanup_by_group
+                    .entry(crate::state::RocksTemporalJoinStore::key_group(key))
+                    .or_default()
+                    .push((key, deadline));
+            }
+        }
+        let mut groups: Vec<i32> = left_by_group
+            .keys()
+            .chain(right_by_group.keys())
+            .copied()
+            .collect();
+        groups.sort_unstable();
+        groups.dedup();
+        let mut snapshots = BTreeMap::new();
+        for group in groups {
+            let side = |left_side: bool, sections: &Side| -> Result<Vec<u8>, DataFusionError> {
+                let Some((rows, times, kinds)) = sections.get(&group) else {
+                    return Ok(Vec::new());
+                };
+                let schema = if left_side {
+                    &self.left_schema
+                } else {
+                    &self.right_schema
+                };
+                let data = store.decode(left_side, schema, rows.iter().copied())?;
+                let mut fields: Vec<Field> =
+                    schema.fields().iter().map(|f| f.as_ref().clone()).collect();
+                let mut columns = data.columns().to_vec();
+                fields.push(Field::new("__time__", DataType::Int64, false));
+                columns.push(Arc::new(Int64Array::from(times.clone())));
+                fields.push(Field::new("__kind__", DataType::Int8, false));
+                columns.push(Arc::new(Int8Array::from(kinds.clone())));
+                Ok(write_ipc(
+                    &RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+                        .expect("temporal side"),
+                ))
+            };
+            let mut parts = vec![side(true, &left_by_group)?, side(false, &right_by_group)?];
+            if cleaning {
+                let cleanup = match cleanup_by_group.get(&group) {
+                    Some(entries) => {
+                        let keys: Vec<&ByteKey> = entries.iter().map(|(key, _)| *key).collect();
+                        let deadlines: Vec<i64> =
+                            entries.iter().map(|(_, deadline)| *deadline).collect();
+                        let key_types: Vec<DataType> = self
+                            .left_keys
+                            .iter()
+                            .map(|&i| self.left_schema.field(i).data_type().clone())
+                            .collect();
+                        let mut fields = key_fields(&key_types);
+                        let mut columns = store.decode_key_columns(&keys);
+                        fields.push(Field::new(CLEANUP_AT_COLUMN, DataType::Int64, false));
+                        columns.push(Arc::new(Int64Array::from(deadlines)));
+                        write_ipc(
+                            &RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+                                .expect("temporal cleanup deadlines"),
+                        )
+                    }
+                    None => Vec::new(),
+                };
+                parts.push(cleanup);
+            }
+            snapshots.insert(group, Self::snapshot_parts(parts));
+        }
+        Ok(snapshots)
     }
 }
 

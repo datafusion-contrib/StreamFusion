@@ -2,6 +2,7 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -52,6 +53,50 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
   }
 
   @Override
+  protected RocksDBNativeStateSupport resolveRocksDBState(boolean rawStateRestored) {
+    return resolveRocksDB(rawStateRestored, () -> true, stateTtlMillis);
+  }
+
+  // The keep-first deduplicator is purely watermark-driven, so every supported row shape can take
+  // the typed RocksDB data plane.
+  @Override
+  protected boolean usesDirectRocksDBState() {
+    return withRowSchema(
+            rowType, s -> Native.rocksdbKeepFirstDeduplicatorSupported(s) ? 1L : 0L)
+        != 0L;
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    return withRowSchema(
+        rowType,
+        s ->
+            Native.createRocksDBKeepFirstDeduplicator(
+                partitionColumns, keyTimestampPrecisions(), rowtimeColumn,
+                stateTtlMillis,
+                getProcessingTimeService().getCurrentProcessingTime(),
+                memoryBudgetBytes(), s,
+                rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
+                rocksdb.aligned()));
+  }
+
+  @Override
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
+    return directRocksDBState()
+        ? Native.checkpointRocksDBKeepFirstDeduplicator(handle, snapshotDirectory)
+        : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected byte[][] snapshotCanonicalPartitions() {
+    return directRocksDBState()
+        ? Native.snapshotRocksDBKeepFirstDeduplicatorPartitions(handle)
+        : snapshotRawPartitions();
+  }
+
+  @Override
   protected long createHandle() {
     return Native.createKeepFirstDeduplicator(
         partitionColumns,
@@ -81,12 +126,18 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
 
   @Override
   protected void closeHandle() {
-    Native.closeKeepFirstDeduplicator(handle);
+    if (directRocksDBState()) {
+      Native.closeRocksDBKeepFirstDeduplicator(handle);
+    } else {
+      Native.closeKeepFirstDeduplicator(handle);
+    }
   }
 
   @Override
   protected long stateBytesHandle() {
-    return Native.keepFirstDeduplicatorStateBytes(handle);
+    return directRocksDBState()
+        ? Native.rocksdbKeepFirstDeduplicatorStateBytes(handle)
+        : Native.keepFirstDeduplicatorStateBytes(handle);
   }
 
   @Override
@@ -111,11 +162,14 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, array, schema);
       // Flink's TtlTimeProvider clock: the processing-time service is System.currentTimeMillis
       // in production and harness-controlled in tests, so expiry is deterministic to test.
-      Native.pushKeepFirstDeduplicator(
-          handle,
-          array.memoryAddress(),
-          schema.memoryAddress(),
-          getProcessingTimeService().getCurrentProcessingTime());
+      long now = getProcessingTimeService().getCurrentProcessingTime();
+      if (directRocksDBState()) {
+        Native.pushRocksDBKeepFirstDeduplicator(
+            handle, array.memoryAddress(), schema.memoryAddress(), now);
+      } else {
+        Native.pushKeepFirstDeduplicator(
+            handle, array.memoryAddress(), schema.memoryAddress(), now);
+      }
     } finally {
       in.close();
     }
@@ -133,12 +187,21 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
   public void processWatermark(Watermark mark) throws Exception {
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushKeepFirstDeduplicator(
-          handle,
-          mark.getTimestamp(),
-          getProcessingTimeService().getCurrentProcessingTime(),
-          array.memoryAddress(),
-          schema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.flushRocksDBKeepFirstDeduplicator(
+            handle,
+            mark.getTimestamp(),
+            getProcessingTimeService().getCurrentProcessingTime(),
+            array.memoryAddress(),
+            schema.memoryAddress());
+      } else {
+        Native.flushKeepFirstDeduplicator(
+            handle,
+            mark.getTimestamp(),
+            getProcessingTimeService().getCurrentProcessingTime(),
+            array.memoryAddress(),
+            schema.memoryAddress());
+      }
       VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
       if (out.getRowCount() > 0) {
         ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));

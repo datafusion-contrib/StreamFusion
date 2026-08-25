@@ -59,11 +59,13 @@ There are also deliberate implementation differences:
   watermarks fire with per-key-group range scans); session aggregates join them with key-major
   session lists that hydrate by prefix scan for merging, and event-time over aggregates (unbounded
   non-distinct folds and ranking window functions; bounded frames, proctime shapes, and distinct
-  aggregates stay on the snapshot path), event-time window rank, and the event-time interval join
-  (append-mostly sequence-keyed buffers carrying each row's matched flag). The remaining native
-  operators — the temporal join, keep-first dedup, temporal sort, and proctime windowed operators,
-  which need the snapshot store's persisted processing-time deadline — replace one key-group
-  snapshot payload in RocksDB at each checkpoint;
+  aggregates stay on the snapshot path), event-time window rank, the event-time interval join
+  (append-mostly sequence-keyed buffers carrying each row's matched flag), the temporal join
+  (versioned build rows in byte-comparable version order), keep-first deduplicate, and the
+  temporal sort buffer. Every event-time operator now reads and writes RocksDB per key; only
+  proctime shapes — which re-arm timers from the snapshot store's persisted processing-time
+  deadline — and the over aggregate's gated variants above replace key-group snapshot payloads in
+  RocksDB at each checkpoint;
 - the native stores' shared cache and write-buffer manager live in StreamFusion's own RocksDB
   library, sized by the same Flink options and formulas but leased separately from the delegate
   backend's pool (C++ objects cannot cross the two RocksDB libraries), and the binding exposes no
