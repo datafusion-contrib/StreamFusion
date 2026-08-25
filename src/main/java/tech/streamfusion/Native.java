@@ -1279,6 +1279,54 @@ public final class Native {
 
   public static native void closeRocksDBUpdatingJoiner(long handle);
 
+  /** Creates a window joiner whose buffered rows live directly in a Rust-owned RocksDB instance. */
+  public static native long createRocksDBWindowJoiner(
+      int[] leftKeys,
+      int[] rightKeys,
+      int[] keyTimestampPrecisions,
+      int leftWindowStart,
+      int leftWindowEnd,
+      int rightWindowStart,
+      int rightWindowEnd,
+      int joinType,
+      long leftSchemaAddress,
+      long rightSchemaAddress,
+      int[] predKinds,
+      int[] predPayload,
+      int[] predChildCounts,
+      long[] predLongs,
+      double[] predDoubles,
+      String[] predStrings,
+      long memoryBudgetBytes,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  /** Materializes direct RocksDB window-join state as backend-independent key-group partitions. */
+  public static native byte[][] snapshotRocksDBWindowJoinerPartitions(long handle);
+
+  public static native void pushLeftRocksDBWindowJoiner(
+      long handle, long inArrayAddress, long inSchemaAddress);
+
+  public static native void pushRightRocksDBWindowJoiner(
+      long handle, long inArrayAddress, long inSchemaAddress);
+
+  public static native void flushRocksDBWindowJoiner(
+      long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
+
+  public static native String[] checkpointRocksDBWindowJoiner(
+      long handle, String snapshotDirectory);
+
+  public static native long rocksdbWindowJoinerStateBytes(long handle);
+
+  public static native void closeRocksDBWindowJoiner(long handle);
+
   /**
    * Creates an append-only or retracting Top-N ranker backed directly by a Rust-owned RocksDB
    * instance. The declared input schema builds the arrow-row converters the persisted state is

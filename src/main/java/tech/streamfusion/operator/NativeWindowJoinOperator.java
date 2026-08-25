@@ -2,6 +2,7 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import java.util.function.LongBinaryOperator;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
@@ -105,6 +106,37 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
     predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
   }
 
+  // A proctime join re-arms its cleanup timer from the snapshot-store deadline after recovery, so
+  // it stays on the generic snapshot store; the event-time join is purely watermark-driven.
+  @Override
+  protected boolean usesDirectRocksDBState() {
+    return !proctime;
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    return withSchemas(
+        (l, r) ->
+            Native.createRocksDBWindowJoiner(
+                leftKeys, rightKeys, keyTimestampPrecisions(),
+                leftWindowStart, leftWindowEnd, rightWindowStart, rightWindowEnd,
+                joinType, l, r,
+                predicate.kinds, predicate.payload, predicate.childCounts,
+                predicate.boundLongs(), predicate.doubles, predicate.strings,
+                memoryBudgetBytes(),
+                rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
+                rocksdb.aligned()));
+  }
+
+  @Override
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
+    return directRocksDBState()
+        ? Native.checkpointRocksDBWindowJoiner(handle, snapshotDirectory)
+        : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
   @Override
   protected long createHandle() {
     return withSchemas(
@@ -159,13 +191,26 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
   }
 
   @Override
+  protected byte[][] snapshotCanonicalPartitions() {
+    return directRocksDBState()
+        ? Native.snapshotRocksDBWindowJoinerPartitions(handle)
+        : snapshotRawPartitions();
+  }
+
+  @Override
   protected void closeHandle() {
-    Native.closeWindowJoiner(handle);
+    if (directRocksDBState()) {
+      Native.closeRocksDBWindowJoiner(handle);
+    } else {
+      Native.closeWindowJoiner(handle);
+    }
   }
 
   @Override
   protected long stateBytesHandle() {
-    return Native.windowJoinerStateBytes(handle);
+    return directRocksDBState()
+        ? Native.rocksdbWindowJoinerStateBytes(handle)
+        : Native.windowJoinerStateBytes(handle);
   }
 
   /** Exports both side row types as FFI Arrow schemas for the duration of one native call. */
@@ -259,7 +304,14 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
     try (ArrowArray array = ArrowArray.allocateNew(inAllocator);
         ArrowSchema schema = ArrowSchema.allocateNew(inAllocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, array, schema);
-      if (left) {
+      if (directRocksDBState()) {
+        if (left) {
+          Native.pushLeftRocksDBWindowJoiner(handle, array.memoryAddress(), schema.memoryAddress());
+        } else {
+          Native.pushRightRocksDBWindowJoiner(
+              handle, array.memoryAddress(), schema.memoryAddress());
+        }
+      } else if (left) {
         Native.pushLeftWindowJoiner(handle, array.memoryAddress(), schema.memoryAddress());
       } else {
         Native.pushRightWindowJoiner(handle, array.memoryAddress(), schema.memoryAddress());
@@ -288,7 +340,12 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
   private void flush(long threshold) {
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushWindowJoiner(handle, threshold, array.memoryAddress(), schema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.flushRocksDBWindowJoiner(
+            handle, threshold, array.memoryAddress(), schema.memoryAddress());
+      } else {
+        Native.flushWindowJoiner(handle, threshold, array.memoryAddress(), schema.memoryAddress());
+      }
       VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
       if (out.getRowCount() > 0) {
         ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));

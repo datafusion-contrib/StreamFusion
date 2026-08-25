@@ -7,6 +7,9 @@
 //! for a whole bundle's working set in one columnar conversion; a state-TTL value carries its
 //! last-write timestamp as a fixed 8-byte prefix so the compaction filter never parses the row.
 
+pub(crate) mod window_buffer;
+pub(crate) use window_buffer::RocksWindowBuffer;
+
 use crate::*;
 use arrow::row::{RowConverter, SortField};
 use rocksdb::checkpoint::Checkpoint;

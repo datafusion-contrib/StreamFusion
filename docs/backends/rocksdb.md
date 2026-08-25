@@ -51,11 +51,13 @@ incremental checkpointing is enabled.
 
 There are also deliberate implementation differences:
 
-- the group aggregate, changelog normalize, keep-last deduplicate, updating join, and the three
-  Top-N rankers perform per-key RocksDB reads and writes (the join's two sides share one database,
-  keyed by a table prefix, under one checkpoint); the remaining native operators — the
-  watermark-bounded windowed set — replace one key-group snapshot payload in RocksDB at each
-  checkpoint;
+- the group aggregate, changelog normalize, keep-last deduplicate, updating join, the three Top-N
+  rankers, and the event-time window join perform per-key RocksDB reads and writes (a two-sided
+  operator's tables share one database, keyed by a table prefix, under one checkpoint; the window
+  join buffers rows as append-only sequence-keyed entries and evicts closed windows by watermark);
+  the remaining native operators — the other watermark-bounded windowed set, and proctime window
+  joins, which need the snapshot store's persisted processing-time deadline — replace one
+  key-group snapshot payload in RocksDB at each checkpoint;
 - the native stores' shared cache and write-buffer manager live in StreamFusion's own RocksDB
   library, sized by the same Flink options and formulas but leased separately from the delegate
   backend's pool (C++ objects cannot cross the two RocksDB libraries), and the binding exposes no

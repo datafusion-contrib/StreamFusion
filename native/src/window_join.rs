@@ -33,6 +33,8 @@ pub(crate) struct WindowJoiner {
     pub(crate) memory: OperatorMemory,
     /// Persistent-state mode: both sides' buffered rows live in the persistent store (write buffers
     /// + disk tables); the in-memory `*_buffered` vectors stay empty between calls.
+    #[cfg(feature = "rocksdb-state")]
+    store: Option<crate::state::RocksWindowBuffer>,
     key_timestamp_precisions: Vec<i32>,
 }
 
@@ -70,6 +72,8 @@ impl WindowJoiner {
             left_late_drops: 0,
             right_late_drops: 0,
             memory: OperatorMemory::unaccounted(),
+            #[cfg(feature = "rocksdb-state")]
+            store: None,
             // Equi-join key columns have matching types on both sides, so one precision stream
             // serves both (the raw snapshot partitioner already relies on this).
             key_timestamp_precisions: vec![-1; key_arity],
@@ -84,7 +88,26 @@ impl WindowJoiner {
         self
     }
 
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_store(mut self, store: crate::state::RocksWindowBuffer) -> Self {
+        self.store = Some(store);
+        self
+    }
+
     /// Attaches the task off-heap budget for a backend that starts with nothing resident.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_read_through_budget(
+        mut self,
+        budget_bytes: i64,
+    ) -> Result<Self, DataFusionError> {
+        self.memory.attach("window-join", budget_bytes, 0)?;
+        Ok(self)
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn store_mut(&mut self) -> &mut crate::state::RocksWindowBuffer {
+        self.store.as_mut().expect("window-join rocksdb store")
+    }
 
     /// Bounds the buffered rows by the operator's task off-heap budget (negative = unaccounted),
     /// accounting any restored buffers immediately.
@@ -112,6 +135,10 @@ impl WindowJoiner {
         self.left_schema = Some(batch.schema());
         let (batch, dropped) = Self::filter_late(batch, self.left_wend, self.current_watermark)?;
         self.left_late_drops += dropped as u64;
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.push_store(batch, true);
+        }
         self.left_buffered.push(batch);
         self.account()
     }
@@ -120,6 +147,10 @@ impl WindowJoiner {
         self.right_schema = Some(batch.schema());
         let (batch, dropped) = Self::filter_late(batch, self.right_wend, self.current_watermark)?;
         self.right_late_drops += dropped as u64;
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.push_store(batch, false);
+        }
         self.right_buffered.push(batch);
         self.account()
     }
@@ -140,15 +171,76 @@ impl WindowJoiner {
         Ok((batch, late_rows))
     }
 
-    /// Persistent-state arrival path: every input row stages into its side's write buffer under
-    /// a fresh arrival sequence, keyed by its window end (the fire column) and routed by the
+    /// Persistent-state arrival path: every input row appends to its side's store table under
+    /// a fresh arrival sequence, valued by its window end (the fire column) and routed by the
     /// equi-join key's group. Nothing joins here — emission is watermark-driven (`flush`).
+    #[cfg(feature = "rocksdb-state")]
+    fn push_store(&mut self, batch: RecordBatch, left: bool) -> Result<(), DataFusionError> {
+        if batch.num_rows() == 0 {
+            return Ok(());
+        }
+        let (keys, wend) = if left {
+            (&self.left_keys, self.left_wend)
+        } else {
+            (&self.right_keys, self.right_wend)
+        };
+        let ends = rt_to_millis(batch.column(wend));
+        self.store
+            .as_mut()
+            .expect("window-join rocksdb store")
+            .push(left, &batch, keys, &self.key_timestamp_precisions, &ends)
+    }
 
-    /// Persistent-state firing path: each side's overlay range read returns the rows of every
-    /// closed window in arrival order (staging their deletions), and the memory path's own join
-    /// runs over them.
+    /// Persistent-state firing path: each side's table scan removes and returns the rows of every
+    /// closed window, reassembled in arrival order, and the memory path's own join runs over them.
+    #[cfg(feature = "rocksdb-state")]
+    fn flush_store(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        let (left_schema, right_schema) = self.side_schemas();
+        let store = self.store.as_mut().expect("window-join rocksdb store");
+        let left = store.take_closed(true, watermark, &left_schema)?;
+        let right = store.take_closed(false, watermark, &right_schema)?;
+        self.join_closed(left, right)
+    }
 
-    /// Projects a fired store batch (`kg`, `k`, `rt`, payload…) back to the side's data rows.
+    /// Each side's learned input schema (the declared data schema until its first batch), which
+    /// store-reconstructed batches carry so they match what the memory path would have buffered.
+    #[cfg(feature = "rocksdb-state")]
+    fn side_schemas(&self) -> (SchemaRef, SchemaRef) {
+        (
+            self.left_schema
+                .clone()
+                .unwrap_or_else(|| self.left_data_schema.clone()),
+            self.right_schema
+                .clone()
+                .unwrap_or_else(|| self.right_data_schema.clone()),
+        )
+    }
+
+    /// The complete buffered state in the memory snapshot's per-key-group encoding, for
+    /// backend-independent canonical savepoints (see `snapshot_partitions`).
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn canonical_partitions(
+        &mut self,
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let (left_schema, right_schema) = self.side_schemas();
+        let store = self.store.as_ref().expect("window-join rocksdb store");
+        let left = store.rows_by_group(true, &left_schema)?;
+        let right = store.rows_by_group(false, &right_schema)?;
+        let mut groups: Vec<i32> = left.keys().chain(right.keys()).copied().collect();
+        groups.sort_unstable();
+        groups.dedup();
+        let mut snapshots = BTreeMap::new();
+        for key_group in groups {
+            snapshots.insert(
+                key_group,
+                Self::snapshot_parts(
+                    left.get(&key_group).map(write_ipc).unwrap_or_default(),
+                    right.get(&key_group).map(write_ipc).unwrap_or_default(),
+                ),
+            );
+        }
+        Ok(snapshots)
+    }
 
     /// Splits a side's buffer into the rows whose window has closed (`window_end <= watermark`,
     /// returned) and the rest (kept buffered). `None` if the side has not seen any rows.
@@ -184,6 +276,10 @@ impl WindowJoiner {
     /// the join's working memory draws on the operator's budget.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         self.current_watermark = self.current_watermark.max(watermark);
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.flush_store(watermark);
+        }
         let left = Self::split_closed(
             &mut self.left_buffered,
             &self.left_schema,
