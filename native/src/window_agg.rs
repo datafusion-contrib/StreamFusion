@@ -312,6 +312,7 @@ impl TumblingAggregator {
             .checkpoint(watermark, timer_deadline, snapshot_dir)
     }
 
+    #[cfg(feature = "rocksdb-state")]
     pub(crate) fn store_timer_deadline(&self) -> i64 {
         self.store
             .as_ref()
