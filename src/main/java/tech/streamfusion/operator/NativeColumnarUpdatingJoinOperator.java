@@ -126,7 +126,8 @@ public class NativeColumnarUpdatingJoinOperator
   }
 
   @Override
-  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+  protected long createRocksDBHandle(
+      RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     return withRowSchemas(
         leftType,
         rightType,
@@ -140,7 +141,7 @@ public class NativeColumnarUpdatingJoinOperator
                 rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
                 rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
                 rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-                rocksdb.aligned()));
+                rocksdb.aligned(), restoredPartitions));
   }
 
   @Override

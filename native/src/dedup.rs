@@ -630,6 +630,78 @@ impl KeepFirstDeduplicator {
 /// (`[watermark][framed pending ipc][emitted ipc]`), for backend-independent canonical savepoints.
 #[cfg(feature = "rocksdb-state")]
 impl KeepFirstDeduplicator {
+    /// Decodes restored blob key groups once at open and writes them through the typed store, so
+    /// a canonical or raw restore continues on the direct persistent path. Candidates append in
+    /// blob order (fresh sequences reproduce the memory path's emission order), fired markers keep
+    /// their stamps, and the leading watermark rides every key group; `adopt_store_ttl` then
+    /// applies the enable-TTL migration exactly as the memory restore does.
+    pub(crate) fn import_partitions(
+        &mut self,
+        snapshots: &[Vec<u8>],
+    ) -> Result<(), DataFusionError> {
+        let mut watermark = self.current_watermark;
+        for bytes in snapshots {
+            if bytes.len() >= 8 {
+                watermark = watermark.max(i64::from_le_bytes(
+                    bytes[0..8].try_into().expect("watermark"),
+                ));
+            }
+        }
+        self.current_watermark = watermark;
+        self.store_mut().set_watermark(watermark);
+        let ttl_on = self.ttl_ms > 0;
+        let rt_column = self.rt_column;
+        let partition_columns = self.partition_columns.clone();
+        let precisions = self.key_timestamp_precisions.clone();
+        for bytes in snapshots {
+            if bytes.len() < 12 {
+                continue;
+            }
+            let pending_len =
+                u32::from_le_bytes(bytes[8..12].try_into().expect("pending len")) as usize;
+            assert!(
+                12 + pending_len <= bytes.len(),
+                "truncated dedup raw key-group snapshot"
+            );
+            for batch in read_ipc_if_present(&bytes[12..12 + pending_len]) {
+                let rt = rt_to_millis(batch.column(rt_column));
+                let store = self.store_mut();
+                let keys = store.entry_keys(&batch, &partition_columns, &precisions);
+                let winners: Vec<(usize, ByteKey, i64)> = keys
+                    .into_iter()
+                    .enumerate()
+                    .map(|(row, key)| (row, key, rt.value(row)))
+                    .collect();
+                store.put_candidates(&batch, &winners)?;
+            }
+            for batch in read_ipc_if_present(&bytes[12 + pending_len..]) {
+                let stamps = batch
+                    .column_by_name(TTL_TS_COLUMN)
+                    .is_some()
+                    .then(|| column_i64(&batch, TTL_TS_COLUMN));
+                let key_columns: Vec<usize> =
+                    (0..batch.num_columns() - stamps.is_some() as usize).collect();
+                let store = self.store_mut();
+                let keys = store.entry_keys(&batch, &key_columns, &precisions);
+                let markers: Vec<(ByteKey, Option<i64>)> = keys
+                    .into_iter()
+                    .enumerate()
+                    .map(|(row, key)| {
+                        (
+                            key,
+                            stamps
+                                .as_ref()
+                                .filter(|_| ttl_on)
+                                .map(|stamps| stamps.value(row)),
+                        )
+                    })
+                    .collect();
+                store.put_markers(&markers)?;
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn canonical_partitions(&self) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
         use crate::state::{RocksKeepFirstDedupStore, StoredCandidate};
         let store = self.store.as_ref().expect("keep-first dedup rocksdb store");
@@ -1471,10 +1543,122 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
     }
 }
 
+/// Blob decode shared by the memory rebuild and the typed persistent import: every load goes
+/// through the state seam only.
+impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
+    fn load_snapshot(&mut self, bytes: &[u8], restored_at_ms: i64) {
+        for batch in read_ipc_if_present(bytes) {
+            if batch.schema_ref().field(0).name() == RAW_SNAPSHOT_KEY {
+                self.load_batch_raw(&batch, restored_at_ms);
+            } else {
+                self.load_batch_decoded(&batch, restored_at_ms);
+            }
+        }
+    }
+
+    /// Raw-format rows carry the stored key, payload, and rowtime verbatim — restoring is a
+    /// straight map rebuild with no decode or re-encode. The optional trailing columns are read
+    /// by name: the stored row kind when the writer was proctime keep-last (absent restores as
+    /// INSERT), and the TTL timestamps when the writer had TTL on — a pre-TTL snapshot restored
+    /// into a TTL'd deduplicator stamps every key with the restore time (a full retention from
+    /// now, Flink's enable-TTL migration) instead of 0, which would expire everything on first
+    /// touch.
+    fn load_batch_raw(&mut self, batch: &RecordBatch, restored_at_ms: i64) {
+        if self.schema.is_none() {
+            let payload_schema =
+                decode_schema_metadata(batch).expect("raw dedup snapshot payload schema");
+            let empty = RecordBatch::new_empty(payload_schema.clone());
+            self.ensure_converters(&empty, empty.num_columns());
+            self.schema = Some(payload_schema);
+        }
+        let keys = column_binary(batch, RAW_SNAPSHOT_KEY);
+        let payloads = column_binary(batch, RAW_SNAPSHOT_ROW);
+        let rowtimes = column_i64(batch, RAW_SNAPSHOT_ROWTIME);
+        let update_kinds = batch
+            .column_by_name(RAW_SNAPSHOT_UPDATE_KIND)
+            .map(|column| {
+                column
+                    .as_any()
+                    .downcast_ref::<BooleanArray>()
+                    .expect("dedup snapshot update-kind column must be boolean")
+            });
+        let write_timestamps = batch
+            .column_by_name(TTL_TS_COLUMN)
+            .is_some()
+            .then(|| column_i64(batch, TTL_TS_COLUMN));
+        for row in 0..batch.num_rows() {
+            self.rows.insert(
+                ByteKey::from(keys.value(row)),
+                DedupRow {
+                    rowtime: rowtimes.value(row),
+                    payload: Arc::from(payloads.value(row)),
+                    staged: None,
+                    update_kind: update_kinds.as_ref().is_some_and(|kinds| kinds.value(row)),
+                    last_write_ms: write_timestamps
+                        .as_ref()
+                        .map_or(restored_at_ms, |ts| ts.value(row)),
+                },
+            );
+        }
+    }
+
+    /// Snapshots written before the raw format decoded the rows to typed columns; kept so
+    /// existing savepoints keep restoring. The format predates TTL, so every key is stamped with
+    /// the restore time (the enable-TTL migration).
+    fn load_batch_decoded(&mut self, batch: &RecordBatch, restored_at_ms: i64) {
+        let arity = batch.num_columns();
+        self.schema = Some(batch.schema());
+        self.ensure_converters(batch, arity);
+        // The stored rowtime matters only to the rowtime-ordered comparison; proctime stores 0.
+        let rt = self
+            .rowtime_ordered
+            .then(|| rt_to_millis(batch.column(self.rt_column)));
+        let mut parts = BinaryRowBatchEncoder::new(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        );
+        let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
+        let payloads = self
+            .payload_converter
+            .as_ref()
+            .unwrap()
+            .convert_columns(&data_arrays)
+            .expect("encode payload");
+        let rows = &mut self.rows;
+        for row in 0..batch.num_rows() {
+            rows.insert(
+                ByteKey::from(parts.encode(row)),
+                DedupRow {
+                    rowtime: rt.as_ref().map_or(0, |rt| rt.value(row)),
+                    payload: Arc::from(payloads.row(row).data()),
+                    staged: None,
+                    update_kind: false,
+                    last_write_ms: restored_at_ms,
+                },
+            );
+        }
+    }
+}
+
 /// Commits the persistent store and exports the complete logical table in the same raw key-group
 /// encoding the memory snapshot writes, for backend-independent canonical savepoints.
 #[cfg(feature = "rocksdb-state")]
 impl KeepLastDeduplicator<RocksDedupStore> {
+    /// Decodes restored blob key groups once at open and writes them through the typed store, so
+    /// a canonical or raw restore continues on the direct persistent path.
+    pub(crate) fn import_partitions(
+        &mut self,
+        snapshots: &[Vec<u8>],
+        restored_at_ms: i64,
+    ) -> Result<(), DataFusionError> {
+        for bytes in snapshots {
+            self.load_snapshot(bytes, restored_at_ms);
+            self.rows.end_bundle()?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn canonical_partitions(
         &mut self,
     ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
@@ -1576,90 +1760,6 @@ impl KeepLastDeduplicator {
         )
     }
 
-    /// Raw-format rows carry the stored key, payload, and rowtime verbatim — restoring is a
-    /// straight map rebuild with no decode or re-encode. The optional trailing columns are read
-    /// by name: the stored row kind when the writer was proctime keep-last (absent restores as
-    /// INSERT), and the TTL timestamps when the writer had TTL on — a pre-TTL snapshot restored
-    /// into a TTL'd deduplicator stamps every key with the restore time (a full retention from
-    /// now, Flink's enable-TTL migration) instead of 0, which would expire everything on first
-    /// touch.
-    fn load_batch_raw(&mut self, batch: &RecordBatch, restored_at_ms: i64) {
-        if self.schema.is_none() {
-            let payload_schema =
-                decode_schema_metadata(batch).expect("raw dedup snapshot payload schema");
-            let empty = RecordBatch::new_empty(payload_schema.clone());
-            self.ensure_converters(&empty, empty.num_columns());
-            self.schema = Some(payload_schema);
-        }
-        let keys = column_binary(batch, RAW_SNAPSHOT_KEY);
-        let payloads = column_binary(batch, RAW_SNAPSHOT_ROW);
-        let rowtimes = column_i64(batch, RAW_SNAPSHOT_ROWTIME);
-        let update_kinds = batch
-            .column_by_name(RAW_SNAPSHOT_UPDATE_KIND)
-            .map(|column| {
-                column
-                    .as_any()
-                    .downcast_ref::<BooleanArray>()
-                    .expect("dedup snapshot update-kind column must be boolean")
-            });
-        let write_timestamps = batch
-            .column_by_name(TTL_TS_COLUMN)
-            .is_some()
-            .then(|| column_i64(batch, TTL_TS_COLUMN));
-        for row in 0..batch.num_rows() {
-            self.rows.insert(
-                ByteKey::from(keys.value(row)),
-                DedupRow {
-                    rowtime: rowtimes.value(row),
-                    payload: Arc::from(payloads.value(row)),
-                    staged: None,
-                    update_kind: update_kinds.as_ref().is_some_and(|kinds| kinds.value(row)),
-                    last_write_ms: write_timestamps
-                        .as_ref()
-                        .map_or(restored_at_ms, |ts| ts.value(row)),
-                },
-            );
-        }
-    }
-
-    /// Snapshots written before the raw format decoded the rows to typed columns; kept so
-    /// existing savepoints keep restoring. The format predates TTL, so every key is stamped with
-    /// the restore time (the enable-TTL migration).
-    fn load_batch_decoded(&mut self, batch: &RecordBatch, restored_at_ms: i64) {
-        let arity = batch.num_columns();
-        self.schema = Some(batch.schema());
-        self.ensure_converters(batch, arity);
-        // The stored rowtime matters only to the rowtime-ordered comparison; proctime stores 0.
-        let rt = self
-            .rowtime_ordered
-            .then(|| rt_to_millis(batch.column(self.rt_column)));
-        let mut parts = BinaryRowBatchEncoder::new(
-            batch,
-            &self.partition_columns,
-            &self.key_timestamp_precisions,
-        );
-        let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
-        let payloads = self
-            .payload_converter
-            .as_ref()
-            .unwrap()
-            .convert_columns(&data_arrays)
-            .expect("encode payload");
-        let rows = &mut self.rows;
-        for row in 0..batch.num_rows() {
-            rows.insert(
-                ByteKey::from(parts.encode(row)),
-                DedupRow {
-                    rowtime: rt.as_ref().map_or(0, |rt| rt.value(row)),
-                    payload: Arc::from(payloads.row(row).data()),
-                    staged: None,
-                    update_kind: false,
-                    last_write_ms: restored_at_ms,
-                },
-            );
-        }
-    }
-
     fn restore_partitions(
         partition_columns: Vec<usize>,
         key_timestamp_precisions: Vec<i32>,
@@ -1679,13 +1779,7 @@ impl KeepLastDeduplicator {
         )
         .with_key_timestamp_precisions(key_timestamp_precisions);
         for bytes in snapshots {
-            for batch in read_ipc_if_present(bytes) {
-                if batch.schema_ref().field(0).name() == RAW_SNAPSHOT_KEY {
-                    dedup.load_batch_raw(&batch, restored_at_ms);
-                } else {
-                    dedup.load_batch_decoded(&batch, restored_at_ms);
-                }
-            }
+            dedup.load_snapshot(bytes, restored_at_ms);
         }
         dedup
     }

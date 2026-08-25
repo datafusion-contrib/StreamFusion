@@ -1595,6 +1595,69 @@ impl OverWindowAggregator {
         Ok(())
     }
 
+    /// Decodes restored blob key groups once at open and writes them through the typed store, so
+    /// a canonical or raw restore continues on the direct persistent path. Fold rows land in the
+    /// folds table with their restored retention stamps; buffered rows append to the pending
+    /// table in blob order, reproducing the memory restore's arrival order. `adopt_store_retention`
+    /// then hydrates the resident retention bookkeeping from what was written.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn import_partitions(
+        &mut self,
+        snapshots: &[Vec<u8>],
+    ) -> Result<(), DataFusionError> {
+        let state_count = self.store_state_types.len();
+        for bytes in snapshots {
+            if bytes.len() < 12 {
+                continue;
+            }
+            let accumulators_len =
+                u32::from_le_bytes(bytes[8..12].try_into().expect("accumulators len")) as usize;
+            assert!(
+                12 + accumulators_len <= bytes.len(),
+                "truncated over-aggregate raw key-group snapshot"
+            );
+            for batch in read_ipc_if_present(&bytes[12..12 + accumulators_len]) {
+                let stamps = retention_stamps(&batch);
+                let arity = batch.num_columns() - state_count - stamps.is_some() as usize;
+                let key_columns: Vec<usize> = (0..arity).collect();
+                let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
+                let keys_encoded =
+                    encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
+                let store = self.store.as_mut().expect("over rocksdb store");
+                let mut entries = Vec::with_capacity(batch.num_rows());
+                for row in 0..batch.num_rows() {
+                    let key_group = store.key_group(binary_row_hash(
+                        &batch,
+                        &key_columns,
+                        row,
+                        &self.key_timestamp_precisions,
+                    ));
+                    entries.push((
+                        store.fold_key(key_group, keys_encoded.row(row).data()),
+                        stamps.map_or(i64::MIN, |stamps| stamps.value(row)),
+                    ));
+                }
+                let state_columns: Vec<ArrayRef> = (arity..arity + state_count)
+                    .map(|column| batch.column(column).clone())
+                    .collect();
+                store.write_folds(&entries, &state_columns)?;
+            }
+            for batch in read_ipc_if_present(&bytes[12 + accumulators_len..]) {
+                let rowtimes = rt_to_millis(batch.column(self.rt_column));
+                self.store
+                    .as_mut()
+                    .expect("over rocksdb store")
+                    .push_pending(
+                        &batch,
+                        &self.key_columns,
+                        &self.key_timestamp_precisions,
+                        &rowtimes,
+                    )?;
+            }
+        }
+        Ok(())
+    }
+
     /// Persists the late-data watermark and the arrival sequence, then takes the store's native
     /// checkpoint.
     #[cfg(feature = "rocksdb-state")]

@@ -8,13 +8,20 @@ import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchSerializer;
 import tech.streamfusion.operator.EncodedPredicate;
 import tech.streamfusion.operator.NativeColumnarChangelogNormalizeOperator;
+import tech.streamfusion.operator.NativeColumnarDeduplicateOperator;
 import tech.streamfusion.operator.NativeColumnarGroupAggregateOperator;
 import tech.streamfusion.operator.NativeColumnarKeepLastDeduplicateOperator;
+import tech.streamfusion.operator.NativeColumnarSessionWindowAggregateOperator;
+import tech.streamfusion.operator.NativeColumnarTemporalSortOperator;
 import tech.streamfusion.operator.NativeColumnarTopNOperator;
 import tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator;
 import tech.streamfusion.operator.NativeColumnarWindowAggregateOperator;
+import tech.streamfusion.operator.NativeColumnarWindowRankOperator;
+import tech.streamfusion.operator.NativeIntervalJoinOperator;
 import tech.streamfusion.operator.NativeOverAggregateOperator;
 import tech.streamfusion.operator.NativeTemporalJoinOperator;
+import tech.streamfusion.operator.NativeWindowJoinOperator;
+import tech.streamfusion.operator.NativeStateRouteProbe;
 import tech.streamfusion.operator.RowDataArrowConverter;
 import tech.streamfusion.operator.TaskOffHeapMemory;
 import java.util.ArrayList;
@@ -137,6 +144,459 @@ class RocksDBNativeStateBackendAllOperatorsTest {
       restored.setProcessingTime(1000);
       assertEquals(List.of(List.of(6L, 0L, 1000L)), collectWindows(restored));
     }
+  }
+
+  /**
+   * A windowed operator's canonical restore also imports into its typed store: the restored
+   * event-time window aggregate provably runs direct, the imported open window fires on the next
+   * watermark, and a checkpoint taken after the import round-trips through a second restore.
+   */
+  @Test
+  void canonicalRestoreImportsWindowAggregateIntoDirectStore() throws Exception {
+    OperatorSubtaskState savepoint;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> memory =
+            eventTimeWindowHarness(eventTimeWindowOperator())) {
+      memory.setup(new ArrowBatchSerializer());
+      memory.open();
+      memory.processElement(new StreamRecord<>(windowBatch(allocator, 6)));
+      savepoint = canonicalSavepoint(memory);
+    }
+
+    OperatorSubtaskState checkpoint;
+    NativeColumnarWindowAggregateOperator imported = eventTimeWindowOperator();
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> restored =
+            eventTimeWindowHarness(imported)) {
+      restored.setStateBackend(backend());
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(savepoint);
+      restored.open();
+      assertTrue(
+          NativeStateRouteProbe.directRocksDBState(imported),
+          "a canonical restore must import into the direct typed store, not the blob path");
+      restored.processElement(new StreamRecord<>(windowBatch(allocator, 4)));
+      checkpoint = restored.snapshot(1, 1);
+      rocksHandle(checkpoint);
+      restored.notifyOfCompletedCheckpoint(1);
+    }
+
+    try (KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+        eventTimeWindowHarness(eventTimeWindowOperator())) {
+      harness.setStateBackend(backend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(checkpoint);
+      harness.open();
+      harness.processWatermark(new Watermark(1000));
+      assertEquals(List.of(List.of(10L, 0L, 1000L)), collectWindows(harness));
+    }
+  }
+
+  /**
+   * A window join's canonical restore imports both sides' buffered rows into the typed store: the
+   * restored operator provably runs direct, the imported rows join on the closing watermark exactly
+   * as an uninterrupted memory run does, and a checkpoint taken after the import round-trips.
+   * The savepoint predates any watermark, so nothing depends on the (unpersisted) watermark.
+   */
+  @Test
+  void canonicalRestoreImportsWindowJoinIntoDirectStore() throws Exception {
+    List<List<Long>> expected;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+            reference = windowJoinHarness(windowJoinOperator())) {
+      reference.setup(new ArrowBatchSerializer());
+      reference.open();
+      reference.processElement1(new StreamRecord<>(windowJoinBatch(allocator, 1, 10)));
+      reference.processElement2(new StreamRecord<>(windowJoinBatch(allocator, 1, 100)));
+      reference.processBothWatermarks(new Watermark(1000));
+      expected = collectWindowJoinPairs(reference);
+      assertEquals(List.of(List.of(1L, 10L, 1L, 100L)), expected);
+    }
+
+    OperatorSubtaskState savepoint;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+            memory = windowJoinHarness(windowJoinOperator())) {
+      memory.setup(new ArrowBatchSerializer());
+      memory.open();
+      memory.processElement1(new StreamRecord<>(windowJoinBatch(allocator, 1, 10)));
+      memory.processElement2(new StreamRecord<>(windowJoinBatch(allocator, 1, 100)));
+      savepoint = canonicalSavepoint(memory);
+    }
+
+    OperatorSubtaskState checkpoint;
+    NativeWindowJoinOperator imported = windowJoinOperator();
+    try (KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+        restored = windowJoinHarness(imported)) {
+      restored.setStateBackend(backend());
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(savepoint);
+      restored.open();
+      assertTrue(
+          NativeStateRouteProbe.directRocksDBState(imported),
+          "a canonical restore must import into the direct typed store, not the blob path");
+      checkpoint = restored.snapshot(1, 1);
+      rocksHandle(checkpoint);
+      restored.notifyOfCompletedCheckpoint(1);
+      restored.processBothWatermarks(new Watermark(1000));
+      assertEquals(expected, collectWindowJoinPairs(restored));
+    }
+
+    try (KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+        harness = windowJoinHarness(windowJoinOperator())) {
+      harness.setStateBackend(backend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(checkpoint);
+      harness.open();
+      harness.processBothWatermarks(new Watermark(1000));
+      assertEquals(expected, collectWindowJoinPairs(harness));
+    }
+  }
+
+  /**
+   * An interval join's canonical restore imports the buffered rows (and their outer-join row-id
+   * identity) into the typed store: the restored operator provably runs direct, a post-restore
+   * probe row still matches the imported buffered row, and the checkpoint taken right after the
+   * import round-trips. No watermark is taken before the savepoint, so nothing depends on the
+   * (unpersisted) watermark.
+   */
+  @Test
+  void canonicalRestoreImportsIntervalJoinIntoDirectStore() throws Exception {
+    List<List<Object>> expected;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+            reference = intervalJoinHarness(intervalJoinOperator())) {
+      reference.setup(new ArrowBatchSerializer());
+      reference.open();
+      reference.processElement1(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(1L, 10L, 5000L)), TEMPORAL_ROW, allocator))));
+      collectTemporal(reference);
+      reference.processElement2(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(1L, 100L, 5500L)), TEMPORAL_ROW, allocator))));
+      expected = collectTemporal(reference);
+      assertEquals(List.of(temporalRow(1L, 10L, 5000L, 1L, 100L, 5500L)), expected);
+    }
+
+    OperatorSubtaskState savepoint;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+            memory = intervalJoinHarness(intervalJoinOperator())) {
+      memory.setup(new ArrowBatchSerializer());
+      memory.open();
+      memory.processElement1(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(1L, 10L, 5000L)), TEMPORAL_ROW, allocator))));
+      savepoint = canonicalSavepoint(memory);
+    }
+
+    OperatorSubtaskState checkpoint;
+    NativeIntervalJoinOperator imported = intervalJoinOperator();
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+            restored = intervalJoinHarness(imported)) {
+      restored.setStateBackend(backend());
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(savepoint);
+      restored.open();
+      assertTrue(
+          NativeStateRouteProbe.directRocksDBState(imported),
+          "a canonical restore must import into the direct typed store, not the blob path");
+      checkpoint = restored.snapshot(1, 1);
+      rocksHandle(checkpoint);
+      restored.notifyOfCompletedCheckpoint(1);
+      restored.processElement2(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(1L, 100L, 5500L)), TEMPORAL_ROW, allocator))));
+      assertEquals(expected, collectTemporal(restored));
+    }
+
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+            harness = intervalJoinHarness(intervalJoinOperator())) {
+      harness.setStateBackend(backend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(checkpoint);
+      harness.open();
+      harness.processElement2(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(1L, 100L, 5500L)), TEMPORAL_ROW, allocator))));
+      assertEquals(expected, collectTemporal(harness));
+    }
+  }
+
+  /**
+   * A window rank's canonical restore imports the open windows' buffered rows and the late-data
+   * watermark into the typed store: the restored operator provably runs direct, post-restore rows
+   * re-rank against the imported buffer, the closing watermark emits exactly the uninterrupted
+   * memory run's top-N, and a checkpoint taken after the import round-trips.
+   */
+  @Test
+  void canonicalRestoreImportsWindowRankIntoDirectStore() throws Exception {
+    List<List<Long>> expected;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> reference =
+            windowRankHarness(windowRankOperator())) {
+      reference.setup(new ArrowBatchSerializer());
+      reference.open();
+      reference.processElement(
+          new StreamRecord<>(rankBatch(allocator, rankRow(10), rankRow(30))));
+      reference.processElement(new StreamRecord<>(rankBatch(allocator, rankRow(20))));
+      reference.processWatermark(new Watermark(1000));
+      expected = collectRanked(reference);
+      assertEquals(List.of(List.of(30L, 1L), List.of(20L, 2L)), expected);
+    }
+
+    OperatorSubtaskState savepoint;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> memory =
+            windowRankHarness(windowRankOperator())) {
+      memory.setup(new ArrowBatchSerializer());
+      memory.open();
+      memory.processElement(new StreamRecord<>(rankBatch(allocator, rankRow(10), rankRow(30))));
+      savepoint = canonicalSavepoint(memory);
+    }
+
+    OperatorSubtaskState checkpoint;
+    NativeColumnarWindowRankOperator imported = windowRankOperator();
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> restored =
+            windowRankHarness(imported)) {
+      restored.setStateBackend(backend());
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(savepoint);
+      restored.open();
+      assertTrue(
+          NativeStateRouteProbe.directRocksDBState(imported),
+          "a canonical restore must import into the direct typed store, not the blob path");
+      restored.processElement(new StreamRecord<>(rankBatch(allocator, rankRow(20))));
+      checkpoint = restored.snapshot(1, 1);
+      rocksHandle(checkpoint);
+      restored.notifyOfCompletedCheckpoint(1);
+      restored.processWatermark(new Watermark(1000));
+      assertEquals(expected, collectRanked(restored));
+    }
+
+    try (KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+        windowRankHarness(windowRankOperator())) {
+      harness.setStateBackend(backend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(checkpoint);
+      harness.open();
+      harness.processWatermark(new Watermark(1000));
+      assertEquals(expected, collectRanked(harness));
+    }
+  }
+
+  /**
+   * A session aggregate's canonical restore imports the open sessions into the typed store: the
+   * restored operator provably runs direct, a post-restore row merges into the imported session,
+   * the closing watermark emits exactly the uninterrupted memory run's session, and a checkpoint
+   * taken after the import round-trips. The savepoint predates any watermark, so nothing depends
+   * on the (unpersisted) watermark.
+   */
+  @Test
+  void canonicalRestoreImportsSessionAggregateIntoDirectStore() throws Exception {
+    List<List<Long>> expected;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> reference =
+            sessionHarness(sessionOperator())) {
+      reference.setup(new ArrowBatchSerializer());
+      reference.open();
+      reference.processElement(new StreamRecord<>(sessionBatch(allocator, 10, 0)));
+      reference.processElement(new StreamRecord<>(sessionBatch(allocator, 20, 200)));
+      reference.processWatermark(new Watermark(700));
+      expected = collectSessions(reference);
+      assertEquals(List.of(List.of(30L, 0L, 700L)), expected);
+    }
+
+    OperatorSubtaskState savepoint;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> memory =
+            sessionHarness(sessionOperator())) {
+      memory.setup(new ArrowBatchSerializer());
+      memory.open();
+      memory.processElement(new StreamRecord<>(sessionBatch(allocator, 10, 0)));
+      savepoint = canonicalSavepoint(memory);
+    }
+
+    OperatorSubtaskState checkpoint;
+    NativeColumnarSessionWindowAggregateOperator imported = sessionOperator();
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> restored =
+            sessionHarness(imported)) {
+      restored.setStateBackend(backend());
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(savepoint);
+      restored.open();
+      assertTrue(
+          NativeStateRouteProbe.directRocksDBState(imported),
+          "a canonical restore must import into the direct typed store, not the blob path");
+      restored.processElement(new StreamRecord<>(sessionBatch(allocator, 20, 200)));
+      checkpoint = restored.snapshot(1, 1);
+      rocksHandle(checkpoint);
+      restored.notifyOfCompletedCheckpoint(1);
+      restored.processWatermark(new Watermark(700));
+      assertEquals(expected, collectSessions(restored));
+    }
+
+    try (KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+        sessionHarness(sessionOperator())) {
+      harness.setStateBackend(backend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(checkpoint);
+      harness.open();
+      harness.processWatermark(new Watermark(700));
+      assertEquals(expected, collectSessions(harness));
+    }
+  }
+
+  /**
+   * A keep-first deduplicate's canonical restore imports the pending candidates, fired markers,
+   * AND the late-data watermark (which this blob carries) into the typed store: the restored
+   * operator provably runs direct, an already-fired key stays suppressed, a row below the imported
+   * watermark drops as late, the remaining input finishes exactly as the uninterrupted memory run
+   * does, and a checkpoint taken after the import round-trips.
+   */
+  @Test
+  void canonicalRestoreImportsKeepFirstDedupIntoDirectStore() throws Exception {
+    List<List<Long>> expected;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> reference =
+            keepFirstHarness(keepFirstOperator())) {
+      reference.setup(new ArrowBatchSerializer());
+      reference.open();
+      keepFirstPhaseOne(reference, allocator);
+      collectDedup(reference);
+      expected = keepFirstPhaseTwo(reference, allocator);
+      assertEquals(List.of(List.of(2L, 40L), List.of(3L, 8L)), expected);
+    }
+
+    OperatorSubtaskState savepoint;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> memory =
+            keepFirstHarness(keepFirstOperator())) {
+      memory.setup(new ArrowBatchSerializer());
+      memory.open();
+      keepFirstPhaseOne(memory, allocator);
+      collectDedup(memory);
+      savepoint = canonicalSavepoint(memory);
+    }
+
+    OperatorSubtaskState checkpoint;
+    NativeColumnarDeduplicateOperator imported = keepFirstOperator();
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> restored =
+            keepFirstHarness(imported)) {
+      restored.setStateBackend(backend());
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(savepoint);
+      restored.open();
+      assertTrue(
+          NativeStateRouteProbe.directRocksDBState(imported),
+          "a canonical restore must import into the direct typed store, not the blob path");
+      checkpoint = restored.snapshot(1, 1);
+      rocksHandle(checkpoint);
+      restored.notifyOfCompletedCheckpoint(1);
+      assertEquals(expected, keepFirstPhaseTwo(restored, allocator));
+    }
+
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            keepFirstHarness(keepFirstOperator())) {
+      harness.setStateBackend(backend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(checkpoint);
+      harness.open();
+      assertEquals(expected, keepFirstPhaseTwo(harness, allocator));
+    }
+  }
+
+  /**
+   * A temporal sorter's canonical restore imports the buffered rows into the typed store under
+   * fresh arrival sequences: the restored operator provably runs direct, later watermarks release
+   * the imported and post-restore rows in exactly the uninterrupted memory run's order, and a
+   * checkpoint taken after the import round-trips.
+   */
+  @Test
+  void canonicalRestoreImportsTemporalSorterIntoDirectStore() throws Exception {
+    List<List<Long>> expected;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> reference =
+            sorterHarness(new NativeColumnarTemporalSortOperator(1, SORT_ROW))) {
+      reference.setup(new ArrowBatchSerializer());
+      reference.open();
+      reference.processElement(
+          new StreamRecord<>(sortBatch(allocator, sortRow(30, 2000), sortRow(10, 500))));
+      reference.processElement(new StreamRecord<>(sortBatch(allocator, sortRow(20, 0))));
+      reference.processWatermark(new Watermark(3000));
+      expected = collectSorted(reference);
+      assertEquals(List.of(List.of(20L, 0L), List.of(10L, 500L), List.of(30L, 2000L)), expected);
+    }
+
+    OperatorSubtaskState savepoint;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> memory =
+            sorterHarness(new NativeColumnarTemporalSortOperator(1, SORT_ROW))) {
+      memory.setup(new ArrowBatchSerializer());
+      memory.open();
+      memory.processElement(
+          new StreamRecord<>(sortBatch(allocator, sortRow(30, 2000), sortRow(10, 500))));
+      savepoint = canonicalSavepoint(memory);
+    }
+
+    OperatorSubtaskState checkpoint;
+    NativeColumnarTemporalSortOperator imported = new NativeColumnarTemporalSortOperator(1, SORT_ROW);
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> restored =
+            sorterHarness(imported)) {
+      restored.setStateBackend(backend());
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(savepoint);
+      restored.open();
+      assertTrue(
+          NativeStateRouteProbe.directRocksDBState(imported),
+          "a canonical restore must import into the direct typed store, not the blob path");
+      restored.processElement(new StreamRecord<>(sortBatch(allocator, sortRow(20, 0))));
+      checkpoint = restored.snapshot(1, 1);
+      rocksHandle(checkpoint);
+      restored.notifyOfCompletedCheckpoint(1);
+      restored.processWatermark(new Watermark(3000));
+      assertEquals(expected, collectSorted(restored));
+    }
+
+    try (KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+        sorterHarness(new NativeColumnarTemporalSortOperator(1, SORT_ROW))) {
+      harness.setStateBackend(backend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(checkpoint);
+      harness.open();
+      harness.processWatermark(new Watermark(3000));
+      assertEquals(expected, collectSorted(harness));
+    }
+  }
+
+  private static NativeColumnarWindowAggregateOperator eventTimeWindowOperator() {
+    return new NativeColumnarWindowAggregateOperator(
+        false, 1000, 1000, 1, new int[] {0}, new int[0], new int[0], new int[] {0},
+        new int[] {0}, "UTC", WINDOW_OUTPUT, false, new int[0], MAX_PARALLELISM);
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      eventTimeWindowHarness(NativeColumnarWindowAggregateOperator operator) throws Exception {
+    return new KeyedOneInputStreamOperatorTestHarness<>(
+        operator, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0);
   }
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
@@ -421,6 +881,64 @@ class RocksDBNativeStateBackendAllOperatorsTest {
       harness.processBothWatermarks(new Watermark(Long.MAX_VALUE));
       assertEquals(
           List.of(temporalRow(1L, 1L, 200L, null, null, null)), collectTemporal(harness));
+    }
+  }
+
+  /**
+   * A canonical (memory-format) savepoint restored onto the RocksDB backend imports the blob key
+   * groups into the operator's typed store once at open: the restored operator provably runs the
+   * direct route, continues the changelog from the imported state, and its next checkpoint is an
+   * ordinary incremental RocksDB handle that itself restores identically — the import round-trips.
+   */
+  @Test
+  void canonicalRestoreImportsIntoDirectStore() throws Exception {
+    OperatorSubtaskState savepoint;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> memory =
+            harness()) {
+      memory.setup(new ArrowBatchSerializer());
+      memory.open();
+      memory.processElement(new StreamRecord<>(batch(allocator, row(1, 10), row(2, 20))));
+      collect(memory);
+      savepoint = canonicalSavepoint(memory);
+    }
+
+    OperatorSubtaskState checkpoint;
+    NativeColumnarGroupAggregateOperator imported = groupAggregateOperator(0);
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> restored =
+            harness(imported)) {
+      restored.setStateBackend(backend());
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(savepoint);
+      restored.open();
+      assertTrue(
+          NativeStateRouteProbe.directRocksDBState(imported),
+          "a canonical restore must import into the direct typed store, not the blob path");
+      restored.processElement(new StreamRecord<>(batch(allocator, row(1, 5))));
+      assertEquals(
+          List.of(update(RowKind.UPDATE_BEFORE, 1, 10), update(RowKind.UPDATE_AFTER, 1, 15)),
+          collect(restored));
+      checkpoint = restored.snapshot(1, 1);
+      rocksHandle(checkpoint);
+      restored.notifyOfCompletedCheckpoint(1);
+    }
+
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            harness()) {
+      harness.setStateBackend(backend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(checkpoint);
+      harness.open();
+      harness.processElement(new StreamRecord<>(batch(allocator, row(1, 100), row(2, 7))));
+      assertEquals(
+          List.of(
+              update(RowKind.UPDATE_BEFORE, 1, 15),
+              update(RowKind.UPDATE_AFTER, 1, 115),
+              update(RowKind.UPDATE_BEFORE, 2, 20),
+              update(RowKind.UPDATE_AFTER, 2, 27)),
+          collect(harness));
     }
   }
 
@@ -1165,24 +1683,319 @@ class RocksDBNativeStateBackendAllOperatorsTest {
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness(
       long stateTtlMillis) throws Exception {
-    NativeColumnarGroupAggregateOperator operator =
-        new NativeColumnarGroupAggregateOperator(
-            new int[] {0}, // SUM
-            new int[] {0}, // BIGINT
-            new int[] {1},
-            new int[] {0},
-            new int[] {-1},
-            new int[] {-1},
-            new int[] {-1},
-            -1,
-            true,
-            false,
-            0,
-            stateTtlMillis,
-            new int[] {-1},
-            MAX_PARALLELISM);
+    return harness(groupAggregateOperator(stateTtlMillis));
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness(
+      NativeColumnarGroupAggregateOperator operator) throws Exception {
     return new KeyedOneInputStreamOperatorTestHarness<>(
         operator, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0);
+  }
+
+  private static NativeColumnarGroupAggregateOperator groupAggregateOperator(
+      long stateTtlMillis) {
+    return new NativeColumnarGroupAggregateOperator(
+        new int[] {0}, // SUM
+        new int[] {0}, // BIGINT
+        new int[] {1},
+        new int[] {0},
+        new int[] {-1},
+        new int[] {-1},
+        new int[] {-1},
+        -1,
+        true,
+        false,
+        0,
+        stateTtlMillis,
+        new int[] {-1},
+        MAX_PARALLELISM);
+  }
+
+  /** Both window-join sides `[k, v, window_start, window_end]`; the pre-attached window is [0, 1000). */
+  private static final RowType WINDOW_JOIN_ROW =
+      RowType.of(
+          new LogicalType[] {
+            new BigIntType(),
+            new BigIntType(),
+            new LocalZonedTimestampType(3),
+            new LocalZonedTimestampType(3)
+          },
+          new String[] {"k", "v", "window_start", "window_end"});
+
+  private static final RowType WINDOW_JOIN_OUTPUT =
+      RowType.of(
+          new LogicalType[] {
+            new BigIntType(),
+            new BigIntType(),
+            new LocalZonedTimestampType(3),
+            new LocalZonedTimestampType(3),
+            new BigIntType(),
+            new BigIntType(),
+            new LocalZonedTimestampType(3),
+            new LocalZonedTimestampType(3)
+          },
+          new String[] {"lk", "lv", "ls", "le", "rk", "rv", "rs", "re"});
+
+  private static NativeWindowJoinOperator windowJoinOperator() {
+    return new NativeWindowJoinOperator(
+        new int[] {0}, new int[] {0}, 2, 3, 2, 3, 0, WINDOW_JOIN_ROW, WINDOW_JOIN_ROW,
+        EncodedPredicate.NONE, false, 1000, 1000, false, new int[] {-1}, MAX_PARALLELISM);
+  }
+
+  private static KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+      windowJoinHarness(NativeWindowJoinOperator operator) throws Exception {
+    return new KeyedTwoInputStreamOperatorTestHarness<>(
+        operator, batch -> 0, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0);
+  }
+
+  private static ArrowBatch windowJoinBatch(BufferAllocator allocator, long key, long value) {
+    GenericRowData row = new GenericRowData(4);
+    row.setField(0, key);
+    row.setField(1, value);
+    row.setField(2, TimestampData.fromEpochMillis(0));
+    row.setField(3, TimestampData.fromEpochMillis(1000));
+    return new ArrowBatch(RowDataArrowConverter.write(List.of(row), WINDOW_JOIN_ROW, allocator));
+  }
+
+  private static List<List<Long>> collectWindowJoinPairs(
+      KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch> harness) {
+    List<List<Long>> rows = new ArrayList<>();
+    while (!harness.getOutput().isEmpty()) {
+      Object event = harness.getOutput().poll();
+      if (event instanceof StreamRecord) {
+        try (VectorSchemaRoot root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
+          for (RowData row : RowDataArrowConverter.read(root, WINDOW_JOIN_OUTPUT)) {
+            rows.add(List.of(row.getLong(0), row.getLong(1), row.getLong(4), row.getLong(5)));
+          }
+        }
+      }
+    }
+    return rows;
+  }
+
+  /** Inner interval join `a.rt BETWEEN b.rt - 1000 AND b.rt + 1000` over {@link #TEMPORAL_ROW}. */
+  private static NativeIntervalJoinOperator intervalJoinOperator() {
+    return new NativeIntervalJoinOperator(
+        new int[] {0}, new int[] {0}, 2, 2, -1000L, 1000L, 0, TEMPORAL_ROW, TEMPORAL_ROW,
+        EncodedPredicate.NONE, false, new int[] {-1}, MAX_PARALLELISM);
+  }
+
+  private static KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+      intervalJoinHarness(NativeIntervalJoinOperator operator) throws Exception {
+    return new KeyedTwoInputStreamOperatorTestHarness<>(
+        operator, batch -> 0, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0);
+  }
+
+  /** Window rank rows `[v, window_start, window_end]`; top-2 by v descending with rank numbers. */
+  private static final RowType RANK_ROW =
+      RowType.of(
+          new LogicalType[] {
+            new BigIntType(), new LocalZonedTimestampType(3), new LocalZonedTimestampType(3)
+          },
+          new String[] {"v", "window_start", "window_end"});
+
+  private static final RowType RANK_OUTPUT =
+      RowType.of(
+          new LogicalType[] {
+            new BigIntType(), new TimestampType(3), new TimestampType(3), new BigIntType()
+          },
+          new String[] {"v", "window_start", "window_end", "w0$o0"});
+
+  private static NativeColumnarWindowRankOperator windowRankOperator() {
+    return new NativeColumnarWindowRankOperator(
+        1, 2, new int[0], new int[0], new int[] {0}, new int[] {0}, new int[] {0}, 2, true,
+        "UTC", false, 0, 0, false, RANK_ROW, MAX_PARALLELISM);
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      windowRankHarness(NativeColumnarWindowRankOperator operator) throws Exception {
+    return new KeyedOneInputStreamOperatorTestHarness<>(
+        operator, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0);
+  }
+
+  private static RowData rankRow(long value) {
+    GenericRowData row = new GenericRowData(3);
+    row.setField(0, value);
+    row.setField(1, TimestampData.fromEpochMillis(0));
+    row.setField(2, TimestampData.fromEpochMillis(1000));
+    return row;
+  }
+
+  private static ArrowBatch rankBatch(BufferAllocator allocator, RowData... rows) {
+    return new ArrowBatch(RowDataArrowConverter.write(List.of(rows), RANK_ROW, allocator));
+  }
+
+  private static List<List<Long>> collectRanked(
+      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness) {
+    List<List<Long>> rows = new ArrayList<>();
+    while (!harness.getOutput().isEmpty()) {
+      Object event = harness.getOutput().poll();
+      if (event instanceof StreamRecord) {
+        try (VectorSchemaRoot root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
+          for (RowData row : RowDataArrowConverter.read(root, RANK_OUTPUT)) {
+            rows.add(List.of(row.getLong(0), row.getLong(3)));
+          }
+        }
+      }
+    }
+    return rows;
+  }
+
+  /** Session rows `[value, rt]` under a 500ms gap; output `[total, window_start, window_end]`. */
+  private static final RowType SESSION_ROW =
+      RowType.of(
+          new LogicalType[] {new BigIntType(), new LocalZonedTimestampType(3)},
+          new String[] {"value", "rt"});
+
+  private static final RowType SESSION_OUTPUT =
+      RowType.of(
+          new LogicalType[] {new BigIntType(), new TimestampType(3), new TimestampType(3)},
+          new String[] {"total", "window_start", "window_end"});
+
+  private static NativeColumnarSessionWindowAggregateOperator sessionOperator() {
+    return new NativeColumnarSessionWindowAggregateOperator(
+        500, 1, new int[] {0}, new int[0], new int[0], new int[] {0}, new int[] {0}, "UTC",
+        SESSION_OUTPUT, false, new int[0], MAX_PARALLELISM);
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      sessionHarness(NativeColumnarSessionWindowAggregateOperator operator) throws Exception {
+    return new KeyedOneInputStreamOperatorTestHarness<>(
+        operator, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0);
+  }
+
+  private static ArrowBatch sessionBatch(BufferAllocator allocator, long value, long eventTime) {
+    GenericRowData row = new GenericRowData(2);
+    row.setField(0, value);
+    row.setField(1, TimestampData.fromEpochMillis(eventTime));
+    return new ArrowBatch(RowDataArrowConverter.write(List.of(row), SESSION_ROW, allocator));
+  }
+
+  private static List<List<Long>> collectSessions(
+      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness) {
+    List<List<Long>> rows = new ArrayList<>();
+    while (!harness.getOutput().isEmpty()) {
+      Object event = harness.getOutput().poll();
+      if (event instanceof StreamRecord) {
+        try (VectorSchemaRoot root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
+          for (RowData row : RowDataArrowConverter.read(root, SESSION_OUTPUT)) {
+            rows.add(
+                List.of(
+                    row.getLong(0),
+                    row.getTimestamp(1, 3).getMillisecond(),
+                    row.getTimestamp(2, 3).getMillisecond()));
+          }
+        }
+      }
+    }
+    return rows;
+  }
+
+  /** Keep-first over {@link #DEDUP_ROW}: partition key column 0, rowtime column 2 (BIGINT millis). */
+  private static NativeColumnarDeduplicateOperator keepFirstOperator() {
+    return new NativeColumnarDeduplicateOperator(
+        new int[] {0}, new int[] {-1}, 2, DEDUP_ROW, 0, MAX_PARALLELISM);
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      keepFirstHarness(NativeColumnarDeduplicateOperator operator) throws Exception {
+    return new KeyedOneInputStreamOperatorTestHarness<>(
+        operator, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0);
+  }
+
+  /** Buffers three keys' rows and fires watermark 500, emitting key 1's first row `(1, 20)`. */
+  private static void keepFirstPhaseOne(
+      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness,
+      BufferAllocator allocator)
+      throws Exception {
+    harness.processElement(
+        new StreamRecord<>(
+            new ArrowBatch(
+                RowDataArrowConverter.write(
+                    List.of(
+                        GenericRowData.of(1L, 30L, 2000L),
+                        GenericRowData.of(2L, 40L, 1000L),
+                        GenericRowData.of(1L, 20L, 0L)),
+                    DEDUP_ROW,
+                    allocator))));
+    harness.processWatermark(new Watermark(500));
+  }
+
+  /**
+   * The remaining input: a row for the already-fired key 1 (suppressed by its marker), a key-3 row
+   * below the watermark 500 (dropped as late), a live key-3 candidate, and the closing watermark.
+   */
+  private static List<List<Long>> keepFirstPhaseTwo(
+      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness,
+      BufferAllocator allocator)
+      throws Exception {
+    harness.processElement(
+        new StreamRecord<>(
+            new ArrowBatch(
+                RowDataArrowConverter.write(
+                    List.of(
+                        GenericRowData.of(1L, 99L, 1500L),
+                        GenericRowData.of(3L, 7L, 300L),
+                        GenericRowData.of(3L, 8L, 1200L)),
+                    DEDUP_ROW,
+                    allocator))));
+    harness.processWatermark(new Watermark(3000));
+    return collectKeepFirst(harness);
+  }
+
+  private static List<List<Long>> collectKeepFirst(
+      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness) {
+    List<List<Long>> rows = new ArrayList<>();
+    while (!harness.getOutput().isEmpty()) {
+      Object event = harness.getOutput().poll();
+      if (event instanceof StreamRecord) {
+        try (VectorSchemaRoot root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
+          for (RowData row : RowDataArrowConverter.read(root, DEDUP_ROW)) {
+            rows.add(List.of(row.getLong(0), row.getLong(1)));
+          }
+        }
+      }
+    }
+    rows.sort(java.util.Comparator.comparingLong(row -> row.get(0)));
+    return rows;
+  }
+
+  /** Sorter rows `[v, rt]`; ordered by rt (column 1). The sorter owns one canonical empty key. */
+  private static final RowType SORT_ROW =
+      RowType.of(
+          new LogicalType[] {new BigIntType(), new LocalZonedTimestampType(3)},
+          new String[] {"v", "rt"});
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      sorterHarness(NativeColumnarTemporalSortOperator operator) throws Exception {
+    return new KeyedOneInputStreamOperatorTestHarness<>(operator, batch -> 0, Types.INT, 1, 1, 0);
+  }
+
+  private static RowData sortRow(long value, long rtMillis) {
+    GenericRowData row = new GenericRowData(2);
+    row.setField(0, value);
+    row.setField(1, TimestampData.fromEpochMillis(rtMillis));
+    return row;
+  }
+
+  private static ArrowBatch sortBatch(BufferAllocator allocator, RowData... rows) {
+    return new ArrowBatch(RowDataArrowConverter.write(List.of(rows), SORT_ROW, allocator));
+  }
+
+  private static List<List<Long>> collectSorted(
+      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness) {
+    List<List<Long>> rows = new ArrayList<>();
+    while (!harness.getOutput().isEmpty()) {
+      Object event = harness.getOutput().poll();
+      if (event instanceof StreamRecord) {
+        try (VectorSchemaRoot root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
+          for (RowData row : RowDataArrowConverter.read(root, SORT_ROW)) {
+            rows.add(List.of(row.getLong(0), row.getTimestamp(1, 3).getMillisecond()));
+          }
+        }
+      }
+    }
+    return rows;
   }
 
   private static IncrementalRemoteKeyedStateHandle rocksHandle(OperatorSubtaskState state) {

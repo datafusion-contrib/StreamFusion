@@ -76,8 +76,9 @@ public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindow
   }
 
   @Override
-  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
-    return createRocksDBWindowAggregatorHandle(rocksdb, cumulative, keyTypes);
+  protected long createRocksDBHandle(
+      RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
+    return createRocksDBWindowAggregatorHandle(rocksdb, cumulative, keyTypes, restoredPartitions);
   }
 
   @Override

@@ -216,6 +216,44 @@ impl WindowJoiner {
         )
     }
 
+    /// Decodes restored blob key groups once at open and appends them through the typed store, so
+    /// a canonical or raw restore continues on the direct persistent path. Blob order is the
+    /// memory restore's order, so the appended sequences reproduce its arrival order per side;
+    /// the processing-time deadline arrives from the host's restored timer frame.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn import_partitions(
+        &mut self,
+        snapshots: &[Vec<u8>],
+        timer_deadline: i64,
+    ) -> Result<(), DataFusionError> {
+        for bytes in snapshots {
+            if bytes.len() < 4 {
+                continue;
+            }
+            let left_len =
+                u32::from_le_bytes(bytes[0..4].try_into().expect("snapshot len")) as usize;
+            assert!(
+                4 + left_len <= bytes.len(),
+                "truncated window-join raw key-group snapshot"
+            );
+            for (left, section) in [
+                (true, &bytes[4..4 + left_len]),
+                (false, &bytes[4 + left_len..]),
+            ] {
+                for batch in read_ipc_if_present(section) {
+                    if left {
+                        self.left_schema = Some(batch.schema());
+                    } else {
+                        self.right_schema = Some(batch.schema());
+                    }
+                    self.push_store(batch, left)?;
+                }
+            }
+        }
+        self.store_mut().adopt_restored(timer_deadline);
+        Ok(())
+    }
+
     /// The complete buffered state in the memory snapshot's per-key-group encoding, for
     /// backend-independent canonical savepoints (see `snapshot_partitions`).
     #[cfg(feature = "rocksdb-state")]

@@ -366,6 +366,20 @@ impl RocksKeepFirstDedupStore {
         Ok(out)
     }
 
+    /// Writes restored fired markers — the blob import's inverse of `scan_markers`: a stamped
+    /// marker carries its firing wall clock, an unstamped one the TTL-off empty value.
+    pub(crate) fn put_markers(
+        &mut self,
+        markers: &[(ByteKey, Option<i64>)],
+    ) -> Result<(), DataFusionError> {
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        for (key, stamp) in markers {
+            let value: Vec<u8> = stamp.map(|s| s.to_le_bytes().to_vec()).unwrap_or_default();
+            writes.put(Self::db_key(key, EMITTED_TABLE), value)?;
+        }
+        writes.finish()
+    }
+
     /// Enable-TTL migration (the blob restore's stamping): markers written by a TTL-off run carry
     /// no timestamp, so they are re-stamped a full retention from the restore instead of expiring
     /// on first probe.

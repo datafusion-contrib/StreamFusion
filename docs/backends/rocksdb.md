@@ -84,6 +84,13 @@ semantics; they do not imply identical local I/O behavior for the differences ab
 Native-format savepoints retain the incremental RocksDB/SST representation. Canonical savepoints
 materialize the backend-independent [StreamFusion canonical state format](canonical-state.md) and
 use Flink's full-snapshot writer, producing `KeyGroupsSavepointStateHandle` state. They can restore
-onto either this backend or the memory backend. The direct group-aggregate store scans and decodes
-its logical rows for this operation, so canonical savepoints are intentionally full and more
-expensive than ordinary incremental checkpoints.
+onto either this backend or the memory backend. A direct store scans and decodes its logical rows
+for this operation, so canonical savepoints are intentionally full and more expensive than ordinary
+incremental checkpoints.
+
+Restoring a canonical savepoint (or legacy raw keyed state) onto this backend decodes the blob key
+groups once at open and bulk-writes them — rows, TTL stamps, watermarks, sequence high-water marks,
+and timer deadlines — through the operator's typed store, so a memory-to-RocksDB transition
+continues on the direct per-key path and its next checkpoint is an ordinary incremental RocksDB
+handle. Only the snapshot-store shapes (the multiset group aggregates and the over aggregate's
+gated variants) restore such state into the generic snapshot store instead.

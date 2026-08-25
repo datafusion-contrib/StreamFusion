@@ -1920,10 +1920,43 @@ impl GroupAggregator {
             key_columns,
             generate_update_before,
         );
-        let num_agg = aggregator.kinds.len();
+        aggregator.load_snapshot(bytes, restored_at_ms);
+        aggregator
+    }
+
+    /// Rebuilds a single in-memory aggregator from the disjoint raw keyed-state payloads assigned
+    /// to this subtask after restore/rescale.
+    pub(crate) fn restore_partitions(
+        kinds: Vec<i64>,
+        value_types: Vec<i64>,
+        value_columns: Vec<i64>,
+        key_columns: Vec<usize>,
+        generate_update_before: bool,
+        snapshots: &[Vec<u8>],
+        restored_at_ms: i64,
+    ) -> Self {
+        let mut merged = GroupAggregator::new(
+            kinds,
+            value_types,
+            value_columns,
+            key_columns,
+            generate_update_before,
+        );
+        for bytes in snapshots {
+            merged.load_snapshot(bytes, restored_at_ms);
+        }
+        merged
+    }
+}
+
+impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
+    /// Decodes one raw key-group snapshot blob into the backing store through the state seam, so
+    /// the same decode serves the memory rebuild and the typed persistent import.
+    fn load_snapshot(&mut self, bytes: &[u8], restored_at_ms: i64) {
+        let num_agg = self.kinds.len();
         let batches = read_framed(bytes);
         if batches.is_empty() {
-            return aggregator;
+            return;
         }
         // Main batch: BinaryRow key, records, then (state, nonnull) per aggregate, then the TTL
         // timestamps when the writer had TTL on. A pre-TTL snapshot restored into a TTL'd operator
@@ -1949,7 +1982,7 @@ impl GroupAggregator {
         let records = column_i64(main, "records");
         for row in 0..main.num_rows() {
             let key = ByteKey::from(keys.value(row));
-            let state = aggregator.create(key);
+            let state = self.create(key);
             state.records = records.value(row);
             state.last_write_ms = write_timestamps
                 .as_ref()
@@ -1971,7 +2004,7 @@ impl GroupAggregator {
         // One side batch per MIN/MAX or DISTINCT aggregate: BinaryRow key, value, count.
         let mut frame = 1;
         for i in 0..num_agg {
-            if !matches!(aggregator.kinds[i], 1 | 2 | 7 | 9) {
+            if !matches!(self.kinds[i], 1 | 2 | 7 | 9) {
                 continue;
             }
             let side = &batches[frame];
@@ -1987,7 +2020,7 @@ impl GroupAggregator {
             for row in 0..side.num_rows() {
                 let key = keys.value(row);
                 let value = ScalarValue::try_from_array(values, row).expect("multiset value");
-                match aggregator.store.get_mut(key).map(|s| &mut s.aggs[i]) {
+                match self.store.get_mut(key).map(|s| &mut s.aggs[i]) {
                     Some(GroupAggState::Extremes { counts: map, .. }) => {
                         map.insert(MinMaxKey::from_scalar(&value), counts.value(row));
                     }
@@ -2003,45 +2036,25 @@ impl GroupAggregator {
                 }
             }
         }
-        aggregator
-    }
-
-    /// Rebuilds a single in-memory aggregator from the disjoint raw keyed-state payloads assigned
-    /// to this subtask after restore/rescale.
-    pub(crate) fn restore_partitions(
-        kinds: Vec<i64>,
-        value_types: Vec<i64>,
-        value_columns: Vec<i64>,
-        key_columns: Vec<usize>,
-        generate_update_before: bool,
-        snapshots: &[Vec<u8>],
-        restored_at_ms: i64,
-    ) -> Self {
-        let mut merged = GroupAggregator::new(
-            kinds.clone(),
-            value_types.clone(),
-            value_columns.clone(),
-            key_columns.clone(),
-            generate_update_before,
-        );
-        for bytes in snapshots {
-            let restored = GroupAggregator::restore(
-                kinds.clone(),
-                value_types.clone(),
-                value_columns.clone(),
-                key_columns.clone(),
-                generate_update_before,
-                bytes,
-                restored_at_ms,
-            );
-            merged.store.absorb(restored.store);
-        }
-        merged
     }
 }
 
 #[cfg(feature = "rocksdb-state")]
 impl GroupAggregator<RocksGroupStore> {
+    /// Decodes restored blob key groups once at open and writes them through the typed store, so
+    /// a canonical or raw restore continues on the direct persistent path.
+    pub(crate) fn import_partitions(
+        &mut self,
+        snapshots: &[Vec<u8>],
+        restored_at_ms: i64,
+    ) -> Result<(), DataFusionError> {
+        for bytes in snapshots {
+            self.load_snapshot(bytes, restored_at_ms);
+            self.store.end_bundle()?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn canonical_partitions(
         &mut self,
     ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {

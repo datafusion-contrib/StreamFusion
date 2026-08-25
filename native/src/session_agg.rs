@@ -622,6 +622,56 @@ impl SessionAggregator {
         Ok(partitions)
     }
 
+    /// Decodes restored blob key groups once at open and writes them through the typed store, so
+    /// a canonical or raw restore continues on the direct persistent path. The blob carries no
+    /// watermark (matching the memory restore); the processing-time deadline arrives from the
+    /// host's restored timer frame.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn import_partitions(
+        &mut self,
+        snapshots: &[Vec<u8>],
+        timer_deadline: i64,
+    ) -> Result<(), DataFusionError> {
+        let state_field_total: usize = self.store_field_counts.iter().sum();
+        for bytes in snapshots {
+            for batch in read_ipc_if_present(bytes) {
+                let arity = batch.num_columns() - 2 - state_field_total;
+                let key_columns: Vec<usize> = (0..arity).collect();
+                let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
+                let keys_encoded =
+                    encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
+                let starts = column_i64(&batch, "window_start");
+                let ends = column_i64(&batch, "window_end");
+                let store = self
+                    .store
+                    .as_mut()
+                    .expect("session-aggregate rocksdb store");
+                let mut entries = Vec::with_capacity(batch.num_rows());
+                for row in 0..batch.num_rows() {
+                    let key_group = store.key_group(binary_row_hash(
+                        &batch,
+                        &key_columns,
+                        row,
+                        &self.key_timestamp_precisions,
+                    ));
+                    entries.push((
+                        store.db_key(key_group, keys_encoded.row(row).data(), starts.value(row)),
+                        ends.value(row),
+                    ));
+                }
+                let state_columns: Vec<ArrayRef> = (arity + 2..batch.num_columns())
+                    .map(|column| batch.column(column).clone())
+                    .collect();
+                store.write(&[], &entries, &state_columns)?;
+            }
+        }
+        self.store
+            .as_mut()
+            .expect("session-aggregate rocksdb store")
+            .adopt_restored(timer_deadline);
+        Ok(())
+    }
+
     /// Serializes every open session (one row per (key, session): key, start, end, then each
     /// accumulator's state fields) with Arrow IPC, mirroring the tumbling checkpoint path.
     fn snapshot(&mut self) -> Vec<u8> {

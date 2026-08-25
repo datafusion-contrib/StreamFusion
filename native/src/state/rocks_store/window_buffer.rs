@@ -282,6 +282,12 @@ impl RocksWindowBuffer {
         self.timer_deadline
     }
 
+    /// Adopts the deadline a blob import restored (it arrives with the blobs, not from a store
+    /// checkpoint); the next checkpoint persists it under the reserved key.
+    pub(crate) fn adopt_restored(&mut self, timer_deadline: i64) {
+        self.timer_deadline = self.timer_deadline.max(timer_deadline);
+    }
+
     fn table(left: bool) -> u8 {
         if left {
             PAIR_FIRST_TABLE

@@ -67,14 +67,15 @@ public class NativeColumnarChangelogNormalizeOperator
   }
 
   @Override
-  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+  protected long createRocksDBHandle(
+      RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     return Native.createRocksDBChangelogNormalizer(
         keyColumns, keyTimestampPrecisions(), generateUpdateBefore, miniBatch, stateTtlMillis,
         getProcessingTimeService().getCurrentProcessingTime(), memoryBudgetBytes(),
         rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
         rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
         rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-        rocksdb.aligned());
+        rocksdb.aligned(), restoredPartitions);
   }
 
   @Override

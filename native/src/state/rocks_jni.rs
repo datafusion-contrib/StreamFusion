@@ -32,6 +32,20 @@ fn read_strings(env: &mut JNIEnv, values: &JObjectArray) -> Vec<Option<String>> 
         .collect()
 }
 
+/// The restored blob key groups a create receives when a canonical savepoint or raw keyed state
+/// (rather than a RocksDB checkpoint) is being restored; empty on a fresh start or native restore.
+fn read_restored_partitions(env: &mut JNIEnv, values: &JObjectArray) -> Vec<Vec<u8>> {
+    (0..env.get_array_length(values).expect("array length"))
+        .map(|i| {
+            let value = env
+                .get_object_array_element(values, i)
+                .expect("array element");
+            env.convert_byte_array(&JByteArray::from(value))
+                .expect("restored partition bytes")
+        })
+        .collect()
+}
+
 /// Opens an operator's typed store: fresh when no restored sources exist, otherwise merged from
 /// the restored checkpoint directories with this subtask's key-group range.
 #[allow(clippy::too_many_arguments)]
@@ -216,6 +230,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBGroupAggregato
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let kinds = read_int_array(&env, &aggregate_kinds);
@@ -266,6 +281,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBGroupAggregato
             }
             base.with_backend(store)
                 .with_read_through_budget(memory_budget_bytes)
+        });
+        let aggregator = aggregator.and_then(|mut aggregator| {
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            aggregator.import_partitions(&restored, now_millis)?;
+            Ok(aggregator)
         });
         boxed_or_throw(&mut env, aggregator)
     })
@@ -418,6 +438,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBChangelogNorma
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let config = RocksStoreConfig {
@@ -448,6 +469,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBChangelogNorma
             .with_state_ttl(state_ttl_millis)
             .with_backend(store)
             .with_read_through_budget(memory_budget_bytes)
+        });
+        let normalizer = normalizer.and_then(|mut normalizer| {
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            normalizer.import_partitions(&restored, now_millis)?;
+            Ok(normalizer)
         });
         boxed_or_throw(&mut env, normalizer)
     })
@@ -621,6 +647,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBKeepLastDedupl
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let config = RocksStoreConfig {
@@ -656,6 +683,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBKeepLastDedupl
             .with_state_ttl(state_ttl_millis)
             .with_backend(store)
             .with_read_through_budget(memory_budget_bytes)
+        });
+        let dedup = dedup.and_then(|mut dedup| {
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            dedup.import_partitions(&restored, now_millis)?;
+            Ok(dedup)
         });
         boxed_or_throw(&mut env, dedup)
     })
@@ -884,6 +916,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBKeepFirstDedup
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let partitions = read_columns(&env, &partition_columns);
@@ -906,11 +939,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBKeepFirstDedup
             key_group_end,
             aligned,
         );
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
         let dedup = store.and_then(|store| {
             let mut dedup = KeepFirstDeduplicator::new(partitions, rt_column as usize)
                 .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
                 .with_state_ttl(state_ttl_millis)
                 .with_store(store);
+            dedup.import_partitions(&restored)?;
             dedup.adopt_store_ttl(now_millis)?;
             dedup.with_read_through_budget(memory_budget_bytes)
         });
@@ -1058,6 +1093,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBUpdatingJoiner
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let config = RocksStoreConfig {
@@ -1107,6 +1143,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBUpdatingJoiner
             .with_state_ttl(left_state_ttl_millis, right_state_ttl_millis)
             .with_backend(left_store, right_store)
             .with_read_through_budget(memory_budget_bytes)
+        });
+        let joiner = joiner.and_then(|mut joiner| {
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            joiner.import_partitions(&restored, now_millis)?;
+            Ok(joiner)
         });
         boxed_or_throw(&mut env, joiner)
     })
@@ -1361,6 +1402,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowJoiner<'
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
+    restored_timer_deadline: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let config = RocksStoreConfig {
@@ -1410,6 +1453,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowJoiner<'
             .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
             .with_store(store)
             .with_read_through_budget(memory_budget_bytes)
+        });
+        let joiner = joiner.and_then(|mut joiner| {
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            joiner.import_partitions(&restored, restored_timer_deadline)?;
+            Ok(joiner)
         });
         boxed_or_throw(&mut env, joiner)
     })
@@ -1647,6 +1695,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBIntervalJoiner
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
+    restored_timer_deadline: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let config = RocksStoreConfig {
@@ -1696,6 +1746,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBIntervalJoiner
             .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
             .with_store(store)
             .with_read_through_budget(memory_budget_bytes)
+        });
+        let joiner = joiner.and_then(|mut joiner| {
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            joiner.import_partitions(&restored, restored_timer_deadline)?;
+            Ok(joiner)
         });
         boxed_or_throw(&mut env, joiner)
     })
@@ -1975,6 +2030,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTemporalJoiner
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let config = RocksStoreConfig {
@@ -2023,6 +2079,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTemporalJoiner
             .with_state_retention(state_ttl_millis)
             .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
             .with_store(store);
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            joiner.import_partitions(&restored)?;
             joiner.adopt_store_retention(now_millis)?;
             joiner.with_read_through_budget(memory_budget_bytes)
         });
@@ -2234,6 +2292,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTemporalSorter
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let config = RocksStoreConfig {
@@ -2254,9 +2313,12 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTemporalSorter
             aligned,
         );
         let sorter = store.and_then(|store| {
-            TemporalSorter::new(rt_column as usize)
+            let mut sorter = TemporalSorter::new(rt_column as usize)
                 .with_store(store)
-                .with_read_through_budget(memory_budget_bytes)
+                .with_read_through_budget(memory_budget_bytes)?;
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            sorter.import_snapshots(&restored)?;
+            Ok(sorter)
         });
         boxed_or_throw(&mut env, sorter)
     })
@@ -2463,6 +2525,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowAggregat
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
+    restored_timer_deadline: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let kinds = read_int_array(&env, &aggregate_kinds);
@@ -2496,7 +2560,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowAggregat
             ))
         };
         let aggregator = store.and_then(|store| {
-            TumblingAggregator::new(
+            let mut aggregator = TumblingAggregator::new(
                 window_millis,
                 slide_millis,
                 cumulative != 0,
@@ -2505,7 +2569,10 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowAggregat
             )
             .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
             .with_store(store, key_types)
-            .with_read_through_budget(memory_budget_bytes)
+            .with_read_through_budget(memory_budget_bytes)?;
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            aggregator.import_partitions(&restored, restored_timer_deadline)?;
+            Ok(aggregator)
         });
         boxed_or_throw(&mut env, aggregator)
     })
@@ -2718,6 +2785,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSessionAggrega
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
+    restored_timer_deadline: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let kinds = read_int_array(&env, &aggregate_kinds);
@@ -2751,10 +2820,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSessionAggrega
             ))
         };
         let aggregator = store.and_then(|store| {
-            SessionAggregator::new(gap_millis, value_types, kinds)
+            let mut aggregator = SessionAggregator::new(gap_millis, value_types, kinds)
                 .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
                 .with_store(store, key_types)
-                .with_read_through_budget(memory_budget_bytes)
+                .with_read_through_budget(memory_budget_bytes)?;
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            aggregator.import_partitions(&restored, restored_timer_deadline)?;
+            Ok(aggregator)
         });
         boxed_or_throw(&mut env, aggregator)
     })
@@ -2965,6 +3037,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBOverAggregator
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let kinds = read_int_array(&env, &aggregate_kinds);
@@ -3014,6 +3087,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBOverAggregator
             .with_state_retention(state_ttl_millis)
             .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
             .with_store(store, key_types);
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            aggregator.import_partitions(&restored)?;
             aggregator.adopt_store_retention(now_millis)?;
             aggregator.with_read_through_budget(memory_budget_bytes)
         });
@@ -3155,6 +3230,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTopNRanker<'lo
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let partitions = read_columns(&env, &partition_columns);
@@ -3208,6 +3284,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTopNRanker<'lo
                 .map(RocksTopNHandle::Append)
             }
         });
+        let ranker = ranker.and_then(|mut ranker| {
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            ranker.import_partitions(&restored, now_millis)?;
+            Ok(ranker)
+        });
         boxed_or_throw(&mut env, ranker)
     })
 }
@@ -3240,6 +3321,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBUpdateFastTopN
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let partitions = read_columns(&env, &partition_columns);
@@ -3284,6 +3366,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBUpdateFastTopN
             .with_backend(store)
             .with_read_through_budget(memory_budget_bytes)
             .map(RocksTopNHandle::UpdateFast)
+        });
+        let ranker = ranker.and_then(|mut ranker| {
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            ranker.import_partitions(&restored, now_millis)?;
+            Ok(ranker)
         });
         boxed_or_throw(&mut env, ranker)
     })
@@ -3493,6 +3580,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowRanker<'
     key_group_start: jint,
     key_group_end: jint,
     aligned: jboolean,
+    restored_partitions: JObjectArray<'local>,
+    restored_timer_deadline: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         let schema = import_schema(schema_address);
@@ -3532,6 +3621,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowRanker<'
             .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
             .with_store(store, schema)
             .with_memory_budget(memory_budget_bytes)
+        });
+        let ranker = ranker.and_then(|mut ranker| {
+            let restored = read_restored_partitions(&mut env, &restored_partitions);
+            ranker.import_partitions(&restored, restored_timer_deadline)?;
+            Ok(ranker)
         });
         boxed_or_throw(&mut env, ranker)
     })

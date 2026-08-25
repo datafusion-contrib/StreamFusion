@@ -80,7 +80,8 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   }
 
   @Override
-  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+  protected long createRocksDBHandle(
+      RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     long now = getProcessingTimeService().getCurrentProcessingTime();
     return withRowSchema(
         rowType,
@@ -107,7 +108,8 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
                 rocksdb.sourceSnapshotTokens(),
                 rocksdb.keyGroupStart(),
                 rocksdb.keyGroupEnd(),
-                rocksdb.aligned()));
+                rocksdb.aligned(),
+                restoredPartitions));
   }
 
   @Override

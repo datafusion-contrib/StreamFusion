@@ -100,7 +100,8 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
   }
 
   @Override
-  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+  protected long createRocksDBHandle(
+      RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     long now = getProcessingTimeService().getCurrentProcessingTime();
     if (updateFast()) {
       return withRowSchema(
@@ -113,7 +114,8 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
                   memoryBudgetBytes(), schemaAddress, rocksdb.tableDirectory(), maxParallelism(),
                   rocksdb.optionsJson(), rocksdb.sharedResourcesHandle(),
                   rocksdb.sourceDirectories(), rocksdb.sourceSnapshotTokens(),
-                  rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(), rocksdb.aligned()));
+                  rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(), rocksdb.aligned(),
+                  restoredPartitions));
     }
     return withRowSchema(
         rowType,
@@ -124,7 +126,8 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
                 stateTtlMillis, now, memoryBudgetBytes(), schemaAddress, rocksdb.tableDirectory(),
                 maxParallelism(), rocksdb.optionsJson(), rocksdb.sharedResourcesHandle(),
                 rocksdb.sourceDirectories(), rocksdb.sourceSnapshotTokens(),
-                rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(), rocksdb.aligned()));
+                rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(), rocksdb.aligned(),
+                  restoredPartitions));
   }
 
   @Override

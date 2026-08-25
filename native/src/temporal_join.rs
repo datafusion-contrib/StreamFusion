@@ -1152,6 +1152,63 @@ impl TemporalJoiner {
         Ok(self.finish_advance(decisions, pred_pairs, pred_idx))
     }
 
+    /// Decodes restored blob key groups once at open and writes them through the typed store, so
+    /// a canonical or raw restore continues on the direct persistent path. Probe rows append in
+    /// blob order (fresh sequences reproduce arrival order per key), build versions key by their
+    /// version timestamp, and deadlines land in the deadline table; `adopt_store_retention` then
+    /// applies the enable-retention migration exactly as the memory restore does.
+    pub(crate) fn import_partitions(
+        &mut self,
+        snapshots: &[Vec<u8>],
+    ) -> Result<(), DataFusionError> {
+        for bytes in snapshots {
+            if bytes.is_empty() {
+                continue;
+            }
+            let sections = read_framed_sections(bytes);
+            for (left, section) in [(true, &sections[0]), (false, &sections[1])] {
+                let key_columns = if left {
+                    self.left_keys.clone()
+                } else {
+                    self.right_keys.clone()
+                };
+                for batch in read_ipc_if_present(section) {
+                    let arity = batch.num_columns() - 2;
+                    let times = column_i64(&batch, "__time__");
+                    let kinds = batch
+                        .column_by_name("__kind__")
+                        .expect("__kind__")
+                        .as_any()
+                        .downcast_ref::<Int8Array>()
+                        .expect("__kind__ i8")
+                        .clone();
+                    let data = batch.project(&(0..arity).collect::<Vec<_>>())?;
+                    let store = self.store.as_mut().expect("temporal-join rocksdb store");
+                    let entry_keys =
+                        store.entry_keys(&data, &key_columns, &self.key_timestamp_precisions);
+                    if left {
+                        store.push_left(&data, &entry_keys, &times, Some(&kinds))?;
+                    } else {
+                        store.push_right(&data, &entry_keys, &times, Some(&kinds))?;
+                    }
+                }
+            }
+            if let Some(section) = sections.get(2) {
+                for batch in read_ipc_if_present(section) {
+                    let deadlines = column_i64(&batch, CLEANUP_AT_COLUMN);
+                    let key_columns: Vec<usize> = (0..batch.num_columns() - 1).collect();
+                    let store = self.store.as_mut().expect("temporal-join rocksdb store");
+                    let entry_keys =
+                        store.entry_keys(&batch, &key_columns, &self.key_timestamp_precisions);
+                    for (row, key) in entry_keys.iter().enumerate() {
+                        store.set_deadline(key, deadlines.value(row))?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// The complete persistent state in the blob snapshot's per-key-group framed-section encoding
     /// (probe rows, build versions, and — while cleaning is on — the deadline section), for
     /// backend-independent canonical savepoints.

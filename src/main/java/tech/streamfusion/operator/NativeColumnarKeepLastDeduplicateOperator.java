@@ -92,7 +92,8 @@ public class NativeColumnarKeepLastDeduplicateOperator
   }
 
   @Override
-  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+  protected long createRocksDBHandle(
+      RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     return Native.createRocksDBKeepLastDeduplicator(
         partitionColumns, keyTimestampPrecisions(), rowtimeColumn, generateUpdateBefore,
         generateInsert, rowtimeOrdered, keepFirst, miniBatch, compactChanges, stateTtlMillis,
@@ -100,7 +101,7 @@ public class NativeColumnarKeepLastDeduplicateOperator
         rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
         rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
         rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-        rocksdb.aligned());
+        rocksdb.aligned(), restoredPartitions);
   }
 
   @Override

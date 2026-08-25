@@ -1667,6 +1667,21 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
 /// left and right sections composed exactly as the memory partitions are.
 #[cfg(feature = "rocksdb-state")]
 impl UpdatingJoiner<RocksJoinStore> {
+    /// Decodes restored blob key groups once at open and writes them through the typed stores, so
+    /// a canonical or raw restore continues on the direct persistent path.
+    pub(crate) fn import_partitions(
+        &mut self,
+        snapshots: &[Vec<u8>],
+        restored_at_ms: i64,
+    ) -> Result<(), DataFusionError> {
+        for bytes in snapshots {
+            self.load_snapshot(bytes, restored_at_ms);
+            self.left_state.end_bundle()?;
+            self.right_state.end_bundle()?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn canonical_partitions(
         &mut self,
     ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
@@ -1768,12 +1783,7 @@ impl UpdatingJoiner {
             predicate,
         )
         .with_key_timestamp_precisions(key_timestamp_precisions);
-        if bytes.is_empty() {
-            return joiner;
-        }
-        let left_len = u32::from_le_bytes(bytes[0..4].try_into().expect("snapshot len")) as usize;
-        joiner.load_side(true, &bytes[4..4 + left_len], restored_at_ms);
-        joiner.load_side(false, &bytes[4 + left_len..], restored_at_ms);
+        joiner.load_snapshot(bytes, restored_at_ms);
         joiner
     }
 
@@ -1799,19 +1809,26 @@ impl UpdatingJoiner {
         )
         .with_key_timestamp_precisions(key_timestamp_precisions);
         for bytes in snapshots {
-            if bytes.len() < 4 {
-                continue;
-            }
-            let left_len =
-                u32::from_le_bytes(bytes[0..4].try_into().expect("snapshot len")) as usize;
-            assert!(
-                4 + left_len <= bytes.len(),
-                "truncated updating-join raw key-group snapshot"
-            );
-            joiner.load_side(true, &bytes[4..4 + left_len], restored_at_ms);
-            joiner.load_side(false, &bytes[4 + left_len..], restored_at_ms);
+            joiner.load_snapshot(bytes, restored_at_ms);
         }
         joiner
+    }
+}
+
+/// Blob decode shared by the memory rebuild and the typed persistent import: every load goes
+/// through the state seam only.
+impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
+    fn load_snapshot(&mut self, bytes: &[u8], restored_at_ms: i64) {
+        if bytes.len() < 4 {
+            return;
+        }
+        let left_len = u32::from_le_bytes(bytes[0..4].try_into().expect("snapshot len")) as usize;
+        assert!(
+            4 + left_len <= bytes.len(),
+            "truncated updating-join raw key-group snapshot"
+        );
+        self.load_side(true, &bytes[4..4 + left_len], restored_at_ms);
+        self.load_side(false, &bytes[4 + left_len..], restored_at_ms);
     }
 
     fn load_side(&mut self, is_left: bool, bytes: &[u8], restored_at_ms: i64) {

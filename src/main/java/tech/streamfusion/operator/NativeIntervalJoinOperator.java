@@ -107,7 +107,8 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
   }
 
   @Override
-  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+  protected long createRocksDBHandle(
+      RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     return withSchemas(
         (l, r) ->
             Native.createRocksDBIntervalJoiner(
@@ -119,7 +120,8 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
                 rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
                 rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
                 rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-                rocksdb.aligned()));
+                rocksdb.aligned(), restoredPartitions,
+                restoredProcessingTimeTimerDeadline()));
   }
 
   @Override

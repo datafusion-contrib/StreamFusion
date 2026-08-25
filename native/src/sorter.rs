@@ -50,6 +50,30 @@ impl TemporalSorter {
         self.store.as_mut().expect("temporal-sort rocksdb store")
     }
 
+    /// Writes restored blob snapshots through the persistent buffer once at open, so a canonical
+    /// or raw restore continues on the direct persistent path. The blob is the memory snapshot's
+    /// plain IPC stream in arrival order, so appending under fresh sequences keeps the order.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn import_snapshots(
+        &mut self,
+        snapshots: &[Vec<u8>],
+    ) -> Result<(), DataFusionError> {
+        let rt_column = self.rt_column;
+        for bytes in snapshots {
+            if bytes.is_empty() {
+                continue;
+            }
+            let reader = arrow::ipc::reader::StreamReader::try_new(bytes.as_slice(), None)
+                .expect("sort buffer reader");
+            for batch in reader {
+                let batch = batch.expect("read sort buffer");
+                let rowtimes = rt_to_millis(batch.column(rt_column));
+                self.store_mut().push(&batch, &rowtimes)?;
+            }
+        }
+        Ok(())
+    }
+
     /// The persistent buffer serialized as the memory snapshot's own plain-IPC blob (empty bytes
     /// when nothing is buffered), for backend-independent canonical savepoints.
     #[cfg(feature = "rocksdb-state")]

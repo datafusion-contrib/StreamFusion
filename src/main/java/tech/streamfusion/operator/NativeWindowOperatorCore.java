@@ -177,14 +177,18 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
 
   /** Creates an aligned-window aggregator whose state lives directly in a Rust-owned RocksDB. */
   protected final long createRocksDBWindowAggregatorHandle(
-      RocksDBNativeStateSupport rocksdb, boolean cumulative, int[] keyTypes) {
+      RocksDBNativeStateSupport rocksdb,
+      boolean cumulative,
+      int[] keyTypes,
+      byte[][] restoredPartitions) {
     return Native.createRocksDBWindowAggregator(
         windowMillis, slideMillis, cumulative, valueTypes, aggregateKinds, keyTypes,
         keyTimestampPrecisions(), memoryBudgetBytes(),
         rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
         rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
         rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-        rocksdb.aligned());
+        rocksdb.aligned(), restoredPartitions,
+        restoredProcessingTimeTimerDeadline());
   }
 
   @Override

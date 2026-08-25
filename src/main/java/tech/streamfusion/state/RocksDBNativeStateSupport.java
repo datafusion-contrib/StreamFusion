@@ -44,9 +44,10 @@ public final class RocksDBNativeStateSupport {
   /**
    * Resolves RocksDB mode for one operator, or null when its state stays on memory. The backend
    * takes over when the job selected it, this build carries the native store, and the operator's
-   * own state shape is persistable. Raw or canonical partitions are imported through the generic
-   * snapshot store on the first RocksDB checkpoint. A RocksDB backend that
-   * loses on a later gate logs the fallback — memory state stays correct, just non-incremental.
+   * own state shape is persistable. Raw or canonical partitions are decoded once at open into the
+   * operator's typed store (or, for the snapshot-store shapes, imported on the first RocksDB
+   * checkpoint). A RocksDB backend that loses on a later gate logs the fallback — memory state
+   * stays correct, just non-incremental.
    */
   public static RocksDBNativeStateSupport resolve(
       KeyedStateBackend<?> keyedStateBackend,

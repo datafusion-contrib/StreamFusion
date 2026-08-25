@@ -1093,7 +1093,8 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions);
 
   /** Materializes direct RocksDB aggregate state as backend-independent key-group partitions. */
   public static native byte[][] snapshotRocksDBGroupAggregatorPartitions(long handle);
@@ -1137,7 +1138,8 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions);
 
   /** Materializes direct RocksDB normalizer state as backend-independent key-group partitions. */
   public static native byte[][] snapshotRocksDBChangelogNormalizerPartitions(long handle);
@@ -1186,7 +1188,8 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions);
 
   /** Materializes direct RocksDB dedup state as backend-independent key-group partitions. */
   public static native byte[][] snapshotRocksDBKeepLastDeduplicatorPartitions(long handle);
@@ -1241,7 +1244,8 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions);
 
   public static native void pushRocksDBKeepFirstDeduplicator(
       long handle, long inArrayAddress, long inSchemaAddress, long nowMillis);
@@ -1288,7 +1292,8 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions);
 
   /** Materializes direct RocksDB join state as backend-independent key-group partitions. */
   public static native byte[][] snapshotRocksDBUpdatingJoinerPartitions(long handle);
@@ -1352,7 +1357,9 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions,
+      long restoredTimerDeadline);
 
   /** Materializes direct RocksDB window-join state as backend-independent key-group partitions. */
   public static native byte[][] snapshotRocksDBWindowJoinerPartitions(long handle);
@@ -1413,7 +1420,9 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions,
+      long restoredTimerDeadline);
 
   public static native void pushLeftRocksDBIntervalJoiner(
       long handle,
@@ -1487,7 +1496,8 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions);
 
   public static native void pushLeftRocksDBTemporalJoiner(
       long handle, long inArrayAddress, long inSchemaAddress, long nowMillis);
@@ -1531,7 +1541,8 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions);
 
   public static native void pushRocksDBTemporalSorter(
       long handle, long inArrayAddress, long inSchemaAddress);
@@ -1581,7 +1592,9 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions,
+      long restoredTimerDeadline);
 
   public static native void pushRocksDBWindowAggregator(
       long handle, long inArrayAddress, long inSchemaAddress);
@@ -1634,7 +1647,9 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions,
+      long restoredTimerDeadline);
 
   public static native void pushRocksDBSessionAggregator(
       long handle, long inArrayAddress, long inSchemaAddress);
@@ -1692,7 +1707,8 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions);
 
   public static native void pushRocksDBOverAggregator(
       long handle, long inArrayAddress, long inSchemaAddress, long nowMillis);
@@ -1743,7 +1759,8 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions);
 
   /** {@link #createRocksDBTopNRanker} for the update-fast (unique-keyed changelog) variant. */
   public static native long createRocksDBUpdateFastTopNRanker(
@@ -1769,7 +1786,8 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions);
 
   /** Materializes direct RocksDB Top-N state as backend-independent key-group partitions. */
   public static native byte[][] snapshotRocksDBTopNRankerPartitions(long handle);
@@ -1826,7 +1844,9 @@ public final class Native {
       String[] sourceSnapshotTokens,
       int keyGroupStart,
       int keyGroupEnd,
-      boolean aligned);
+      boolean aligned,
+      byte[][] restoredPartitions,
+      long restoredTimerDeadline);
 
   public static native void pushRocksDBWindowRanker(
       long handle, long inArrayAddress, long inSchemaAddress);

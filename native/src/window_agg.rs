@@ -995,6 +995,58 @@ impl TumblingAggregator {
         Ok(partitions)
     }
 
+    /// Decodes restored blob key groups once at open and writes them through the typed store, so
+    /// a canonical or raw restore continues on the direct persistent path. The blob carries the
+    /// late-data watermark in schema metadata; the processing-time deadline arrives from the
+    /// host's restored timer frame.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn import_partitions(
+        &mut self,
+        snapshots: &[Vec<u8>],
+        timer_deadline: i64,
+    ) -> Result<(), DataFusionError> {
+        let state_field_total: usize = self.store_field_counts.iter().sum();
+        let mut watermark = self.current_watermark;
+        for bytes in snapshots {
+            for batch in read_ipc_if_present(bytes) {
+                if let Some(current) = batch.schema().metadata().get("current_watermark") {
+                    watermark = watermark.max(current.parse().expect("watermark"));
+                }
+                let arity = batch.num_columns() - 2 - state_field_total;
+                let ends = column_i64(&batch, "window_end");
+                let starts = column_i64(&batch, "window_start");
+                let key_columns: Vec<usize> = (2..2 + arity).collect();
+                let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(2 + j)).collect();
+                let keys_encoded =
+                    encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
+                let store = self.store.as_mut().expect("window-aggregate rocksdb store");
+                let mut entries = Vec::with_capacity(batch.num_rows());
+                for row in 0..batch.num_rows() {
+                    let key_group = store.key_group(binary_row_hash(
+                        &batch,
+                        &key_columns,
+                        row,
+                        &self.key_timestamp_precisions,
+                    ));
+                    entries.push((
+                        store.db_key(key_group, ends.value(row), keys_encoded.row(row).data()),
+                        starts.value(row),
+                    ));
+                }
+                let state_columns: Vec<ArrayRef> = (2 + arity..batch.num_columns())
+                    .map(|column| batch.column(column).clone())
+                    .collect();
+                store.put(&entries, &state_columns)?;
+            }
+        }
+        self.current_watermark = watermark;
+        self.store
+            .as_mut()
+            .expect("window-aggregate rocksdb store")
+            .adopt_restored(watermark, timer_deadline);
+        Ok(())
+    }
+
     /// Serializes every open window's accumulator state as an Arrow batch (one row per (window,
     /// key): window end, window start, key, then every accumulator's state fields in order), encoded
     /// with Arrow IPC. Carries arbitrary multi-aggregate, multi-field state through one path.

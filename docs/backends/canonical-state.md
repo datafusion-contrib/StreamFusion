@@ -21,9 +21,10 @@ payload length (`i32`), and CRC32C (`u32`). Chunk `n` is stored in the reserved 
 envelope are the stable reader boundary for a future translation tool.
 
 The chunks contain the operator's logical Arrow IPC snapshot sections. Memory and RocksDB operators
-produce and consume the same representation. Direct RocksDB aggregate state is decoded from its
-typed table only when a canonical savepoint is requested; ordinary checkpoints and native-format
-savepoints retain the incremental SST path.
+produce and consume the same representation. Direct RocksDB state is decoded from its typed table
+only when a canonical savepoint is requested, and restoring onto the RocksDB backend decodes the
+sections once at open and bulk-writes them back into the typed table; ordinary checkpoints and
+native-format savepoints retain the incremental SST path.
 
 Reading or writing these reserved states temporarily selects each owned key group. The operation
 restores the hosting backend's exact active key and key-group context afterward, including an unset

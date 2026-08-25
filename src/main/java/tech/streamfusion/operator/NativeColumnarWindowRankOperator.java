@@ -113,7 +113,8 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   }
 
   @Override
-  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+  protected long createRocksDBHandle(
+      RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     return withRowSchema(
         rowType,
         address ->
@@ -124,7 +125,8 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
                 rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
                 rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
                 rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-                rocksdb.aligned()));
+                rocksdb.aligned(), restoredPartitions,
+                restoredProcessingTimeTimerDeadline()));
   }
 
   @Override

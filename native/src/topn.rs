@@ -1155,23 +1155,31 @@ impl TopNRanker {
         )
         .with_key_timestamp_precisions(key_timestamp_precisions);
         for bytes in snapshots {
-            for batch in read_ipc_if_present(bytes) {
-                if batch.schema_ref().field(0).name() == RAW_SNAPSHOT_KEY {
-                    load_topn_batch_raw(
-                        &mut ranker.schema,
-                        &mut ranker.converters,
-                        &mut ranker.groups,
-                        &ranker.partition_columns,
-                        &ranker.sort_columns,
-                        &batch,
-                        restored_at_ms,
-                    );
-                } else {
-                    ranker.load_batch_decoded(&batch, restored_at_ms);
-                }
-            }
+            ranker.load_snapshot(bytes, restored_at_ms);
         }
         ranker
+    }
+}
+
+/// Blob decode shared by the memory rebuild and the typed persistent import: every load goes
+/// through the state seam only.
+impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
+    fn load_snapshot(&mut self, bytes: &[u8], restored_at_ms: i64) {
+        for batch in read_ipc_if_present(bytes) {
+            if batch.schema_ref().field(0).name() == RAW_SNAPSHOT_KEY {
+                load_topn_batch_raw(
+                    &mut self.schema,
+                    &mut self.converters,
+                    &mut self.groups,
+                    &self.partition_columns,
+                    &self.sort_columns,
+                    &batch,
+                    restored_at_ms,
+                );
+            } else {
+                self.load_batch_decoded(&batch, restored_at_ms);
+            }
+        }
     }
 
     /// Snapshots written before the raw format decoded the buffers to typed columns; kept so
@@ -1222,7 +1230,7 @@ impl TopNRanker {
 fn load_topn_batch_raw(
     schema: &mut Option<SchemaRef>,
     converters: &mut Option<TopNConverters>,
-    groups: &mut MemoryTopNStore,
+    groups: &mut impl KeyedStateStore<Vec<TopNRow>>,
     partition_columns: &[usize],
     sort_columns: &[SortColumn],
     batch: &RecordBatch,
@@ -1934,23 +1942,31 @@ impl RetractableTopNRanker {
         )
         .with_key_timestamp_precisions(key_timestamp_precisions);
         for bytes in snapshots {
-            for batch in read_ipc_if_present(bytes) {
-                if batch.schema_ref().field(0).name() == RAW_SNAPSHOT_KEY {
-                    load_topn_batch_raw(
-                        &mut ranker.schema,
-                        &mut ranker.converters,
-                        &mut ranker.groups,
-                        &ranker.partition_columns,
-                        &ranker.sort_columns,
-                        &batch,
-                        restored_at_ms,
-                    );
-                } else {
-                    ranker.load_batch_decoded(&batch, restored_at_ms);
-                }
-            }
+            ranker.load_snapshot(bytes, restored_at_ms);
         }
         ranker
+    }
+}
+
+/// Blob decode shared by the memory rebuild and the typed persistent import: every load goes
+/// through the state seam only.
+impl<S: KeyedStateStore<Vec<TopNRow>>> RetractableTopNRanker<S> {
+    fn load_snapshot(&mut self, bytes: &[u8], restored_at_ms: i64) {
+        for batch in read_ipc_if_present(bytes) {
+            if batch.schema_ref().field(0).name() == RAW_SNAPSHOT_KEY {
+                load_topn_batch_raw(
+                    &mut self.schema,
+                    &mut self.converters,
+                    &mut self.groups,
+                    &self.partition_columns,
+                    &self.sort_columns,
+                    &batch,
+                    restored_at_ms,
+                );
+            } else {
+                self.load_batch_decoded(&batch, restored_at_ms);
+            }
+        }
     }
 
     /// Snapshots written before the raw format decoded the buffers to typed columns; kept so
@@ -2754,48 +2770,56 @@ impl UpdatableTopNRanker {
             generate_update_before,
         );
         for bytes in snapshots {
-            for batch in read_ipc_if_present(bytes) {
-                if ranker.schema.is_none() {
-                    let payload_schema = decode_schema_metadata(&batch)
-                        .expect("raw update-fast snapshot payload schema");
-                    let empty = RecordBatch::new_empty(payload_schema.clone());
-                    ranker.converters = Some(TopNConverters::build(
-                        &empty,
-                        empty.num_columns(),
-                        &ranker.partition_columns,
-                        &ranker.sort_columns,
-                    ));
-                    ranker.schema = Some(payload_schema);
-                }
-                let conv = ranker.converters.as_ref().expect("converters set");
-                let sort_parser = conv.sort.parser();
-                let payload_parser = conv.payload.parser();
-                let keys = column_binary(&batch, RAW_SNAPSHOT_KEY);
-                let sorts = column_binary(&batch, RAW_SNAPSHOT_SORT);
-                let row_keys = column_binary(&batch, RAW_SNAPSHOT_ROW_KEY);
-                let rows = column_binary(&batch, RAW_SNAPSHOT_ROW);
-                let write_timestamps = batch
-                    .column_by_name(TTL_TS_COLUMN)
-                    .is_some()
-                    .then(|| column_i64(&batch, TTL_TS_COLUMN));
-                for row in 0..batch.num_rows() {
-                    let part = keys.value(row);
-                    let buffer = match ranker.groups.get_mut(part) {
-                        Some(buffer) => buffer,
-                        None => ranker.groups.insert(ByteKey::from(part), Vec::new()),
-                    };
-                    buffer.push(UpdatableRow {
-                        sort: sort_parser.parse(sorts.value(row)).owned(),
-                        payload: Arc::new(payload_parser.parse(rows.value(row)).owned()),
-                        row_key: ByteKey::from(row_keys.value(row)),
-                        ts_ms: write_timestamps
-                            .as_ref()
-                            .map_or(restored_at_ms, |ts| ts.value(row)),
-                    });
-                }
-            }
+            ranker.load_snapshot(bytes, restored_at_ms);
         }
         ranker
+    }
+}
+
+/// Blob decode shared by the memory rebuild and the typed persistent import: every load goes
+/// through the state seam only.
+impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
+    fn load_snapshot(&mut self, bytes: &[u8], restored_at_ms: i64) {
+        for batch in read_ipc_if_present(bytes) {
+            if self.schema.is_none() {
+                let payload_schema = decode_schema_metadata(&batch)
+                    .expect("raw update-fast snapshot payload schema");
+                let empty = RecordBatch::new_empty(payload_schema.clone());
+                self.converters = Some(TopNConverters::build(
+                    &empty,
+                    empty.num_columns(),
+                    &self.partition_columns,
+                    &self.sort_columns,
+                ));
+                self.schema = Some(payload_schema);
+            }
+            let conv = self.converters.as_ref().expect("converters set");
+            let sort_parser = conv.sort.parser();
+            let payload_parser = conv.payload.parser();
+            let keys = column_binary(&batch, RAW_SNAPSHOT_KEY);
+            let sorts = column_binary(&batch, RAW_SNAPSHOT_SORT);
+            let row_keys = column_binary(&batch, RAW_SNAPSHOT_ROW_KEY);
+            let rows = column_binary(&batch, RAW_SNAPSHOT_ROW);
+            let write_timestamps = batch
+                .column_by_name(TTL_TS_COLUMN)
+                .is_some()
+                .then(|| column_i64(&batch, TTL_TS_COLUMN));
+            for row in 0..batch.num_rows() {
+                let part = keys.value(row);
+                let buffer = match self.groups.get_mut(part) {
+                    Some(buffer) => buffer,
+                    None => self.groups.insert(ByteKey::from(part), Vec::new()),
+                };
+                buffer.push(UpdatableRow {
+                    sort: sort_parser.parse(sorts.value(row)).owned(),
+                    payload: Arc::new(payload_parser.parse(rows.value(row)).owned()),
+                    row_key: ByteKey::from(row_keys.value(row)),
+                    ts_ms: write_timestamps
+                        .as_ref()
+                        .map_or(restored_at_ms, |ts| ts.value(row)),
+                });
+            }
+        }
     }
 }
 
@@ -2971,6 +2995,32 @@ impl RocksTopNHandle {
         }
     }
 
+    /// Decodes restored blob key groups once at open and writes them through the typed store, so
+    /// a canonical or raw restore continues on the direct persistent path.
+    pub(crate) fn import_partitions(
+        &mut self,
+        snapshots: &[Vec<u8>],
+        restored_at_ms: i64,
+    ) -> Result<(), DataFusionError> {
+        for bytes in snapshots {
+            match self {
+                RocksTopNHandle::Append(r) => {
+                    r.load_snapshot(bytes, restored_at_ms);
+                    r.store_mut().end_bundle()?;
+                }
+                RocksTopNHandle::Retract(r) => {
+                    r.load_snapshot(bytes, restored_at_ms);
+                    r.store_mut().end_bundle()?;
+                }
+                RocksTopNHandle::UpdateFast(r) => {
+                    r.load_snapshot(bytes, restored_at_ms);
+                    r.store_mut().end_bundle()?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn state_bytes(&self) -> usize {
         match self {
             RocksTopNHandle::Append(r) => r.memory.state_bytes,
@@ -3112,6 +3162,41 @@ impl WindowRanker {
             .as_ref()
             .expect("window-rank rocksdb store")
             .timer_deadline()
+    }
+
+    /// Decodes restored blob key groups once at open and replays them through the store-backed
+    /// push, so a canonical or raw restore continues on the direct persistent path. The blob rows
+    /// re-rank stably in blob order (the memory restore's own replay), the leading watermark rides
+    /// every key group, and the processing-time deadline arrives from the host's restored timer
+    /// frame.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn import_partitions(
+        &mut self,
+        snapshots: &[Vec<u8>],
+        timer_deadline: i64,
+    ) -> Result<(), DataFusionError> {
+        let mut watermark = self.current_watermark;
+        for bytes in snapshots {
+            if bytes.len() >= 8 {
+                watermark = watermark.max(i64::from_le_bytes(
+                    bytes[0..8].try_into().expect("watermark"),
+                ));
+            }
+        }
+        self.current_watermark = watermark;
+        for bytes in snapshots {
+            if bytes.len() < 8 {
+                continue;
+            }
+            for batch in read_ipc_if_present(&bytes[8..]) {
+                self.push(&batch)?;
+            }
+        }
+        self.store
+            .as_mut()
+            .expect("window-rank rocksdb store")
+            .adopt_restored(watermark, timer_deadline);
+        Ok(())
     }
 
     /// Bounds the per-window buffers by the operator's task off-heap budget (negative =

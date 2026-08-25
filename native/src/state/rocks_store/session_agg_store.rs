@@ -162,6 +162,12 @@ impl RocksSessionAggStore {
         self.timer_deadline
     }
 
+    /// Adopts the deadline a blob import restored (it arrives with the blobs, not from a store
+    /// checkpoint); the next checkpoint persists it under the reserved key.
+    pub(crate) fn adopt_restored(&mut self, timer_deadline: i64) {
+        self.timer_deadline = self.timer_deadline.max(timer_deadline);
+    }
+
     /// The Flink key group of a group key's BinaryRow hash — identical routing to the blob path's
     /// raw keyed-state partitioner.
     pub(crate) fn key_group(&self, binary_row_hash: i32) -> i32 {

@@ -352,6 +352,12 @@ impl RocksIntervalBuffer {
         self.timer_deadline
     }
 
+    /// Adopts the deadline a blob import restored (it arrives with the blobs, not from a store
+    /// checkpoint); the next checkpoint persists it under the reserved key.
+    pub(crate) fn adopt_restored(&mut self, timer_deadline: i64) {
+        self.timer_deadline = self.timer_deadline.max(timer_deadline);
+    }
+
     fn buffered_row(key: &[u8], value: &[u8]) -> BufferedIntervalRow {
         BufferedIntervalRow {
             key_group: i32::from_be_bytes(key[..4].try_into().expect("key group")),

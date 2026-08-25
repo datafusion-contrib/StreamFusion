@@ -122,13 +122,15 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   }
 
   @Override
-  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+  protected long createRocksDBHandle(
+      RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     return Native.createRocksDBSessionAggregator(
         gapMillis, valueTypes, aggregateKinds, keyTypes, keyTimestampPrecisions(),
         memoryBudgetBytes(), rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
         rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
         rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-        rocksdb.aligned());
+        rocksdb.aligned(), restoredPartitions,
+        restoredProcessingTimeTimerDeadline());
   }
 
   @Override

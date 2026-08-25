@@ -506,6 +506,70 @@ impl IntervalJoiner {
         Ok(Some(self.null_pad(&rows, is_left)))
     }
 
+    /// Decodes restored blob key groups once at open and appends them through the typed store, so
+    /// a canonical or raw restore continues on the direct persistent path. Blob row order is the
+    /// buffers' arrival order, so appending under fresh sequences keeps it; each row's matched
+    /// flag rejoins it from the blob's id set, and the processing-time deadline arrives from the
+    /// host's restored timer frame.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn import_partitions(
+        &mut self,
+        snapshots: &[Vec<u8>],
+        timer_deadline: i64,
+    ) -> Result<(), DataFusionError> {
+        for bytes in snapshots {
+            let sections = read_framed_sections(bytes);
+            if sections.len() != 4 {
+                continue;
+            }
+            for (left, data_section, matched_section) in [
+                (true, &sections[0], &sections[2]),
+                (false, &sections[1], &sections[3]),
+            ] {
+                let matched_ids = deserialize_id_set(matched_section);
+                let (key_columns, time_column) = if left {
+                    (&self.left_keys, self.left_time)
+                } else {
+                    (&self.right_keys, self.right_time)
+                };
+                for batch in read_ipc_if_present(data_section) {
+                    let (data, matched) = if self.join_type == JoinKind::Inner {
+                        (batch.clone(), vec![false; batch.num_rows()])
+                    } else {
+                        let rowid_column = batch.num_columns() - 1;
+                        let rowids = batch
+                            .column(rowid_column)
+                            .as_any()
+                            .downcast_ref::<Int64Array>()
+                            .expect("interval snapshot row ids");
+                        let matched = (0..batch.num_rows())
+                            .map(|row| matched_ids.contains(&rowids.value(row)))
+                            .collect();
+                        let data = batch.project(&(0..rowid_column).collect::<Vec<_>>())?;
+                        (data, matched)
+                    };
+                    let rowtimes = rt_to_millis(data.column(time_column));
+                    self.store
+                        .as_mut()
+                        .expect("interval-join rocksdb store")
+                        .push(
+                            left,
+                            &data,
+                            key_columns,
+                            &self.key_timestamp_precisions,
+                            &rowtimes,
+                            &matched,
+                        )?;
+                }
+            }
+        }
+        self.store
+            .as_mut()
+            .expect("interval-join rocksdb store")
+            .adopt_restored(timer_deadline);
+        Ok(())
+    }
+
     /// The complete buffered state in the memory snapshot's per-key-group four-section encoding
     /// (both sides' rows plus the matched-id sets derived from the stored flags), for
     /// backend-independent canonical savepoints.

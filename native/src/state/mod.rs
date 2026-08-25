@@ -106,9 +106,9 @@ impl<V> KeyedStateStore<V> for MemoryStateStore<V> {
     }
 }
 
-/// The resident map's full-iteration surface — snapshot, restore-merge, and budget accounting walk
-/// every entry. Only the memory store exposes it: a persistent store snapshots through its own
-/// commit path instead of materializing the key space.
+/// The resident map's full-iteration surface — snapshot and budget accounting walk every entry.
+/// Only the memory store exposes it: a persistent store snapshots through its own commit path
+/// instead of materializing the key space.
 impl<V> MemoryStateStore<V> {
     pub(crate) fn keys(&self) -> impl Iterator<Item = &ByteKey> {
         self.map.keys()
@@ -116,9 +116,5 @@ impl<V> MemoryStateStore<V> {
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&ByteKey, &V)> {
         self.map.iter()
-    }
-
-    pub(crate) fn absorb(&mut self, other: Self) {
-        self.map.extend(other.map);
     }
 }

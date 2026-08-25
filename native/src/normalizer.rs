@@ -514,69 +514,17 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
     }
 }
 
-/// Commits the persistent store and exports the complete logical table in the same raw key-group
-/// encoding the memory snapshot writes, for backend-independent canonical savepoints.
-#[cfg(feature = "rocksdb-state")]
-impl ChangelogNormalizer<RocksNormalizerStore> {
-    pub(crate) fn canonical_partitions(
-        &mut self,
-    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
-        let keys = self.rows.canonical_keys_by_group()?;
-        if self.schema.is_none() && !keys.is_empty() {
-            self.rows.finish_canonical_scan();
-            return Err(DataFusionError::Execution(
-                "changelog-normalize canonical snapshot needs the payload schema, which only \
-                 arrives with input; take the savepoint after the operator has processed a batch"
-                    .into(),
-            ));
+/// Blob decode shared by the memory rebuild and the typed persistent import: every load goes
+/// through the state seam only.
+impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
+    fn load_snapshot(&mut self, bytes: &[u8], restored_at_ms: i64) {
+        for batch in read_ipc_if_present(bytes) {
+            if batch.schema_ref().field(0).name() == RAW_SNAPSHOT_KEY {
+                self.load_batch_raw(&batch, restored_at_ms);
+            } else {
+                self.load_batch_decoded(&batch, restored_at_ms);
+            }
         }
-        let partitions = keys
-            .iter()
-            .map(|(&group, selected)| (group, self.snapshot_keys(selected)))
-            .collect();
-        self.rows.finish_canonical_scan();
-        Ok(partitions)
-    }
-}
-
-/// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
-/// store checkpoints through its own commit path instead of materializing the key space.
-impl ChangelogNormalizer {
-    /// Serializes the stored last-row-per-key set with its already canonical BinaryRow key: one
-    /// IPC blob per key group, the group one hash of the stored key's bytes per entry.
-    fn raw_snapshot_groups(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
-        if self.schema.is_none() {
-            return BTreeMap::new();
-        }
-        let mut keys_by_group: BTreeMap<i32, Vec<ByteKey>> = BTreeMap::new();
-        for (key, _) in self.rows.iter() {
-            let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
-            keys_by_group.entry(group).or_default().push(key.clone());
-        }
-        keys_by_group
-            .iter()
-            .map(|(&group, selected)| (group, self.snapshot_keys(selected)))
-            .collect()
-    }
-
-    #[cfg(test)]
-    fn snapshot(&self) -> Vec<u8> {
-        self.raw_snapshot_groups(1).remove(&0).unwrap_or_default()
-    }
-
-    #[cfg(test)]
-    fn restore(
-        key_columns: Vec<usize>,
-        generate_update_before: bool,
-        bytes: &[u8],
-        restored_at_ms: i64,
-    ) -> Self {
-        Self::restore_partitions(
-            key_columns,
-            generate_update_before,
-            &[bytes.to_vec()],
-            restored_at_ms,
-        )
     }
 
     /// Raw-format rows carry the stored key and payload bytes verbatim — restoring is a straight
@@ -667,6 +615,86 @@ impl ChangelogNormalizer {
         }
         self.payload_converter = Some(converter);
     }
+}
+
+/// Commits the persistent store and exports the complete logical table in the same raw key-group
+/// encoding the memory snapshot writes, for backend-independent canonical savepoints.
+#[cfg(feature = "rocksdb-state")]
+impl ChangelogNormalizer<RocksNormalizerStore> {
+    /// Decodes restored blob key groups once at open and writes them through the typed store, so
+    /// a canonical or raw restore continues on the direct persistent path.
+    pub(crate) fn import_partitions(
+        &mut self,
+        snapshots: &[Vec<u8>],
+        restored_at_ms: i64,
+    ) -> Result<(), DataFusionError> {
+        for bytes in snapshots {
+            self.load_snapshot(bytes, restored_at_ms);
+            self.rows.end_bundle()?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn canonical_partitions(
+        &mut self,
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let keys = self.rows.canonical_keys_by_group()?;
+        if self.schema.is_none() && !keys.is_empty() {
+            self.rows.finish_canonical_scan();
+            return Err(DataFusionError::Execution(
+                "changelog-normalize canonical snapshot needs the payload schema, which only \
+                 arrives with input; take the savepoint after the operator has processed a batch"
+                    .into(),
+            ));
+        }
+        let partitions = keys
+            .iter()
+            .map(|(&group, selected)| (group, self.snapshot_keys(selected)))
+            .collect();
+        self.rows.finish_canonical_scan();
+        Ok(partitions)
+    }
+}
+
+/// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
+/// store checkpoints through its own commit path instead of materializing the key space.
+impl ChangelogNormalizer {
+    /// Serializes the stored last-row-per-key set with its already canonical BinaryRow key: one
+    /// IPC blob per key group, the group one hash of the stored key's bytes per entry.
+    fn raw_snapshot_groups(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
+        if self.schema.is_none() {
+            return BTreeMap::new();
+        }
+        let mut keys_by_group: BTreeMap<i32, Vec<ByteKey>> = BTreeMap::new();
+        for (key, _) in self.rows.iter() {
+            let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
+            keys_by_group.entry(group).or_default().push(key.clone());
+        }
+        keys_by_group
+            .iter()
+            .map(|(&group, selected)| (group, self.snapshot_keys(selected)))
+            .collect()
+    }
+
+    #[cfg(test)]
+    fn snapshot(&self) -> Vec<u8> {
+        self.raw_snapshot_groups(1).remove(&0).unwrap_or_default()
+    }
+
+    #[cfg(test)]
+    fn restore(
+        key_columns: Vec<usize>,
+        generate_update_before: bool,
+        bytes: &[u8],
+        restored_at_ms: i64,
+    ) -> Self {
+        Self::restore_partitions(
+            key_columns,
+            generate_update_before,
+            &[bytes.to_vec()],
+            restored_at_ms,
+        )
+    }
 
     fn snapshot_partitions(
         &mut self,
@@ -707,13 +735,7 @@ impl ChangelogNormalizer {
     ) -> Self {
         let mut normalizer = ChangelogNormalizer::new(key_columns, generate_update_before);
         for bytes in snapshots {
-            for batch in read_ipc_if_present(bytes) {
-                if batch.schema_ref().field(0).name() == RAW_SNAPSHOT_KEY {
-                    normalizer.load_batch_raw(&batch, restored_at_ms);
-                } else {
-                    normalizer.load_batch_decoded(&batch, restored_at_ms);
-                }
-            }
+            normalizer.load_snapshot(bytes, restored_at_ms);
         }
         normalizer
     }

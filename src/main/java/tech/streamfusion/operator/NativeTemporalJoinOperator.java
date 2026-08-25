@@ -86,7 +86,8 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
   }
 
   @Override
-  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+  protected long createRocksDBHandle(
+      RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     return withSchemas(
         (l, r) ->
             Native.createRocksDBTemporalJoiner(
@@ -100,7 +101,7 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
                 rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
                 rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
                 rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-                rocksdb.aligned()));
+                rocksdb.aligned(), restoredPartitions));
   }
 
   @Override

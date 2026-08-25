@@ -109,7 +109,14 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
     return false;
   }
 
-  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+  /**
+   * Creates the operator's typed RocksDB handle. {@code restoredPartitions} carries the key-group
+   * blobs of a canonical or raw restore (empty on a fresh start or a native RocksDB restore); the
+   * create decodes them once and bulk-writes the state into the typed store, so such a restore
+   * still runs direct.
+   */
+  protected long createRocksDBHandle(
+      RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     throw new UnsupportedOperationException("operator resolved RocksDB state without a create");
   }
 
@@ -213,9 +220,9 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
     rocksdbState = rocksdb != null;
     if (rocksdbState) {
       rocksdbSupport = rocksdb;
-      directRocksDBState = snapshots.isEmpty() && usesDirectRocksDBState();
+      directRocksDBState = usesDirectRocksDBState();
       if (directRocksDBState) {
-        handle = createRocksDBHandle(rocksdb);
+        handle = createRocksDBHandle(rocksdb, snapshots.toArray(new byte[0][]));
         if (carriesProcessingTimeTimer()) {
           restoredProcessingTimeTimerDeadline = rocksdbTimerDeadline();
         }
