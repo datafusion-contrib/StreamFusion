@@ -127,6 +127,18 @@ impl TopNConverters {
             payload: Arc::new(payload),
         }
     }
+
+    /// Builds the converter set from the operator's declared input type — the persistent path,
+    /// which must share these instances with its state codec before any batch arrives.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn from_declared(
+        schema: &SchemaRef,
+        partition_columns: &[usize],
+        sort_columns: &[SortColumn],
+    ) -> Self {
+        let empty = RecordBatch::new_empty(schema.clone());
+        Self::build(&empty, empty.num_columns(), partition_columns, sort_columns)
+    }
 }
 
 /// A buffered Top-N row as compact arrow-row bytes: its memcomparable sort key and the value-encoded
@@ -193,18 +205,126 @@ pub(crate) struct TopNRanker<S: KeyedStateStore<Vec<TopNRow>> = MemoryTopNStore>
 /// The resident default backend for the Top-N buffer store (see `state/` for the seam).
 pub(crate) type MemoryTopNStore = MemoryStateStore<Vec<TopNRow>>;
 
-/// The Top-N buffer's persistent backend: the persistent list store — one table row per buffered
-/// element under PK `[kg, k, ord]` — under the Top-N element codec.
-
-/// The Top-N element codec: each buffered row persists as its full row in typed columns (never
-/// the transient arrow-row bytes; see the dedup codec for why), and the memcomparable sort key is
-/// re-derived from the row's own sort columns on hydration. The list store's `ord` column
-/// preserves buffer positions exactly, so tie order (arrival order among equal sort keys — which
-/// decides evictions at the boundary) survives restore byte-for-byte.
-
 /// Estimated footprint of one buffered Top-N entry (sort key + payload row + container overhead).
 pub(crate) fn topn_entry_bytes(entry: &TopNRow) -> usize {
     entry.sort.row().as_ref().len() + entry.payload.row().as_ref().len() + GROUP_ENTRY_OVERHEAD
+}
+
+/// The Top-N buffer's persistent backend: the generic persistent store under the raw whole-list
+/// codec — one RocksDB value per partition key holding the ordered buffer.
+#[cfg(feature = "rocksdb-state")]
+pub(crate) type RocksTopNStore = crate::state::RocksStore<TopNStateCodec>;
+
+/// The Top-N value codec for the persistent store: raw — `[n_rows: u32 LE]`, then per buffered row
+/// `[sort_len: u32 LE][sort][payload_len: u32 LE][payload][ts_ms: i64 LE]`, in buffer order. The
+/// element order IS the ranker's sort-plus-arrival invariant, so the round trip must not reorder;
+/// the sort and payload bytes are the ranker's own arrow-row encodings, parsed back through the
+/// SAME converter instances the operator ranks with (arrow-row rejects rows from another
+/// instance). The store-level TTL prefix carries the buffer's NEWEST row clock, so compaction only
+/// drops a value once every row expired; per-row expiry stays the ranker's lazy prune, exactly as
+/// on the memory backend.
+#[cfg(feature = "rocksdb-state")]
+pub(crate) struct TopNStateCodec {
+    sort: Arc<RowConverter>,
+    payload: Arc<RowConverter>,
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl TopNStateCodec {
+    pub(crate) fn new(converters: &TopNConverters) -> Self {
+        TopNStateCodec {
+            sort: Arc::clone(&converters.sort),
+            payload: Arc::clone(&converters.payload),
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl crate::state::RocksStateCodec for TopNStateCodec {
+    type Value = Vec<TopNRow>;
+    fn supported(&self) -> bool {
+        true
+    }
+    fn value_fields(&self) -> Vec<(String, DataType)> {
+        vec![("rows".to_string(), DataType::Binary)]
+    }
+    fn encode(&self, _value: &Vec<TopNRow>) -> Vec<ScalarValue> {
+        unreachable!("raw codec")
+    }
+    fn decode(&self, _scalars: &[ScalarValue]) -> Vec<TopNRow> {
+        unreachable!("raw codec")
+    }
+    fn value_bytes(&self, value: &Vec<TopNRow>) -> usize {
+        4 + value
+            .iter()
+            .map(|entry| 16 + entry.sort.row().data().len() + entry.payload.row().data().len())
+            .sum::<usize>()
+    }
+    fn write_ms(&self, value: &Vec<TopNRow>) -> i64 {
+        value.iter().map(|entry| entry.ts_ms).max().unwrap_or(0)
+    }
+    fn raw(&self) -> bool {
+        true
+    }
+    fn raw_write(&self, value: &Vec<TopNRow>, out: &mut Vec<u8>) {
+        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        for entry in value {
+            write_length_prefixed(out, entry.sort.row().data());
+            write_length_prefixed(out, entry.payload.row().data());
+            out.extend_from_slice(&entry.ts_ms.to_le_bytes());
+        }
+    }
+    fn from_raw(&self, bytes: &[u8]) -> Vec<TopNRow> {
+        let mut cursor = RawListCursor::new(bytes);
+        let sort_parser = self.sort.parser();
+        let payload_parser = self.payload.parser();
+        (0..cursor.u32())
+            .map(|_| TopNRow {
+                sort: sort_parser.parse(cursor.bytes()).owned(),
+                payload: Arc::new(payload_parser.parse(cursor.bytes()).owned()),
+                ts_ms: cursor.i64(),
+            })
+            .collect()
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+fn write_length_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
+    out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(bytes);
+}
+
+/// Reads a raw list layout back: length-prefixed byte slices and fixed-width integers, in exactly
+/// the order the writer appended them.
+#[cfg(feature = "rocksdb-state")]
+struct RawListCursor<'a> {
+    bytes: &'a [u8],
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl<'a> RawListCursor<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        RawListCursor { bytes }
+    }
+
+    fn u32(&mut self) -> usize {
+        let (head, rest) = self.bytes.split_at(4);
+        self.bytes = rest;
+        u32::from_le_bytes(head.try_into().expect("u32 field")) as usize
+    }
+
+    fn i64(&mut self) -> i64 {
+        let (head, rest) = self.bytes.split_at(8);
+        self.bytes = rest;
+        i64::from_le_bytes(head.try_into().expect("i64 field"))
+    }
+
+    fn bytes(&mut self) -> &'a [u8] {
+        let len = self.u32();
+        let (head, rest) = self.bytes.split_at(len);
+        self.bytes = rest;
+        head
+    }
 }
 
 /// Refreshes the whole tie group of the row just inserted at `pos`. Flink's append-only Top-N
@@ -344,6 +464,14 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> TopNRanker<S> {
     /// the codec's converters); the lazy first-batch build then never runs.
     pub(crate) fn with_converters(mut self, converters: TopNConverters) -> Self {
         self.converters = Some(converters);
+        self
+    }
+
+    /// Pre-installs the payload schema alongside `with_converters` on the persistent path, so
+    /// canonical snapshots work before the first input batch arrives.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_payload_schema(mut self, schema: SchemaRef) -> Self {
+        self.schema = Some(schema);
         self
     }
 
@@ -846,6 +974,81 @@ fn write_raw_topn_snapshot_partition<'a>(
     write_ipc(&batch)
 }
 
+/// Commits a persistent Top-N store and exports every non-empty buffer in the raw key-group
+/// encoding the memory snapshots write, for backend-independent canonical savepoints. Empty
+/// buffers are skipped exactly as the memory snapshots skip them.
+#[cfg(feature = "rocksdb-state")]
+fn rocks_canonical_partitions<C, R>(
+    groups: &mut crate::state::RocksStore<C>,
+    write_partition: impl Fn(&[(&ByteKey, &Vec<R>)]) -> Vec<u8>,
+) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError>
+where
+    C: crate::state::RocksStateCodec<Value = Vec<R>>,
+{
+    let keys = groups.canonical_keys_by_group()?;
+    let mut partitions = BTreeMap::new();
+    for (&group, selected) in &keys {
+        let entries: Vec<(&ByteKey, &Vec<R>)> = selected
+            .iter()
+            .map(|key| {
+                (
+                    key,
+                    groups.get(&key.0).expect("canonical key remains resident"),
+                )
+            })
+            .filter(|(_, buffer)| !buffer.is_empty())
+            .collect();
+        if !entries.is_empty() {
+            partitions.insert(group, write_partition(&entries));
+        }
+    }
+    groups.finish_canonical_scan();
+    Ok(partitions)
+}
+
+/// Commits the persistent store and exports the complete logical table in the same raw key-group
+/// encoding the memory snapshot writes, for backend-independent canonical savepoints.
+#[cfg(feature = "rocksdb-state")]
+impl TopNRanker<RocksTopNStore> {
+    pub(crate) fn canonical_partitions(
+        &mut self,
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let schema = self
+            .schema
+            .clone()
+            .expect("declared schema installed on the persistent path");
+        let ttl_on = self.ttl_ms > 0;
+        rocks_canonical_partitions(&mut self.groups, |entries| {
+            write_raw_topn_snapshot_partition(
+                entries.iter().map(|&(key, buffer)| (key, buffer)),
+                &schema,
+                ttl_on,
+            )
+        })
+    }
+}
+
+/// See [`TopNRanker::canonical_partitions`]; the retracting buffers share the raw encoding.
+#[cfg(feature = "rocksdb-state")]
+impl RetractableTopNRanker<RocksTopNStore> {
+    pub(crate) fn canonical_partitions(
+        &mut self,
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let schema = self
+            .schema
+            .clone()
+            .expect("declared schema installed on the persistent path");
+        let ttl_on = self.ttl_ms > 0;
+        rocks_canonical_partitions(&mut self.groups, |entries| {
+            write_raw_topn_snapshot_partition(
+                entries.iter().map(|&(key, buffer)| (key, buffer)),
+                &schema,
+                ttl_on,
+            )
+        })
+    }
+}
+
 /// Immutable append-only Top-N view captured at an aligned checkpoint barrier. Payload rows are
 /// shared through their existing Arcs; only the small partition and sort keys are copied. IPC is
 /// deliberately deferred until Flink's heap-state serializer runs on the async checkpoint thread.
@@ -1249,6 +1452,14 @@ impl<S: KeyedStateStore<Vec<TopNRow>>> RetractableTopNRanker<S> {
     /// the codec's converters); the lazy first-batch build then never runs.
     pub(crate) fn with_converters(mut self, converters: TopNConverters) -> Self {
         self.converters = Some(converters);
+        self
+    }
+
+    /// Pre-installs the payload schema alongside `with_converters` on the persistent path, so
+    /// canonical snapshots work before the first input batch arrives.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_payload_schema(mut self, schema: SchemaRef) -> Self {
+        self.schema = Some(schema);
         self
     }
 
@@ -1892,6 +2103,85 @@ pub(crate) fn updatable_entry_bytes(entry: &UpdatableRow) -> usize {
         + GROUP_ENTRY_OVERHEAD
 }
 
+/// The update-fast buffer's persistent backend: the generic persistent store under the raw
+/// whole-list codec.
+#[cfg(feature = "rocksdb-state")]
+pub(crate) type RocksUpdatableTopNStore = crate::state::RocksStore<UpdatableTopNStateCodec>;
+
+/// [`TopNStateCodec`] for the update-fast buffer: each row additionally carries its unique-key
+/// bytes — `[sort_len: u32 LE][sort][payload_len: u32 LE][payload][row_key_len: u32 LE][row_key]
+/// [ts_ms: i64 LE]` per row after the `u32` row count.
+#[cfg(feature = "rocksdb-state")]
+pub(crate) struct UpdatableTopNStateCodec {
+    sort: Arc<RowConverter>,
+    payload: Arc<RowConverter>,
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl UpdatableTopNStateCodec {
+    pub(crate) fn new(converters: &TopNConverters) -> Self {
+        UpdatableTopNStateCodec {
+            sort: Arc::clone(&converters.sort),
+            payload: Arc::clone(&converters.payload),
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl crate::state::RocksStateCodec for UpdatableTopNStateCodec {
+    type Value = Vec<UpdatableRow>;
+    fn supported(&self) -> bool {
+        true
+    }
+    fn value_fields(&self) -> Vec<(String, DataType)> {
+        vec![("rows".to_string(), DataType::Binary)]
+    }
+    fn encode(&self, _value: &Vec<UpdatableRow>) -> Vec<ScalarValue> {
+        unreachable!("raw codec")
+    }
+    fn decode(&self, _scalars: &[ScalarValue]) -> Vec<UpdatableRow> {
+        unreachable!("raw codec")
+    }
+    fn value_bytes(&self, value: &Vec<UpdatableRow>) -> usize {
+        4 + value
+            .iter()
+            .map(|entry| {
+                20 + entry.sort.row().data().len()
+                    + entry.payload.row().data().len()
+                    + entry.row_key.len()
+            })
+            .sum::<usize>()
+    }
+    fn write_ms(&self, value: &Vec<UpdatableRow>) -> i64 {
+        value.iter().map(|entry| entry.ts_ms).max().unwrap_or(0)
+    }
+    fn raw(&self) -> bool {
+        true
+    }
+    fn raw_write(&self, value: &Vec<UpdatableRow>, out: &mut Vec<u8>) {
+        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        for entry in value {
+            write_length_prefixed(out, entry.sort.row().data());
+            write_length_prefixed(out, entry.payload.row().data());
+            write_length_prefixed(out, &entry.row_key.0);
+            out.extend_from_slice(&entry.ts_ms.to_le_bytes());
+        }
+    }
+    fn from_raw(&self, bytes: &[u8]) -> Vec<UpdatableRow> {
+        let mut cursor = RawListCursor::new(bytes);
+        let sort_parser = self.sort.parser();
+        let payload_parser = self.payload.parser();
+        (0..cursor.u32())
+            .map(|_| UpdatableRow {
+                sort: sort_parser.parse(cursor.bytes()).owned(),
+                payload: Arc::new(payload_parser.parse(cursor.bytes()).owned()),
+                row_key: ByteKey::from(cursor.bytes()),
+                ts_ms: cursor.i64(),
+            })
+            .collect()
+    }
+}
+
 /// [`prune_expired_topn_rows`] for the update-fast buffer: per-row-key entry expiry. Silent — the
 /// next record for an expired row key is treated as a fresh insert (for `limit == 1` that means
 /// even a strictly worse row becomes the new top-1, exactly Flink's expired `ValueState` read).
@@ -2016,6 +2306,14 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
     /// the codec's converters); the lazy first-batch build then never runs.
     pub(crate) fn with_converters(mut self, converters: TopNConverters) -> Self {
         self.converters = Some(converters);
+        self
+    }
+
+    /// Pre-installs the payload schema alongside `with_converters` on the persistent path, so
+    /// canonical snapshots work before the first input batch arrives.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_payload_schema(mut self, schema: SchemaRef) -> Self {
+        self.schema = Some(schema);
         self
     }
 
@@ -2312,6 +2610,79 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
     }
 }
 
+/// One key group's raw update-fast snapshot blob, buffer order preserved. The TTL timestamps ride
+/// a trailing column only while TTL is on, so a TTL-off snapshot stays byte-identical to the
+/// pre-TTL format.
+fn write_raw_updatable_snapshot_partition<'a>(
+    entries: impl Iterator<Item = (&'a ByteKey, &'a Vec<UpdatableRow>)>,
+    schema: &SchemaRef,
+    ttl_on: bool,
+) -> Vec<u8> {
+    let mut keys = BinaryBuilder::new();
+    let mut sorts = BinaryBuilder::new();
+    let mut row_keys = BinaryBuilder::new();
+    let mut rows = BinaryBuilder::new();
+    let mut write_timestamps = Int64Builder::new();
+    for (key, buffer) in entries {
+        for entry in buffer {
+            keys.append_value(&key.0);
+            sorts.append_value(entry.sort.row().data());
+            row_keys.append_value(&entry.row_key.0);
+            rows.append_value(entry.payload.row().data());
+            write_timestamps.append_value(entry.ts_ms);
+        }
+    }
+    let mut fields = vec![
+        Field::new(RAW_SNAPSHOT_KEY, DataType::Binary, false),
+        Field::new(RAW_SNAPSHOT_SORT, DataType::Binary, false),
+        Field::new(RAW_SNAPSHOT_ROW_KEY, DataType::Binary, false),
+        Field::new(RAW_SNAPSHOT_ROW, DataType::Binary, false),
+    ];
+    if ttl_on {
+        fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
+    }
+    let raw_schema = Arc::new(Schema::new_with_metadata(
+        fields,
+        std::collections::HashMap::from([(
+            RAW_SNAPSHOT_PAYLOAD_SCHEMA.to_string(),
+            encode_schema_metadata(schema),
+        )]),
+    ));
+    let mut columns: Vec<ArrayRef> = vec![
+        Arc::new(keys.finish()),
+        Arc::new(sorts.finish()),
+        Arc::new(row_keys.finish()),
+        Arc::new(rows.finish()),
+    ];
+    if ttl_on {
+        columns.push(Arc::new(write_timestamps.finish()));
+    }
+    let batch =
+        RecordBatch::try_new(raw_schema, columns).expect("raw update-fast top-n snapshot batch");
+    write_ipc(&batch)
+}
+
+/// See [`TopNRanker::canonical_partitions`]; the update-fast buffers use their own raw encoding.
+#[cfg(feature = "rocksdb-state")]
+impl UpdatableTopNRanker<RocksUpdatableTopNStore> {
+    pub(crate) fn canonical_partitions(
+        &mut self,
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let schema = self
+            .schema
+            .clone()
+            .expect("declared schema installed on the persistent path");
+        let ttl_on = self.ttl_ms > 0;
+        rocks_canonical_partitions(&mut self.groups, |entries| {
+            write_raw_updatable_snapshot_partition(
+                entries.iter().map(|&(key, buffer)| (key, buffer)),
+                &schema,
+                ttl_on,
+            )
+        })
+    }
+}
+
 /// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
 /// store checkpoints through its own commit path instead of materializing the key space.
 impl UpdatableTopNRanker {
@@ -2334,68 +2705,26 @@ impl UpdatableTopNRanker {
         let Some(schema) = self.schema.as_ref() else {
             return BTreeMap::new();
         };
-        // The TTL timestamps ride a trailing column only while TTL is on, so a TTL-off snapshot
-        // stays byte-identical to the pre-TTL format.
-        let ttl_on = self.ttl_ms > 0;
-        let mut builders: BTreeMap<
-            i32,
-            (
-                BinaryBuilder,
-                BinaryBuilder,
-                BinaryBuilder,
-                BinaryBuilder,
-                Int64Builder,
-            ),
-        > = BTreeMap::new();
+        let mut partitions: BTreeMap<i32, Vec<(&ByteKey, &Vec<UpdatableRow>)>> = BTreeMap::new();
         for (key, buffer) in self.groups.iter() {
             if buffer.is_empty() {
                 continue;
             }
             let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
-            let (keys, sorts, row_keys, rows, write_timestamps) =
-                builders.entry(group).or_default();
-            for entry in buffer.iter() {
-                keys.append_value(&key.0);
-                sorts.append_value(entry.sort.row().data());
-                row_keys.append_value(&entry.row_key.0);
-                rows.append_value(entry.payload.row().data());
-                write_timestamps.append_value(entry.ts_ms);
-            }
+            partitions.entry(group).or_default().push((key, buffer));
         }
-        let mut fields = vec![
-            Field::new(RAW_SNAPSHOT_KEY, DataType::Binary, false),
-            Field::new(RAW_SNAPSHOT_SORT, DataType::Binary, false),
-            Field::new(RAW_SNAPSHOT_ROW_KEY, DataType::Binary, false),
-            Field::new(RAW_SNAPSHOT_ROW, DataType::Binary, false),
-        ];
-        if ttl_on {
-            fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
-        }
-        let raw_schema = Arc::new(Schema::new_with_metadata(
-            fields,
-            std::collections::HashMap::from([(
-                RAW_SNAPSHOT_PAYLOAD_SCHEMA.to_string(),
-                encode_schema_metadata(schema),
-            )]),
-        ));
-        builders
+        partitions
             .into_iter()
-            .map(
-                |(group, (mut keys, mut sorts, mut row_keys, mut rows, mut write_timestamps))| {
-                    let mut columns: Vec<ArrayRef> = vec![
-                        Arc::new(keys.finish()),
-                        Arc::new(sorts.finish()),
-                        Arc::new(row_keys.finish()),
-                        Arc::new(rows.finish()),
-                    ];
-                    if ttl_on {
-                        columns.push(Arc::new(write_timestamps.finish()));
-                    }
-                    let batch = RecordBatch::try_new(raw_schema.clone(), columns)
-                        .expect("raw update-fast top-n snapshot batch");
-                    (group, write_ipc(&batch))
-                },
-            )
+            .map(|(group, entries)| {
+                (
+                    group,
+                    write_raw_updatable_snapshot_partition(
+                        entries.into_iter(),
+                        schema,
+                        self.ttl_ms > 0,
+                    ),
+                )
+            })
             .collect()
     }
 
@@ -2574,6 +2903,95 @@ impl TopNHandle {
                 )
                 .with_state_ttl(state_ttl_ms),
             )
+        }
+    }
+}
+
+/// The persistent Top-N handle the JVM holds under the RocksDB backend: the three ranker variants
+/// over their typed read-through stores (the [`TopNHandle`] analog). Each variant owns one
+/// single-table store; a checkpoint commits that store, and canonical savepoints re-encode the
+/// logical table in the memory snapshots' raw key-group format.
+#[cfg(feature = "rocksdb-state")]
+pub(crate) enum RocksTopNHandle {
+    Append(TopNRanker<RocksTopNStore>),
+    Retract(RetractableTopNRanker<RocksTopNStore>),
+    UpdateFast(UpdatableTopNRanker<RocksUpdatableTopNStore>),
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl RocksTopNHandle {
+    pub(crate) fn push(
+        &mut self,
+        batch: &RecordBatch,
+        now_ms: i64,
+    ) -> Result<RecordBatch, DataFusionError> {
+        match self {
+            RocksTopNHandle::Append(r) => {
+                r.store_mut().set_clock(now_ms);
+                r.push(batch, now_ms)
+            }
+            RocksTopNHandle::Retract(r) => {
+                r.store_mut().set_clock(now_ms);
+                r.push(batch, now_ms)
+            }
+            RocksTopNHandle::UpdateFast(r) => {
+                r.store_mut().set_clock(now_ms);
+                r.push(batch, now_ms)
+            }
+        }
+    }
+
+    pub(crate) fn flush(&mut self) -> RecordBatch {
+        match self {
+            RocksTopNHandle::Append(r) => r.flush_net_diff(),
+            RocksTopNHandle::Retract(r) => r.flush_net_diff(),
+            // The update-fast ranker has no net-diff staging; every push emitted its diff already.
+            RocksTopNHandle::UpdateFast(_) => RecordBatch::new_empty(Arc::new(Schema::empty())),
+        }
+    }
+
+    pub(crate) fn checkpoint(
+        &mut self,
+        snapshot_dir: &str,
+    ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
+        match self {
+            RocksTopNHandle::Append(r) => r.store_mut().checkpoint(snapshot_dir),
+            RocksTopNHandle::Retract(r) => r.store_mut().checkpoint(snapshot_dir),
+            RocksTopNHandle::UpdateFast(r) => r.store_mut().checkpoint(snapshot_dir),
+        }
+    }
+
+    pub(crate) fn canonical_partitions(
+        &mut self,
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        match self {
+            RocksTopNHandle::Append(r) => r.canonical_partitions(),
+            RocksTopNHandle::Retract(r) => r.canonical_partitions(),
+            RocksTopNHandle::UpdateFast(r) => r.canonical_partitions(),
+        }
+    }
+
+    pub(crate) fn state_bytes(&self) -> usize {
+        match self {
+            RocksTopNHandle::Append(r) => r.memory.state_bytes,
+            RocksTopNHandle::Retract(r) => r.memory.state_bytes,
+            RocksTopNHandle::UpdateFast(r) => r.memory.state_bytes,
+        }
+    }
+
+    pub(crate) fn staging_bytes(&self) -> usize {
+        match self {
+            RocksTopNHandle::Append(r) => r.staging_bytes(),
+            RocksTopNHandle::Retract(r) => r.staging_bytes(),
+            RocksTopNHandle::UpdateFast(_) => 0,
+        }
+    }
+
+    pub(crate) fn staged_partitions(&self) -> usize {
+        match self {
+            RocksTopNHandle::Append(r) => r.staged_partitions(),
+            RocksTopNHandle::Retract(r) => r.staged_partitions(),
+            RocksTopNHandle::UpdateFast(_) => 0,
         }
     }
 }

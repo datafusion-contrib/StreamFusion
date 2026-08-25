@@ -153,10 +153,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSharedResource
     write_buffer_ratio: jdouble,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
-        Box::into_raw(Box::new(crate::state::rocks_config::RocksSharedResources::new(
-            total_bytes,
-            write_buffer_ratio,
-        ))) as jlong
+        Box::into_raw(Box::new(
+            crate::state::rocks_config::RocksSharedResources::new(total_bytes, write_buffer_ratio),
+        )) as jlong
     })
 }
 
@@ -167,7 +166,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_releaseRocksDBSharedResourc
     handle: jlong,
 ) {
     crate::bridge::jni_guard(env, move |_env| unsafe {
-        drop(from_handle::<crate::state::rocks_config::RocksSharedResources>(handle));
+        drop(from_handle::<
+            crate::state::rocks_config::RocksSharedResources,
+        >(handle));
     })
 }
 
@@ -495,7 +496,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBChangelogNormal
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBChangelogNormalizer<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBChangelogNormalizer<
+    'local,
+>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -545,13 +548,17 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBChangelogNor
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_rocksdbChangelogNormalizerStateBytes<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbChangelogNormalizerStateBytes<
+    'local,
+>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
-        unsafe { &*(handle as *const RocksChangelogNormalizer) }.memory.state_bytes as jlong
+        unsafe { &*(handle as *const RocksChangelogNormalizer) }
+            .memory
+            .state_bytes as jlong
     })
 }
 #[no_mangle]
@@ -567,7 +574,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbChangelogNormalizerS
     })
 }
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_rocksdbChangelogNormalizerStagedKeys<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbChangelogNormalizerStagedKeys<
+    'local,
+>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
@@ -755,7 +764,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbKeepLastDeduplicator
     handle: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
-        unsafe { &*(handle as *const RocksKeepLastDeduplicator) }.memory.state_bytes as jlong
+        unsafe { &*(handle as *const RocksKeepLastDeduplicator) }
+            .memory
+            .state_bytes as jlong
     })
 }
 #[no_mangle]
@@ -918,7 +929,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_pushLeftRocksDBUpdatingJoin
     out_array: jlong,
     out_schema: jlong,
 ) {
-    push_rocksdb_updating_joiner(env, handle, true, in_array, in_schema, now, out_array, out_schema)
+    push_rocksdb_updating_joiner(
+        env, handle, true, in_array, in_schema, now, out_array, out_schema,
+    )
 }
 
 #[no_mangle]
@@ -1009,7 +1022,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbUpdatingJoinerStateB
     handle: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |_env| {
-        unsafe { &*(handle as *const RocksUpdatingJoiner) }.memory.state_bytes as jlong
+        unsafe { &*(handle as *const RocksUpdatingJoiner) }
+            .memory
+            .state_bytes as jlong
     })
 }
 #[no_mangle]
@@ -1051,6 +1066,291 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBUpdatingJoiner<
 ) {
     crate::bridge::jni_guard(env, move |_env| unsafe {
         drop(from_handle::<RocksUpdatingJoiner>(handle));
+    })
+}
+
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTopNRanker<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    partition_columns: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
+    sort_indices: JIntArray<'local>,
+    sort_ascending: JIntArray<'local>,
+    sort_nulls_first: JIntArray<'local>,
+    offset: jlong,
+    limit: jlong,
+    output_rank_number: jboolean,
+    retracting: jboolean,
+    net_diff: jboolean,
+    state_ttl_millis: jlong,
+    now_millis: jlong,
+    memory_budget_bytes: jlong,
+    schema_address: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    options_json: JString<'local>,
+    shared_resources: jlong,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let partitions = read_columns(&env, &partition_columns);
+        let timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
+        let schema = import_schema(schema_address);
+        let converters = TopNConverters::from_declared(&schema, &partitions, &sort);
+        let config = RocksStoreConfig {
+            table_dir: read_string(&mut env, &table_directory),
+            max_parallelism: max_parallelism as usize,
+            options_json: read_string(&mut env, &options_json),
+            ttl_ms: state_ttl_millis.max(0),
+            shared_resources,
+        };
+        let store = open_store(
+            &mut env,
+            config,
+            TopNStateCodec::new(&converters),
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+            now_millis,
+        );
+        let ranker = store.and_then(|store| {
+            if retracting != 0 {
+                RetractableTopNRanker::new(partitions, sort, offset, limit, output_rank_number != 0)
+                    .with_key_timestamp_precisions(timestamp_precisions)
+                    .with_net_diff(net_diff != 0)
+                    .with_state_ttl(state_ttl_millis)
+                    .with_converters(converters)
+                    .with_payload_schema(schema)
+                    .with_backend(store)
+                    .with_read_through_budget(memory_budget_bytes)
+                    .map(RocksTopNHandle::Retract)
+            } else {
+                TopNRanker::new(
+                    partitions,
+                    sort,
+                    limit,
+                    output_rank_number != 0,
+                    net_diff != 0,
+                )
+                .with_key_timestamp_precisions(timestamp_precisions)
+                .with_state_ttl(state_ttl_millis)
+                .with_converters(converters)
+                .with_payload_schema(schema)
+                .with_backend(store)
+                .with_read_through_budget(memory_budget_bytes)
+                .map(RocksTopNHandle::Append)
+            }
+        });
+        boxed_or_throw(&mut env, ranker)
+    })
+}
+
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBUpdateFastTopNRanker<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    partition_columns: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
+    row_key_columns: JIntArray<'local>,
+    row_key_timestamp_precisions: JIntArray<'local>,
+    sort_indices: JIntArray<'local>,
+    sort_ascending: JIntArray<'local>,
+    sort_nulls_first: JIntArray<'local>,
+    limit: jlong,
+    output_rank_number: jboolean,
+    generate_update_before: jboolean,
+    state_ttl_millis: jlong,
+    now_millis: jlong,
+    memory_budget_bytes: jlong,
+    schema_address: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    options_json: JString<'local>,
+    shared_resources: jlong,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let partitions = read_columns(&env, &partition_columns);
+        let partition_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let row_keys = read_columns(&env, &row_key_columns);
+        let row_key_precisions = read_i32_array(&env, &row_key_timestamp_precisions);
+        let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
+        let schema = import_schema(schema_address);
+        let converters = TopNConverters::from_declared(&schema, &partitions, &sort);
+        let config = RocksStoreConfig {
+            table_dir: read_string(&mut env, &table_directory),
+            max_parallelism: max_parallelism as usize,
+            options_json: read_string(&mut env, &options_json),
+            ttl_ms: state_ttl_millis.max(0),
+            shared_resources,
+        };
+        let store = open_store(
+            &mut env,
+            config,
+            UpdatableTopNStateCodec::new(&converters),
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+            now_millis,
+        );
+        let ranker = store.and_then(|store| {
+            UpdatableTopNRanker::new(
+                partitions,
+                partition_precisions,
+                row_keys,
+                row_key_precisions,
+                sort,
+                limit,
+                output_rank_number != 0,
+                generate_update_before != 0,
+            )
+            .with_state_ttl(state_ttl_millis)
+            .with_converters(converters)
+            .with_payload_schema(schema)
+            .with_backend(store)
+            .with_read_through_budget(memory_budget_bytes)
+            .map(RocksTopNHandle::UpdateFast)
+        });
+        boxed_or_throw(&mut env, ranker)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pushRocksDBTopNRanker<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array: jlong,
+    in_schema: jlong,
+    now: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let ranker = unsafe { &mut *(handle as *mut RocksTopNHandle) };
+        // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+        let result = {
+            let batch = import_record_batch(in_array, in_schema);
+            ranker.push(&batch, now)
+        };
+        match result {
+            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBTopNRanker<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| {
+        let ranker = unsafe { &mut *(handle as *mut RocksTopNHandle) };
+        export_record_batch(ranker.flush(), out_array, out_schema);
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBTopNRanker<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    snapshot_directory: JString<'local>,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let snapshot_directory = read_string(&mut env, &snapshot_directory);
+        match unsafe { &mut *(handle as *mut RocksTopNHandle) }.checkpoint(&snapshot_directory) {
+            Ok(m) => manifest_array(&mut env, &m),
+            Err(e) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB checkpoint failed: {e}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBTopNRankerPartitions<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let ranker = unsafe { &mut *(handle as *mut RocksTopNHandle) };
+        match ranker.canonical_partitions() {
+            Ok(partitions) => keyed_state_partition_array(&mut env, partitions, "rocksdb-top-n"),
+            Err(error) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB canonical snapshot failed: {error}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbTopNRankerStateBytes<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const RocksTopNHandle) }.state_bytes() as jlong
+    })
+}
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbTopNRankerStagingBytes<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const RocksTopNHandle) }.staging_bytes() as jlong
+    })
+}
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbTopNRankerStagedPartitions<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const RocksTopNHandle) }.staged_partitions() as jlong
+    })
+}
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBTopNRanker<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<RocksTopNHandle>(handle));
     })
 }
 

@@ -1279,6 +1279,86 @@ public final class Native {
 
   public static native void closeRocksDBUpdatingJoiner(long handle);
 
+  /**
+   * Creates an append-only or retracting Top-N ranker backed directly by a Rust-owned RocksDB
+   * instance. The declared input schema builds the arrow-row converters the persisted state is
+   * decoded with, so restored bytes parse before any batch arrives.
+   */
+  public static native long createRocksDBTopNRanker(
+      int[] partitionColumns,
+      int[] keyTimestampPrecisions,
+      int[] sortIndices,
+      int[] sortAscending,
+      int[] sortNullsFirst,
+      long offset,
+      long limit,
+      boolean outputRankNumber,
+      boolean retracting,
+      boolean netDiff,
+      long stateTtlMillis,
+      long nowMillis,
+      long memoryBudgetBytes,
+      long schemaAddress,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  /** {@link #createRocksDBTopNRanker} for the update-fast (unique-keyed changelog) variant. */
+  public static native long createRocksDBUpdateFastTopNRanker(
+      int[] partitionColumns,
+      int[] keyTimestampPrecisions,
+      int[] rowKeyColumns,
+      int[] rowKeyTimestampPrecisions,
+      int[] sortIndices,
+      int[] sortAscending,
+      int[] sortNullsFirst,
+      long limit,
+      boolean outputRankNumber,
+      boolean generateUpdateBefore,
+      long stateTtlMillis,
+      long nowMillis,
+      long memoryBudgetBytes,
+      long schemaAddress,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  /** Materializes direct RocksDB Top-N state as backend-independent key-group partitions. */
+  public static native byte[][] snapshotRocksDBTopNRankerPartitions(long handle);
+
+  public static native void pushRocksDBTopNRanker(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long nowMillis,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  public static native void flushRocksDBTopNRanker(
+      long handle, long outArrayAddress, long outSchemaAddress);
+
+  public static native String[] checkpointRocksDBTopNRanker(long handle, String snapshotDirectory);
+
+  public static native long rocksdbTopNRankerStateBytes(long handle);
+
+  public static native long rocksdbTopNRankerStagingBytes(long handle);
+
+  public static native long rocksdbTopNRankerStagedPartitions(long handle);
+
+  public static native void closeRocksDBTopNRanker(long handle);
+
   /** Generic RocksDB persistence for operators still using their key-group snapshot codec. */
   public static native long createRocksDBSnapshotStore(
       String databaseDirectory,

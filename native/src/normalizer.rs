@@ -475,7 +475,10 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
     /// trailing column only while TTL is on, so a TTL-off snapshot stays byte-identical to the
     /// pre-TTL format (and disabling TTL sheds the timestamps).
     fn snapshot_keys(&self, selected: &[ByteKey]) -> Vec<u8> {
-        let schema = self.schema.as_ref().expect("schema set once a row was stored");
+        let schema = self
+            .schema
+            .as_ref()
+            .expect("schema set once a row was stored");
         let ttl_on = self.ttl_ms > 0;
         let mut keys = BinaryBuilder::new();
         let mut payloads = BinaryBuilder::new();

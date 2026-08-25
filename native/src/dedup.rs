@@ -1244,7 +1244,10 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
     /// keep-last shape (the only suppression that consults it) and the TTL timestamps only while
     /// TTL is on — so every other snapshot stays byte-identical to its prior format.
     fn snapshot_keys(&self, selected: &[ByteKey]) -> Vec<u8> {
-        let schema = self.schema.as_ref().expect("schema set once a row was stored");
+        let schema = self
+            .schema
+            .as_ref()
+            .expect("schema set once a row was stored");
         let kind_on = !self.rowtime_ordered && !self.keep_first;
         let ttl_on = self.ttl_ms > 0;
         let mut keys = BinaryBuilder::new();

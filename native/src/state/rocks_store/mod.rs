@@ -81,8 +81,7 @@ pub(crate) struct RocksStoreConfig {
 
 impl RocksStoreConfig {
     fn shared(&self) -> Option<&'static crate::state::rocks_config::RocksSharedResources> {
-        (self.shared_resources != 0)
-            .then(|| unsafe { &*(self.shared_resources as *const _) })
+        (self.shared_resources != 0).then(|| unsafe { &*(self.shared_resources as *const _) })
     }
 }
 
@@ -200,7 +199,9 @@ fn open_shared_db(
     std::fs::create_dir_all(&config.table_dir).map_err(ioe)?;
     let resolved = crate::state::rocks_config::FlinkRocksOptions::from_json(&config.options_json)
         .map_err(DataFusionError::Plan)?;
-    let (mut options, cache) = resolved.build(config.shared()).map_err(DataFusionError::Plan)?;
+    let (mut options, cache) = resolved
+        .build(config.shared())
+        .map_err(DataFusionError::Plan)?;
     let write_batch_size = resolved.write_batch_size;
     let clock = Arc::new(AtomicI64::new(0));
     if ttls.iter().any(|&(_, ttl)| ttl > 0) {
@@ -771,7 +772,9 @@ impl RocksSnapshotStore {
             let resolved =
                 crate::state::rocks_config::FlinkRocksOptions::from_json(&config.options_json)
                     .map_err(DataFusionError::Plan)?;
-            let (options, cache) = resolved.build(config.shared()).map_err(DataFusionError::Plan)?;
+            let (options, cache) = resolved
+                .build(config.shared())
+                .map_err(DataFusionError::Plan)?;
             let write_batch_size = resolved.write_batch_size;
             let db = DB::open(&options, &config.table_dir).map_err(re)?;
             let timer_deadline = db
@@ -792,7 +795,9 @@ impl RocksSnapshotStore {
         let resolved =
             crate::state::rocks_config::FlinkRocksOptions::from_json(&config.options_json)
                 .map_err(DataFusionError::Plan)?;
-        let (options, cache) = resolved.build(config.shared()).map_err(DataFusionError::Plan)?;
+        let (options, cache) = resolved
+            .build(config.shared())
+            .map_err(DataFusionError::Plan)?;
         let write_batch_size = resolved.write_batch_size;
         let db = DB::open(&options, &config.table_dir).map_err(re)?;
         let mut timer_deadline = i64::MIN;

@@ -4,6 +4,7 @@ import tech.streamfusion.Native;
 import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import tech.streamfusion.planner.NativeConfig;
 import tech.streamfusion.state.CanonicalNativeState;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -86,6 +87,58 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
   /** Whether this is Flink's UpdatableTopNFunction shape (a unique-keyed changelog input). */
   private boolean updateFast() {
     return rowKeyColumns != null;
+  }
+
+  @Override
+  protected boolean usesDirectRocksDBState() {
+    return true;
+  }
+
+  @Override
+  protected RocksDBNativeStateSupport resolveRocksDBState(boolean rawStateRestored) {
+    return resolveRocksDB(rawStateRestored, () -> true, stateTtlMillis);
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    long now = getProcessingTimeService().getCurrentProcessingTime();
+    if (updateFast()) {
+      return withRowSchema(
+          rowType,
+          schemaAddress ->
+              Native.createRocksDBUpdateFastTopNRanker(
+                  partitionColumns, keyTimestampPrecisions(), rowKeyColumns,
+                  rowKeyTimestampPrecisions, sortIndices, sortAscending, sortNullsFirst, limit,
+                  outputRankNumber, generateUpdateBefore, stateTtlMillis, now,
+                  memoryBudgetBytes(), schemaAddress, rocksdb.tableDirectory(), maxParallelism(),
+                  rocksdb.optionsJson(), rocksdb.sharedResourcesHandle(),
+                  rocksdb.sourceDirectories(), rocksdb.sourceSnapshotTokens(),
+                  rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(), rocksdb.aligned()));
+    }
+    return withRowSchema(
+        rowType,
+        schemaAddress ->
+            Native.createRocksDBTopNRanker(
+                partitionColumns, keyTimestampPrecisions(), sortIndices, sortAscending,
+                sortNullsFirst, offset, limit, outputRankNumber, retracting, netDiff,
+                stateTtlMillis, now, memoryBudgetBytes(), schemaAddress, rocksdb.tableDirectory(),
+                maxParallelism(), rocksdb.optionsJson(), rocksdb.sharedResourcesHandle(),
+                rocksdb.sourceDirectories(), rocksdb.sourceSnapshotTokens(),
+                rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(), rocksdb.aligned()));
+  }
+
+  @Override
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
+    return directRocksDBState()
+        ? Native.checkpointRocksDBTopNRanker(handle, snapshotDirectory)
+        : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected byte[][] snapshotCanonicalPartitions() {
+    return directRocksDBState()
+        ? Native.snapshotRocksDBTopNRankerPartitions(handle)
+        : snapshotRawPartitions();
   }
 
   @Override
@@ -173,12 +226,18 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
 
   @Override
   protected void closeHandle() {
-    Native.closeTopNRanker(handle);
+    if (directRocksDBState()) {
+      Native.closeRocksDBTopNRanker(handle);
+    } else {
+      Native.closeTopNRanker(handle);
+    }
   }
 
   @Override
   protected long stateBytesHandle() {
-    return Native.topNRankerStateBytes(handle);
+    return directRocksDBState()
+        ? Native.rocksdbTopNRankerStateBytes(handle)
+        : Native.topNRankerStateBytes(handle);
   }
 
   @Override
@@ -257,7 +316,8 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
   }
 
   private void publishCacheSize() {
-    if (!retracting && handle != 0) {
+    // The direct RocksDB rankers keep no resident cache between bundles; the gauge stays zero.
+    if (!retracting && handle != 0 && !directRocksDBState()) {
       cacheSize = Native.topNRankerCacheSize(handle);
     }
   }
@@ -273,13 +333,23 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
       // Flink's TtlTimeProvider clock: the processing-time service is System.currentTimeMillis in
       // production and harness-controlled in tests, so expiry is deterministic to test.
       long now = getProcessingTimeService().getCurrentProcessingTime();
-      Native.pushTopNRanker(
-          handle,
-          inArray.memoryAddress(),
-          inSchema.memoryAddress(),
-          now,
-          outArray.memoryAddress(),
-          outSchema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.pushRocksDBTopNRanker(
+            handle,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            now,
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      } else {
+        Native.pushTopNRanker(
+            handle,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            now,
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       if (out.getRowCount() > 0) {
@@ -325,11 +395,21 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
   }
 
   private void flushBundle(FlushReason reason) {
-    long transientBytes = Native.topNRankerStagingBytes(handle);
-    long touchedPartitions = Native.topNRankerStagedPartitions(handle);
+    long transientBytes =
+        directRocksDBState()
+            ? Native.rocksdbTopNRankerStagingBytes(handle)
+            : Native.topNRankerStagingBytes(handle);
+    long touchedPartitions =
+        directRocksDBState()
+            ? Native.rocksdbTopNRankerStagedPartitions(handle)
+            : Native.topNRankerStagedPartitions(handle);
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushTopNRanker(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.flushRocksDBTopNRanker(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      } else {
+        Native.flushTopNRanker(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       int outputRows = out.getRowCount();
