@@ -57,10 +57,12 @@ There are also deliberate implementation differences:
   writes (a two-sided operator's tables share one database under table-prefixed keys; window
   buffers append sequence-keyed entries and windowed aggregate state keys by window end, so
   watermarks fire with per-key-group range scans); session aggregates join them with key-major
-  session lists that hydrate by prefix scan for merging. The remaining native operators —
-  window rank, over aggregate, interval/temporal joins, keep-first dedup, temporal sort, and
-  proctime windowed operators, which need the snapshot store's persisted processing-time
-  deadline — replace one key-group snapshot payload in RocksDB at each checkpoint;
+  session lists that hydrate by prefix scan for merging, and event-time over aggregates (unbounded
+  non-distinct folds and ranking window functions; bounded frames, proctime shapes, and distinct
+  aggregates stay on the snapshot path). The remaining native operators — window rank,
+  interval/temporal joins, keep-first dedup, temporal sort, and proctime windowed operators, which
+  need the snapshot store's persisted processing-time deadline — replace one key-group snapshot
+  payload in RocksDB at each checkpoint;
 - the native stores' shared cache and write-buffer manager live in StreamFusion's own RocksDB
   library, sized by the same Flink options and formulas but leased separately from the delegate
   backend's pool (C++ objects cannot cross the two RocksDB libraries), and the binding exposes no

@@ -270,11 +270,6 @@ impl OverAggregator {
         )
     }
 
-    /// Backend-mode firing: seeds each listed key's running state from persisted scalars (the
-    /// same emit()/restore_value round trip the raw snapshot uses), folds the batch, then
-    /// exports the updated scalars per seed and drops the in-memory map — in backend mode the
-    /// store's write buffer owns the state between firings.
-
     fn restore(
         value_types: Vec<i64>,
         kinds: Vec<i64>,
@@ -864,9 +859,6 @@ impl WindowFunctionOver {
         )
     }
 
-    /// Backend-mode firing — see {@link OverAggregator::update_hydrated}; window-function state
-    /// round-trips through the same state()/restore_state scalars as the raw snapshot.
-
     fn restore(kinds: Vec<i64>, bytes: &[u8], stamps: &mut HashMap<ByteKey, i64>) -> Self {
         let mut over = WindowFunctionOver::new(kinds);
         let state_counts: Vec<usize> = over
@@ -969,9 +961,6 @@ impl OverInner {
             OverInner::WindowFunctions(inner) => inner.update(batch),
         }
     }
-
-    /// Backend-mode firing with store-resident per-key state; only the fixed-width fold shapes
-    /// support the native state codec.
 
     fn snapshot(&mut self, retention: RetentionStamps) -> Vec<u8> {
         match self {
@@ -1078,12 +1067,136 @@ impl OverInner {
                 .sum(),
         }
     }
+
+    /// Seeds the key codec from declared key types, so persisted fold keys decode before any
+    /// batch arrives.
+    #[cfg(feature = "rocksdb-state")]
+    fn seed_key_codec(&mut self, key_types: &[DataType]) {
+        match self {
+            OverInner::Aggregates(inner) => {
+                inner.key_converter = Some(key_row_converter_from_types(key_types));
+                inner.key_types = key_types.to_vec();
+            }
+            OverInner::WindowFunctions(inner) => {
+                inner.key_converter = Some(key_row_converter_from_types(key_types));
+                inner.key_types = key_types.to_vec();
+            }
+            OverInner::Bounded(_) => unreachable!("bounded OVER frames stay on the snapshot store"),
+        }
+    }
+
+    /// The fold-state column types the persistent store round-trips per key — the same scalars
+    /// the raw snapshot rides.
+    #[cfg(feature = "rocksdb-state")]
+    fn store_state_types(&self) -> Vec<DataType> {
+        match self {
+            OverInner::Aggregates(inner) => inner
+                .kinds
+                .iter()
+                .zip(&inner.value_types)
+                .map(|(&kind, vt)| OverAggState::new(kind, vt).result_type())
+                .collect(),
+            OverInner::WindowFunctions(inner) => inner
+                .kinds
+                .iter()
+                .flat_map(|&kind| WindowFnState::new(kind).state_types())
+                .collect(),
+            OverInner::Bounded(_) => unreachable!("bounded OVER frames stay on the snapshot store"),
+        }
+    }
+
+    /// Rebuilds one key's running state from persisted scalars — the same emit()/restore round
+    /// trip the raw snapshot uses.
+    #[cfg(feature = "rocksdb-state")]
+    fn seed_key(&mut self, key: &[u8], scalars: &[ScalarValue]) {
+        match self {
+            OverInner::Aggregates(inner) => {
+                for (i, state) in inner.states(key).iter_mut().enumerate() {
+                    state.restore_value(&scalars[i]);
+                }
+            }
+            OverInner::WindowFunctions(inner) => {
+                let counts: Vec<usize> = inner
+                    .kinds
+                    .iter()
+                    .map(|&kind| WindowFnState::new(kind).state_types().len())
+                    .collect();
+                let mut column = 0;
+                for (i, state) in inner.states(key).iter_mut().enumerate() {
+                    state.restore_state(&scalars[column..column + counts[i]]);
+                    column += counts[i];
+                }
+            }
+            OverInner::Bounded(_) => unreachable!("bounded OVER frames stay on the snapshot store"),
+        }
+    }
+
+    /// One folded key's updated state scalars, for the write-through.
+    #[cfg(feature = "rocksdb-state")]
+    fn export_key(&self, key: &[u8]) -> Vec<ScalarValue> {
+        match self {
+            OverInner::Aggregates(inner) => inner
+                .keys
+                .get(key)
+                .expect("fired key folded")
+                .iter()
+                .map(OverAggState::emit)
+                .collect(),
+            OverInner::WindowFunctions(inner) => inner
+                .keys
+                .get(key)
+                .expect("fired key folded")
+                .iter()
+                .flat_map(WindowFnState::state)
+                .collect(),
+            OverInner::Bounded(_) => unreachable!("bounded OVER frames stay on the snapshot store"),
+        }
+    }
+
+    /// Drops the resident fold map — in store mode RocksDB owns the state between bundles.
+    #[cfg(feature = "rocksdb-state")]
+    fn clear_resident(&mut self) {
+        match self {
+            OverInner::Aggregates(inner) => inner.keys.clear(),
+            OverInner::Bounded(inner) => inner.keys.clear(),
+            OverInner::WindowFunctions(inner) => inner.keys.clear(),
+        }
+    }
 }
 
-/// The fold-state column types a persistent OVER persists per key, or `None` when the shape
-/// stays on memory state: proctime ordering (emission is eager, off-watermark), bounded
-/// ROWS/RANGE frames (a per-key row buffer, not a fixed-width fold), or a mix of window
-/// functions and aggregates.
+/// The fold-state column types the persistent OVER store carries per key, or `None` when the
+/// shape stays on the snapshot store: proctime ordering (eager emission on processing-time
+/// retention clocks), bounded ROWS/RANGE frames (a per-key row buffer, not a fixed-width fold),
+/// distinct aggregates (list-typed seen-sets), or a mix of window functions and aggregates.
+#[cfg(feature = "rocksdb-state")]
+pub(crate) fn rocks_over_state_types(
+    value_types: &[i64],
+    kinds: &[i64],
+    frame_kind: i64,
+    proctime: bool,
+) -> Option<Vec<DataType>> {
+    if proctime || kinds.iter().any(|&kind| kind >= 100) {
+        return None;
+    }
+    if kinds.iter().all(|&kind| is_window_function_kind(kind)) {
+        return Some(
+            kinds
+                .iter()
+                .flat_map(|&kind| WindowFnState::new(kind).state_types())
+                .collect(),
+        );
+    }
+    if frame_kind != 0 || kinds.iter().any(|&kind| is_window_function_kind(kind)) {
+        return None;
+    }
+    Some(
+        kinds
+            .iter()
+            .zip(value_types)
+            .map(|(&kind, &vt)| OverAggState::new(kind, &value_data_type(vt)).result_type())
+            .collect(),
+    )
+}
 
 /// Columnar OVER: buffers whole input batches, and on a watermark emits the rows it has completed
 /// (rowtime <= watermark) with the running aggregate / window-function column(s) appended — the input
@@ -1134,9 +1247,18 @@ pub(crate) struct OverWindowAggregator {
     /// byte-identically to the inner's converter (same columns, same codec).
     key_converter: Option<RowConverter>,
     pub(crate) memory: OperatorMemory,
-    /// Persistent-state mode: pending rows and per-key fold state live in the persistent store
-    /// (write buffers + disk tables); the in-memory `buffered` batches and the inner's key map
-    /// stay empty between calls.
+    /// Persistent-state mode: pending rows and per-key fold state live in RocksDB; the in-memory
+    /// `buffered` batches and the inner's key map stay empty between bundles.
+    #[cfg(feature = "rocksdb-state")]
+    store: Option<crate::state::RocksOverAggStore>,
+    /// Fold tombstones a cleanup staged this call (an expired key clearing silently), written
+    /// with the call's other store writes so a restore cannot resurrect the cleared fold.
+    #[cfg(feature = "rocksdb-state")]
+    store_tombstones: Vec<Vec<u8>>,
+    #[cfg(feature = "rocksdb-state")]
+    store_state_types: Vec<DataType>,
+    #[cfg(feature = "rocksdb-state")]
+    store_key_types: Vec<DataType>,
     key_timestamp_precisions: Vec<i32>,
 }
 
@@ -1172,6 +1294,14 @@ impl OverWindowAggregator {
             retention_bytes: 0,
             key_converter: None,
             memory: OperatorMemory::unaccounted(),
+            #[cfg(feature = "rocksdb-state")]
+            store: None,
+            #[cfg(feature = "rocksdb-state")]
+            store_tombstones: Vec::new(),
+            #[cfg(feature = "rocksdb-state")]
+            store_state_types: Vec::new(),
+            #[cfg(feature = "rocksdb-state")]
+            store_key_types: Vec::new(),
             key_timestamp_precisions: vec![-1; key_arity],
         }
     }
@@ -1227,44 +1357,32 @@ impl OverWindowAggregator {
         }
     }
 
-    /// Writes a deadline mutation through to the persistent deadlines table — a no-op on memory
-    /// state, where the deadline map rides the raw snapshot instead.
-    fn stage_backend_deadline(&mut self, key: &[u8], deadline: Option<i64>) {
-        let _ = (key, deadline);
-    }
-
     /// Flink's `registerProcessingCleanupTimer`: the deadline moves to `now + maxRetention` only
     /// when the key has none, or the current one would land within a min-retention of now.
     fn register_cleanup(&mut self, key: &[u8], now_ms: i64) {
         let armed = now_ms.saturating_add(self.max_retention_ms);
-        let moved = match self.cleanup_state.get_mut(key) {
+        match self.cleanup_state.get_mut(key) {
             Some(deadline) => {
                 if now_ms.saturating_add(self.min_retention_ms) > *deadline {
                     *deadline = armed;
-                    true
-                } else {
-                    false
                 }
             }
             None => {
                 self.retention_bytes += byte_key_bytes(key);
                 self.cleanup_state.insert(ByteKey::from(key), armed);
-                true
             }
-        };
-        if moved {
-            self.stage_backend_deadline(key, Some(armed));
         }
     }
 
     /// Flink's `cleanupState`: drops the key's fold/frame state and its retention stamp, silently
-    /// (emitting nothing). On the persistent backend the fold row tombstones through the write
-    /// buffer, so a restore cannot resurrect the cleared fold.
+    /// (emitting nothing). On the persistent store the fold row tombstones with the call's other
+    /// writes, so a restore cannot resurrect the cleared fold.
     fn clear_key(&mut self, key: &[u8]) {
         self.inner.clear_key(key);
+        #[cfg(feature = "rocksdb-state")]
+        self.stage_fold_tombstone(key);
         if self.cleanup_state.remove(key).is_some() {
             self.retention_bytes -= byte_key_bytes(key);
-            self.stage_backend_deadline(key, None);
         }
         if self.last_write_ms.remove(key).is_some() {
             self.retention_bytes -= byte_key_bytes(key);
@@ -1305,8 +1423,7 @@ impl OverWindowAggregator {
             for key in due {
                 if self.pending_rows.contains_key(&key) {
                     let armed = now_ms.saturating_add(self.max_retention_ms);
-                    self.cleanup_state.insert(key.clone(), armed);
-                    self.stage_backend_deadline(&key.0, Some(armed));
+                    self.cleanup_state.insert(key, armed);
                 } else {
                     self.clear_key(&key.0);
                 }
@@ -1400,21 +1517,148 @@ impl OverWindowAggregator {
         }
     }
 
-    /// Attaches the task off-heap budget for a backend that starts with nothing resident.
+    /// Attaches the persistent store, seeding the key codecs from the declared key types (a
+    /// firing may need to decode fold keys before any batch arrives) and the late-data watermark
+    /// from the checkpoint the store restored.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_store(
+        mut self,
+        store: crate::state::RocksOverAggStore,
+        key_types: Vec<DataType>,
+    ) -> Self {
+        self.watermark = store.watermark();
+        self.key_converter = Some(key_row_converter_from_types(&key_types));
+        self.inner.seed_key_codec(&key_types);
+        self.store_state_types = self.inner.store_state_types();
+        self.store_key_types = key_types;
+        self.store = Some(store);
+        self
+    }
 
-    /// Restore-time hydration of the persistent retention state — the backend's
-    /// `adopt_restored_stamps`: the resident deadline map from the `deadlines/` table, the
-    /// deferral counts re-derived from the pending table's payload (the pending PK is the
-    /// arrival sequence, so only the payload's PARTITION BY columns identify the key), and every
-    /// fold key without a restored deadline stamped `restored_at + max` (the enable-flip
-    /// migration; pending-only keys deliberately get no stamp, exactly as memory mode stamps
-    /// only fold-state keys — deferral protects them regardless).
+    /// Attaches the task off-heap budget for a backend whose only resident state is the
+    /// retention bookkeeping.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_read_through_budget(
+        mut self,
+        budget_bytes: i64,
+    ) -> Result<Self, DataFusionError> {
+        self.memory
+            .attach("over-aggregate", budget_bytes, self.retention_bytes)?;
+        Ok(self)
+    }
 
-    /// `register_batch` for the persistent path, keyed by the store's BinaryRow key (the folds
-    /// table's PK) so a fired deadline addresses the same fold row: expire, re-arm, and count
-    /// per row, exactly as the memory twin.
+    /// Restore-time hydration of the persistent retention state — the store path's
+    /// `adopt_restored_stamps`: fold stamps read from the value prefixes (a pre-retention writer's
+    /// `i64::MIN` stamped `restored_at + max`, the enable-flip migration), and the deferral counts
+    /// re-derived from the pending table's payload (the pending key is the arrival sequence, so
+    /// only the payload's PARTITION BY columns identify the key). Pending-only keys deliberately
+    /// get no stamp, exactly as memory mode stamps only fold-state keys — deferral protects them
+    /// regardless.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn adopt_store_retention(
+        &mut self,
+        restored_at_ms: i64,
+    ) -> Result<(), DataFusionError> {
+        if !self.deadline_cleaning() {
+            return Ok(());
+        }
+        let migrated = restored_at_ms.saturating_add(self.max_retention_ms);
+        let store = self.store.as_ref().expect("over rocksdb store");
+        for fold in store.scan_folds()? {
+            let stamp = if fold.stamp == i64::MIN {
+                migrated
+            } else {
+                fold.stamp
+            };
+            self.retention_bytes += byte_key_bytes(&fold.key);
+            self.cleanup_state.insert(ByteKey(fold.key), stamp);
+        }
+        let Some(pending) = store.scan_pending(&store.payload_schema())? else {
+            return Ok(());
+        };
+        let key_arrays: Vec<&ArrayRef> = self
+            .key_columns
+            .iter()
+            .map(|&i| pending.column(i))
+            .collect();
+        let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, pending.num_rows());
+        for row in 0..pending.num_rows() {
+            let key = keys_encoded.row(row).data();
+            match self.pending_rows.get_mut(key) {
+                Some(count) => *count += 1,
+                None => {
+                    self.retention_bytes += byte_key_bytes(key);
+                    self.pending_rows.insert(ByteKey::from(key), 1);
+                }
+            }
+        }
+        Ok(())
+    }
 
-    /// `settle_fired` for the persistent path, over the same BinaryRow keys.
+    /// Persists the late-data watermark and the arrival sequence, then takes the store's native
+    /// checkpoint.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn checkpoint_store(
+        &mut self,
+        snapshot_dir: &str,
+    ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
+        let watermark = self.watermark;
+        self.store
+            .as_mut()
+            .expect("over rocksdb store")
+            .checkpoint(watermark, snapshot_dir)
+    }
+
+    /// Stages one cleared key's fold tombstone (no-op on memory state). The key group re-derives
+    /// from the arrow-row key — decode the key columns, re-hash their BinaryRow — because a sweep
+    /// clears keys outside any batch context; clears are rare (idle-key expiry only).
+    #[cfg(feature = "rocksdb-state")]
+    fn stage_fold_tombstone(&mut self, key: &[u8]) {
+        if self.store.is_none() {
+            return;
+        }
+        let key_group = self.store_fold_key_group(key);
+        let db_key = self
+            .store
+            .as_ref()
+            .expect("over rocksdb store")
+            .fold_key(key_group, key);
+        self.store_tombstones.push(db_key);
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    fn store_fold_key_group(&self, key: &[u8]) -> i32 {
+        let columns = decode_byte_keys(self.key_converter.as_ref(), &[key], &self.store_key_types);
+        let batch = RecordBatch::try_new_with_options(
+            Arc::new(Schema::new(key_fields(&self.store_key_types))),
+            columns,
+            &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(1)),
+        )
+        .expect("over fold key batch");
+        let key_columns: Vec<usize> = (0..self.store_key_types.len()).collect();
+        self.store
+            .as_ref()
+            .expect("over rocksdb store")
+            .key_group(binary_row_hash(
+                &batch,
+                &key_columns,
+                0,
+                &self.key_timestamp_precisions,
+            ))
+    }
+
+    /// Writes the tombstones staged by this call's cleanups through to the store.
+    #[cfg(feature = "rocksdb-state")]
+    fn flush_tombstones(&mut self) -> Result<(), DataFusionError> {
+        if self.store_tombstones.is_empty() {
+            return Ok(());
+        }
+        let tombstones = std::mem::take(&mut self.store_tombstones);
+        self.store
+            .as_mut()
+            .expect("over rocksdb store")
+            .delete_folds(&tombstones)
+    }
 
     /// Bounds this operator's state (buffered batches plus the inner per-key fold state) by the
     /// operator's task off-heap budget (negative = unaccounted), accounting restored state
@@ -1446,7 +1690,10 @@ impl OverWindowAggregator {
     }
 
     /// Buffers a rowtime batch (no output until a watermark). `now_ms` is the host's
-    /// processing-time reading — the cleanup-deadline clock.
+    /// processing-time reading — the cleanup-deadline clock. On the persistent store the batch's
+    /// rows append to the pending table under fresh arrival sequences instead of buffering
+    /// resident — nothing folds here; emission and the per-key fold are watermark-driven
+    /// (`flush`) — while the deadline bookkeeping runs exactly as on memory state.
     pub(crate) fn push(&mut self, batch: RecordBatch, now_ms: i64) -> Result<(), DataFusionError> {
         self.input_schema = Some(batch.schema());
         let rowtimes = rt_to_millis(batch.column(self.rt_column));
@@ -1461,20 +1708,123 @@ impl OverWindowAggregator {
             self.maybe_sweep(now_ms);
             self.register_batch(&batch, now_ms);
         }
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            if batch.num_rows() > 0 {
+                let rowtimes = rt_to_millis(batch.column(self.rt_column));
+                self.store
+                    .as_mut()
+                    .expect("over rocksdb store")
+                    .push_pending(
+                        &batch,
+                        &self.key_columns,
+                        &self.key_timestamp_precisions,
+                        &rowtimes,
+                    )?;
+            }
+            self.flush_tombstones()?;
+            return self.account();
+        }
         self.buffered.push(batch);
         self.account()
     }
 
-    /// Persistent-state arrival path: every input row stages into the pending write buffer under
-    /// a fresh arrival sequence, routed by its PARTITION BY key's group. Nothing folds here —
-    /// emission and the per-key fold are watermark-driven (`flush`). The deadline bookkeeping
-    /// runs exactly as on memory state, over the store's BinaryRow keys.
-
-    /// Persistent-state firing path: the store's overlay range read returns every pending row the
+    /// Persistent-state firing path: the store removes and returns every pending row the
     /// watermark completed, in arrival order; the per-key running state hydrates from the folds
-    /// table for exactly the fired keys, folds, and writes back into the folds write buffer. A
-    /// fired key past its deadline folds anyway — its pending rows deferred the cleanup, exactly
-    /// as memory mode — and re-arms through the post-fire settle.
+    /// table for exactly the fired keys, folds on the memory path's own code, and writes back at
+    /// the bundle boundary with the post-settle retention stamp riding each value. A fired key
+    /// past its deadline folds anyway — its pending rows deferred the cleanup, exactly as memory
+    /// mode — and re-arms through the post-fire settle.
+    #[cfg(feature = "rocksdb-state")]
+    fn flush_store(&mut self, watermark: i64, now_ms: i64) -> Result<RecordBatch, DataFusionError> {
+        let schema = self.input_schema.clone().unwrap_or_else(|| {
+            self.store
+                .as_ref()
+                .expect("over rocksdb store")
+                .payload_schema()
+        });
+        let complete = self
+            .store
+            .as_mut()
+            .expect("over rocksdb store")
+            .take_complete(watermark, &schema)?;
+        let Some(complete) = complete else {
+            self.flush_tombstones()?;
+            self.account()?;
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
+        };
+
+        let key_arrays: Vec<&ArrayRef> = self
+            .key_columns
+            .iter()
+            .map(|&i| complete.column(i))
+            .collect();
+        let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, complete.num_rows());
+        let mut encoder = BinaryRowBatchEncoder::new(
+            &complete,
+            &self.key_columns,
+            &self.key_timestamp_precisions,
+        );
+        let store = self.store.as_ref().expect("over rocksdb store");
+        let mut seen: ahash::HashSet<ByteKey> = ahash::HashSet::default();
+        let mut touched: Vec<ByteKey> = Vec::new();
+        let mut db_keys: Vec<Vec<u8>> = Vec::new();
+        for row in 0..complete.num_rows() {
+            let key = ByteKey::from(keys_encoded.row(row).data());
+            if seen.insert(key.clone()) {
+                db_keys.push(store.fold_key(store.key_group(encoder.hash(row)), &key.0));
+                touched.push(key);
+            }
+        }
+        for (key, stored) in touched.iter().zip(store.get_folds(&db_keys)?) {
+            if let Some((_, scalars)) = stored {
+                self.inner.seed_key(&key.0, &scalars);
+            }
+        }
+
+        let rt = Arc::new(rt_to_millis(complete.column(self.rt_column)));
+        let aggregates = self.inner.update(&self.keyed_subbatch(&complete, rt));
+        if self.deadline_cleaning() {
+            self.settle_fired(&complete, now_ms);
+        }
+
+        let mut entries: Vec<(Vec<u8>, i64)> = Vec::with_capacity(touched.len());
+        let mut state_columns: Vec<Vec<ScalarValue>> =
+            vec![Vec::with_capacity(touched.len()); self.store_state_types.len()];
+        for (key, db_key) in touched.iter().zip(db_keys) {
+            let stamp = self.cleanup_state.get(&*key.0).copied().unwrap_or(i64::MIN);
+            for (column, scalar) in state_columns.iter_mut().zip(self.inner.export_key(&key.0)) {
+                column.push(scalar);
+            }
+            entries.push((db_key, stamp));
+        }
+        self.inner.clear_resident();
+        let arrays: Vec<ArrayRef> = state_columns
+            .into_iter()
+            .zip(&self.store_state_types)
+            .map(|(scalars, data_type)| scalars_to_array(scalars, data_type))
+            .collect();
+        self.store
+            .as_mut()
+            .expect("over rocksdb store")
+            .write_folds(&entries, &arrays)?;
+        self.flush_tombstones()?;
+        self.account()?;
+
+        let mut fields: Vec<Field> = complete
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| f.as_ref().clone())
+            .collect();
+        let mut columns: Vec<ArrayRef> = complete.columns().to_vec();
+        for (i, field) in aggregates.schema().fields().iter().enumerate() {
+            fields.push(field.as_ref().clone());
+            columns.push(aggregates.column(i).clone());
+        }
+        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build over output batch"))
+    }
 
     /// Proctime OVER: fold the whole batch in arrival order and emit every row immediately (proctime
     /// has no watermark to wait on). Each row is tagged with an increasing arrival sequence used as the
@@ -1527,6 +1877,10 @@ impl OverWindowAggregator {
         self.watermark = self.watermark.max(watermark);
         if self.deadline_cleaning() {
             self.maybe_sweep(now_ms);
+        }
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.flush_store(watermark, now_ms);
         }
         let schema = match &self.input_schema {
             Some(schema) => schema.clone(),
@@ -1647,6 +2001,32 @@ impl OverWindowAggregator {
         timestamp_precisions: &[i32],
     ) -> BTreeMap<i32, Vec<u8>> {
         self.raw_snapshot_partitions(max_parallelism, timestamp_precisions)
+    }
+
+    /// Canonical savepoint from the persistent store: hydrates every committed fold into the
+    /// inner map and the pending rows into the buffer, reuses the memory path's raw keyed-snapshot
+    /// encoding (so backend transitions stay byte-compatible — the resident retention stamps ride
+    /// as the trailing column exactly as on memory state), then drops the resident copies.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn canonical_partitions(
+        &mut self,
+        max_parallelism: usize,
+        timestamp_precisions: &[i32],
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let store = self.store.as_ref().expect("over rocksdb store");
+        let folds = store.scan_folds()?;
+        let pending = store.scan_pending(&store.payload_schema())?;
+        for fold in &folds {
+            self.inner.seed_key(&fold.key, &fold.state);
+        }
+        if let Some(pending) = pending {
+            self.input_schema = Some(pending.schema());
+            self.buffered = vec![pending];
+        }
+        let partitions = self.raw_snapshot_partitions(max_parallelism, timestamp_precisions);
+        self.inner.clear_resident();
+        self.buffered.clear();
+        Ok(partitions)
     }
 
     fn raw_snapshot_partitions(
@@ -1832,6 +2212,14 @@ impl OverWindowAggregator {
             retention_bytes: 0,
             key_converter: None,
             memory: OperatorMemory::unaccounted(),
+            #[cfg(feature = "rocksdb-state")]
+            store: None,
+            #[cfg(feature = "rocksdb-state")]
+            store_tombstones: Vec::new(),
+            #[cfg(feature = "rocksdb-state")]
+            store_state_types: Vec::new(),
+            #[cfg(feature = "rocksdb-state")]
+            store_key_types: Vec::new(),
             key_timestamp_precisions: vec![-1; key_arity],
         }
         .with_state_retention(min_retention_ms);

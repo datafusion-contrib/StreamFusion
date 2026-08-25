@@ -2,8 +2,8 @@
 
 **Applies to:** every native operator running on the RocksDB state backend's typed store (the
 group aggregate, changelog normalize, keep-last deduplicate, updating join, the three Top-N
-rankers, the event-time window join, and the aligned and session event-time window aggregates
-today; each migrated operator inherits it)
+rankers, the event-time window join, the aligned and session event-time window aggregates, and
+event-time over aggregates today; each migrated operator inherits it)
 
 Found by issue [#26](https://github.com/datafusion-contrib/StreamFusion/issues/26): at 10M events
 the backend spent 80% of CPU in its own memory-pressure flush, and a StreamFusion-only tuning knob

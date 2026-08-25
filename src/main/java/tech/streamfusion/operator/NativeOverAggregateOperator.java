@@ -2,6 +2,7 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -67,6 +68,64 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   }
 
   @Override
+  protected boolean usesDirectRocksDBState() {
+    return withRowSchema(
+            rowType,
+            schemaAddress ->
+                Native.rocksdbOverAggregatorSupported(
+                        valueTypes, aggregateKinds, frameKind, proctime, schemaAddress)
+                    ? 1
+                    : 0)
+        == 1;
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    long now = getProcessingTimeService().getCurrentProcessingTime();
+    return withRowSchema(
+        rowType,
+        schemaAddress ->
+            Native.createRocksDBOverAggregator(
+                valueTypes,
+                aggregateKinds,
+                timeColumn,
+                valueColumns,
+                keyColumns,
+                frameKind,
+                frameOffset,
+                proctime,
+                keyTimestampPrecisions(),
+                stateTtlMillis,
+                now,
+                memoryBudgetBytes(),
+                schemaAddress,
+                rocksdb.tableDirectory(),
+                maxParallelism(),
+                rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(),
+                rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(),
+                rocksdb.keyGroupStart(),
+                rocksdb.keyGroupEnd(),
+                rocksdb.aligned()));
+  }
+
+  @Override
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
+    return directRocksDBState()
+        ? Native.checkpointRocksDBOverAggregator(handle, snapshotDirectory)
+        : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected byte[][] snapshotCanonicalPartitions() {
+    return directRocksDBState()
+        ? Native.snapshotRocksDBOverAggregatorPartitions(
+            handle, maxParallelism(), keyTimestampPrecisions())
+        : snapshotRawPartitions();
+  }
+
+  @Override
   protected long createHandle() {
     return Native.createOverAggregator(
         valueTypes, aggregateKinds, timeColumn, valueColumns, keyColumns, frameKind, frameOffset,
@@ -98,12 +157,18 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
 
   @Override
   protected void closeHandle() {
-    Native.closeOverAggregator(handle);
+    if (directRocksDBState()) {
+      Native.closeRocksDBOverAggregator(handle);
+    } else {
+      Native.closeOverAggregator(handle);
+    }
   }
 
   @Override
   protected long stateBytesHandle() {
-    return Native.overAggregatorStateBytes(handle);
+    return directRocksDBState()
+        ? Native.rocksdbOverAggregatorStateBytes(handle)
+        : Native.overAggregatorStateBytes(handle);
   }
 
   @Override
@@ -145,6 +210,10 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
             out.close();
           }
         }
+      } else if (directRocksDBState()) {
+        // Rowtime on direct RocksDB state: the rows append to the persistent pending table.
+        Native.pushRocksDBOverAggregator(
+            handle, inArray.memoryAddress(), inSchema.memoryAddress(), now);
       } else {
         // Rowtime: the native aggregator imports and keeps the batch (buffered until a watermark
         // completes these rows), so this side hands it off and closes its own view.
@@ -171,12 +240,21 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
     }
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushOverAggregator(
-          handle,
-          mark.getTimestamp(),
-          getProcessingTimeService().getCurrentProcessingTime(),
-          array.memoryAddress(),
-          schema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.flushRocksDBOverAggregator(
+            handle,
+            mark.getTimestamp(),
+            getProcessingTimeService().getCurrentProcessingTime(),
+            array.memoryAddress(),
+            schema.memoryAddress());
+      } else {
+        Native.flushOverAggregator(
+            handle,
+            mark.getTimestamp(),
+            getProcessingTimeService().getCurrentProcessingTime(),
+            array.memoryAddress(),
+            schema.memoryAddress());
+      }
       VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
       if (out.getRowCount() > 0) {
         ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));

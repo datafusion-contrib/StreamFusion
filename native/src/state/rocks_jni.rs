@@ -1830,6 +1830,266 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBSessionAggregat
 }
 
 #[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbOverAggregatorSupported<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    value_types: JIntArray<'local>,
+    aggregate_kinds: JIntArray<'local>,
+    frame_kind: jint,
+    proctime: jboolean,
+    in_schema: jlong,
+) -> jboolean {
+    crate::bridge::jni_guard(env, move |env| {
+        let kinds = read_int_array(&env, &aggregate_kinds);
+        let value_types = read_int_array(&env, &value_types);
+        let schema = import_schema(in_schema);
+        let payload_types: Vec<DataType> = schema
+            .fields()
+            .iter()
+            .map(|field| field.data_type().clone())
+            .collect();
+        let supported =
+            match rocks_over_state_types(&value_types, &kinds, frame_kind as i64, proctime != 0) {
+                Some(state_types) => {
+                    rocks_row_supported(&state_types) && rocks_row_supported(&payload_types)
+                }
+                None => false,
+            };
+        supported as jboolean
+    })
+}
+
+/// [`open_store`] for the OVER aggregate's two-table store: fresh when no restored sources
+/// exist, otherwise merged once with this subtask's key-group range.
+#[allow(clippy::too_many_arguments)]
+fn open_over_agg_store(
+    env: &mut JNIEnv,
+    config: RocksStoreConfig,
+    state_types: &[DataType],
+    payload_schema: SchemaRef,
+    source_directories: &JObjectArray,
+    source_snapshot_tokens: &JObjectArray,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> Result<RocksOverAggStore, DataFusionError> {
+    let source_dirs: Vec<_> = read_strings(env, source_directories)
+        .into_iter()
+        .flatten()
+        .collect();
+    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
+        .into_iter()
+        .flatten()
+        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
+        .collect();
+    let key_groups = key_group_start..=key_group_end;
+    if source_dirs.is_empty() {
+        RocksOverAggStore::create(config, state_types, payload_schema, key_groups)
+    } else {
+        RocksOverAggStore::open_merged(
+            config,
+            state_types,
+            payload_schema,
+            key_groups,
+            &source_dirs
+                .into_iter()
+                .zip(source_tokens)
+                .collect::<Vec<_>>(),
+            aligned != 0,
+        )
+    }
+}
+
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBOverAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    value_types: JIntArray<'local>,
+    aggregate_kinds: JIntArray<'local>,
+    rt_column: jint,
+    value_columns: JIntArray<'local>,
+    key_columns: JIntArray<'local>,
+    frame_kind: jint,
+    frame_offset: jlong,
+    proctime: jboolean,
+    key_timestamp_precisions: JIntArray<'local>,
+    state_ttl_millis: jlong,
+    now_millis: jlong,
+    memory_budget_bytes: jlong,
+    in_schema: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    options_json: JString<'local>,
+    shared_resources: jlong,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let kinds = read_int_array(&env, &aggregate_kinds);
+        let value_types = read_int_array(&env, &value_types);
+        let values = read_columns(&env, &value_columns);
+        let keys = read_columns(&env, &key_columns);
+        let schema = import_schema(in_schema);
+        let key_types: Vec<DataType> = keys
+            .iter()
+            .map(|&column| schema.field(column).data_type().clone())
+            .collect();
+        let config = RocksStoreConfig {
+            table_dir: read_string(&mut env, &table_directory),
+            max_parallelism: max_parallelism as usize,
+            options_json: read_string(&mut env, &options_json),
+            ttl_ms: 0,
+            shared_resources,
+        };
+        let store =
+            match rocks_over_state_types(&value_types, &kinds, frame_kind as i64, proctime != 0) {
+                Some(state_types) => open_over_agg_store(
+                    &mut env,
+                    config,
+                    &state_types,
+                    schema,
+                    &source_directories,
+                    &source_snapshot_tokens,
+                    key_group_start,
+                    key_group_end,
+                    aligned,
+                ),
+                None => Err(DataFusionError::Plan(
+                    "over shape not supported by RocksDB".into(),
+                )),
+            };
+        let aggregator = store.and_then(|store| {
+            let mut aggregator = OverWindowAggregator::new(
+                value_types,
+                kinds,
+                rt_column as usize,
+                values,
+                keys,
+                frame_kind as i64,
+                frame_offset,
+                proctime != 0,
+            )
+            .with_state_retention(state_ttl_millis)
+            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
+            .with_store(store, key_types);
+            aggregator.adopt_store_retention(now_millis)?;
+            aggregator.with_read_through_budget(memory_budget_bytes)
+        });
+        boxed_or_throw(&mut env, aggregator)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pushRocksDBOverAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array: jlong,
+    in_schema: jlong,
+    now_millis: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
+        // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+        let result = {
+            let batch = import_record_batch(in_array, in_schema);
+            aggregator.push(batch, now_millis)
+        };
+        if let Err(e) = result {
+            throw_memory_limit(&mut env, &e.to_string());
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBOverAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark_millis: jlong,
+    now_millis: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
+        match aggregator.flush(watermark_millis, now_millis) {
+            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBOverAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    snapshot_directory: JString<'local>,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let snapshot_directory = read_string(&mut env, &snapshot_directory);
+        let aggregator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
+        match aggregator.checkpoint_store(&snapshot_directory) {
+            Ok(m) => manifest_array(&mut env, &m),
+            Err(e) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB checkpoint failed: {e}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBOverAggregatorPartitions<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    max_parallelism: jint,
+    timestamp_precisions: JIntArray<'local>,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
+        let precisions = read_i32_array(&env, &timestamp_precisions);
+        match aggregator.canonical_partitions(max_parallelism as usize, &precisions) {
+            Ok(partitions) => keyed_state_partition_array(&mut env, partitions, "rocksdb-over"),
+            Err(error) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB canonical snapshot failed: {error}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_rocksdbOverAggregatorStateBytes,
+    OverWindowAggregator
+);
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBOverAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<OverWindowAggregator>(handle));
+    })
+}
+
+#[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTopNRanker<'local>(
     env: JNIEnv<'local>,

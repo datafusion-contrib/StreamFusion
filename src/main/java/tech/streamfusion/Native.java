@@ -1427,6 +1427,66 @@ public final class Native {
   public static native void closeRocksDBSessionAggregator(long handle);
 
   /**
+   * Whether an OVER aggregate's shape is admitted by the direct RocksDB store: an event-time
+   * unbounded fold of non-distinct aggregates or pure window functions, with every input column
+   * encodable by the store's row codec. Proctime ordering, bounded frames, and distinct
+   * aggregates stay on the snapshot-store compat path.
+   */
+  public static native boolean rocksdbOverAggregatorSupported(
+      int[] valueTypes, int[] aggregateKinds, int frameKind, boolean proctime, long schemaAddress);
+
+  /**
+   * Creates an event-time OVER aggregator whose pending rows and per-key running fold live
+   * directly in a Rust-owned RocksDB instance. The declared input schema builds the arrow-row
+   * converters the persisted state is decoded with, so restored bytes parse before any batch
+   * arrives; {@code nowMillis} is the restore clock the retention stamps migrate against.
+   */
+  public static native long createRocksDBOverAggregator(
+      int[] valueTypes,
+      int[] aggregateKinds,
+      int timeColumn,
+      int[] valueColumns,
+      int[] keyColumns,
+      int frameKind,
+      long frameOffset,
+      boolean proctime,
+      int[] keyTimestampPrecisions,
+      long stateTtlMillis,
+      long nowMillis,
+      long memoryBudgetBytes,
+      long schemaAddress,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  public static native void pushRocksDBOverAggregator(
+      long handle, long inArrayAddress, long inSchemaAddress, long nowMillis);
+
+  public static native void flushRocksDBOverAggregator(
+      long handle,
+      long watermarkMillis,
+      long nowMillis,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  public static native String[] checkpointRocksDBOverAggregator(
+      long handle, String snapshotDirectory);
+
+  /** Materializes direct RocksDB OVER state as backend-independent key-group partitions. */
+  public static native byte[][] snapshotRocksDBOverAggregatorPartitions(
+      long handle, int maxParallelism, int[] keyTimestampPrecisions);
+
+  public static native long rocksdbOverAggregatorStateBytes(long handle);
+
+  public static native void closeRocksDBOverAggregator(long handle);
+
+  /**
    * Creates an append-only or retracting Top-N ranker backed directly by a Rust-owned RocksDB
    * instance. The declared input schema builds the arrow-row converters the persisted state is
    * decoded with, so restored bytes parse before any batch arrives.
