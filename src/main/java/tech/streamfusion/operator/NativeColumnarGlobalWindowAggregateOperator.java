@@ -2,6 +2,7 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -70,6 +71,16 @@ public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindow
   }
 
   @Override
+  protected boolean usesDirectRocksDBState() {
+    return Native.rocksdbWindowAggregatorSupported(valueTypes, aggregateKinds, keyTypes);
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    return createRocksDBWindowAggregatorHandle(rocksdb, cumulative, keyTypes);
+  }
+
+  @Override
   protected long createHandle() {
     return cumulative
         ? Native.createCumulativeAggregator(
@@ -108,7 +119,13 @@ public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindow
     try (ArrowArray array = ArrowArray.allocateNew(inAllocator);
         ArrowSchema schema = ArrowSchema.allocateNew(inAllocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, array, schema);
-      Native.updatePartialTumblingAggregator(handle, array.memoryAddress(), schema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.pushPartialRocksDBWindowAggregator(
+            handle, array.memoryAddress(), schema.memoryAddress());
+      } else {
+        Native.updatePartialTumblingAggregator(
+            handle, array.memoryAddress(), schema.memoryAddress());
+      }
     } finally {
       in.close(); // the partial batch is consumed
     }

@@ -2,6 +2,7 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.flink.api.common.operators.ProcessingTimeService.ProcessingTimeCallback;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
@@ -115,6 +116,19 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
         scheduleNextTimer(now);
       }
     }
+  }
+
+  // A proctime window re-arms its firing timer from the snapshot-store deadline after recovery,
+  // so it stays on the generic snapshot store; the event-time window is purely watermark-driven.
+  @Override
+  protected boolean usesDirectRocksDBState() {
+    return !proctime
+        && Native.rocksdbWindowAggregatorSupported(valueTypes, aggregateKinds, keyTypes);
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    return createRocksDBWindowAggregatorHandle(rocksdb, cumulative, keyTypes);
   }
 
   @Override

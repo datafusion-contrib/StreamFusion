@@ -1,6 +1,7 @@
 package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -174,14 +175,49 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
         handle, maxParallelism(), keyTimestampPrecisions());
   }
 
+  /** Creates an aligned-window aggregator whose state lives directly in a Rust-owned RocksDB. */
+  protected final long createRocksDBWindowAggregatorHandle(
+      RocksDBNativeStateSupport rocksdb, boolean cumulative, int[] keyTypes) {
+    return Native.createRocksDBWindowAggregator(
+        windowMillis, slideMillis, cumulative, valueTypes, aggregateKinds, keyTypes,
+        keyTimestampPrecisions(), memoryBudgetBytes(),
+        rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
+        rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
+        rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
+        rocksdb.aligned());
+  }
+
+  @Override
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
+    return directRocksDBState()
+        ? Native.checkpointRocksDBWindowAggregator(handle, snapshotDirectory)
+        : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected byte[][] snapshotCanonicalPartitions() {
+    return directRocksDBState()
+        ? Native.snapshotRocksDBWindowAggregatorPartitions(
+            handle, maxParallelism(), keyTimestampPrecisions())
+        : snapshotRawPartitions();
+  }
+
   /** Folds an exported batch into the native aggregator. */
   protected void updateHandle(long arrayAddress, long schemaAddress) {
-    Native.updateTumblingAggregator(handle, arrayAddress, schemaAddress);
+    if (directRocksDBState()) {
+      Native.pushRocksDBWindowAggregator(handle, arrayAddress, schemaAddress);
+    } else {
+      Native.updateTumblingAggregator(handle, arrayAddress, schemaAddress);
+    }
   }
 
   /** Fetches the windows the watermark has closed from the native aggregator. */
   protected void flushHandle(long watermark, long arrayAddress, long schemaAddress) {
-    Native.flushTumblingAggregator(handle, watermark, arrayAddress, schemaAddress);
+    if (directRocksDBState()) {
+      Native.flushRocksDBWindowAggregator(handle, watermark, arrayAddress, schemaAddress);
+    } else {
+      Native.flushTumblingAggregator(handle, watermark, arrayAddress, schemaAddress);
+    }
   }
 
   /** Serializes the native aggregator's open state for a checkpoint. */
@@ -192,13 +228,19 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   /** Releases the native aggregator handle. */
   @Override
   protected void closeHandle() {
-    Native.closeTumblingAggregator(handle);
+    if (directRocksDBState()) {
+      Native.closeRocksDBWindowAggregator(handle);
+    } else {
+      Native.closeTumblingAggregator(handle);
+    }
   }
 
   /** The native aggregator's tracked state footprint in bytes (zero when unaccounted). */
   @Override
   protected long stateBytesHandle() {
-    return Native.tumblingAggregatorStateBytes(handle);
+    return directRocksDBState()
+        ? Native.rocksdbWindowAggregatorStateBytes(handle)
+        : Native.tumblingAggregatorStateBytes(handle);
   }
 
   // Every window operator can arm a processing-time timer (the proctime modes do; the event-time

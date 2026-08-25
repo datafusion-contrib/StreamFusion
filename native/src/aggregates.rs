@@ -711,6 +711,17 @@ pub(crate) fn build_aggregates(kinds: &[i64], value_types: &[i64]) -> Vec<Window
         .collect()
 }
 
+/// The Arrow types of every accumulator state field, flattened in snapshot order — the persistent
+/// window store's value row schema, derived from the same state fields the blob snapshot types.
+#[cfg(feature = "rocksdb-state")]
+pub(crate) fn window_state_types(kinds: &[i64], value_types: &[i64]) -> Vec<DataType> {
+    build_aggregates(kinds, value_types)
+        .iter()
+        .flat_map(WindowAggregate::state_fields)
+        .map(|field| field.data_type().clone())
+        .collect()
+}
+
 /// Builds an array from per-row scalars, using the given type for the empty case (where the
 /// element type cannot be inferred from the values).
 pub(crate) fn scalars_to_array(scalars: Vec<ScalarValue>, data_type: &DataType) -> ArrayRef {

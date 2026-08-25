@@ -1328,6 +1328,58 @@ public final class Native {
   public static native void closeRocksDBWindowJoiner(long handle);
 
   /**
+   * Whether the aligned-window aggregate's key and accumulator-state shapes are encodable by the
+   * direct RocksDB store's row codec; anything else stays on the snapshot-store compat path.
+   */
+  public static native boolean rocksdbWindowAggregatorSupported(
+      int[] valueTypes, int[] aggregateKinds, int[] keyTypes);
+
+  /**
+   * Creates an aligned-window (tumble/hop/cumulate) aggregator whose open (window, key) state lives
+   * directly in a Rust-owned RocksDB instance. The declared key types build the key codec the
+   * persisted state is decoded with, so restored bytes parse before any batch arrives.
+   */
+  public static native long createRocksDBWindowAggregator(
+      long windowMillis,
+      long slideMillis,
+      boolean cumulative,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      int[] keyTypes,
+      int[] keyTimestampPrecisions,
+      long memoryBudgetBytes,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  public static native void pushRocksDBWindowAggregator(
+      long handle, long inArrayAddress, long inSchemaAddress);
+
+  /** Global two-phase half: merges a partial batch into the direct RocksDB window state. */
+  public static native void pushPartialRocksDBWindowAggregator(
+      long handle, long inArrayAddress, long inSchemaAddress);
+
+  public static native void flushRocksDBWindowAggregator(
+      long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
+
+  public static native String[] checkpointRocksDBWindowAggregator(
+      long handle, String snapshotDirectory);
+
+  /** Materializes direct RocksDB window state as backend-independent key-group partitions. */
+  public static native byte[][] snapshotRocksDBWindowAggregatorPartitions(
+      long handle, int maxParallelism, int[] keyTimestampPrecisions);
+
+  public static native long rocksdbWindowAggregatorStateBytes(long handle);
+
+  public static native void closeRocksDBWindowAggregator(long handle);
+
+  /**
    * Creates an append-only or retracting Top-N ranker backed directly by a Rust-owned RocksDB
    * instance. The declared input schema builds the arrow-row converters the persisted state is
    * decoded with, so restored bytes parse before any batch arrives.

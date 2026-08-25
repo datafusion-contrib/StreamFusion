@@ -153,8 +153,17 @@ pub(crate) fn assign_windows(
     RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("failed to build TVF batch")
 }
 
-/// The BinaryRow key bytes of `n` rows whose decoded key columns lead `columns` — how the
-/// persistent stores address keyed rows. Shared by the window and session aggregates.
+/// The positions of a batch's `key0..key{n-1}` columns — the columns the persistent store's
+/// BinaryRow key-group routing hashes, wherever they sit in the batch's layout.
+#[cfg(feature = "rocksdb-state")]
+fn key_column_indices(batch: &RecordBatch) -> Vec<usize> {
+    let schema = batch.schema();
+    let mut indices = Vec::new();
+    while let Some((index, _)) = schema.column_with_name(&format!("key{}", indices.len())) {
+        indices.push(index);
+    }
+    indices
+}
 
 /// One open aligned window: its start, plus the per-key accumulators folding in matching rows. The
 /// owning map keys windows by their *end*, which is unique even for cumulative windows that share a
@@ -196,10 +205,20 @@ pub(crate) struct TumblingAggregator {
     // Managed-memory accounting: open-window footprint tracked per touched group (not by
     // rescanning all state) and resized against the reservation after every state change.
     pub(crate) memory: OperatorMemory,
-    /// Persistent-state mode: committed (key, window) rows live in the persistent store; the decoded
-    /// `windows` map holds only this interval's touched state (seeded on first touch, staged
-    /// wholesale at the barrier, then dropped).
     key_timestamp_precisions: Vec<i32>,
+    /// Persistent-state mode: committed (window, key) rows live in the persistent store; the decoded
+    /// `windows` map holds only the current bundle's touched state (hydrated on first touch, written
+    /// through at the bundle boundary, then dropped — the map stays empty between bundles).
+    #[cfg(feature = "rocksdb-state")]
+    store: Option<crate::state::RocksWindowAggStore>,
+    /// The bundle's touched (window end, key) groups and their Flink key groups — exactly the
+    /// resident set, so the write-through drains it and the routing needs no second hash pass.
+    #[cfg(feature = "rocksdb-state")]
+    store_groups: HashMap<(i64, OwnedRow), i32>,
+    #[cfg(feature = "rocksdb-state")]
+    store_state_types: Vec<DataType>,
+    #[cfg(feature = "rocksdb-state")]
+    store_field_counts: Vec<usize>,
 }
 
 impl TumblingAggregator {
@@ -223,6 +242,14 @@ impl TumblingAggregator {
             snapshot_cache: None,
             memory: OperatorMemory::unaccounted(),
             key_timestamp_precisions: Vec::new(),
+            #[cfg(feature = "rocksdb-state")]
+            store: None,
+            #[cfg(feature = "rocksdb-state")]
+            store_groups: HashMap::default(),
+            #[cfg(feature = "rocksdb-state")]
+            store_state_types: Vec::new(),
+            #[cfg(feature = "rocksdb-state")]
+            store_field_counts: Vec::new(),
         }
     }
 
@@ -234,13 +261,55 @@ impl TumblingAggregator {
         self
     }
 
+    /// Attaches the persistent (window, key) store, seeding the key codec from the declared key
+    /// types (a firing may need to decode keys before any batch arrives) and the late-data
+    /// watermark from the checkpoint the store restored.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_store(
+        mut self,
+        store: crate::state::RocksWindowAggStore,
+        key_types: Vec<DataType>,
+    ) -> Self {
+        self.current_watermark = store.watermark();
+        self.key_converter = Some(key_row_converter_from_types(&key_types));
+        self.key_types = key_types;
+        self.store_state_types = self
+            .aggregates
+            .iter()
+            .flat_map(WindowAggregate::state_fields)
+            .map(|field| field.data_type().clone())
+            .collect();
+        self.store_field_counts = self
+            .aggregates
+            .iter()
+            .map(|aggregate| aggregate.state_fields().len())
+            .collect();
+        self.store = Some(store);
+        self
+    }
+
     /// Attaches the task off-heap budget for a backend that starts with nothing resident.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_read_through_budget(
+        mut self,
+        budget_bytes: i64,
+    ) -> Result<Self, DataFusionError> {
+        self.memory.attach("window-aggregate", budget_bytes, 0)?;
+        Ok(self)
+    }
 
-    /// Restores the late-data watermark (persistent-state restore packs it in the token; the
-    /// memory path's raw snapshot carries it in schema metadata).
-
-    /// The key-field timestamp descriptors, defaulting to non-timestamp (`-1`) per key column —
-    /// the aggregator learns its key arity from batches, not at construction.
+    /// Persists the late-data watermark and takes the store's native checkpoint.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn checkpoint_store(
+        &mut self,
+        snapshot_dir: &str,
+    ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
+        let watermark = self.current_watermark;
+        self.store
+            .as_mut()
+            .expect("window-aggregate rocksdb store")
+            .checkpoint(watermark, snapshot_dir)
+    }
 
     /// Bounds this aggregator's state by a task off-heap budget the host reserved for the operator
     /// (a negative budget means unaccounted). Registers a reservation against a pool of that size and
@@ -389,7 +458,7 @@ impl TumblingAggregator {
                     .push(row as u32);
             }
         }
-        self.accumulate_grouped(grouped, &values)
+        self.hydrate_and_accumulate(batch, grouped, &values)
     }
 
     /// Window-attached local half: each row already carries its window as `window_start`/`window_end`
@@ -425,7 +494,31 @@ impl TumblingAggregator {
                 .or_default()
                 .push(row as u32);
         }
-        self.accumulate_grouped(grouped, &values)
+        self.hydrate_and_accumulate(batch, grouped, &values)
+    }
+
+    /// Folds the grouped rows through the persistent-store bundle protocol when a store is
+    /// attached: hydrate the touched (window, key) groups, fold, write the touched groups back and
+    /// drop them. On the memory path this is the plain fold.
+    fn hydrate_and_accumulate(
+        &mut self,
+        batch: &RecordBatch,
+        grouped: ahash::HashMap<(i64, i64, Row<'_>), Vec<u32>>,
+        values: &[&ArrayRef],
+    ) -> Result<(), DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            let touched: Vec<(i64, i64, Row<'_>, u32)> = grouped
+                .iter()
+                .map(|(&(start, end, key), rows)| (start, end, key, rows[0]))
+                .collect();
+            self.hydrate_store_groups(batch, &touched)?;
+            self.accumulate_grouped(grouped, values)?;
+            return self.write_through_store();
+        }
+        #[cfg(not(feature = "rocksdb-state"))]
+        let _ = batch;
+        self.accumulate_grouped(grouped, values)
     }
 
     /// Folds the grouped row positions into their (window, key) accumulators. The value columns are
@@ -473,8 +566,10 @@ impl TumblingAggregator {
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         self.snapshot_cache = None;
         self.current_watermark = self.current_watermark.max(watermark);
-        // Persistent state: windows committed at earlier barriers and untouched this interval
-        // still close now — hydrate them into the decoded map so one drain covers both.
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.flush_store(watermark);
+        }
         let n = self.aggregates.len();
         let mut keys: Vec<OwnedRow> = Vec::new();
         let mut starts = Vec::new();
@@ -497,11 +592,51 @@ impl TumblingAggregator {
             }
         }
         self.memory.account_shrink();
+        Ok(self.final_batch(keys, starts, ends, results))
+    }
 
+    /// Persistent-state firing: the store removes and returns every closed (window, key) group in
+    /// window-end order, then the memory path's key order — every fired group leaves the store, so
+    /// a closed window can never re-fire after a restore.
+    #[cfg(feature = "rocksdb-state")]
+    fn flush_store(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        let fired = self
+            .store
+            .as_mut()
+            .expect("window-aggregate rocksdb store")
+            .take_closed(watermark)?;
+        let n = self.aggregates.len();
+        let mut keys: Vec<OwnedRow> = Vec::with_capacity(fired.len());
+        let mut starts = Vec::with_capacity(fired.len());
+        let mut ends = Vec::with_capacity(fired.len());
+        let mut results: Vec<Vec<ScalarValue>> = vec![Vec::new(); n];
+        let converter = self
+            .key_converter
+            .as_ref()
+            .expect("window store key converter");
+        let parser = converter.parser();
+        for group in &fired {
+            keys.push(parser.parse(&group.key).owned());
+            starts.push(group.start);
+            ends.push(group.end);
+            let mut accumulators = self.accumulators_from_scalars(&group.state);
+            for (i, accumulator) in accumulators.iter_mut().enumerate() {
+                results[i].push(accumulator.evaluate().expect("failed to finalize"));
+            }
+        }
+        Ok(self.final_batch(keys, starts, ends, results))
+    }
+
+    /// The fired-window output batch `[key.., window_start, window_end, result0..]`.
+    fn final_batch(
+        &self,
+        keys: Vec<OwnedRow>,
+        starts: Vec<i64>,
+        ends: Vec<i64>,
+        results: Vec<Vec<ScalarValue>>,
+    ) -> RecordBatch {
         let mut fields = key_fields(&self.key_types);
         let mut columns = decode_keys(self.key_converter.as_ref(), &keys, &self.key_types);
-        // Persistent state: every fired (key, window) leaves the store — a `-D` per row commits
-        // at the next barrier, so a closed window can never re-fire after a restore.
         fields.push(Field::new("window_start", DataType::Int64, false));
         fields.push(Field::new("window_end", DataType::Int64, false));
         columns.push(Arc::new(Int64Array::from(starts)));
@@ -516,16 +651,9 @@ impl TumblingAggregator {
             ));
             columns.push(scalars_to_array(scalars, &self.aggregates[i].result_type()));
         }
-        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build result batch"))
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build result batch")
     }
-
-    /// The BinaryRow key bytes of `n` rows whose decoded key columns lead `columns` — how the
-    /// store addresses (key, window) rows.
-
-    /// Persistent-state barrier: stages every open (key, window) as a whole-row rewrite, drops
-    /// the decoded map (the next interval re-seeds touched keys from the committed table), and
-    /// commits the region. Returns the manifest and the watermark the token must carry.
 
     /// Local half of two-phase aggregation: emits each closed window's per-aggregate partial state
     /// as `[key, partial0..partialN-1, slice_end]`. Single-field partials (sum/min/max/count).
@@ -606,6 +734,21 @@ impl TumblingAggregator {
             })
             .collect();
 
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            let mut seen: ahash::HashSet<(i64, Row<'_>)> = ahash::HashSet::default();
+            let mut touched: Vec<(i64, i64, Row<'_>, u32)> = Vec::new();
+            for row in 0..batch.num_rows() {
+                let key = keys_encoded.row(row);
+                for (start, end) in self.partial_windows(slice_ends.value(row)) {
+                    if seen.insert((end, key)) {
+                        touched.push((start, end, key, row as u32));
+                    }
+                }
+            }
+            self.hydrate_store_groups(batch, &touched)?;
+        }
+
         let track = self.memory.tracking();
         for row in 0..batch.num_rows() {
             let slice_end = slice_ends.value(row);
@@ -630,7 +773,10 @@ impl TumblingAggregator {
                 }
             }
         }
-        self.memory.account()
+        self.memory.account()?;
+        #[cfg(feature = "rocksdb-state")]
+        self.write_through_store()?;
+        Ok(())
     }
 
     /// The `(start, end)` windows a slice ending at `slice_end` belongs to in the global merge.
@@ -658,6 +804,186 @@ impl TumblingAggregator {
                 })
                 .collect()
         }
+    }
+
+    /// Persistent-state hydration: point-reads every touched (window end, key) group not yet
+    /// resident this bundle — one multi-get, one columnar decode — and rebuilds its accumulators
+    /// from the stored state scalars, so the fold and the write-through see committed state. Every
+    /// touched group's key-group routing (the blob path's BinaryRow hash) is recorded for the
+    /// write-through.
+    #[cfg(feature = "rocksdb-state")]
+    fn hydrate_store_groups(
+        &mut self,
+        batch: &RecordBatch,
+        touched: &[(i64, i64, Row<'_>, u32)],
+    ) -> Result<(), DataFusionError> {
+        if touched.is_empty() {
+            return Ok(());
+        }
+        let key_columns = key_column_indices(batch);
+        let mut encoder =
+            BinaryRowBatchEncoder::new(batch, &key_columns, &self.key_timestamp_precisions);
+        let mut probes: Vec<(i64, OwnedRow)> = Vec::new();
+        let mut db_keys: Vec<Vec<u8>> = Vec::new();
+        for &(_, end, key, row) in touched {
+            let group = (end, key.owned());
+            if self.store_groups.contains_key(&group) {
+                continue;
+            }
+            let store = self.store.as_ref().expect("window-aggregate rocksdb store");
+            let key_group = store.key_group(encoder.hash(row as usize));
+            db_keys.push(store.db_key(key_group, end, key.data()));
+            self.store_groups.insert(group.clone(), key_group);
+            probes.push(group);
+        }
+        if probes.is_empty() {
+            return Ok(());
+        }
+        let fetched = self
+            .store
+            .as_ref()
+            .expect("window-aggregate rocksdb store")
+            .get(&db_keys)?;
+        let track = self.memory.tracking();
+        for ((end, key), stored) in probes.into_iter().zip(fetched) {
+            let Some((start, state)) = stored else {
+                continue;
+            };
+            let accumulators = self.accumulators_from_scalars(&state);
+            if track {
+                self.memory
+                    .record((owned_row_bytes(&key) + accumulators_bytes(&accumulators)) as isize);
+            }
+            self.windows
+                .entry(end)
+                .or_insert_with(|| AlignedWindow {
+                    start,
+                    keys: HashMap::default(),
+                })
+                .keys
+                .insert(key, accumulators);
+        }
+        self.memory.account()
+    }
+
+    /// Persistent-state bundle boundary: writes every touched (window, key) group's accumulator
+    /// state through in one columnar encode, then drops the resident entries — the map stays empty
+    /// between bundles and RocksDB owns durability and memory.
+    #[cfg(feature = "rocksdb-state")]
+    fn write_through_store(&mut self) -> Result<(), DataFusionError> {
+        if self.store.is_none() {
+            return Ok(());
+        }
+        let track = self.memory.tracking();
+        let store_groups = std::mem::take(&mut self.store_groups);
+        let mut entries: Vec<(Vec<u8>, i64)> = Vec::with_capacity(store_groups.len());
+        let mut state_columns: Vec<Vec<ScalarValue>> =
+            vec![Vec::with_capacity(store_groups.len()); self.store_state_types.len()];
+        for ((end, key), key_group) in store_groups {
+            let window = self.windows.get_mut(&end).expect("touched window resident");
+            let start = window.start;
+            let mut accumulators = window.keys.remove(&key).expect("touched group resident");
+            let mut column = 0;
+            for accumulator in accumulators.iter_mut() {
+                for scalar in accumulator.state().expect("state") {
+                    state_columns[column].push(scalar);
+                    column += 1;
+                }
+            }
+            entries.push((
+                self.store
+                    .as_ref()
+                    .expect("window-aggregate rocksdb store")
+                    .db_key(key_group, end, key.row().data()),
+                start,
+            ));
+            if track {
+                self.memory
+                    .forget(owned_row_bytes(&key) + accumulators_bytes(&accumulators));
+            }
+        }
+        self.windows.clear();
+        let arrays: Vec<ArrayRef> = state_columns
+            .into_iter()
+            .zip(&self.store_state_types)
+            .map(|(scalars, data_type)| scalars_to_array(scalars, data_type))
+            .collect();
+        self.store
+            .as_mut()
+            .expect("window-aggregate rocksdb store")
+            .put(&entries, &arrays)?;
+        self.memory.account_shrink();
+        Ok(())
+    }
+
+    /// Rebuilds one group's accumulators from its stored state scalars — the restore path's own
+    /// state → merge_batch round trip, one field slice per aggregate.
+    #[cfg(feature = "rocksdb-state")]
+    fn accumulators_from_scalars(&self, scalars: &[ScalarValue]) -> Vec<Box<dyn Accumulator>> {
+        let mut column = 0;
+        self.aggregates
+            .iter()
+            .zip(&self.store_field_counts)
+            .map(|(aggregate, &count)| {
+                let mut accumulator = aggregate.create_accumulator();
+                let state: Vec<ArrayRef> = scalars[column..column + count]
+                    .iter()
+                    .map(|scalar| scalar.to_array().expect("state array"))
+                    .collect();
+                accumulator
+                    .merge_batch(&state)
+                    .expect("failed to restore window group");
+                column += count;
+                accumulator
+            })
+            .collect()
+    }
+
+    /// Canonical savepoint from the persistent store: hydrates every committed (window, key)
+    /// group into the decoded map, reuses the memory path's raw keyed-snapshot encoding (so
+    /// backend transitions stay byte-compatible), then drops the map.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn canonical_partitions(
+        &mut self,
+        max_parallelism: usize,
+        timestamp_precisions: &[i32],
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let stored = self
+            .store
+            .as_ref()
+            .expect("window-aggregate rocksdb store")
+            .scan_all()?;
+        let hydrated: Vec<(i64, i64, OwnedRow, Vec<Box<dyn Accumulator>>)> = {
+            let converter = self
+                .key_converter
+                .as_ref()
+                .expect("window store key converter");
+            let parser = converter.parser();
+            stored
+                .into_iter()
+                .map(|group| {
+                    (
+                        group.end,
+                        group.start,
+                        parser.parse(&group.key).owned(),
+                        self.accumulators_from_scalars(&group.state),
+                    )
+                })
+                .collect()
+        };
+        for (end, start, key, accumulators) in hydrated {
+            self.windows
+                .entry(end)
+                .or_insert_with(|| AlignedWindow {
+                    start,
+                    keys: HashMap::default(),
+                })
+                .keys
+                .insert(key, accumulators);
+        }
+        let partitions = self.snapshot_partitions(max_parallelism, timestamp_precisions);
+        self.windows.clear();
+        Ok(partitions)
     }
 
     /// Serializes every open window's accumulator state as an Arrow batch (one row per (window,

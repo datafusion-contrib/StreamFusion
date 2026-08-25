@@ -29,12 +29,19 @@ pub(crate) fn encode_keys(
 /// converter carries a single dummy field there, and `encode_group_keys` feeds it a constant column —
 /// every row then encodes to one shared key, i.e. the single global group.
 pub(crate) fn key_row_converter(arrays: &[&ArrayRef]) -> RowConverter {
-    let fields: Vec<SortField> = if arrays.is_empty() {
+    let types: Vec<DataType> = arrays.iter().map(|a| a.data_type().clone()).collect();
+    key_row_converter_from_types(&types)
+}
+
+/// [`key_row_converter`] from declared key types, for a store that must encode and decode keys
+/// before any batch has been seen.
+pub(crate) fn key_row_converter_from_types(types: &[DataType]) -> RowConverter {
+    let fields: Vec<SortField> = if types.is_empty() {
         vec![SortField::new(DataType::Boolean)]
     } else {
-        arrays
+        types
             .iter()
-            .map(|a| SortField::new(a.data_type().clone()))
+            .map(|data_type| SortField::new(data_type.clone()))
             .collect()
     };
     RowConverter::new(fields).expect("group key converter")

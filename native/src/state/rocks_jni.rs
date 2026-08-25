@@ -1330,6 +1330,278 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBWindowJoiner<'l
     })
 }
 
+/// The Arrow carriage type of a window grouping-key column, from the JVM key-type code: timestamps
+/// ride as int64 nanoseconds and int widens to int64 (the aggregator's existing key carriage), so
+/// only string, boolean, date, and decimal keys keep a distinct Arrow type.
+fn window_key_data_type(code: i64) -> DataType {
+    match code {
+        3 => DataType::Utf8,
+        7 => DataType::Boolean,
+        8 => DataType::Date32,
+        code if code >= 2000 => {
+            let packed = code - 2000;
+            DataType::Decimal128((packed / 100) as u8, (packed % 100) as i8)
+        }
+        _ => DataType::Int64,
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbWindowAggregatorSupported<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    value_types: JIntArray<'local>,
+    aggregate_kinds: JIntArray<'local>,
+    key_types: JIntArray<'local>,
+) -> jboolean {
+    crate::bridge::jni_guard(env, move |env| {
+        let kinds = read_int_array(&env, &aggregate_kinds);
+        let value_types = read_int_array(&env, &value_types);
+        let key_types: Vec<DataType> = read_int_array(&env, &key_types)
+            .into_iter()
+            .map(window_key_data_type)
+            .collect();
+        (rocks_row_supported(&key_types)
+            && rocks_row_supported(&window_state_types(&kinds, &value_types))) as jboolean
+    })
+}
+
+/// [`open_store`] for the aligned-window aggregate's composite-key store: fresh when no restored
+/// sources exist, otherwise merged once with this subtask's key-group range.
+#[allow(clippy::too_many_arguments)]
+fn open_window_agg_store(
+    env: &mut JNIEnv,
+    config: RocksStoreConfig,
+    state_types: &[DataType],
+    source_directories: &JObjectArray,
+    source_snapshot_tokens: &JObjectArray,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> Result<RocksWindowAggStore, DataFusionError> {
+    let source_dirs: Vec<_> = read_strings(env, source_directories)
+        .into_iter()
+        .flatten()
+        .collect();
+    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
+        .into_iter()
+        .flatten()
+        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
+        .collect();
+    let key_groups = key_group_start..=key_group_end;
+    if source_dirs.is_empty() {
+        RocksWindowAggStore::create(config, state_types, key_groups)
+    } else {
+        RocksWindowAggStore::open_merged(
+            config,
+            state_types,
+            key_groups,
+            &source_dirs
+                .into_iter()
+                .zip(source_tokens)
+                .collect::<Vec<_>>(),
+            aligned != 0,
+        )
+    }
+}
+
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    window_millis: jlong,
+    slide_millis: jlong,
+    cumulative: jboolean,
+    value_types: JIntArray<'local>,
+    aggregate_kinds: JIntArray<'local>,
+    key_types: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
+    memory_budget_bytes: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    options_json: JString<'local>,
+    shared_resources: jlong,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let kinds = read_int_array(&env, &aggregate_kinds);
+        let value_types = read_int_array(&env, &value_types);
+        let key_types: Vec<DataType> = read_int_array(&env, &key_types)
+            .into_iter()
+            .map(window_key_data_type)
+            .collect();
+        let state_types = window_state_types(&kinds, &value_types);
+        let config = RocksStoreConfig {
+            table_dir: read_string(&mut env, &table_directory),
+            max_parallelism: max_parallelism as usize,
+            options_json: read_string(&mut env, &options_json),
+            ttl_ms: 0,
+            shared_resources,
+        };
+        let store = if rocks_row_supported(&key_types) {
+            open_window_agg_store(
+                &mut env,
+                config,
+                &state_types,
+                &source_directories,
+                &source_snapshot_tokens,
+                key_group_start,
+                key_group_end,
+                aligned,
+            )
+        } else {
+            Err(DataFusionError::Plan(
+                "window key shape not supported by RocksDB".into(),
+            ))
+        };
+        let aggregator = store.and_then(|store| {
+            TumblingAggregator::new(
+                window_millis,
+                slide_millis,
+                cumulative != 0,
+                value_types,
+                kinds,
+            )
+            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
+            .with_store(store, key_types)
+            .with_read_through_budget(memory_budget_bytes)
+        });
+        boxed_or_throw(&mut env, aggregator)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pushRocksDBWindowAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array: jlong,
+    in_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+        let result = {
+            let batch = import_record_batch(in_array, in_schema);
+            aggregator.update(&batch)
+        };
+        if let Err(e) = result {
+            throw_memory_limit(&mut env, &e.to_string());
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pushPartialRocksDBWindowAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array: jlong,
+    in_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+        let result = {
+            let batch = import_record_batch(in_array, in_schema);
+            aggregator.update_partial(&batch)
+        };
+        if let Err(e) = result {
+            throw_memory_limit(&mut env, &e.to_string());
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBWindowAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark_millis: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        match aggregator.flush(watermark_millis) {
+            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBWindowAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    snapshot_directory: JString<'local>,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let snapshot_directory = read_string(&mut env, &snapshot_directory);
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        match aggregator.checkpoint_store(&snapshot_directory) {
+            Ok(m) => manifest_array(&mut env, &m),
+            Err(e) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB checkpoint failed: {e}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBWindowAggregatorPartitions<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    max_parallelism: jint,
+    timestamp_precisions: JIntArray<'local>,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        let precisions = read_i32_array(&env, &timestamp_precisions);
+        match aggregator.canonical_partitions(max_parallelism as usize, &precisions) {
+            Ok(partitions) => {
+                keyed_state_partition_array(&mut env, partitions, "rocksdb-fixed-window")
+            }
+            Err(error) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB canonical snapshot failed: {error}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_rocksdbWindowAggregatorStateBytes,
+    TumblingAggregator
+);
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBWindowAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<TumblingAggregator>(handle));
+    })
+}
+
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTopNRanker<'local>(
