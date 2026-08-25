@@ -619,10 +619,62 @@ pub(crate) fn dedup_entry_bytes(key: &[u8], payload: &[u8]) -> usize {
     key.len() + payload.len() + GROUP_ENTRY_OVERHEAD
 }
 
-/// The dedup persistent backend: the generic persistent store under the dedup row codec.
+/// The dedup persistent backend: the generic persistent store under the raw dedup codec.
+#[cfg(feature = "rocksdb-state")]
+pub(crate) type RocksDedupStore = crate::state::RocksStore<DedupStateCodec>;
 
-/// The dedup value codec for the persistent store: a row-payload codec (see `RowPayloadCodec`), with
-/// the rowtime re-derived from the row's own rowtime column on hydration, exactly as restore does.
+/// The dedup value codec for the persistent store: raw — `[rowtime: i64 LE][update_kind: u8]`
+/// followed by the stored row's arrow-row payload bytes, verbatim (the same payload the raw
+/// keyed-state snapshot carries, so the two persistence paths cannot drift). Every payload shape
+/// round-trips as opaque bytes, so every keep-last state shape is persistable.
+#[cfg(feature = "rocksdb-state")]
+pub(crate) struct DedupStateCodec;
+
+#[cfg(feature = "rocksdb-state")]
+const DEDUP_RAW_PREFIX: usize = 9;
+
+#[cfg(feature = "rocksdb-state")]
+impl crate::state::RocksStateCodec for DedupStateCodec {
+    type Value = DedupRow;
+    fn supported(&self) -> bool {
+        true
+    }
+    fn value_fields(&self) -> Vec<(String, DataType)> {
+        vec![("row".to_string(), DataType::Binary)]
+    }
+    fn encode(&self, _value: &DedupRow) -> Vec<ScalarValue> {
+        unreachable!("raw codec")
+    }
+    fn decode(&self, _scalars: &[ScalarValue]) -> DedupRow {
+        unreachable!("raw codec")
+    }
+    fn value_bytes(&self, value: &DedupRow) -> usize {
+        DEDUP_RAW_PREFIX + value.payload.len()
+    }
+    fn write_ms(&self, value: &DedupRow) -> i64 {
+        value.last_write_ms
+    }
+    fn stamp_write_ms(&self, value: &mut DedupRow, ts_ms: i64) {
+        value.last_write_ms = ts_ms;
+    }
+    fn raw(&self) -> bool {
+        true
+    }
+    fn raw_write(&self, value: &DedupRow, out: &mut Vec<u8>) {
+        out.extend_from_slice(&value.rowtime.to_le_bytes());
+        out.push(value.update_kind as u8);
+        out.extend_from_slice(&value.payload);
+    }
+    fn from_raw(&self, bytes: &[u8]) -> DedupRow {
+        DedupRow {
+            rowtime: i64::from_le_bytes(bytes[..8].try_into().expect("dedup rowtime prefix")),
+            payload: bytes[DEDUP_RAW_PREFIX..].into(),
+            staged: None,
+            update_kind: bytes[8] != 0,
+            last_write_ms: 0,
+        }
+    }
+}
 
 impl KeepLastDeduplicator {
     pub(crate) fn new(
@@ -1183,36 +1235,28 @@ const RAW_SNAPSHOT_ROWTIME: &str = "__rowtime__";
 /// (another shape, or pre-flag) restores as INSERT.
 const RAW_SNAPSHOT_UPDATE_KIND: &str = "__update_kind__";
 
-/// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
-/// store checkpoints through its own commit path instead of materializing the key space.
-impl KeepLastDeduplicator {
-    /// One IPC blob per key group of raw state bytes: the stored Flink-BinaryRow key, arrow-row
-    /// payload, and rowtime, verbatim — no decode, and the group is one hash of the stored key's
-    /// bytes per entry (that encoding's hash IS Flink's key-group input). The schema's metadata
-    /// carries the typed payload schema so converters can be rebuilt before any input arrives.
-    fn raw_snapshot_groups(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
-        let Some(schema) = &self.schema else {
-            return BTreeMap::new();
-        };
-        // The optional columns ride only where they mean something — the stored kind for the
-        // proctime keep-last shape (the only suppression that consults it) and the TTL timestamps
-        // only while TTL is on — so every other snapshot stays byte-identical to its prior format.
+/// One key group's raw snapshot blob, built from any backend's resident view of the selected keys.
+impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
+    /// Serializes the selected keys' stored rows as raw state bytes: the stored Flink-BinaryRow
+    /// key, arrow-row payload, and rowtime, verbatim — no decode. The schema's metadata carries
+    /// the typed payload schema so converters can be rebuilt before any input arrives. The
+    /// optional columns ride only where they mean something — the stored kind for the proctime
+    /// keep-last shape (the only suppression that consults it) and the TTL timestamps only while
+    /// TTL is on — so every other snapshot stays byte-identical to its prior format.
+    fn snapshot_keys(&self, selected: &[ByteKey]) -> Vec<u8> {
+        let schema = self.schema.as_ref().expect("schema set once a row was stored");
         let kind_on = !self.rowtime_ordered && !self.keep_first;
         let ttl_on = self.ttl_ms > 0;
-        let mut builders: BTreeMap<
-            i32,
-            (
-                BinaryBuilder,
-                BinaryBuilder,
-                Int64Builder,
-                BooleanBuilder,
-                Int64Builder,
-            ),
-        > = BTreeMap::new();
-        for (key, row) in self.rows.iter() {
-            let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
-            let (keys, payloads, rowtimes, update_kinds, write_timestamps) =
-                builders.entry(group).or_default();
+        let mut keys = BinaryBuilder::new();
+        let mut payloads = BinaryBuilder::new();
+        let mut rowtimes = Int64Builder::new();
+        let mut update_kinds = BooleanBuilder::new();
+        let mut write_timestamps = Int64Builder::new();
+        for key in selected {
+            let row = self
+                .rows
+                .get(&key.0)
+                .expect("snapshot key remains in dedup state");
             keys.append_value(&key.0);
             payloads.append_value(&row.payload);
             rowtimes.append_value(row.rowtime);
@@ -1224,15 +1268,22 @@ impl KeepLastDeduplicator {
             Field::new(RAW_SNAPSHOT_ROW, DataType::Binary, false),
             Field::new(RAW_SNAPSHOT_ROWTIME, DataType::Int64, false),
         ];
+        let mut columns: Vec<ArrayRef> = vec![
+            Arc::new(keys.finish()),
+            Arc::new(payloads.finish()),
+            Arc::new(rowtimes.finish()),
+        ];
         if kind_on {
             fields.push(Field::new(
                 RAW_SNAPSHOT_UPDATE_KIND,
                 DataType::Boolean,
                 false,
             ));
+            columns.push(Arc::new(update_kinds.finish()));
         }
         if ttl_on {
             fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
+            columns.push(Arc::new(write_timestamps.finish()));
         }
         let raw_schema = Arc::new(Schema::new_with_metadata(
             fields,
@@ -1241,29 +1292,53 @@ impl KeepLastDeduplicator {
                 encode_schema_metadata(schema),
             )]),
         ));
-        builders
-            .into_iter()
-            .map(
-                |(
-                    group,
-                    (mut keys, mut payloads, mut rowtimes, mut update_kinds, mut write_timestamps),
-                )| {
-                    let mut columns: Vec<ArrayRef> = vec![
-                        Arc::new(keys.finish()),
-                        Arc::new(payloads.finish()),
-                        Arc::new(rowtimes.finish()),
-                    ];
-                    if kind_on {
-                        columns.push(Arc::new(update_kinds.finish()));
-                    }
-                    if ttl_on {
-                        columns.push(Arc::new(write_timestamps.finish()));
-                    }
-                    let batch = RecordBatch::try_new(raw_schema.clone(), columns)
-                        .expect("raw dedup snapshot batch");
-                    (group, write_ipc(&batch))
-                },
-            )
+        let batch = RecordBatch::try_new(raw_schema, columns).expect("raw dedup snapshot batch");
+        write_ipc(&batch)
+    }
+}
+
+/// Commits the persistent store and exports the complete logical table in the same raw key-group
+/// encoding the memory snapshot writes, for backend-independent canonical savepoints.
+#[cfg(feature = "rocksdb-state")]
+impl KeepLastDeduplicator<RocksDedupStore> {
+    pub(crate) fn canonical_partitions(
+        &mut self,
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let keys = self.rows.canonical_keys_by_group()?;
+        if self.schema.is_none() && !keys.is_empty() {
+            self.rows.finish_canonical_scan();
+            return Err(DataFusionError::Execution(
+                "keep-last dedup canonical snapshot needs the payload schema, which only arrives \
+                 with input; take the savepoint after the operator has processed a batch"
+                    .into(),
+            ));
+        }
+        let partitions = keys
+            .iter()
+            .map(|(&group, selected)| (group, self.snapshot_keys(selected)))
+            .collect();
+        self.rows.finish_canonical_scan();
+        Ok(partitions)
+    }
+}
+
+/// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
+/// store checkpoints through its own commit path instead of materializing the key space.
+impl KeepLastDeduplicator {
+    /// One IPC blob per key group of raw state bytes, the group one hash of the stored key's
+    /// bytes per entry (that encoding's hash IS Flink's key-group input).
+    fn raw_snapshot_groups(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
+        if self.schema.is_none() {
+            return BTreeMap::new();
+        }
+        let mut keys_by_group: BTreeMap<i32, Vec<ByteKey>> = BTreeMap::new();
+        for (key, _) in self.rows.iter() {
+            let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
+            keys_by_group.entry(group).or_default().push(key.clone());
+        }
+        keys_by_group
+            .iter()
+            .map(|(&group, selected)| (group, self.snapshot_keys(selected)))
             .collect()
     }
 

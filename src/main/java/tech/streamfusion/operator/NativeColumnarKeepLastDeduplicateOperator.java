@@ -3,6 +3,7 @@ package tech.streamfusion.operator;
 import tech.streamfusion.Native;
 import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -81,6 +82,35 @@ public class NativeColumnarKeepLastDeduplicateOperator
   }
 
   @Override
+  protected boolean usesDirectRocksDBState() {
+    return true;
+  }
+
+  @Override
+  protected RocksDBNativeStateSupport resolveRocksDBState(boolean rawStateRestored) {
+    return resolveRocksDB(rawStateRestored, () -> true, stateTtlMillis);
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    return Native.createRocksDBKeepLastDeduplicator(
+        partitionColumns, keyTimestampPrecisions(), rowtimeColumn, generateUpdateBefore,
+        generateInsert, rowtimeOrdered, keepFirst, miniBatch, compactChanges, stateTtlMillis,
+        getProcessingTimeService().getCurrentProcessingTime(), memoryBudgetBytes(),
+        rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
+        rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
+        rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
+        rocksdb.aligned());
+  }
+
+  @Override
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
+    return directRocksDBState()
+        ? Native.checkpointRocksDBKeepLastDeduplicator(handle, snapshotDirectory)
+        : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
   protected long createHandle() {
     return Native.createKeepLastDeduplicator(
         partitionColumns,
@@ -121,13 +151,26 @@ public class NativeColumnarKeepLastDeduplicateOperator
   }
 
   @Override
+  protected byte[][] snapshotCanonicalPartitions() {
+    return directRocksDBState()
+        ? Native.snapshotRocksDBKeepLastDeduplicatorPartitions(handle)
+        : snapshotRawPartitions();
+  }
+
+  @Override
   protected void closeHandle() {
-    Native.closeKeepLastDeduplicator(handle);
+    if (directRocksDBState()) {
+      Native.closeRocksDBKeepLastDeduplicator(handle);
+    } else {
+      Native.closeKeepLastDeduplicator(handle);
+    }
   }
 
   @Override
   protected long stateBytesHandle() {
-    return Native.keepLastDeduplicatorStateBytes(handle);
+    return directRocksDBState()
+        ? Native.rocksdbKeepLastDeduplicatorStateBytes(handle)
+        : Native.keepLastDeduplicatorStateBytes(handle);
   }
 
   @Override
@@ -179,7 +222,10 @@ public class NativeColumnarKeepLastDeduplicateOperator
           }
         }
         miniBatchMetrics.onSlice(length, firstContribution);
-        miniBatchMetrics.onCurrentKeys(Native.keepLastDeduplicatorStagedKeys(handle));
+        miniBatchMetrics.onCurrentKeys(
+            directRocksDBState()
+                ? Native.rocksdbKeepLastDeduplicatorStagedKeys(handle)
+                : Native.keepLastDeduplicatorStagedKeys(handle));
         offset += length;
         if (boundary.onSlice(length)) {
           flushBundle(FlushReason.COUNT);
@@ -202,13 +248,23 @@ public class NativeColumnarKeepLastDeduplicateOperator
       // Flink's TtlTimeProvider clock: the processing-time service is System.currentTimeMillis in
       // production and harness-controlled in tests, so expiry is deterministic to test.
       long now = getProcessingTimeService().getCurrentProcessingTime();
-      Native.pushKeepLastDeduplicator(
-          handle,
-          inArray.memoryAddress(),
-          inSchema.memoryAddress(),
-          now,
-          outArray.memoryAddress(),
-          outSchema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.pushRocksDBKeepLastDeduplicator(
+            handle,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            now,
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      } else {
+        Native.pushKeepLastDeduplicator(
+            handle,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            now,
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       if (out.getRowCount() > 0) {
@@ -254,12 +310,23 @@ public class NativeColumnarKeepLastDeduplicateOperator
   }
 
   private void flushBundle(FlushReason reason) {
-    long transientBytes = Native.keepLastDeduplicatorStagingBytes(handle);
-    long touchedKeys = Native.keepLastDeduplicatorStagedKeys(handle);
+    long transientBytes =
+        directRocksDBState()
+            ? Native.rocksdbKeepLastDeduplicatorStagingBytes(handle)
+            : Native.keepLastDeduplicatorStagingBytes(handle);
+    long touchedKeys =
+        directRocksDBState()
+            ? Native.rocksdbKeepLastDeduplicatorStagedKeys(handle)
+            : Native.keepLastDeduplicatorStagedKeys(handle);
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushKeepLastDeduplicator(
-          handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.flushRocksDBKeepLastDeduplicator(
+            handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      } else {
+        Native.flushKeepLastDeduplicator(
+            handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       int outputRows = out.getRowCount();

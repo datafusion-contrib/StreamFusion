@@ -3,6 +3,7 @@ package tech.streamfusion.operator;
 import tech.streamfusion.Native;
 import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -56,6 +57,34 @@ public class NativeColumnarChangelogNormalizeOperator
   }
 
   @Override
+  protected boolean usesDirectRocksDBState() {
+    return true;
+  }
+
+  @Override
+  protected RocksDBNativeStateSupport resolveRocksDBState(boolean rawStateRestored) {
+    return resolveRocksDB(rawStateRestored, () -> true, stateTtlMillis);
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    return Native.createRocksDBChangelogNormalizer(
+        keyColumns, keyTimestampPrecisions(), generateUpdateBefore, miniBatch, stateTtlMillis,
+        getProcessingTimeService().getCurrentProcessingTime(), memoryBudgetBytes(),
+        rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
+        rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
+        rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
+        rocksdb.aligned());
+  }
+
+  @Override
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
+    return directRocksDBState()
+        ? Native.checkpointRocksDBChangelogNormalizer(handle, snapshotDirectory)
+        : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
   protected long createHandle() {
     return Native.createChangelogNormalizer(
         keyColumns,
@@ -86,13 +115,26 @@ public class NativeColumnarChangelogNormalizeOperator
   }
 
   @Override
+  protected byte[][] snapshotCanonicalPartitions() {
+    return directRocksDBState()
+        ? Native.snapshotRocksDBChangelogNormalizerPartitions(handle)
+        : snapshotRawPartitions();
+  }
+
+  @Override
   protected void closeHandle() {
-    Native.closeChangelogNormalizer(handle);
+    if (directRocksDBState()) {
+      Native.closeRocksDBChangelogNormalizer(handle);
+    } else {
+      Native.closeChangelogNormalizer(handle);
+    }
   }
 
   @Override
   protected long stateBytesHandle() {
-    return Native.changelogNormalizerStateBytes(handle);
+    return directRocksDBState()
+        ? Native.rocksdbChangelogNormalizerStateBytes(handle)
+        : Native.changelogNormalizerStateBytes(handle);
   }
 
   @Override
@@ -148,7 +190,10 @@ public class NativeColumnarChangelogNormalizeOperator
             }
           }
           miniBatchMetrics.onSlice(length, firstContribution);
-          miniBatchMetrics.onCurrentKeys(Native.changelogNormalizerStagedKeys(handle));
+          miniBatchMetrics.onCurrentKeys(
+              directRocksDBState()
+                  ? Native.rocksdbChangelogNormalizerStagedKeys(handle)
+                  : Native.changelogNormalizerStagedKeys(handle));
           offset += length;
           if (boundary.onSlice(length)) {
             flushBundle(FlushReason.COUNT);
@@ -172,13 +217,23 @@ public class NativeColumnarChangelogNormalizeOperator
       // Flink's TtlTimeProvider clock: the processing-time service is System.currentTimeMillis in
       // production and harness-controlled in tests, so expiry is deterministic to test.
       long now = getProcessingTimeService().getCurrentProcessingTime();
-      Native.pushChangelogNormalizer(
-          handle,
-          inArray.memoryAddress(),
-          inSchema.memoryAddress(),
-          now,
-          outArray.memoryAddress(),
-          outSchema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.pushRocksDBChangelogNormalizer(
+            handle,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            now,
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      } else {
+        Native.pushChangelogNormalizer(
+            handle,
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            now,
+            outArray.memoryAddress(),
+            outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       if (out.getRowCount() > 0) {
@@ -224,12 +279,23 @@ public class NativeColumnarChangelogNormalizeOperator
   }
 
   private void flushBundle(FlushReason reason) {
-    long transientBytes = Native.changelogNormalizerStagingBytes(handle);
-    long touchedKeys = Native.changelogNormalizerStagedKeys(handle);
+    long transientBytes =
+        directRocksDBState()
+            ? Native.rocksdbChangelogNormalizerStagingBytes(handle)
+            : Native.changelogNormalizerStagingBytes(handle);
+    long touchedKeys =
+        directRocksDBState()
+            ? Native.rocksdbChangelogNormalizerStagedKeys(handle)
+            : Native.changelogNormalizerStagedKeys(handle);
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushChangelogNormalizer(
-          handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.flushRocksDBChangelogNormalizer(
+            handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      } else {
+        Native.flushChangelogNormalizer(
+            handle, outArray.memoryAddress(), outSchema.memoryAddress());
+      }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       int outputRows = out.getRowCount();

@@ -53,10 +53,55 @@ pub(crate) fn scalar_row_bytes(row: &[ScalarValue]) -> usize {
     row.iter().map(ScalarValue::size).sum()
 }
 
-/// The normalizer persistent backend: the generic persistent store under a plain row-payload codec.
+/// The normalizer persistent backend: the generic persistent store under the raw payload codec.
+#[cfg(feature = "rocksdb-state")]
+pub(crate) type RocksNormalizerStore = crate::state::RocksStore<NormalizerStateCodec>;
 
-/// The normalizer value codec for the persistent store: exactly a row-payload codec (see
-/// `RowPayloadCodec`) — the stored last row per unique key, as typed columns.
+/// The normalizer value codec for the persistent store: raw — the persisted value IS the stored
+/// row's arrow-row payload bytes, verbatim (the same bytes the raw keyed-state snapshot carries, so
+/// the two persistence paths cannot drift). Every payload shape round-trips as opaque bytes, so
+/// every normalizer state shape is persistable.
+#[cfg(feature = "rocksdb-state")]
+pub(crate) struct NormalizerStateCodec;
+
+#[cfg(feature = "rocksdb-state")]
+impl crate::state::RocksStateCodec for NormalizerStateCodec {
+    type Value = NormalizedRow;
+    fn supported(&self) -> bool {
+        true
+    }
+    fn value_fields(&self) -> Vec<(String, DataType)> {
+        vec![("row".to_string(), DataType::Binary)]
+    }
+    fn encode(&self, _value: &NormalizedRow) -> Vec<ScalarValue> {
+        unreachable!("raw codec")
+    }
+    fn decode(&self, _scalars: &[ScalarValue]) -> NormalizedRow {
+        unreachable!("raw codec")
+    }
+    fn value_bytes(&self, value: &NormalizedRow) -> usize {
+        value.payload.len()
+    }
+    fn write_ms(&self, value: &NormalizedRow) -> i64 {
+        value.last_write_ms
+    }
+    fn stamp_write_ms(&self, value: &mut NormalizedRow, ts_ms: i64) {
+        value.last_write_ms = ts_ms;
+    }
+    fn raw(&self) -> bool {
+        true
+    }
+    fn raw_write(&self, value: &NormalizedRow, out: &mut Vec<u8>) {
+        out.extend_from_slice(&value.payload);
+    }
+    fn from_raw(&self, bytes: &[u8]) -> NormalizedRow {
+        NormalizedRow {
+            payload: bytes.into(),
+            staged: false,
+            last_write_ms: 0,
+        }
+    }
+}
 
 impl ChangelogNormalizer {
     pub(crate) fn new(key_columns: Vec<usize>, generate_update_before: bool) -> Self {
@@ -422,26 +467,24 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
     }
 }
 
-/// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
-/// store checkpoints through its own commit path instead of materializing the key space.
-impl ChangelogNormalizer {
-    /// Serializes the stored last-row-per-key set with its already canonical BinaryRow key.
-    /// One IPC blob per key group of raw state bytes: the stored Flink-BinaryRow key and
-    /// arrow-row payload, verbatim — no decode, and the group is one hash of the stored key's
-    /// bytes per entry. The schema's metadata carries the typed payload schema so the converter
-    /// can be rebuilt before any input arrives.
-    fn raw_snapshot_groups(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
-        let Some(schema) = &self.schema else {
-            return BTreeMap::new();
-        };
-        // The TTL timestamps ride a trailing column only while TTL is on, so a TTL-off snapshot
-        // stays byte-identical to the pre-TTL format (and disabling TTL sheds the timestamps).
+/// One key group's raw snapshot blob, built from any backend's resident view of the selected keys.
+impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
+    /// Serializes the selected keys' stored rows as raw state bytes: the stored Flink-BinaryRow key
+    /// and arrow-row payload, verbatim — no decode. The schema's metadata carries the typed payload
+    /// schema so the converter can be rebuilt before any input arrives. The TTL timestamps ride a
+    /// trailing column only while TTL is on, so a TTL-off snapshot stays byte-identical to the
+    /// pre-TTL format (and disabling TTL sheds the timestamps).
+    fn snapshot_keys(&self, selected: &[ByteKey]) -> Vec<u8> {
+        let schema = self.schema.as_ref().expect("schema set once a row was stored");
         let ttl_on = self.ttl_ms > 0;
-        let mut builders: BTreeMap<i32, (BinaryBuilder, BinaryBuilder, Int64Builder)> =
-            BTreeMap::new();
-        for (key, row) in self.rows.iter() {
-            let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
-            let (keys, payloads, write_timestamps) = builders.entry(group).or_default();
+        let mut keys = BinaryBuilder::new();
+        let mut payloads = BinaryBuilder::new();
+        let mut write_timestamps = Int64Builder::new();
+        for key in selected {
+            let row = self
+                .rows
+                .get(&key.0)
+                .expect("snapshot key remains in normalizer state");
             keys.append_value(&key.0);
             payloads.append_value(&row.payload);
             write_timestamps.append_value(row.last_write_ms);
@@ -450,8 +493,10 @@ impl ChangelogNormalizer {
             Field::new(RAW_SNAPSHOT_KEY, DataType::Binary, false),
             Field::new(RAW_SNAPSHOT_ROW, DataType::Binary, false),
         ];
+        let mut columns: Vec<ArrayRef> = vec![Arc::new(keys.finish()), Arc::new(payloads.finish())];
         if ttl_on {
             fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
+            columns.push(Arc::new(write_timestamps.finish()));
         }
         let raw_schema = Arc::new(Schema::new_with_metadata(
             fields,
@@ -460,18 +505,54 @@ impl ChangelogNormalizer {
                 encode_schema_metadata(schema),
             )]),
         ));
-        builders
-            .into_iter()
-            .map(|(group, (mut keys, mut payloads, mut write_timestamps))| {
-                let mut columns: Vec<ArrayRef> =
-                    vec![Arc::new(keys.finish()), Arc::new(payloads.finish())];
-                if ttl_on {
-                    columns.push(Arc::new(write_timestamps.finish()));
-                }
-                let batch = RecordBatch::try_new(raw_schema.clone(), columns)
-                    .expect("raw normalizer snapshot batch");
-                (group, write_ipc(&batch))
-            })
+        let batch =
+            RecordBatch::try_new(raw_schema, columns).expect("raw normalizer snapshot batch");
+        write_ipc(&batch)
+    }
+}
+
+/// Commits the persistent store and exports the complete logical table in the same raw key-group
+/// encoding the memory snapshot writes, for backend-independent canonical savepoints.
+#[cfg(feature = "rocksdb-state")]
+impl ChangelogNormalizer<RocksNormalizerStore> {
+    pub(crate) fn canonical_partitions(
+        &mut self,
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let keys = self.rows.canonical_keys_by_group()?;
+        if self.schema.is_none() && !keys.is_empty() {
+            self.rows.finish_canonical_scan();
+            return Err(DataFusionError::Execution(
+                "changelog-normalize canonical snapshot needs the payload schema, which only \
+                 arrives with input; take the savepoint after the operator has processed a batch"
+                    .into(),
+            ));
+        }
+        let partitions = keys
+            .iter()
+            .map(|(&group, selected)| (group, self.snapshot_keys(selected)))
+            .collect();
+        self.rows.finish_canonical_scan();
+        Ok(partitions)
+    }
+}
+
+/// The raw keyed-state snapshot/restore surface exists only on the memory backend — a persistent
+/// store checkpoints through its own commit path instead of materializing the key space.
+impl ChangelogNormalizer {
+    /// Serializes the stored last-row-per-key set with its already canonical BinaryRow key: one
+    /// IPC blob per key group, the group one hash of the stored key's bytes per entry.
+    fn raw_snapshot_groups(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
+        if self.schema.is_none() {
+            return BTreeMap::new();
+        }
+        let mut keys_by_group: BTreeMap<i32, Vec<ByteKey>> = BTreeMap::new();
+        for (key, _) in self.rows.iter() {
+            let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
+            keys_by_group.entry(group).or_default().push(key.clone());
+        }
+        keys_by_group
+            .iter()
+            .map(|(&group, selected)| (group, self.snapshot_keys(selected)))
             .collect()
     }
 

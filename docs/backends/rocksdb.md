@@ -51,8 +51,9 @@ incremental checkpointing is enabled.
 
 There are also deliberate implementation differences:
 
-- only the group-aggregate state codec currently performs per-key RocksDB reads and writes; the
-  remaining native operators replace one key-group snapshot payload in RocksDB at each checkpoint;
+- the group aggregate, changelog normalize, and keep-last deduplicate stores perform per-key
+  RocksDB reads and writes; the remaining native operators replace one key-group snapshot payload
+  in RocksDB at each checkpoint;
 - the native stores' shared cache and write-buffer manager live in StreamFusion's own RocksDB
   library, sized by the same Flink options and formulas but leased separately from the delegate
   backend's pool (C++ objects cannot cross the two RocksDB libraries), and the binding exposes no

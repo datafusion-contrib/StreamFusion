@@ -7,6 +7,8 @@ use jni::sys::{jboolean, jdouble, jint, jlong, jobjectArray};
 use jni::JNIEnv;
 
 type RocksGroupAggregator = GroupAggregator<RocksGroupStore>;
+type RocksChangelogNormalizer = ChangelogNormalizer<RocksNormalizerStore>;
+type RocksKeepLastDeduplicator = KeepLastDeduplicator<RocksDedupStore>;
 
 fn read_string(env: &mut JNIEnv, value: &JString) -> String {
     env.get_string(value).expect("jni string").into()
@@ -25,6 +27,46 @@ fn read_strings(env: &mut JNIEnv, values: &JObjectArray) -> Vec<Option<String>> 
             }
         })
         .collect()
+}
+
+/// Opens an operator's typed store: fresh when no restored sources exist, otherwise merged from
+/// the restored checkpoint directories with this subtask's key-group range.
+#[allow(clippy::too_many_arguments)]
+fn open_store<C: RocksStateCodec>(
+    env: &mut JNIEnv,
+    config: RocksStoreConfig,
+    codec: C,
+    source_directories: &JObjectArray,
+    source_snapshot_tokens: &JObjectArray,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+    now_millis: jlong,
+) -> Result<RocksStore<C>, DataFusionError> {
+    let source_dirs: Vec<_> = read_strings(env, source_directories)
+        .into_iter()
+        .flatten()
+        .collect();
+    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
+        .into_iter()
+        .flatten()
+        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
+        .collect();
+    if source_dirs.is_empty() {
+        RocksStore::create(config, codec)
+    } else {
+        RocksStore::open_merged(
+            config,
+            codec,
+            &source_dirs
+                .into_iter()
+                .zip(source_tokens)
+                .collect::<Vec<_>>(),
+            key_group_start..=key_group_end,
+            aligned != 0,
+            now_millis,
+        )
+    }
 }
 
 fn manifest_array<'local>(
@@ -148,30 +190,17 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBGroupAggregato
             ttl_ms: state_ttl_millis.max(0),
             shared_resources,
         };
-        let source_dirs: Vec<_> = read_strings(&mut env, &source_directories)
-            .into_iter()
-            .flatten()
-            .collect();
-        let source_tokens: Vec<_> = read_strings(&mut env, &source_snapshot_tokens)
-            .into_iter()
-            .flatten()
-            .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
-            .collect();
-        let store = if source_dirs.is_empty() {
-            RocksGroupStore::create(config, codec)
-        } else {
-            RocksGroupStore::open_merged(
-                config,
-                codec,
-                &source_dirs
-                    .into_iter()
-                    .zip(source_tokens)
-                    .collect::<Vec<_>>(),
-                key_group_start..=key_group_end,
-                aligned != 0,
-                now_millis,
-            )
-        };
+        let store = open_store(
+            &mut env,
+            config,
+            codec,
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+            now_millis,
+        );
         let aggregator = store.and_then(|store| {
             let mut base = GroupAggregator::new(
                 kinds,
@@ -320,6 +349,402 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBGroupAggregator
 ) {
     crate::bridge::jni_guard(env, move |_env| unsafe {
         drop(from_handle::<RocksGroupAggregator>(handle));
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBChangelogNormalizer<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    key_columns: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
+    generate_update_before: jboolean,
+    mini_batch: jboolean,
+    state_ttl_millis: jlong,
+    now_millis: jlong,
+    memory_budget_bytes: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    options_json: JString<'local>,
+    shared_resources: jlong,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let config = RocksStoreConfig {
+            table_dir: read_string(&mut env, &table_directory),
+            max_parallelism: max_parallelism as usize,
+            options_json: read_string(&mut env, &options_json),
+            ttl_ms: state_ttl_millis.max(0),
+            shared_resources,
+        };
+        let store = open_store(
+            &mut env,
+            config,
+            NormalizerStateCodec,
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+            now_millis,
+        );
+        let normalizer = store.and_then(|store| {
+            ChangelogNormalizer::new(
+                read_columns(&env, &key_columns),
+                generate_update_before != 0,
+            )
+            .with_mini_batch(mini_batch != 0)
+            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
+            .with_state_ttl(state_ttl_millis)
+            .with_backend(store)
+            .with_read_through_budget(memory_budget_bytes)
+        });
+        boxed_or_throw(&mut env, normalizer)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pushRocksDBChangelogNormalizer<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array: jlong,
+    in_schema: jlong,
+    now: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let normalizer = unsafe { &mut *(handle as *mut RocksChangelogNormalizer) };
+        normalizer.store_mut().set_clock(now);
+        // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+        let result = {
+            let batch = import_record_batch(in_array, in_schema);
+            normalizer.push(&batch, now)
+        };
+        match result {
+            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBChangelogNormalizer<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        match unsafe { &mut *(handle as *mut RocksChangelogNormalizer) }.flush_mini_batch() {
+            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBChangelogNormalizer<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    snapshot_directory: JString<'local>,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let snapshot_directory = read_string(&mut env, &snapshot_directory);
+        match unsafe { &mut *(handle as *mut RocksChangelogNormalizer) }
+            .store_mut()
+            .checkpoint(&snapshot_directory)
+        {
+            Ok(m) => manifest_array(&mut env, &m),
+            Err(e) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB checkpoint failed: {e}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBChangelogNormalizerPartitions<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let normalizer = unsafe { &mut *(handle as *mut RocksChangelogNormalizer) };
+        match normalizer.canonical_partitions() {
+            Ok(partitions) => {
+                keyed_state_partition_array(&mut env, partitions, "rocksdb-changelog-normalizer")
+            }
+            Err(error) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB canonical snapshot failed: {error}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbChangelogNormalizerStateBytes<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const RocksChangelogNormalizer) }.memory.state_bytes as jlong
+    })
+}
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbChangelogNormalizerStagingBytes<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const RocksChangelogNormalizer) }.staging_bytes() as jlong
+    })
+}
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbChangelogNormalizerStagedKeys<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const RocksChangelogNormalizer) }.staged_keys() as jlong
+    })
+}
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBChangelogNormalizer<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<RocksChangelogNormalizer>(handle));
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBKeepLastDeduplicator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    partition_columns: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
+    rt_column: jint,
+    generate_update_before: jboolean,
+    generate_insert: jboolean,
+    rowtime_ordered: jboolean,
+    keep_first: jboolean,
+    mini_batch: jboolean,
+    compact_changes: jboolean,
+    state_ttl_millis: jlong,
+    now_millis: jlong,
+    memory_budget_bytes: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    options_json: JString<'local>,
+    shared_resources: jlong,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let config = RocksStoreConfig {
+            table_dir: read_string(&mut env, &table_directory),
+            max_parallelism: max_parallelism as usize,
+            options_json: read_string(&mut env, &options_json),
+            ttl_ms: state_ttl_millis.max(0),
+            shared_resources,
+        };
+        let store = open_store(
+            &mut env,
+            config,
+            DedupStateCodec,
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+            now_millis,
+        );
+        let dedup = store.and_then(|store| {
+            KeepLastDeduplicator::new(
+                read_columns(&env, &partition_columns),
+                rt_column as usize,
+                generate_update_before != 0,
+                rowtime_ordered != 0,
+                keep_first != 0,
+            )
+            .with_generate_insert(generate_insert != 0)
+            .with_mini_batch(mini_batch != 0)
+            .with_compact_changes(compact_changes != 0)
+            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
+            .with_state_ttl(state_ttl_millis)
+            .with_backend(store)
+            .with_read_through_budget(memory_budget_bytes)
+        });
+        boxed_or_throw(&mut env, dedup)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pushRocksDBKeepLastDeduplicator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array: jlong,
+    in_schema: jlong,
+    now: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let dedup = unsafe { &mut *(handle as *mut RocksKeepLastDeduplicator) };
+        dedup.store_mut().set_clock(now);
+        // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+        let result = {
+            let batch = import_record_batch(in_array, in_schema);
+            dedup.push(&batch, now)
+        };
+        match result {
+            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBKeepLastDeduplicator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        match unsafe { &mut *(handle as *mut RocksKeepLastDeduplicator) }.flush_mini_batch() {
+            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBKeepLastDeduplicator<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    snapshot_directory: JString<'local>,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let snapshot_directory = read_string(&mut env, &snapshot_directory);
+        match unsafe { &mut *(handle as *mut RocksKeepLastDeduplicator) }
+            .store_mut()
+            .checkpoint(&snapshot_directory)
+        {
+            Ok(m) => manifest_array(&mut env, &m),
+            Err(e) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB checkpoint failed: {e}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBKeepLastDeduplicatorPartitions<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let dedup = unsafe { &mut *(handle as *mut RocksKeepLastDeduplicator) };
+        match dedup.canonical_partitions() {
+            Ok(partitions) => {
+                keyed_state_partition_array(&mut env, partitions, "rocksdb-keep-last-dedup")
+            }
+            Err(error) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB canonical snapshot failed: {error}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbKeepLastDeduplicatorStateBytes<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const RocksKeepLastDeduplicator) }.memory.state_bytes as jlong
+    })
+}
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbKeepLastDeduplicatorStagingBytes<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const RocksKeepLastDeduplicator) }.staging_bytes() as jlong
+    })
+}
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbKeepLastDeduplicatorStagedKeys<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const RocksKeepLastDeduplicator) }.staged_keys() as jlong
+    })
+}
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBKeepLastDeduplicator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<RocksKeepLastDeduplicator>(handle));
     })
 }
 

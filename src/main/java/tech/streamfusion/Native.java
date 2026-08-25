@@ -1120,6 +1120,99 @@ public final class Native {
 
   public static native void closeRocksDBGroupAggregator(long handle);
 
+  /** Creates a changelog normalizer backed directly by a Rust-owned RocksDB instance. */
+  public static native long createRocksDBChangelogNormalizer(
+      int[] keyColumns,
+      int[] keyTimestampPrecisions,
+      boolean generateUpdateBefore,
+      boolean miniBatch,
+      long stateTtlMillis,
+      long nowMillis,
+      long memoryBudgetBytes,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  /** Materializes direct RocksDB normalizer state as backend-independent key-group partitions. */
+  public static native byte[][] snapshotRocksDBChangelogNormalizerPartitions(long handle);
+
+  public static native void pushRocksDBChangelogNormalizer(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long nowMillis,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  public static native void flushRocksDBChangelogNormalizer(
+      long handle, long outArrayAddress, long outSchemaAddress);
+
+  public static native String[] checkpointRocksDBChangelogNormalizer(
+      long handle, String snapshotDirectory);
+
+  public static native long rocksdbChangelogNormalizerStateBytes(long handle);
+
+  public static native long rocksdbChangelogNormalizerStagingBytes(long handle);
+
+  public static native long rocksdbChangelogNormalizerStagedKeys(long handle);
+
+  public static native void closeRocksDBChangelogNormalizer(long handle);
+
+  /** Creates an eager deduplicator backed directly by a Rust-owned RocksDB instance. */
+  public static native long createRocksDBKeepLastDeduplicator(
+      int[] partitionColumns,
+      int[] keyTimestampPrecisions,
+      int rowtimeColumn,
+      boolean generateUpdateBefore,
+      boolean generateInsert,
+      boolean rowtimeOrdered,
+      boolean keepFirst,
+      boolean miniBatch,
+      boolean compactChanges,
+      long stateTtlMillis,
+      long nowMillis,
+      long memoryBudgetBytes,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  /** Materializes direct RocksDB dedup state as backend-independent key-group partitions. */
+  public static native byte[][] snapshotRocksDBKeepLastDeduplicatorPartitions(long handle);
+
+  public static native void pushRocksDBKeepLastDeduplicator(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long nowMillis,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  public static native void flushRocksDBKeepLastDeduplicator(
+      long handle, long outArrayAddress, long outSchemaAddress);
+
+  public static native String[] checkpointRocksDBKeepLastDeduplicator(
+      long handle, String snapshotDirectory);
+
+  public static native long rocksdbKeepLastDeduplicatorStateBytes(long handle);
+
+  public static native long rocksdbKeepLastDeduplicatorStagingBytes(long handle);
+
+  public static native long rocksdbKeepLastDeduplicatorStagedKeys(long handle);
+
+  public static native void closeRocksDBKeepLastDeduplicator(long handle);
+
   /** Generic RocksDB persistence for operators still using their key-group snapshot codec. */
   public static native long createRocksDBSnapshotStore(
       String databaseDirectory,

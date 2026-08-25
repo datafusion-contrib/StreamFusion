@@ -26,6 +26,21 @@ pub(crate) trait RocksStateCodec {
         0
     }
     fn stamp_write_ms(&self, _value: &mut Self::Value, _ts_ms: i64) {}
+
+    /// A codec whose value already carries a self-contained byte payload (an arrow-row the
+    /// operator encoded) can persist its own layout directly, skipping the store's columnar
+    /// conversion in both directions. A raw codec implements all three methods; `encode`/`decode`
+    /// are then unused. `raw_write` appends into the store's value buffer (after any TTL prefix),
+    /// so a composite layout costs no intermediate copy.
+    fn raw(&self) -> bool {
+        false
+    }
+    fn raw_write(&self, _value: &Self::Value, _out: &mut Vec<u8>) {
+        unreachable!("not a raw codec")
+    }
+    fn from_raw(&self, _bytes: &[u8]) -> Self::Value {
+        unreachable!("not a raw codec")
+    }
 }
 
 pub(crate) fn rocks_row_supported(types: &[DataType]) -> bool {
@@ -50,58 +65,6 @@ pub(crate) fn rocks_row_supported(types: &[DataType]) -> bool {
 
 pub(crate) fn rocks_group_supported(kinds: &[i64], state_types: &[DataType]) -> bool {
     group_kinds_persistable(kinds) && rocks_row_supported(state_types)
-}
-
-pub(crate) struct RocksRowPayloadCodec {
-    row_types: Vec<DataType>,
-    converter: RowConverter,
-}
-
-impl RocksRowPayloadCodec {
-    pub(crate) fn new(row_types: Vec<DataType>) -> Self {
-        let converter = RowConverter::new(
-            row_types
-                .iter()
-                .map(|t| SortField::new(t.clone()))
-                .collect(),
-        )
-        .expect("row payload codec converter");
-        Self {
-            row_types,
-            converter,
-        }
-    }
-    pub(crate) fn supported(&self) -> bool {
-        rocks_row_supported(&self.row_types)
-    }
-    pub(crate) fn fields(&self) -> Vec<(String, DataType)> {
-        self.row_types
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (format!("c{i}"), t.clone()))
-            .collect()
-    }
-    pub(crate) fn encode_payload(&self, payload: &[u8]) -> Vec<ScalarValue> {
-        let parser = self.converter.parser();
-        self.converter
-            .convert_rows([parser.parse(payload)])
-            .expect("decode row payload")
-            .iter()
-            .map(|c| ScalarValue::try_from_array(c, 0).expect("row scalar"))
-            .collect()
-    }
-    pub(crate) fn decode_payload(&self, scalars: &[ScalarValue]) -> (Arc<[u8]>, Vec<ArrayRef>) {
-        let columns: Vec<_> = scalars
-            .iter()
-            .zip(&self.row_types)
-            .map(|(s, t)| scalars_to_array(vec![s.clone()], t))
-            .collect();
-        let rows = self
-            .converter
-            .convert_columns(&columns)
-            .expect("encode row payload");
-        (Arc::from(rows.row(0).data()), columns)
-    }
 }
 
 #[derive(Clone)]
@@ -374,7 +337,17 @@ impl<C: RocksStateCodec> RocksStore<C> {
             return Ok(());
         }
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
-        if !keys.is_empty() {
+        let ttl = self.config.ttl_ms > 0;
+        if !keys.is_empty() && self.codec.raw() {
+            for (key, state) in keys.iter().zip(&states) {
+                let mut value = Vec::with_capacity(self.value_prefix_len());
+                if ttl {
+                    value.extend_from_slice(&self.codec.write_ms(state).to_le_bytes());
+                }
+                self.codec.raw_write(state, &mut value);
+                writes.put(self.db_key(&key.0), value)?;
+            }
+        } else if !keys.is_empty() {
             let mut columns: Vec<Vec<ScalarValue>> =
                 vec![Vec::with_capacity(states.len()); self.value_fields.len()];
             for state in &states {
@@ -391,7 +364,6 @@ impl<C: RocksStateCodec> RocksStore<C> {
                 .converter
                 .convert_columns(&arrays)
                 .map_err(|e| DataFusionError::External(Box::new(e)))?;
-            let ttl = self.config.ttl_ms > 0;
             for ((key, state), row) in keys.iter().zip(&states).zip(rows.iter()) {
                 let row = row.data();
                 let mut value = Vec::with_capacity(self.value_prefix_len() + row.len());
@@ -412,6 +384,28 @@ impl<C: RocksStateCodec> RocksStore<C> {
     /// TTL has lapsed (Flink's `NeverReturnExpired`).
     fn decode_values(&self, values: &[&[u8]]) -> Result<Vec<Option<C::Value>>, DataFusionError> {
         let prefix = self.value_prefix_len();
+        let live_ts = |value: &&[u8]| {
+            let ts = (prefix > 0)
+                .then(|| i64::from_le_bytes(value[..8].try_into().expect("ttl prefix")));
+            match ts {
+                Some(t) if self.now_ms >= t.saturating_add(self.config.ttl_ms) => Err(()),
+                other => Ok(other),
+            }
+        };
+        if self.codec.raw() {
+            return Ok(values
+                .iter()
+                .map(|value| {
+                    live_ts(value).ok().map(|ts| {
+                        let mut state = self.codec.from_raw(&value[prefix..]);
+                        if let Some(ts) = ts {
+                            self.codec.stamp_write_ms(&mut state, ts);
+                        }
+                        state
+                    })
+                })
+                .collect());
+        }
         let parser = self.converter.parser();
         let rows: Vec<_> = values.iter().map(|v| parser.parse(&v[prefix..])).collect();
         let columns = self
@@ -421,15 +415,10 @@ impl<C: RocksStateCodec> RocksStore<C> {
         let mut out = Vec::with_capacity(values.len());
         let mut scalars = vec![ScalarValue::Null; columns.len()];
         for (row, value) in values.iter().enumerate() {
-            let ts = if prefix > 0 {
-                Some(i64::from_le_bytes(value[..8].try_into().expect("ttl prefix")))
-            } else {
-                None
-            };
-            if ts.is_some_and(|t| self.now_ms >= t.saturating_add(self.config.ttl_ms)) {
+            let Ok(ts) = live_ts(value) else {
                 out.push(None);
                 continue;
-            }
+            };
             for (slot, column) in scalars.iter_mut().zip(&columns) {
                 *slot = ScalarValue::try_from_array(column, row)?;
             }
