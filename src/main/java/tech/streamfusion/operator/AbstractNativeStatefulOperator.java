@@ -213,6 +213,7 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
                 rocksdb.tableDirectory(),
                 maxParallelism(),
                 rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(),
                 rocksdb.sourceDirectories(),
                 rocksdb.sourceSnapshotTokens(),
                 rocksdb.keyGroupStart(),
@@ -337,19 +338,7 @@ public abstract class AbstractNativeStatefulOperator<OUT> extends AbstractStream
    */
   protected final void publishStateBytes() {
     if (memoryBudget != null) {
-      long stateBytes = stateBytesHandle();
-      memoryBudget.publishStateBytes(stateBytes);
-      long configuredFlush = NativeConfig.rocksDBWriteBufferBytes();
-      long sharedPressureFlush =
-          Math.max(1L << 20, TaskOffHeapMemory.capacityBytes() / 16);
-      long flushThreshold = Math.min(configuredFlush, sharedPressureFlush);
-      if (rocksdbState
-          && rocksdbSupport != null
-          && stateBytes > 0
-          && (stateBytes >= flushThreshold
-              || TaskOffHeapMemory.availableBytes() < flushThreshold)) {
-        rocksdbSupport.flushForMemoryPressure();
-      }
+      memoryBudget.publishStateBytes(stateBytesHandle());
     }
   }
 

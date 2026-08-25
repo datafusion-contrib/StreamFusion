@@ -1297,6 +1297,18 @@ class NexmarkMatrixBenchmark {
             config.put("table.exec.mini-batch.size", "50000");
           }
         }
+        // SF_STATE_BACKENDS_OPTIONS adds job options (semicolon-separated key=value pairs) to
+        // BOTH engines symmetrically — e.g. a tiny write buffer to exercise memtable flushing at
+        // small event counts. The queries and data stay fixed; only backend tuning may vary.
+        String extraOptions = System.getenv("SF_STATE_BACKENDS_OPTIONS");
+        if (extraOptions != null && !extraOptions.isBlank()) {
+          for (String pair : extraOptions.split(";")) {
+            int split = pair.indexOf('=');
+            for (Map<String, String> config : List.of(rocksdb, nativeRocksDB)) {
+              config.put(pair.substring(0, split).trim(), pair.substring(split + 1).trim());
+            }
+          }
+        }
         if (!preflighted) {
           assertStateBackendsEngage(brokers, rocksdb, nativeRocksDB, rocksDir);
           preflighted = true;

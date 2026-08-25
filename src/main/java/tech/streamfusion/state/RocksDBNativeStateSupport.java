@@ -85,6 +85,11 @@ public final class RocksDBNativeStateSupport {
     return backend.optionsJson();
   }
 
+  /** The slot's shared native RocksDB memory pool, or 0 when the job runs without one. */
+  public long sharedResourcesHandle() {
+    return backend.sharedResourcesHandle();
+  }
+
   public String[] sourceDirectories() {
     return sourceDirectories;
   }
@@ -120,14 +125,5 @@ public final class RocksDBNativeStateSupport {
   /** Installs the operator's checkpoint hook (see {@link RocksDBNativeState}); call once. */
   public void register(RocksDBNativeState nativeState) {
     backend.registerNativeState(nativeState, stateTtlMillis);
-  }
-
-  /** Flushes the write buffer locally; checkpoint publication remains barrier-driven. */
-  public void flushForMemoryPressure() {
-    try {
-      backend.flushForMemoryPressure();
-    } catch (Exception failure) {
-      throw new IllegalStateException("RocksDB state memory-pressure flush failed", failure);
-    }
   }
 }

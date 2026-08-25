@@ -7,8 +7,10 @@ being divided into fixed per-slot or per-operator slices.
 
 The setting must be greater than zero. It is already part of Flink's TaskManager process-memory
 model, so increasing it also increases the total process memory Flink derives unless total process
-memory is configured explicitly. StreamFusion does **not** reserve Flink managed memory and the
-managed-memory size, fraction, and consumer-weight settings do not cap StreamFusion.
+memory is configured explicitly. StreamFusion does **not** reserve Flink managed memory; the one
+consumer *sized* from the managed-memory share is the RocksDB backend's native store pool, which
+follows Flink's `state.backend.rocksdb.memory.*` semantics (see the
+[RocksDB backend](backends/rocksdb.md)) but allocates natively outside the managed pool.
 
 ## What is charged
 
@@ -35,12 +37,11 @@ A reservation that would cross the TaskManager-wide cap is denied with
 `taskmanager.memory.task.off-heap.size`.
 
 The in-memory state backend cannot spill, so a denied growth request fails the task and Flink's
-configured restart policy applies. The RocksDB backend can reduce its resident footprint: once an
-operator reaches `-Dstreamfusion.state.rocksdb.write-buffer-mb` (64 MiB by default), or shared
-headroom becomes low, StreamFusion flushes it to local RocksDB files independently of checkpoint
-timing. The next Flink checkpoint pins and uploads those files through the normal
-incremental state-handle path. A single allocation that cannot fit can still fail before a flush
-can help.
+configured restart policy applies. Under the RocksDB backend, native state is written through to
+RocksDB at every batch, so an operator's resident working set stays bounded by its batch size;
+RocksDB's own memtables and block cache hold the rest, governed by Flink's
+`state.backend.rocksdb.memory.*` options rather than the task off-heap pool (see the
+[RocksDB backend](backends/rocksdb.md) memory section).
 
 ## Sizing
 
@@ -65,5 +66,5 @@ StreamFusion registers these gauges with each native operator or connector metri
 - `nativeStateBytes` — the operator's sampled native state footprint.
 
 See [Configuration](configuration.md#memory) for the related settings and
-[RocksDB backend](backends/rocksdb.md) for checkpoint and restore semantics after local buffer
-flushes.
+[RocksDB backend](backends/rocksdb.md) for the RocksDB write path, memory pool, and checkpoint
+semantics.

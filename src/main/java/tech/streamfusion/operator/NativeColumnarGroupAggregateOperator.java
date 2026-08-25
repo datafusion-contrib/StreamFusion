@@ -92,8 +92,9 @@ public class NativeColumnarGroupAggregateOperator
         generateUpdateBefore, miniBatch, stateTtlMillis,
         getProcessingTimeService().getCurrentProcessingTime(), memoryBudgetBytes(),
         rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
-        rocksdb.sourceDirectories(), rocksdb.sourceSnapshotTokens(),
-        rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(), rocksdb.aligned());
+        rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
+        rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
+        rocksdb.aligned());
   }
 
   @Override

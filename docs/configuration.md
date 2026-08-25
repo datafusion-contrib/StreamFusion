@@ -33,15 +33,15 @@ serialized operator configuration rather than process-global state before a stab
 ## Memory
 
 See [Memory management](memory-management.md) for the authoritative pool, covered consumers,
-exhaustion behavior, RocksDB flushing, sizing, and metrics.
+exhaustion behavior, sizing, and metrics.
 
 - **`taskmanager.memory.task.off-heap.size`** — the single TaskManager-wide authority for
   StreamFusion memory. It must be greater than zero. Native operator state and DataFusion working
   memory and Arrow FFI buffers reserve from this shared cap. A denied reservation fails with a
   `NativeMemoryLimitException` naming this normal Flink setting.
-- **`-Dstreamfusion.state.rocksdb.write-buffer-mb`** (default 64) — force a local RocksDB checkpoint
-  when native state reaches this pressure threshold. StreamFusion may lower the effective threshold
-  under TaskManager-wide memory pressure.
+- **`state.backend.rocksdb.memory.*`** — Flink's normal RocksDB memory-control options size the
+  native stores' shared block cache and write-buffer manager under the RocksDB backend; there are
+  no StreamFusion-specific state memory settings. See [RocksDB backend](backends/rocksdb.md).
 
 ### Off-heap sizing
 
@@ -50,9 +50,9 @@ one TaskManager, not per operator:
 
 - Arrow FFI buffers are process-wide and bounded by in-flight batches.
 - Native operator state and DataFusion working reservations vary with the query. The in-memory state
-  backend fails when it cannot reserve more. The RocksDB backend flushes to local files at its
-  threshold or when shared headroom is low; an allocation that still cannot
-  reserve from the shared cap fails normally.
+  backend fails when it cannot reserve more. Under the RocksDB backend, state lives in RocksDB's own
+  memtables and block cache (bounded by `state.backend.rocksdb.memory.*`), and only the per-batch
+  working set reserves from this cap.
 
 Kafka client buffers are owned by Flink's Java source/sink and remain under the normal Flink/JVM
 memory model; StreamFusion charges only its Arrow batches and native codec/operator work here.

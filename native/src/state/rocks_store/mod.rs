@@ -1,19 +1,18 @@
-//! Rust-owned RocksDB state. Operators retain their existing typed codecs and write-buffer
-//! semantics; committed entries are keyed by Flink key group plus BinaryRow bytes and are read
-//! directly through RocksDB without a Java/JNI data-plane round trip.
+//! Rust-owned RocksDB state, on Flink's write path: dirty entries are written through to the
+//! RocksDB memtable at every bundle boundary, so RocksDB's own write buffers are the only write
+//! buffer and its background threads own all flushing and compaction. Committed entries are keyed
+//! by Flink key group plus BinaryRow bytes and are read directly through RocksDB without a
+//! Java/JNI data-plane round trip. Values travel as compact arrow-row bytes, encoded and decoded
+//! for a whole bundle's working set in one columnar conversion; a state-TTL value carries its
+//! last-write timestamp as a fixed 8-byte prefix so the compaction filter never parses the row.
 
 use crate::*;
-use arrow::array::{Array, Int64Array};
-use arrow::ipc::reader::StreamReader;
-use arrow::ipc::writer::StreamWriter;
+use arrow::row::{RowConverter, SortField};
 use rocksdb::checkpoint::Checkpoint;
 use rocksdb::{Cache, CompactionDecision, IteratorMode, Options, WriteBatch, WriteOptions, DB};
-use std::collections::HashSet;
-use std::io::Cursor;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
-const TS_COLUMN: &str = "ts";
 const SNAPSHOT_TIMER_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-timer";
 
 pub(crate) trait RocksStateCodec {
@@ -55,15 +54,15 @@ pub(crate) fn rocks_group_supported(kinds: &[i64], state_types: &[DataType]) -> 
 
 pub(crate) struct RocksRowPayloadCodec {
     row_types: Vec<DataType>,
-    converter: arrow::row::RowConverter,
+    converter: RowConverter,
 }
 
 impl RocksRowPayloadCodec {
     pub(crate) fn new(row_types: Vec<DataType>) -> Self {
-        let converter = arrow::row::RowConverter::new(
+        let converter = RowConverter::new(
             row_types
                 .iter()
-                .map(|t| arrow::row::SortField::new(t.clone()))
+                .map(|t| SortField::new(t.clone()))
                 .collect(),
         )
         .expect("row payload codec converter");
@@ -111,6 +110,16 @@ pub(crate) struct RocksStoreConfig {
     pub max_parallelism: usize,
     pub options_json: String,
     pub ttl_ms: i64,
+    /// Borrowed pointer to the slot's [`RocksSharedResources`], 0 when the job runs without a
+    /// shared pool. Java's shared-resource lease outlives every store opened under it.
+    pub shared_resources: i64,
+}
+
+impl RocksStoreConfig {
+    fn shared(&self) -> Option<&'static crate::state::rocks_config::RocksSharedResources> {
+        (self.shared_resources != 0)
+            .then(|| unsafe { &*(self.shared_resources as *const _) })
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -195,6 +204,7 @@ pub(crate) struct RocksStore<C: RocksStateCodec> {
     config: RocksStoreConfig,
     codec: C,
     value_fields: Vec<Field>,
+    converter: RowConverter,
     now_ms: i64,
     clock: Arc<AtomicI64>,
     generation: i64,
@@ -256,7 +266,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
         let resolved =
             crate::state::rocks_config::FlinkRocksOptions::from_json(&config.options_json)
                 .map_err(DataFusionError::Plan)?;
-        let (mut options, cache) = resolved.build().map_err(DataFusionError::Plan)?;
+        let (mut options, cache) = resolved.build(config.shared()).map_err(DataFusionError::Plan)?;
         let write_batch_size = resolved.write_batch_size;
         let clock = Arc::new(AtomicI64::new(0));
         if config.ttl_ms > 0 {
@@ -282,20 +292,25 @@ impl<C: RocksStateCodec> RocksStore<C> {
             });
         }
         let db = DB::open(&options, &config.table_dir).map_err(re)?;
-        let mut value_fields: Vec<_> = codec
+        let value_fields: Vec<_> = codec
             .value_fields()
             .into_iter()
             .map(|(n, t)| Field::new(n, t, true))
             .collect();
-        if config.ttl_ms > 0 {
-            value_fields.push(Field::new(TS_COLUMN, DataType::Int64, true));
-        }
+        let converter = RowConverter::new(
+            value_fields
+                .iter()
+                .map(|f| SortField::new(f.data_type().clone()))
+                .collect(),
+        )
+        .map_err(|e| DataFusionError::External(Box::new(e)))?;
         Ok(Self {
             db,
             _cache: cache,
             config,
             codec,
             value_fields,
+            converter,
             now_ms: 0,
             clock,
             generation: 0,
@@ -328,74 +343,114 @@ impl<C: RocksStateCodec> RocksStore<C> {
         out
     }
 
-    fn encode_value(&self, state: &C::Value) -> Result<Vec<u8>, DataFusionError> {
-        let mut scalars = self.codec.encode(state);
+    /// The fixed prefix a persisted value carries ahead of its arrow-row bytes: the last-write
+    /// timestamp when TTL is on, nothing when it is off (matching the raw snapshots' convention
+    /// that a TTL-off format carries no timestamp).
+    fn value_prefix_len(&self) -> usize {
         if self.config.ttl_ms > 0 {
-            scalars.push(ScalarValue::Int64(Some(self.codec.write_ms(state))));
+            8
+        } else {
+            0
         }
-        let arrays: Vec<_> = scalars
-            .into_iter()
-            .zip(&self.value_fields)
-            .map(|(s, f)| scalars_to_array(vec![s], f.data_type()))
-            .collect();
-        let batch = RecordBatch::try_new(Arc::new(Schema::new(self.value_fields.clone())), arrays)
+    }
+
+    /// Writes every dirty working-set entry through to RocksDB in one columnar conversion —
+    /// Flink's write path, amortized to one memtable write per touched key per bundle.
+    fn write_dirty(&mut self) -> Result<(), DataFusionError> {
+        let mut keys = Vec::new();
+        let mut states = Vec::new();
+        let mut deletes = Vec::new();
+        for (key, slot) in &self.working {
+            match slot {
+                Slot::Present { state, dirty: true } => {
+                    keys.push(key);
+                    states.push(state);
+                }
+                Slot::Absent { dirty: true } => deletes.push(key),
+                _ => {}
+            }
+        }
+        if keys.is_empty() && deletes.is_empty() {
+            return Ok(());
+        }
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        if !keys.is_empty() {
+            let mut columns: Vec<Vec<ScalarValue>> =
+                vec![Vec::with_capacity(states.len()); self.value_fields.len()];
+            for state in &states {
+                for (column, scalar) in columns.iter_mut().zip(self.codec.encode(state)) {
+                    column.push(scalar);
+                }
+            }
+            let arrays: Vec<_> = columns
+                .into_iter()
+                .zip(&self.value_fields)
+                .map(|(scalars, field)| scalars_to_array(scalars, field.data_type()))
+                .collect();
+            let rows = self
+                .converter
+                .convert_columns(&arrays)
+                .map_err(|e| DataFusionError::External(Box::new(e)))?;
+            let ttl = self.config.ttl_ms > 0;
+            for ((key, state), row) in keys.iter().zip(&states).zip(rows.iter()) {
+                let row = row.data();
+                let mut value = Vec::with_capacity(self.value_prefix_len() + row.len());
+                if ttl {
+                    value.extend_from_slice(&self.codec.write_ms(state).to_le_bytes());
+                }
+                value.extend_from_slice(row);
+                writes.put(self.db_key(&key.0), value)?;
+            }
+        }
+        for key in deletes {
+            writes.delete(self.db_key(&key.0))?;
+        }
+        writes.finish()
+    }
+
+    /// Decodes a set of persisted values in one columnar conversion; `None` marks an entry whose
+    /// TTL has lapsed (Flink's `NeverReturnExpired`).
+    fn decode_values(&self, values: &[&[u8]]) -> Result<Vec<Option<C::Value>>, DataFusionError> {
+        let prefix = self.value_prefix_len();
+        let parser = self.converter.parser();
+        let rows: Vec<_> = values.iter().map(|v| parser.parse(&v[prefix..])).collect();
+        let columns = self
+            .converter
+            .convert_rows(rows)
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
-        let mut bytes = Vec::new();
-        {
-            let mut writer = StreamWriter::try_new(&mut bytes, &batch.schema()).map_err(ae)?;
-            writer.write(&batch).map_err(ae)?;
-            writer.finish().map_err(ae)?;
+        let mut out = Vec::with_capacity(values.len());
+        let mut scalars = vec![ScalarValue::Null; columns.len()];
+        for (row, value) in values.iter().enumerate() {
+            let ts = if prefix > 0 {
+                Some(i64::from_le_bytes(value[..8].try_into().expect("ttl prefix")))
+            } else {
+                None
+            };
+            if ts.is_some_and(|t| self.now_ms >= t.saturating_add(self.config.ttl_ms)) {
+                out.push(None);
+                continue;
+            }
+            for (slot, column) in scalars.iter_mut().zip(&columns) {
+                *slot = ScalarValue::try_from_array(column, row)?;
+            }
+            let mut state = self.codec.decode(&scalars);
+            if let Some(ts) = ts {
+                self.codec.stamp_write_ms(&mut state, ts);
+            }
+            out.push(Some(state));
         }
-        Ok(bytes)
+        Ok(out)
     }
 
     fn decode_value(&self, bytes: &[u8]) -> Result<Option<C::Value>, DataFusionError> {
-        let mut reader = StreamReader::try_new(Cursor::new(bytes), None).map_err(ae)?;
-        let batch = reader
-            .next()
-            .transpose()
-            .map_err(ae)?
-            .ok_or_else(|| DataFusionError::Internal("empty RocksDB state value".into()))?;
-        let mut scalars: Vec<_> = batch
-            .columns()
-            .iter()
-            .map(|c| ScalarValue::try_from_array(c, 0))
-            .collect::<Result<_, _>>()?;
-        let ts = if self.config.ttl_ms > 0 {
-            match scalars.pop() {
-                Some(ScalarValue::Int64(v)) => v,
-                _ => None,
-            }
-        } else {
-            None
-        };
-        if ts.is_some_and(|t| self.now_ms >= t.saturating_add(self.config.ttl_ms)) {
-            return Ok(None);
-        }
-        let mut state = self.codec.decode(&scalars);
-        if let Some(ts) = ts {
-            self.codec.stamp_write_ms(&mut state, ts);
-        }
-        Ok(Some(state))
+        Ok(self.decode_values(&[bytes])?.pop().flatten())
     }
 
     pub(crate) fn checkpoint(
         &mut self,
         snapshot_dir: &str,
     ) -> Result<RocksCheckpointManifest, DataFusionError> {
-        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
-        for (key, slot) in &self.working {
-            let db_key = self.db_key(&key.0);
-            match slot {
-                Slot::Present { state, dirty: true } => {
-                    writes.put(db_key, self.encode_value(state)?)?
-                }
-                Slot::Absent { dirty: true } => writes.delete(db_key)?,
-                _ => {}
-            }
-        }
-        writes.finish()?;
-        self.db.flush().map_err(re)?;
+        self.write_dirty()?;
         self.working.clear();
         if snapshot_dir.is_empty() {
             return Ok(RocksCheckpointManifest::absent());
@@ -404,7 +459,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
         checkpoint_files(&self.db, snapshot_dir, self.generation)
     }
 
-    /// Flushes the read-through cache and decodes the complete logical table for a canonical
+    /// Commits the working set and decodes the complete logical table for a canonical
     /// savepoint. This intentionally walks RocksDB only for the portable full-snapshot path.
     pub(crate) fn canonical_keys_by_group(
         &mut self,
@@ -481,33 +536,49 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
         precisions: &[i32],
     ) -> Result<(), DataFusionError> {
         let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, precisions);
-        let mut missing = HashSet::new();
+        let mut missing = Vec::new();
+        let mut seen = ahash::HashSet::default();
         for row in 0..batch.num_rows() {
             let key = ByteKey::from(encoder.encode(row));
-            if !self.working.contains_key(&key) {
-                missing.insert(key);
+            if !self.working.contains_key(&key) && seen.insert(key.clone()) {
+                missing.push(key);
             }
         }
-        for key in missing {
-            let value = self.db.get(self.db_key(&key.0)).map_err(re)?;
-            let slot = match value {
-                Some(v) => match self.decode_value(&v)? {
-                    Some(state) => Slot::Present {
-                        state,
-                        dirty: false,
-                    },
-                    None => Slot::Absent { dirty: true },
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let db_keys: Vec<_> = missing.iter().map(|key| self.db_key(&key.0)).collect();
+        let fetched = self.db.multi_get(&db_keys);
+        let mut hit_keys = Vec::new();
+        let mut hit_values = Vec::new();
+        for (key, value) in missing.iter().zip(&fetched) {
+            match value {
+                Ok(Some(bytes)) => {
+                    hit_keys.push(key.clone());
+                    hit_values.push(bytes.as_slice());
+                }
+                Ok(None) => {
+                    self.working
+                        .insert(key.clone(), Slot::Absent { dirty: false });
+                }
+                Err(error) => return Err(re(error.clone())),
+            }
+        }
+        for (key, state) in hit_keys.into_iter().zip(self.decode_values(&hit_values)?) {
+            let slot = match state {
+                Some(state) => Slot::Present {
+                    state,
+                    dirty: false,
                 },
-                None => Slot::Absent { dirty: false },
+                None => Slot::Absent { dirty: true },
             };
             self.working.insert(key, slot);
         }
         Ok(())
     }
     fn end_bundle(&mut self) -> Result<(), DataFusionError> {
-        self.working.retain(|_, slot| match slot {
-            Slot::Present { dirty, .. } | Slot::Absent { dirty } => *dirty,
-        });
+        self.write_dirty()?;
+        self.working.clear();
         Ok(())
     }
     fn footprint_delta(&mut self) -> isize {
@@ -521,9 +592,6 @@ fn re(error: rocksdb::Error) -> DataFusionError {
 fn ioe(error: std::io::Error) -> DataFusionError {
     DataFusionError::External(Box::new(error))
 }
-fn ae(error: arrow::error::ArrowError) -> DataFusionError {
-    DataFusionError::External(Box::new(error))
-}
 
 /// Flink deliberately disables the WAL for keyed state: completed checkpoints, rather than the
 /// local database log, are the durability boundary. Keep the Rust-owned instance on that same
@@ -534,15 +602,13 @@ fn flink_write_options() -> WriteOptions {
     options
 }
 
+/// A TTL value's last-write timestamp, read from the fixed 8-byte prefix ahead of the row bytes.
+/// Only installed as a compaction-filter probe when the store's TTL is on, so a TTL-off value
+/// (which carries no prefix) is never inspected.
 fn persisted_write_ms(bytes: &[u8]) -> Option<i64> {
-    let mut reader = StreamReader::try_new(Cursor::new(bytes), None).ok()?;
-    let batch = reader.next()?.ok()?;
-    let column = batch.column_by_name(TS_COLUMN)?;
-    column
-        .as_any()
-        .downcast_ref::<Int64Array>()
-        .filter(|values| values.is_valid(0))
-        .map(|values| values.value(0))
+    bytes
+        .get(..8)
+        .map(|prefix| i64::from_le_bytes(prefix.try_into().expect("ttl prefix")))
 }
 
 /// Compatibility store for native operators whose existing state engine still snapshots by key
@@ -568,7 +634,7 @@ impl RocksSnapshotStore {
             let resolved =
                 crate::state::rocks_config::FlinkRocksOptions::from_json(&config.options_json)
                     .map_err(DataFusionError::Plan)?;
-            let (options, cache) = resolved.build().map_err(DataFusionError::Plan)?;
+            let (options, cache) = resolved.build(config.shared()).map_err(DataFusionError::Plan)?;
             let write_batch_size = resolved.write_batch_size;
             let db = DB::open(&options, &config.table_dir).map_err(re)?;
             let timer_deadline = db
@@ -589,7 +655,7 @@ impl RocksSnapshotStore {
         let resolved =
             crate::state::rocks_config::FlinkRocksOptions::from_json(&config.options_json)
                 .map_err(DataFusionError::Plan)?;
-        let (options, cache) = resolved.build().map_err(DataFusionError::Plan)?;
+        let (options, cache) = resolved.build(config.shared()).map_err(DataFusionError::Plan)?;
         let write_batch_size = resolved.write_batch_size;
         let db = DB::open(&options, &config.table_dir).map_err(re)?;
         let mut timer_deadline = i64::MIN;
@@ -663,7 +729,6 @@ impl RocksSnapshotStore {
             writes.put(SNAPSHOT_TIMER_KEY, timer_deadline.to_be_bytes())?;
         }
         writes.finish()?;
-        self.db.flush().map_err(re)?;
         self.timer_deadline = timer_deadline;
         if snapshot_dir.is_empty() {
             return Ok(RocksCheckpointManifest::absent());
@@ -688,6 +753,9 @@ fn copy_checkpoint_db(source: &str, destination: &str) -> Result<(), DataFusionE
     Ok(())
 }
 
+/// RocksDB's native checkpoint flushes live memtables itself before hard-linking the immutable
+/// files (there is no WAL to carry them), so a barrier needs no explicit flush call — matching
+/// Flink's incremental snapshot strategy.
 fn checkpoint_files(
     db: &DB,
     snapshot_dir: &str,

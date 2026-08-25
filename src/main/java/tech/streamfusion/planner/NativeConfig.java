@@ -167,13 +167,4 @@ public final class NativeConfig {
     return booleanValue("streamfusion.logFallbackReasons", false);
   }
 
-  /**
-   * Maximum resident native state target before forcing a local RocksDB checkpoint, in mebibytes
-   * ({@code streamfusion.state.rocksdb.write-buffer-mb}, default 64).
-   */
-  public static long rocksDBWriteBufferBytes() {
-    return Math.max(1L, Long.parseLong(value("streamfusion.state.rocksdb.write-buffer-mb", "64")))
-        << 20;
-  }
-
 }

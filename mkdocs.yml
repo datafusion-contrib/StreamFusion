@@ -148,3 +148,4 @@ nav:
       - Kafka timestamps as fixed JSON syntax: optimizations/kafka-timestamp-fixed-json.md
       - Post-exchange batch coalescing: optimizations/post-exchange-coalescing.md
       - Shared native sources: optimizations/shared-native-sources.md
+      - RocksDB write-through: optimizations/rocksdb-write-through.md

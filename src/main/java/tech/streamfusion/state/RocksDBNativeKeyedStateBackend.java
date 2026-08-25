@@ -6,6 +6,7 @@ import org.apache.flink.api.common.state.StateDescriptor;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.core.fs.CloseableRegistry;
+import org.apache.flink.runtime.memory.OpaqueMemoryResource;
 import org.apache.flink.runtime.checkpoint.CheckpointOptions;
 import org.apache.flink.runtime.state.AbstractKeyedStateBackend;
 import org.apache.flink.runtime.state.CheckpointStreamFactory;
@@ -55,22 +56,26 @@ public final class RocksDBNativeKeyedStateBackend<K>
   private final File tableDirectory;
   private final List<RocksDBRestoredSource> restoredSources;
   private final String optionsJson;
+  private final OpaqueMemoryResource<NativeRocksSharedResources> sharedResources;
   private final CloseableRegistry cancelStreamRegistry = new CloseableRegistry();
 
   private boolean delegateStateUsed;
+  private boolean sharedResourcesReleased;
 
   RocksDBNativeKeyedStateBackend(
       CheckpointableKeyedStateBackend<K> delegate,
       RocksDBNativeSnapshotStrategy snapshotStrategy,
       File workingDirectory,
       List<RocksDBRestoredSource> restoredSources,
-      String optionsJson) {
+      String optionsJson,
+      OpaqueMemoryResource<NativeRocksSharedResources> sharedResources) {
     this.delegate = delegate;
     this.snapshotStrategy = snapshotStrategy;
     this.workingDirectory = workingDirectory;
     this.tableDirectory = new File(workingDirectory, "db");
     this.restoredSources = restoredSources;
     this.optionsJson = optionsJson;
+    this.sharedResources = sharedResources;
   }
 
   // ---- The native operator's surface -----------------------------------------------------------
@@ -89,6 +94,11 @@ public final class RocksDBNativeKeyedStateBackend<K>
     return optionsJson;
   }
 
+  /** The slot's shared native memory pool, or 0 when the job runs without one. */
+  public long sharedResourcesHandle() {
+    return sharedResources == null ? 0 : sharedResources.getResourceHandle().nativeHandle();
+  }
+
   /**
    * Registers the operator's native checkpoint hook; snapshots then go through RocksDB commits.
    * The operator's idle-state retention (0 = off) rides along so table maintenance can
@@ -104,14 +114,6 @@ public final class RocksDBNativeKeyedStateBackend<K>
               + "the two channels are exclusive");
     }
     snapshotStrategy.registerNativeState(nativeState, stateTtlMillis);
-  }
-
-  /** Flushes native state to local immutable files without publishing a Flink checkpoint. */
-  public void flushForMemoryPressure() throws Exception {
-    if (!snapshotStrategy.hasNativeState()) {
-      throw new IllegalStateException("no native RocksDB state is registered");
-    }
-    snapshotStrategy.flushForMemoryPressure();
   }
 
   /** Reads and removes StreamFusion's reserved canonical state without claiming JVM state use. */
@@ -193,6 +195,7 @@ public final class RocksDBNativeKeyedStateBackend<K>
     snapshotStrategy.close();
     delegate.dispose();
     deleteWorkingDirectory();
+    releaseSharedResources();
   }
 
   @Override
@@ -201,6 +204,19 @@ public final class RocksDBNativeKeyedStateBackend<K>
     cancelStreamRegistry.close();
     delegate.close();
     deleteWorkingDirectory();
+    releaseSharedResources();
+  }
+
+  /** Returns this backend's lease; the native pool itself dies with the slot's last lease. */
+  private void releaseSharedResources() {
+    if (sharedResources != null && !sharedResourcesReleased) {
+      sharedResourcesReleased = true;
+      try {
+        sharedResources.close();
+      } catch (Exception failure) {
+        throw new IllegalStateException("failed to release native RocksDB memory lease", failure);
+      }
+    }
   }
 
   private void deleteWorkingDirectory() {

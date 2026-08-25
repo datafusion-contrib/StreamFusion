@@ -3,7 +3,7 @@
 
 use crate::*;
 use jni::objects::{JByteArray, JClass, JIntArray, JObject, JObjectArray, JString};
-use jni::sys::{jboolean, jint, jlong, jobjectArray};
+use jni::sys::{jboolean, jdouble, jint, jlong, jobjectArray};
 use jni::JNIEnv;
 
 type RocksGroupAggregator = GroupAggregator<RocksGroupStore>;
@@ -59,6 +59,32 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbStateAvailable<'loca
 }
 
 #[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSharedResources<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    total_bytes: jlong,
+    write_buffer_ratio: jdouble,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        Box::into_raw(Box::new(crate::state::rocks_config::RocksSharedResources::new(
+            total_bytes,
+            write_buffer_ratio,
+        ))) as jlong
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_releaseRocksDBSharedResources<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<crate::state::rocks_config::RocksSharedResources>(handle));
+    })
+}
+
+#[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_rocksdbGroupAggregatorSupported<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -96,6 +122,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBGroupAggregato
     table_directory: JString<'local>,
     max_parallelism: jint,
     options_json: JString<'local>,
+    shared_resources: jlong,
     source_directories: JObjectArray<'local>,
     source_snapshot_tokens: JObjectArray<'local>,
     key_group_start: jint,
@@ -119,6 +146,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBGroupAggregato
             max_parallelism: max_parallelism as usize,
             options_json: read_string(&mut env, &options_json),
             ttl_ms: state_ttl_millis.max(0),
+            shared_resources,
         };
         let source_dirs: Vec<_> = read_strings(&mut env, &source_directories)
             .into_iter()
@@ -302,6 +330,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSnapshotStore<
     table_directory: JString<'local>,
     max_parallelism: jint,
     options_json: JString<'local>,
+    shared_resources: jlong,
     source_directories: JObjectArray<'local>,
     source_snapshot_tokens: JObjectArray<'local>,
     key_group_start: jint,
@@ -314,6 +343,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSnapshotStore<
             max_parallelism: max_parallelism as usize,
             options_json: read_string(&mut env, &options_json),
             ttl_ms: 0,
+            shared_resources,
         };
         let source_dirs: Vec<_> = read_strings(&mut env, &source_directories)
             .into_iter()

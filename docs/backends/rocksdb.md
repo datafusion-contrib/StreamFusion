@@ -16,6 +16,23 @@ including local directories, incremental checkpoints, compaction style, level an
 sizes, write-buffer settings, compression, log level, and TTL compaction query cadence. Incremental
 checkpoints reuse immutable SST handles; full checkpoints upload the complete live file set.
 
+## Write path and memory
+
+The write path is Flink's: state writes go through to the RocksDB memtable (WAL off), amortized to
+one write per touched key per batch, and RocksDB's background threads own all memtable flushing and
+compaction. There is no StreamFusion-side write buffer above RocksDB and no forced flush — the
+checkpoint barrier commits the current batch's residue and takes RocksDB's native hard-link
+checkpoint, which flushes live memtables itself. Typed-store values are compact arrow-row bytes; a
+state-TTL value carries its last-write timestamp as a fixed 8-byte prefix, so the TTL compaction
+filter reads one integer per entry.
+
+Native store memory follows Flink's RocksDB memory control (`state.backend.rocksdb.memory.*`): one
+shared block cache and write-buffer manager per slot — sized by `memory.fixed-per-slot` if set,
+else the slot's managed-memory share (`memory.managed`, on by default), else `memory.fixed-per-tm`
+at TaskManager scope — with memtables charged against the cache under Flink's
+`memory.write-buffer-ratio` split. With none of these configured, each store falls back to its own
+per-instance write buffers and block cache from the translated options.
+
 Aligned same-range recovery opens a local copy of the checkpoint database. Rescaling reads only the
 key groups assigned to the recovering subtask and writes a new local database. This preserves
 Flink's max-parallelism and key-group redistribution semantics.
@@ -35,10 +52,11 @@ incremental checkpointing is enabled.
 There are also deliberate implementation differences:
 
 - only the group-aggregate state codec currently performs per-key RocksDB reads and writes; the
-  remaining native operators replace one key-group snapshot payload in RocksDB at a flush or
-  checkpoint;
-- StreamFusion accounts native state against Flink task off-heap memory rather than Flink's managed
-  RocksDB memory pool;
+  remaining native operators replace one key-group snapshot payload in RocksDB at each checkpoint;
+- the native stores' shared cache and write-buffer manager live in StreamFusion's own RocksDB
+  library, sized by the same Flink options and formulas but leased separately from the delegate
+  backend's pool (C++ objects cannot cross the two RocksDB libraries), and the binding exposes no
+  high-priority cache pool (`memory.high-priority-pool-ratio` is not applied);
 - RocksDB options factories are unsupported; and
 - Flink's local-recovery snapshot and restore-tuning options are not implemented for native state.
 

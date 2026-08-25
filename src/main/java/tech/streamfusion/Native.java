@@ -1056,6 +1056,15 @@ public final class Native {
   /** Whether this native build carries direct Rust RocksDB state. */
   public static native boolean rocksdbStateAvailable();
 
+  /**
+   * Creates the slot's shared RocksDB block cache and write-buffer manager (Flink's memory-control
+   * split of the given budget); every native store opened with the returned handle is bounded by
+   * it. Released through Flink's shared-resource lease, after every store under it closed.
+   */
+  public static native long createRocksDBSharedResources(long totalBytes, double writeBufferRatio);
+
+  public static native void releaseRocksDBSharedResources(long handle);
+
   /** Whether this aggregate state shape can be encoded in the Rust RocksDB store. */
   public static native boolean rocksdbGroupAggregatorSupported(
       int[] aggregateKinds, int[] valueTypes);
@@ -1079,6 +1088,7 @@ public final class Native {
       String databaseDirectory,
       int maxParallelism,
       String optionsJson,
+      long sharedResources,
       String[] sourceDirectories,
       String[] sourceSnapshotTokens,
       int keyGroupStart,
@@ -1115,6 +1125,7 @@ public final class Native {
       String databaseDirectory,
       int maxParallelism,
       String optionsJson,
+      long sharedResources,
       String[] sourceDirectories,
       String[] sourceSnapshotTokens,
       int keyGroupStart,

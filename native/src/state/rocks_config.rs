@@ -1,5 +1,38 @@
-use rocksdb::{BlockBasedOptions, Cache, DBCompactionStyle, DBCompressionType, LogLevel, Options};
+use rocksdb::{
+    BlockBasedOptions, Cache, DBCompactionStyle, DBCompressionType, LogLevel, Options,
+    WriteBufferManager,
+};
 use serde::{Deserialize, Serialize};
+
+/// One block cache and write-buffer manager shared by every native store in a Flink slot,
+/// mirroring Flink's RocksDB memory control: memtables are charged against the cache, so the
+/// slot's total RocksDB memory stays under one bound instead of scaling with operator count.
+/// Java owns the lifetime through Flink's shared-resource lease machinery.
+pub(crate) struct RocksSharedResources {
+    pub cache: Cache,
+    pub write_buffer_manager: WriteBufferManager,
+}
+
+impl RocksSharedResources {
+    /// Flink's exact split (`RocksDBMemoryControllerUtils`): with write-buffer ratio `w` of total
+    /// memory `t`, the cache holds `(3 - w) * t / 3` and the write-buffer manager `2 * t * w / 3`,
+    /// so memtable overhead charged to the cache cannot evict the whole read working set.
+    pub(crate) fn new(total_bytes: i64, write_buffer_ratio: f64) -> Self {
+        let total = total_bytes.max(0) as f64;
+        let cache_capacity = ((3.0 - write_buffer_ratio) * total / 3.0) as usize;
+        let write_buffer_capacity = (2.0 * total * write_buffer_ratio / 3.0) as usize;
+        let cache = Cache::new_lru_cache(cache_capacity);
+        let write_buffer_manager = WriteBufferManager::new_write_buffer_manager_with_cache(
+            write_buffer_capacity,
+            false,
+            cache.clone(),
+        );
+        Self {
+            cache,
+            write_buffer_manager,
+        }
+    }
+}
 
 /// The resolved subset of Flink's public RocksDB configuration. Java resolves Flink defaults and
 /// predefined profiles before serializing this value, so Rust applies one unambiguous option set.
@@ -38,7 +71,10 @@ impl FlinkRocksOptions {
             .map_err(|error| format!("invalid Flink RocksDB options: {error}"))
     }
 
-    pub(crate) fn build(&self) -> Result<(Options, Option<Cache>), String> {
+    pub(crate) fn build(
+        &self,
+        shared: Option<&RocksSharedResources>,
+    ) -> Result<(Options, Option<Cache>), String> {
         let mut options = Options::default();
         options.create_if_missing(true);
         options.set_max_background_jobs(self.max_background_threads);
@@ -77,7 +113,15 @@ impl FlinkRocksOptions {
         let mut table = BlockBasedOptions::default();
         table.set_block_size(self.block_size);
         table.set_metadata_block_size(self.metadata_block_size);
-        let cache = if self.block_cache_size == 0 {
+        let cache = if let Some(shared) = shared {
+            options.set_write_buffer_manager(&shared.write_buffer_manager);
+            // Flink's arena sanity bound: memtable arenas allocate in blocks charged against the
+            // shared cache, and the default (write buffer / 8) keeps a single arena block from
+            // overshooting the manager's mutable limit and stalling writes.
+            options.set_arena_block_size(self.write_buffer_size / 8);
+            table.set_block_cache(&shared.cache);
+            None
+        } else if self.block_cache_size == 0 {
             None
         } else {
             let cache = Cache::new_lru_cache(self.block_cache_size);

@@ -66,7 +66,8 @@ final class RocksDBNativeSnapshotStrategy
 
   /** A backend discriminator followed by the metadata format version. */
   private static final int META_MAGIC = 0x5346524b; // SFRK
-  private static final int META_VERSION = 1;
+  /** Version 2: typed-store values are arrow-row bytes with a TTL-timestamp prefix, not IPC. */
+  private static final int META_VERSION = 2;
 
   private static final int COPY_BUFFER_BYTES = 64 * 1024;
 
@@ -115,14 +116,6 @@ final class RocksDBNativeSnapshotStrategy
       throw new IllegalStateException("no native RocksDB state is registered");
     }
     return nativeState;
-  }
-
-  /**
-   * Commits the native write buffer to the local table without creating Flink checkpoint state.
-   * A later barrier uses RocksDB's native checkpoint API to pin and upload the immutable files.
-   */
-  void flushForMemoryPressure() throws Exception {
-    nativeState.checkpoint("");
   }
 
   /** Seeds the reuse base from a restored checkpoint (single-handle, claim-style restore). */
@@ -398,10 +391,13 @@ final class RocksDBNativeSnapshotStrategy
     }
   }
 
+  /**
+   * Whether the handle carries this backend's magic. Claims every version — an outdated snapshot
+   * must fail restore with the version error, not fall through to the delegate backend.
+   */
   static boolean isNativeMeta(StreamStateHandle metaHandle) {
-    try {
-      readMetaDocument(metaHandle);
-      return true;
+    try (InputStream in = metaHandle.openInputStream()) {
+      return new DataInputStream(in).readInt() == META_MAGIC;
     } catch (IOException ignored) {
       return false;
     }

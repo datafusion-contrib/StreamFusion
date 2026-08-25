@@ -1,8 +1,12 @@
 package tech.streamfusion.state;
 
 import org.apache.flink.configuration.CheckpointingOptions;
+import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.core.execution.SavepointFormatType;
+import org.apache.flink.runtime.memory.OpaqueMemoryResource;
+import org.apache.flink.runtime.memory.MemoryManager;
+import org.apache.flink.runtime.memory.SharedResources;
 import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
 import org.apache.flink.runtime.state.IncrementalKeyedStateHandle.HandleAndLocalPath;
 import org.apache.flink.runtime.state.IncrementalRemoteKeyedStateHandle;
@@ -35,12 +39,74 @@ public final class RocksDBNativeStateBackend implements StateBackend {
   private final FlinkRocksDBOptions nativeOptions;
   private final boolean incrementalCheckpoints;
   private final String localDirectories;
+  private final boolean useManagedMemory;
+  private final long fixedPerSlotBytes;
+  private final double writeBufferRatio;
 
   RocksDBNativeStateBackend(ReadableConfig config, ClassLoader classLoader) {
     this.delegate = new EmbeddedRocksDBStateBackend().configure(config, classLoader);
     this.nativeOptions = FlinkRocksDBOptions.from(config);
     this.incrementalCheckpoints = config.get(CheckpointingOptions.INCREMENTAL_CHECKPOINTS);
     this.localDirectories = config.get(RocksDBOptions.LOCAL_DIRECTORIES);
+    this.useManagedMemory = config.get(RocksDBOptions.USE_MANAGED_MEMORY);
+    this.fixedPerSlotBytes =
+        config.getOptional(RocksDBOptions.FIX_PER_SLOT_MEMORY_SIZE)
+            .map(MemorySize::getBytes)
+            .orElse(0L);
+    this.writeBufferRatio = config.get(RocksDBOptions.WRITE_BUFFER_RATIO);
+  }
+
+  /**
+   * Leases the slot's native RocksDB memory pool, resolved with Flink's own precedence:
+   * fixed-per-slot wins, else the slot's managed-memory share (the default), else fixed-per-TM at
+   * TM scope; nothing configured (or a zero budget) leaves stores on their per-instance options.
+   * The C++ pool lives in StreamFusion's RocksDB library, so it is leased under its own resource
+   * id alongside the delegate backend's pool rather than shared with it.
+   */
+  private OpaqueMemoryResource<NativeRocksSharedResources> leaseSharedResources(
+      KeyedStateBackendParameters<?> parameters) throws Exception {
+    MemoryManager memoryManager = parameters.getEnv().getMemoryManager();
+    double ratio = writeBufferRatio;
+    if (fixedPerSlotBytes > 0) {
+      return memoryManager.getExternalSharedMemoryResource(
+          "streamfusion-rocksdb-slot-memory",
+          size -> new NativeRocksSharedResources(size, ratio),
+          fixedPerSlotBytes);
+    }
+    if (useManagedMemory && parameters.getManagedMemoryFraction() > 0) {
+      long budget = memoryManager.computeMemorySize(parameters.getManagedMemoryFraction());
+      if (budget > 0) {
+        return memoryManager.getExternalSharedMemoryResource(
+            "streamfusion-rocksdb-slot-memory",
+            size -> new NativeRocksSharedResources(size, ratio),
+            budget);
+      }
+    }
+    long fixedPerTm =
+        parameters
+            .getEnv()
+            .getTaskManagerInfo()
+            .getConfiguration()
+            .getOptional(RocksDBOptions.FIX_PER_TM_MEMORY_SIZE)
+            .map(MemorySize::getBytes)
+            .orElse(0L);
+    if (fixedPerTm > 0) {
+      SharedResources sharedResources = parameters.getEnv().getSharedResources();
+      Object leaseHolder = new Object();
+      SharedResources.ResourceAndSize<NativeRocksSharedResources> resource =
+          sharedResources.getOrAllocateSharedResource(
+              "streamfusion-rocksdb-tm-memory",
+              leaseHolder,
+              size -> new NativeRocksSharedResources(size, ratio),
+              fixedPerTm);
+      return new OpaqueMemoryResource<>(
+          resource.resourceHandle(),
+          resource.size(),
+          () ->
+              sharedResources.release(
+                  "streamfusion-rocksdb-tm-memory", leaseHolder, unused -> {}));
+    }
+    return null;
   }
 
   @Override
@@ -83,7 +149,12 @@ public final class RocksDBNativeStateBackend implements StateBackend {
       strategy.seedRestored(restored.getCheckpointId(), restored.getSharedState());
     }
     return new RocksDBNativeKeyedStateBackend<>(
-        inner, strategy, workingDirectory, sources, nativeOptions.json());
+        inner,
+        strategy,
+        workingDirectory,
+        sources,
+        nativeOptions.json(),
+        leaseSharedResources(parameters));
   }
 
   private File workingDirectory(KeyedStateBackendParameters<?> parameters) {
