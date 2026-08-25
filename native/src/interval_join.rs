@@ -34,9 +34,11 @@ pub(crate) struct IntervalJoiner {
     left_next_id: i64,
     right_next_id: i64,
     pub(crate) memory: OperatorMemory,
-    /// Persistent-state mode: both sides' rows live in the persistent store, probed per push by the
-    /// incoming batch's equi keys; the in-memory buffers stay empty and the matched-id sets are
-    /// drained into the store's matched column after every join.
+    /// Persistent-state mode: both sides' rows live in the persistent store, probed per push by
+    /// the incoming batch's equi-key groups; the in-memory buffers and matched-id sets stay empty
+    /// — a row's id is its store sequence and its match flag rides in the stored value.
+    #[cfg(feature = "rocksdb-state")]
+    store: Option<crate::state::RocksIntervalBuffer>,
     key_timestamp_precisions: Vec<i32>,
 }
 
@@ -75,6 +77,8 @@ impl IntervalJoiner {
             left_next_id: 0,
             right_next_id: 0,
             memory: OperatorMemory::unaccounted(),
+            #[cfg(feature = "rocksdb-state")]
+            store: None,
             key_timestamp_precisions: Vec::new(),
         }
     }
@@ -87,18 +91,26 @@ impl IntervalJoiner {
         self
     }
 
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_store(mut self, store: crate::state::RocksIntervalBuffer) -> Self {
+        self.store = Some(store);
+        self
+    }
+
     /// Attaches the task off-heap budget for a backend that starts with nothing resident.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_read_through_budget(
+        mut self,
+        budget_bytes: i64,
+    ) -> Result<Self, DataFusionError> {
+        self.memory.attach("interval-join", budget_bytes, 0)?;
+        Ok(self)
+    }
 
-    /// The key-field timestamp descriptors, defaulting to non-timestamp per equi-key column.
-
-    /// Persistent-state arrival path, shared by both sides: probe the opposite store by the
-    /// batch's equi keys (overlay: committed rows minus region-superseded, plus the region's
-    /// live rows, in arrival order), run the memory path's own join against the incoming batch,
-    /// stage the incoming rows with their matched flags, and re-stage the opposite rows a first
-    /// match flipped. Emission happens here, as in memory mode — the join is push-driven.
-
-    /// Persistent-state eviction path: each side's range read returns the rows the watermark
-    /// retired (staging their deletions); an outer side null-pads its never-matched ones.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn store_mut(&mut self) -> &mut crate::state::RocksIntervalBuffer {
+        self.store.as_mut().expect("interval-join rocksdb store")
+    }
 
     /// Bounds the buffered rows (plus the outer-join match flags) by the operator's task off-heap
     /// budget (negative = unaccounted), accounting any restored state immediately.
@@ -132,6 +144,21 @@ impl IntervalJoiner {
             .collect()
     }
 
+    /// A proctime join stamps every row's time column with the operator's clock before joining, so
+    /// the interval is measured in processing time rather than read from a rowtime column.
+    fn stamp(&self, batch: RecordBatch, is_left: bool, proctime_now: Option<i64>) -> RecordBatch {
+        let Some(now) = proctime_now else {
+            return batch;
+        };
+        let (schema, time) = if is_left {
+            (&self.left_data_schema, self.left_time)
+        } else {
+            (&self.right_data_schema, self.right_time)
+        };
+        let target = schema.field(time).data_type().clone();
+        stamp_time_column(&batch, time, now, &target)
+    }
+
     /// The schema of one side's buffered batches: data, plus a trailing `__rowid__` for an outer join.
     fn buf_schema(&self, is_left: bool) -> SchemaRef {
         let data = if is_left {
@@ -155,17 +182,11 @@ impl IntervalJoiner {
         batch: RecordBatch,
         proctime_now: Option<i64>,
     ) -> Result<RecordBatch, DataFusionError> {
-        let batch = match proctime_now {
-            Some(now) => {
-                let target = self
-                    .left_data_schema
-                    .field(self.left_time)
-                    .data_type()
-                    .clone();
-                stamp_time_column(&batch, self.left_time, now, &target)
-            }
-            None => batch,
-        };
+        let batch = self.stamp(batch, true, proctime_now);
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.push_store(batch, true);
+        }
         let interval = Some((self.left_time, self.right_time, self.lower, self.upper));
         let filter = residual_filter(
             &self.left_data_schema,
@@ -198,7 +219,11 @@ impl IntervalJoiner {
         } else {
             let right = concat_batches(&self.buf_schema(false), self.right_buffered.iter())
                 .expect("concat right interval buffer");
-            self.join_tagged(tagged.clone(), right, filter)?
+            let (pairs, left_matched, right_matched) =
+                self.join_tagged(tagged.clone(), right, filter)?;
+            self.left_matched.extend(left_matched);
+            self.right_matched.extend(right_matched);
+            pairs
         };
         self.left_buffered.push(tagged);
         self.account()?;
@@ -212,17 +237,11 @@ impl IntervalJoiner {
         batch: RecordBatch,
         proctime_now: Option<i64>,
     ) -> Result<RecordBatch, DataFusionError> {
-        let batch = match proctime_now {
-            Some(now) => {
-                let target = self
-                    .right_data_schema
-                    .field(self.right_time)
-                    .data_type()
-                    .clone();
-                stamp_time_column(&batch, self.right_time, now, &target)
-            }
-            None => batch,
-        };
+        let batch = self.stamp(batch, false, proctime_now);
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.push_store(batch, false);
+        }
         let interval = Some((self.left_time, self.right_time, self.lower, self.upper));
         let filter = residual_filter(
             &self.left_data_schema,
@@ -254,7 +273,11 @@ impl IntervalJoiner {
         } else {
             let left = concat_batches(&self.buf_schema(true), self.left_buffered.iter())
                 .expect("concat left interval buffer");
-            self.join_tagged(left, tagged.clone(), filter)?
+            let (pairs, left_matched, right_matched) =
+                self.join_tagged(left, tagged.clone(), filter)?;
+            self.left_matched.extend(left_matched);
+            self.right_matched.extend(right_matched);
+            pairs
         };
         self.right_buffered.push(tagged);
         self.account()?;
@@ -262,14 +285,14 @@ impl IntervalJoiner {
     }
 
     /// Runs the (always INNER) hash join of two row-id-tagged operands `[left data.., left __rowid__]`
-    /// and `[right data.., right __rowid__]`, records the matched row-ids on both sides, and returns
-    /// the matched pairs projected back to `[left data.., right data..]` (the row-ids dropped).
+    /// and `[right data.., right __rowid__]`, returning the matched pairs projected back to
+    /// `[left data.., right data..]` (the row-ids dropped) plus each side's matched row-id set.
     fn join_tagged(
         &mut self,
         left_tagged: RecordBatch,
         right_tagged: RecordBatch,
         filter: Option<JoinFilter>,
-    ) -> Result<RecordBatch, DataFusionError> {
+    ) -> Result<(RecordBatch, HashSet<i64>, HashSet<i64>), DataFusionError> {
         let left_arity = self.left_data_schema.fields().len();
         let joined = hash_join_inner(
             left_tagged,
@@ -279,7 +302,7 @@ impl IntervalJoiner {
             self.memory.task_ctx(),
         )?;
         if joined.num_rows() == 0 {
-            return Ok(empty_batch());
+            return Ok((empty_batch(), HashSet::default(), HashSet::default()));
         }
         // Layout after the join (renamed c0..): [left data.., left rid, right data.., right rid].
         let total = joined.num_columns();
@@ -293,9 +316,11 @@ impl IntervalJoiner {
             .as_any()
             .downcast_ref::<Int64Array>()
             .expect("right rid");
+        let mut left_matched = HashSet::default();
+        let mut right_matched = HashSet::default();
         for i in 0..joined.num_rows() {
-            self.left_matched.insert(left_rid.value(i));
-            self.right_matched.insert(right_rid.value(i));
+            left_matched.insert(left_rid.value(i));
+            right_matched.insert(right_rid.value(i));
         }
         // Project out the two row-id columns, leaving [left data.., right data..].
         let keep: Vec<usize> = (0..left_arity).chain(left_arity + 1..total - 1).collect();
@@ -311,8 +336,233 @@ impl IntervalJoiner {
             })
             .collect();
         let columns: Vec<ArrayRef> = keep.iter().map(|&i| joined.column(i).clone()).collect();
-        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("project interval pairs"))
+        let pairs = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("project interval pairs");
+        Ok((pairs, left_matched, right_matched))
+    }
+
+    /// Persistent-state arrival path, shared by both sides: scan the opposite table's rows in the
+    /// key groups this batch's equi keys hash to (the only rows it can match), run the memory
+    /// path's own join against them, flip the flag of opposite rows that gained their first match,
+    /// and append the incoming rows — sequenced as their row ids, flagged by this probe's matches.
+    /// Emission happens here, as in memory mode — the join is push-driven.
+    #[cfg(feature = "rocksdb-state")]
+    fn push_store(
+        &mut self,
+        batch: RecordBatch,
+        left: bool,
+    ) -> Result<RecordBatch, DataFusionError> {
+        let interval = Some((self.left_time, self.right_time, self.lower, self.upper));
+        let filter = residual_filter(
+            &self.left_data_schema,
+            &self.right_data_schema,
+            interval,
+            self.predicate.as_mut(),
+        );
+        let keys = if left {
+            self.left_keys.clone()
+        } else {
+            self.right_keys.clone()
+        };
+        let time = if left {
+            self.left_time
+        } else {
+            self.right_time
+        };
+        let opposite_schema = if left {
+            self.right_data_schema.clone()
+        } else {
+            self.left_data_schema.clone()
+        };
+        let rowtimes = rt_to_millis(batch.column(time));
+        let mut encoder = BinaryRowBatchEncoder::new(&batch, &keys, &self.key_timestamp_precisions);
+        let store = self.store.as_ref().expect("interval-join rocksdb store");
+        let mut touched: Vec<i32> = (0..batch.num_rows())
+            .map(|row| store.key_group(encoder.hash(row)))
+            .collect();
+        touched.sort_unstable();
+        touched.dedup();
+        let scanned = store.scan_groups(!left, &touched)?;
+
+        if self.join_type == JoinKind::Inner {
+            let result = if scanned.is_empty() {
+                empty_batch()
+            } else {
+                let rows: Vec<_> = scanned.iter().collect();
+                let opposite = store.decode(!left, &opposite_schema, &rows)?;
+                let (probe_left, probe_right) = if left {
+                    (batch.clone(), opposite)
+                } else {
+                    (opposite, batch.clone())
+                };
+                hash_join_inner(
+                    probe_left,
+                    probe_right,
+                    &self.key_pairs(),
+                    filter,
+                    self.memory.task_ctx(),
+                )?
+            };
+            let precisions = self.key_timestamp_precisions.clone();
+            self.store_mut().push(
+                left,
+                &batch,
+                &keys,
+                &precisions,
+                &rowtimes,
+                &vec![false; batch.num_rows()],
+            )?;
+            return Ok(result);
+        }
+        // Outer: the incoming rows' ids are the sequences the append below will assign.
+        let base = store.next_row_id(left);
+        let mut next = base;
+        let tagged = append_rowids(&batch, &mut next);
+        let (result, own_matched, opposite_matched) = if scanned.is_empty() {
+            (empty_batch(), HashSet::default(), HashSet::default())
+        } else {
+            let rows: Vec<_> = scanned.iter().collect();
+            let opposite_data = store.decode(!left, &opposite_schema, &rows)?;
+            let opposite_tagged = tag_with_seqs(&opposite_data, &rows);
+            let (pairs, left_matched, right_matched) = if left {
+                self.join_tagged(tagged, opposite_tagged, filter)?
+            } else {
+                self.join_tagged(opposite_tagged, tagged, filter)?
+            };
+            if left {
+                (pairs, left_matched, right_matched)
+            } else {
+                (pairs, right_matched, left_matched)
+            }
+        };
+        let flips: Vec<_> = scanned
+            .iter()
+            .filter(|row| !row.matched && opposite_matched.contains(&(row.seq as i64)))
+            .collect();
+        let matched: Vec<bool> = (0..batch.num_rows() as i64)
+            .map(|row| own_matched.contains(&(base + row)))
+            .collect();
+        let precisions = self.key_timestamp_precisions.clone();
+        let store = self.store_mut();
+        store.mark_matched(!left, &flips)?;
+        store.push(left, &batch, &keys, &precisions, &rowtimes, &matched)?;
+        Ok(result)
+    }
+
+    /// Persistent-state eviction path: each side's scan removes the rows the watermark retired
+    /// (splitting on the value's rowtime against the interval bounds, exactly the memory path's
+    /// predicates); an outer side null-pads its never-matched retired rows in sequence order.
+    #[cfg(feature = "rocksdb-state")]
+    fn advance_store(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        let (lower, upper) = (self.lower, self.upper);
+        let store = self.store.as_mut().expect("interval-join rocksdb store");
+        let left_expired = store.take_expired(true, |rt| rt - lower > watermark)?;
+        let right_expired = store.take_expired(false, |rt| rt + upper > watermark)?;
+        if self.join_type == JoinKind::Inner {
+            return Ok(empty_batch());
+        }
+        let left_pads = self.null_pad_expired(true, &left_expired)?;
+        let right_pads = self.null_pad_expired(false, &right_expired)?;
+        Ok(match (left_pads, right_pads) {
+            (None, None) => empty_batch(),
+            (Some(b), None) | (None, Some(b)) => b,
+            (Some(l), Some(r)) => {
+                concat_batches(&l.schema(), [l, r].iter()).expect("concat interval null-pads")
+            }
+        })
+    }
+
+    /// The null-padded output for one side's retired rows that never matched, or `None` when the
+    /// side is not outer or every retired row matched. A row is retired only once no future
+    /// other-side row could match it, so its stored flag is final.
+    #[cfg(feature = "rocksdb-state")]
+    fn null_pad_expired(
+        &self,
+        is_left: bool,
+        expired: &[crate::state::BufferedIntervalRow],
+    ) -> Result<Option<RecordBatch>, DataFusionError> {
+        let this_outer = if is_left {
+            self.join_type.left_is_outer()
+        } else {
+            self.join_type.right_is_outer()
+        };
+        if !this_outer {
+            return Ok(None);
+        }
+        let unmatched: Vec<_> = expired.iter().filter(|row| !row.matched).collect();
+        if unmatched.is_empty() {
+            return Ok(None);
+        }
+        let schema = if is_left {
+            &self.left_data_schema
+        } else {
+            &self.right_data_schema
+        };
+        let rows = self
+            .store
+            .as_ref()
+            .expect("interval-join rocksdb store")
+            .decode(is_left, schema, &unmatched)?;
+        Ok(Some(self.null_pad(&rows, is_left)))
+    }
+
+    /// The complete buffered state in the memory snapshot's per-key-group four-section encoding
+    /// (both sides' rows plus the matched-id sets derived from the stored flags), for
+    /// backend-independent canonical savepoints.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn canonical_partitions(&self) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let store = self.store.as_ref().expect("interval-join rocksdb store");
+        let left = store.rows_by_group(true)?;
+        let right = store.rows_by_group(false)?;
+        let mut groups: Vec<i32> = left.keys().chain(right.keys()).copied().collect();
+        groups.sort_unstable();
+        groups.dedup();
+        let mut snapshots = BTreeMap::new();
+        for key_group in groups {
+            let (left_rows, left_matched) = self.canonical_side(true, left.get(&key_group))?;
+            let (right_rows, right_matched) = self.canonical_side(false, right.get(&key_group))?;
+            snapshots.insert(
+                key_group,
+                Self::snapshot_parts([left_rows, right_rows, left_matched, right_matched]),
+            );
+        }
+        Ok(snapshots)
+    }
+
+    /// One side's canonical sections for one key group: the buffered rows under the memory path's
+    /// buffer schema (sequence-tagged for an outer join) and the matched-id set from the flags.
+    #[cfg(feature = "rocksdb-state")]
+    fn canonical_side(
+        &self,
+        is_left: bool,
+        rows: Option<&Vec<crate::state::BufferedIntervalRow>>,
+    ) -> Result<(Vec<u8>, Vec<u8>), DataFusionError> {
+        let Some(rows) = rows else {
+            return Ok((Vec::new(), Vec::new()));
+        };
+        let refs: Vec<_> = rows.iter().collect();
+        let schema = if is_left {
+            &self.left_data_schema
+        } else {
+            &self.right_data_schema
+        };
+        let data = self
+            .store
+            .as_ref()
+            .expect("interval-join rocksdb store")
+            .decode(is_left, schema, &refs)?;
+        if self.join_type == JoinKind::Inner {
+            return Ok((write_ipc(&data), Vec::new()));
+        }
+        let matched: HashSet<i64> = refs
+            .iter()
+            .filter(|row| row.matched)
+            .map(|row| row.seq as i64)
+            .collect();
+        Ok((
+            write_ipc(&tag_with_seqs(&data, &refs)),
+            serialize_id_set(&matched),
+        ))
     }
 
     /// Drops the rows the watermark has made dead and, for an outer join, returns the null-padded
@@ -322,6 +572,10 @@ impl IntervalJoiner {
     /// `right.rt + upper <= watermark`. Because an outer row is evicted only once no future other-side
     /// row could match it, all its potential matches have been seen, so its match flag is final.
     pub(crate) fn advance(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.advance_store(watermark);
+        }
         let (lower, upper) = (self.lower, self.upper);
         if self.join_type == JoinKind::Inner {
             Self::evict_inner(
@@ -775,6 +1029,17 @@ impl IntervalJoiner {
             ]),
         )
     }
+}
+
+/// Rebuilds one side's `[data.., __rowid__]` tagged batch from store-decoded rows, each row's id
+/// its store sequence.
+#[cfg(feature = "rocksdb-state")]
+fn tag_with_seqs(data: &RecordBatch, rows: &[&crate::state::BufferedIntervalRow]) -> RecordBatch {
+    let ids = Int64Array::from(rows.iter().map(|row| row.seq as i64).collect::<Vec<_>>());
+    let mut columns = data.columns().to_vec();
+    columns.push(Arc::new(ids));
+    RecordBatch::try_new(with_rowid_schema(&data.schema()), columns)
+        .expect("tag interval rows with sequences")
 }
 
 /// The interval-bounds conjunct `joined[left_rt] BETWEEN joined[right_rt] + lower AND + upper`, built

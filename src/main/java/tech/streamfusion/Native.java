@@ -1328,6 +1328,77 @@ public final class Native {
   public static native void closeRocksDBWindowJoiner(long handle);
 
   /**
+   * Whether both interval-join input row shapes are encodable by the direct RocksDB store's row
+   * codec; anything else stays on the snapshot-store compat path.
+   */
+  public static native boolean rocksdbIntervalJoinerSupported(
+      long leftSchemaAddress, long rightSchemaAddress);
+
+  /**
+   * Creates an interval joiner whose buffered rows (with their outer-join match flags) live
+   * directly in a Rust-owned RocksDB instance. The declared input schemas build the row codecs the
+   * persisted rows are decoded with, so restored bytes parse before any batch arrives.
+   */
+  public static native long createRocksDBIntervalJoiner(
+      int[] leftKeys,
+      int[] rightKeys,
+      int[] keyTimestampPrecisions,
+      int leftTime,
+      int rightTime,
+      long lowerMillis,
+      long upperMillis,
+      int joinType,
+      long leftSchemaAddress,
+      long rightSchemaAddress,
+      int[] predKinds,
+      int[] predPayload,
+      int[] predChildCounts,
+      long[] predLongs,
+      double[] predDoubles,
+      String[] predStrings,
+      long memoryBudgetBytes,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  public static native void pushLeftRocksDBIntervalJoiner(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress,
+      boolean proctime,
+      long proctimeNowMillis);
+
+  public static native void pushRightRocksDBIntervalJoiner(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress,
+      boolean proctime,
+      long proctimeNowMillis);
+
+  public static native void advanceRocksDBIntervalJoiner(
+      long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
+
+  public static native String[] checkpointRocksDBIntervalJoiner(
+      long handle, String snapshotDirectory);
+
+  /** Materializes direct RocksDB interval-join state as backend-independent key-group partitions. */
+  public static native byte[][] snapshotRocksDBIntervalJoinerPartitions(long handle);
+
+  public static native long rocksdbIntervalJoinerStateBytes(long handle);
+
+  public static native void closeRocksDBIntervalJoiner(long handle);
+
+  /**
    * Whether the aligned-window aggregate's key and accumulator-state shapes are encodable by the
    * direct RocksDB store's row codec; anything else stays on the snapshot-store compat path.
    */
@@ -1565,6 +1636,54 @@ public final class Native {
   public static native long rocksdbTopNRankerStagedPartitions(long handle);
 
   public static native void closeRocksDBTopNRanker(long handle);
+
+  /**
+   * Whether the window ranker's input row shape is encodable by the direct RocksDB store's row
+   * codec; anything else stays on the snapshot-store compat path.
+   */
+  public static native boolean rocksdbWindowRankerSupported(long schemaAddress);
+
+  /**
+   * Creates a window ranker (window Top-N / window deduplication) whose open (window, key) buffers
+   * live directly in a Rust-owned RocksDB instance. The declared input schema builds the row codec
+   * the persisted buffers are decoded with, so restored bytes parse before any batch arrives.
+   */
+  public static native long createRocksDBWindowRanker(
+      int windowStartCol,
+      int windowEndCol,
+      int[] partitionColumns,
+      int[] keyTimestampPrecisions,
+      int[] sortIndices,
+      int[] sortAscending,
+      int[] sortNullsFirst,
+      long limit,
+      boolean outputRankNumber,
+      long schemaAddress,
+      long memoryBudgetBytes,
+      String databaseDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned);
+
+  public static native void pushRocksDBWindowRanker(
+      long handle, long inArrayAddress, long inSchemaAddress);
+
+  public static native void flushRocksDBWindowRanker(
+      long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
+
+  public static native String[] checkpointRocksDBWindowRanker(long handle, String snapshotDirectory);
+
+  /** Materializes direct RocksDB window-rank state as backend-independent key-group partitions. */
+  public static native byte[][] snapshotRocksDBWindowRankerPartitions(long handle);
+
+  public static native long rocksdbWindowRankerStateBytes(long handle);
+
+  public static native void closeRocksDBWindowRanker(long handle);
 
   /** Generic RocksDB persistence for operators still using their key-group snapshot codec. */
   public static native long createRocksDBSnapshotStore(

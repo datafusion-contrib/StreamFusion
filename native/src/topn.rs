@@ -3015,6 +3015,19 @@ pub(crate) struct WindowRanker {
     groups: HashMap<(i64, i64, GroupKey), Vec<JoinRow>>,
     schema: Option<SchemaRef>,
     pub(crate) memory: OperatorMemory,
+    /// Persistent-state mode: committed (window, key) buffers live in the persistent store; the
+    /// resident `groups` map holds only the current bundle's touched groups (hydrated on first
+    /// touch, written through at the bundle boundary, then dropped).
+    #[cfg(feature = "rocksdb-state")]
+    store: Option<crate::state::RocksWindowRankStore>,
+    /// The bundle's touched (window, key) groups and their store keys — exactly the resident set,
+    /// so the write-through drains it and the routing needs no second hash pass.
+    #[cfg(feature = "rocksdb-state")]
+    store_groups: HashMap<(i64, i64, GroupKey), Vec<u8>>,
+    #[cfg(feature = "rocksdb-state")]
+    store_key_converter: Option<RowConverter>,
+    #[cfg(feature = "rocksdb-state")]
+    key_timestamp_precisions: Vec<i32>,
 }
 
 impl WindowRanker {
@@ -3038,12 +3051,63 @@ impl WindowRanker {
             groups: HashMap::default(),
             schema: None,
             memory: OperatorMemory::unaccounted(),
+            #[cfg(feature = "rocksdb-state")]
+            store: None,
+            #[cfg(feature = "rocksdb-state")]
+            store_groups: HashMap::default(),
+            #[cfg(feature = "rocksdb-state")]
+            store_key_converter: None,
+            #[cfg(feature = "rocksdb-state")]
+            key_timestamp_precisions: Vec::new(),
         }
+    }
+
+    /// Attaches the persistent (window, key) store, seeding the row schema (a firing may need to
+    /// emit before any batch arrives), the partition-key codec, and the late-data watermark from
+    /// the checkpoint the store restored.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_store(
+        mut self,
+        store: crate::state::RocksWindowRankStore,
+        schema: SchemaRef,
+    ) -> Self {
+        self.current_watermark = store.watermark();
+        let key_types: Vec<DataType> = self
+            .partition_columns
+            .iter()
+            .map(|&column| schema.field(column).data_type().clone())
+            .collect();
+        self.store_key_converter = Some(key_row_converter_from_types(&key_types));
+        self.schema = Some(schema);
+        self.store = Some(store);
+        self
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn with_key_timestamp_precisions(
+        mut self,
+        key_timestamp_precisions: Vec<i32>,
+    ) -> Self {
+        self.key_timestamp_precisions = key_timestamp_precisions;
+        self
+    }
+
+    /// Persists the late-data watermark and takes the store's native checkpoint.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn checkpoint_store(
+        &mut self,
+        snapshot_dir: &str,
+    ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
+        let watermark = self.current_watermark;
+        self.store
+            .as_mut()
+            .expect("window-rank rocksdb store")
+            .checkpoint(watermark, snapshot_dir)
     }
 
     /// Bounds the per-window buffers by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored buffers immediately.
-    fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
+    pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
         let state: usize = self
             .groups
             .iter()
@@ -3059,13 +3123,6 @@ impl WindowRanker {
         Ok(self)
     }
 
-    /// Persistent-state arrival path: new windows this batch touches seed from the committed
-    /// table first (committed rows precede this batch's rows — the ROW_NUMBER tie-break is
-    /// arrival order), then every live row ranks into its window's buffer in the store.
-
-    /// Persistent-state firing path: the store's overlay fire returns every closed window's rows
-    /// (in-memory buffers plus committed windows untouched this interval) in rank order.
-
     pub(crate) fn push(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
@@ -3076,6 +3133,8 @@ impl WindowRanker {
             .iter()
             .map(|&i| batch.column(i))
             .collect();
+        #[cfg(feature = "rocksdb-state")]
+        self.hydrate_store_groups(batch, &ws, &we, &partition_arrays)?;
         let data_arrays: Vec<&ArrayRef> = (0..arity).map(|i| batch.column(i)).collect();
         let track = self.memory.tracking();
         let mut delta = 0isize;
@@ -3120,13 +3179,139 @@ impl WindowRanker {
             }
         }
         self.memory.record(delta);
+        self.memory.account()?;
+        #[cfg(feature = "rocksdb-state")]
+        self.write_through_store()?;
+        Ok(())
+    }
+
+    /// Persistent-state hydration: point-reads every touched (window, key) group not yet resident
+    /// this bundle — one multi-get, one columnar decode — so the ranking and the write-through see
+    /// the committed buffer (committed rows precede this batch's rows, preserving the ROW_NUMBER
+    /// arrival tie-break). Every touched group's key-group routing (the blob path's BinaryRow
+    /// hash) is recorded for the write-through.
+    #[cfg(feature = "rocksdb-state")]
+    fn hydrate_store_groups(
+        &mut self,
+        batch: &RecordBatch,
+        ws: &Int64Array,
+        we: &Int64Array,
+        partition_arrays: &[&ArrayRef],
+    ) -> Result<(), DataFusionError> {
+        if self.store.is_none() {
+            return Ok(());
+        }
+        let key_columns: Vec<ArrayRef> = partition_arrays.iter().map(|&a| a.clone()).collect();
+        let key_rows = if key_columns.is_empty() {
+            None
+        } else {
+            Some(
+                self.store_key_converter
+                    .as_ref()
+                    .expect("window-rank store key converter")
+                    .convert_columns(&key_columns)
+                    .map_err(|e| DataFusionError::External(Box::new(e)))?,
+            )
+        };
+        let mut encoder = BinaryRowBatchEncoder::new(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        );
+        let mut probes: Vec<(i64, i64, GroupKey)> = Vec::new();
+        let mut db_keys: Vec<Vec<u8>> = Vec::new();
+        for row in 0..batch.num_rows() {
+            let window_end = we.value(row);
+            if window_end <= self.current_watermark {
+                continue;
+            }
+            let group = (window_end, ws.value(row), read_key(partition_arrays, row));
+            if self.store_groups.contains_key(&group) {
+                continue;
+            }
+            let store = self.store.as_ref().expect("window-rank rocksdb store");
+            let key_group = store.key_group(encoder.hash(row));
+            let key_bytes = key_rows
+                .as_ref()
+                .map(|rows| rows.row(row).data())
+                .unwrap_or(&[]);
+            let db_key = store.db_key(key_group, group.0, group.1, key_bytes);
+            db_keys.push(db_key.clone());
+            self.store_groups.insert(group.clone(), db_key);
+            probes.push(group);
+        }
+        if probes.is_empty() {
+            return Ok(());
+        }
+        let fetched = self
+            .store
+            .as_ref()
+            .expect("window-rank rocksdb store")
+            .get(&db_keys)?;
+        let track = self.memory.tracking();
+        for ((end, start, key), stored) in probes.into_iter().zip(fetched) {
+            let Some(rows) = stored else {
+                continue;
+            };
+            if track {
+                self.memory.record(
+                    (group_key_bytes(&key)
+                        + rows
+                            .iter()
+                            .map(|r| scalar_row_bytes(r) + GROUP_ENTRY_OVERHEAD)
+                            .sum::<usize>()) as isize,
+                );
+            }
+            self.groups.insert((end, start, key), rows);
+        }
         self.memory.account()
+    }
+
+    /// Persistent-state bundle boundary: writes every touched (window, key) group's ranked buffer
+    /// through in one columnar encode, then drops the resident entries — the map stays empty
+    /// between bundles and RocksDB owns durability and memory.
+    #[cfg(feature = "rocksdb-state")]
+    fn write_through_store(&mut self) -> Result<(), DataFusionError> {
+        if self.store.is_none() {
+            return Ok(());
+        }
+        let track = self.memory.tracking();
+        let store_groups = std::mem::take(&mut self.store_groups);
+        let mut entries: Vec<(Vec<u8>, Vec<JoinRow>)> = Vec::with_capacity(store_groups.len());
+        let mut freed = 0usize;
+        for ((end, start, key), db_key) in store_groups {
+            if track {
+                freed += group_key_bytes(&key);
+            }
+            let buffer = self
+                .groups
+                .remove(&(end, start, key))
+                .expect("touched group resident");
+            if track {
+                freed += buffer
+                    .iter()
+                    .map(|r| scalar_row_bytes(r) + GROUP_ENTRY_OVERHEAD)
+                    .sum::<usize>();
+            }
+            entries.push((db_key, buffer));
+        }
+        self.store
+            .as_mut()
+            .expect("window-rank rocksdb store")
+            .put(entries)?;
+        self.memory.forget(freed);
+        self.memory.account_shrink();
+        Ok(())
     }
 
     /// Emits the top-N rows of every window the watermark has closed, in rank order (with the rank
     /// number appended when the host projects it), and evicts those windows.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         self.current_watermark = watermark;
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.flush_store(watermark);
+        }
         let mut ready: Vec<(i64, i64, GroupKey)> = self
             .groups
             .keys()
@@ -3155,6 +3340,27 @@ impl WindowRanker {
         }
         self.memory.forget(freed);
         self.memory.account_shrink();
+        Ok(self.emit(rows, ranks))
+    }
+
+    /// Persistent-state firing: the store removes and returns every closed (window, key) group in
+    /// (window_end, window_start) order with each buffer already ranked — every fired group leaves
+    /// the store, so a closed window can never re-fire after a restore.
+    #[cfg(feature = "rocksdb-state")]
+    fn flush_store(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        let fired = self
+            .store
+            .as_mut()
+            .expect("window-rank rocksdb store")
+            .take_closed(watermark)?;
+        let mut rows: Vec<JoinRow> = Vec::new();
+        let mut ranks: Vec<i64> = Vec::new();
+        for group in fired {
+            for (rank, row) in group.rows.into_iter().enumerate() {
+                rows.push(row);
+                ranks.push(rank as i64 + 1);
+            }
+        }
         Ok(self.emit(rows, ranks))
     }
 
@@ -3188,13 +3394,18 @@ impl WindowRanker {
     }
 
     fn snapshot_batch(&self) -> Option<RecordBatch> {
-        let Some(schema) = &self.schema else {
+        if self.schema.is_none() {
             return None;
-        };
+        }
         let rows: Vec<&JoinRow> = self.groups.values().flatten().collect();
         if rows.is_empty() {
             return None;
         }
+        Some(self.rows_batch(&rows))
+    }
+
+    fn rows_batch(&self, rows: &[&JoinRow]) -> RecordBatch {
+        let schema = self.schema.as_ref().expect("window-rank schema");
         let fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
         let columns: Vec<ArrayRef> = (0..fields.len())
             .map(|j| {
@@ -3204,10 +3415,32 @@ impl WindowRanker {
                 )
             })
             .collect();
-        Some(
-            RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-                .expect("window-rank snapshot"),
-        )
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("window-rank snapshot")
+    }
+
+    /// Canonical savepoint from the persistent store: every committed buffer re-partitioned by its
+    /// stored key group under the memory path's raw keyed encoding (watermark plus one IPC batch
+    /// per key group), so backend transitions stay byte-compatible.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn canonical_partitions(&self) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let stored = self
+            .store
+            .as_ref()
+            .expect("window-rank rocksdb store")
+            .scan_all()?;
+        let mut rows_by_group: BTreeMap<i32, Vec<JoinRow>> = BTreeMap::new();
+        for group in stored {
+            rows_by_group
+                .entry(group.key_group)
+                .or_default()
+                .extend(group.rows);
+        }
+        let mut snapshots = BTreeMap::new();
+        for (key_group, rows) in rows_by_group {
+            let rows: Vec<&JoinRow> = rows.iter().collect();
+            snapshots.insert(key_group, self.snapshot_parts(Some(self.rows_batch(&rows))));
+        }
+        Ok(snapshots)
     }
 
     fn snapshot_partitions(
@@ -3278,7 +3511,7 @@ impl WindowRanker {
         ranker
     }
 
-    fn restore_partitions(
+    pub(crate) fn restore_partitions(
         window_start_col: usize,
         window_end_col: usize,
         partition_columns: Vec<usize>,

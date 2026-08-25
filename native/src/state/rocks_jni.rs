@@ -1330,6 +1330,316 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBWindowJoiner<'l
     })
 }
 
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbIntervalJoinerSupported<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    left_schema_address: jlong,
+    right_schema_address: jlong,
+) -> jboolean {
+    crate::bridge::jni_guard(env, move |_env| {
+        let row_types = |schema: SchemaRef| -> Vec<DataType> {
+            schema
+                .fields()
+                .iter()
+                .map(|field| field.data_type().clone())
+                .collect()
+        };
+        (rocks_row_supported(&row_types(import_schema(left_schema_address)))
+            && rocks_row_supported(&row_types(import_schema(right_schema_address))))
+            as jboolean
+    })
+}
+
+/// [`open_store`] for the interval join's two-table row buffer: fresh when no restored sources
+/// exist, otherwise merged once with this subtask's key-group range.
+#[allow(clippy::too_many_arguments)]
+fn open_interval_buffer(
+    env: &mut JNIEnv,
+    config: RocksStoreConfig,
+    left_schema: SchemaRef,
+    right_schema: SchemaRef,
+    source_directories: &JObjectArray,
+    source_snapshot_tokens: &JObjectArray,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> Result<RocksIntervalBuffer, DataFusionError> {
+    let source_dirs: Vec<_> = read_strings(env, source_directories)
+        .into_iter()
+        .flatten()
+        .collect();
+    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
+        .into_iter()
+        .flatten()
+        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
+        .collect();
+    if source_dirs.is_empty() {
+        RocksIntervalBuffer::create(config, left_schema, right_schema)
+    } else {
+        RocksIntervalBuffer::open_merged(
+            config,
+            left_schema,
+            right_schema,
+            &source_dirs
+                .into_iter()
+                .zip(source_tokens)
+                .collect::<Vec<_>>(),
+            key_group_start..=key_group_end,
+            aligned != 0,
+        )
+    }
+}
+
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBIntervalJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    left_keys: JIntArray<'local>,
+    right_keys: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
+    left_time: jint,
+    right_time: jint,
+    lower: jlong,
+    upper: jlong,
+    join_type: jint,
+    left_schema_address: jlong,
+    right_schema_address: jlong,
+    pred_kinds: JIntArray<'local>,
+    pred_payload: JIntArray<'local>,
+    pred_child_counts: JIntArray<'local>,
+    pred_longs: JLongArray<'local>,
+    pred_doubles: JDoubleArray<'local>,
+    pred_strings: JObjectArray<'local>,
+    memory_budget_bytes: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    options_json: JString<'local>,
+    shared_resources: jlong,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let config = RocksStoreConfig {
+            table_dir: read_string(&mut env, &table_directory),
+            max_parallelism: max_parallelism as usize,
+            options_json: read_string(&mut env, &options_json),
+            ttl_ms: 0,
+            shared_resources,
+        };
+        let left_schema = import_schema(left_schema_address);
+        let right_schema = import_schema(right_schema_address);
+        let store = open_interval_buffer(
+            &mut env,
+            config,
+            left_schema.clone(),
+            right_schema.clone(),
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+        );
+        let joiner = store.and_then(|store| {
+            let left = read_columns(&env, &left_keys);
+            let right = read_columns(&env, &right_keys);
+            let predicate = read_join_predicate(
+                &mut env,
+                &pred_kinds,
+                &pred_payload,
+                &pred_child_counts,
+                &pred_longs,
+                &pred_doubles,
+                &pred_strings,
+            );
+            IntervalJoiner::new(
+                left,
+                right,
+                left_time as usize,
+                right_time as usize,
+                lower,
+                upper,
+                predicate,
+                JoinKind::from_code(join_type),
+                left_schema,
+                right_schema,
+            )
+            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
+            .with_store(store)
+            .with_read_through_budget(memory_budget_bytes)
+        });
+        boxed_or_throw(&mut env, joiner)
+    })
+}
+
+fn push_rocksdb_interval_joiner(
+    env: JNIEnv,
+    handle: jlong,
+    is_left: bool,
+    in_array: jlong,
+    in_schema: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+    proctime: jboolean,
+    proctime_now_millis: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let joiner = unsafe { &mut *(handle as *mut IntervalJoiner) };
+        // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+        let result = {
+            let batch = import_record_batch(in_array, in_schema);
+            let now = (proctime != 0).then_some(proctime_now_millis);
+            if is_left {
+                joiner.push_left(batch, now)
+            } else {
+                joiner.push_right(batch, now)
+            }
+        };
+        match result {
+            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_tech_streamfusion_Native_pushLeftRocksDBIntervalJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array: jlong,
+    in_schema: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+    proctime: jboolean,
+    proctime_now_millis: jlong,
+) {
+    push_rocksdb_interval_joiner(
+        env,
+        handle,
+        true,
+        in_array,
+        in_schema,
+        out_array,
+        out_schema,
+        proctime,
+        proctime_now_millis,
+    )
+}
+
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_tech_streamfusion_Native_pushRightRocksDBIntervalJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array: jlong,
+    in_schema: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+    proctime: jboolean,
+    proctime_now_millis: jlong,
+) {
+    push_rocksdb_interval_joiner(
+        env,
+        handle,
+        false,
+        in_array,
+        in_schema,
+        out_array,
+        out_schema,
+        proctime,
+        proctime_now_millis,
+    )
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_advanceRocksDBIntervalJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark_millis: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let joiner = unsafe { &mut *(handle as *mut IntervalJoiner) };
+        match joiner.advance(watermark_millis) {
+            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBIntervalJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    snapshot_directory: JString<'local>,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let snapshot_directory = read_string(&mut env, &snapshot_directory);
+        let joiner = unsafe { &mut *(handle as *mut IntervalJoiner) };
+        match joiner.store_mut().checkpoint(&snapshot_directory) {
+            Ok(m) => manifest_array(&mut env, &m),
+            Err(e) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB checkpoint failed: {e}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBIntervalJoinerPartitions<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let joiner = unsafe { &*(handle as *const IntervalJoiner) };
+        match joiner.canonical_partitions() {
+            Ok(partitions) => {
+                keyed_state_partition_array(&mut env, partitions, "rocksdb-interval-join")
+            }
+            Err(error) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB canonical snapshot failed: {error}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_rocksdbIntervalJoinerStateBytes,
+    IntervalJoiner
+);
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBIntervalJoiner<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<IntervalJoiner>(handle));
+    })
+}
+
 /// The Arrow carriage type of a window grouping-key column, from the JVM key-type code: timestamps
 /// ride as int64 nanoseconds and int widens to int64 (the aggregator's existing key carriage), so
 /// only string, boolean, date, and decimal keys keep a distinct Arrow type.
@@ -2371,6 +2681,234 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBTopNRanker<'loc
 ) {
     crate::bridge::jni_guard(env, move |_env| unsafe {
         drop(from_handle::<RocksTopNHandle>(handle));
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_rocksdbWindowRankerSupported<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    schema_address: jlong,
+) -> jboolean {
+    crate::bridge::jni_guard(env, move |_env| {
+        let schema = import_schema(schema_address);
+        let row_types: Vec<DataType> = schema
+            .fields()
+            .iter()
+            .map(|field| field.data_type().clone())
+            .collect();
+        rocks_row_supported(&row_types) as jboolean
+    })
+}
+
+/// [`open_store`] for the window ranker's composite-key store: fresh when no restored sources
+/// exist, otherwise merged once with this subtask's key-group range.
+#[allow(clippy::too_many_arguments)]
+fn open_window_rank_store(
+    env: &mut JNIEnv,
+    config: RocksStoreConfig,
+    row_types: &[DataType],
+    source_directories: &JObjectArray,
+    source_snapshot_tokens: &JObjectArray,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> Result<RocksWindowRankStore, DataFusionError> {
+    let source_dirs: Vec<_> = read_strings(env, source_directories)
+        .into_iter()
+        .flatten()
+        .collect();
+    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
+        .into_iter()
+        .flatten()
+        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
+        .collect();
+    let key_groups = key_group_start..=key_group_end;
+    if source_dirs.is_empty() {
+        RocksWindowRankStore::create(config, row_types, key_groups)
+    } else {
+        RocksWindowRankStore::open_merged(
+            config,
+            row_types,
+            key_groups,
+            &source_dirs
+                .into_iter()
+                .zip(source_tokens)
+                .collect::<Vec<_>>(),
+            aligned != 0,
+        )
+    }
+}
+
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowRanker<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    window_start_col: jint,
+    window_end_col: jint,
+    partition_columns: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
+    sort_indices: JIntArray<'local>,
+    sort_ascending: JIntArray<'local>,
+    sort_nulls_first: JIntArray<'local>,
+    limit: jlong,
+    output_rank_number: jboolean,
+    schema_address: jlong,
+    memory_budget_bytes: jlong,
+    table_directory: JString<'local>,
+    max_parallelism: jint,
+    options_json: JString<'local>,
+    shared_resources: jlong,
+    source_directories: JObjectArray<'local>,
+    source_snapshot_tokens: JObjectArray<'local>,
+    key_group_start: jint,
+    key_group_end: jint,
+    aligned: jboolean,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let schema = import_schema(schema_address);
+        let row_types: Vec<DataType> = schema
+            .fields()
+            .iter()
+            .map(|field| field.data_type().clone())
+            .collect();
+        let config = RocksStoreConfig {
+            table_dir: read_string(&mut env, &table_directory),
+            max_parallelism: max_parallelism as usize,
+            options_json: read_string(&mut env, &options_json),
+            ttl_ms: 0,
+            shared_resources,
+        };
+        let store = open_window_rank_store(
+            &mut env,
+            config,
+            &row_types,
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+        );
+        let ranker = store.and_then(|store| {
+            let partitions = read_columns(&env, &partition_columns);
+            let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
+            WindowRanker::new(
+                window_start_col as usize,
+                window_end_col as usize,
+                partitions,
+                sort,
+                limit,
+                output_rank_number != 0,
+            )
+            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
+            .with_store(store, schema)
+            .with_memory_budget(memory_budget_bytes)
+        });
+        boxed_or_throw(&mut env, ranker)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pushRocksDBWindowRanker<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array: jlong,
+    in_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let ranker = unsafe { &mut *(handle as *mut WindowRanker) };
+        // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
+        let result = {
+            let batch = import_record_batch(in_array, in_schema);
+            ranker.push(&batch)
+        };
+        if let Err(e) = result {
+            throw_memory_limit(&mut env, &e.to_string());
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBWindowRanker<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark_millis: jlong,
+    out_array: jlong,
+    out_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let ranker = unsafe { &mut *(handle as *mut WindowRanker) };
+        match ranker.flush(watermark_millis) {
+            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBWindowRanker<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    snapshot_directory: JString<'local>,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let snapshot_directory = read_string(&mut env, &snapshot_directory);
+        let ranker = unsafe { &mut *(handle as *mut WindowRanker) };
+        match ranker.checkpoint_store(&snapshot_directory) {
+            Ok(m) => manifest_array(&mut env, &m),
+            Err(e) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB checkpoint failed: {e}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBWindowRankerPartitions<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let ranker = unsafe { &*(handle as *const WindowRanker) };
+        match ranker.canonical_partitions() {
+            Ok(partitions) => {
+                keyed_state_partition_array(&mut env, partitions, "rocksdb-window-rank")
+            }
+            Err(error) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("RocksDB canonical snapshot failed: {error}"),
+                );
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+state_bytes_getter!(
+    Java_tech_streamfusion_Native_rocksdbWindowRankerStateBytes,
+    WindowRanker
+);
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBWindowRanker<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<WindowRanker>(handle));
     })
 }
 

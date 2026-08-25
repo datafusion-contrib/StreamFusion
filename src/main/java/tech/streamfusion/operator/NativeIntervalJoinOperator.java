@@ -2,6 +2,7 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import java.util.function.LongBinaryOperator;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
@@ -96,6 +97,45 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
     predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
   }
 
+  // A proctime interval join re-arms its cleanup timer from the snapshot-store deadline after
+  // recovery, so it stays on the generic snapshot store; the event-time join is purely
+  // watermark-driven.
+  @Override
+  protected boolean usesDirectRocksDBState() {
+    return !proctime
+        && withSchemas((l, r) -> Native.rocksdbIntervalJoinerSupported(l, r) ? 1L : 0L) != 0L;
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    return withSchemas(
+        (l, r) ->
+            Native.createRocksDBIntervalJoiner(
+                leftKeys, rightKeys, keyTimestampPrecisions(),
+                leftTime, rightTime, lowerMillis, upperMillis, joinType, l, r,
+                predicate.kinds, predicate.payload, predicate.childCounts,
+                predicate.boundLongs(), predicate.doubles, predicate.strings,
+                memoryBudgetBytes(),
+                rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
+                rocksdb.aligned()));
+  }
+
+  @Override
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
+    return directRocksDBState()
+        ? Native.checkpointRocksDBIntervalJoiner(handle, snapshotDirectory)
+        : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected byte[][] snapshotCanonicalPartitions() {
+    return directRocksDBState()
+        ? Native.snapshotRocksDBIntervalJoinerPartitions(handle)
+        : snapshotRawPartitions();
+  }
+
   @Override
   protected long createHandle() {
     return withSchemas(
@@ -124,12 +164,18 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
 
   @Override
   protected void closeHandle() {
-    Native.closeIntervalJoiner(handle);
+    if (directRocksDBState()) {
+      Native.closeRocksDBIntervalJoiner(handle);
+    } else {
+      Native.closeIntervalJoiner(handle);
+    }
   }
 
   @Override
   protected long stateBytesHandle() {
-    return Native.intervalJoinerStateBytes(handle);
+    return directRocksDBState()
+        ? Native.rocksdbIntervalJoinerStateBytes(handle)
+        : Native.intervalJoinerStateBytes(handle);
   }
 
   /** Exports both side row types as FFI Arrow schemas for the duration of one native call. */
@@ -178,7 +224,27 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
         ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
-      if (left) {
+      if (directRocksDBState()) {
+        if (left) {
+          Native.pushLeftRocksDBIntervalJoiner(
+              handle,
+              inArray.memoryAddress(),
+              inSchema.memoryAddress(),
+              outArray.memoryAddress(),
+              outSchema.memoryAddress(),
+              proctime,
+              now);
+        } else {
+          Native.pushRightRocksDBIntervalJoiner(
+              handle,
+              inArray.memoryAddress(),
+              inSchema.memoryAddress(),
+              outArray.memoryAddress(),
+              outSchema.memoryAddress(),
+              proctime,
+              now);
+        }
+      } else if (left) {
         Native.pushLeftIntervalJoiner(
             handle,
             inArray.memoryAddress(),
@@ -248,8 +314,13 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
   private void advance(long threshold) {
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      Native.advanceIntervalJoiner(
-          handle, threshold, outArray.memoryAddress(), outSchema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.advanceRocksDBIntervalJoiner(
+            handle, threshold, outArray.memoryAddress(), outSchema.memoryAddress());
+      } else {
+        Native.advanceIntervalJoiner(
+            handle, threshold, outArray.memoryAddress(), outSchema.memoryAddress());
+      }
       VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
       if (out.getRowCount() > 0) {
         ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));

@@ -2,6 +2,7 @@ package tech.streamfusion.operator;
 
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -101,6 +102,46 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
     return proctime ? maxOpenEnd : Long.MIN_VALUE;
   }
 
+  // A proctime window rank re-arms its firing timer from the snapshot-store deadline after
+  // recovery, so it stays on the generic snapshot store; the event-time rank is purely
+  // watermark-driven.
+  @Override
+  protected boolean usesDirectRocksDBState() {
+    return !proctime
+        && withRowSchema(
+                rowType, address -> Native.rocksdbWindowRankerSupported(address) ? 1L : 0L)
+            != 0L;
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocksdb) {
+    return withRowSchema(
+        rowType,
+        address ->
+            Native.createRocksDBWindowRanker(
+                windowStartColumn, windowEndColumn, partitionColumns, keyTimestampPrecisions(),
+                sortIndices, sortAscending, sortNullsFirst, limit, outputRankNumber,
+                address, memoryBudgetBytes(),
+                rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
+                rocksdb.aligned()));
+  }
+
+  @Override
+  protected String[] checkpointRocksDBHandle(String snapshotDirectory) {
+    return directRocksDBState()
+        ? Native.checkpointRocksDBWindowRanker(handle, snapshotDirectory)
+        : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected byte[][] snapshotCanonicalPartitions() {
+    return directRocksDBState()
+        ? Native.snapshotRocksDBWindowRankerPartitions(handle)
+        : snapshotRawPartitions();
+  }
+
   @Override
   protected long createHandle() {
     return Native.createWindowRanker(
@@ -138,12 +179,18 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
 
   @Override
   protected void closeHandle() {
-    Native.closeWindowRanker(handle);
+    if (directRocksDBState()) {
+      Native.closeRocksDBWindowRanker(handle);
+    } else {
+      Native.closeWindowRanker(handle);
+    }
   }
 
   @Override
   protected long stateBytesHandle() {
-    return Native.windowRankerStateBytes(handle);
+    return directRocksDBState()
+        ? Native.rocksdbWindowRankerStateBytes(handle)
+        : Native.windowRankerStateBytes(handle);
   }
 
   @Override
@@ -173,7 +220,11 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
     try (ArrowArray array = ArrowArray.allocateNew(inAllocator);
         ArrowSchema schema = ArrowSchema.allocateNew(inAllocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, array, schema);
-      Native.pushWindowRanker(handle, array.memoryAddress(), schema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.pushRocksDBWindowRanker(handle, array.memoryAddress(), schema.memoryAddress());
+      } else {
+        Native.pushWindowRanker(handle, array.memoryAddress(), schema.memoryAddress());
+      }
     } finally {
       in.close();
     }
@@ -234,8 +285,13 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   private void flush(long threshold) {
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushWindowRanker(
-          handle, threshold, array.memoryAddress(), schema.memoryAddress());
+      if (directRocksDBState()) {
+        Native.flushRocksDBWindowRanker(
+            handle, threshold, array.memoryAddress(), schema.memoryAddress());
+      } else {
+        Native.flushWindowRanker(
+            handle, threshold, array.memoryAddress(), schema.memoryAddress());
+      }
       VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
       if (out.getRowCount() > 0) {
         // The native side keeps window_start/window_end as UTC epoch (so eviction compares against the
