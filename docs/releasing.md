@@ -44,8 +44,8 @@ bin/check-artifacts.sh --host-only
 Before publishing the first candidate, push a signed dry-run tag to the canonical repository:
 
 ```sh
-git tag -s dry-run-v0.1.0-rc1 -m 'Dry run StreamFusion 0.1.0-rc1'
-git push upstream dry-run-v0.1.0-rc1
+git tag -s dry-run-v0.1.0-rc2 -m 'Dry run StreamFusion 0.1.0-rc2'
+git push upstream dry-run-v0.1.0-rc2
 ```
 
 The `dry-run-v<version>` path runs the same Linux and macOS runner builds, artifact checks, signing,
@@ -57,8 +57,8 @@ the coordinate in a real release. Delete the draft release and dry-run tag after
 Once the dry run passes, push the signed version tag only after the version commit is on `main`:
 
 ```sh
-git tag -s v0.1.0-rc1 -m 'StreamFusion 0.1.0-rc1'
-git push upstream v0.1.0-rc1
+git tag -s v0.1.0-rc2 -m 'StreamFusion 0.1.0-rc2'
+git push upstream v0.1.0-rc2
 ```
 
 The release workflow rejects either tag form unless its value exactly matches both Maven projects
@@ -67,7 +67,7 @@ and Cargo.
 Following DataFusion Comet's runner-native pattern, it builds the Linux x86_64 payload on an Ubuntu
 runner and the Apple Silicon payload on a macOS runner. It merges those binaries into the release
 JARs, validates the artifact boundaries, signs and publishes the reactor through the Central Portal,
-and only then creates the GitHub release. A version containing a hyphen, such as `0.1.0-rc1`, becomes
+and only then creates the GitHub release. A version containing a hyphen, such as `0.1.0-rc2`, becomes
 a GitHub prerelease.
 
 If a release fails before Central reports it as published, fix the cause, delete the unpublished tag,

@@ -160,7 +160,7 @@ _Apple M1 Max; numbers are comparable only within a machine._
 ## Running and configuration
 
 ```sh
-STREAMFUSION_VERSION=0.1.0-rc1
+STREAMFUSION_VERSION=0.1.0-rc2
 curl --fail --location \
   "https://repo1.maven.org/maven2/tech/streamfusion/streamfusion-loader/$STREAMFUSION_VERSION/streamfusion-loader-$STREAMFUSION_VERSION.jar" \
   --output "$FLINK_HOME/lib/00-streamfusion-loader.jar"

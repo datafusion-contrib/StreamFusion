@@ -37,7 +37,7 @@
     </scm>
 
     <properties>
-        <revision>0.1.0-rc1</revision>
+        <revision>0.1.0-rc2</revision>
         <central.autoPublish>true</central.autoPublish>
         <central.waitUntil>published</central.waitUntil>
         <maven.compiler.source>17</maven.compiler.source>

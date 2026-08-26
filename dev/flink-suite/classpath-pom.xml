@@ -10,47 +10,47 @@
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-core</artifactId>
-            <version>0.1.0-rc1</version>
+            <version>0.1.0-rc2</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-kafka</artifactId>
-            <version>0.1.0-rc1</version>
+            <version>0.1.0-rc2</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-json</artifactId>
-            <version>0.1.0-rc1</version>
+            <version>0.1.0-rc2</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-csv</artifactId>
-            <version>0.1.0-rc1</version>
+            <version>0.1.0-rc2</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-raw</artifactId>
-            <version>0.1.0-rc1</version>
+            <version>0.1.0-rc2</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-avro</artifactId>
-            <version>0.1.0-rc1</version>
+            <version>0.1.0-rc2</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-avro-confluent-registry</artifactId>
-            <version>0.1.0-rc1</version>
+            <version>0.1.0-rc2</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-protobuf</artifactId>
-            <version>0.1.0-rc1</version>
+            <version>0.1.0-rc2</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-parquet</artifactId>
-            <version>0.1.0-rc1</version>
+            <version>0.1.0-rc2</version>
         </dependency>
         <!-- StreamFusion discovers connector planner extensions at startup. Connector APIs are
              provided-scope in the production modules, so make Kafka's API explicit in this
