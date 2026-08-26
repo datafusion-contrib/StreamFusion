@@ -514,6 +514,38 @@
                         <configuration>
                             <doclint>none</doclint>
                             <quiet>true</quiet>
+                            <!-- Modules document only the sources they compile, but javadoc still
+                                 parses the opt-in Delta sources it finds next to them on the shared
+                                 sourcepath, so their connector dependencies must be resolvable. -->
+                            <sourceFileExcludes>
+                                <sourceFileExclude>tech/streamfusion/delta/**</sourceFileExclude>
+                                <sourceFileExclude>tech/streamfusion/planner/DeltaPlannerExtension.java</sourceFileExclude>
+                                <sourceFileExclude>tech/streamfusion/planner/DeltaSinkMatcher.java</sourceFileExclude>
+                                <sourceFileExclude>tech/streamfusion/planner/NativeDeltaSinkExecNode.java</sourceFileExclude>
+                                <sourceFileExclude>tech/streamfusion/planner/StreamPhysicalNativeDeltaSink.java</sourceFileExclude>
+                            </sourceFileExcludes>
+                            <additionalDependencies>
+                                <additionalDependency>
+                                    <groupId>io.delta</groupId>
+                                    <artifactId>delta-flink_2.2</artifactId>
+                                    <version>${delta.version}</version>
+                                </additionalDependency>
+                                <additionalDependency>
+                                    <groupId>io.delta</groupId>
+                                    <artifactId>delta-kernel-api</artifactId>
+                                    <version>${delta.version}</version>
+                                </additionalDependency>
+                                <additionalDependency>
+                                    <groupId>org.apache.parquet</groupId>
+                                    <artifactId>parquet-hadoop</artifactId>
+                                    <version>1.16.0</version>
+                                </additionalDependency>
+                                <additionalDependency>
+                                    <groupId>org.apache.hadoop</groupId>
+                                    <artifactId>hadoop-common</artifactId>
+                                    <version>3.3.4</version>
+                                </additionalDependency>
+                            </additionalDependencies>
                         </configuration>
                         <executions>
                             <execution>

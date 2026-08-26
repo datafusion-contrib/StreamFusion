@@ -39,6 +39,9 @@ bin/build-release.sh --host-only
 bin/check-artifacts.sh --host-only
 ```
 
+`bin/build-release.sh` packages with the unsigned `release` profile, so the source and javadoc
+attachments the publish workflow builds are verified locally before any tag exists.
+
 ## Publish
 
 Before publishing the first candidate, push a signed dry-run tag to the canonical repository:
