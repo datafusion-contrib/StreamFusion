@@ -199,7 +199,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbGroupAggregatorSuppo
             .into_iter()
             .map(value_data_type)
             .collect();
-        rocks_group_supported(&kinds, &group_state_types(&kinds, &values)) as jboolean
+        rocks_group_supported(&kinds, &values, &group_state_types(&kinds, &values)) as jboolean
     })
 }
 
@@ -239,11 +239,12 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBGroupAggregato
             .iter()
             .map(|&code| value_data_type(code))
             .collect();
-        let codec = GroupStateCodec {
-            kinds: kinds.clone(),
-            value_types: values.clone(),
-            state_types: group_state_types(&kinds, &values),
-        };
+        let codec = GroupStateCodec::new(
+            kinds.clone(),
+            values,
+            read_int_array(&env, &value_columns),
+            read_int_array(&env, &distinct_view_columns),
+        );
         let config = RocksStoreConfig {
             table_dir: read_string(&mut env, &table_directory),
             max_parallelism: max_parallelism as usize,

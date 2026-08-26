@@ -125,6 +125,23 @@ final class GroupAggregateMatcher {
   /** Native aggregate kind 9 (SUM(DISTINCT)); matches the convention in the Rust GroupAggState. */
   private static final int KIND_SUM_DISTINCT = 9;
 
+  /**
+   * Native kinds 10/11: MIN/MAX over an insert-only input. No retraction can ever arrive, so the
+   * state is a plain running extreme — one scalar in the main row — instead of the retractable
+   * value multiset (and, on the RocksDB backend, no companion element table). Only the numeric
+   * types the running fold covers map; decimal and string extremes keep the multiset kinds.
+   */
+  static final int KIND_MIN_APPEND = 10;
+
+  static final int KIND_MAX_APPEND = 11;
+
+  /** Whether an insert-only MIN/MAX over this value type can run as a plain running extreme. */
+  static boolean runningExtremeType(SqlTypeName type) {
+    return type == SqlTypeName.BIGINT
+        || type == SqlTypeName.INTEGER
+        || type == SqlTypeName.DOUBLE;
+  }
+
   private static final int KIND_MIN = WindowAggregateMatcher.KIND_MIN;
   private static final int KIND_MAX = WindowAggregateMatcher.KIND_MAX;
 
@@ -145,6 +162,18 @@ final class GroupAggregateMatcher {
         kind = KIND_SUM_DISTINCT;
       }
       // MIN/MAX(DISTINCT) stay their plain kinds: the extreme ignores multiplicity either way.
+      // Over an insert-only input a numeric MIN/MAX needs no retractable multiset at all.
+      if ((kind == KIND_MIN || kind == KIND_MAX)
+          && ChangelogPlanUtils.inputInsertOnly(agg)
+          && runningExtremeType(
+              agg.getInput()
+                  .getRowType()
+                  .getFieldList()
+                  .get(call.getArgList().get(0))
+                  .getType()
+                  .getSqlTypeName())) {
+        kind = kind == KIND_MIN ? KIND_MIN_APPEND : KIND_MAX_APPEND;
+      }
       kinds[i] = kind;
     }
     return kinds;
@@ -154,8 +183,31 @@ final class GroupAggregateMatcher {
     return WindowAggregateMatcher.valueColumns(agg.aggCalls());
   }
 
+  /**
+   * Native code for a COUNT(DISTINCT) value whose Flink type has no faithful type code (TIME,
+   * BOOLEAN, complex types — the shared mapping's default would report BIGINT). The fold reads the
+   * actual column either way; the explicit code keeps such aggregates off backends that need a
+   * fixed element type, like the per-element RocksDB store.
+   */
+  private static final int OPAQUE_DISTINCT_VALUE_CODE = 100;
+
   static int[] valueTypeCodes(StreamPhysicalGroupAggregate agg) {
-    return WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType());
+    RelDataType inputType = agg.getInput().getRowType();
+    int[] codes = WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), inputType);
+    Seq<AggregateCall> aggCalls = agg.aggCalls();
+    for (int i = 0; i < codes.length; i++) {
+      AggregateCall call = aggCalls.apply(i);
+      if (call.isDistinct()
+          && !call.getArgList().isEmpty()
+          && WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind())
+              == WindowAggregateMatcher.KIND_COUNT
+          && codes[i] == 0
+          && inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName()
+              != SqlTypeName.BIGINT) {
+        codes[i] = OPAQUE_DISTINCT_VALUE_CODE;
+      }
+    }
+    return codes;
   }
 
   static int[] keyColumns(StreamPhysicalGroupAggregate agg) {

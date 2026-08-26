@@ -62,11 +62,15 @@ There are also deliberate implementation differences:
   aggregates stay on the snapshot path), event-time window rank, the event-time interval join
   (append-mostly sequence-keyed buffers carrying each row's matched flag), the temporal join
   (versioned build rows in byte-comparable version order), keep-first deduplicate, and the
-  temporal sort buffer. Typed stores persist an operator's processing-time timer deadline under a
-  reserved key, so proctime windows, sessions, rank, and the window and interval joins run direct
-  too. Every such operator now reads and writes RocksDB per key; only the multiset group
-  aggregates and the over aggregate's gated variants above replace key-group snapshot payloads in
-  RocksDB at each checkpoint;
+  temporal sort buffer. Group aggregates with MIN/MAX retraction or DISTINCT keep their per-key
+  multisets as companion element tables: a bundle point-reads only the elements its batches name,
+  the running count/sum/extreme rides the main row, changes write through as element-level deltas,
+  and a retraction that removes the current extreme reseeks the ordered element table (a numeric
+  MIN/MAX over an insert-only input needs no multiset at all and runs as a plain running value). Typed
+  stores persist an operator's processing-time timer deadline under a reserved key, so proctime
+  windows, sessions, rank, and the window and interval joins run direct too. Every such operator
+  now reads and writes RocksDB per key; only the over aggregate's gated variants above replace
+  key-group snapshot payloads in RocksDB at each checkpoint;
 - the native stores' shared cache and write-buffer manager live in StreamFusion's own RocksDB
   library, sized by the same Flink options and formulas but leased separately from the delegate
   backend's pool (C++ objects cannot cross the two RocksDB libraries), and the binding exposes no
@@ -92,5 +96,6 @@ Restoring a canonical savepoint (or legacy raw keyed state) onto this backend de
 groups once at open and bulk-writes them — rows, TTL stamps, watermarks, sequence high-water marks,
 and timer deadlines — through the operator's typed store, so a memory-to-RocksDB transition
 continues on the direct per-key path and its next checkpoint is an ordinary incremental RocksDB
-handle. Only the snapshot-store shapes (the multiset group aggregates and the over aggregate's
-gated variants) restore such state into the generic snapshot store instead.
+handle. A multiset group aggregate's import also spreads each blob's side batches into its
+companion element tables. Only the over aggregate's gated variants restore such state into the
+generic snapshot store instead.

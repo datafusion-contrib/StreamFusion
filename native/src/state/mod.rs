@@ -59,6 +59,13 @@ pub(crate) trait KeyedStateStore<V> {
     /// read filtering and compaction instead of materializing the key space; only the resident
     /// memory store can (and should) walk its entries.
     fn retain_live(&mut self, _keep: &mut dyn FnMut(&[u8], &mut V) -> bool) {}
+
+    /// Resolves any multiset extreme the current bundle's retractions invalidated for this key —
+    /// a partial-view persistent backend reseeks its committed element table; the resident memory
+    /// backend holds the full multiset and never needs it.
+    fn resolve_multiset_extremes(&mut self, _key: &[u8]) -> Result<(), DataFusionError> {
+        Ok(())
+    }
 }
 
 /// Today's state backend: the whole working set resident in one hash map. This is the default

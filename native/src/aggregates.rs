@@ -18,6 +18,11 @@ pub(crate) fn value_data_type(code: i64) -> DataType {
         // the logical distinction is restored by the JVM output row type.
         7 => DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None),
         8 => DataType::Date32,
+        // A COUNT(DISTINCT) value whose Flink type has no faithful code (TIME, BOOLEAN, complex
+        // types): the fold reads the actual column and the distinct set keys scalars, so the
+        // declared type is immaterial there — but a fixed-type persistent element codec cannot be
+        // built for it, and Null keeps such aggregates off the per-element RocksDB path.
+        100 => DataType::Null,
         // Decimal packs precision/scale into the code (2000 + precision*100 + scale), matching the
         // JVM side, so the per-aggregate value type carries them without a wider signature.
         c if c >= 2000 => {
@@ -904,8 +909,15 @@ impl RunningAgg {
             return Count(0); // COUNT and COUNT(DISTINCT) both report a bigint count
         }
         // SUM(DISTINCT) (kind 9) runs a plain SUM inside its distinct set (GroupAggState wraps it);
-        // its running/result/state types are exactly SUM's.
-        let kind = if kind == 9 { 0 } else { kind };
+        // its running/result/state types are exactly SUM's. Kinds 10/11 are MIN/MAX over an
+        // insert-only input: no retraction can ever arrive, so they run as the plain single-value
+        // extremes instead of the retractable multiset.
+        let kind = match kind {
+            9 => 0,
+            10 => 1,
+            11 => 2,
+            kind => kind,
+        };
         // kind: 0=SUM, 1=MIN, 2=MAX, 5=FIRST_VALUE, 6=LAST_VALUE (3=COUNT handled above).
         match (kind, value_type) {
             (0, DataType::Int64) => SumI64(None),

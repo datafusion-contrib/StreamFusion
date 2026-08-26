@@ -942,6 +942,93 @@ class RocksDBNativeStateBackendAllOperatorsTest {
     }
   }
 
+  /**
+   * A multiset aggregate's canonical restore imports the blob side batches into the companion
+   * element tables and the running extreme into the main row: the restored operator provably runs
+   * the direct route, a retraction of the imported minimum reseeks the imported elements for the
+   * next extreme, and the post-import checkpoint round-trips.
+   */
+  @Test
+  void canonicalRestoreImportsMultisetAggregateIntoDirectStore() throws Exception {
+    OperatorSubtaskState savepoint;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> memory =
+            harness(minAggregateOperator())) {
+      memory.setup(new ArrowBatchSerializer());
+      memory.open();
+      memory.processElement(
+          new StreamRecord<>(batch(allocator, row(1, 10), row(1, 5), row(2, 20))));
+      collect(memory);
+      savepoint = canonicalSavepoint(memory);
+    }
+
+    OperatorSubtaskState checkpoint;
+    NativeColumnarGroupAggregateOperator imported = minAggregateOperator();
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> restored =
+            harness(imported)) {
+      restored.setStateBackend(backend());
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(savepoint);
+      restored.open();
+      assertTrue(
+          NativeStateRouteProbe.directRocksDBState(imported),
+          "a canonical restore must import into the direct typed store, not the blob path");
+      restored.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(rowOfKind(RowKind.DELETE, 1, 5)), INPUT, allocator, true))));
+      assertEquals(
+          List.of(update(RowKind.UPDATE_BEFORE, 1, 5), update(RowKind.UPDATE_AFTER, 1, 10)),
+          collect(restored));
+      checkpoint = restored.snapshot(1, 1);
+      rocksHandle(checkpoint);
+      restored.notifyOfCompletedCheckpoint(1);
+    }
+
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            harness(minAggregateOperator())) {
+      harness.setStateBackend(backend());
+      harness.setup(new ArrowBatchSerializer());
+      harness.initializeState(checkpoint);
+      harness.open();
+      harness.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(rowOfKind(RowKind.DELETE, 1, 10), row(2, 5)),
+                      INPUT,
+                      allocator,
+                      true))));
+      assertEquals(
+          List.of(
+              update(RowKind.DELETE, 1, 10),
+              update(RowKind.UPDATE_BEFORE, 2, 20),
+              update(RowKind.UPDATE_AFTER, 2, 5)),
+          collect(harness));
+    }
+  }
+
+  private static NativeColumnarGroupAggregateOperator minAggregateOperator() {
+    return new NativeColumnarGroupAggregateOperator(
+        new int[] {1}, // MIN
+        new int[] {0}, // BIGINT
+        new int[] {1},
+        new int[] {0},
+        new int[] {-1},
+        new int[] {-1},
+        new int[] {-1},
+        -1,
+        true,
+        false,
+        0,
+        0,
+        new int[] {-1},
+        MAX_PARALLELISM);
+  }
+
   /** Retracting a group to zero records deletes it in the table, across a checkpoint. */
   @Test
   void deletesSurviveCheckpointAndRestore() throws Exception {

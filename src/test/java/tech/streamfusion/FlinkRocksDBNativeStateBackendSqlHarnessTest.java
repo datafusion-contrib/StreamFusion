@@ -20,9 +20,10 @@ import org.junit.jupiter.api.Test;
  * The RocksDB state backend behind Flink's normal backend toggle: with {@code state.backend.type}
  * set to the StreamFusion factory, a native group aggregate keeps its state in a local RocksDB
  * table (read-through probes, barrier commits) and must produce exactly the host's results; host
- * (fallback) operators in the same job run unchanged on the wrapped hashmap backend. MIN/MAX keep
- * multiset state, which the RocksDB row codec does not carry — that query exercises the
- * per-operator fallback to memory state under the same backend.
+ * (fallback) operators in the same job run unchanged on the wrapped hashmap backend. MIN/MAX
+ * retraction and DISTINCT multisets live in per-aggregate companion element tables beside the main
+ * row; a COUNT(DISTINCT) over a value type with no faithful native code exercises the per-operator
+ * fallback to memory state under the same backend.
  *
  * <p>Every run here is the production shape: Rust reads and writes its RocksDB instance directly,
  * while Java coordinates Flink checkpoint handles and uploads.
@@ -352,12 +353,84 @@ class FlinkRocksDBNativeStateBackendSqlHarnessTest {
   }
 
   @Test
-  void unsupportedAggregatesCheckpointThroughRocksDBBackend() throws Exception {
+  void minMaxAggregatesOnRocksDBBackendMatchHost() throws Exception {
+    // MIN/MAX over this insert-only source run as plain running extremes (kinds 10/11) — one
+    // scalar in the main row, no multiset; the retracting nested query below exercises the
+    // companion element tables.
     Path input = Files.createTempDirectory("rocksdb-minmax-in");
     writeInput(input);
     NativeParity.assertChangelogParity(
         () -> rocksdbEnvironment(input),
         "SELECT k, MIN(v) AS mn, MAX(v) AS mx, SUM(v) AS s FROM t GROUP BY k");
+  }
+
+  @Test
+  void distinctAggregatesOnRocksDBBackendMatchHost() throws Exception {
+    // COUNT/SUM(DISTINCT) keep value→multiplicity sets in companion element tables; the running
+    // cardinality and sum ride the main row, so only the batch's elements are ever read.
+    Path input = Files.createTempDirectory("rocksdb-distinct-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        () -> rocksdbEnvironment(input),
+        "SELECT k, COUNT(DISTINCT v) AS dc, SUM(DISTINCT v) AS ds FROM t GROUP BY k");
+  }
+
+  @Test
+  void distinctAggregatesWithTtlOnRocksDBBackendMatchHost() throws Exception {
+    // 1h retention — nothing expires in-test; the native tests cover expiry purging companion
+    // elements. This pins the end-to-end SQL result with TTL'd multiset tables in the checkpoint.
+    Path input = Files.createTempDirectory("rocksdb-ttl-distinct-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        () -> {
+          TableEnvironment tEnv = rocksdbEnvironment(input);
+          tEnv.getConfig().set("table.exec.state.ttl", "1 h");
+          return tEnv;
+        },
+        "SELECT k, COUNT(DISTINCT v) AS dc, SUM(DISTINCT v) AS ds FROM t GROUP BY k");
+  }
+
+  @Test
+  void retractingMultisetAggregatesOnRocksDBBackendMatchHost() throws Exception {
+    // A retracting input drives element-level deletes and extreme reseeks: the inner aggregate's
+    // -U/+U pairs move values out of and into the outer MIN and DISTINCT multisets across bundles.
+    Path input = Files.createTempDirectory("rocksdb-retract-multiset-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        () -> rocksdbEnvironment(input),
+        "SELECT MOD(k, 2) AS g, MIN(total) AS mn, COUNT(DISTINCT total) AS dc FROM"
+            + " (SELECT k, SUM(v) AS total FROM t GROUP BY k) GROUP BY MOD(k, 2)");
+  }
+
+  @Test
+  void twoPhaseDistinctAggregatesOnRocksDBBackendMatchHost() throws Exception {
+    // The mini-batch global merges the locals' (value, count) distinct views into the RocksDB
+    // multiset tables; the view entries drive the probes and journals accumulate across the
+    // bundle's physical batches until the flush.
+    Path input = Files.createTempDirectory("rocksdb-two-phase-distinct-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        () -> {
+          TableEnvironment tEnv = rocksdbEnvironment(input);
+          tEnv.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
+          tEnv.getConfig().set("table.exec.mini-batch.enabled", "true");
+          tEnv.getConfig().set("table.exec.mini-batch.allow-latency", "1 s");
+          tEnv.getConfig().set("table.exec.mini-batch.size", "3");
+          return tEnv;
+        },
+        "SELECT k, COUNT(DISTINCT v) AS dc, COUNT(*) AS c FROM t GROUP BY k");
+  }
+
+  @Test
+  void opaqueDistinctValuesCheckpointThroughRocksDBBackend() throws Exception {
+    // COUNT(DISTINCT) over a boolean has no faithful native type code, so no fixed-type element
+    // codec exists: the aggregate runs on memory state and checkpoints through the backend's
+    // snapshot-blob compatibility path.
+    Path input = Files.createTempDirectory("rocksdb-opaque-distinct-in");
+    writeInput(input);
+    NativeParity.assertChangelogParity(
+        () -> rocksdbEnvironment(input),
+        "SELECT k, COUNT(DISTINCT v > 10) AS db, SUM(v) AS s FROM t GROUP BY k");
   }
 
   // Batch mode at parallelism 1 writes exactly one part file. The proctime dedup query is

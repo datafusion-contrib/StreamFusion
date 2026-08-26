@@ -9157,3 +9157,451 @@ fn c_abi_decode_failure_serves_the_panic_text() {
 // persistent group state: read-through probes, barrier commits, restore, rescale.
 // Everything runs on the vortex file format — the production configuration.
 // ---------------------------------------------------------------------------------------------
+
+// Multiset group-aggregate state (MIN/MAX retraction, COUNT/SUM DISTINCT) on the per-key RocksDB
+// store: main rows carry the running values, one companion element table per multiset aggregate
+// holds the elements, and a bundle point-reads exactly the (key, element) pairs its batches name.
+// Every test drives the memory backend with the same input and requires byte-identical
+// changelogs, so a stale, lost, or double-counted element cannot hide.
+#[cfg(feature = "rocksdb-state")]
+mod rocksdb_group_multisets {
+    use super::*;
+    use crate::state::rocks_config::FlinkRocksOptions;
+
+    fn options_json() -> String {
+        serde_json::to_string(&FlinkRocksOptions {
+            max_background_threads: 2,
+            max_open_files: -1,
+            log_max_file_size: 0,
+            log_file_num: 1,
+            log_directory: None,
+            log_level: "INFO_LEVEL".into(),
+            compaction_style: "LEVEL".into(),
+            compression_per_level: vec!["NO_COMPRESSION".into()],
+            use_dynamic_level_size: true,
+            target_file_size_base: 4 << 20,
+            max_size_level_base: 16 << 20,
+            write_buffer_size: 4 << 20,
+            max_write_buffer_number: 2,
+            min_write_buffer_number_to_merge: 1,
+            write_batch_size: 2 << 20,
+            compaction_filter_query_time_after_num_entries: 1000,
+            periodic_compaction_seconds: 0,
+            block_size: 4096,
+            metadata_block_size: 4096,
+            block_cache_size: 8 << 20,
+            use_bloom_filter: false,
+            bloom_filter_bits_per_key: 10.0,
+            bloom_filter_block_based_mode: false,
+        })
+        .unwrap()
+    }
+
+    fn store_config(name: &str, ttl_ms: i64) -> RocksStoreConfig {
+        let dir = std::env::temp_dir().join(format!(
+            "streamfusion-group-multiset-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        RocksStoreConfig {
+            table_dir: dir.to_string_lossy().into_owned(),
+            max_parallelism: 128,
+            options_json: options_json(),
+            ttl_ms,
+            shared_resources: 0,
+        }
+    }
+
+    fn snapshot_dir(name: &str) -> String {
+        let dir = std::env::temp_dir().join(format!(
+            "streamfusion-group-multiset-{name}-snapshot-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir.to_string_lossy().into_owned()
+    }
+
+    // MIN, MAX, COUNT(DISTINCT), SUM(DISTINCT), all over the bigint value column.
+    const KINDS: [i64; 4] = [1, 2, 7, 9];
+
+    fn memory_agg(ttl_ms: i64) -> GroupAggregator {
+        GroupAggregator::new(KINDS.to_vec(), vec![0; 4], vec![1; 4], vec![0], true)
+            .with_state_ttl(ttl_ms)
+    }
+
+    fn rocks_store(name: &str, ttl_ms: i64) -> RocksGroupStore {
+        let codec = GroupStateCodec::new(
+            KINDS.to_vec(),
+            vec![DataType::Int64; 4],
+            vec![1; 4],
+            vec![-1; 4],
+        );
+        RocksGroupStore::create(store_config(name, ttl_ms), codec).unwrap()
+    }
+
+    fn rocks_agg(name: &str, ttl_ms: i64) -> GroupAggregator<RocksGroupStore> {
+        memory_agg(ttl_ms).with_backend(rocks_store(name, ttl_ms))
+    }
+
+    fn assert_parity(
+        rocks: &mut GroupAggregator<RocksGroupStore>,
+        memory: &mut GroupAggregator,
+        batch: &RecordBatch,
+        now: i64,
+    ) {
+        rocks.store_mut().set_clock(now);
+        let from_rocks = rocks.update(batch, now).unwrap();
+        let from_memory = memory.update(batch, now).unwrap();
+        assert_eq!(from_rocks, from_memory);
+    }
+
+    // Bundle-per-update parity with retractions, key deletion, and re-creation: every bundle
+    // boundary clears the working set, so the touched elements and running values must round-trip
+    // through the companion tables and the main row.
+    #[test]
+    fn multiset_aggregates_match_memory_across_bundles() {
+        let mut rocks = rocks_agg("parity", 0);
+        let mut memory = memory_agg(0);
+        let bundles = vec![
+            group_changelog(
+                vec![1, 1, 2],
+                vec![Some(10), Some(5), Some(7)],
+                vec![0, 0, 0],
+            ),
+            // Retract one value, re-add another already in the multiset (count 1 -> 2).
+            group_changelog(vec![1, 1], vec![Some(5), Some(10)], vec![3, 0]),
+            // Retract both copies of 10: the group empties and deletes (-D).
+            group_changelog(vec![1, 1], vec![Some(10), Some(10)], vec![3, 3]),
+            // Re-create the deleted key: a leaked companion element would inflate the count.
+            group_changelog(vec![1], vec![Some(3)], vec![0]),
+            // Delete and re-create within one bundle, with a duplicate distinct value.
+            group_changelog(
+                vec![2, 2, 2],
+                vec![Some(7), Some(4), Some(4)],
+                vec![3, 0, 0],
+            ),
+            group_changelog(vec![2, 2], vec![Some(4), Some(9)], vec![3, 0]),
+        ];
+        for batch in &bundles {
+            assert_parity(&mut rocks, &mut memory, batch, 0);
+        }
+    }
+
+    // The multisets survive a native checkpoint and a fresh store opened from it.
+    #[test]
+    fn multiset_aggregates_survive_checkpoint_and_reopen() {
+        let mut rocks = rocks_agg("restart", 0);
+        let mut memory = memory_agg(0);
+        let first = group_changelog(
+            vec![1, 1, 2],
+            vec![Some(10), Some(5), Some(7)],
+            vec![0, 0, 0],
+        );
+        let second = group_changelog(vec![1, 1], vec![Some(5), Some(10)], vec![3, 0]);
+        assert_parity(&mut rocks, &mut memory, &first, 0);
+        assert_parity(&mut rocks, &mut memory, &second, 0);
+        let snapshot = snapshot_dir("restart");
+        let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+        drop(rocks);
+
+        let codec = GroupStateCodec::new(
+            KINDS.to_vec(),
+            vec![DataType::Int64; 4],
+            vec![1; 4],
+            vec![-1; 4],
+        );
+        let reopened = RocksGroupStore::open_merged(
+            store_config("restart-reopen", 0),
+            codec,
+            &[(snapshot, manifest.snapshot_id)],
+            0..=127,
+            true,
+            0,
+        )
+        .unwrap();
+        let mut rocks = memory_agg(0).with_backend(reopened);
+        let probes = vec![
+            group_changelog(vec![1, 1], vec![Some(10), Some(10)], vec![3, 3]),
+            group_changelog(vec![1, 2], vec![Some(3), Some(7)], vec![0, 3]),
+        ];
+        for batch in &probes {
+            assert_parity(&mut rocks, &mut memory, batch, 0);
+        }
+    }
+
+    // Canonical partitions hydrate the full multisets from the companion tables and keep the
+    // memory snapshot encoding, so a memory-backed aggregator restores them exactly.
+    #[test]
+    fn canonical_partitions_round_trip_multisets_to_memory() {
+        let mut rocks = rocks_agg("canonical", 0);
+        let mut memory = memory_agg(0);
+        let seed = group_changelog(
+            vec![1, 1, 2, 1],
+            vec![Some(10), Some(5), Some(7), Some(5)],
+            vec![0, 0, 0, 0],
+        );
+        assert_parity(&mut rocks, &mut memory, &seed, 0);
+        let partitions: Vec<Vec<u8>> = rocks
+            .canonical_partitions()
+            .unwrap()
+            .into_values()
+            .collect();
+        let mut restored = GroupAggregator::restore_partitions(
+            KINDS.to_vec(),
+            vec![0; 4],
+            vec![1; 4],
+            vec![0],
+            true,
+            &partitions,
+            0,
+        );
+        let probe = group_changelog(
+            vec![1, 1, 2],
+            vec![Some(5), Some(5), Some(7)],
+            vec![3, 3, 3],
+        );
+        let from_restored = restored.update(&probe, 0).unwrap();
+        let from_memory = memory.update(&probe, 0).unwrap();
+        assert_eq!(from_restored, from_memory);
+    }
+
+    // The inverse transition: canonical blob partitions import into a fresh typed store at open
+    // (the memory-to-RocksDB path), elements landing in the companion tables and running values in
+    // the main rows, so the run continues per key with no blob fallback.
+    #[test]
+    fn canonical_partitions_import_into_the_typed_store() {
+        let mut memory = memory_agg(0);
+        let mut control = memory_agg(0);
+        let seed = group_changelog(
+            vec![1, 1, 2, 1],
+            vec![Some(10), Some(5), Some(7), Some(5)],
+            vec![0, 0, 0, 0],
+        );
+        memory.update(&seed, 0).unwrap();
+        control.update(&seed, 0).unwrap();
+        let partitions: Vec<Vec<u8>> = memory
+            .snapshot_partitions(128, &[-1])
+            .into_values()
+            .collect();
+
+        let mut rocks = memory_agg(0).with_backend(rocks_store("import", 0));
+        rocks.import_partitions(&partitions, 0).unwrap();
+        let bundles = vec![
+            // Retract the imported min twice (multiplicity 2), forcing the committed reseek.
+            group_changelog(vec![1, 1], vec![Some(5), Some(5)], vec![3, 3]),
+            group_changelog(vec![1, 2], vec![Some(3), Some(7)], vec![0, 3]),
+        ];
+        for batch in &bundles {
+            assert_parity(&mut rocks, &mut control, batch, 0);
+        }
+    }
+
+    // An expired group's companion elements are purged when the key is touched again: the fresh
+    // group starts from empty multisets, exactly like the memory backend's lazy expiry.
+    #[test]
+    fn ttl_expiry_purges_multiset_elements() {
+        let mut rocks = rocks_agg("ttl", 1000);
+        let mut memory = memory_agg(1000);
+        let seed = group_changelog(
+            vec![1, 1, 1],
+            vec![Some(10), Some(5), Some(10)],
+            vec![0, 0, 0],
+        );
+        assert_parity(&mut rocks, &mut memory, &seed, 0);
+        let touch = group_changelog(vec![1], vec![Some(7)], vec![0]);
+        assert_parity(&mut rocks, &mut memory, &touch, 2000);
+        let retract = group_changelog(vec![1], vec![Some(7)], vec![3]);
+        assert_parity(&mut rocks, &mut memory, &retract, 2000);
+        let fresh = group_changelog(vec![1], vec![Some(4)], vec![0]);
+        assert_parity(&mut rocks, &mut memory, &fresh, 2100);
+    }
+
+    // Mini-batch bundles span several physical batches; probes dedupe and journals accumulate
+    // until the flush's bundle commit.
+    #[test]
+    fn mini_batch_multisets_match_memory() {
+        let mut rocks = rocks_agg("minibatch", 0).with_mini_batch();
+        let mut memory = memory_agg(0).with_mini_batch();
+        let bundles = vec![
+            vec![
+                group_changelog(vec![1, 2], vec![Some(10), Some(7)], vec![0, 0]),
+                group_changelog(vec![1, 1], vec![Some(5), Some(5)], vec![0, 3]),
+            ],
+            vec![
+                group_changelog(vec![1], vec![Some(10)], vec![3]),
+                group_changelog(vec![2, 2], vec![Some(7), Some(4)], vec![3, 0]),
+            ],
+        ];
+        for bundle in &bundles {
+            for batch in bundle {
+                rocks.store_mut().set_clock(0);
+                rocks.update(batch, 0).unwrap();
+                memory.update(batch, 0).unwrap();
+            }
+            let from_rocks = rocks.flush_mini_batch().unwrap();
+            let from_memory = memory.flush_mini_batch().unwrap();
+            assert_eq!(from_rocks, from_memory);
+        }
+    }
+
+    // Retractions that remove the current extreme force the committed-table reseek: the next
+    // extreme may be a committed element the batch never touches, may be tombstoned by the same
+    // bundle, or may be beaten by an element inserted this bundle.
+    #[test]
+    fn extreme_retractions_reseek_the_committed_table() {
+        let kinds = vec![1i64, 2];
+        let codec = GroupStateCodec::new(
+            kinds.clone(),
+            vec![DataType::Int64; 2],
+            vec![1; 2],
+            vec![-1; 2],
+        );
+        let store = RocksGroupStore::create(store_config("reseek", 0), codec).unwrap();
+        let mut rocks = GroupAggregator::new(kinds.clone(), vec![0, 0], vec![1, 1], vec![0], true)
+            .with_backend(store);
+        let mut memory = GroupAggregator::new(kinds, vec![0, 0], vec![1, 1], vec![0], true);
+        let bundles = vec![
+            group_changelog(
+                vec![1, 1, 1, 1],
+                vec![Some(10), Some(5), Some(7), Some(12)],
+                vec![0, 0, 0, 0],
+            ),
+            // Kill the committed min: the next min (7) is committed and untouched by this batch.
+            group_changelog(vec![1], vec![Some(5)], vec![3]),
+            // Kill the committed max the same way.
+            group_changelog(vec![1], vec![Some(12)], vec![3]),
+            // Kill the min AND its committed successor in one bundle (a tombstone the reseek must
+            // skip), landing on the third committed element.
+            group_changelog(vec![1, 1], vec![Some(7), Some(10)], vec![3, 3]),
+            // Rebuild, then race an inserted-this-bundle candidate against the committed one:
+            // insert 1 (new min), retract it, retract the committed min 3 -> min falls to 4.
+            group_changelog(vec![1, 1], vec![Some(3), Some(4)], vec![0, 0]),
+            group_changelog(
+                vec![1, 1, 1],
+                vec![Some(1), Some(1), Some(3)],
+                vec![0, 3, 3],
+            ),
+            // Insert-then-retract-then-insert of the same element within a bundle: the zeroed
+            // tombstone must revive, and the extreme with it.
+            group_changelog(
+                vec![1, 1, 1],
+                vec![Some(2), Some(2), Some(2)],
+                vec![0, 3, 0],
+            ),
+        ];
+        for batch in &bundles {
+            rocks.store_mut().set_clock(0);
+            let from_rocks = rocks.update(batch, 0).unwrap();
+            let from_memory = memory.update(batch, 0).unwrap();
+            assert_eq!(from_rocks, from_memory);
+        }
+    }
+
+    // Insert-only MIN/MAX (kinds 10/11) run as plain running extremes: identical output to the
+    // multiset kinds on an append-only stream, no companion tables on the store, and a blob
+    // written by the multiset representation (an older savepoint of the same query) restores into
+    // the running representation exactly.
+    #[test]
+    fn append_only_extremes_run_as_running_scalars() {
+        let seed = group_changelog(
+            vec![1, 1, 2, 1],
+            vec![Some(10), Some(5), Some(20), Some(7)],
+            vec![0, 0, 0, 0],
+        );
+        let probe = group_changelog(vec![1, 2], vec![Some(3), Some(30)], vec![0, 0]);
+
+        let mut multiset = GroupAggregator::new(vec![1, 2], vec![0, 0], vec![1, 1], vec![0], true);
+        let mut running = GroupAggregator::new(vec![10, 11], vec![0, 0], vec![1, 1], vec![0], true);
+        assert_eq!(
+            multiset.update(&seed, 0).unwrap(),
+            running.update(&seed, 0).unwrap()
+        );
+
+        // A multiset-era blob (side batches populated, NULL main scalars) restores into the
+        // running representation: the elements fold back into the running extremes.
+        let blob: Vec<Vec<u8>> = multiset
+            .snapshot_partitions(128, &[-1])
+            .into_values()
+            .collect();
+        let mut restored = GroupAggregator::restore_partitions(
+            vec![10, 11],
+            vec![0, 0],
+            vec![1, 1],
+            vec![0],
+            true,
+            &blob,
+            0,
+        );
+        assert_eq!(
+            restored.update(&probe, 0).unwrap(),
+            multiset.update(&probe, 0).unwrap()
+        );
+
+        // The running kinds on the direct store: plain main rows, no companion element tables.
+        let codec = GroupStateCodec::new(
+            vec![10, 11],
+            vec![DataType::Int64; 2],
+            vec![1; 2],
+            vec![-1; 2],
+        );
+        let store =
+            RocksGroupStore::create(store_config("append-only-extremes", 0), codec).unwrap();
+        let mut rocks = GroupAggregator::new(vec![10, 11], vec![0, 0], vec![1, 1], vec![0], true)
+            .with_backend(store);
+        let mut control = GroupAggregator::new(vec![10, 11], vec![0, 0], vec![1, 1], vec![0], true);
+        for batch in [&seed, &probe] {
+            rocks.store_mut().set_clock(0);
+            assert_eq!(
+                rocks.update(batch, 0).unwrap(),
+                control.update(batch, 0).unwrap()
+            );
+        }
+    }
+
+    fn string_changelog(keys: Vec<i64>, values: Vec<Option<&str>>, kinds: Vec<i8>) -> RecordBatch {
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("key0", DataType::Int64, false),
+                Field::new("value0", DataType::Utf8, true),
+                Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(keys)),
+                Arc::new(StringArray::from(values)),
+                Arc::new(Int8Array::from(kinds)),
+            ],
+        )
+        .unwrap()
+    }
+
+    // String MIN/MAX extremes: the companion element is the Utf8 state scalar.
+    #[test]
+    fn string_extremes_match_memory_across_bundles() {
+        let kinds = vec![1i64, 2];
+        let codec = GroupStateCodec::new(
+            kinds.clone(),
+            vec![DataType::Utf8; 2],
+            vec![1; 2],
+            vec![-1; 2],
+        );
+        let store = RocksGroupStore::create(store_config("strings", 0), codec).unwrap();
+        let mut rocks = GroupAggregator::new(kinds.clone(), vec![3, 3], vec![1, 1], vec![0], true)
+            .with_backend(store);
+        let mut memory = GroupAggregator::new(kinds, vec![3, 3], vec![1, 1], vec![0], true);
+        let bundles = vec![
+            string_changelog(
+                vec![1, 1, 1],
+                vec![Some("pear"), Some("apple"), Some("fig")],
+                vec![0, 0, 0],
+            ),
+            string_changelog(vec![1], vec![Some("apple")], vec![3]),
+            string_changelog(vec![1, 1], vec![Some("fig"), Some("pear")], vec![3, 3]),
+        ];
+        for batch in &bundles {
+            rocks.store_mut().set_clock(0);
+            let from_rocks = rocks.update(batch, 0).unwrap();
+            let from_memory = memory.update(batch, 0).unwrap();
+            assert_eq!(from_rocks, from_memory);
+        }
+    }
+}

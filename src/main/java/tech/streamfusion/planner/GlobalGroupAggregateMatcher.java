@@ -295,7 +295,9 @@ final class GlobalGroupAggregateMatcher {
    * distinct COUNT/SUM keeps the distinct-set state (kind 7/9) fed from its view column.
    */
   static int[] kinds(StreamPhysicalGlobalGroupAggregate agg) {
+    RelDataType inputType = agg.getInput().getRowType();
     int[] kinds = new int[agg.aggCalls().size()];
+    int offset = agg.grouping().length;
     for (int i = 0; i < kinds.length; i++) {
       AggregateCall call = agg.aggCalls().apply(i);
       int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
@@ -305,9 +307,21 @@ final class GlobalGroupAggregateMatcher {
                 ? LocalGroupAggregateMatcher.KIND_COUNT_DISTINCT
                 : LocalGroupAggregateMatcher.KIND_SUM_DISTINCT;
       } else {
+        // A MIN/MAX merge is only admitted without retraction (see unsupportedReason), so a
+        // numeric one always runs as the plain running extreme — no retractable multiset.
+        if ((kind == WindowAggregateMatcher.KIND_MIN
+                || kind == WindowAggregateMatcher.KIND_MAX)
+            && GroupAggregateMatcher.runningExtremeType(
+                inputType.getFieldList().get(offset).getType().getSqlTypeName())) {
+          kind =
+              kind == WindowAggregateMatcher.KIND_MIN
+                  ? GroupAggregateMatcher.KIND_MIN_APPEND
+                  : GroupAggregateMatcher.KIND_MAX_APPEND;
+        }
         kinds[i] =
             kind == WindowAggregateMatcher.KIND_COUNT ? WindowAggregateMatcher.KIND_SUM : kind;
       }
+      offset += spanOf(agg, i);
     }
     return kinds;
   }
