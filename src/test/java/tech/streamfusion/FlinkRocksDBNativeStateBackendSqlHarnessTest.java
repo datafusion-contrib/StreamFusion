@@ -199,6 +199,55 @@ class FlinkRocksDBNativeStateBackendSqlHarnessTest {
   }
 
   @Test
+  void boundedRowsOverAggregateOnRocksDBBackendMatchesHost() throws Exception {
+    // Bounded ROWS frame: the per-key sliding buffer lives in the RocksDB frames table across
+    // 50 ms barriers — a firing hydrates exactly the fired keys' buffers, recomputes each row's
+    // frame, appends the survivors, and deletes the evicted rows.
+    NativeParity.assertParity(
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbBoundedOverEnvironment,
+        "SELECT k, v, ts, SUM(v) OVER w AS s, MAX(v) OVER w AS hi FROM src "
+            + "WINDOW w AS (PARTITION BY k ORDER BY rt ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)");
+  }
+
+  @Test
+  void boundedRangeOverAggregateOnRocksDBBackendMatchesHost() throws Exception {
+    // Bounded RANGE frame: the rowtime-interval frame reads the same frames table; eviction is
+    // the rowtime bound rather than a row count. The plan materializes the interval constant as
+    // an input column, so the payload codec's interval normalization is on this path.
+    NativeParity.assertParity(
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbBoundedOverEnvironment,
+        "SELECT k, v, ts, SUM(v) OVER (PARTITION BY k ORDER BY rt "
+            + "RANGE BETWEEN INTERVAL '1' SECOND PRECEDING AND CURRENT ROW) AS s FROM src");
+  }
+
+  @Test
+  void distinctOverAggregateOnRocksDBBackendMatchesHost() throws Exception {
+    // SUM(DISTINCT) over the unbounded fold: the seen-set lives in per-element companion rows,
+    // point-probed per firing — a duplicate value committed before a barrier stays skipped after.
+    NativeParity.assertParity(
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbRowtimeEnvironment,
+        "SELECT k, v, ts, SUM(DISTINCT v) OVER (PARTITION BY k ORDER BY rt) AS s FROM src");
+  }
+
+  @Test
+  void proctimeOverAggregateOnRocksDBBackendMatchesHost() throws Exception {
+    // Proctime OVER folds eagerly in arrival order: each push hydrates the batch's keys from the
+    // folds table and writes back — the persisted arrival counter keeps ordering across barriers.
+    NativeParity.assertParity(
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbProctimeEnvironment,
+        "SELECT k, v, SUM(v) OVER (PARTITION BY k ORDER BY pt) AS s FROM src");
+  }
+
+  @Test
+  void proctimeBoundedRowsOverAggregateOnRocksDBBackendMatchesHost() throws Exception {
+    // Proctime bounded ROWS: the sliding frame keys the frames table by the arrival sequence.
+    NativeParity.assertParity(
+        FlinkRocksDBNativeStateBackendSqlHarnessTest::rocksdbProctimeEnvironment,
+        "SELECT k, v, SUM(v) OVER w AS s, MAX(v) OVER w AS hi FROM src "
+            + "WINDOW w AS (PARTITION BY k ORDER BY pt ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)");
+  }
+
+  @Test
   void windowTopNOnRocksDBBackendMatchesHost() throws Exception {
     // Event-time window Top-N: open windows' buffers stage into the RocksDB table at each 50 ms
     // barrier, and every watermark firing merges the write buffer with a committed range scan
@@ -481,6 +530,75 @@ class FlinkRocksDBNativeStateBackendSqlHarnessTest {
             .column("ts", DataTypes.BIGINT())
             .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
             .watermark("rt", "SOURCE_WATERMARK()")
+            .build());
+    return tEnv;
+  }
+
+  /**
+   * The bounded-frame OVER source: like {@link #rocksdbRowtimeEnvironment()} but with strictly
+   * positive rowtimes. Flink's bounded functions initialize their per-key last-triggering
+   * timestamp to 0, so a {@code ts <= 0} row is dropped as late from the very first record — a
+   * per-key late rule the native operator does not replicate yet (it drops by the last
+   * watermark), so this source stays out of the divergent region.
+   */
+  private static TableEnvironment rocksdbBoundedOverEnvironment() {
+    Configuration configuration = new Configuration();
+    configuration.setString(
+        "state.backend.type", "tech.streamfusion.state.RocksDBNativeStateBackendFactory");
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(configuration);
+    env.setParallelism(1);
+    env.enableCheckpointing(50);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
+    DataStream<Row> source =
+        env.fromData(
+                Types.ROW_NAMED(new String[] {"k", "v", "ts"}, Types.LONG, Types.LONG, Types.LONG),
+                Row.of(1L, 30L, 2001L),
+                Row.of(2L, 50L, 1501L),
+                Row.of(1L, 20L, 1L),
+                Row.of(2L, 40L, 1001L),
+                Row.of(1L, 25L, 801L))
+            .assignTimestampsAndWatermarks(
+                WatermarkStrategy.<Row>forBoundedOutOfOrderness(Duration.ofSeconds(2))
+                    .withTimestampAssigner((row, ts) -> (Long) row.getField(2)));
+    tEnv.createTemporaryView(
+        "src",
+        source,
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("v", DataTypes.BIGINT())
+            .column("ts", DataTypes.BIGINT())
+            .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
+            .watermark("rt", "SOURCE_WATERMARK()")
+            .build());
+    return tEnv;
+  }
+
+  /** The proctime OVER harness source (arrival-ordered, parallelism 1) on the RocksDB backend. */
+  private static TableEnvironment rocksdbProctimeEnvironment() {
+    Configuration configuration = new Configuration();
+    configuration.setString(
+        "state.backend.type", "tech.streamfusion.state.RocksDBNativeStateBackendFactory");
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(configuration);
+    env.setParallelism(1);
+    env.enableCheckpointing(50);
+    StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+    tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
+    DataStream<Row> source =
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"k", "v"}, Types.LONG, Types.LONG),
+            Row.of(1L, 10L),
+            Row.of(2L, 100L),
+            Row.of(1L, 20L),
+            Row.of(2L, 200L),
+            Row.of(1L, 30L));
+    tEnv.createTemporaryView(
+        "src",
+        source,
+        Schema.newBuilder()
+            .column("k", DataTypes.BIGINT())
+            .column("v", DataTypes.BIGINT())
+            .columnByExpression("pt", "PROCTIME()")
             .build());
     return tEnv;
   }

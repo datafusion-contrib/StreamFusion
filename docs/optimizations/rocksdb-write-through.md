@@ -2,8 +2,9 @@
 
 **Applies to:** every native operator running on the RocksDB state backend's typed store — all
 operators today, event-time and proctime, including the multiset aggregate shapes (MIN/MAX
-retraction, DISTINCT) with per-element companion tables; only the over aggregate's gated variants
-remain on the snapshot path
+retraction, DISTINCT) with per-element companion tables and every OVER shape (unbounded folds,
+bounded ROWS/RANGE frame buffers, proctime, DISTINCT seen-sets); the snapshot path remains only
+for shapes whose state has no fixed-type native codec
 
 Found by issue [#26](https://github.com/datafusion-contrib/StreamFusion/issues/26): at 10M events
 the backend spent 80% of CPU in its own memory-pressure flush, and a StreamFusion-only tuning knob

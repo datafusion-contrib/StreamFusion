@@ -57,9 +57,14 @@ There are also deliberate implementation differences:
   writes (a two-sided operator's tables share one database under table-prefixed keys; window
   buffers append sequence-keyed entries and windowed aggregate state keys by window end, so
   watermarks fire with per-key-group range scans); session aggregates join them with key-major
-  session lists that hydrate by prefix scan for merging, and event-time over aggregates (unbounded
-  non-distinct folds and ranking window functions; bounded frames, proctime shapes, and distinct
-  aggregates stay on the snapshot path), event-time window rank, the event-time interval join
+  session lists that hydrate by prefix scan for merging, and over aggregates across every admitted
+  shape — the unbounded folds and ranking window functions keep one fold row per key; bounded
+  ROWS/RANGE frames keep their per-key sliding buffers as `[key][rowtime][arrival]`-ordered frame
+  rows (a firing prefix-scans exactly the fired keys, recomputes on the resident buffer, then
+  writes the appended rows and deletes the evicted ones) with per-key deadline stamp rows;
+  DISTINCT aggregates keep insert-only seen-sets as per-element companion rows, point-probed per
+  batch; and the proctime shapes run the same layouts eagerly, ordered by a persisted arrival
+  counter — event-time window rank, the event-time interval join
   (append-mostly sequence-keyed buffers carrying each row's matched flag), the temporal join
   (versioned build rows in byte-comparable version order), keep-first deduplicate, and the
   temporal sort buffer. Group aggregates with MIN/MAX retraction or DISTINCT keep their per-key
@@ -68,9 +73,11 @@ There are also deliberate implementation differences:
   and a retraction that removes the current extreme reseeks the ordered element table (a numeric
   MIN/MAX over an insert-only input needs no multiset at all and runs as a plain running value). Typed
   stores persist an operator's processing-time timer deadline under a reserved key, so proctime
-  windows, sessions, rank, and the window and interval joins run direct too. Every such operator
-  now reads and writes RocksDB per key; only the over aggregate's gated variants above replace
-  key-group snapshot payloads in RocksDB at each checkpoint;
+  windows, sessions, rank, and the window and interval joins run direct too. Every native operator
+  now reads and writes RocksDB per key; the generic snapshot path remains only as the fallback for
+  a shape whose state has no fixed-type native codec (a DISTINCT over a value type with no faithful
+  type code), which keeps its memory-resident state and replaces key-group snapshot payloads in
+  RocksDB at each checkpoint;
 - the native stores' shared cache and write-buffer manager live in StreamFusion's own RocksDB
   library, sized by the same Flink options and formulas but leased separately from the delegate
   backend's pool (C++ objects cannot cross the two RocksDB libraries), and the binding exposes no
@@ -97,5 +104,6 @@ groups once at open and bulk-writes them — rows, TTL stamps, watermarks, seque
 and timer deadlines — through the operator's typed store, so a memory-to-RocksDB transition
 continues on the direct per-key path and its next checkpoint is an ordinary incremental RocksDB
 handle. A multiset group aggregate's import also spreads each blob's side batches into its
-companion element tables. Only the over aggregate's gated variants restore such state into the
-generic snapshot store instead.
+companion element tables, and an over aggregate's import fans its buffer rows into the frames
+table and its seen-sets into the distinct element tables. Only the snapshot-path fallback shapes
+above restore such state into the generic snapshot store instead.

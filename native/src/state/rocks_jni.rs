@@ -2962,7 +2962,17 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbOverAggregatorSuppor
         let supported =
             match rocks_over_state_types(&value_types, &kinds, frame_kind as i64, proctime != 0) {
                 Some(state_types) => {
-                    rocks_row_supported(&state_types) && rocks_row_supported(&payload_types)
+                    rocks_row_supported(&state_types)
+                        && rocks_row_supported(&rocks_over_frame_value_types(
+                            &value_types,
+                            frame_kind as i64,
+                        ))
+                        && rocks_row_supported(&rocks_over_distinct_element_types(
+                            &value_types,
+                            &kinds,
+                            frame_kind as i64,
+                        ))
+                        && rocks_row_supported(&payload_types)
                 }
                 None => false,
             };
@@ -2970,13 +2980,15 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbOverAggregatorSuppor
     })
 }
 
-/// [`open_store`] for the OVER aggregate's two-table store: fresh when no restored sources
+/// [`open_store`] for the OVER aggregate's multi-table store: fresh when no restored sources
 /// exist, otherwise merged once with this subtask's key-group range.
 #[allow(clippy::too_many_arguments)]
 fn open_over_agg_store(
     env: &mut JNIEnv,
     config: RocksStoreConfig,
     state_types: &[DataType],
+    frame_value_types: &[DataType],
+    distinct_element_types: &[DataType],
     payload_schema: SchemaRef,
     source_directories: &JObjectArray,
     source_snapshot_tokens: &JObjectArray,
@@ -2995,11 +3007,20 @@ fn open_over_agg_store(
         .collect();
     let key_groups = key_group_start..=key_group_end;
     if source_dirs.is_empty() {
-        RocksOverAggStore::create(config, state_types, payload_schema, key_groups)
+        RocksOverAggStore::create(
+            config,
+            state_types,
+            frame_value_types,
+            distinct_element_types,
+            payload_schema,
+            key_groups,
+        )
     } else {
         RocksOverAggStore::open_merged(
             config,
             state_types,
+            frame_value_types,
+            distinct_element_types,
             payload_schema,
             key_groups,
             &source_dirs
@@ -3063,6 +3084,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBOverAggregator
                     &mut env,
                     config,
                     &state_types,
+                    &rocks_over_frame_value_types(&value_types, frame_kind as i64),
+                    &rocks_over_distinct_element_types(&value_types, &kinds, frame_kind as i64),
                     schema,
                     &source_directories,
                     &source_snapshot_tokens,

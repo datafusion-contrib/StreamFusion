@@ -1081,7 +1081,10 @@ impl OverInner {
                 inner.key_converter = Some(key_row_converter_from_types(key_types));
                 inner.key_types = key_types.to_vec();
             }
-            OverInner::Bounded(_) => unreachable!("bounded OVER frames stay on the snapshot store"),
+            OverInner::Bounded(inner) => {
+                inner.key_converter = Some(key_row_converter_from_types(key_types));
+                inner.key_types = key_types.to_vec();
+            }
         }
     }
 
@@ -1101,7 +1104,7 @@ impl OverInner {
                 .iter()
                 .flat_map(|&kind| WindowFnState::new(kind).state_types())
                 .collect(),
-            OverInner::Bounded(_) => unreachable!("bounded OVER frames stay on the snapshot store"),
+            OverInner::Bounded(_) => Vec::new(), // per-key state is the frames table, not a fold row
         }
     }
 
@@ -1127,7 +1130,7 @@ impl OverInner {
                     column += counts[i];
                 }
             }
-            OverInner::Bounded(_) => unreachable!("bounded OVER frames stay on the snapshot store"),
+            OverInner::Bounded(_) => unreachable!("bounded OVER frames keep no fold row"),
         }
     }
 
@@ -1149,7 +1152,7 @@ impl OverInner {
                 .iter()
                 .flat_map(WindowFnState::state)
                 .collect(),
-            OverInner::Bounded(_) => unreachable!("bounded OVER frames stay on the snapshot store"),
+            OverInner::Bounded(_) => unreachable!("bounded OVER frames keep no fold row"),
         }
     }
 
@@ -1165,18 +1168,19 @@ impl OverInner {
 }
 
 /// The fold-state column types the persistent OVER store carries per key, or `None` when the
-/// shape stays on the snapshot store: proctime ordering (eager emission on processing-time
-/// retention clocks), bounded ROWS/RANGE frames (a per-key row buffer, not a fixed-width fold),
-/// distinct aggregates (list-typed seen-sets), or a mix of window functions and aggregates.
+/// shape cannot run on it: a mix of window functions and aggregates (which the planner never
+/// builds — this is defensive). A bounded frame keeps no fold row (its per-key state is the
+/// frames table), so it declares an empty fold layout; the proctime shapes share the rowtime
+/// layouts (their ordering key is the arrival sequence).
 #[cfg(feature = "rocksdb-state")]
 pub(crate) fn rocks_over_state_types(
     value_types: &[i64],
     kinds: &[i64],
     frame_kind: i64,
-    proctime: bool,
+    _proctime: bool,
 ) -> Option<Vec<DataType>> {
-    if proctime || kinds.iter().any(|&kind| kind >= 100) {
-        return None;
+    if frame_kind != 0 {
+        return Some(Vec::new());
     }
     if kinds.iter().all(|&kind| is_window_function_kind(kind)) {
         return Some(
@@ -1186,7 +1190,7 @@ pub(crate) fn rocks_over_state_types(
                 .collect(),
         );
     }
-    if frame_kind != 0 || kinds.iter().any(|&kind| is_window_function_kind(kind)) {
+    if kinds.iter().any(|&kind| is_window_function_kind(kind)) {
         return None;
     }
     Some(
@@ -1196,6 +1200,38 @@ pub(crate) fn rocks_over_state_types(
             .map(|(&kind, &vt)| OverAggState::new(kind, &value_data_type(vt)).result_type())
             .collect(),
     )
+}
+
+/// The bounded shapes' frame-row value column types (empty for the unbounded shapes).
+#[cfg(feature = "rocksdb-state")]
+pub(crate) fn rocks_over_frame_value_types(value_types: &[i64], frame_kind: i64) -> Vec<DataType> {
+    if frame_kind == 0 {
+        return Vec::new();
+    }
+    value_types
+        .iter()
+        .map(|&code| value_data_type(code))
+        .collect()
+}
+
+/// The unbounded fold's DISTINCT seen-set element types, in store slot order (empty when no
+/// aggregate is DISTINCT or the frame is bounded — a bounded frame recomputes DISTINCT from its
+/// buffered rows and keeps no set).
+#[cfg(feature = "rocksdb-state")]
+pub(crate) fn rocks_over_distinct_element_types(
+    value_types: &[i64],
+    kinds: &[i64],
+    frame_kind: i64,
+) -> Vec<DataType> {
+    if frame_kind != 0 {
+        return Vec::new();
+    }
+    kinds
+        .iter()
+        .zip(value_types)
+        .filter(|(&kind, _)| kind >= 100)
+        .map(|(_, &vt)| value_data_type(vt))
+        .collect()
 }
 
 /// Columnar OVER: buffers whole input batches, and on a watermark emits the rows it has completed
@@ -1247,18 +1283,26 @@ pub(crate) struct OverWindowAggregator {
     /// byte-identically to the inner's converter (same columns, same codec).
     key_converter: Option<RowConverter>,
     pub(crate) memory: OperatorMemory,
-    /// Persistent-state mode: pending rows and per-key fold state live in RocksDB; the in-memory
-    /// `buffered` batches and the inner's key map stay empty between bundles.
+    /// Persistent-state mode: pending rows, per-key fold state, bounded-frame buffers, and
+    /// distinct seen-sets live in RocksDB; the in-memory `buffered` batches and the inner's key
+    /// map stay empty between bundles.
     #[cfg(feature = "rocksdb-state")]
     store: Option<crate::state::RocksOverAggStore>,
-    /// Fold tombstones a cleanup staged this call (an expired key clearing silently), written
-    /// with the call's other store writes so a restore cannot resurrect the cleared fold.
+    /// Point deletes a cleanup staged this call (an expired key clearing its fold or stamp row
+    /// silently), written with the call's other store writes so a restore cannot resurrect the
+    /// cleared state.
     #[cfg(feature = "rocksdb-state")]
     store_tombstones: Vec<Vec<u8>>,
+    /// Prefix ranges a cleanup staged this call (a cleared key's frame buffer or seen-sets).
+    #[cfg(feature = "rocksdb-state")]
+    store_range_deletes: Vec<Vec<u8>>,
     #[cfg(feature = "rocksdb-state")]
     store_state_types: Vec<DataType>,
     #[cfg(feature = "rocksdb-state")]
     store_key_types: Vec<DataType>,
+    /// The DISTINCT aggregate positions of the unbounded fold, in store slot order.
+    #[cfg(feature = "rocksdb-state")]
+    distinct_slots: Vec<usize>,
     key_timestamp_precisions: Vec<i32>,
 }
 
@@ -1299,9 +1343,13 @@ impl OverWindowAggregator {
             #[cfg(feature = "rocksdb-state")]
             store_tombstones: Vec::new(),
             #[cfg(feature = "rocksdb-state")]
+            store_range_deletes: Vec::new(),
+            #[cfg(feature = "rocksdb-state")]
             store_state_types: Vec::new(),
             #[cfg(feature = "rocksdb-state")]
             store_key_types: Vec::new(),
+            #[cfg(feature = "rocksdb-state")]
+            distinct_slots: Vec::new(),
             key_timestamp_precisions: vec![-1; key_arity],
         }
     }
@@ -1527,10 +1575,21 @@ impl OverWindowAggregator {
         key_types: Vec<DataType>,
     ) -> Self {
         self.watermark = store.watermark();
+        self.next_seq = store.next_seq() as i64;
         self.key_converter = Some(key_row_converter_from_types(&key_types));
         self.inner.seed_key_codec(&key_types);
         self.store_state_types = self.inner.store_state_types();
         self.store_key_types = key_types;
+        self.distinct_slots = match &self.inner {
+            OverInner::Aggregates(inner) => inner
+                .kinds
+                .iter()
+                .enumerate()
+                .filter(|(_, &kind)| kind >= 100)
+                .map(|(index, _)| index)
+                .collect(),
+            _ => Vec::new(),
+        };
         self.store = Some(store);
         self
     }
@@ -1559,20 +1618,57 @@ impl OverWindowAggregator {
         &mut self,
         restored_at_ms: i64,
     ) -> Result<(), DataFusionError> {
+        if self.value_ttl_on() {
+            // The proctime unbounded fold: the fold stamps are last-write clocks. A pre-TTL
+            // writer's i64::MIN adopts the restore clock as a fresh last write, Flink's
+            // enable-TTL migration.
+            let store = self.store.as_ref().expect("over rocksdb store");
+            for fold in store.scan_folds()? {
+                let stamp = if fold.stamp == i64::MIN {
+                    restored_at_ms
+                } else {
+                    fold.stamp
+                };
+                self.retention_bytes += byte_key_bytes(&fold.key);
+                self.last_write_ms.insert(ByteKey(fold.key), stamp);
+            }
+            return Ok(());
+        }
         if !self.deadline_cleaning() {
             return Ok(());
         }
         let migrated = restored_at_ms.saturating_add(self.max_retention_ms);
-        let store = self.store.as_ref().expect("over rocksdb store");
-        for fold in store.scan_folds()? {
-            let stamp = if fold.stamp == i64::MIN {
-                migrated
-            } else {
-                fold.stamp
-            };
-            self.retention_bytes += byte_key_bytes(&fold.key);
-            self.cleanup_state.insert(ByteKey(fold.key), stamp);
+        if matches!(self.inner, OverInner::Bounded(_)) {
+            // The bounded shapes: per-key stamp rows carry the deadlines; a frame-holding key
+            // without one (a pre-retention writer) is stamped from the restore clock. Only the
+            // rowtime frame buffers pending rows, and its deferral counts re-derive below.
+            let store = self.store.as_ref().expect("over rocksdb store");
+            for (key, stamp) in store.scan_stamps()? {
+                self.retention_bytes += byte_key_bytes(&key);
+                self.cleanup_state.insert(ByteKey(key), stamp);
+            }
+            for (key, _) in store.scan_frames()? {
+                if !self.cleanup_state.contains_key(&*key) {
+                    self.retention_bytes += byte_key_bytes(&key);
+                    self.cleanup_state.insert(ByteKey(key), migrated);
+                }
+            }
+        } else {
+            let store = self.store.as_ref().expect("over rocksdb store");
+            for fold in store.scan_folds()? {
+                let stamp = if fold.stamp == i64::MIN {
+                    migrated
+                } else {
+                    fold.stamp
+                };
+                self.retention_bytes += byte_key_bytes(&fold.key);
+                self.cleanup_state.insert(ByteKey(fold.key), stamp);
+            }
         }
+        if self.proctime {
+            return Ok(()); // proctime buffers nothing pending — no deferral counts
+        }
+        let store = self.store.as_ref().expect("over rocksdb store");
         let Some(pending) = store.scan_pending(&store.payload_schema())? else {
             return Ok(());
         };
@@ -1597,19 +1693,29 @@ impl OverWindowAggregator {
 
     /// Decodes restored blob key groups once at open and writes them through the typed store, so
     /// a canonical or raw restore continues on the direct persistent path. Fold rows land in the
-    /// folds table with their restored retention stamps; buffered rows append to the pending
-    /// table in blob order, reproducing the memory restore's arrival order. `adopt_store_retention`
-    /// then hydrates the resident retention bookkeeping from what was written.
+    /// folds table with their restored retention stamps (their seen-sets fanning out to the
+    /// distinct tables); a bounded shape's buffer rows land in the frames table under fresh
+    /// arrival sequences in blob order, with per-key stamp rows; buffered pending rows append to
+    /// the pending table in blob order, reproducing the memory restore's arrival order; and the
+    /// blob's arrival counter floors the store's, so proctime ordering keys stay monotone.
+    /// `adopt_store_retention` then hydrates the resident retention bookkeeping from what was
+    /// written.
     #[cfg(feature = "rocksdb-state")]
     pub(crate) fn import_partitions(
         &mut self,
         snapshots: &[Vec<u8>],
     ) -> Result<(), DataFusionError> {
         let state_count = self.store_state_types.len();
+        let bounded = matches!(self.inner, OverInner::Bounded(_));
         for bytes in snapshots {
             if bytes.len() < 12 {
                 continue;
             }
+            let next_seq = i64::from_le_bytes(bytes[0..8].try_into().expect("next_seq"));
+            self.store
+                .as_mut()
+                .expect("over rocksdb store")
+                .adopt_next_seq(next_seq.max(0) as u64);
             let accumulators_len =
                 u32::from_le_bytes(bytes[8..12].try_into().expect("accumulators len")) as usize;
             assert!(
@@ -1617,32 +1723,14 @@ impl OverWindowAggregator {
                 "truncated over-aggregate raw key-group snapshot"
             );
             for batch in read_ipc_if_present(&bytes[12..12 + accumulators_len]) {
-                let stamps = retention_stamps(&batch);
-                let arity = batch.num_columns() - state_count - stamps.is_some() as usize;
-                let key_columns: Vec<usize> = (0..arity).collect();
-                let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
-                let keys_encoded =
-                    encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
-                let store = self.store.as_mut().expect("over rocksdb store");
-                let mut entries = Vec::with_capacity(batch.num_rows());
-                for row in 0..batch.num_rows() {
-                    let key_group = store.key_group(binary_row_hash(
-                        &batch,
-                        &key_columns,
-                        row,
-                        &self.key_timestamp_precisions,
-                    ));
-                    entries.push((
-                        store.fold_key(key_group, keys_encoded.row(row).data()),
-                        stamps.map_or(i64::MIN, |stamps| stamps.value(row)),
-                    ));
+                if bounded {
+                    self.import_frame_batch(&batch)?;
+                } else {
+                    self.import_fold_batch(&batch, state_count)?;
                 }
-                let state_columns: Vec<ArrayRef> = (arity..arity + state_count)
-                    .map(|column| batch.column(column).clone())
-                    .collect();
-                store.write_folds(&entries, &state_columns)?;
             }
             for batch in read_ipc_if_present(&bytes[12 + accumulators_len..]) {
+                let batch = Self::normalize_interval_columns(&batch);
                 let rowtimes = rt_to_millis(batch.column(self.rt_column));
                 self.store
                     .as_mut()
@@ -1655,7 +1743,118 @@ impl OverWindowAggregator {
                     )?;
             }
         }
+        self.next_seq = self.store.as_ref().expect("over rocksdb store").next_seq() as i64;
         Ok(())
+    }
+
+    /// One restored unbounded-fold batch (`[key0.., state0.., distinct lists.., stamp?]`) into
+    /// the folds and distinct tables.
+    #[cfg(feature = "rocksdb-state")]
+    fn import_fold_batch(
+        &mut self,
+        batch: &RecordBatch,
+        state_count: usize,
+    ) -> Result<(), DataFusionError> {
+        let stamps = retention_stamps(batch);
+        let arity = batch.num_columns()
+            - state_count
+            - self.distinct_slots.len()
+            - stamps.is_some() as usize;
+        let key_columns: Vec<usize> = (0..arity).collect();
+        let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
+        let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
+        let store = self.store.as_mut().expect("over rocksdb store");
+        let mut entries = Vec::with_capacity(batch.num_rows());
+        let mut key_groups = Vec::with_capacity(batch.num_rows());
+        for row in 0..batch.num_rows() {
+            let key_group = store.key_group(binary_row_hash(
+                batch,
+                &key_columns,
+                row,
+                &self.key_timestamp_precisions,
+            ));
+            key_groups.push(key_group);
+            entries.push((
+                store.fold_key(key_group, keys_encoded.row(row).data()),
+                stamps.map_or(i64::MIN, |stamps| stamps.value(row)),
+            ));
+        }
+        let state_columns: Vec<ArrayRef> = (arity..arity + state_count)
+            .map(|column| batch.column(column).clone())
+            .collect();
+        store.write_folds(&entries, &state_columns)?;
+        for slot in 0..self.distinct_slots.len() {
+            let list = batch
+                .column(arity + state_count + slot)
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .expect("over distinct list");
+            let store = self.store.as_ref().expect("over rocksdb store");
+            let element_rows = store.encode_distinct_elements(slot, &list.values().clone())?;
+            let offsets = list.offsets();
+            let mut db_keys: Vec<Vec<u8>> = Vec::new();
+            for row in 0..batch.num_rows() {
+                let prefix =
+                    store.distinct_prefix(slot, key_groups[row], keys_encoded.row(row).data());
+                for index in offsets[row] as usize..offsets[row + 1] as usize {
+                    let mut db_key = prefix.clone();
+                    db_key.extend_from_slice(&element_rows[index]);
+                    db_keys.push(db_key);
+                }
+            }
+            self.store
+                .as_mut()
+                .expect("over rocksdb store")
+                .write_distinct(&db_keys)?;
+        }
+        Ok(())
+    }
+
+    /// One restored bounded-frame batch (`[key0.., rt, value0.., stamp?]`, one row per buffered
+    /// row) into the frames table under fresh sequences in blob order, with one stamp row per key.
+    #[cfg(feature = "rocksdb-state")]
+    fn import_frame_batch(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        let stamps = retention_stamps(batch);
+        let value_count = self.value_columns.len();
+        let arity = batch.num_columns() - 1 - value_count - stamps.is_some() as usize;
+        let key_columns: Vec<usize> = (0..arity).collect();
+        let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
+        let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
+        let rt = column_i64(batch, "rt");
+        let seq_start = self
+            .store
+            .as_mut()
+            .expect("over rocksdb store")
+            .allocate_seqs(batch.num_rows());
+        let store = self.store.as_ref().expect("over rocksdb store");
+        let mut writes: Vec<(Vec<u8>, i64, u64)> = Vec::with_capacity(batch.num_rows());
+        let mut stamp_entries: Vec<(Vec<u8>, Option<i64>)> = Vec::new();
+        let mut stamped: ahash::HashSet<ByteKey> = ahash::HashSet::default();
+        for row in 0..batch.num_rows() {
+            let key = keys_encoded.row(row).data();
+            let key_group = store.key_group(binary_row_hash(
+                batch,
+                &key_columns,
+                row,
+                &self.key_timestamp_precisions,
+            ));
+            writes.push((
+                store.frame_prefix(key_group, key),
+                rt.value(row),
+                seq_start + row as u64,
+            ));
+            if let Some(stamps) = stamps {
+                if stamped.insert(ByteKey::from(key)) {
+                    stamp_entries.push((store.stamp_key(key_group, key), Some(stamps.value(row))));
+                }
+            }
+        }
+        let value_columns: Vec<ArrayRef> = (arity + 1..arity + 1 + value_count)
+            .map(|column| batch.column(column).clone())
+            .collect();
+        let store = self.store.as_mut().expect("over rocksdb store");
+        store.write_frames(&writes, &value_columns)?;
+        store.write_stamps(&stamp_entries)
     }
 
     /// Persists the late-data watermark and the arrival sequence, then takes the store's native
@@ -1672,21 +1871,29 @@ impl OverWindowAggregator {
             .checkpoint(watermark, snapshot_dir)
     }
 
-    /// Stages one cleared key's fold tombstone (no-op on memory state). The key group re-derives
-    /// from the arrow-row key — decode the key columns, re-hash their BinaryRow — because a sweep
-    /// clears keys outside any batch context; clears are rare (idle-key expiry only).
+    /// Stages one cleared key's persistent deletes (no-op on memory state) — the fold row and
+    /// seen-set ranges of the unbounded shapes, the frame range and stamp row of the bounded
+    /// ones. The key group re-derives from the arrow-row key — decode the key columns, re-hash
+    /// their BinaryRow — because a sweep clears keys outside any batch context; clears are rare
+    /// (idle-key expiry only).
     #[cfg(feature = "rocksdb-state")]
     fn stage_fold_tombstone(&mut self, key: &[u8]) {
         if self.store.is_none() {
             return;
         }
         let key_group = self.store_fold_key_group(key);
-        let db_key = self
-            .store
-            .as_ref()
-            .expect("over rocksdb store")
-            .fold_key(key_group, key);
-        self.store_tombstones.push(db_key);
+        let store = self.store.as_ref().expect("over rocksdb store");
+        if matches!(self.inner, OverInner::Bounded(_)) {
+            self.store_range_deletes
+                .push(store.frame_prefix(key_group, key));
+            self.store_tombstones.push(store.stamp_key(key_group, key));
+        } else {
+            self.store_tombstones.push(store.fold_key(key_group, key));
+            for slot in 0..self.distinct_slots.len() {
+                self.store_range_deletes
+                    .push(store.distinct_prefix(slot, key_group, key));
+            }
+        }
     }
 
     #[cfg(feature = "rocksdb-state")]
@@ -1710,17 +1917,25 @@ impl OverWindowAggregator {
             ))
     }
 
-    /// Writes the tombstones staged by this call's cleanups through to the store.
+    /// Writes the tombstones and range deletes staged by this call's cleanups through to the
+    /// store — before any hydration in the same call, so a cleared key reads back absent.
     #[cfg(feature = "rocksdb-state")]
     fn flush_tombstones(&mut self) -> Result<(), DataFusionError> {
-        if self.store_tombstones.is_empty() {
-            return Ok(());
+        if !self.store_tombstones.is_empty() {
+            let tombstones = std::mem::take(&mut self.store_tombstones);
+            self.store
+                .as_mut()
+                .expect("over rocksdb store")
+                .delete_folds(&tombstones)?;
         }
-        let tombstones = std::mem::take(&mut self.store_tombstones);
-        self.store
-            .as_mut()
-            .expect("over rocksdb store")
-            .delete_folds(&tombstones)
+        if !self.store_range_deletes.is_empty() {
+            let ranges = std::mem::take(&mut self.store_range_deletes);
+            self.store
+                .as_mut()
+                .expect("over rocksdb store")
+                .delete_prefix_range(&ranges)?;
+        }
+        Ok(())
     }
 
     /// Bounds this operator's state (buffered batches plus the inner per-key fold state) by the
@@ -1758,6 +1973,12 @@ impl OverWindowAggregator {
     /// resident — nothing folds here; emission and the per-key fold are watermark-driven
     /// (`flush`) — while the deadline bookkeeping runs exactly as on memory state.
     pub(crate) fn push(&mut self, batch: RecordBatch, now_ms: i64) -> Result<(), DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        let batch = if self.store.is_some() {
+            Self::normalize_interval_columns(&batch)
+        } else {
+            batch
+        };
         self.input_schema = Some(batch.schema());
         let rowtimes = rt_to_millis(batch.column(self.rt_column));
         let on_time: BooleanArray = rowtimes
@@ -1792,14 +2013,402 @@ impl OverWindowAggregator {
         self.account()
     }
 
+    /// One key's persisted retention stamp for a fold write-back: the cleanup deadline (rowtime
+    /// shapes), the last-write clock (the proctime per-value TTL), or `i64::MIN` while retention
+    /// is off.
+    #[cfg(feature = "rocksdb-state")]
+    fn fold_stamp(&self, key: &[u8]) -> i64 {
+        if self.deadline_cleaning() {
+            self.cleanup_state.get(key).copied().unwrap_or(i64::MIN)
+        } else if self.value_ttl_on() {
+            self.last_write_ms.get(key).copied().unwrap_or(i64::MIN)
+        } else {
+            i64::MIN
+        }
+    }
+
+    /// The host declares day-time INTERVAL columns as their BIGINT millis form and year-month
+    /// ones as INT months (Flink's internal representations, the payload codec's contract), but a
+    /// native Calc materializes an interval literal as an Arrow interval column — normalize such
+    /// columns to the declared form before they enter the store codecs. The emitted rows carry
+    /// the normalized form too; downstream consumers never read the column (it exists only as the
+    /// OVER frame's hoisted constant).
+    #[cfg(feature = "rocksdb-state")]
+    fn normalize_interval_columns(batch: &RecordBatch) -> RecordBatch {
+        use arrow::datatypes::IntervalUnit;
+        if !batch
+            .schema()
+            .fields()
+            .iter()
+            .any(|field| matches!(field.data_type(), DataType::Interval(_)))
+        {
+            return batch.clone();
+        }
+        let mut fields: Vec<Field> = Vec::with_capacity(batch.num_columns());
+        let mut columns: Vec<ArrayRef> = Vec::with_capacity(batch.num_columns());
+        for (field, column) in batch.schema().fields().iter().zip(batch.columns()) {
+            match field.data_type() {
+                DataType::Interval(IntervalUnit::DayTime) => {
+                    let array: &IntervalDayTimeArray =
+                        column.as_any().downcast_ref().expect("day-time interval");
+                    let millis: Int64Array = array
+                        .iter()
+                        .map(|value| {
+                            value.map(|value| {
+                                value.days as i64 * 86_400_000 + value.milliseconds as i64
+                            })
+                        })
+                        .collect();
+                    fields.push(Field::new(
+                        field.name(),
+                        DataType::Int64,
+                        field.is_nullable(),
+                    ));
+                    columns.push(Arc::new(millis));
+                }
+                DataType::Interval(IntervalUnit::YearMonth) => {
+                    let array = column
+                        .as_any()
+                        .downcast_ref::<arrow::array::IntervalYearMonthArray>()
+                        .expect("year-month interval");
+                    let months: Int32Array = array.iter().collect();
+                    fields.push(Field::new(
+                        field.name(),
+                        DataType::Int32,
+                        field.is_nullable(),
+                    ));
+                    columns.push(Arc::new(months));
+                }
+                _ => {
+                    fields.push(field.as_ref().clone());
+                    columns.push(column.clone());
+                }
+            }
+        }
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to normalize over interval columns")
+    }
+
+    /// The batch's distinct touched keys, each with its fold-row DB key.
+    #[cfg(feature = "rocksdb-state")]
+    fn touched_keys(&mut self, batch: &RecordBatch) -> (Vec<ByteKey>, Vec<Vec<u8>>) {
+        let key_arrays: Vec<&ArrayRef> =
+            self.key_columns.iter().map(|&i| batch.column(i)).collect();
+        let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
+        let mut encoder =
+            BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_timestamp_precisions);
+        let store = self.store.as_ref().expect("over rocksdb store");
+        let mut seen: ahash::HashSet<ByteKey> = ahash::HashSet::default();
+        let mut touched: Vec<ByteKey> = Vec::new();
+        let mut db_keys: Vec<Vec<u8>> = Vec::new();
+        for row in 0..batch.num_rows() {
+            let key = ByteKey::from(keys_encoded.row(row).data());
+            if seen.insert(key.clone()) {
+                db_keys.push(store.fold_key(store.key_group(encoder.hash(row)), &key.0));
+                touched.push(key);
+            }
+        }
+        (touched, db_keys)
+    }
+
+    /// Store-mode fold for the unbounded shapes, shared by the rowtime firing and the proctime
+    /// eager push: the per-key running state hydrates from the folds table for exactly the
+    /// touched keys (one multi-get), any DISTINCT seen-set entries the batch names point-probe in
+    /// (one multi-get across slots), the fold runs on the memory path's own code, and the touched
+    /// folds plus the newly seen elements write back in one columnar pass with the post-fold
+    /// retention stamp riding each value.
+    #[cfg(feature = "rocksdb-state")]
+    fn fold_unbounded_on_store(
+        &mut self,
+        batch: &RecordBatch,
+        rt: ArrayRef,
+        settle_now_ms: Option<i64>,
+    ) -> Result<RecordBatch, DataFusionError> {
+        let (touched, db_keys) = self.touched_keys(batch);
+        let store = self.store.as_ref().expect("over rocksdb store");
+        for (key, stored) in touched.iter().zip(store.get_folds(&db_keys)?) {
+            if let Some((_, scalars)) = stored {
+                self.inner.seed_key(&key.0, &scalars);
+            }
+        }
+        let additions = self.probe_store_distinct(batch)?;
+
+        let aggregates = self.inner.update(&self.keyed_subbatch(batch, rt));
+        if let Some(now_ms) = settle_now_ms {
+            self.settle_fired(batch, now_ms);
+        }
+
+        let mut entries: Vec<(Vec<u8>, i64)> = Vec::with_capacity(touched.len());
+        let mut state_columns: Vec<Vec<ScalarValue>> =
+            vec![Vec::with_capacity(touched.len()); self.store_state_types.len()];
+        for (key, db_key) in touched.iter().zip(db_keys) {
+            let stamp = self.fold_stamp(&key.0);
+            for (column, scalar) in state_columns.iter_mut().zip(self.inner.export_key(&key.0)) {
+                column.push(scalar);
+            }
+            entries.push((db_key, stamp));
+        }
+        self.inner.clear_resident();
+        let arrays: Vec<ArrayRef> = state_columns
+            .into_iter()
+            .zip(&self.store_state_types)
+            .map(|(scalars, data_type)| scalars_to_array(scalars, data_type))
+            .collect();
+        let store = self.store.as_mut().expect("over rocksdb store");
+        store.write_folds(&entries, &arrays)?;
+        store.write_distinct(&additions)?;
+        Ok(aggregates)
+    }
+
+    /// Point-hydrates the DISTINCT seen-set entries this batch's rows name into the touched keys'
+    /// resident sets (probe hits), and returns the misses — exactly the companion rows the fold
+    /// is about to add, for the write-back. OVER input is insert-only, so a probed-absent element
+    /// with a non-null occurrence always becomes present.
+    #[cfg(feature = "rocksdb-state")]
+    fn probe_store_distinct(
+        &mut self,
+        batch: &RecordBatch,
+    ) -> Result<Vec<Vec<u8>>, DataFusionError> {
+        if self.distinct_slots.is_empty() {
+            return Ok(Vec::new());
+        }
+        let value_types: Vec<DataType> = match &self.inner {
+            OverInner::Aggregates(inner) => inner.value_types.clone(),
+            _ => return Ok(Vec::new()),
+        };
+        let key_arrays: Vec<&ArrayRef> =
+            self.key_columns.iter().map(|&i| batch.column(i)).collect();
+        let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
+        let mut encoder =
+            BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_timestamp_precisions);
+        let store = self.store.as_ref().expect("over rocksdb store");
+        let mut probe_keys: Vec<Vec<u8>> = Vec::new();
+        let mut probe_meta: Vec<(usize, ByteKey, ScalarValue)> = Vec::new();
+        let mut deduped: ahash::HashSet<Vec<u8>> = ahash::HashSet::default();
+        for (slot, &agg) in self.distinct_slots.clone().iter().enumerate() {
+            let column = batch.column(self.value_columns[agg]);
+            let reader = over_value_column(column, &value_types[agg]);
+            let mut scalars: Vec<ScalarValue> = Vec::new();
+            let mut rows: Vec<usize> = Vec::new();
+            for row in 0..batch.num_rows() {
+                if let Some(value) = reader.at(row) {
+                    scalars.push(num_to_scalar(&value_types[agg], Some(value)));
+                    rows.push(row);
+                }
+            }
+            if scalars.is_empty() {
+                continue;
+            }
+            let elements = scalars_to_array(scalars.clone(), &value_types[agg]);
+            let element_rows = store.encode_distinct_elements(slot, &elements)?;
+            for ((row, element_row), scalar) in rows.iter().zip(element_rows).zip(scalars) {
+                let key = keys_encoded.row(*row).data();
+                let key_group = store.key_group(encoder.hash(*row));
+                let mut db_key = store.distinct_prefix(slot, key_group, key);
+                db_key.extend_from_slice(&element_row);
+                if deduped.insert(db_key.clone()) {
+                    probe_keys.push(db_key);
+                    probe_meta.push((agg, ByteKey::from(key), scalar));
+                }
+            }
+        }
+        let present = store.probe_distinct(&probe_keys)?;
+        let OverInner::Aggregates(inner) = &mut self.inner else {
+            unreachable!("distinct slots imply the unbounded aggregate shape");
+        };
+        let mut additions: Vec<Vec<u8>> = Vec::new();
+        for ((db_key, (agg, key, scalar)), hit) in
+            probe_keys.into_iter().zip(probe_meta).zip(present)
+        {
+            if hit {
+                let state = &mut inner.states(&key.0)[agg];
+                state
+                    .distinct
+                    .as_mut()
+                    .expect("distinct state")
+                    .add_scalar(scalar);
+            } else {
+                additions.push(db_key);
+            }
+        }
+        Ok(additions)
+    }
+
+    /// Store-mode fold for the bounded shapes, shared by the rowtime firing and the proctime
+    /// eager push: exactly the touched keys' frame buffers hydrate from the frames table (one
+    /// prefix scan each), the append/recompute/evict runs on the memory path's own code, and the
+    /// diff writes back — appended rows that survived eviction insert under fresh arrival
+    /// sequences, evicted rows delete by exact position. Returns the aggregate columns and the
+    /// touched keys with their stamp-row DB keys and post-fold buffer sizes, for the caller's
+    /// retention-stamp writes.
+    #[cfg(feature = "rocksdb-state")]
+    #[allow(clippy::type_complexity)]
+    fn fold_bounded_on_store(
+        &mut self,
+        batch: &RecordBatch,
+        rt: &Int64Array,
+    ) -> Result<(RecordBatch, Vec<(ByteKey, Vec<u8>, usize)>), DataFusionError> {
+        let key_arrays: Vec<&ArrayRef> =
+            self.key_columns.iter().map(|&i| batch.column(i)).collect();
+        let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
+        let mut encoder =
+            BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_timestamp_precisions);
+        let store = self.store.as_ref().expect("over rocksdb store");
+        let mut indexed: ahash::HashMap<ByteKey, usize> = ahash::HashMap::default();
+        let mut touched: Vec<(ByteKey, i32)> = Vec::new();
+        let mut prefixes: Vec<Vec<u8>> = Vec::new();
+        let mut row_owner: Vec<usize> = Vec::with_capacity(batch.num_rows());
+        for row in 0..batch.num_rows() {
+            let key = ByteKey::from(keys_encoded.row(row).data());
+            let owner = *indexed.entry(key.clone()).or_insert_with(|| {
+                let key_group = store.key_group(encoder.hash(row));
+                prefixes.push(store.frame_prefix(key_group, &key.0));
+                touched.push((key, key_group));
+                touched.len() - 1
+            });
+            row_owner.push(owner);
+        }
+
+        let loaded = store.load_frames(&prefixes)?;
+        let (value_types, loaded_meta): (Vec<DataType>, Vec<Vec<(i64, u64)>>) = {
+            let OverInner::Bounded(inner) = &mut self.inner else {
+                unreachable!("bounded store fold on a non-bounded shape");
+            };
+            let mut loaded_meta: Vec<Vec<(i64, u64)>> = Vec::with_capacity(loaded.len());
+            for ((key, _), rows) in touched.iter().zip(loaded) {
+                let mut meta = Vec::with_capacity(rows.len());
+                let buffer: Vec<BufferedRow> = rows
+                    .into_iter()
+                    .map(|row| {
+                        meta.push((row.rt, row.seq));
+                        BufferedRow {
+                            rt: row.rt,
+                            values: row.values.iter().map(num_from_scalar).collect(),
+                        }
+                    })
+                    .collect();
+                if !buffer.is_empty() {
+                    inner.keys.insert(key.clone(), buffer);
+                }
+                loaded_meta.push(meta);
+            }
+            (inner.value_types.clone(), loaded_meta)
+        };
+
+        // Replicate update()'s append order (rowtime ascending, stable), assigning each appended
+        // row a fresh arrival sequence so byte order equals buffer order.
+        let n = batch.num_rows();
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by_key(|&row| rt.value(row));
+        let seq_start = self
+            .store
+            .as_mut()
+            .expect("over rocksdb store")
+            .allocate_seqs(n);
+        self.next_seq = self.store.as_ref().expect("over rocksdb store").next_seq() as i64;
+        let mut appended_meta: Vec<Vec<(i64, u64, usize)>> =
+            (0..touched.len()).map(|_| Vec::new()).collect();
+        for (position, &row) in order.iter().enumerate() {
+            appended_meta[row_owner[row]].push((rt.value(row), seq_start + position as u64, row));
+        }
+
+        let aggregates = self
+            .inner
+            .update(&self.keyed_subbatch(batch, Arc::new(rt.clone())));
+
+        let OverInner::Bounded(inner) = &self.inner else {
+            unreachable!("bounded store fold on a non-bounded shape");
+        };
+        let mut writes: Vec<(Vec<u8>, i64, u64)> = Vec::new();
+        let mut write_rows: Vec<usize> = Vec::new();
+        let mut deletes: Vec<(Vec<u8>, i64, u64)> = Vec::new();
+        let mut touched_out: Vec<(ByteKey, Vec<u8>, usize)> = Vec::with_capacity(touched.len());
+        for (owner, (key, key_group)) in touched.iter().enumerate() {
+            let kept = inner.keys.get(&*key.0).map_or(0, Vec::len);
+            let full = loaded_meta[owner].len() + appended_meta[owner].len();
+            let cut = full - kept;
+            for &(row_rt, seq) in loaded_meta[owner].iter().take(cut) {
+                deletes.push((prefixes[owner].clone(), row_rt, seq));
+            }
+            let appended_cut = cut.saturating_sub(loaded_meta[owner].len());
+            for &(row_rt, seq, row) in appended_meta[owner].iter().skip(appended_cut) {
+                writes.push((prefixes[owner].clone(), row_rt, seq));
+                write_rows.push(row);
+            }
+            let stamp_key = self
+                .store
+                .as_ref()
+                .expect("over rocksdb store")
+                .stamp_key(*key_group, &key.0);
+            touched_out.push((key.clone(), stamp_key, kept));
+        }
+
+        let mut value_columns: Vec<ArrayRef> = Vec::with_capacity(self.value_columns.len());
+        for (a, &value_column) in self.value_columns.iter().enumerate() {
+            let reader = over_value_column(batch.column(value_column), &value_types[a]);
+            let scalars: Vec<ScalarValue> = write_rows
+                .iter()
+                .map(|&row| num_to_scalar(&value_types[a], reader.at(row)))
+                .collect();
+            value_columns.push(scalars_to_array(scalars, &value_types[a]));
+        }
+        let store = self.store.as_mut().expect("over rocksdb store");
+        store.write_frames(&writes, &value_columns)?;
+        store.delete_frames(&deletes)?;
+        Ok((aggregates, touched_out))
+    }
+
+    /// Writes the bounded shapes' touched-key retention stamps: the key's current cleanup
+    /// deadline while its buffer holds rows, a delete once it emptied (the raw snapshots likewise
+    /// drop a bufferless key's stamp, so restores stay byte-compatible with memory state).
+    #[cfg(feature = "rocksdb-state")]
+    fn write_bounded_stamps(
+        &mut self,
+        touched: &[(ByteKey, Vec<u8>, usize)],
+    ) -> Result<(), DataFusionError> {
+        if !self.deadline_cleaning() {
+            return Ok(());
+        }
+        let entries: Vec<(Vec<u8>, Option<i64>)> = touched
+            .iter()
+            .map(|(key, stamp_key, kept)| {
+                let stamp = (*kept > 0)
+                    .then(|| self.cleanup_state.get(&*key.0).copied().unwrap_or(i64::MIN));
+                (stamp_key.clone(), stamp)
+            })
+            .collect();
+        self.store
+            .as_mut()
+            .expect("over rocksdb store")
+            .write_stamps(&entries)
+    }
+
+    /// The emitted batch: the completed input columns with the aggregate column(s) appended.
+    fn append_aggregates(complete: &RecordBatch, aggregates: &RecordBatch) -> RecordBatch {
+        let mut fields: Vec<Field> = complete
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| f.as_ref().clone())
+            .collect();
+        let mut columns: Vec<ArrayRef> = complete.columns().to_vec();
+        for (i, field) in aggregates.schema().fields().iter().enumerate() {
+            fields.push(field.as_ref().clone());
+            columns.push(aggregates.column(i).clone());
+        }
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("failed to build over output batch")
+    }
+
     /// Persistent-state firing path: the store removes and returns every pending row the
-    /// watermark completed, in arrival order; the per-key running state hydrates from the folds
-    /// table for exactly the fired keys, folds on the memory path's own code, and writes back at
-    /// the bundle boundary with the post-settle retention stamp riding each value. A fired key
-    /// past its deadline folds anyway — its pending rows deferred the cleanup, exactly as memory
-    /// mode — and re-arms through the post-fire settle.
+    /// watermark completed, in arrival order, then the shape's store fold runs over exactly the
+    /// fired keys and writes back at the bundle boundary. A fired key past its deadline folds
+    /// anyway — its pending rows deferred the cleanup, exactly as memory mode — and re-arms
+    /// through the post-fire settle.
     #[cfg(feature = "rocksdb-state")]
     fn flush_store(&mut self, watermark: i64, now_ms: i64) -> Result<RecordBatch, DataFusionError> {
+        // A sweep may have cleared idle keys this call; their deletes must land before hydration.
+        self.flush_tombstones()?;
         let schema = self.input_schema.clone().unwrap_or_else(|| {
             self.store
                 .as_ref()
@@ -1812,81 +2421,27 @@ impl OverWindowAggregator {
             .expect("over rocksdb store")
             .take_complete(watermark, &schema)?;
         let Some(complete) = complete else {
-            self.flush_tombstones()?;
             self.account()?;
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         };
 
-        let key_arrays: Vec<&ArrayRef> = self
-            .key_columns
-            .iter()
-            .map(|&i| complete.column(i))
-            .collect();
-        let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, complete.num_rows());
-        let mut encoder = BinaryRowBatchEncoder::new(
-            &complete,
-            &self.key_columns,
-            &self.key_timestamp_precisions,
-        );
-        let store = self.store.as_ref().expect("over rocksdb store");
-        let mut seen: ahash::HashSet<ByteKey> = ahash::HashSet::default();
-        let mut touched: Vec<ByteKey> = Vec::new();
-        let mut db_keys: Vec<Vec<u8>> = Vec::new();
-        for row in 0..complete.num_rows() {
-            let key = ByteKey::from(keys_encoded.row(row).data());
-            if seen.insert(key.clone()) {
-                db_keys.push(store.fold_key(store.key_group(encoder.hash(row)), &key.0));
-                touched.push(key);
+        let rt = rt_to_millis(complete.column(self.rt_column));
+        let output = if matches!(self.inner, OverInner::Bounded(_)) {
+            let (aggregates, touched) = self.fold_bounded_on_store(&complete, &rt)?;
+            if self.deadline_cleaning() {
+                self.settle_fired(&complete, now_ms);
             }
-        }
-        for (key, stored) in touched.iter().zip(store.get_folds(&db_keys)?) {
-            if let Some((_, scalars)) = stored {
-                self.inner.seed_key(&key.0, &scalars);
-            }
-        }
-
-        let rt = Arc::new(rt_to_millis(complete.column(self.rt_column)));
-        let aggregates = self.inner.update(&self.keyed_subbatch(&complete, rt));
-        if self.deadline_cleaning() {
-            self.settle_fired(&complete, now_ms);
-        }
-
-        let mut entries: Vec<(Vec<u8>, i64)> = Vec::with_capacity(touched.len());
-        let mut state_columns: Vec<Vec<ScalarValue>> =
-            vec![Vec::with_capacity(touched.len()); self.store_state_types.len()];
-        for (key, db_key) in touched.iter().zip(db_keys) {
-            let stamp = self.cleanup_state.get(&*key.0).copied().unwrap_or(i64::MIN);
-            for (column, scalar) in state_columns.iter_mut().zip(self.inner.export_key(&key.0)) {
-                column.push(scalar);
-            }
-            entries.push((db_key, stamp));
-        }
+            self.write_bounded_stamps(&touched)?;
+            Self::append_aggregates(&complete, &aggregates)
+        } else {
+            let settle = self.deadline_cleaning().then_some(now_ms);
+            let aggregates = self.fold_unbounded_on_store(&complete, Arc::new(rt), settle)?;
+            Self::append_aggregates(&complete, &aggregates)
+        };
         self.inner.clear_resident();
-        let arrays: Vec<ArrayRef> = state_columns
-            .into_iter()
-            .zip(&self.store_state_types)
-            .map(|(scalars, data_type)| scalars_to_array(scalars, data_type))
-            .collect();
-        self.store
-            .as_mut()
-            .expect("over rocksdb store")
-            .write_folds(&entries, &arrays)?;
         self.flush_tombstones()?;
         self.account()?;
-
-        let mut fields: Vec<Field> = complete
-            .schema()
-            .fields()
-            .iter()
-            .map(|f| f.as_ref().clone())
-            .collect();
-        let mut columns: Vec<ArrayRef> = complete.columns().to_vec();
-        for (i, field) in aggregates.schema().fields().iter().enumerate() {
-            fields.push(field.as_ref().clone());
-            columns.push(aggregates.column(i).clone());
-        }
-        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build over output batch"))
+        Ok(output)
     }
 
     /// Proctime OVER: fold the whole batch in arrival order and emit every row immediately (proctime
@@ -1901,11 +2456,21 @@ impl OverWindowAggregator {
         batch: RecordBatch,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        let batch = if self.store.is_some() {
+            Self::normalize_interval_columns(&batch)
+        } else {
+            batch
+        };
         self.input_schema = Some(batch.schema());
         let ttl = self.value_ttl(now_ms);
         if ttl.enabled() || self.deadline_cleaning() {
             self.maybe_sweep(now_ms);
             self.expire_and_stamp(&batch, now_ms, ttl);
+        }
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            return self.push_proctime_store(batch);
         }
         let n = batch.num_rows();
         let seq: Int64Array = (0..n as i64).map(|i| self.next_seq + i).collect();
@@ -1914,19 +2479,42 @@ impl OverWindowAggregator {
             .inner
             .update(&self.keyed_subbatch(&batch, Arc::new(seq)));
         self.account()?;
-        let mut fields: Vec<Field> = batch
-            .schema()
-            .fields()
-            .iter()
-            .map(|f| f.as_ref().clone())
-            .collect();
-        let mut columns: Vec<ArrayRef> = batch.columns().to_vec();
-        for (i, field) in aggregates.schema().fields().iter().enumerate() {
-            fields.push(field.as_ref().clone());
-            columns.push(aggregates.column(i).clone());
-        }
-        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build proctime over output batch"))
+        Ok(Self::append_aggregates(&batch, &aggregates))
+    }
+
+    /// Proctime eager push on the persistent store: retention already ran (an expired key's
+    /// deletes must land before hydration reads it back), then the shape's store fold hydrates
+    /// exactly this batch's keys, folds in arrival order under fresh persisted sequences, and
+    /// writes back — each push is one bundle.
+    #[cfg(feature = "rocksdb-state")]
+    fn push_proctime_store(&mut self, batch: RecordBatch) -> Result<RecordBatch, DataFusionError> {
+        self.flush_tombstones()?;
+        let output = if matches!(self.inner, OverInner::Bounded(_)) {
+            // The ordering key is the arrival sequence itself; fold_bounded_on_store assigns each
+            // appended row's persisted sequence, so the rt column here is a preview of the same
+            // counter (distinct and increasing, which is all the fold reads).
+            let n = batch.num_rows();
+            let seq_start = self.store.as_ref().expect("over rocksdb store").next_seq();
+            let seq: Int64Array = (0..n as u64).map(|i| (seq_start + i) as i64).collect();
+            let (aggregates, touched) = self.fold_bounded_on_store(&batch, &seq)?;
+            self.write_bounded_stamps(&touched)?;
+            Self::append_aggregates(&batch, &aggregates)
+        } else {
+            let n = batch.num_rows();
+            let seq_start = self
+                .store
+                .as_mut()
+                .expect("over rocksdb store")
+                .allocate_seqs(n);
+            self.next_seq = self.store.as_ref().expect("over rocksdb store").next_seq() as i64;
+            let seq: Int64Array = (0..n as u64).map(|i| (seq_start + i) as i64).collect();
+            let aggregates = self.fold_unbounded_on_store(&batch, Arc::new(seq), None)?;
+            Self::append_aggregates(&batch, &aggregates)
+        };
+        self.inner.clear_resident();
+        self.flush_tombstones()?;
+        self.account()?;
+        Ok(output)
     }
 
     /// Emits the rows the watermark has completed (input columns + running aggregates) and keeps the
@@ -1977,19 +2565,7 @@ impl OverWindowAggregator {
             self.settle_fired(&complete, now_ms);
         }
         self.account()?;
-        let mut fields: Vec<Field> = complete
-            .schema()
-            .fields()
-            .iter()
-            .map(|f| f.as_ref().clone())
-            .collect();
-        let mut columns: Vec<ArrayRef> = complete.columns().to_vec();
-        for (i, field) in aggregates.schema().fields().iter().enumerate() {
-            fields.push(field.as_ref().clone());
-            columns.push(aggregates.column(i).clone());
-        }
-        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build over output batch"))
+        Ok(Self::append_aggregates(&complete, &aggregates))
     }
 
     /// The `[rt(i64), value0.., key0..]` batch the inner per-key fold reads, projected from `source`.
@@ -2066,10 +2642,11 @@ impl OverWindowAggregator {
         self.raw_snapshot_partitions(max_parallelism, timestamp_precisions)
     }
 
-    /// Canonical savepoint from the persistent store: hydrates every committed fold into the
-    /// inner map and the pending rows into the buffer, reuses the memory path's raw keyed-snapshot
-    /// encoding (so backend transitions stay byte-compatible — the resident retention stamps ride
-    /// as the trailing column exactly as on memory state), then drops the resident copies.
+    /// Canonical savepoint from the persistent store: hydrates every committed fold (or frame
+    /// buffer) and seen-set into the inner map and the pending rows into the buffer, reuses the
+    /// memory path's raw keyed-snapshot encoding (so backend transitions stay byte-compatible —
+    /// the resident retention stamps ride as the trailing column exactly as on memory state),
+    /// then drops the resident copies.
     #[cfg(feature = "rocksdb-state")]
     pub(crate) fn canonical_partitions(
         &mut self,
@@ -2077,14 +2654,59 @@ impl OverWindowAggregator {
         timestamp_precisions: &[i32],
     ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
         let store = self.store.as_ref().expect("over rocksdb store");
-        let folds = store.scan_folds()?;
-        let pending = store.scan_pending(&store.payload_schema())?;
-        for fold in &folds {
-            self.inner.seed_key(&fold.key, &fold.state);
-        }
-        if let Some(pending) = pending {
-            self.input_schema = Some(pending.schema());
-            self.buffered = vec![pending];
+        self.next_seq = store.next_seq() as i64;
+        if matches!(self.inner, OverInner::Bounded(_)) {
+            let frames = store.scan_frames()?;
+            let pending = store.scan_pending(&store.payload_schema())?;
+            let OverInner::Bounded(inner) = &mut self.inner else {
+                unreachable!("bounded canonical on a non-bounded shape");
+            };
+            for (key, rows) in frames {
+                let buffer: Vec<BufferedRow> = rows
+                    .into_iter()
+                    .map(|row| BufferedRow {
+                        rt: row.rt,
+                        values: row.values.iter().map(num_from_scalar).collect(),
+                    })
+                    .collect();
+                inner.keys.insert(ByteKey(key), buffer);
+            }
+            if let Some(pending) = pending {
+                self.input_schema = Some(pending.schema());
+                self.buffered = vec![pending];
+            }
+        } else {
+            let folds = store.scan_folds()?;
+            let pending = store.scan_pending(&store.payload_schema())?;
+            for fold in &folds {
+                self.inner.seed_key(&fold.key, &fold.state);
+            }
+            for slot in 0..self.distinct_slots.len() {
+                let agg = self.distinct_slots[slot];
+                for fold in &folds {
+                    let key_group = self.store_fold_key_group(&fold.key);
+                    let elements = self
+                        .store
+                        .as_ref()
+                        .expect("over rocksdb store")
+                        .scan_distinct(slot, key_group, &fold.key)?;
+                    let OverInner::Aggregates(inner) = &mut self.inner else {
+                        unreachable!("distinct slots imply the unbounded aggregate shape");
+                    };
+                    let state = &mut inner.states(&fold.key)[agg];
+                    for element in elements {
+                        state
+                            .distinct
+                            .as_mut()
+                            .expect("distinct state")
+                            .add_scalar(element);
+                    }
+                }
+            }
+            if let Some(pending) = pending {
+                self.input_schema = Some(pending.schema());
+                self.buffered = vec![pending];
+            }
         }
         let partitions = self.raw_snapshot_partitions(max_parallelism, timestamp_precisions);
         self.inner.clear_resident();
@@ -2280,9 +2902,13 @@ impl OverWindowAggregator {
             #[cfg(feature = "rocksdb-state")]
             store_tombstones: Vec::new(),
             #[cfg(feature = "rocksdb-state")]
+            store_range_deletes: Vec::new(),
+            #[cfg(feature = "rocksdb-state")]
             store_state_types: Vec::new(),
             #[cfg(feature = "rocksdb-state")]
             store_key_types: Vec::new(),
+            #[cfg(feature = "rocksdb-state")]
+            distinct_slots: Vec::new(),
             key_timestamp_precisions: vec![-1; key_arity],
         }
         .with_state_retention(min_retention_ms);
