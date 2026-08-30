@@ -35,7 +35,13 @@ pub(crate) fn partition_batch(
             .collect();
         out.push((
             key_group,
-            RecordBatch::try_new(batch.schema(), columns).expect("sub batch"),
+            // A key-only projection carries no columns, and Arrow cannot infer a row count from none.
+            RecordBatch::try_new_with_options(
+                batch.schema(),
+                columns,
+                &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(indices.len())),
+            )
+            .expect("sub batch"),
         ));
     }
     out
@@ -74,7 +80,13 @@ pub(crate) fn partition_batch_by_key_group(
             Some((
                 key_group,
                 ordinals,
-                RecordBatch::try_new(batch.schema(), columns).expect("key-group sub-batch"),
+                RecordBatch::try_new_with_options(
+                    batch.schema(),
+                    columns,
+                    &arrow::record_batch::RecordBatchOptions::new()
+                        .with_row_count(Some(indices.len())),
+                )
+                .expect("key-group sub-batch"),
             ))
         })
         .collect()
@@ -244,4 +256,35 @@ pub extern "system" fn Java_tech_streamfusion_Native_concatBatches<'local>(
         let merged = concat_batches(&batches[0].schema(), &batches).expect("concat batches");
         export_record_batch(merged, out_array_address, out_schema_address);
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arrow::datatypes::Schema;
+    use std::sync::Arc;
+
+    fn zero_column_batch(rows: usize) -> RecordBatch {
+        RecordBatch::try_new_with_options(
+            Arc::new(Schema::empty()),
+            vec![],
+            &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(rows)),
+        )
+        .expect("zero-column batch")
+    }
+
+    /// A projection can leave no columns behind, and Arrow refuses to infer a row count from none.
+    #[test]
+    fn partitions_a_zero_column_batch() {
+        let batch = zero_column_batch(4);
+        let parts = partition_batch(&batch, &[], &[], 128, 2);
+        assert_eq!(parts.iter().map(|(_, b)| b.num_rows()).sum::<usize>(), 4);
+    }
+
+    #[test]
+    fn partitions_a_zero_column_batch_by_key_group() {
+        let batch = zero_column_batch(3);
+        let parts = partition_batch_by_key_group(&batch, &[], &[], 128);
+        assert_eq!(parts.iter().map(|(_, _, b)| b.num_rows()).sum::<usize>(), 3);
+    }
 }
