@@ -29,6 +29,25 @@ class FlinkCalcSqlHarnessTest {
   }
 
   @Test
+  void floatLiteralArithmeticMatchesHost() throws Exception {
+    // A double-typed constant would widen the whole expression, so the projection would come back
+    // as DOUBLE where the plan promised FLOAT.
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::environment, "SELECT f4 * CAST(2 AS FLOAT) FROM f");
+  }
+
+  @Test
+  void floatColumnArithmeticMatchesHost() throws Exception {
+    NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT f4 + f4, f4 - f4 FROM f");
+  }
+
+  @Test
+  void floatCastProjectionMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::environment, "SELECT CAST(v AS FLOAT) * f4 FROM f");
+  }
+
+  @Test
   void mixedComputedAndColumnProjectionMatchesHost() throws Exception {
     NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT v + k, s, k FROM f");
   }
@@ -474,11 +493,16 @@ class FlinkCalcSqlHarnessTest {
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
     DataStream<Row> source =
         env.fromData(
-            Types.ROW_NAMED(new String[] {"k", "v", "s"}, Types.LONG, Types.INT, Types.STRING),
-            Row.of(1L, 10, "a"),
-            Row.of(2L, 30, "b"),
-            Row.of(3L, 20, "c"),
-            Row.of(4L, 40, "d"));
+            Types.ROW_NAMED(
+                new String[] {"k", "v", "s", "f4"},
+                Types.LONG,
+                Types.INT,
+                Types.STRING,
+                Types.FLOAT),
+            Row.of(1L, 10, "a", 1.5f),
+            Row.of(2L, 30, "b", 2.25f),
+            Row.of(3L, 20, "c", 3.75f),
+            Row.of(4L, 40, "d", 4.125f));
     tEnv.createTemporaryView(
         "f",
         source,
@@ -486,6 +510,7 @@ class FlinkCalcSqlHarnessTest {
             .column("k", DataTypes.BIGINT())
             .column("v", DataTypes.INT())
             .column("s", DataTypes.STRING())
+            .column("f4", DataTypes.FLOAT())
             .build());
     return tEnv;
   }
