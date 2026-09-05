@@ -470,7 +470,9 @@ pub(crate) fn infer_calc_output_schema(
         .zip(&expression.output_names)
         .map(|(root, name)| match infer(*root) {
             Ok(data_type) => Ok(Field::new(name, data_type, true)),
-            Err(e) => Err(format!("projection `{name}` does not compile natively: {e}")),
+            Err(e) => Err(format!(
+                "projection `{name}` does not compile natively: {e}"
+            )),
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Schema::new(fields))
