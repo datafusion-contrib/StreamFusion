@@ -41,8 +41,13 @@ keeps concurrently created MiniClusters from exhausting a developer machine or C
 Flink's published planner artifact relocates its internal Calcite classes, while its source tests use
 the unshaded classes. The runner therefore keeps an isolated Maven repository and compiles
 an isolated copy of the StreamFusion source tree against the checkout's untouched parser, Calcite
-bridge, and planner output. Suite-only artifacts remain under `.flink-suite`; production build
-outputs and the developer's normal Maven repository are not replaced.
+bridge, and planner output. Those unshaded artifacts are installed with the dependencies their
+shaded form bundles declared as ordinary dependencies, the same way Flink's IntelliJ profile exposes
+them, so every upstream test module resolves Flink's patched Calcite classes through its own planner
+dependency, ahead of stock Calcite. Surefire does not preserve the order of the StreamFusion classpath
+it appends, so nothing may depend on that order for class resolution. Suite-only artifacts remain
+under `.flink-suite`; production build outputs and the developer's normal Maven repository are not
+replaced.
 
 Flink's plan unit tests assert stock physical operator names, so an accelerator necessarily changes
 their golden output. Run `bin/flink-suite.sh diagnostic` to include those tests when inspecting plan

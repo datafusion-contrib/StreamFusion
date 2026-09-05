@@ -150,7 +150,7 @@ else
   jar --create --file "${UNSHADED_SQL_PARSER_JAR}" \
     -C "${FLINK_ROOT}/flink-table/flink-sql-parser/target/classes" . || exit $?
   "${FLINK_ROOT}/mvnw" -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
-    -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
+    -Dmaven.repo.local="${SUITE_MAVEN_REPO}" -Didea.version=streamfusion-suite \
     -pl flink-table/flink-sql-parser \
     help:effective-pom -Doutput="${UNSHADED_SQL_PARSER_POM}" || exit $?
   mvn -B -ntp -s "${MAVEN_SETTINGS}" -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
@@ -160,7 +160,7 @@ else
   jar --create --file "${UNSHADED_BRIDGE_JAR}" \
     -C "${FLINK_ROOT}/flink-table/flink-table-calcite-bridge/target/classes" . || exit $?
   "${FLINK_ROOT}/mvnw" -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
-    -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
+    -Dmaven.repo.local="${SUITE_MAVEN_REPO}" -Didea.version=streamfusion-suite \
     -pl flink-table/flink-table-calcite-bridge \
     help:effective-pom -Doutput="${UNSHADED_BRIDGE_POM}" || exit $?
   mvn -B -ntp -s "${MAVEN_SETTINGS}" -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
@@ -170,7 +170,7 @@ else
   jar --create --file "${UNSHADED_PLANNER_JAR}" \
     -C "${FLINK_ROOT}/flink-table/flink-table-planner/target/classes" . || exit $?
   "${FLINK_ROOT}/mvnw" -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
-    -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
+    -Dmaven.repo.local="${SUITE_MAVEN_REPO}" -Didea.version=streamfusion-suite \
     -pl flink-table/flink-table-planner \
     help:effective-pom -Doutput="${UNSHADED_PLANNER_POM}" || exit $?
   mvn -B -ntp -s "${MAVEN_SETTINGS}" -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \

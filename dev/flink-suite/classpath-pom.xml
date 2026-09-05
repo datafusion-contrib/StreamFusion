@@ -60,22 +60,5 @@
             <artifactId>flink-connector-kafka</artifactId>
             <version>5.0.0-2.2</version>
         </dependency>
-        <!-- Flink's source tests use the unshaded planner ABI. The production planner JAR normally
-             bundles these classes, so connector and format modules do not declare them directly. -->
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-sql-parser</artifactId>
-            <version>2.2.1</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-table-calcite-bridge</artifactId>
-            <version>2.2.1</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.calcite</groupId>
-            <artifactId>calcite-core</artifactId>
-            <version>1.36.0</version>
-        </dependency>
     </dependencies>
 </project>
