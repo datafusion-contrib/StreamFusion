@@ -48,6 +48,17 @@ class FlinkCalcSqlHarnessTest {
   }
 
   @Test
+  void projectionWhoseNativeTypeDiffersFromTheDeclaredTypeFallsBack() throws Exception {
+    // FLOAT * DECIMAL is DOUBLE to Flink but single precision to DataFusion's coercion. The planner
+    // must notice the disagreement before the job runs rather than hand the host a Double column
+    // where it will read a Float.
+    NativeParity.assertFallbackReasonContains(
+        FlinkCalcSqlHarnessTest::environment,
+        "SELECT CAST(v AS FLOAT) * 1.5 FROM f",
+        "evaluates natively as FloatingPoint(SINGLE) but the plan declares DOUBLE");
+  }
+
+  @Test
   void mixedComputedAndColumnProjectionMatchesHost() throws Exception {
     NativeParity.assertParity(FlinkCalcSqlHarnessTest::environment, "SELECT v + k, s, k FROM f");
   }

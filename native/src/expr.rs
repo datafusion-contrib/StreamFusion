@@ -1620,25 +1620,13 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
     }
 }
 
-/// A compiled expression tree against a schema, coerced like the planner's logical pipeline so the
-/// physical expression sees the operand types the host would.
-pub(crate) fn compile_expr(
-    schema: &SchemaRef,
-    _df_schema: &DFSchema,
-    kinds: &[i64],
-    payload: &[i64],
-    child_counts: &[i64],
-    longs: &[i64],
-    doubles: &[f64],
-    strings: &[Option<String>],
-    root: usize,
-) -> Arc<dyn PhysicalExpr> {
-    // RexInputRef is positional, while DataFusion's logical Column is name-based. Flink plans can
-    // legitimately carry duplicate names (nested ranks commonly have two hidden `w0$o0` fields),
-    // so compiling against the Arrow names can silently bind an input ref to the first duplicate.
-    // Give every compile-time field a stable positional name; the resulting physical Column keeps
-    // its resolved index and evaluates against the original batch by position.
-    let indexed_schema = Arc::new(Schema::new(
+/// The compile-time view of a schema. RexInputRef is positional, while DataFusion's logical Column
+/// is name-based. Flink plans can legitimately carry duplicate names (nested ranks commonly have
+/// two hidden `w0$o0` fields), so compiling against the Arrow names can silently bind an input ref
+/// to the first duplicate. Give every field a stable positional name; the resulting physical Column
+/// keeps its resolved index and evaluates against the original batch by position.
+fn indexed_schema(schema: &SchemaRef) -> SchemaRef {
+    Arc::new(Schema::new(
         schema
             .fields()
             .iter()
@@ -1652,9 +1640,24 @@ pub(crate) fn compile_expr(
                 .with_metadata(field.metadata().clone())
             })
             .collect::<Vec<_>>(),
-    ));
-    let indexed_df_schema =
-        DFSchema::try_from(indexed_schema.as_ref().clone()).expect("indexed expression schema");
+    ))
+}
+
+/// Compiles an expression tree against a schema, coerced like the planner's logical pipeline so the
+/// physical expression sees the operand types the host would. A coercion or planning failure comes
+/// back as an error rather than a panic, so a plan-time caller can decline the tree.
+pub(crate) fn try_compile_expr(
+    schema: &SchemaRef,
+    kinds: &[i64],
+    payload: &[i64],
+    child_counts: &[i64],
+    longs: &[i64],
+    doubles: &[f64],
+    strings: &[Option<String>],
+    root: usize,
+) -> Result<Arc<dyn PhysicalExpr>, DataFusionError> {
+    let indexed_schema = indexed_schema(schema);
+    let indexed_df_schema = DFSchema::try_from(indexed_schema.as_ref().clone())?;
     let mut cursor = root;
     let logical = build_expr(
         &indexed_schema,
@@ -1669,9 +1672,55 @@ pub(crate) fn compile_expr(
     let context = SimplifyContext::builder()
         .with_schema(Arc::new(indexed_df_schema.clone()))
         .build();
-    let coerced = ExprSimplifier::new(context)
-        .coerce(logical, &indexed_df_schema)
-        .expect("failed to coerce expr");
+    let coerced = ExprSimplifier::new(context).coerce(logical, &indexed_df_schema)?;
     create_physical_expr(&coerced, &indexed_df_schema, &ExecutionProps::new())
-        .expect("failed to compile expr")
+}
+
+/// A compiled expression tree against a schema; see [`try_compile_expr`].
+pub(crate) fn compile_expr(
+    schema: &SchemaRef,
+    _df_schema: &DFSchema,
+    kinds: &[i64],
+    payload: &[i64],
+    child_counts: &[i64],
+    longs: &[i64],
+    doubles: &[f64],
+    strings: &[Option<String>],
+    root: usize,
+) -> Arc<dyn PhysicalExpr> {
+    try_compile_expr(
+        schema,
+        kinds,
+        payload,
+        child_counts,
+        longs,
+        doubles,
+        strings,
+        root,
+    )
+    .expect("failed to compile expr")
+}
+
+/// The Arrow type an expression tree evaluates to over `schema`, without evaluating it.
+pub(crate) fn infer_expr_type(
+    schema: &SchemaRef,
+    kinds: &[i64],
+    payload: &[i64],
+    child_counts: &[i64],
+    longs: &[i64],
+    doubles: &[f64],
+    strings: &[Option<String>],
+    root: usize,
+) -> Result<DataType, DataFusionError> {
+    try_compile_expr(
+        schema,
+        kinds,
+        payload,
+        child_counts,
+        longs,
+        doubles,
+        strings,
+        root,
+    )?
+    .data_type(&indexed_schema(schema))
 }

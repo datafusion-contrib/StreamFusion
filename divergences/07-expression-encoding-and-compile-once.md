@@ -46,10 +46,27 @@ DataFusion query *per batch*; that path is superseded by the compiled handle. Th
 cost it removed was the first confirmed hot-path finding of the benchmark sweep
 (see `docs/optimizations.md`).
 
+## Plan-time type verification (diverges from Comet)
+The encoder admits nodes; DataFusion decides result types when the tree is compiled,
+and its coercion rules are not Calcite's (`FLOAT * DECIMAL` is `DOUBLE` to Flink, `Float32`
+to DataFusion). Comet resolves this on the JVM side: its serde mirrors Spark's type rules
+and the native plan is trusted to match. We do not duplicate DataFusion's coercion table in
+Java — it is the very thing that drifts. Instead the planner asks the native library: it
+compiles the encoded Calc against the input's Arrow schema at planning time (types only, no
+batch) and hands back the inferred output schema. The comparison then happens on the JVM
+side, next to the column-vector reader whose acceptance it encodes (`ArrowConversion.readsAs`):
+exact Arrow type, except the unit/zone tolerance the timestamp and time vectors already have
+on read. A projection the boundary would not read as its declared column, or a tree that does
+not coerce at all, declines the Calc with the disagreement as the recorded fallback reason.
+The consequence is that planning itself loads the native library — on the client or
+JobManager — which the deployment already requires to be present everywhere.
+
 ## Scope / consequences
 - The matcher gates to the admitted op codes and operand types; any un-admitted node
   anywhere in the expression makes the whole Calc fall back. Every admitted op gets a
   parity test before it is turned on.
+- Admission is also gated on the compiled tree's type matching the declared output; see
+  the section above and `docs/operators/calc-filter.md` ("Declared-type guard").
 - The handle holds compiled native state and must be released on operator close, like
   the aggregator handles ([04](04-synchronous-stateful-execution.md)).
 

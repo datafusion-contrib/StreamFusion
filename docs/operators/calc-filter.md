@@ -22,6 +22,29 @@ fallback.
   NULL-semantics divergence from Flink) is a plain fallback — there's no partial evaluation of an
   expression tree, so one unknown function anywhere in it declines the whole `Calc`.
 
+## Declared-type guard
+
+Admitting every node in a tree is not the same as producing the type Flink declared for the tree:
+the result type of an arithmetic or function call is decided by DataFusion's coercion rules when
+the expression is compiled, and those do not always agree with Calcite's. `FLOAT * DECIMAL`, for
+example, is `DOUBLE` to Flink but single precision to DataFusion. The columnar boundary builds
+Flink's column vectors from the Arrow batch it is handed, so a disagreement used to surface as a
+`ClassCastException` on the first row read, after the job had started.
+
+The planner therefore compiles the encoded `Calc` at planning time — types only, no data — against
+the Arrow schema of its input and checks that the boundary would read each projection's inferred
+Arrow type as its declared column (and that the condition is `BOOLEAN`). "Read as" is the reader's
+own rule, not byte-equality of Arrow types: timestamps and times may carry any unit or zone, since
+the column vectors convert on read (`PROCTIME()` is stamped as millisecond UTC where the row type
+converts to nanoseconds), but every other type — width, decimal precision and scale, string
+encoding, nested element types — must match exactly. Any disagreement, or a tree DataFusion cannot
+coerce at all, is a plain fallback whose recorded reason names the column and both types, e.g.
+`projection `EXPR$0` evaluates natively as FloatingPoint(SINGLE) but the plan declares DOUBLE`. Such
+a reason is a real gap to close (either the encoder should carry the width Flink uses, as it does
+for narrow integer literals, or the tree should be cast to the declared type), not a query to
+rewrite. This check requires the native library in the planning JVM, which the standard deployment
+already provides (see [Deployment](../deployment.md)).
+
 ## Casts
 
 Native, unconditionally, with no host involvement:

@@ -461,6 +461,27 @@ public final class Native {
       String[] outputNames);
 
   /**
+   * Compiles an encoded Calc against the Arrow schema of its input (exported by the JVM through the
+   * C Data Interface) and writes the Arrow schema its projections would produce to {@code
+   * outputSchemaAddress}. Types only — no batch is evaluated — so the planner can compare the native
+   * result types with the plan's declared row type before the job runs. Returns null once the schema
+   * is written, else why none could be inferred: a tree DataFusion cannot compile, or a condition
+   * that is not boolean.
+   */
+  public static native String inferCalcOutputSchema(
+      int[] kinds,
+      int[] payload,
+      int[] childCounts,
+      long[] longs,
+      double[] doubles,
+      String[] strings,
+      int[] projectionRoots,
+      int conditionRoot,
+      String[] outputNames,
+      long inputSchemaAddress,
+      long outputSchemaAddress);
+
+  /**
    * Runs a batch the JVM exported through a compiled Calc handle — filtering by the condition, then
    * projecting — writing the output batch into the consumer-allocated output C structs.
    *

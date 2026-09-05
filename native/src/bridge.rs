@@ -259,6 +259,14 @@ pub(crate) fn import_schema(schema_address: jlong) -> SchemaRef {
     Arc::new(Schema::try_from(&ffi_schema).expect("failed to import Arrow schema"))
 }
 
+/// Exports a schema (no data) into a consumer-allocated C struct; the JVM owns and releases it.
+pub(crate) fn export_schema(schema: &Schema, schema_address: jlong) {
+    let ffi_schema = FFI_ArrowSchema::try_from(schema).expect("failed to export Arrow schema");
+    unsafe {
+        std::ptr::write(schema_address as *mut FFI_ArrowSchema, ffi_schema);
+    }
+}
+
 /// Exports a batch into consumer-allocated C structs; the JVM owns and releases it after import.
 pub(crate) fn export_record_batch(batch: RecordBatch, array_address: jlong, schema_address: jlong) {
     let out_data = StructArray::from(batch).to_data();

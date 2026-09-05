@@ -28,7 +28,12 @@ final class CalcMatcher {
     if (!FilterCalcMatcher.convertibleRow(calc.getInput().getRowType())) {
       return false;
     }
-    return RexExpression.encodeCalc(calc) != null;
+    RexExpression encoded = RexExpression.encodeCalc(calc);
+    return encoded != null && outputTypeMismatch(calc, encoded) == null;
+  }
+
+  private static String outputTypeMismatch(Calc calc, RexExpression encoded) {
+    return CalcOutputTypeCheck.mismatch(encoded, calc.getInput().getRowType(), calc.getRowType());
   }
 
   /** The encoded Calc (condition + projections), or null if it contains an unsupported operation. */
@@ -109,12 +114,20 @@ final class CalcMatcher {
         calc.getCluster(), calc.getTraitSet(), input, calc.getRowType(), encoded);
   }
 
-  /** The precise expression reason a Calc fell back, from the encoder. */
+  /**
+   * The precise reason a Calc fell back: an input column the converter cannot carry, the encoder's
+   * first un-admitted node, or an expression whose native result type disagrees with the plan.
+   */
   static String unsupportedReason(Calc calc) {
-    String reason =
-        FilterCalcMatcher.convertibleRow(calc.getInput().getRowType())
-            ? RexExpression.reasonForCalc(calc)
-            : "unsupported input column type";
+    String reason = reason(calc);
     return "Calc: " + (reason != null ? reason : "unsupported Calc expression");
+  }
+
+  private static String reason(Calc calc) {
+    if (!FilterCalcMatcher.convertibleRow(calc.getInput().getRowType())) {
+      return "unsupported input column type";
+    }
+    RexExpression encoded = RexExpression.encodeCalc(calc);
+    return encoded == null ? RexExpression.reasonForCalc(calc) : outputTypeMismatch(calc, encoded);
   }
 }

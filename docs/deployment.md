@@ -3,7 +3,10 @@
 StreamFusion currently supports exactly **Flink 2.2.0 and 2.2.1**. The loader fails closed for an
 unknown or unversioned planner ABI. Install the loader and core JARs into Flink's `lib` directory
 — never into a job JAR — and it accelerates ordinary streaming SQL jobs with no application-side
-`NativePlanner.install(...)` call and no query rewriting.
+`NativePlanner.install(...)` call and no query rewriting. Planning itself loads the native library
+(the planner compiles each `Calc`'s expressions to verify their result types before admitting it),
+so the JARs must be present on the submission client or JobManager as well as the TaskManagers —
+which installing them into `lib` on one shared image already ensures.
 
 Release artifacts are available from Maven Central and already contain the optimized native
 libraries. Fetch the loader and the separate runtime-visible core payload directly into a Flink

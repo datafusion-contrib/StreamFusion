@@ -190,6 +190,39 @@ public final class ArrowConversion {
     return new Field(fieldName, fieldType, children);
   }
 
+  /**
+   * Whether a column the native engine produces as {@code actual} is read correctly as the Flink
+   * type {@code declared} by the vectors {@link #createColumnVector} builds. That dispatch is by
+   * Arrow type, not by the declared type, so this is the contract a native output must meet: the
+   * same Arrow type the row type converts to, except that timestamps and times may carry any unit
+   * (and any zone), which the vectors convert on read. Nested children are held to the same rule.
+   */
+  public static boolean readsAs(Field actual, LogicalType declared) {
+    return readsAs(actual, toArrowField(actual.getName(), declared));
+  }
+
+  private static boolean readsAs(Field actual, Field expected) {
+    ArrowType actualType = actual.getType();
+    ArrowType expectedType = expected.getType();
+    boolean convertibleOnRead =
+        (actualType instanceof ArrowType.Timestamp && expectedType instanceof ArrowType.Timestamp)
+            || (actualType instanceof ArrowType.Time && expectedType instanceof ArrowType.Time);
+    if (!convertibleOnRead && !actualType.equals(expectedType)) {
+      return false;
+    }
+    List<Field> actualChildren = actual.getChildren();
+    List<Field> expectedChildren = expected.getChildren();
+    if (actualChildren.size() != expectedChildren.size()) {
+      return false;
+    }
+    for (int i = 0; i < actualChildren.size(); i++) {
+      if (!readsAs(actualChildren.get(i), expectedChildren.get(i))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /** A reader that exposes the batch's rows as {@link RowData} backed directly by the Arrow buffers. */
   public static ArrowReader createArrowReader(VectorSchemaRoot root, RowType rowType) {
     List<ColumnVector> columnVectors = new ArrayList<>();

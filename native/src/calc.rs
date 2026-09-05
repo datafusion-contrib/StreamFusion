@@ -383,25 +383,146 @@ pub extern "system" fn Java_tech_streamfusion_Native_createCalcExpression<'local
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
         capture_jvm(&env); // so a JvmUdf node in this Calc can upcall the JVM bridge at evaluation time
-        let expression = CalcExpression {
-            kinds: read_int_array(&env, &kinds),
-            payload: read_int_array(&env, &payload),
-            child_counts: read_int_array(&env, &child_counts),
-            longs: read_longs(&env, &longs),
-            doubles: read_doubles(&env, &doubles),
-            strings: read_strings(&mut env, &strings),
-            projection_roots: read_int_array(&env, &projection_roots)
-                .into_iter()
-                .map(|r| r as usize)
-                .collect(),
-            condition_root: condition_root as i64,
-            output_names: read_strings(&mut env, &output_names)
-                .into_iter()
-                .map(|s| s.expect("output name"))
-                .collect(),
-            compiled: None,
-        };
+        let output_names = read_strings(&mut env, &output_names)
+            .into_iter()
+            .map(|s| s.expect("output name"))
+            .collect();
+        let expression = read_calc_expression(
+            &mut env,
+            &kinds,
+            &payload,
+            &child_counts,
+            &longs,
+            &doubles,
+            &strings,
+            &projection_roots,
+            condition_root,
+            output_names,
+        );
         into_handle(expression)
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn read_calc_expression<'local>(
+    env: &mut JNIEnv<'local>,
+    kinds: &JIntArray<'local>,
+    payload: &JIntArray<'local>,
+    child_counts: &JIntArray<'local>,
+    longs: &JLongArray<'local>,
+    doubles: &JDoubleArray<'local>,
+    strings: &JObjectArray<'local>,
+    projection_roots: &JIntArray<'local>,
+    condition_root: jint,
+    output_names: Vec<String>,
+) -> CalcExpression {
+    CalcExpression {
+        kinds: read_int_array(env, kinds),
+        payload: read_int_array(env, payload),
+        child_counts: read_int_array(env, child_counts),
+        longs: read_longs(env, longs),
+        doubles: read_doubles(env, doubles),
+        strings: read_strings(env, strings),
+        projection_roots: read_int_array(env, projection_roots)
+            .into_iter()
+            .map(|r| r as usize)
+            .collect(),
+        condition_root: condition_root as i64,
+        output_names,
+        compiled: None,
+    }
+}
+
+/// The Arrow schema an encoded Calc would produce over `input`, without evaluating it: one field per
+/// projection, typed by compiling the tree the way the operator will. A tree DataFusion cannot
+/// compile, or a condition that is not boolean, is reported instead — either would otherwise fail
+/// the task on its first batch.
+pub(crate) fn infer_calc_output_schema(
+    input: &SchemaRef,
+    expression: &CalcExpression,
+) -> Result<Schema, String> {
+    let infer = |root: usize| {
+        infer_expr_type(
+            input,
+            &expression.kinds,
+            &expression.payload,
+            &expression.child_counts,
+            &expression.longs,
+            &expression.doubles,
+            &expression.strings,
+            root,
+        )
+    };
+    if expression.condition_root >= 0 {
+        match infer(expression.condition_root as usize) {
+            Err(e) => return Err(format!("condition does not compile natively: {e}")),
+            Ok(DataType::Boolean) => {}
+            Ok(other) => {
+                return Err(format!(
+                    "condition evaluates natively as {other} rather than Boolean"
+                ))
+            }
+        }
+    }
+    let fields = expression
+        .projection_roots
+        .iter()
+        .zip(&expression.output_names)
+        .map(|(root, name)| match infer(*root) {
+            Ok(data_type) => Ok(Field::new(name, data_type, true)),
+            Err(e) => Err(format!("projection `{name}` does not compile natively: {e}")),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Schema::new(fields))
+}
+
+/// Plan-time view of an encoded Calc's output; see [`infer_calc_output_schema`]. The input schema
+/// arrives, and the inferred schema leaves, through the C Data Interface (schemas only, no data).
+/// Returns null once the output schema is written, else the reason no schema could be inferred.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_inferCalcOutputSchema<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    kinds: JIntArray<'local>,
+    payload: JIntArray<'local>,
+    child_counts: JIntArray<'local>,
+    longs: JLongArray<'local>,
+    doubles: JDoubleArray<'local>,
+    strings: JObjectArray<'local>,
+    projection_roots: JIntArray<'local>,
+    condition_root: jint,
+    output_names: JObjectArray<'local>,
+    input_schema_address: jlong,
+    output_schema_address: jlong,
+) -> jstring {
+    crate::bridge::jni_guard(env, move |env| {
+        let input = import_schema(input_schema_address);
+        let output_names = read_strings(env, &output_names)
+            .into_iter()
+            .map(|s| s.expect("output name"))
+            .collect();
+        let expression = read_calc_expression(
+            env,
+            &kinds,
+            &payload,
+            &child_counts,
+            &longs,
+            &doubles,
+            &strings,
+            &projection_roots,
+            condition_root,
+            output_names,
+        );
+        match infer_calc_output_schema(&input, &expression) {
+            Ok(schema) => {
+                export_schema(&schema, output_schema_address);
+                std::ptr::null_mut()
+            }
+            Err(reason) => env
+                .new_string(reason)
+                .expect("inference failure string")
+                .into_raw(),
+        }
     })
 }
 
