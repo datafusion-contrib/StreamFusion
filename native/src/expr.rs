@@ -33,6 +33,8 @@ pub(crate) fn build_expr(
         7 => logical_lit(longs[arg] as i32),
         8 => logical_lit(longs[arg] as i16),
         9 => logical_lit(longs[arg] as i8),
+        // Likewise for FLOAT, which the host evaluates in single precision.
+        22 => logical_lit(doubles[arg] as f32),
         11 => {
             // A widening numeric cast: build the single child, then wrap it. `arg` is the target code.
             let child = build_expr(

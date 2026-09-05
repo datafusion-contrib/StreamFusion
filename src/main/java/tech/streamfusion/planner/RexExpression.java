@@ -88,6 +88,9 @@ final class RexExpression {
   private static final int KIND_DECIMAL_DIVIDE = 20;
   private static final int KIND_DECIMAL_MOD = 21;
 
+  // A single-precision literal, so a FLOAT expression is not widened to double by its constants.
+  private static final int KIND_LIT_FLOAT = 22;
+
   // Cast target type codes, mirrored on the native side.
   private static final int CAST_TINYINT = 0;
   private static final int CAST_SMALLINT = 1;
@@ -406,6 +409,17 @@ final class RexExpression {
         }
       case FLOAT:
       case REAL:
+        {
+          Double value = literal.getValueAs(Double.class);
+          if (value == null) {
+            return false;
+          }
+          // The host evaluates FLOAT arithmetic in single precision. A double literal would widen the
+          // whole expression, changing both the result type the plan promised and its last bits.
+          add(KIND_LIT_FLOAT, doubles.size(), 0);
+          doubles.add(value);
+          return true;
+        }
       case DOUBLE:
         {
           Double value = literal.getValueAs(Double.class);
