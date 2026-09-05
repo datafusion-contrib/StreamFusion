@@ -5,7 +5,8 @@
 
 [![CI](https://github.com/datafusion-contrib/StreamFusion/actions/workflows/ci.yml/badge.svg)](https://github.com/datafusion-contrib/StreamFusion/actions/workflows/ci.yml)
 [![Maven Central](https://img.shields.io/maven-central/v/tech.streamfusion/streamfusion-loader.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/tech.streamfusion/streamfusion-loader)
-[![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/gCKHfb96Q)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/BsUVHZpZaP)
+[![Slack](https://img.shields.io/badge/Slack-join-4A154B?logo=slack&logoColor=white)](https://join.slack.com/t/streamfusion/shared_invite/zt-49ckmlwmo-6DIjwC1vwJ3qjWmtTHId0A)
 
 **[Read the docs](https://datafusion-contrib.github.io/StreamFusion/)** — connector/format
 coverage, per-operator native/fallback status, state backends, deployment, and configuration.

@@ -47,8 +47,11 @@ extra:
       link: https://github.com/datafusion-contrib/StreamFusion
       name: GitHub
     - icon: fontawesome/brands/discord
-      link: https://discord.gg/gCKHfb96Q
+      link: https://discord.gg/BsUVHZpZaP
       name: Discord
+    - icon: fontawesome/brands/slack
+      link: https://join.slack.com/t/streamfusion/shared_invite/zt-49ckmlwmo-6DIjwC1vwJ3qjWmtTHId0A
+      name: Slack
 
 nav:
   - Introduction: index.md
