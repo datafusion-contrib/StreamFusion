@@ -53,6 +53,45 @@ Flink's plan unit tests assert stock physical operator names, so an accelerator 
 their golden output. Run `bin/flink-suite.sh diagnostic` to include those tests when inspecting plan
 coverage; their `Calc` versus `NativeCalc`-style diffs are diagnostic output, not result-parity bugs.
 
+## Installation audit and exit status
+
+The suite agent targets the pinned release's `DefaultPlannerFactory` and `DelegatePlannerFactory`
+and checks that they declare the expected `create(Context)` method. Transformation records are kept per
+classloader. A successful return from `NativePlanner.install` is recorded for that table
+configuration; entering factory advice alone is not sufficient. An independent constructor check
+requires each eligible streaming table environment to have completed installation. Batch/automatic
+mode and the existing unmodified JSON-plan/test exclusions remain exempt. Merely loading a valid
+factory without creating an environment is allowed. Unknown factory implementations are not
+automatically supported: an eligible environment created without installation fails the audit.
+
+Instrumentation failures, caught installation errors, and eligible environments without installation
+remain fatal even if another configuration or classloader succeeds later. This proves installation,
+not that every query used a native operator; ordinary planner fallback still applies. The audit
+relies on the supported factory methods and table-environment constructor contract remaining visible.
+Changes to both observation points require new compatibility validation.
+
+Each runner invocation uses a fresh audit directory. Each agent JVM writes a `.pending` receipt
+at startup and replaces it with `.ok` or `.failed` at shutdown; failed audits exit with code 70.
+A late audit failure invalidates a prior success receipt and terminates the JVM. The runner
+rejects missing, failed, or incomplete receipts and Surefire dump files. It never turns
+a nonzero Maven exit into success because the test XML looks clean. Surefire's test-failure-ignore
+option lets the XML summarizer apply the named expected-failure allowlist without suppressing
+unexpected assertions/errors; fork failures, dumps, and incomplete audit receipts remain failures.
+Receipts are retained beneath `.flink-suite/audit-<mode>.*` for diagnosis.
+
+PR CI packages the agent and runs three real Surefire 3.2.2 process regressions through the
+launcher: an abnormal exit after passing XML and a successful audit, an abort before audit
+completion, and an allowlisted assertion failure. No Rust build or MiniCluster is required.
+
+```sh
+mvn -f dev/flink-suite/agent/pom.xml clean package
+python3 -m unittest discover -s dev/flink-suite -p 'test_fork_exit.py'
+```
+
+These regressions test exit propagation, not the full Flink installation path. Use the upstream
+integration suite to validate the supported planner hooks. Temporary projects and reports are
+isolated; released Maven dependencies share the normal local cache.
+
 The checkout is cached between runs. Set `FLINK_SUITE_ROOT` to put it elsewhere, or tune local test
 parallelism with `FLINK_SUITE_UNIT_FORKS` and `FLINK_SUITE_IT_FORKS`. The runner uses only public
 artifact repositories, independent of developer-specific Maven mirrors. `FLINK_VERSION` is pinned by

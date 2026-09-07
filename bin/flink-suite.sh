@@ -23,7 +23,7 @@ readonly UNSHADED_BRIDGE_POM="${SUITE_ROOT}/flink-table-calcite-bridge-${FLINK_V
 readonly UNSHADED_SQL_PARSER_JAR="${SUITE_ROOT}/flink-sql-parser-${FLINK_VERSION}-unshaded.jar"
 readonly UNSHADED_SQL_PARSER_POM="${SUITE_ROOT}/flink-sql-parser-${FLINK_VERSION}-effective.pom"
 readonly SUITE_MODE="${1:-runtime}"
-readonly FLINK_MODULE_CONFIG="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED -Djunit.platform.reflection.search.useLegacySemantics=true -javaagent:${AGENT_JAR}"
+FLINK_MODULE_CONFIG="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED -Djunit.platform.reflection.search.useLegacySemantics=true -javaagent:${AGENT_JAR}"
 readonly FORMAT_MODULES="flink-formats/flink-json,flink-formats/flink-csv,flink-formats/flink-avro,flink-formats/flink-avro-confluent-registry,flink-formats/flink-protobuf"
 readonly PARQUET_MODULE="flink-formats/flink-parquet"
 readonly PARQUET_SINK_TESTS="org.apache.flink.formats.parquet.ParquetFsStreamingSinkITCase,org.apache.flink.formats.parquet.ParquetTimestampITCase"
@@ -230,6 +230,10 @@ if [[ "${SUITE_MODE}" == "formats" ]]; then
 else
   find "${REPORT_ROOT}" -mindepth 1 -maxdepth 1 -type f -delete
 fi
+AUDIT_ROOT="$(mktemp -d "${SUITE_ROOT}/audit-${SUITE_MODE}.XXXXXX")" || exit $?
+readonly AUDIT_ROOT
+FLINK_MODULE_CONFIG+=" \"-Dstreamfusion.flink-suite.audit-dir=${AUDIT_ROOT}\""
+
 MAVEN_TEST_ARGS=(
   -B -ntp -s "${MAVEN_SETTINGS}" \
   -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
@@ -237,6 +241,7 @@ MAVEN_TEST_ARGS=(
   -Dmaven.test.additionalClasspath="${STREAMFUSION_CLASSPATH}" \
   -Dstreamfusion.logFallbackReasons=true \
   -Dstreamfusion.native.development=true \
+  -Dmaven.test.failure.ignore=true \
   -Dfast \
   -Djunit.jupiter.execution.parallel.enabled=false \
   -Dflink.forkCountUnitTest="${FLINK_SUITE_UNIT_FORKS:-2}" \
@@ -292,14 +297,11 @@ if [[ "${SUITE_MODE}" == "parquet" && ${TEST_STATUS} -eq 0 ]]; then
   fi
 fi
 
-SUMMARY_ARGS=("${REPORT_ROOT}")
+SUMMARY_ARGS=("${REPORT_ROOT}" --test-exit-code "${TEST_STATUS}" --audit-dir "${AUDIT_ROOT}")
 if [[ "${SUITE_MODE}" == "runtime" || "${SUITE_MODE}" == "diagnostic" ]]; then
   SUMMARY_ARGS+=(--xfail "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testCurrentDate")
 fi
 python3 "${REPO_ROOT}/dev/flink-suite/summarize.py" "${SUMMARY_ARGS[@]}"
 readonly SUMMARY_STATUS=$?
 
-if [[ ${TEST_STATUS} -ne 0 && ${SUMMARY_STATUS} -ne 0 ]]; then
-  exit "${TEST_STATUS}"
-fi
 exit "${SUMMARY_STATUS}"

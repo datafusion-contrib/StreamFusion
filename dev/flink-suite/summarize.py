@@ -13,7 +13,23 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("reports", type=pathlib.Path)
     parser.add_argument("--xfail", action="append", default=[])
+    parser.add_argument("--test-exit-code", type=int, default=0)
+    parser.add_argument("--audit-dir", type=pathlib.Path)
     args = parser.parse_args()
+
+    infrastructure: list[str] = []
+    if args.test_exit_code:
+        infrastructure.append(f"test process exited with status {args.test_exit_code}")
+    for dump in sorted(args.reports.rglob("*.dump*")):
+        infrastructure.append(f"Surefire infrastructure diagnostic: {dump}")
+    if args.audit_dir is not None:
+        receipts = sorted(args.audit_dir.iterdir()) if args.audit_dir.is_dir() else []
+        if not receipts:
+            infrastructure.append("no StreamFusion agent audit receipts were produced")
+        for receipt in receipts:
+            if not receipt.is_file() or receipt.suffix != ".ok":
+                infrastructure.append(f"incomplete or failed StreamFusion agent audit: {receipt.name}")
+
 
     files = sorted(args.reports.rglob("TEST-*.xml"))
     if not files:
@@ -96,7 +112,14 @@ def main() -> int:
             if detail:
                 print(f"  - {detail}")
 
-    return 1 if unexpected_failures or unexpected_errors or malformed else 0
+    if infrastructure:
+        print()
+        print("## Infrastructure failures")
+        for problem in infrastructure:
+            print(f"- {problem}")
+
+    return 1 if unexpected_failures or unexpected_errors or malformed or infrastructure else 0
+
 
 
 if __name__ == "__main__":

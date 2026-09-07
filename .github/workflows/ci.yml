@@ -13,6 +13,24 @@ env:
   RUST_BACKTRACE: "1"
 
 jobs:
+  suite-harness-tests:
+    name: Upstream suite harness tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Package suite agent
+        run: mvn -B -ntp -f dev/flink-suite/agent/pom.xml clean package
+      - name: Verify fork failures reach the launcher
+        run: python -m unittest discover -s dev/flink-suite -p 'test_fork_exit.py'
+
   native-tests:
     name: Rust tests
     runs-on: ubuntu-24.04
