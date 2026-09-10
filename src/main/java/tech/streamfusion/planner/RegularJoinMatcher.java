@@ -21,10 +21,8 @@ import org.apache.flink.table.runtime.operators.join.FlinkJoinType;
  * Recognizes the regular (non-windowed) equi-joins the native updating join implements:
  * {@code a JOIN b ON a.k = b.k}, where both inputs may be changelogs. Supports INNER, LEFT/RIGHT/FULL
  * outer, and SEMI/ANTI (the native joiner tracks a per-row match-degree for the latter families).
- * Requires at least one null-filtering equi-join key, no residual non-equi predicate, and input/output
- * row types the row/Arrow conversion supports. A residual filter or an unsupported column type falls
- * back to the host. The join keys may be any converter-supported type (the join keys its state by
- * their scalar values).
+ * Requires null-filtering equi keys and supported row types. Residual predicates must encode and
+ * compile to BOOLEAN against the joined input schema; unsupported conditions fall back to the host.
  */
 final class RegularJoinMatcher {
 
@@ -43,8 +41,17 @@ final class RegularJoinMatcher {
     if (leftKeys.length == 0 || leftKeys.length != joinSpec.getRightKeys().length) {
       return "regular join: needs at least one equi-join key";
     }
-    if (joinSpec.getNonEquiCondition().isPresent() && nonEquiPredicate(join) == null) {
-      return "regular join: the residual non-equi condition is not natively expressible";
+    if (joinSpec.getNonEquiCondition().isPresent()) {
+      RexExpression residual = nonEquiPredicate(join);
+      if (residual == null) {
+        return "regular join: the residual non-equi condition is not natively expressible";
+      }
+      String mismatch =
+          CalcOutputTypeCheck.predicateMismatch(
+              residual, join.getLeft().getRowType(), join.getRight().getRowType());
+      if (mismatch != null) {
+        return "regular join: residual " + mismatch;
+      }
     }
     for (boolean filterNull : joinSpec.getFilterNulls()) {
       if (!filterNull) {

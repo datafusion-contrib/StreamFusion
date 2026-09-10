@@ -345,6 +345,21 @@ impl CalcExpression {
                 .expect("failed to evaluate projection")
                 .into_array(rows)
                 .expect("failed to materialize projection");
+            // Downstream operators use Flink's millisecond representation, not Arrow interval pairs.
+            let array: ArrayRef =
+                if let Some(intervals) = array.as_any().downcast_ref::<IntervalDayTimeArray>() {
+                    let millis: Int64Array = intervals
+                        .iter()
+                        .map(|value| {
+                            value.map(|value| {
+                                i64::from(value.days) * 86_400_000 + i64::from(value.milliseconds)
+                            })
+                        })
+                        .collect();
+                    Arc::new(millis)
+                } else {
+                    array
+                };
             fields.push(Field::new(
                 &self.output_names[i],
                 array.data_type().clone(),
@@ -433,10 +448,9 @@ fn read_calc_expression<'local>(
     }
 }
 
-/// The Arrow schema an encoded Calc would produce over `input`, without evaluating it: one field per
-/// projection, typed by compiling the tree the way the operator will. A tree DataFusion cannot
-/// compile, or a condition that is not boolean, is reported instead — either would otherwise fail
-/// the task on its first batch.
+/// Expression types before Calc normalizes day-time interval outputs to integer milliseconds.
+/// Keeping the interval type lets Java reject a projection declared BIGINT instead of INTERVAL.
+/// Compilation failures and non-boolean conditions are rejected before task execution.
 pub(crate) fn infer_calc_output_schema(
     input: &SchemaRef,
     expression: &CalcExpression,

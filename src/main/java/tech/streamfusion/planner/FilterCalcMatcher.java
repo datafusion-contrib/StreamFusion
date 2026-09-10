@@ -30,7 +30,13 @@ final class FilterCalcMatcher {
     if (!convertibleRow(calc.getInput().getRowType())) {
       return false;
     }
-    return encodedCondition(calc) != null;
+    if (encodedCondition(calc) == null) {
+      return false;
+    }
+    RexExpression encoded = RexExpression.encodeCalc(calc);
+    return encoded != null
+        && CalcOutputTypeCheck.mismatch(encoded, calc.getInput().getRowType(), calc.getRowType())
+            == null;
   }
 
   /** The condition encoded for the native engine, or null if it contains an unsupported operation. */

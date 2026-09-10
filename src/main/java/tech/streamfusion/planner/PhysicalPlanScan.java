@@ -11,11 +11,13 @@ import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 import java.util.Set;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.Calc;
 import org.apache.flink.table.api.config.OptimizerConfigOptions;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalChangelogNormalize;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCorrelate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalDeltaJoin;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExpand;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGlobalGroupAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGlobalWindowAggregate;
@@ -89,6 +91,15 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // Master switch: with native acceleration off, substitute nothing — the query runs on the host.
     if (!NativeConfig.nativeEnabled()) {
       LOG.info("StreamFusion native acceleration is disabled; the plan runs on Flink");
+      return root;
+    }
+    // Keep regular joins visible to Flink's later FORCE validation.
+    if (deltaJoinForceWouldReject(root)) {
+      recordFallback(
+          "delta join: table.optimizer.delta-join.strategy is FORCE but this optimizer block"
+              + " contains a regular join and no delta join");
+      LOG.info(
+          "StreamFusion declined the optimizer block so Flink can enforce its FORCE delta-join strategy");
       return root;
     }
     RelNode optimized = substitute(root);
@@ -719,6 +730,37 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     for (RelNode input : node.getInputs()) {
       record(input);
     }
+  }
+
+  // Unlike Flink's statement-wide validation, this guard is conservative per optimizer block.
+  static boolean deltaJoinForceWouldReject(RelNode root) {
+    if (ShortcutUtils.unwrapTableConfig(root)
+            .get(OptimizerConfigOptions.TABLE_OPTIMIZER_DELTA_JOIN_STRATEGY)
+        != OptimizerConfigOptions.DeltaJoinStrategy.FORCE) {
+      return false;
+    }
+    class JoinFinder extends RelVisitor {
+      boolean regularJoinExists;
+      boolean deltaJoinExists;
+
+      @Override
+      public void visit(RelNode node, int ordinal, RelNode parent) {
+        if (deltaJoinExists) {
+          return;
+        }
+        if (node instanceof StreamPhysicalDeltaJoin) {
+          deltaJoinExists = true;
+          return;
+        }
+        if (node instanceof StreamPhysicalJoin) {
+          regularJoinExists = true;
+        }
+        super.visit(node, ordinal, parent);
+      }
+    }
+    JoinFinder finder = new JoinFinder();
+    finder.go(root);
+    return finder.regularJoinExists && !finder.deltaJoinExists;
   }
 
   /** Operator types seen in the optimized physical plans, in traversal order. */

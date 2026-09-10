@@ -1,11 +1,13 @@
 package tech.streamfusion.planner;
 
+import java.util.ArrayList;
 import java.util.List;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.types.pojo.Field;
+import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
@@ -13,6 +15,7 @@ import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.Native;
 import tech.streamfusion.NativeException;
 import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.operator.RowDataArrowConverter;
 
 /**
  * Plan-time agreement between the types the native engine will produce for an encoded Calc and the
@@ -61,6 +64,50 @@ final class CalcOutputTypeCheck {
       return mismatch(Data.importSchema(allocator, outputSchema, null).getFields(), declared);
     } catch (NativeException compileFailure) {
       return "expression does not compile natively: " + compileFailure.getMessage();
+    }
+  }
+
+  // Join residual references index nullable columns c0.. in [left, right] order.
+  static String predicateMismatch(
+      RexExpression encoded, RelDataType leftType, RelDataType rightType) {
+    List<Field> fields = new ArrayList<>();
+    for (RelDataType side : List.of(leftType, rightType)) {
+      RowType logical = FlinkTypeFactory$.MODULE$.toLogicalRowType(side);
+      for (RowType.RowField field : logical.getFields()) {
+        if (!RowDataArrowConverter.supports(RowType.of(field.getType()))) {
+          return "condition " + (side == leftType ? "left" : "right") + " input column `"
+              + field.getName() + "` has unsupported SQL type " + field.getType().asSummaryString();
+        }
+      }
+      Schema schema = ArrowConversion.toArrowSchema(logical);
+      for (Field field : schema.getFields()) {
+        fields.add(
+            new Field("c" + fields.size(), FieldType.nullable(field.getType()), field.getChildren()));
+      }
+    }
+    try (BufferAllocator allocator = new RootAllocator();
+        ArrowSchema inputSchema = ArrowSchema.allocateNew(allocator);
+        ArrowSchema outputSchema = ArrowSchema.allocateNew(allocator)) {
+      Data.exportSchema(allocator, new Schema(fields), null, inputSchema);
+      String failure =
+          Native.inferCalcOutputSchema(
+              encoded.kinds(),
+              encoded.payload(),
+              encoded.childCounts(),
+              encoded.longs(),
+              encoded.doubles(),
+              encoded.strings(),
+              new int[0],
+              0,
+              new String[0],
+              inputSchema.memoryAddress(),
+              outputSchema.memoryAddress());
+      if (failure == null) {
+        Data.importSchema(allocator, outputSchema, null);
+      }
+      return failure;
+    } catch (NativeException compileFailure) {
+      return "condition does not compile natively: " + compileFailure.getMessage();
     }
   }
 

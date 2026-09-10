@@ -15,6 +15,11 @@ Same equi-key/type/residual conditions as the [regular join](regular-join.md): a
 equi-key, null-dropping keys for a non-INNER join, and a non-equi residual the native expression
 engine can express. All four join types — INNER, LEFT, RIGHT, and FULL — are native.
 
+Residual predicates are compiled at planning time against the nullable `[left, right]` Arrow
+schema and must return `BOOLEAN`. Successful expression encoding alone is not admission: an
+unsupported coercion, such as comparing a materialized interval with an interval literal, falls
+back with `residual condition does not compile natively` before the first batch is processed.
+
 ## Falls back to Flink when
 
 - the join type isn't INNER, LEFT, RIGHT, or FULL;

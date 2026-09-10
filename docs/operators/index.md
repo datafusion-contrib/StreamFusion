@@ -28,6 +28,14 @@ also not running it is parity, not a gap.
 - **Insert-only guard** — every operator except the changelog-aware ones (`GROUP BY`, regular join,
   a CDC source, `Calc`, `UNION ALL`, `Expand`, changelog normalize, streaming Top-N/`LIMIT`)
   requires an insert-only input; a retracting/updating input falls it back.
+- **`table.optimizer.delta-join.strategy = FORCE`** — no substitutions are made in an optimizer
+  block containing an ordinary join and no delta join. Flink validates this strategy *after* our
+  pass across all statement roots; removing the ordinary joins could hide its intended rejection.
+  Blocks containing a delta join, or no ordinary join, are **not rejected by this FORCE guard**;
+  ordinary admission and island checks still apply. **`DeltaJoin` remains unsupported.** The guard
+  is deliberately conservative per block: a regular-join block still falls back when a delta join
+  exists only in another block, even if Flink's statement-wide check accepts the statement. The
+  fallback reason names the optimizer block. `AUTO` and `NONE` are unaffected by this guard.
 
 ## Idle-state TTL
 

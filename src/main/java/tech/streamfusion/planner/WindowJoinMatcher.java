@@ -43,8 +43,17 @@ final class WindowJoinMatcher {
     // Zero user equi-keys is allowed: the native joiner always joins on the two sides' window bounds
     // (window_start/window_end), so with no extra key it matches every pair within a window (subject to
     // the residual) — Nexmark q5's `AuctionBids JOIN MaxBids ON starttime/endtime AND num >= maxn`.
-    if (joinSpec.getNonEquiCondition().isPresent() && nonEquiPredicate(join) == null) {
-      return "window join: the residual non-equi condition is not natively expressible";
+    if (joinSpec.getNonEquiCondition().isPresent()) {
+      RexExpression residual = nonEquiPredicate(join);
+      if (residual == null) {
+        return "window join: the residual non-equi condition is not natively expressible";
+      }
+      String mismatch =
+          CalcOutputTypeCheck.predicateMismatch(
+              residual, join.getLeft().getRowType(), join.getRight().getRowType());
+      if (mismatch != null) {
+        return "window join: residual " + mismatch;
+      }
     }
     for (boolean filterNull : joinSpec.getFilterNulls()) {
       if (!filterNull) {

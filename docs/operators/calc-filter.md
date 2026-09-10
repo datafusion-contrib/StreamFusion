@@ -107,14 +107,39 @@ the Arrow schema of its input and checks that the boundary would read each proje
 Arrow type as its declared column (and that the condition is `BOOLEAN`). "Read as" is the reader's
 own rule, not byte-equality of Arrow types: timestamps and times may carry any unit or zone, since
 the column vectors convert on read (`PROCTIME()` is stamped as millisecond UTC where the row type
-converts to nanoseconds), but every other type — width, decimal precision and scale, string
-encoding, nested element types — must match exactly. Any disagreement, or a tree DataFusion cannot
+converts to nanoseconds). A top-level day-time interval projection may infer either `Int(64)`
+milliseconds or `Interval(DAY_TIME)`. Calc converts the latter to nullable `Int(64)` milliseconds
+before emitting its batch, so native exchanges and keyed operators receive the same representation
+as a Flink-fed interval column. Inference retains the expression's interval type so this exemption
+cannot admit an interval expression for a declared `BIGINT`. The Java reader also supports an
+`Interval(DAY_TIME)` at the host boundary. Nested interval outputs must already use their canonical
+integer encoding; they do not receive this exemption. Every other type — width, decimal precision
+and scale, string encoding, nested element types — must match exactly. Any disagreement, or a tree
+DataFusion cannot
 coerce at all, is a plain fallback whose recorded reason names the column and both types, e.g.
 `projection `EXPR$0` evaluates natively as FloatingPoint(SINGLE) but the plan declares DOUBLE`. Such
 a reason is a real gap to close (either the encoder should carry the width Flink uses, as it does
 for narrow integer literals, or the tree should be cast to the declared type), not a query to
 rewrite. This check requires the native library in the planning JVM, which the standard deployment
 already provides (see [Deployment](../deployment.md)).
+
+One such gap is deliberate. A difference between two timestamps evaluates natively as a duration,
+reported as `evaluates natively as Duration(NANOSECOND)`, and the Calc falls back. Flink floors each
+operand to milliseconds and subtracts those, so narrowing the finished difference would disagree
+whenever the operands carry sub-millisecond precision — `TIMESTAMP(6)` values a millisecond apart in
+Flink's arithmetic can round to the same millisecond in ours. Reading it here is not parity, so it
+stays on the host until the subtraction itself is done on floored operands.
+
+Year-month interval literals remain unsupported by the expression encoder and fall back with
+`unsupported literal type: INTERVAL_YEAR_MONTH` (or the literal's specific year/month qualifier).
+Arrow `Interval(YEAR_MONTH)` and `Interval(MONTH_DAY_NANO)` outputs are not accepted by this
+read contract. This change does not add native calendar-month interval expressions.
+
+Filter-only Calcs use the same plan-time compilation check. An encodable predicate is not enough:
+for example, a materialized interval column is an `Int64`, but comparing it with an interval literal
+requires coercion DataFusion does not support. This shape falls back with
+`condition does not compile natively`, including when a Top-N separates the producing projection
+from the filter. It must not be admitted only to fail when the first batch arrives.
 
 ## Casts
 

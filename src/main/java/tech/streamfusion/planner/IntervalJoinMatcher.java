@@ -39,8 +39,17 @@ final class IntervalJoinMatcher {
     if (leftKeys.length == 0 || leftKeys.length != rightKeys.length) {
       return "interval join: needs at least one equi-join key";
     }
-    if (joinSpec.getNonEquiCondition().isPresent() && nonEquiPredicate(join) == null) {
-      return "interval join: the residual non-equi condition is not natively expressible";
+    if (joinSpec.getNonEquiCondition().isPresent()) {
+      RexExpression residual = nonEquiPredicate(join);
+      if (residual == null) {
+        return "interval join: the residual non-equi condition is not natively expressible";
+      }
+      String mismatch =
+          CalcOutputTypeCheck.predicateMismatch(
+              residual, join.getLeft().getRowType(), join.getRight().getRowType());
+      if (mismatch != null) {
+        return "interval join: residual " + mismatch;
+      }
     }
     for (boolean filterNull : joinSpec.getFilterNulls()) {
       if (!filterNull) {

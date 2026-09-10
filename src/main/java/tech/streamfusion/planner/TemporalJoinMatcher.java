@@ -83,8 +83,17 @@ final class TemporalJoinMatcher {
     }
     // A residual non-equi predicate beyond FOR SYSTEM_TIME (e.g. `… AND o.amount < r.rate`) is applied
     // natively as the join filter, so it must be expressible by the native expression engine.
-    if (residualCondition(join) != null && nonEquiPredicate(join) == null) {
-      return "temporal join: the residual non-equi condition is not natively expressible";
+    if (residualCondition(join) != null) {
+      RexExpression residual = nonEquiPredicate(join);
+      if (residual == null) {
+        return "temporal join: the residual non-equi condition is not natively expressible";
+      }
+      String mismatch =
+          CalcOutputTypeCheck.predicateMismatch(
+              residual, join.getLeft().getRowType(), join.getRight().getRowType());
+      if (mismatch != null) {
+        return "temporal join: residual " + mismatch;
+      }
     }
     return null;
   }

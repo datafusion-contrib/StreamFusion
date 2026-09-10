@@ -27,6 +27,7 @@ import tech.streamfusion.arrow.vectors.ArrowDecimalColumnVector;
 import tech.streamfusion.arrow.vectors.ArrowDoubleColumnVector;
 import tech.streamfusion.arrow.vectors.ArrowFloatColumnVector;
 import tech.streamfusion.arrow.vectors.ArrowIntColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowIntervalDayColumnVector;
 import tech.streamfusion.arrow.vectors.ArrowMapColumnVector;
 import tech.streamfusion.arrow.vectors.ArrowNullColumnVector;
 import tech.streamfusion.arrow.vectors.ArrowRowColumnVector;
@@ -69,6 +70,7 @@ import org.apache.arrow.vector.FixedSizeBinaryVector;
 import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
+import org.apache.arrow.vector.IntervalDayVector;
 import org.apache.arrow.vector.NullVector;
 import org.apache.arrow.vector.SmallIntVector;
 import org.apache.arrow.vector.TimeMicroVector;
@@ -86,6 +88,7 @@ import org.apache.arrow.vector.complex.MapVector;
 import org.apache.arrow.vector.complex.StructVector;
 import org.apache.arrow.vector.types.DateUnit;
 import org.apache.arrow.vector.types.FloatingPointPrecision;
+import org.apache.arrow.vector.types.IntervalUnit;
 import org.apache.arrow.vector.types.TimeUnit;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
@@ -195,9 +198,15 @@ public final class ArrowConversion {
    * type {@code declared} by the vectors {@link #createColumnVector} builds. That dispatch is by
    * Arrow type, not by the declared type, so this is the contract a native output must meet: the
    * same Arrow type the row type converts to, except that timestamps and times may carry any unit
-   * (and any zone), which the vectors convert on read. Nested children are held to the same rule.
+   * (and any zone) and a day-time interval may arrive in either encoding, which the vectors convert
+   * on read. The interval exemption is top-level only; nested fields retain exact type checks.
    */
   public static boolean readsAs(Field actual, LogicalType declared) {
+    // An interval is scalar, so the exemption is decided here rather than threaded through the
+    // recursion: a declared type's children do not line up positionally with Arrow's for a MAP.
+    if (readsAsDayTimeInterval(actual.getType(), declared)) {
+      return true;
+    }
     return readsAs(actual, toArrowField(actual.getName(), declared));
   }
 
@@ -221,6 +230,23 @@ public final class ArrowConversion {
       }
     }
     return true;
+  }
+
+  /**
+   * The engine canonicalises a day-time interval as milliseconds, but a day-time interval literal
+   * reaches this boundary as Arrow's own interval array, which {@link ArrowIntervalDayColumnVector}
+   * reads back. Keyed on the declared Flink type rather than the millisecond {@code Int(64)} it
+   * converts to, so a BIGINT column is not silently rescaled by a vector that means days and millis.
+   *
+   * <p>Two encodings stay out. Year-month never arrives, because the encoder declines those literals
+   * before a batch exists. A duration — what a timestamp difference evaluates to — cannot be read
+   * here at all: Flink floors each operand to milliseconds before subtracting, so narrowing the
+   * finished difference diverges whenever the operands carry sub-millisecond precision.
+   */
+  private static boolean readsAsDayTimeInterval(ArrowType actualType, LogicalType declared) {
+    return declared instanceof DayTimeIntervalType
+        && actualType instanceof ArrowType.Interval
+        && ((ArrowType.Interval) actualType).getUnit() == IntervalUnit.DAY_TIME;
   }
 
   /** A reader that exposes the batch's rows as {@link RowData} backed directly by the Arrow buffers. */
@@ -278,6 +304,8 @@ public final class ArrowConversion {
         || vector instanceof TimeMicroVector
         || vector instanceof TimeNanoVector) {
       return new ArrowTimeColumnVector(vector);
+    } else if (vector instanceof IntervalDayVector) {
+      return new ArrowIntervalDayColumnVector((IntervalDayVector) vector);
     } else if (vector instanceof TimeStampVector) {
       return new ArrowTimestampColumnVector(vector);
     } else if (vector instanceof MapVector) {
@@ -306,7 +334,11 @@ public final class ArrowConversion {
     } else if (vector instanceof NullVector) {
       return ArrowNullColumnVector.INSTANCE;
     } else {
-      throw new UnsupportedOperationException(String.format("Unsupported type %s.", fieldType));
+      throw new UnsupportedOperationException(String.format(
+        "Unsupported type %s (Arrow vector %s, arrow type %s).",
+        fieldType,
+        vector.getClass().getSimpleName(),
+        vector.getField().getType()));
     }
   }
 
@@ -374,7 +406,11 @@ public final class ArrowConversion {
     } else if (vector instanceof NullVector) {
       return new NullWriter<>((NullVector) vector);
     } else {
-      throw new UnsupportedOperationException(String.format("Unsupported type %s.", fieldType));
+      throw new UnsupportedOperationException(String.format(
+        "Unsupported type %s (Arrow vector %s, arrow type %s).",
+        fieldType,
+        vector.getClass().getSimpleName(),
+        vector.getField().getType()));
     }
   }
 
@@ -444,7 +480,11 @@ public final class ArrowConversion {
     } else if (vector instanceof NullVector) {
       return new NullWriter<>((NullVector) vector);
     } else {
-      throw new UnsupportedOperationException(String.format("Unsupported type %s.", fieldType));
+      throw new UnsupportedOperationException(String.format(
+        "Unsupported type %s (Arrow vector %s, arrow type %s).",
+        fieldType,
+        vector.getClass().getSimpleName(),
+        vector.getField().getType()));
     }
   }
 

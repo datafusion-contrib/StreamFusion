@@ -48,6 +48,11 @@ versioned table) and the legacy proctime temporal *function* join are both parit
 itself rejects them (FLINK-19830). For the proctime *dimension-table* shape that Flink does support,
 see [Lookup join](lookup-join.md).
 
+Residual predicates are compiled at planning time against the nullable `[left, right]` Arrow
+schema and must return `BOOLEAN`. Successful expression encoding alone is not admission: an
+unsupported coercion, such as comparing a materialized interval with an interval literal, falls
+back with `residual condition does not compile natively` before the first batch is processed.
+
 ## Falls back to Flink when
 
 - the join type isn't INNER or LEFT (Flink itself rejects RIGHT/FULL for a versioned-table join);

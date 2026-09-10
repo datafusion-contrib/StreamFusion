@@ -9397,6 +9397,101 @@ fn calc_projects_computed_columns() {
     );
 }
 
+#[test]
+fn calc_normalizes_interval_outputs_without_losing_nulls_or_row_kinds() {
+    use arrow::datatypes::{IntervalDayTime, IntervalUnit};
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("interval", DataType::Interval(IntervalUnit::DayTime), true),
+        Field::new("value", DataType::Int64, false),
+        Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+    ]));
+    let intervals: ArrayRef = Arc::new(IntervalDayTimeArray::from(vec![
+        Some(IntervalDayTime::new(2, 500)),
+        Some(IntervalDayTime::new(-1, -3_600_000)),
+        Some(IntervalDayTime::new(1, -500)),
+        None,
+        Some(IntervalDayTime::new(0, 0)),
+    ]));
+    let values: ArrayRef = Arc::new(Int64Array::from(vec![1, 2, 3, 4, 5]));
+    let kinds: ArrayRef = Arc::new(Int8Array::from(vec![0, 1, 2, 3, 0]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![intervals, values.clone(), kinds.clone()],
+    )
+    .unwrap();
+    let mut calc = CalcExpression {
+        kinds: vec![0, 0],
+        payload: vec![0, 1],
+        child_counts: vec![0, 0],
+        longs: vec![],
+        doubles: vec![],
+        strings: vec![],
+        projection_roots: vec![0, 1],
+        condition_root: -1,
+        output_names: vec!["alias".to_string(), "value".to_string()],
+        compiled: None,
+    };
+
+    let out = calc.evaluate(batch);
+    assert_eq!(
+        out.schema().field(0),
+        &Field::new("alias", DataType::Int64, true)
+    );
+    let millis = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!(millis.value(0), 172_800_500);
+    assert_eq!(millis.value(1), -90_000_000);
+    assert_eq!(millis.value(2), 86_399_500);
+    assert!(millis.is_null(3));
+    assert_eq!(millis.value(4), 0);
+    assert!(Arc::ptr_eq(out.column(1), &values));
+    assert!(Arc::ptr_eq(out.column(2), &kinds));
+    assert_eq!(out.schema().field(2).name(), ROW_KIND_COLUMN);
+
+    let empty = calc.evaluate(RecordBatch::new_empty(schema));
+    assert_eq!(empty.num_rows(), 0);
+    assert_eq!(empty.schema(), out.schema());
+}
+
+#[test]
+fn calc_preserves_interval_inference_but_emits_canonical_literal_columns() {
+    use arrow::datatypes::IntervalUnit;
+
+    let schema = Arc::new(Schema::new(vec![Field::new("k", DataType::Int64, false)]));
+    let mut calc = CalcExpression {
+        kinds: vec![15],
+        payload: vec![0],
+        child_counts: vec![0],
+        longs: vec![-90_000_000],
+        doubles: vec![],
+        strings: vec![],
+        projection_roots: vec![0],
+        condition_root: -1,
+        output_names: vec!["d".to_string()],
+        compiled: None,
+    };
+    let inferred = crate::calc::infer_calc_output_schema(&schema, &calc).unwrap();
+    assert_eq!(
+        inferred.field(0).data_type(),
+        &DataType::Interval(IntervalUnit::DayTime)
+    );
+
+    let batch = RecordBatch::try_new(schema, vec![Arc::new(Int64Array::from(vec![1, 2]))]).unwrap();
+    let out = calc.evaluate(batch);
+    assert_eq!(
+        out.schema().field(0),
+        &Field::new("d", DataType::Int64, true)
+    );
+    assert_eq!(
+        out.column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .values(),
+        &[-90_000_000, -90_000_000]
+    );
+}
+
 // A Calc filters by the condition (a > 2), then projects the survivors.
 #[test]
 fn calc_filters_then_projects() {

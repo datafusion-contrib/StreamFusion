@@ -17,6 +17,11 @@ native.
 An event-time window join closes each window on the watermark, like the windowed aggregate; a
 proctime window join closes it on a processing-time timer instead.
 
+Residual predicates are compiled at planning time against the nullable `[left, right]` Arrow
+schema and must return `BOOLEAN`. Successful expression encoding alone is not admission: an
+unsupported coercion, such as comparing a materialized interval with an interval literal, falls
+back with `residual condition does not compile natively` before the first batch is processed.
+
 ## Falls back to Flink when
 
 - the join type isn't INNER, LEFT, RIGHT, or FULL;

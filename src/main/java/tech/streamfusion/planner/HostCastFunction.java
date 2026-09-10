@@ -33,6 +33,9 @@ public final class HostCastFunction extends ScalarFunction {
 
   private static final long serialVersionUID = 1L;
 
+  /** Enough invocations to cross java.lang.reflect's native-to-generated accessor threshold. */
+  private static final int WARMUP_INVOCATIONS = 20;
+
   private final LogicalType inputType;
   private final LogicalType targetType;
 
@@ -88,9 +91,42 @@ public final class HostCastFunction extends ScalarFunction {
       // java.lang.reflect switches from its native accessor to a generated accessor after a small
       // invocation threshold. Force that transition while Flink's job classloader is open; otherwise
       // a long-running native batch can cross the threshold after the safety wrapper was retired.
-      for (int i = 0; i < 20; i++) {
-        executor.cast(null);
+      Object sample = warmupValue(inputType);
+      for (int i = 0; i < WARMUP_INVOCATIONS; i++) {
+        executor.cast(sample);
       }
+    }
+  }
+
+  /**
+   * A value the executor can actually consume. {@code null} is not legal input for a NOT NULL type,
+   * whose generated cast dereferences the argument without a guard. Unknown types throw rather than
+   * warm with a null, so widening the admitted casts has to decide what primes them.
+   */
+  private static Object warmupValue(LogicalType type) {
+    switch (type.getTypeRoot()) {
+      case CHAR:
+      case VARCHAR:
+        return StringData.fromString("0");
+      case BOOLEAN:
+        return Boolean.FALSE;
+      case TINYINT:
+        return (byte) 0;
+      case SMALLINT:
+        return (short) 0;
+      case INTEGER:
+        return 0;
+      case BIGINT:
+        return 0L;
+      case FLOAT:
+        return 0f;
+      case DOUBLE:
+        return 0d;
+      case DECIMAL:
+        DecimalType decimal = (DecimalType) type;
+        return DecimalData.fromBigDecimal(BigDecimal.ZERO, decimal.getPrecision(), decimal.getScale());
+      default:
+        throw new IllegalStateException("no warm-up value for " + type);
     }
   }
 
