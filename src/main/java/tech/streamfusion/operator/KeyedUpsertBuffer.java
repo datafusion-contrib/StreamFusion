@@ -17,18 +17,36 @@ import tech.streamfusion.Native;
  */
 public final class KeyedUpsertBuffer implements AutoCloseable {
 
-  /** One merged flush: the caller owns {@link #root} and closes it once written. */
-  public static final class Flushed {
+  /** One flush: the caller closes both batches once written. */
+  public static final class Flushed implements AutoCloseable {
     public final VectorSchemaRoot root;
+    public final VectorSchemaRoot changelog;
     public final long deleteRows;
     public final long minSequence;
     public final long maxSequence;
 
-    Flushed(VectorSchemaRoot root, long deleteRows, long minSequence, long maxSequence) {
+    Flushed(
+        VectorSchemaRoot root,
+        VectorSchemaRoot changelog,
+        long deleteRows,
+        long minSequence,
+        long maxSequence) {
       this.root = root;
+      this.changelog = changelog;
       this.deleteRows = deleteRows;
       this.minSequence = minSequence;
       this.maxSequence = maxSequence;
+    }
+
+    @Override
+    public void close() {
+      try {
+        root.close();
+      } finally {
+        if (changelog != null) {
+          changelog.close();
+        }
+      }
     }
   }
 
@@ -78,16 +96,67 @@ public final class KeyedUpsertBuffer implements AutoCloseable {
 
   /** Merges and empties the buffer; {@code null} when no row survives. */
   public Flushed flush() {
+    return flush(false);
+  }
+
+  /** Also returns the input changelog in key and arrival order when requested. */
+  public Flushed flush(boolean includeChangelog) {
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
-        ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      long[] summary =
-          Native.keyedUpsertBufferFlush(handle, array.memoryAddress(), schema.memoryAddress());
-      if (summary[0] == 0) {
-        return null;
+        ArrowSchema schema = ArrowSchema.allocateNew(allocator);
+        ArrowArray changelogArray = includeChangelog ? ArrowArray.allocateNew(allocator) : null;
+        ArrowSchema changelogSchema =
+            includeChangelog ? ArrowSchema.allocateNew(allocator) : null) {
+      VectorSchemaRoot root = null;
+      try {
+        long[] summary =
+            Native.keyedUpsertBufferFlush(
+                handle,
+                array.memoryAddress(),
+                schema.memoryAddress(),
+                includeChangelog ? changelogArray.memoryAddress() : 0,
+                includeChangelog ? changelogSchema.memoryAddress() : 0);
+        if (summary[0] == 0) {
+          return null;
+        }
+        root = importBatch(array, schema);
+        VectorSchemaRoot changelog =
+            includeChangelog ? importBatch(changelogArray, changelogSchema) : null;
+        return new Flushed(root, changelog, summary[1], summary[2], summary[3]);
+      } catch (Throwable failure) {
+        if (root != null) {
+          root.close();
+        }
+        releaseUnimported(array, schema);
+        releaseUnimported(changelogArray, changelogSchema);
+        throw failure;
       }
-      VectorSchemaRoot root =
-          Data.importVectorSchemaRoot(allocator, array, schema, NativeAllocator.DICTIONARIES);
-      return new Flushed(root, summary[1], summary[2], summary[3]);
+    }
+  }
+
+  private VectorSchemaRoot importBatch(ArrowArray array, ArrowSchema schema) {
+    // Import through non-owning struct views so the outer scope can release either output if
+    // importing its sibling fails. The root takes ownership of the exported buffers.
+    VectorSchemaRoot root =
+        VectorSchemaRoot.create(
+            Data.importSchema(
+                allocator, ArrowSchema.wrap(schema.memoryAddress()), NativeAllocator.DICTIONARIES),
+            allocator);
+    try {
+      Data.importIntoVectorSchemaRoot(
+          allocator, ArrowArray.wrap(array.memoryAddress()), root, NativeAllocator.DICTIONARIES);
+      return root;
+    } catch (Throwable failure) {
+      root.close();
+      throw failure;
+    }
+  }
+
+  private static void releaseUnimported(ArrowArray array, ArrowSchema schema) {
+    if (array != null && array.snapshot().release != 0) {
+      array.release();
+    }
+    if (schema != null && schema.snapshot().release != 0) {
+      schema.release();
     }
   }
 

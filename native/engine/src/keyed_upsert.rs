@@ -27,9 +27,10 @@ pub(crate) struct KeyedUpsertBuffer {
 
 /// A flushed buffer in Paimon's key-value file layout: the key columns, the sequence number, the
 /// row kind, then every table column (the key columns again, as Paimon stores the full row as the
-/// value). Every key appears once.
+/// value). The data batch has one row per key; the optional input changelog retains all rows.
 pub(crate) struct MergedBatch {
     pub(crate) batch: RecordBatch,
+    pub(crate) changelog: Option<RecordBatch>,
     pub(crate) delete_rows: usize,
     pub(crate) min_sequence: i64,
     pub(crate) max_sequence: i64,
@@ -105,7 +106,7 @@ impl KeyedUpsertBuffer {
 
     /// Merges everything pushed so far into one sorted key-value batch and empties the buffer.
     /// Returns `None` when no row survives.
-    pub(crate) fn flush(&mut self) -> Option<MergedBatch> {
+    pub(crate) fn flush(&mut self, include_changelog: bool) -> Option<MergedBatch> {
         let batches = std::mem::take(&mut self.batches);
         let sequences = std::mem::take(&mut self.sequences);
         self.rows = 0;
@@ -150,29 +151,52 @@ impl KeyedUpsertBuffer {
         if selected.is_empty() {
             return None;
         }
-        let indices = UInt32Array::from(selected);
-        let taken: Vec<ArrayRef> = batch
-            .columns()
-            .iter()
-            .map(|column| take(column, &indices, None).expect("take merged rows"))
-            .collect();
-        let sequence_taken =
-            take(&(Arc::new(sequence) as ArrayRef), &indices, None).expect("take sequence numbers");
-        let sequence_values = sequence_taken
+        let sequence = Arc::new(sequence) as ArrayRef;
+        let changelog = include_changelog.then(|| {
+            self.key_value_batch(
+                &batch,
+                &sequence,
+                &UInt32Array::from_iter_values(order.iter().map(|&row| row as u32)),
+            )
+        });
+        let merged = self.key_value_batch(&batch, &sequence, &UInt32Array::from(selected));
+        let sequence_values = merged
+            .column(self.key_columns.len())
             .as_any()
             .downcast_ref::<Int64Array>()
             .expect("sequence column");
-        let kind_values = taken[self.kind_column]
+        let kind_values = merged
+            .column(self.key_columns.len() + 1)
             .as_any()
             .downcast_ref::<Int8Array>()
             .expect("row kind column");
         let delete_rows = (0..kind_values.len())
             .filter(|&row| is_retract(kind_values.value(row)))
             .count();
-        let (min_sequence, max_sequence) = (
-            arrow::compute::min(sequence_values).expect("min sequence"),
-            arrow::compute::max(sequence_values).expect("max sequence"),
-        );
+        let min_sequence = arrow::compute::min(sequence_values).expect("min sequence");
+        let max_sequence = arrow::compute::max(sequence_values).expect("max sequence");
+        Some(MergedBatch {
+            batch: merged,
+            changelog,
+            delete_rows,
+            min_sequence,
+            max_sequence,
+        })
+    }
+
+    fn key_value_batch(
+        &self,
+        batch: &RecordBatch,
+        sequence: &ArrayRef,
+        indices: &UInt32Array,
+    ) -> RecordBatch {
+        let schema = batch.schema();
+        let taken: Vec<ArrayRef> = batch
+            .columns()
+            .iter()
+            .map(|column| take(column, indices, None).expect("take key-value rows"))
+            .collect();
+        let sequence_taken = take(sequence, indices, None).expect("take sequence numbers");
 
         let mut fields: Vec<Field> = Vec::new();
         let mut columns: Vec<ArrayRef> = Vec::new();
@@ -198,14 +222,7 @@ impl KeyedUpsertBuffer {
                 columns.push(taken[column].clone());
             }
         }
-        let merged = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("merged key-value batch");
-        Some(MergedBatch {
-            batch: merged,
-            delete_rows,
-            min_sequence,
-            max_sequence,
-        })
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("key-value batch")
     }
 }
 
@@ -279,7 +296,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_keyedUpsertBufferRows<'loca
 
 /// Merges the pending rows into one sorted key-value batch exported into the consumer-allocated C
 /// structs and empties the buffer. Returns `{rows, deleteRows, minSequence, maxSequence}`; when
-/// `rows` is 0 nothing was exported.
+/// `rows` is 0 nothing was exported. Nonzero changelog addresses also receive the sorted input.
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_keyedUpsertBufferFlush<'local>(
     env: JNIEnv<'local>,
@@ -287,10 +304,12 @@ pub extern "system" fn Java_tech_streamfusion_Native_keyedUpsertBufferFlush<'loc
     handle: jlong,
     out_array_address: jlong,
     out_schema_address: jlong,
+    changelog_array_address: jlong,
+    changelog_schema_address: jlong,
 ) -> jni::sys::jlongArray {
     crate::bridge::jni_guard(env, move |env| {
         let buffer = unsafe { &mut *(handle as *mut KeyedUpsertBuffer) };
-        let summary = match buffer.flush() {
+        let summary = match buffer.flush(changelog_array_address != 0) {
             Some(merged) => {
                 let summary = [
                     merged.batch.num_rows() as jlong,
@@ -299,6 +318,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_keyedUpsertBufferFlush<'loc
                     merged.max_sequence,
                 ];
                 export_record_batch(merged.batch, out_array_address, out_schema_address);
+                if let Some(changelog) = merged.changelog {
+                    export_record_batch(
+                        changelog,
+                        changelog_array_address,
+                        changelog_schema_address,
+                    );
+                }
                 summary
             }
             None => [0, 0, 0, 0],
@@ -395,7 +421,7 @@ mod tests {
         buffer.push(batch(&[(9, "d", 0), (2, "e", 3)]), 13);
         assert_eq!(buffer.rows(), 5);
         assert!(buffer.bytes() > 0);
-        let merged = buffer.flush().expect("rows");
+        let merged = buffer.flush(false).expect("rows");
         assert_eq!(buffer.rows(), 0);
         assert_eq!(buffer.bytes(), 0);
         let schema = merged.batch.schema();
@@ -412,16 +438,52 @@ mod tests {
         assert_eq!(merged.delete_rows, 1);
         assert_eq!(merged.min_sequence, 12);
         assert_eq!(merged.max_sequence, 14);
-        assert!(buffer.flush().is_none());
+        assert!(buffer.flush(false).is_none());
     }
 
     #[test]
     fn keeps_the_first_row_per_key_when_asked() {
         let mut buffer = KeyedUpsertBuffer::new(vec![0], 2, Keep::First, false);
         buffer.push(batch(&[(1, "first", 0), (1, "second", 2)]), 0);
-        let merged = buffer.flush().expect("rows");
+        let merged = buffer.flush(false).expect("rows");
         assert_eq!(strings(&merged.batch, 4), vec!["first"]);
         assert_eq!(i64s(&merged.batch, 1), vec![0]);
+    }
+
+    #[test]
+    fn input_changelog_keeps_all_kinds_in_key_and_sequence_order() {
+        let mut buffer = KeyedUpsertBuffer::new(vec![0], 2, Keep::Last, false);
+        buffer.push(
+            batch(&[(5, "old", 0), (2, "deleted", 3), (5, "before", 1)]),
+            10,
+        );
+        buffer.push(batch(&[(5, "new", 2), (2, "inserted", 0)]), 13);
+        let flushed = buffer.flush(true).expect("rows");
+        let changelog = flushed.changelog.expect("input changelog");
+        assert_eq!(i64s(&changelog, 0), vec![2, 2, 5, 5, 5]);
+        assert_eq!(i64s(&changelog, 1), vec![11, 14, 10, 12, 13]);
+        assert_eq!(i8s(&changelog, 2), vec![3, 0, 0, 1, 2]);
+        assert_eq!(strings(&flushed.batch, 4), vec!["inserted", "new"]);
+        assert!(buffer.flush(true).is_none());
+    }
+
+    #[test]
+    fn ignored_retracts_are_absent_from_both_flush_outputs() {
+        let mut buffer = KeyedUpsertBuffer::new(vec![0], 2, Keep::Last, true);
+        assert_eq!(
+            buffer.push(
+                batch(&[(1, "a", 0), (1, "a", 1), (1, "b", 2), (1, "b", 3)]),
+                7
+            ),
+            2
+        );
+        let flushed = buffer.flush(true).expect("rows");
+        let changelog = flushed.changelog.expect("input changelog");
+        assert_eq!(i64s(&changelog, 1), vec![7, 8]);
+        assert_eq!(i8s(&changelog, 2), vec![0, 2]);
+        assert_eq!(strings(&flushed.batch, 4), vec!["b"]);
+        buffer.push(batch(&[(1, "ignored", 3)]), 9);
+        assert!(buffer.flush(true).is_none());
     }
 
     #[test]
@@ -434,7 +496,7 @@ mod tests {
             ),
             2
         );
-        let merged = buffer.flush().expect("rows");
+        let merged = buffer.flush(false).expect("rows");
         assert_eq!(i64s(&merged.batch, 0), vec![1, 2]);
         assert_eq!(i64s(&merged.batch, 1), vec![0, 1]);
         assert_eq!(strings(&merged.batch, 4), vec!["a", "d"]);
@@ -442,7 +504,7 @@ mod tests {
         let mut only_retracts = KeyedUpsertBuffer::new(vec![0], 2, Keep::Last, true);
         assert_eq!(only_retracts.push(batch(&[(1, "a", 3)]), 0), 0);
         assert_eq!(only_retracts.rows(), 0);
-        assert!(only_retracts.flush().is_none());
+        assert!(only_retracts.flush(false).is_none());
     }
 
     #[test]
@@ -452,7 +514,7 @@ mod tests {
             batch(&[(2, "b", 0), (1, "\u{e9}", 0), (1, "b", 0), (0, "ba", 0)]),
             0,
         );
-        let merged = buffer.flush().expect("rows");
+        let merged = buffer.flush(false).expect("rows");
         assert_eq!(strings(&merged.batch, 0), vec!["b", "b", "ba", "\u{e9}"]);
         assert_eq!(i64s(&merged.batch, 1), vec![1, 2, 0, 1]);
     }

@@ -23,6 +23,7 @@ import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.PositionOutputStream;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.DataFilePathFactory;
+import org.apache.paimon.io.DataIncrement;
 import org.apache.paimon.manifest.FileSource;
 import org.apache.paimon.stats.SimpleStats;
 import org.apache.paimon.table.FileStoreTable;
@@ -38,7 +39,9 @@ import tech.streamfusion.operator.NativeAllocator;
  * size and each file is described the way Paimon's own key-value file writer describes one: key
  * bounds from its first and last row, footer statistics through Paimon's extractor, sequence range
  * and delete count from its rows. Paimon derives that metadata while walking rows one by one; a
- * batch written whole computes it column-wise here.
+ * batch written whole computes it column-wise here. An input-changelog batch uses the same layout
+ * and sort but retains every input row; its files roll independently and enter the changelog
+ * increment with their own compression and statistics settings.
  */
 public final class NativePaimonKeyValueFileWriter {
 
@@ -64,7 +67,9 @@ public final class NativePaimonKeyValueFileWriter {
   private final long schemaId;
   private final long targetFileSize;
   private final String compression;
+  private final String changelogCompression;
   private final PaimonKeyValueLayout layout;
+  private final PaimonKeyValueLayout changelogLayout;
   private final FormatWriterFactory writerFactory;
 
   public NativePaimonKeyValueFileWriter(FileStoreTable table, PaimonKeyValueLayout layout) {
@@ -74,43 +79,67 @@ public final class NativePaimonKeyValueFileWriter {
     this.schemaId = table.schema().id();
     this.targetFileSize = options.targetFileSize(true);
     this.compression = options.fileCompressionPerLevel().getOrDefault(0, options.fileCompression());
+    this.changelogCompression =
+        options.changelogFileCompression() == null
+            ? compression
+            : options.changelogFileCompression();
     this.layout = layout;
+    this.changelogLayout = PaimonKeyValueLayout.changelog(table);
     this.writerFactory =
         FileFormat.fromIdentifier(options.fileFormatString(), options.toConfiguration())
             .createWriterFactory(layout.writeType);
   }
 
-  /** Writes one bucket's flushed rows and closes them; returns the new files' metadata. */
-  public List<DataFileMeta> write(
-      BinaryRow partition, int bucket, KeyedUpsertBuffer.Flushed flushed) throws IOException {
+  /** Writes and closes both outputs of a bucket's flush, returning data and changelog metadata. */
+  public DataIncrement write(BinaryRow partition, int bucket, KeyedUpsertBuffer.Flushed flushed)
+      throws IOException {
     DataFilePathFactory paths =
         table.store().pathFactory().createDataFilePathFactory(partition, bucket);
+    try (flushed) {
+      List<DataFileMeta> data = write(flushed.root, paths, false);
+      List<DataFileMeta> changelog =
+          flushed.changelog == null
+              ? Collections.emptyList()
+              : write(flushed.changelog, paths, true);
+      return new DataIncrement(data, Collections.emptyList(), changelog);
+    }
+  }
+
+  private List<DataFileMeta> write(
+      VectorSchemaRoot root, DataFilePathFactory paths, boolean changelog) throws IOException {
     List<DataFileMeta> files = new ArrayList<>();
-    try (VectorSchemaRoot root = flushed.root) {
-      List<WrittenFile> written = new ArrayList<>();
-      int start = 0;
-      while (start < root.getRowCount()) {
-        WrittenFile file = writeFile(root, start, paths);
-        written.add(file);
-        start = file.end;
-      }
-      BinaryRow[] keyBounds = keyBounds(root, written);
-      for (int i = 0; i < written.size(); i++) {
-        files.add(describe(root, written.get(i), keyBounds[2 * i], keyBounds[2 * i + 1], paths));
-      }
+    List<WrittenFile> written = new ArrayList<>();
+    int start = 0;
+    while (start < root.getRowCount()) {
+      WrittenFile file = writeFile(root, start, paths, changelog);
+      written.add(file);
+      start = file.end;
+    }
+    BinaryRow[] keyBounds = keyBounds(root, written);
+    for (int i = 0; i < written.size(); i++) {
+      files.add(
+          describe(
+              root,
+              written.get(i),
+              keyBounds[2 * i],
+              keyBounds[2 * i + 1],
+              paths,
+              changelog ? changelogLayout : layout));
     }
     return files;
   }
 
   /** Encodes rows from {@code start} into one file until it reaches the target size. */
-  private WrittenFile writeFile(VectorSchemaRoot root, int start, DataFilePathFactory paths)
+  private WrittenFile writeFile(
+      VectorSchemaRoot root, int start, DataFilePathFactory paths, boolean changelog)
       throws IOException {
-    Path path = paths.newPath();
+    Path path = changelog ? paths.newChangelogPath() : paths.newPath();
     int rows = root.getRowCount();
     int end = start;
     long fileSize;
     try (PositionOutputStream out = fileIO.newOutputStream(path, false)) {
-      FormatWriter writer = writerFactory.create(out, compression);
+      FormatWriter writer =
+          writerFactory.create(out, changelog ? changelogCompression : compression);
       while (end < rows) {
         int count = Math.min(ROWS_PER_CHUNK, rows - end);
         ((NativePaimonParquetWriter) writer)
@@ -131,7 +160,8 @@ public final class NativePaimonKeyValueFileWriter {
       WrittenFile file,
       BinaryRow minKey,
       BinaryRow maxKey,
-      DataFilePathFactory paths)
+      DataFilePathFactory paths,
+      PaimonKeyValueLayout layout)
       throws IOException {
     BigIntVector sequences = (BigIntVector) root.getVector(layout.sequenceColumn());
     TinyIntVector kinds = (TinyIntVector) root.getVector(layout.kindColumn());

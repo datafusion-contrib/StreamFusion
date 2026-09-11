@@ -3,7 +3,6 @@ package tech.streamfusion.paimon;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -15,14 +14,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.JsonNode;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.table.api.Schema;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.ExplainDetail;
+import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.TableResult;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
@@ -204,7 +203,8 @@ class PaimonSinkParityTest {
             + " (id BIGINT NOT NULL, label STRING, nested ROW<x INT, y STRING>, pt STRING)"
             + " PARTITIONED BY (pt) WITH ('bucket' = '2', 'bucket-key' = 'id')");
     DataStream<Row> stream = env.fromData(fixtureTypeInformation(), fixtureRows());
-    tableEnv.createTemporaryView("fixture_source", tableEnv.fromDataStream(stream, fixtureSchema()));
+    tableEnv.createTemporaryView(
+        "fixture_source", tableEnv.fromDataStream(stream, fixtureSchema()));
     PhysicalPlanScan scan = nativeSink ? NativePlanner.install(tableEnv) : null;
 
     tableEnv
@@ -272,7 +272,9 @@ class PaimonSinkParityTest {
     TableResult insert = tableEnv.executeSql("INSERT INTO relocated SELECT id, name FROM ticks");
     waitForFiles(firstExternal);
     tableEnv.executeSql(
-        "ALTER TABLE relocated SET ('data-file.external-paths' = '" + secondExternal.toUri() + "')");
+        "ALTER TABLE relocated SET ('data-file.external-paths' = '"
+            + secondExternal.toUri()
+            + "')");
     insert.await();
 
     assertAccelerated(scan);
@@ -307,6 +309,31 @@ class PaimonSinkParityTest {
     FileStoreTable stockTable = upsertFixture(warehouse, "pk_stock", options, 1, false, 0);
 
     assertSameTables(stockTable, nativeTable, true, mergedRows(false));
+  }
+
+  @ParameterizedTest
+  @MethodSource("tech.streamfusion.paimon.PaimonChangelogSinkWriteTest#modes")
+  void primaryKeyChangelogModesMatchStockThroughTheFlinkSink(Map<String, String> mode)
+      throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-sink-changelog");
+    String options =
+        "'bucket' = '2', 'sink.parallelism' = '2', "
+            + mode.entrySet().stream()
+                .map(e -> "'" + e.getKey() + "' = '" + e.getValue() + "'")
+                .collect(Collectors.joining(", "));
+    for (int run = 0; run < 2; run++) {
+      FileStoreTable ours = upsertFixture(warehouse, "pk_native", options, 1, true, run);
+      FileStoreTable stock = upsertFixture(warehouse, "pk_stock", options, 1, false, run);
+      assertEquals(
+          PaimonTestTables.readRows(stock, stock.rowType()),
+          PaimonTestTables.readRows(ours, ours.rowType()));
+      if (ours.coreOptions().changelogProducer()
+          != org.apache.paimon.CoreOptions.ChangelogProducer.NONE) {
+        List<String> expected = PaimonChangelogSinkWriteTest.changelogRows(stock);
+        assertTrue(!expected.isEmpty(), "the stock sink produced changelog records");
+        assertEquals(expected, PaimonChangelogSinkWriteTest.changelogRows(ours));
+      }
+    }
   }
 
   @Test
@@ -388,7 +415,8 @@ class PaimonSinkParityTest {
   @Test
   void writeOnlyPrimaryKeyTableLeavesLevelZeroFilesForADedicatedCompaction() throws Exception {
     java.nio.file.Path warehouse = Files.createTempDirectory("paimon-sink-pk-write-only");
-    String options = "'bucket' = '2', 'write-only' = 'true', 'num-sorted-run.compaction-trigger' = '2'";
+    String options =
+        "'bucket' = '2', 'write-only' = 'true', 'num-sorted-run.compaction-trigger' = '2'";
     upsertFixture(warehouse, "pk_native", options, 1, true, 0);
     upsertFixture(warehouse, "pk_stock", options, 1, false, 0);
     FileStoreTable nativeTable = upsertFixture(warehouse, "pk_native", options, 1, true, 1);
@@ -478,12 +506,15 @@ class PaimonSinkParityTest {
             + " (id BIGINT NOT NULL, name STRING, price DECIMAL(10, 2), pt STRING NOT NULL,"
             + " PRIMARY KEY (id, pt) NOT ENFORCED) PARTITIONED BY (pt) WITH ('bucket' = '2')");
     DataStream<Row> stream = env.fromData(fixtureTypeInformation(), fixtureRows());
-    tableEnv.createTemporaryView("fixture_source", tableEnv.fromDataStream(stream, fixtureSchema()));
+    tableEnv.createTemporaryView(
+        "fixture_source", tableEnv.fromDataStream(stream, fixtureSchema()));
     PhysicalPlanScan scan = nativeSink ? NativePlanner.install(tableEnv) : null;
 
     tableEnv
         .executeSql(
-            "INSERT INTO " + name + " SELECT id, name, price, COALESCE(pt, '-') FROM fixture_source")
+            "INSERT INTO "
+                + name
+                + " SELECT id, name, price, COALESCE(pt, '-') FROM fixture_source")
         .await();
 
     if (nativeSink) {
@@ -576,37 +607,95 @@ class PaimonSinkParityTest {
     tableEnv.createTemporaryView("changelog_source", source);
   }
 
-  private static final String PK_SCHEMA = "(id BIGINT NOT NULL, v INT, PRIMARY KEY (id) NOT ENFORCED)";
+  private static final String PK_SCHEMA =
+      "(id BIGINT NOT NULL, v INT, PRIMARY KEY (id) NOT ENFORCED)";
 
   static Stream<Arguments> declinedTables() {
     return Stream.of(
         Arguments.of(PK_SCHEMA, "'bucket' = '-1'", "bucket mode HASH_DYNAMIC"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'merge-engine' = 'partial-update'", "merge-engine partial-update"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'merge-engine' = 'first-row'", "merge-engine first-row"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'changelog-producer' = 'input'", "changelog-producer input"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'changelog-producer' = 'lookup'", "changelog-producer lookup"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'changelog-producer' = 'full-compaction'", "changelog-producer full-compaction"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'deletion-vectors.enabled' = 'true'", "deletion-vectors.enabled"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'force-lookup' = 'true'", "force-lookup"),
+        Arguments.of(
+            PK_SCHEMA,
+            "'bucket' = '2', 'changelog-producer' = 'input', 'changelog-file.format' = 'avro'",
+            "changelog-file.format avro"),
+        Arguments.of(
+            PK_SCHEMA,
+            "'bucket' = '2', 'deletion-vectors.enabled' = 'true', 'pk-btree.index.columns' = 'v'",
+            "primary-key indexes"),
+        Arguments.of(
+            PK_SCHEMA,
+            "'bucket' = '2', 'deletion-vectors.enabled' = 'true', 'pk-bitmap.index.columns' = 'v'",
+            "primary-key indexes"),
+        Arguments.of(
+            PK_SCHEMA,
+            "'bucket' = '2', 'changelog-producer' = 'input', 'changelog-file.compression' ="
+                + " 'brotli'",
+            "compression BROTLI"),
+        Arguments.of(
+            PK_SCHEMA,
+            "'bucket' = '2', 'merge-engine' = 'partial-update'",
+            "merge-engine partial-update"),
+        Arguments.of(
+            PK_SCHEMA, "'bucket' = '2', 'merge-engine' = 'first-row'", "merge-engine first-row"),
         Arguments.of(PK_SCHEMA, "'bucket' = '2', 'sequence.field' = 'v'", "sequence.field"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'local-merge-buffer-size' = '1 mb'", "local-merge-buffer-size"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'data-file.thin-mode' = 'true'", "data-file.thin-mode"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'sink.key-only-deletes.enabled' = 'true'", "sink.key-only-deletes.enabled"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'full-compaction.delta-commits' = '3'", "full-compaction.delta-commits"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'precommit-compact' = 'true'", "precommit-compact"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'write.sequence-number-init-mode' = 'snapshot'", "write.sequence-number-init-mode"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'sink.use-managed-memory-allocator' = 'true'", "sink.use-managed-memory-allocator"),
-        Arguments.of("(id BIGINT NOT NULL, k DOUBLE NOT NULL, PRIMARY KEY (id, k) NOT ENFORCED)", "'bucket' = '2'", "DOUBLE"),
-        Arguments.of("(id BIGINT, v INT)", "'bucket' = '-1', 'file.format' = 'orc'", "file.format orc"),
-        Arguments.of("(id BIGINT, v INT)", "'bucket' = '-1', 'write-buffer-for-append' = 'true'", "write-buffer-for-append"),
-        Arguments.of("(id BIGINT, v INT)", "'bucket' = '-1', 'file-index.bloom-filter.columns' = 'v'", "file indexes"),
-        Arguments.of("(id BIGINT, v INT)", "'bucket' = '-1', 'row-tracking.enabled' = 'true'", "row tracking"),
-        Arguments.of("(id BIGINT, v INT)", "'bucket' = '-1', 'sink.clustering.by-columns' = 'v'", "clustering"),
-        Arguments.of("(id BIGINT, v INT)", "'bucket' = '-1', 'sink.writer-coordinator.enabled' = 'true'", "sink.writer-coordinator.enabled"),
-        Arguments.of("(id BIGINT, v INT)", "'bucket' = '-1', 'write-only' = 'true', 'sink.coordinator-commit.enabled' = 'true'", "sink.coordinator-commit.enabled"),
-        Arguments.of("(id BIGINT, v INT, pt STRING) PARTITIONED BY (pt)", "'bucket' = '-1', 'partition.sink-strategy' = 'PARTITION_DYNAMIC'", "PARTITION_DYNAMIC"),
+        Arguments.of(
+            PK_SCHEMA,
+            "'bucket' = '2', 'local-merge-buffer-size' = '1 mb'",
+            "local-merge-buffer-size"),
+        Arguments.of(
+            PK_SCHEMA, "'bucket' = '2', 'data-file.thin-mode' = 'true'", "data-file.thin-mode"),
+        Arguments.of(
+            PK_SCHEMA,
+            "'bucket' = '2', 'sink.key-only-deletes.enabled' = 'true'",
+            "sink.key-only-deletes.enabled"),
+        Arguments.of(
+            PK_SCHEMA, "'bucket' = '2', 'precommit-compact' = 'true'", "precommit-compact"),
+        Arguments.of(
+            PK_SCHEMA,
+            "'bucket' = '2', 'write.sequence-number-init-mode' = 'snapshot'",
+            "write.sequence-number-init-mode"),
+        Arguments.of(
+            PK_SCHEMA,
+            "'bucket' = '2', 'sink.use-managed-memory-allocator' = 'true'",
+            "sink.use-managed-memory-allocator"),
+        Arguments.of(
+            "(id BIGINT NOT NULL, k DOUBLE NOT NULL, PRIMARY KEY (id, k) NOT ENFORCED)",
+            "'bucket' = '2'",
+            "DOUBLE"),
+        Arguments.of(
+            "(id BIGINT, v INT)", "'bucket' = '-1', 'file.format' = 'orc'", "file.format orc"),
+        Arguments.of(
+            "(id BIGINT, v INT)",
+            "'bucket' = '-1', 'write-buffer-for-append' = 'true'",
+            "write-buffer-for-append"),
+        Arguments.of(
+            "(id BIGINT, v INT)",
+            "'bucket' = '-1', 'file-index.bloom-filter.columns' = 'v'",
+            "file indexes"),
+        Arguments.of(
+            "(id BIGINT, v INT)",
+            "'bucket' = '-1', 'row-tracking.enabled' = 'true'",
+            "row tracking"),
+        Arguments.of(
+            "(id BIGINT, v INT)",
+            "'bucket' = '-1', 'sink.clustering.by-columns' = 'v'",
+            "clustering"),
+        Arguments.of(
+            "(id BIGINT, v INT)",
+            "'bucket' = '-1', 'sink.writer-coordinator.enabled' = 'true'",
+            "sink.writer-coordinator.enabled"),
+        Arguments.of(
+            "(id BIGINT, v INT)",
+            "'bucket' = '-1', 'write-only' = 'true', 'sink.coordinator-commit.enabled' = 'true'",
+            "sink.coordinator-commit.enabled"),
+        Arguments.of(
+            "(id BIGINT, v INT, pt STRING) PARTITIONED BY (pt)",
+            "'bucket' = '-1', 'partition.sink-strategy' = 'PARTITION_DYNAMIC'",
+            "PARTITION_DYNAMIC"),
         Arguments.of("(id BIGINT, v TIMESTAMP(9))", "'bucket' = '-1'", "INT96"),
-        Arguments.of("(id BIGINT, v INT)", "'bucket' = '-1', 'parquet.bloom.filter.enabled' = 'true'", "bloom"));
+        Arguments.of(
+            "(id BIGINT, v INT)",
+            "'bucket' = '-1', 'parquet.bloom.filter.enabled' = 'true'",
+            "bloom"));
   }
 
   @ParameterizedTest
@@ -620,10 +709,12 @@ class PaimonSinkParityTest {
     StreamTableEnvironment tableEnv = catalogEnvironment(env, warehouse);
     tableEnv.executeSql("CREATE TABLE declined " + schema + " WITH (" + options + ")");
     tableEnv.executeSql(
-        "CREATE TEMPORARY TABLE src (id BIGINT, v INT, pt STRING) WITH ('connector' = 'datagen')");
+        "CREATE TEMPORARY TABLE src (id BIGINT NOT NULL, v INT, pt STRING) WITH ('connector' ="
+            + " 'datagen')");
     PhysicalPlanScan scan = NativePlanner.install(tableEnv);
 
-    tableEnv.explainSql("INSERT INTO declined SELECT * FROM (SELECT id, " + selectFor(schema) + " FROM src)");
+    tableEnv.explainSql(
+        "INSERT INTO declined SELECT * FROM (SELECT id, " + selectFor(schema) + " FROM src)");
 
     assertDeclined(scan, reason);
   }
@@ -685,7 +776,9 @@ class PaimonSinkParityTest {
       StreamExecutionEnvironment env, java.nio.file.Path warehouse) {
     StreamTableEnvironment tableEnv = StreamTableEnvironment.create(env);
     tableEnv.executeSql(
-        "CREATE CATALOG paimon WITH ('type' = 'paimon', 'warehouse' = '" + warehouse.toUri() + "')");
+        "CREATE CATALOG paimon WITH ('type' = 'paimon', 'warehouse' = '"
+            + warehouse.toUri()
+            + "')");
     tableEnv.executeSql("USE CATALOG paimon");
     return tableEnv;
   }

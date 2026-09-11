@@ -45,11 +45,12 @@ public final class PaimonKeyValueLayout {
   final SimpleStatsConverter keyStatsConverter;
   final SimpleStatsConverter valueStatsConverter;
 
-  private PaimonKeyValueLayout(FileStoreTable table) {
+  private PaimonKeyValueLayout(FileStoreTable table, boolean changelog) {
     TableSchema schema = table.schema();
     CoreOptions options = table.coreOptions();
     this.keyType =
-        new RowType(false, PrimaryKeyTableUtils.addKeyNamePrefix(schema.trimmedPrimaryKeysFields()));
+        new RowType(
+            false, PrimaryKeyTableUtils.addKeyNamePrefix(schema.trimmedPrimaryKeysFields()));
     this.valueType = new RowType(false, schema.fields());
     this.writeType = KeyValue.schema(keyType, valueType);
     this.flinkWriteType = LogicalTypeConversion.toLogicalType(writeType);
@@ -61,13 +62,18 @@ public final class PaimonKeyValueLayout {
             .mapToInt(field -> timestampPrecision(field.type()))
             .toArray();
     this.statsProducer =
-        SimpleStatsProducer.fromExtractor(statsExtractor(options, writeType).orElse(null));
+        SimpleStatsProducer.fromExtractor(
+            statsExtractor(options, writeType, changelog).orElse(null));
     this.keyStatsConverter = new SimpleStatsConverter(keyType);
     this.valueStatsConverter = new SimpleStatsConverter(valueType, options.statsDenseStore());
   }
 
   public static PaimonKeyValueLayout of(FileStoreTable table) {
-    return new PaimonKeyValueLayout(table);
+    return new PaimonKeyValueLayout(table, false);
+  }
+
+  static PaimonKeyValueLayout changelog(FileStoreTable table) {
+    return new PaimonKeyValueLayout(table, true);
   }
 
   /** The number of key columns a key-value row starts with. */
@@ -93,13 +99,18 @@ public final class PaimonKeyValueLayout {
   /**
    * Why the primary key cannot be ordered natively, or null. The native sort orders keys by their
    * Arrow byte encoding, which agrees with Paimon's key comparator for every type listed here;
-   * floating-point keys (NaN and signed-zero ordering) do not, and nested keys Paimon rejects itself.
+   * floating-point keys (NaN and signed-zero ordering) do not, and nested keys Paimon rejects
+   * itself.
    */
   @Nullable
   public static String unsupportedKeyReason(FileStoreTable table) {
     for (DataField field : table.schema().trimmedPrimaryKeysFields()) {
       if (!comparableNatively(field.type())) {
-        return "primary key column " + field.name() + " of type " + field.type() + " cannot be ordered natively";
+        return "primary key column "
+            + field.name()
+            + " of type "
+            + field.type()
+            + " cannot be ordered natively";
       }
     }
     return null;
@@ -136,11 +147,18 @@ public final class PaimonKeyValueLayout {
     return -1;
   }
 
-  /** The footer statistics extractor Paimon's key-value writer factory builds for a Parquet file. */
-  private static Optional<SimpleStatsExtractor> statsExtractor(CoreOptions options, RowType writeType) {
+  /**
+   * The footer statistics extractor Paimon's key-value writer factory builds for a Parquet file.
+   */
+  private static Optional<SimpleStatsExtractor> statsExtractor(
+      CoreOptions options, RowType writeType, boolean changelog) {
+    String statsMode =
+        changelog && options.changelogFileStatsMode() != null
+            ? options.changelogFileStatsMode()
+            : options.statsModePerLevel().getOrDefault(0, options.statsMode());
     SimpleColStatsCollector.Factory[] factories =
         StatsCollectorFactories.createStatsFactories(
-            options.statsMode(), options, writeType.getFieldNames(), Collections.emptyList());
+            statsMode, options, writeType.getFieldNames(), Collections.emptyList());
     boolean disabled = true;
     for (SimpleColStatsCollector collector : SimpleColStatsCollector.create(factories)) {
       disabled &= collector instanceof NoneSimpleColStatsCollector;

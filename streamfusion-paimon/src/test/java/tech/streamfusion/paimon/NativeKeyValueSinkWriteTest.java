@@ -56,15 +56,18 @@ class NativeKeyValueSinkWriteTest {
   @Test
   void compactsNativeFilesInJobAndContinuesSequenceNumbersAcrossRuns() throws Exception {
     Map<String, String> options = options("num-sorted-run.compaction-trigger", "2");
-    FileStoreTable table = PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("pk-sink"), options);
-    FileStoreTable twin = PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("pk-sink-twin"), options);
+    FileStoreTable table =
+        PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("pk-sink"), options);
+    FileStoreTable twin =
+        PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("pk-sink-twin"), options);
     List<Object[]> first = PaimonTestTables.changelog(240, 80);
     List<Object[]> second = PaimonTestTables.changelog(400, 120).subList(240, 400);
 
     List<CommitMessage> firstRun = runNatively(table, 1, first);
     assertEquals(List.of(), compactedFiles(firstRun), "a single run has nothing to compact");
     List<CommitMessage> secondRun = runNatively(table, 2, second);
-    assertTrue(!compactedFiles(secondRun).isEmpty(), "Paimon's writer compacted the notified files");
+    assertTrue(
+        !compactedFiles(secondRun).isEmpty(), "Paimon's writer compacted the notified files");
 
     List<CommitMessage> twinFirstRun = runStock(twin, 1, first);
     List<CommitMessage> twinSecondRun = runStock(twin, 2, second);
@@ -75,7 +78,8 @@ class NativeKeyValueSinkWriteTest {
         "the second run numbers its rows from the committed files like Paimon's writer");
 
     RowType rowType = table.rowType();
-    assertEquals(PaimonTestTables.readRows(twin, rowType), PaimonTestTables.readRows(table, rowType));
+    assertEquals(
+        PaimonTestTables.readRows(twin, rowType), PaimonTestTables.readRows(table, rowType));
     assertTrue(
         PaimonTestTables.dataFiles(table).values().stream()
             .flatMap(List::stream)
@@ -86,8 +90,10 @@ class NativeKeyValueSinkWriteTest {
   @Test
   void spillsTheLargestBucketOnceBuffersExceedTheWriteBufferSize() throws Exception {
     Map<String, String> options = options("write-buffer-size", "64 kb", "page-size", "4 kb");
-    FileStoreTable table = PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("pk-spill"), options);
-    FileStoreTable twin = PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("pk-spill-twin"), options);
+    FileStoreTable table =
+        PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("pk-spill"), options);
+    FileStoreTable twin =
+        PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("pk-spill-twin"), options);
     List<Object[]> changelog = PaimonTestTables.changelog(3_000, 500);
 
     List<CommitMessage> run = runNatively(table, 1, changelog);
@@ -98,15 +104,18 @@ class NativeKeyValueSinkWriteTest {
             .collect(Collectors.groupingBy(Map.Entry::getKey, Collectors.counting()));
     assertTrue(filesPerBucket.values().stream().anyMatch(count -> count > 1), "a bucket spilled");
     RowType rowType = table.rowType();
-    assertEquals(PaimonTestTables.readRows(twin, rowType), PaimonTestTables.readRows(table, rowType));
+    assertEquals(
+        PaimonTestTables.readRows(twin, rowType), PaimonTestTables.readRows(table, rowType));
   }
 
   @Test
   void writeOnlyLeavesTheFilesAtLevelZeroForADedicatedCompaction() throws Exception {
     Map<String, String> options =
         options("write-only", "true", "num-sorted-run.compaction-trigger", "2");
-    FileStoreTable table = PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("pk-wo"), options);
-    FileStoreTable twin = PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("pk-wo-twin"), options);
+    FileStoreTable table =
+        PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("pk-wo"), options);
+    FileStoreTable twin =
+        PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("pk-wo-twin"), options);
     List<Object[]> first = PaimonTestTables.changelog(200, 60);
     List<Object[]> second = PaimonTestTables.changelog(300, 60).subList(200, 300);
 
@@ -120,7 +129,8 @@ class NativeKeyValueSinkWriteTest {
         PaimonTestTables.dataFiles(table).values().stream()
             .flatMap(List::stream)
             .allMatch(file -> file.level() == 0));
-    assertEquals(PaimonTestTables.readRows(twin, rowType), PaimonTestTables.readRows(table, rowType));
+    assertEquals(
+        PaimonTestTables.readRows(twin, rowType), PaimonTestTables.readRows(table, rowType));
 
     compactDedicated(table.copy(Map.of("write-only", "false")));
     assertTrue(
@@ -128,7 +138,8 @@ class NativeKeyValueSinkWriteTest {
             .flatMap(List::stream)
             .allMatch(file -> file.level() > 0),
         "the dedicated compaction read our level-0 files");
-    assertEquals(PaimonTestTables.readRows(twin, rowType), PaimonTestTables.readRows(table, rowType));
+    assertEquals(
+        PaimonTestTables.readRows(twin, rowType), PaimonTestTables.readRows(table, rowType));
   }
 
   private static List<CommitMessage> runNatively(
@@ -137,15 +148,17 @@ class NativeKeyValueSinkWriteTest {
     NativeKeyValueSinkWrite write =
         new NativeKeyValueSinkWrite(
             table,
-            "native",
-            new NoopStoreSinkWriteState(0),
-            new IOManagerAsync(),
-            false,
-            !options.writeOnly() && options.prepareCommitWaitCompaction(),
-            true,
-            new MemoryPoolFactory(
-                new HeapMemorySegmentPool(options.writeBufferSize(), options.pageSize())),
-            null);
+            new org.apache.paimon.flink.sink.StoreSinkWriteImpl(
+                table,
+                "native",
+                new NoopStoreSinkWriteState(0),
+                new IOManagerAsync(),
+                false,
+                !options.writeOnly() && options.prepareCommitWaitCompaction(),
+                true,
+                new MemoryPoolFactory(
+                    new HeapMemorySegmentPool(options.writeBufferSize(), options.pageSize())),
+                null));
     StreamTableWrite router = table.newStreamWriteBuilder().withCommitUser("router").newWrite();
     Map<String, List<RowData>> pending = new LinkedHashMap<>();
     Map<String, BinaryRow> partitions = new LinkedHashMap<>();
@@ -167,7 +180,8 @@ class NativeKeyValueSinkWriteTest {
       }
       for (String key : pending.keySet()) {
         if (!pending.get(key).isEmpty()) {
-          write.writeBundle(partitions.get(key), buckets.get(key), batch(allocator, pending.get(key)));
+          write.writeBundle(
+              partitions.get(key), buckets.get(key), batch(allocator, pending.get(key)));
         }
       }
       router.close();
@@ -182,7 +196,8 @@ class NativeKeyValueSinkWriteTest {
   }
 
   private static VectorSchemaRoot batch(BufferAllocator allocator, List<RowData> rows) {
-    return RowDataArrowConverter.write(rows, PaimonTestTables.PRIMARY_KEY_FLINK_TYPE, allocator, true);
+    return RowDataArrowConverter.write(
+        rows, PaimonTestTables.PRIMARY_KEY_FLINK_TYPE, allocator, true);
   }
 
   private static List<CommitMessage> runStock(

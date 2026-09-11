@@ -2,11 +2,13 @@ package tech.streamfusion.operator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.OutOfMemoryException;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.TinyIntVector;
@@ -113,6 +115,49 @@ class KeyedUpsertBufferTest {
       assertEquals(0, flushed.deleteRows);
       assertEquals(0, buffer.push(batch(allocator, row(RowKind.DELETE, 1, "c")), 1));
       assertNull(buffer.flush());
+    }
+  }
+
+  @Test
+  void inputChangelogKeepsIntermediateRowsAndOwnsItsBuffersIndependently() {
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedUpsertBuffer buffer =
+            new KeyedUpsertBuffer(allocator, new int[] {0}, KIND_COLUMN, true, false)) {
+      buffer.push(
+          batch(
+              allocator,
+              row(RowKind.INSERT, 5, "old"),
+              row(RowKind.DELETE, 2, "deleted"),
+              row(RowKind.UPDATE_BEFORE, 5, "old")),
+          10);
+      buffer.push(batch(allocator, row(RowKind.UPDATE_AFTER, 5, "new")), 13);
+      try (KeyedUpsertBuffer.Flushed flushed = buffer.flush(true)) {
+        assertEquals(List.of("deleted", "new"), strings(flushed.root, 4));
+        assertEquals(List.of(2L, 5L, 5L, 5L), longs(flushed.changelog, 0));
+        assertEquals(List.of(11L, 10L, 12L, 13L), longs(flushed.changelog, 1));
+        assertEquals(List.of("deleted", "old", "old", "new"), strings(flushed.changelog, 4));
+        assertEquals(0, buffer.rows());
+        assertNull(buffer.flush(true));
+      }
+    }
+  }
+
+  @Test
+  void failedSecondImportReleasesMergedAndUnimportedChangelog() {
+    try (BufferAllocator source = new RootAllocator();
+        BufferAllocator output = new RootAllocator(700);
+        KeyedUpsertBuffer buffer =
+            new KeyedUpsertBuffer(output, new int[] {0}, KIND_COLUMN, true, false)) {
+      RowData[] rows = new RowData[2000];
+      java.util.Arrays.fill(rows, row(RowKind.UPDATE_AFTER, 1, "repeated-value"));
+      buffer.push(batch(source, rows), 0);
+      try (KeyedUpsertBuffer.Flushed merged = buffer.flush()) {
+        assertEquals(1, merged.root.getRowCount(), "the merged output fits this allocator");
+      }
+      buffer.push(batch(source, rows), 0);
+      assertThrows(OutOfMemoryException.class, () -> buffer.flush(true));
+      assertEquals(0, output.getAllocatedMemory());
+      assertEquals(0, buffer.rows());
     }
   }
 }

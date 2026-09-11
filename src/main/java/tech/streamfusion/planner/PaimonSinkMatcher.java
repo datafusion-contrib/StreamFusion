@@ -39,7 +39,7 @@ import tech.streamfusion.paimon.PaimonKeyValueLayout;
  * table-scoped dynamic options — shapes the native topology identically. An append table takes an
  * insert-only input; a primary-key table takes a changelog, and is admitted only in the shape the
  * native level-0 writer reproduces: fixed buckets, the deduplicate merge engine with Paimon's own
- * compaction, and no changelog production.
+ * compaction and changelog production.
  */
 final class PaimonSinkMatcher {
   private PaimonSinkMatcher() {}
@@ -110,7 +110,8 @@ final class PaimonSinkMatcher {
       }
     }
     if (!"parquet".equalsIgnoreCase(coreOptions.fileFormatString())) {
-      return Planned.fallback("file.format " + coreOptions.fileFormatString() + " is not supported");
+      return Planned.fallback(
+          "file.format " + coreOptions.fileFormatString() + " is not supported");
     }
     if (!options.get(CoreOptions.FILE_FORMAT_PER_LEVEL).isEmpty()) {
       return Planned.fallback("file.format.per.level is not supported");
@@ -177,23 +178,31 @@ final class PaimonSinkMatcher {
   /**
    * The primary-key shapes whose files the native level-0 writer reproduces exactly: rows merged by
    * last arrival (Paimon's deduplicate engine, optionally ignoring deletes), compaction left to the
-   * Paimon writer in the same job or to a dedicated job, no changelog files produced, and sequence
-   * numbers continued from the committed files. Every other shape changes what a level-0 file holds
-   * or how it is committed, so it stays on the stock writer.
+   * Paimon writer selected for the table's changelog producer, and sequence numbers continued from
+   * the committed files. Input changelog shares the native sort and encoding; lookup, full
+   * compaction, and deletion vectors retain Paimon's writer lifecycle.
    */
   private static String primaryKeyFallbackReason(
       FileStoreTable table, CoreOptions coreOptions, Options options) {
     if (coreOptions.mergeEngine() != MergeEngine.DEDUPLICATE) {
       return "merge-engine " + coreOptions.mergeEngine() + " is not supported";
     }
-    if (coreOptions.changelogProducer() != ChangelogProducer.NONE) {
+    if (coreOptions.changelogProducer() != ChangelogProducer.NONE
+        && coreOptions.changelogProducer() != ChangelogProducer.INPUT
+        && coreOptions.changelogProducer() != ChangelogProducer.LOOKUP
+        && coreOptions.changelogProducer() != ChangelogProducer.FULL_COMPACTION) {
       return "changelog-producer " + coreOptions.changelogProducer() + " is not supported";
     }
-    if (coreOptions.deletionVectorsEnabled()) {
-      return "deletion-vectors.enabled is not supported";
+    if (coreOptions.changelogProducer() == ChangelogProducer.INPUT
+        && coreOptions.changelogFileFormat() != null
+        && !"parquet".equalsIgnoreCase(coreOptions.changelogFileFormat())) {
+      return "changelog-file.format " + coreOptions.changelogFileFormat() + " is not supported";
     }
-    if (coreOptions.forceLookup()) {
-      return "force-lookup is not supported";
+    if (coreOptions.primaryKeyVectorIndexEnabled()
+        || coreOptions.primaryKeyFullTextIndexEnabled()
+        || !coreOptions.primaryKeyBTreeIndexColumns().isEmpty()
+        || !coreOptions.primaryKeyBitmapIndexColumns().isEmpty()) {
+      return "primary-key indexes are not supported";
     }
     if (!coreOptions.sequenceField().isEmpty()) {
       return "sequence.field is not supported";
@@ -212,10 +221,6 @@ final class PaimonSinkMatcher {
     }
     if (options.get(FlinkConnectorOptions.SINK_KEY_ONLY_DELETES_ENABLED)) {
       return "sink.key-only-deletes.enabled is not supported";
-    }
-    if (coreOptions.fullCompactionDeltaCommits() != null
-        || options.contains(FlinkConnectorOptions.CHANGELOG_PRODUCER_FULL_COMPACTION_TRIGGER_INTERVAL)) {
-      return "full-compaction.delta-commits is not supported";
     }
     if (options.get(FlinkConnectorOptions.PRECOMMIT_COMPACT)) {
       return FlinkConnectorOptions.PRECOMMIT_COMPACT.key() + " is not supported";
@@ -246,7 +251,22 @@ final class PaimonSinkMatcher {
           + "; streamfusion-paimon must precede paimon-flink on the classpath"
           + " (deploy it as 01-streamfusion-paimon.jar)";
     }
-    return ((NativePaimonParquetFormat) format).nativeWriterFallbackReason(table.rowType());
+    NativePaimonParquetFormat nativeFormat = (NativePaimonParquetFormat) format;
+    String reason = nativeFormat.nativeWriterFallbackReason(table.rowType());
+    if (reason == null && !table.primaryKeys().isEmpty()) {
+      CoreOptions core = table.coreOptions();
+      String compression = core.fileCompressionPerLevel().getOrDefault(0, core.fileCompression());
+      reason = nativeFormat.nativeWriterFallbackReason(table.rowType(), compression);
+      if (reason == null && core.changelogProducer() == ChangelogProducer.INPUT) {
+        reason =
+            nativeFormat.nativeWriterFallbackReason(
+                table.rowType(),
+                core.changelogFileCompression() == null
+                    ? compression
+                    : core.changelogFileCompression());
+      }
+    }
+    return reason;
   }
 
   private static FileStoreTable resolveTable(StreamPhysicalSink sink) {

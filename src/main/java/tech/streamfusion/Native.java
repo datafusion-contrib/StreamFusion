@@ -1,6 +1,5 @@
 package tech.streamfusion;
 
-import tech.streamfusion.format.FormatCodes;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -611,10 +610,15 @@ public final class Native {
   /**
    * Merges the pending rows into one sorted key-value batch exported into the consumer-allocated C
    * structs and empties the buffer. Returns {@code {rows, deleteRows, minSequence, maxSequence}};
-   * when {@code rows} is 0 nothing was exported.
+   * when {@code rows} is 0 nothing was exported. Nonzero changelog addresses also receive all input
+   * rows sorted by key and sequence, before merging.
    */
   public static native long[] keyedUpsertBufferFlush(
-      long handle, long outArrayAddress, long outSchemaAddress);
+      long handle,
+      long outArrayAddress,
+      long outSchemaAddress,
+      long changelogArrayAddress,
+      long changelogSchemaAddress);
 
   /** Releases a keyed-upsert buffer and its pending rows. */
   public static native void closeKeyedUpsertBuffer(long handle);

@@ -64,18 +64,49 @@ with a scan of the bucket's committed files, the same cost Paimon's dedicated co
 compaction action) picks the level-0 files up unchanged.
 
 Supported: `bucket >= 1` with the default or an explicit `bucket-key`, `merge-engine =
-deduplicate`, `changelog-producer = none`, `ignore-delete`, `write-only`, `file.compression*` and
+deduplicate`, `changelog-producer` `none`/`input`/`lookup`/`full-compaction`, `ignore-delete`,
+`write-only`, `file.compression*` and
 the `parquet.*` writer keys as for append tables, and key columns of type `BOOLEAN`,
 `TINYINT`..`BIGINT`, `DECIMAL`, `CHAR`/`VARCHAR`, `BINARY`/`VARBINARY`, `DATE`, `TIMESTAMP`, and
 `TIMESTAMP_LTZ` (the native sort orders keys by their Arrow byte encoding, which agrees with
 Paimon's key comparator for exactly these types). An insert-only stream into a primary-key table
 is taken as all inserts.
 
+### Changelog producers and deletion vectors
+
+- **Input:** the same native sort returns every retained input row before deduplication, ordered
+  by primary key and then arrival sequence. These rows, including `UPDATE_BEFORE` and deletes,
+  are encoded into separate Parquet changelog files and committed through Paimon's changelog
+  manifests. They are not data-file extras, and their rolling boundaries are independent of the
+  merged data files. `ignore-delete` removes retracts before both outputs and before numbering.
+  `changelog-file.format = parquet`, `changelog-file.compression`, and
+  `changelog-file.stats-mode` follow Paimon's writer settings; compression has the same native
+  whitelist as data files.
+- **Lookup and force-lookup:** native level-0 files enter Paimon's selected lookup writer.
+  Paimon manages previous values and compaction-produced changelogs, and applies `lookup-wait`
+  and its lookup compaction strategy. Its active-bucket checkpoint state is preserved, so recovery resumes
+  unfinished lookup even if no more input arrives.
+- **Full compaction:** Paimon's own global full-compaction writer tracks modified buckets and
+  schedules full compaction using `full-compaction.delta-commits` or
+  `changelog-producer.compaction-interval`, including idle checkpoints and restored buckets.
+  These scheduling options also work with `changelog-producer = none` or `input`.
+  Ordinary table compaction can still run between scheduled full compactions, as in stock Paimon.
+- **Deletion vectors:** for `deduplicate` tables with `none`, `input`, or `lookup`, Paimon's
+  lookup compactor produces the deletion vectors and its index metadata is retained in the
+  checkpoint commit. Read visibility follows Paimon's options: uncompacted level-0 files are
+  hidden by default in deletion-vector tables; `deletion-vectors.merge-on-read` includes them.
+
+`write-only` retains Paimon's normal behavior: input changelog is written immediately, while
+lookup, full compaction, and deletion-vector maintenance are left to a separate compaction job.
+The native sink uses the released Java connector for these lifecycles; see
+[the writer boundary and paimon-rust assessment](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/32-paimon-pk-l0-through-the-compactor-hook.md).
+
 ### Parity
 
 Files written natively are row-, metadata-, statistics-, and footer-schema-identical to the stock
 writer's (verified against twin tables in `PaimonSinkParityTest`, `NativePaimonParquetWriterTest`,
-`NativePaimonKeyValueFileWriterTest`, and `NativeKeyValueSinkWriteTest`), and
+`NativePaimonKeyValueFileWriterTest`, `NativeKeyValueSinkWriteTest`, and
+`PaimonChangelogSinkWriteTest`), and
 `bin/flink-suite.sh paimon` runs Paimon's own unchanged append-table SQL integration tests with the
 native sink installed (see [the upstream suite](../upstream-flink-suite.md)). The
 one known statistics difference: a `DOUBLE`/`FLOAT` column whose minimum is a negative zero is
@@ -92,10 +123,10 @@ Each of these declines at planning time with a reason visible in `NativePlanner.
   operator), `INSERT OVERWRITE`, and batch-mode inserts (the substitution only exists in the
   streaming planner).
 - Primary-key tables with `merge-engine` `first-row`, `partial-update`, or `aggregation`;
-  `changelog-producer` `input`, `lookup`, or `full-compaction`; `deletion-vectors.enabled`,
-  `force-lookup`, `sequence.field`, `rowkind.field`, `local-merge-buffer-size`,
+  input changelog with `changelog-file.format` other than `parquet` or unsupported changelog
+  compression; primary-key vector, full-text, BTree, or bitmap indexes; `sequence.field`,
+  `rowkind.field`, `local-merge-buffer-size`,
   `data-file.thin-mode`, `data-file.external-paths`, `sink.key-only-deletes.enabled`,
-  `full-compaction.delta-commits` (or `changelog-producer.compaction-interval`),
   `precommit-compact`, `write.sequence-number-init-mode = snapshot`,
   `sink.use-managed-memory-allocator`; or a `FLOAT`/`DOUBLE` key column.
 - `file.format` other than `parquet`, `file.format.per.level`, `write-buffer-for-append = true`,
@@ -142,6 +173,38 @@ merges each bucket's routed Arrow batches by key in Rust and writes the level-0 
 [Benchmarks](../benchmarks.md#parquet-delta-and-paimon-sink-diagnostics) for the method and
 reproduction command.
 
+### Changelog writer diagnostic
+
+The opt-in writer diagnostic exercises `input`, `lookup`, `full-compaction`, and deletion-vector
+writes against stock Paimon, with one warmup and best of three measured runs. It starts with the
+same row fixture, includes routing and the native path's RowData-to-Arrow conversion, and measures
+writing plus commit preparation and commit. Each run checks the merged table contents. This is a
+writer diagnostic, not an end-to-end Nexmark result; the Nexmark harness is unchanged.
+It measures one checkpoint into an empty table. It does not measure ongoing lookup against older
+files or sparse-update deletion-vector maintenance; those are covered by the recovery parity tests.
+
+```bash
+SF_PAIMON_CHANGELOG_BENCHMARK=true mvn test -Ppaimon,bench \
+  -pl :streamfusion-paimon -am -Dtest=PaimonChangelogSinkBenchmark \
+  -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+The default input is 200,000 changes over 20,000 keys, four buckets, and batches of 4,096 rows.
+`SF_PAIMON_CHANGELOG_ROWS` changes the input size while retaining the ten-to-one change/key ratio.
+
+Local release measurements on 2026-09-11 with Paimon 2.0.0:
+
+| Mode | Stock, 1M changes | Native, 1M changes | Speedup, 1M | Speedup, 200K |
+|---|---:|---:|---:|---:|
+| Input changelog | 3.716 s | 2.319 s | 1.60× | 1.83× |
+| Lookup changelog | 2.387 s | 1.856 s | 1.29× | 1.18× |
+| Full-compaction changelog | 1.276 s | 1.343 s | 0.95× | 0.78× |
+| Deletion vectors enabled | 1.498 s | 1.122 s | 1.34× | 1.31× |
+
+Full compaction is slower in this row-fed diagnostic. It retains Paimon's rowwise compaction and
+adds the native path's conversion and file hand-off costs. Its admission adds coverage for columnar
+pipelines; these measurements do not establish a throughput improvement for that mode.
+
 ## Deployment
 
 Install the published `paimon-flink-2.2-2.0.0.jar`, `streamfusion-parquet`, and
@@ -160,7 +223,6 @@ Paimon.
 ## Outlook
 
 Each remaining gap has its own issue:
-[primary-key changelog producers and deletion vectors](https://github.com/datafusion-contrib/StreamFusion/issues/33),
 [the other merge engines, `sequence.field`, and `rowkind.field`](https://github.com/datafusion-contrib/StreamFusion/issues/47),
 [the remaining primary-key writer options](https://github.com/datafusion-contrib/StreamFusion/issues/48)
 (thin mode, key-only deletes, local merge, external paths, managed memory, snapshot sequence init),

@@ -18,7 +18,6 @@ import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.io.CompactIncrement;
 import org.apache.paimon.io.DataFileMeta;
-import org.apache.paimon.io.DataIncrement;
 import org.apache.paimon.schema.Schema;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.sink.CommitMessage;
@@ -45,7 +44,16 @@ class NativePaimonKeyValueFileWriterTest {
   private static final int PUSH_ROWS = 37;
 
   @ParameterizedTest
-  @ValueSource(strings = {"default", "ignore-delete", "single-bucket-zstd"})
+  @ValueSource(
+      strings = {
+        "default",
+        "ignore-delete",
+        "single-bucket-zstd",
+        "input",
+        "input-counts",
+        "input-none",
+        "input-ignore-delete"
+      })
   void nativeLevelZeroFilesMatchStockTwins(String variant) throws Exception {
     Map<String, String> options = new LinkedHashMap<>();
     options.put("bucket", "2");
@@ -56,13 +64,26 @@ class NativePaimonKeyValueFileWriterTest {
         options.put("bucket", "1");
         options.put("file.compression", "zstd");
       }
+      case "input", "input-counts", "input-none", "input-ignore-delete" -> {
+        options.put("changelog-producer", "input");
+        if (variant.equals("input-counts")) {
+          options.put("changelog-file.compression", "zstd");
+          options.put("changelog-file.stats-mode", "counts");
+        } else if (variant.equals("input-none")) {
+          options.put("changelog-file.stats-mode", "none");
+        } else if (variant.equals("input-ignore-delete")) {
+          options.put("ignore-delete", "true");
+        }
+      }
       default -> throw new IllegalArgumentException(variant);
     }
     List<Object[]> changelog = PaimonTestTables.changelog(ROWS, KEYS);
     FileStoreTable nativeTable =
-        PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("paimon-pk-native"), options);
+        PaimonTestTables.createPrimaryKeyTable(
+            Files.createTempDirectory("paimon-pk-native"), options);
     FileStoreTable twinTable =
-        PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("paimon-pk-twin"), options);
+        PaimonTestTables.createPrimaryKeyTable(
+            Files.createTempDirectory("paimon-pk-twin"), options);
 
     writeNatively(nativeTable, changelog);
     writeStock(twinTable, changelog);
@@ -74,8 +95,8 @@ class NativePaimonKeyValueFileWriterTest {
     assertEquals(ignoreDelete, expectedRows.size() == KEYS, "deletes take effect unless ignored");
     assertEquals(expectedRows, PaimonTestTables.readRows(nativeTable, rowType));
 
-    Map<String, List<DataFileMeta>> nativeFiles = PaimonTestTables.dataFiles(nativeTable);
-    Map<String, List<DataFileMeta>> twinFiles = PaimonTestTables.dataFiles(twinTable);
+    Map<String, List<DataFileMeta>> nativeFiles = allFiles(nativeTable);
+    Map<String, List<DataFileMeta>> twinFiles = allFiles(twinTable);
     assertEquals(twinFiles.keySet(), nativeFiles.keySet(), "same partitions and buckets");
     for (String destination : twinFiles.keySet()) {
       List<DataFileMeta> expected = twinFiles.get(destination);
@@ -104,6 +125,42 @@ class NativePaimonKeyValueFileWriterTest {
       }
     }
     assertEquals(PaimonTestTables.footers(twinTable), PaimonTestTables.footers(nativeTable));
+    if (variant.startsWith("input")) {
+      assertEquals(
+          PaimonChangelogSinkWriteTest.changelogRows(twinTable),
+          PaimonChangelogSinkWriteTest.changelogRows(nativeTable));
+      assertEquals(
+          ignoreDelete
+              ? changelog.stream()
+                  .filter(
+                      r ->
+                          !((org.apache.flink.types.RowKind) r[0])
+                              .equals(org.apache.flink.types.RowKind.DELETE))
+                  .count()
+              : ROWS,
+          PaimonChangelogSinkWriteTest.changelogRows(nativeTable).size());
+    }
+  }
+
+  private static Map<String, List<DataFileMeta>> allFiles(FileStoreTable table) {
+    Map<String, List<DataFileMeta>> files = PaimonTestTables.dataFiles(table);
+    if (table.coreOptions().changelogProducer()
+        == org.apache.paimon.CoreOptions.ChangelogProducer.INPUT) {
+      for (var entry :
+          table
+              .store()
+              .newScan()
+              .withSnapshot(1)
+              .withKind(org.apache.paimon.table.source.ScanMode.CHANGELOG)
+              .plan()
+              .files()) {
+        files
+            .computeIfAbsent(
+                "changelog/" + entry.partition() + "@" + entry.bucket(), k -> new ArrayList<>())
+            .add(entry.file());
+      }
+    }
+    return files;
   }
 
   @Test
@@ -114,9 +171,11 @@ class NativePaimonKeyValueFileWriterTest {
     int rows = 10_000;
     List<Object[]> changelog = PaimonTestTables.changelog(rows, rows);
     FileStoreTable nativeTable =
-        PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("paimon-pk-roll"), options);
+        PaimonTestTables.createPrimaryKeyTable(
+            Files.createTempDirectory("paimon-pk-roll"), options);
     FileStoreTable twinTable =
-        PaimonTestTables.createPrimaryKeyTable(Files.createTempDirectory("paimon-pk-roll-twin"), options);
+        PaimonTestTables.createPrimaryKeyTable(
+            Files.createTempDirectory("paimon-pk-roll-twin"), options);
 
     writeNatively(nativeTable, changelog);
     writeStock(twinTable, changelog);
@@ -124,7 +183,8 @@ class NativePaimonKeyValueFileWriterTest {
     RowType rowType = nativeTable.rowType();
     RowType keyType = PaimonKeyValueLayout.of(nativeTable).keyType;
     assertEquals(
-        PaimonTestTables.readRows(twinTable, rowType), PaimonTestTables.readRows(nativeTable, rowType));
+        PaimonTestTables.readRows(twinTable, rowType),
+        PaimonTestTables.readRows(nativeTable, rowType));
     for (List<DataFileMeta> files : PaimonTestTables.dataFiles(nativeTable).values()) {
       assertTrue(files.size() > 1, "rolled into several files");
       long total = 0;
@@ -133,12 +193,48 @@ class NativePaimonKeyValueFileWriterTest {
         total += file.rowCount();
         String min = PaimonTestTables.render(file.minKey(), keyType);
         String max = PaimonTestTables.render(file.maxKey(), keyType);
-        assertTrue(previousMax == null || previousMax.compareTo(min) < 0, "disjoint ascending ranges");
+        assertTrue(
+            previousMax == null || previousMax.compareTo(min) < 0, "disjoint ascending ranges");
         assertTrue(min.compareTo(max) <= 0);
         previousMax = max;
       }
       assertEquals(files.stream().mapToLong(DataFileMeta::rowCount).sum(), total);
     }
+  }
+
+  @Test
+  void inputChangelogRollsIndependentlyWithoutLosingRepeatedKeys() throws Exception {
+    Map<String, String> options =
+        Map.of("bucket", "1", "target-file-size", "1 kb", "changelog-producer", "input");
+    FileStoreTable nativeTable =
+        PaimonTestTables.createPrimaryKeyTable(
+            Files.createTempDirectory("paimon-input-roll"), options);
+    FileStoreTable twinTable =
+        PaimonTestTables.createPrimaryKeyTable(
+            Files.createTempDirectory("paimon-input-roll-twin"), options);
+    List<Object[]> rows = PaimonTestTables.changelog(10_000, KEYS);
+    writeNatively(nativeTable, rows);
+    writeStock(twinTable, rows);
+
+    int dataFiles = 0;
+    int changelogFiles = 0;
+    long changelogRows = 0;
+    for (var entry : allFiles(nativeTable).entrySet()) {
+      if (entry.getKey().startsWith("changelog/")) {
+        changelogFiles += entry.getValue().size();
+        changelogRows += entry.getValue().stream().mapToLong(DataFileMeta::rowCount).sum();
+      } else {
+        dataFiles += entry.getValue().size();
+      }
+    }
+    assertTrue(changelogFiles > dataFiles, "raw changes roll beyond the deduplicated files");
+    assertEquals(rows.size(), changelogRows);
+    assertEquals(
+        PaimonChangelogSinkWriteTest.changelogRows(twinTable),
+        PaimonChangelogSinkWriteTest.changelogRows(nativeTable));
+    assertEquals(
+        PaimonTestTables.readRows(twinTable, twinTable.rowType()),
+        PaimonTestTables.readRows(nativeTable, nativeTable.rowType()));
   }
 
   @Test
@@ -150,7 +246,8 @@ class NativePaimonKeyValueFileWriterTest {
 
     org.apache.paimon.fs.Path path =
         new org.apache.paimon.fs.Path(Files.createTempDirectory("paimon-pk-double").toUri());
-    new org.apache.paimon.schema.SchemaManager(org.apache.paimon.fs.local.LocalFileIO.create(), path)
+    new org.apache.paimon.schema.SchemaManager(
+            org.apache.paimon.fs.local.LocalFileIO.create(), path)
         .createTable(
             Schema.newBuilder()
                 .column("k", DataTypes.DOUBLE().notNull())
@@ -165,7 +262,8 @@ class NativePaimonKeyValueFileWriterTest {
   }
 
   /** Routes the changelog like the sink does, buffers per bucket, and commits the native files. */
-  private static void writeNatively(FileStoreTable table, List<Object[]> changelog) throws Exception {
+  private static void writeNatively(FileStoreTable table, List<Object[]> changelog)
+      throws Exception {
     StreamTableWrite router = table.newStreamWriteBuilder().withCommitUser("router").newWrite();
     Map<String, List<Object[]>> destinations = new LinkedHashMap<>();
     Map<String, BinaryRow> partitions = new LinkedHashMap<>();
@@ -190,7 +288,11 @@ class NativePaimonKeyValueFileWriterTest {
         List<Object[]> rows = destinations.get(key);
         try (KeyedUpsertBuffer buffer =
             new KeyedUpsertBuffer(
-                allocator, layout.keyColumns, kindColumn, true, table.coreOptions().ignoreDelete())) {
+                allocator,
+                layout.keyColumns,
+                kindColumn,
+                true,
+                table.coreOptions().ignoreDelete())) {
           long sequence = 0;
           for (int start = 0; start < rows.size(); start += PUSH_ROWS) {
             List<RowData> slice =
@@ -202,17 +304,17 @@ class NativePaimonKeyValueFileWriterTest {
                     slice, PaimonTestTables.PRIMARY_KEY_FLINK_TYPE, allocator, true);
             sequence += buffer.push(root, sequence);
           }
-          KeyedUpsertBuffer.Flushed flushed = buffer.flush();
+          KeyedUpsertBuffer.Flushed flushed =
+              buffer.flush(
+                  table.coreOptions().changelogProducer()
+                      == org.apache.paimon.CoreOptions.ChangelogProducer.INPUT);
           if (flushed != null) {
             messages.add(
                 new CommitMessageImpl(
                     partitions.get(key),
                     buckets.get(key),
                     table.bucketSpec().getNumBuckets(),
-                    new DataIncrement(
-                        files.write(partitions.get(key), buckets.get(key), flushed),
-                        List.of(),
-                        List.of()),
+                    files.write(partitions.get(key), buckets.get(key), flushed),
                     CompactIncrement.emptyIncrement()));
           }
         }

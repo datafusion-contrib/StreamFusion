@@ -2,30 +2,29 @@ package tech.streamfusion.paimon;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import javax.annotation.Nullable;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
-import org.apache.flink.metrics.MetricGroup;
-import org.apache.flink.runtime.io.disk.iomanager.IOManager;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.data.BinaryRow;
+import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.flink.sink.Committable;
-import org.apache.paimon.flink.sink.StoreSinkWriteImpl;
-import org.apache.paimon.flink.sink.StoreSinkWriteState;
+import org.apache.paimon.flink.sink.GlobalFullCompactionSinkWrite;
+import org.apache.paimon.flink.sink.StoreSinkWrite;
 import org.apache.paimon.io.CompactIncrement;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.DataIncrement;
 import org.apache.paimon.manifest.ManifestEntry;
-import org.apache.paimon.memory.MemoryPoolFactory;
+import org.apache.paimon.operation.WriteRestore;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.sink.CommitMessageImpl;
+import org.apache.paimon.table.sink.SinkRecord;
 import org.apache.paimon.types.RowKind;
+import org.apache.paimon.utils.UriReaderFactory;
 import tech.streamfusion.operator.KeyedUpsertBuffer;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
@@ -35,17 +34,18 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  * takes one row at a time into a sort buffer and creates level-0 files from it, so the batches are
  * kept instead in a native buffer per bucket and written as level-0 files by the native file
  * writer, at a checkpoint or once the task's buffers exceed the table's write buffer size (largest
- * bucket first, as Paimon's memory pool does). Sequence numbers continue from the bucket's committed
- * files exactly as Paimon's writer seeds its own.
+ * bucket first, as Paimon's memory pool does). Sequence numbers continue from the bucket's
+ * committed files exactly as Paimon's writer seeds its own.
  *
- * <p>Compaction stays Paimon's: before Paimon's writer prepares a commit, the new files are handed to
- * it through the entry its dedicated compaction operator uses for files written elsewhere, so it
+ * <p>Compaction stays Paimon's: before Paimon's writer prepares a commit, the new files are handed
+ * to it through the entry its dedicated compaction operator uses for files written elsewhere, so it
  * compacts them in this job with its own strategy and reports the results in its commit message.
- * Paimon's writer never sees a row, so its message carries only compaction; the new files are
- * merged into it here. Under {@code write-only} the same hand-off is a no-op and a dedicated
- * compaction job compacts the files through the identical entry.
+ * Paimon's selected writer retains its compaction and recovery lifecycle; its message is augmented
+ * with the new data and input-changelog files, preserving all compaction and index metadata. Under
+ * {@code write-only} the same hand-off is a no-op and a dedicated compaction job compacts the files
+ * through the identical entry.
  */
-public final class NativeKeyValueSinkWrite extends StoreSinkWriteImpl {
+public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoCloseable {
 
   private static final long NEW_FILES_SNAPSHOT = Long.MAX_VALUE;
 
@@ -54,6 +54,7 @@ public final class NativeKeyValueSinkWrite extends StoreSinkWriteImpl {
     final int bucket;
     final KeyedUpsertBuffer buffer;
     final List<DataFileMeta> pendingFiles = new ArrayList<>();
+    final List<DataFileMeta> pendingChangelog = new ArrayList<>();
     long nextSequence;
 
     BucketBuffer(BinaryRow partition, int bucket, KeyedUpsertBuffer buffer, long nextSequence) {
@@ -65,6 +66,8 @@ public final class NativeKeyValueSinkWrite extends StoreSinkWriteImpl {
   }
 
   private FileStoreTable table;
+  private final StoreSinkWrite delegate;
+  private final boolean inputChangelog;
   private final PaimonKeyValueLayout layout;
   private final int kindColumn;
   private final boolean ignoreDelete;
@@ -73,28 +76,11 @@ public final class NativeKeyValueSinkWrite extends StoreSinkWriteImpl {
   private final Map<BinaryRow, Map<Integer, BucketBuffer>> buffers = new LinkedHashMap<>();
   private NativePaimonKeyValueFileWriter files;
 
-  public NativeKeyValueSinkWrite(
-      FileStoreTable table,
-      String commitUser,
-      StoreSinkWriteState state,
-      IOManager ioManager,
-      boolean ignorePreviousFiles,
-      boolean waitCompaction,
-      boolean isStreamingMode,
-      MemoryPoolFactory memoryPoolFactory,
-      @Nullable MetricGroup metricGroup) {
-    super(
-        table,
-        commitUser,
-        state,
-        ioManager,
-        ignorePreviousFiles,
-        waitCompaction,
-        isStreamingMode,
-        memoryPoolFactory,
-        metricGroup);
+  public NativeKeyValueSinkWrite(FileStoreTable table, StoreSinkWrite delegate) {
+    this.delegate = delegate;
     CoreOptions options = table.coreOptions();
     this.table = table;
+    this.inputChangelog = options.changelogProducer() == CoreOptions.ChangelogProducer.INPUT;
     this.layout = PaimonKeyValueLayout.of(table);
     this.kindColumn = table.rowType().getFieldCount();
     this.ignoreDelete = options.ignoreDelete();
@@ -107,7 +93,8 @@ public final class NativeKeyValueSinkWrite extends StoreSinkWriteImpl {
    * Takes a routed batch for one bucket: the table's columns plus the hidden row-kind column, or
    * the columns alone from an insert-only edge, whose rows are all inserts.
    */
-  public void writeBundle(BinaryRow partition, int bucket, VectorSchemaRoot root) throws IOException {
+  public void writeBundle(BinaryRow partition, int bucket, VectorSchemaRoot root)
+      throws IOException {
     if (root.getRowCount() == 0) {
       root.close();
       return;
@@ -184,9 +171,11 @@ public final class NativeKeyValueSinkWrite extends StoreSinkWriteImpl {
   }
 
   private void flush(BucketBuffer buffer) throws IOException {
-    KeyedUpsertBuffer.Flushed flushed = buffer.buffer.flush();
+    KeyedUpsertBuffer.Flushed flushed = buffer.buffer.flush(inputChangelog);
     if (flushed != null) {
-      buffer.pendingFiles.addAll(files.write(buffer.partition, buffer.bucket, flushed));
+      DataIncrement increment = files.write(buffer.partition, buffer.bucket, flushed);
+      buffer.pendingFiles.addAll(increment.newFiles());
+      buffer.pendingChangelog.addAll(increment.changelogFiles());
     }
   }
 
@@ -197,12 +186,22 @@ public final class NativeKeyValueSinkWrite extends StoreSinkWriteImpl {
       for (BucketBuffer buffer : partition.values()) {
         flush(buffer);
         if (!buffer.pendingFiles.isEmpty()) {
-          notifyNewFiles(NEW_FILES_SNAPSHOT, buffer.partition, buffer.bucket, buffer.pendingFiles);
+          delegate.notifyNewFiles(
+              NEW_FILES_SNAPSHOT, buffer.partition, buffer.bucket, buffer.pendingFiles);
+          if (delegate instanceof GlobalFullCompactionSinkWrite) {
+            // The public compaction entry also records this bucket in Paimon's checkpoint state.
+            // notifyNewFiles alone does not enroll it in the scheduled full compaction.
+            try {
+              delegate.compact(buffer.partition, buffer.bucket, false);
+            } catch (Exception failure) {
+              throw new IOException(failure);
+            }
+          }
         }
       }
     }
     List<Committable> committables = new ArrayList<>();
-    for (Committable committable : super.prepareCommit(waitCompaction, checkpointId)) {
+    for (Committable committable : delegate.prepareCommit(waitCompaction, checkpointId)) {
       committables.add(withNewFiles(committable, checkpointId));
     }
     for (Map<Integer, BucketBuffer> partition : buffers.values()) {
@@ -210,15 +209,18 @@ public final class NativeKeyValueSinkWrite extends StoreSinkWriteImpl {
         if (!buffer.pendingFiles.isEmpty()) {
           committables.add(
               new Committable(
-                  checkpointId, message(buffer, CompactIncrement.emptyIncrement())));
+                  checkpointId,
+                  message(
+                      buffer, DataIncrement.emptyIncrement(), CompactIncrement.emptyIncrement())));
           buffer.pendingFiles.clear();
+          buffer.pendingChangelog.clear();
         }
       }
     }
     return committables;
   }
 
-  /** Paimon's message for a bucket carries compaction only; the bucket's new files join it. */
+  /** Augments Paimon's bucket commit without losing its changelog or deletion-vector metadata. */
   private Committable withNewFiles(Committable committable, long checkpointId) {
     if (!(committable.commitMessage() instanceof CommitMessageImpl)) {
       return committable;
@@ -230,24 +232,76 @@ public final class NativeKeyValueSinkWrite extends StoreSinkWriteImpl {
       return committable;
     }
     Committable merged =
-        new Committable(checkpointId, message(buffer, message.compactIncrement()));
+        new Committable(
+            checkpointId, message(buffer, message.newFilesIncrement(), message.compactIncrement()));
     buffer.pendingFiles.clear();
+    buffer.pendingChangelog.clear();
     return merged;
   }
 
-  private CommitMessageImpl message(BucketBuffer buffer, CompactIncrement compaction) {
+  private CommitMessageImpl message(
+      BucketBuffer buffer, DataIncrement existing, CompactIncrement compaction) {
+    List<DataFileMeta> data = new ArrayList<>(existing.newFiles());
+    data.addAll(buffer.pendingFiles);
+    List<DataFileMeta> changelog = new ArrayList<>(existing.changelogFiles());
+    changelog.addAll(buffer.pendingChangelog);
     return new CommitMessageImpl(
         buffer.partition,
         buffer.bucket,
         totalBuckets,
         new DataIncrement(
-            new ArrayList<>(buffer.pendingFiles), Collections.emptyList(), Collections.emptyList()),
+            data,
+            existing.deletedFiles(),
+            changelog,
+            existing.newIndexFiles(),
+            existing.deletedIndexFiles()),
         compaction);
   }
 
   @Override
+  public void setWriteRestore(WriteRestore restore) {
+    delegate.setWriteRestore(restore);
+  }
+
+  @Override
+  public void setBlobDescriptorReaderFactory(UriReaderFactory factory) {
+    delegate.setBlobDescriptorReaderFactory(factory);
+  }
+
+  @Override
+  public SinkRecord write(InternalRow row) {
+    throw new UnsupportedOperationException("The native primary-key writer requires Arrow batches");
+  }
+
+  @Override
+  public SinkRecord write(InternalRow row, int bucket) {
+    return write(row);
+  }
+
+  @Override
+  public void compact(BinaryRow partition, int bucket, boolean fullCompaction) throws Exception {
+    delegate.compact(partition, bucket, fullCompaction);
+  }
+
+  @Override
+  public void notifyNewFiles(
+      long snapshotId, BinaryRow partition, int bucket, List<DataFileMeta> files) {
+    delegate.notifyNewFiles(snapshotId, partition, bucket, files);
+  }
+
+  @Override
+  public void snapshotState() throws Exception {
+    delegate.snapshotState();
+  }
+
+  @Override
+  public boolean streamingMode() {
+    return delegate.streamingMode();
+  }
+
+  @Override
   public void replace(FileStoreTable newTable) throws Exception {
-    super.replace(newTable);
+    delegate.replace(newTable);
     table = newTable;
     files = new NativePaimonKeyValueFileWriter(newTable, layout);
   }
@@ -260,6 +314,6 @@ public final class NativeKeyValueSinkWrite extends StoreSinkWriteImpl {
       }
     }
     buffers.clear();
-    super.close();
+    delegate.close();
   }
 }

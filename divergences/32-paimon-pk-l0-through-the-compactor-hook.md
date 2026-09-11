@@ -45,8 +45,8 @@ The sink owns the level-0 file of a primary-key bucket and nothing else:
   through the native path and through Paimon's writer into twin tables and compare rows read back,
   every file's metadata, and Parquet footers, across restarts and through in-job compaction.
 - **A whitelist, not a merge-engine port.** Only the shapes whose level-0 file the native merge
-  reproduces are admitted: fixed buckets, `deduplicate` with optional `ignore-delete`, no
-  changelog production, no deletion vectors, no sequence field, no thin mode, and key types whose
+  reproduces are admitted: fixed buckets, `deduplicate` with optional `ignore-delete`, the verified
+  changelog producers and deletion vectors, no sequence field, no thin mode, and key types whose
   Arrow byte order equals Paimon's key comparator. Everything else falls back to the stock sink at
   planning time.
 
@@ -63,3 +63,45 @@ The sink owns the level-0 file of a primary-key bucket and nothing else:
 - **Memory budget.** The native buffers are bounded by `write-buffer-size` per task, spilling the
   largest bucket into level-0 files; Flink managed memory (`sink.use-managed-memory-allocator`) is
   not drawn on, so that option declines.
+
+## Changelog production and reuse of upstream writers
+
+Input changelog uses the same sort as the data file: every input row is retained in key and
+arrival-sequence order, while the data output keeps the last row per key. This follows both
+Paimon 2.0.0's `SortBufferWriteBuffer` and paimon-rust's `KeyValueFileWriter`. In released Java
+Paimon these are independently rolled changelog files in the commit's data increment, not extra
+files attached to individual data files. Their compression and statistics settings are resolved
+separately. The two Arrow outputs use the existing Comet-style C Data ownership transfer and are
+released together after encoding.
+
+The native sink wraps the `StoreSinkWrite` selected by Paimon's own provider. This retains the
+released `LookupSinkWrite` and `GlobalFullCompactionSinkWrite`, including their checkpoint state,
+restoration, waiting policy, scheduling, and all compaction/index commit metadata. Full-compaction
+writers expose bucket registration through their public `compact` entry; `notifyNewFiles` alone
+does not register a bucket. After notifying the new files, we call incremental `compact` to
+register the bucket before commit preparation. Paimon then decides when to force full compaction.
+This also allows ordinary compaction to begin before commit preparation; its completion timing,
+as with stock asynchronous compaction, is not a fixed checkpoint boundary. Tests isolate scheduled
+full compaction from ordinary size-triggered compaction and separately cover lookup recovery with
+compaction deliberately blocked before a checkpoint.
+
+### Why not depend on paimon-rust here?
+
+Rechecked against Apache Paimon's canonical master and paimon-rust's canonical main on 2026-09-11,
+as well as Java's released `release-2.0.0` and Rust's released `v0.3.0`. The latest published Rust
+crate is 0.3.0; the 0.4.0 workspace is still in development.
+
+Rust 0.3.0 already implements input changelog. However, its key-value writer/configuration and
+preassigned-bucket write entry are internal APIs. The public table writer owns routing, sequence
+initialization, storage access, and commit-message construction, and its key-value writer emits
+thin-mode files. It does not provide the Java Flink writer's lookup/full-compaction scheduling and
+checkpoint lifecycle. Pulling that writer in would therefore replace the existing table boundary,
+rather than reuse an encoding primitive behind it. The public OpenDAL operator injection on main
+is also not in the published 0.3.0 crate.
+
+We reuse the released Java writers for those responsibilities and follow Rust's sort-once,
+separate data/changelog output structure in the existing Arrow buffer. No local, Git, snapshot,
+or fork dependency is introduced. A released public bucket/file-writer API that accepts the
+connector's storage, sequence, schema, and rolling contracts would make direct Rust reuse worth
+revisiting; the Java merge-tree bundle entry in [issue #49](https://github.com/datafusion-contrib/StreamFusion/issues/49)
+would instead eliminate this native level-0 hand-off.

@@ -25,7 +25,8 @@ import org.apache.paimon.types.RowType;
  * footer statistics stay with Paimon's own implementation, so a table written natively is read and
  * described exactly as one written by parquet-mr. The writer factory it hands out writes Arrow
  * bundles through the native encoder and delegates every row-fed file (compaction rewrites, batch
- * inserts, foreign bundles) to the stock writer, so no table ever mixes writer behaviour by accident.
+ * inserts, foreign bundles) to the stock writer, so no table ever mixes writer behaviour by
+ * accident.
  */
 public final class NativePaimonParquetFormat extends FileFormat implements SupportsFieldMetadata {
 
@@ -40,7 +41,10 @@ public final class NativePaimonParquetFormat extends FileFormat implements Suppo
     this.fileCompression = context.options().get(CoreOptions.FILE_COMPRESSION);
   }
 
-  /** The stock format's writer options: the {@code parquet.*} keys plus Paimon's level and block size. */
+  /**
+   * The stock format's writer options: the {@code parquet.*} keys plus Paimon's level and block
+   * size.
+   */
   private Options parquetOptions(FormatContext context) {
     Options options = getIdentifierPrefixOptions(context.options());
     if (!options.containsKey(PaimonParquetSettings.ZSTD_LEVEL_KEY)) {
@@ -53,14 +57,22 @@ public final class NativePaimonParquetFormat extends FileFormat implements Suppo
     return options;
   }
 
-  /** Why the table's default write settings keep the stock writer, or null when the native one applies. */
+  /**
+   * Why the table's default write settings keep the stock writer, or null when the native one
+   * applies.
+   */
   @Nullable
   public String nativeWriterFallbackReason(RowType type) {
+    return nativeWriterFallbackReason(type, fileCompression);
+  }
+
+  @Nullable
+  public String nativeWriterFallbackReason(RowType type, String compression) {
     String unsupportedType = PaimonArrowFields.unsupportedTypeReason(type);
     if (unsupportedType != null) {
       return unsupportedType;
     }
-    return PaimonParquetSettings.translate(parquetOptions, fileCompression).fallbackReason();
+    return PaimonParquetSettings.translate(parquetOptions, compression).fallbackReason();
   }
 
   @Override
