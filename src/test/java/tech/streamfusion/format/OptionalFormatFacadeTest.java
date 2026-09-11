@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Set;
 import tech.streamfusion.format.avro.AvroFormatProvider;
 import tech.streamfusion.format.avro.NativeAvroFormat;
 import tech.streamfusion.format.avroconfluent.AvroConfluentFormatProvider;
@@ -20,6 +21,19 @@ import org.junit.jupiter.api.Test;
 
 /** Direct JNI and provider smoke tests for each independently deployed format artifact. */
 class OptionalFormatFacadeTest {
+
+  @Test
+  void eachFormatOwnsADistinctDriver() {
+    assertEquals(
+        5,
+        Set.of(
+                NativeJsonFormat.driverInitAddress(),
+                NativeCsvFormat.driverInitAddress(),
+                NativeRawFormat.driverInitAddress(),
+                NativeAvroFormat.driverInitAddress(),
+                NativeProtobufFormat.driverInitAddress())
+            .size());
+  }
 
   @Test
   @Tag("streamfusion-json")

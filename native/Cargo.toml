@@ -1,17 +1,28 @@
-[package]
-name = "streamfusion"
+[workspace]
+resolver = "2"
+members = [
+  "engine",
+  "bridge",
+  "native-build",
+  "format-support",
+  "kafka",
+  "json",
+  "csv",
+  "raw",
+  "avro",
+  "protobuf",
+  "parquet",
+  "integration-tests",
+]
+
+[workspace.package]
 version = "0.1.0-rc2"
 edition = "2021"
 license = "Apache-2.0"
 
-[lib]
-name = "streamfusion"
-# rlib alongside cdylib so the benchmarks can link the engine directly (the JVM loads the cdylib).
-crate-type = ["cdylib", "rlib"]
-
-[dependencies]
+[workspace.dependencies]
 jni = "0.21"
-arrow = { version = "58", features = ["ffi", "json", "csv"] }
+arrow = { version = "58", default-features = false, features = ["ffi"] }
 # Custom timestamp formatting (DATE_FORMAT) with a translated strftime pattern. Already in the tree
 # transitively via arrow; pinned here for direct use.
 chrono = "0.4"
@@ -36,7 +47,7 @@ log = "0.4"
 # transitively via datafusion; pinned here for direct use.
 num-bigint = "0.4"
 # Native Parquet sink encoding and test-fixture decoding.
-parquet = { version = "58", features = ["arrow"], optional = true }
+parquet = { version = "58", features = ["arrow"] }
 # Native Avro decode incl. the Confluent Schema Registry wire format (magic byte + 4-byte schema id +
 # Avro body), resolved against a local SchemaStore keyed by integer id. Used by the Kafka source.
 arrow-avro = "58"
@@ -87,76 +98,17 @@ memchr = "2"
 # builds RocksDB 8.10.0, matching the RocksDB release used by Flink 2.2.1. Keep the dependency
 # statically linked into the StreamFusion DSO; the production link uses hidden visibility so it can
 # coexist with Flink's frocksdbjni in jobs containing host-side fallback operators.
-rocksdb = { version = "0.22.0", default-features = false, features = ["snappy", "lz4", "zstd"], optional = true }
+rocksdb = { version = "0.22.0", default-features = false, features = ["snappy", "lz4", "zstd"] }
 # Checkpoint manifests and the borrowed string lexer used by SQL/JSON scalar functions.
 serde = { version = "1", features = ["derive"] }
 # Also parses Avro writer schemas for the decode framing walk; in the tree via arrow-avro anyway.
 serde_json = "1"
-bytes = { version = "1", optional = true }
-# Opt-in mimalloc (see the `mimalloc` feature) for native operator allocation churn.
-libmimalloc-sys = { version = "0.1", optional = true }
+bytes = { version = "1" }
+# Each cdylib opts in through its `mimalloc` feature and pins the v2 branch: v3's lazy thread
+# initialization can crash when a JVM-created thread first allocates through the library.
+# native-build supplies library-local aliases; the hosting JVM keeps its own allocator.
+libmimalloc-sys = { version = "0.1" }
 
-[build-dependencies]
-# Compiles the checked-free shim the mimalloc feature's symbol aliases route through (build.rs).
-cc = "1"
-
-[features]
-# `core` is the engine: the operators, the planner bridge, and every JNI entry point of the core
-# `Native` class. A core build carries no connector-specific code; deployable connector and format
-# JARs ship their own library built with `--no-default-features` plus their feature, which exports
-# only that library's own entry points. The JVM binds each native method to whichever loaded
-# library exports its symbol, so a connector library that also exported the core's could capture
-# some of the core class's methods and leave the two libraries' state split.
-default = ["core"]
-core = []
-kafka = []
-parquet = ["dep:parquet"]
-json = []
-csv = []
-raw = []
-avro = []
-protobuf = []
-# Rust-owned persistent operator state (see src/state/). Core-engine infrastructure, not a
-# connector: Flink's RocksDB backend selection activates it without routing state access through
-# Java or JNI.
-rocksdb-state = ["core", "dep:rocksdb", "dep:bytes"]
-# Rebind the C allocator to mimalloc for everything linked into THIS library,
-# via link-time symbol aliases emitted by build.rs. Library-scoped: the hosting JVM process keeps
-# its own allocator, so this carries none of the risk of a process-wide malloc override (a zone-swap
-# variant was tried and crashed under JVM thread churn — divergences/19). Pinned to the mimalloc v2
-# branch: v3's lazy thread-init dereferences an uninitialized heap when a JVM-created thread's first
-# allocation enters through the dylib (SIGSEGV in _mi_subproc under Flink task threads).
-mimalloc = ["dep:libmimalloc-sys", "libmimalloc-sys/v2"]
-
-# The engine is one large crate; the default parallel codegen-unit split severs cross-unit inlining
-# at arbitrary points, so hot operator loops were measured swinging ~50% from unrelated code
-# additions elsewhere in the crate. One codegen unit trades release-build time (tests build debug,
-# unaffected) for stable, faster code — and benchmark numbers that reflect the change under test.
 [profile.release]
+# Keep engine hot loops in one codegen unit for stable inlining and benchmark results.
 codegen-units = 1
-
-[dev-dependencies]
-criterion = "0.5"
-serde = { version = "1", features = ["derive"] }
-sonic-rs = "0.5.8"
-# Reading encoder output back in tests: parquet's ChunkReader is implemented for bytes::Bytes.
-# Already in the tree transitively via arrow/parquet.
-bytes = "1"
-
-[[bench]]
-name = "operators"
-harness = false
-
-[[bench]]
-name = "scalar_functions"
-harness = false
-
-[[bench]]
-name = "kafka_sink"
-harness = false
-required-features = ["kafka"]
-
-[[bench]]
-name = "json_codecs"
-harness = false
-required-features = ["json"]

@@ -11,7 +11,7 @@ arrays, including scalar adaptation, NULL handling, and result allocation. Input
 planner coercion, JNI, and transposes are excluded from that diagnostic:
 
 ```sh
-cargo bench --manifest-path native/Cargo.toml --features mimalloc --bench scalar_functions
+cargo bench --manifest-path native/Cargo.toml -p streamfusion --features mimalloc --bench scalar_functions
 ```
 
 Run one benchmark at a time. Kernel diagnostics and complete SQL jobs measure different work.

@@ -14,9 +14,9 @@ spellings, and `1.5d` suffixes Java accepts. None of that is configurable from t
 
 ## Decision
 
-The decoders parse text with our own Flink-exact parsers (`native/src/flink_text.rs`), and the CSV
+The decoders parse text with our own Flink-exact parsers (`native/bridge/src/flink_text.rs`), and the CSV
 decode splits records with `csv-core` configured like Flink's Jackson `CsvSchema`
-(`native/src/csv.rs`) instead of using arrow-csv. The JSON simd-path appenders follow the same
+(`native/csv/src/csv.rs`) instead of using arrow-csv. The JSON simd-path appenders follow the same
 converters — string-encoded numbers with a trim, floats truncating toward zero into INT/BIGINT
 columns (TINYINT/SMALLINT reject float tokens: their converters fall through to `parseByte` over
 the raw literal), never-failing booleans, the strict `ISO_LOCAL_DATE`, and the table's
@@ -28,7 +28,7 @@ path for its raw number literals, but the decimal columns decode as raw *text*
 own decimal parse truncates extra fraction digits and errors on precision overflow, which silently
 diverged from Flink on valid data.
 
-The same reasoning holds on the way OUT: the Kafka sink's CSV encode (`native/src/csv_encode.rs`)
+The same reasoning holds on the way OUT: the Kafka sink's CSV encode (`native/kafka/src/csv_encode.rs`)
 is hand-rolled against Jackson's `CsvEncoder` semantics rather than arrow-csv's writer, whose
 envelope cannot be configured into Jackson's — Jackson's "loose" quote decision (25+ UTF-16 units
 always quote; anything at or below `max(delimiter, quote)`, the escape char, or a bare backslash
@@ -36,7 +36,7 @@ quotes), raw never-quoted numbers/booleans/null-literals, doubled quote and esca
 and the joined-array single-field form have no arrow-csv counterparts. Pinned byte-for-byte
 against `CsvRowDataSerializationSchema` in `NativeKafkaCsvEncoderTest`. FLOAT/DOUBLE columns
 spell through a byte-exact port of the legacy (JDK ≤ 18) `Double.toString`/`Float.toString`
-algorithm (`native/src/jdk_double.rs`) on both the CSV and JSON sinks. The spelling is
+algorithm (`native/bridge/src/jdk_double.rs`) on both the CSV and JSON sinks. The spelling is
 JDK-version-dependent — JDK 19 switched to shortest-representation digits, which differ from the
 legacy output on ~0.3% of random doubles and ~11% of random floats — so a runtime probe spells a
 fixed corpus (seeded with values where the two algorithms disagree) on both sides at plan time
@@ -87,7 +87,7 @@ value — a job that runs on both engines produces identical results.
   but Jackson tokenizes — out-of-range number literals (converted per field from the raw text),
   raw control characters inside strings (`ALLOW_UNESCAPED_CONTROL_CHARS`), content trailing the
   root document (never read) — re-decode through a token walk that ports Flink's converters
-  (`native/src/json_retry.rs`) and rewrite into sanitized rows for the fast-path appenders. The
+  (`native/json/src/json_retry.rs`) and rewrite into sanitized rows for the fast-path appenders. The
   CDC envelope dialects keep the spec-strict parse (their `old`-presence pre-scans mirror the
   skip conditions row for row), so a Jackson-only CDC message still fails/drops as before; for
   the same reason a FLOAT physical column in a CDC envelope (or on the decimal-bearing

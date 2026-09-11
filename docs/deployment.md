@@ -104,16 +104,57 @@ Restart Flink after installation, then submit ordinary streaming SQL jobs as usu
 
 ## Contributing from source
 
-For local development, `mvn compile` is Java-only and does not invoke Cargo; `mvn test` builds the
-host **debug** native library once before running tests — fast to iterate with, but roughly an
-order of magnitude slower than release, so never benchmark against it. Build the portable optimized
-artifacts only when developing or preparing a release:
+For local development, `mvn compile` is Java-only and does not invoke Cargo. `mvn test` builds the
+host **debug** native libraries from the Cargo workspace in `native/`. Each extension Maven module
+builds its matching Cargo package; the runtime test assembly builds the workspace. Tests load
+`libstreamfusion` and the individual `libstreamfusion_<extension>` libraries from
+`native/target/debug`, just as a deployment loads each library from its owning JAR. A missing local
+extension library cannot bind its methods to the engine library.
+
+Debug builds are roughly an order of magnitude slower than release, so use `mvn test -Pbench` for
+benchmarks. Build the portable optimized artifacts when developing or preparing a release:
 
 ```sh
 bin/build-release.sh
 ```
 
 The release build enables `mimalloc` by default.
+
+### Native workspace
+
+| Directory | Responsibility |
+| --- | --- |
+| `native/engine` | Operators, planner bridge, Rust state, and the core `Native` JNI entry points; produces `libstreamfusion`. |
+| `native/bridge` | JNI guards, Arrow C Data import/export, handle accounting, Flink numeric/text semantics, and format ABI types. No JNI exports of its own. |
+| `native/format-support` | Shared decoder lifecycle, parse-error isolation, key/value composition, CDC gathering, and format facade macros. No engine or third-party format implementation. |
+| `native/kafka`, `native/parquet` | Connector-specific JNI entry points and implementation. Kafka owns its existing sink encoders. |
+| `native/json`, `native/csv`, `native/raw`, `native/avro`, `native/protobuf` | One decoder library per format JAR. Avro and Avro-Confluent-Registry continue to share the Avro native library. |
+| `native/native-build` | Shared build dependency for library-local mimalloc aliases and the checked free/realloc shim. |
+| `native/integration-tests` | Rust round trips that exercise both connector encoding and format decoding. |
+
+Shared crates are statically linked into each library. Handles, JVM references, and allocator state
+stay local to their owning library; Arrow release callbacks preserve ownership across the C Data
+boundary. The Java leak sentinel queries every loaded library's handle registry. The engine enables
+`rocksdb-state` by default; `cargo build -p streamfusion --no-default-features` builds an engine
+without persistent native state. No connector or format feature selects JNI exports anymore.
+
+```sh
+cd native
+cargo test --workspace
+cargo build -p streamfusion-json
+cargo bench -p streamfusion --bench operators
+cargo bench -p streamfusion-kafka --bench kafka_sink
+cargo bench -p streamfusion-json --bench json_codecs
+```
+
+From the repository root, `python3 bin/check-native-workspace.py --libraries native/target/debug`
+checks dependency isolation and the built libraries' JNI exports. `native.cargo.args` controls the
+Cargo command/profile, and `native.cargo.packages` controls Maven's package selection.
+
+The split removes engine dependencies from standalone extension builds: Parquet's normal dependency
+graph contains 79 packages instead of 253. Release validation did not reproduce the historical
+binary-size reduction proposed in [issue #51](https://github.com/datafusion-contrib/StreamFusion/issues/51);
+the previous export gating already let the linker discard unused engine code.
 
 ## Deployment JVM flags
 

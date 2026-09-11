@@ -1,0 +1,64 @@
+[package]
+name = "streamfusion"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+base64.workspace = true
+streamfusion-bridge = { path = "../bridge" }
+arrow = { workspace = true, features = ["json"] }
+jni.workspace = true
+datafusion.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+regex.workspace = true
+md-5.workspace = true
+sha2.workspace = true
+sha1.workspace = true
+log.workspace = true
+num-bigint.workspace = true
+num-traits.workspace = true
+tokio.workspace = true
+futures.workspace = true
+ahash.workspace = true
+memchr.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+simd-json.workspace = true
+
+[dependencies.libmimalloc-sys]
+workspace = true
+optional = true
+
+[build-dependencies]
+streamfusion-native-build = { path = "../native-build" }
+
+[features]
+default = ["rocksdb-state"]
+mimalloc = ["dep:libmimalloc-sys", "libmimalloc-sys/v2"]
+rocksdb-state = ["dep:rocksdb", "dep:bytes"]
+
+[dependencies.rocksdb]
+workspace = true
+optional = true
+
+[dependencies.bytes]
+workspace = true
+optional = true
+
+[dev-dependencies]
+criterion = "0.5"
+bytes = "1"
+
+[[bench]]
+name = "operators"
+harness = false
+
+[[bench]]
+name = "scalar_functions"
+harness = false

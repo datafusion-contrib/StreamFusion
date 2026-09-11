@@ -1,0 +1,9 @@
+[package]
+name = "streamfusion-native-build"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+cc = "1"

@@ -1,0 +1,28 @@
+[package]
+name = "streamfusion-avro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+streamfusion-bridge = { path = "../bridge" }
+streamfusion-format-support = { path = "../format-support" }
+arrow.workspace = true
+jni.workspace = true
+arrow-avro.workspace = true
+serde_json.workspace = true
+
+[dependencies.libmimalloc-sys]
+workspace = true
+optional = true
+
+[build-dependencies]
+streamfusion-native-build = { path = "../native-build" }
+
+[features]
+default = []
+mimalloc = ["dep:libmimalloc-sys", "libmimalloc-sys/v2"]

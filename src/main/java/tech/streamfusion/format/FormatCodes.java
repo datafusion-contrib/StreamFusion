@@ -4,7 +4,7 @@ import java.util.Map;
 
 /**
  * The {@code MessageDecoder} format-code protocol: one int per value format, shared across the JNI
- * boundary and mirrored by the named constants in {@code native/src/formats.rs}. The codes are wire
+ * boundary and mirrored by the named constants in {@code native/bridge/src/format_codes.rs}. The codes are wire
  * format — never renumber them.
  */
 public final class FormatCodes {

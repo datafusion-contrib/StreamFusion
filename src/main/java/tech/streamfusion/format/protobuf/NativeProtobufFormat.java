@@ -7,13 +7,16 @@ public final class NativeProtobufFormat {
 
   static {
     NativeExtensionLoader.load(
-        NativeProtobufFormat.class, "protobuf", NativeProtobufFormat::nativeBuildVersion);
+        NativeProtobufFormat.class, "protobuf", NativeProtobufFormat::nativeBuildVersion, NativeProtobufFormat::liveNativeHandles);
   }
 
   private NativeProtobufFormat() {}
 
   /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
   private static native String nativeBuildVersion();
+
+  /** Live handles owned by this library, used by the shared leak sentinel. */
+  public static native String liveNativeHandles();
 
   /** Probes that this optional library has loaded. */
   public static native boolean isLoaded();

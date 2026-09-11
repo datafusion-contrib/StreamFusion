@@ -297,7 +297,7 @@ Delegates literal sets to DataFusion's right-trim kernel and scalar-pattern reus
 
 ## Review-driven admission and organization
 
-All scalar registrations added here live in `native/src/flink_functions/mod.rs`, following
+All scalar registrations added here live in `native/engine/src/flink_functions/mod.rs`, following
 Arroyo's registry pattern. The expression decoder consults that registry once, and all local
 kernels live beneath the same module. Unknown registrations return None; they never select an
 unrelated function. Retired opcodes are not reused. Numeric/date-time operations that predate

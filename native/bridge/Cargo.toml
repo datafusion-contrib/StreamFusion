@@ -1,0 +1,15 @@
+[package]
+name = "streamfusion-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+arrow.workspace = true
+jni.workspace = true
+ahash.workspace = true
+num-bigint.workspace = true
+num-traits.workspace = true
+chrono.workspace = true
+base64.workspace = true

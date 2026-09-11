@@ -4,10 +4,17 @@
     <parent><groupId>tech.streamfusion</groupId><artifactId>StreamFusion</artifactId><version>${revision}</version></parent>
     <artifactId>streamfusion-avro-confluent-registry</artifactId>
     <name>StreamFusion Avro Confluent Registry</name>
-    <properties><native.test.resource.skip>true</native.test.resource.skip></properties>
+    <properties>
+        <native.cargo.packages>-p streamfusion-avro</native.cargo.packages>
+        <native.test.resource.skip>true</native.test.resource.skip>
+    </properties>
     <dependencies>
         <dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-core</artifactId><version>${project.version}</version><scope>provided</scope></dependency>
         <dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-avro</artifactId><version>${project.version}</version><scope>provided</scope></dependency>
     </dependencies>
-    <build><sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory><resources combine.self="override"><resource><directory>${project.basedir}/src/main/resources</directory></resource></resources><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version><configuration><includes><include>tech/streamfusion/format/avroconfluent/**/*.java</include><include>tech/streamfusion/kafka/ConfluentSchemaRegistry.java</include></includes></configuration></plugin></plugins></build>
+    <build><sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory><resources combine.self="override"><resource><directory>${project.basedir}/src/main/resources</directory></resource></resources><plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+            </plugin><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version><configuration><includes><include>tech/streamfusion/format/avroconfluent/**/*.java</include><include>tech/streamfusion/kafka/ConfluentSchemaRegistry.java</include></includes></configuration></plugin></plugins></build>
 </project>

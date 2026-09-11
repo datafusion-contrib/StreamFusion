@@ -6,13 +6,16 @@ import tech.streamfusion.NativeExtensionLoader;
 public final class NativeParquet {
 
   static {
-    NativeExtensionLoader.load(NativeParquet.class, "parquet", NativeParquet::nativeBuildVersion);
+    NativeExtensionLoader.load(NativeParquet.class, "parquet", NativeParquet::nativeBuildVersion, NativeParquet::liveNativeHandles);
   }
 
   private NativeParquet() {}
 
   /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
   private static native String nativeBuildVersion();
+
+  /** Live handles owned by this library, used by the shared leak sentinel. */
+  public static native String liveNativeHandles();
 
   /** Forces initialization of the extension class, including loading its native library. */
   public static boolean isLoaded() {

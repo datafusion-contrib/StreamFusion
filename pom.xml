@@ -71,9 +71,11 @@
         <!-- Native build: debug by default for a fast correctness loop. The `bench` profile flips
              both of these to a release build, which benchmarks must use (debug Rust is far slower). -->
         <native.profile>debug</native.profile>
-        <!-- Deployment packaging builds a connector-free core and feature-specific extension DSOs
-             separately in bin/build-release.sh. -->
-        <native.cargo.args>build --features kafka,parquet,json,csv,raw,avro,protobuf,rocksdb-state</native.cargo.args>
+        <!-- Each module selects its Cargo package; bin/build-release.sh stages the deployment DSOs. -->
+        <native.cargo.args>build</native.cargo.args>
+        <native.cargo.packages>-p streamfusion</native.cargo.packages>
+        <native.library>streamfusion</native.library>
+        <native.resource.path>tech/streamfusion/native</native.resource.path>
         <native.build.skip>false</native.build.skip>
         <native.test.resource.skip>false</native.test.resource.skip>
         <native.resource.directory>${project.basedir}/../native/target/${native.profile}</native.resource.directory>
@@ -317,10 +319,10 @@
                  its OS/architecture tree, while Native keeps this location as a development fallback. -->
             <resource>
                 <directory>${native.resource.directory}</directory>
-                <targetPath>tech/streamfusion/native</targetPath>
+                <targetPath>${native.resource.path}</targetPath>
                 <includes>
-                    <include>libstreamfusion.so</include>
-                    <include>libstreamfusion.dylib</include>
+                    <include>lib${native.library}.so</include>
+                    <include>lib${native.library}.dylib</include>
                 </includes>
             </resource>
         </resources>
@@ -440,7 +442,7 @@
                             <skip>${native.build.skip}</skip>
                             <executable>cargo</executable>
                             <workingDirectory>${project.basedir}/../native</workingDirectory>
-                            <commandlineArgs>${native.cargo.args}</commandlineArgs>
+                            <commandlineArgs>${native.cargo.args} ${native.cargo.packages}</commandlineArgs>
                         </configuration>
                     </execution>
                 </executions>
@@ -466,10 +468,10 @@
                             <resources>
                                 <resource>
                                     <directory>${native.resource.directory}</directory>
-                                    <targetPath>tech/streamfusion/native</targetPath>
+                                    <targetPath>${native.resource.path}</targetPath>
                                     <includes>
-                                        <include>libstreamfusion.so</include>
-                                        <include>libstreamfusion.dylib</include>
+                                        <include>lib${native.library}.so</include>
+                                        <include>lib${native.library}.dylib</include>
                                     </includes>
                                 </resource>
                             </resources>
@@ -692,7 +694,7 @@
                      record with a same-JVM process-global handle. -->
                 <sf.benchmarkJvmArgs>-Dstreamfusion.exchange.zeroCopyLocal=false</sf.benchmarkJvmArgs>
                 <native.profile>release</native.profile>
-                <native.cargo.args>build --release --features mimalloc,kafka,parquet,json,csv,raw,avro,protobuf,rocksdb-state</native.cargo.args>
+                <native.cargo.args>build --release --features mimalloc</native.cargo.args>
             </properties>
         </profile>
         <!-- Produces the deployable, performance-oriented runtime payload. Callers may override
@@ -701,7 +703,7 @@
             <id>dist</id>
             <properties>
                 <native.profile>release</native.profile>
-                <native.cargo.args>build --release --no-default-features --features mimalloc,core,rocksdb-state</native.cargo.args>
+                <native.cargo.args>build --release --features mimalloc</native.cargo.args>
             </properties>
         </profile>
         <!-- Packages the resource tree staged by bin/build-release.sh. It deliberately does not
@@ -716,7 +718,7 @@
                 <resources>
                     <resource>
                         <directory>${project.basedir}/../native/target/universal</directory>
-                        <targetPath>tech/streamfusion/native</targetPath>
+                        <targetPath>${native.resource.path}</targetPath>
                         <includes>
                             <include>**/libstreamfusion.so</include>
                             <include>**/libstreamfusion.dylib</include>

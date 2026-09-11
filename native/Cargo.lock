@@ -3249,14 +3249,11 @@ version = "0.1.0-rc2"
 dependencies = [
  "ahash",
  "arrow",
- "arrow-avro",
  "base64",
  "bytes",
- "cc",
  "chrono",
  "chrono-tz",
  "criterion",
- "csv-core",
  "datafusion",
  "futures",
  "jni",
@@ -3266,10 +3263,6 @@ dependencies = [
  "memchr",
  "num-bigint",
  "num-traits",
- "parquet",
- "prost",
- "prost-reflect",
- "prost-types",
  "regex",
  "rocksdb",
  "serde",
@@ -3277,8 +3270,158 @@ dependencies = [
  "sha1",
  "sha2",
  "simd-json",
- "sonic-rs",
+ "streamfusion-bridge",
+ "streamfusion-native-build",
  "tokio",
+]
+
+[[package]]
+name = "streamfusion-avro"
+version = "0.1.0-rc2"
+dependencies = [
+ "arrow",
+ "arrow-avro",
+ "jni",
+ "libmimalloc-sys",
+ "serde_json",
+ "streamfusion-bridge",
+ "streamfusion-format-support",
+ "streamfusion-native-build",
+]
+
+[[package]]
+name = "streamfusion-bridge"
+version = "0.1.0-rc2"
+dependencies = [
+ "ahash",
+ "arrow",
+ "base64",
+ "chrono",
+ "jni",
+ "num-bigint",
+ "num-traits",
+]
+
+[[package]]
+name = "streamfusion-csv"
+version = "0.1.0-rc2"
+dependencies = [
+ "arrow",
+ "csv-core",
+ "jni",
+ "libmimalloc-sys",
+ "streamfusion-bridge",
+ "streamfusion-format-support",
+ "streamfusion-native-build",
+]
+
+[[package]]
+name = "streamfusion-format-support"
+version = "0.1.0-rc2"
+dependencies = [
+ "arrow",
+ "jni",
+ "streamfusion-bridge",
+]
+
+[[package]]
+name = "streamfusion-integration-tests"
+version = "0.1.0-rc2"
+dependencies = [
+ "arrow",
+ "prost-reflect",
+ "streamfusion-avro",
+ "streamfusion-bridge",
+ "streamfusion-kafka",
+ "streamfusion-protobuf",
+]
+
+[[package]]
+name = "streamfusion-json"
+version = "0.1.0-rc2"
+dependencies = [
+ "arrow",
+ "chrono",
+ "criterion",
+ "jni",
+ "libmimalloc-sys",
+ "num-bigint",
+ "num-traits",
+ "serde",
+ "serde_json",
+ "simd-json",
+ "sonic-rs",
+ "streamfusion-bridge",
+ "streamfusion-format-support",
+ "streamfusion-native-build",
+]
+
+[[package]]
+name = "streamfusion-kafka"
+version = "0.1.0-rc2"
+dependencies = [
+ "arrow",
+ "arrow-avro",
+ "base64",
+ "chrono",
+ "criterion",
+ "jni",
+ "libmimalloc-sys",
+ "memchr",
+ "prost",
+ "prost-reflect",
+ "prost-types",
+ "serde_json",
+ "streamfusion-bridge",
+ "streamfusion-native-build",
+]
+
+[[package]]
+name = "streamfusion-native-build"
+version = "0.1.0-rc2"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "streamfusion-parquet"
+version = "0.1.0-rc2"
+dependencies = [
+ "arrow",
+ "bytes",
+ "jni",
+ "libmimalloc-sys",
+ "parquet",
+ "streamfusion-bridge",
+ "streamfusion-native-build",
+]
+
+[[package]]
+name = "streamfusion-protobuf"
+version = "0.1.0-rc2"
+dependencies = [
+ "arrow",
+ "chrono",
+ "jni",
+ "libmimalloc-sys",
+ "prost",
+ "prost-reflect",
+ "prost-types",
+ "streamfusion-bridge",
+ "streamfusion-format-support",
+ "streamfusion-native-build",
+]
+
+[[package]]
+name = "streamfusion-raw"
+version = "0.1.0-rc2"
+dependencies = [
+ "arrow",
+ "jni",
+ "libmimalloc-sys",
+ "streamfusion-bridge",
+ "streamfusion-format-support",
+ "streamfusion-native-build",
 ]
 
 [[package]]

@@ -88,19 +88,19 @@ public final class SharedFlinkCluster
    * callback, in either transfer direction — imports are registered as foreign allocations).
    *
    * <p>Task cleanup can trail the job result by a moment (source fetcher threads close
-   * asynchronously), so the check polls briefly before failing; when clean it costs one JNI call.
+   * asynchronously), so the check polls briefly before failing; when clean it costs one JNI call per loaded library.
    */
   private static void assertNativeMemoryReleased(ExtensionContext context)
       throws InterruptedException {
     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    String handles = Native.liveNativeHandles();
+    String handles = NativeExtensionLoader.liveNativeHandles();
     long allocated = NativeAllocator.SHARED.getAllocatedMemory();
     while ((!handles.isEmpty() || allocated != 0) && System.nanoTime() < deadline) {
       // Records a failed job dropped in flight are freed by the ArrowBatch cleaner backstop, which
       // only runs once a GC notices they are unreachable — nudge it rather than waiting one out.
       System.gc();
       Thread.sleep(20);
-      handles = Native.liveNativeHandles();
+      handles = NativeExtensionLoader.liveNativeHandles();
       allocated = NativeAllocator.SHARED.getAllocatedMemory();
     }
     if (!handles.isEmpty() || allocated != 0) {

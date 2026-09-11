@@ -13,6 +13,10 @@
     <artifactId>streamfusion-runtime</artifactId>
     <name>StreamFusion Runtime</name>
 
+    <properties>
+        <native.cargo.packages>--workspace</native.cargo.packages>
+    </properties>
+
     <!-- Keep the repository layout stable while exposing a conventional runtime Maven module. -->
     <build>
         <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>

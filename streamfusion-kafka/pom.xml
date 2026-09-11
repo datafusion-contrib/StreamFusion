@@ -13,7 +13,11 @@
     <artifactId>streamfusion-kafka</artifactId>
     <name>StreamFusion Kafka</name>
 
-    <properties><native.test.resource.skip>true</native.test.resource.skip></properties>
+    <properties>
+        <native.cargo.packages>-p streamfusion-kafka</native.cargo.packages>
+        <native.library>streamfusion_kafka</native.library>
+        <native.resource.path>tech/streamfusion/native/kafka</native.resource.path>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -30,8 +34,20 @@
             <resource>
                 <directory>${project.basedir}/src/main/resources</directory>
             </resource>
+            <resource>
+                <directory>${native.resource.directory}</directory>
+                <targetPath>${native.resource.path}</targetPath>
+                <includes>
+                    <include>lib${native.library}.so</include>
+                    <include>lib${native.library}.dylib</include>
+                </includes>
+            </resource>
         </resources>
         <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -54,9 +70,7 @@
         </plugins>
     </build>
 
-    <!-- The release library staged by bin/build-release.sh rides along only when the universal
-         deployment bundle is assembled; a source-tree test build loads the development core library
-         instead, and must not find a release library on its classpath next to it. -->
+    <!-- Universal releases package the payloads staged for each supported platform. -->
     <profiles>
         <profile>
             <id>universal</id>

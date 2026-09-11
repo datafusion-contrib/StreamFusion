@@ -71,6 +71,13 @@ git push upstream v0.1.0-rc2
 The release workflow rejects either tag form unless its value exactly matches both Maven projects
 and Cargo.
 
+All native packages inherit the single version in `native/Cargo.toml`'s `[workspace.package]`.
+The release builder selects packages, producing `libstreamfusion` for the engine and a separately
+named library for every native extension. Linux builds the workspace together; macOS selects the
+same packages for each target. Shared dependencies are reused by Cargo. The staged resource layout
+and Maven artifact names remain the same, including the single Avro native payload shared with
+Avro-Confluent-Registry. Extension libraries are checked for foreign JNI entry points before shipping.
+
 Following DataFusion Comet's runner-native pattern, it builds the Linux x86_64 payload on an Ubuntu
 runner and the Apple Silicon payload on a macOS runner. It merges those binaries into the release
 JARs, validates the artifact boundaries, signs and publishes the reactor through the Central Portal,

@@ -6,13 +6,16 @@ import tech.streamfusion.NativeExtensionLoader;
 public final class NativeCsvFormat {
 
   static {
-    NativeExtensionLoader.load(NativeCsvFormat.class, "csv", NativeCsvFormat::nativeBuildVersion);
+    NativeExtensionLoader.load(NativeCsvFormat.class, "csv", NativeCsvFormat::nativeBuildVersion, NativeCsvFormat::liveNativeHandles);
   }
 
   private NativeCsvFormat() {}
 
   /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
   private static native String nativeBuildVersion();
+
+  /** Live handles owned by this library, used by the shared leak sentinel. */
+  public static native String liveNativeHandles();
 
   /** Probes that this optional library has loaded. */
   public static native boolean isLoaded();

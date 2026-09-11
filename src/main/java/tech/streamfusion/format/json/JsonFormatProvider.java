@@ -16,7 +16,7 @@ public final class JsonFormatProvider implements NativeFormatProvider {
 
   /**
    * Whether every column (and every nested leaf) is a type the native JSON decode converts with
-   * Flink's exact semantics — the set {@code native/src/json.rs}'s appender dispatch implements,
+   * Flink's exact semantics — the set {@code native/json/src/json.rs}'s appender dispatch implements,
    * parity-pinned by {@code JsonDecodeParityTest}. Anything else stays on Flink at plan time
    * instead of reaching a native decode it would fail: BINARY (its fixed-size Arrow carriage
    * cannot hold the arbitrary-length base64 Flink decodes without enforcing the declared length)

@@ -1,11 +1,20 @@
 package tech.streamfusion;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
 class NativeLibraryBundleTest {
+
+  @Test
+  void aMissingExtensionCannotUseTheCoreLibrary() {
+    assertTrue(Native.version().length() > 0);
+    assertThrows(
+        UnsatisfiedLinkError.class,
+        () -> NativeExtensionLoader.load(getClass(), "missing-for-test", Native::version));
+  }
 
   @Test
   void packagesTheNativeLibraryAsAClasspathResource() {

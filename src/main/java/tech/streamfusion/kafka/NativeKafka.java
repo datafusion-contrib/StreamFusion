@@ -6,13 +6,16 @@ import tech.streamfusion.NativeExtensionLoader;
 public final class NativeKafka {
 
   static {
-    NativeExtensionLoader.load(NativeKafka.class, "kafka", NativeKafka::nativeBuildVersion);
+    NativeExtensionLoader.load(NativeKafka.class, "kafka", NativeKafka::nativeBuildVersion, NativeKafka::liveNativeHandles);
   }
 
   private NativeKafka() {}
 
   /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
   private static native String nativeBuildVersion();
+
+  /** Live handles owned by this library, used by the shared leak sentinel. */
+  public static native String liveNativeHandles();
 
   /** Whether the native Kafka serialization extension loaded successfully. */
   public static native boolean isLoaded();

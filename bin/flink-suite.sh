@@ -227,7 +227,7 @@ else
   echo "Building the StreamFusion development native library for the source suite..."
   (
     cd "${STREAMFUSION_BUILD_ROOT}/native" &&
-      cargo build --features kafka,parquet,json,csv,raw,avro,protobuf,rocksdb-state
+      cargo build --workspace
   ) || exit $?
 
   echo "Building and installing StreamFusion and its supported connector/format modules against the source-suite planner..."

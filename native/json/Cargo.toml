@@ -1,0 +1,40 @@
+[package]
+name = "streamfusion-json"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+streamfusion-bridge = { path = "../bridge" }
+streamfusion-format-support = { path = "../format-support" }
+arrow = { workspace = true, features = ["json"] }
+jni.workspace = true
+simd-json.workspace = true
+num-traits.workspace = true
+num-bigint.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+
+[dependencies.libmimalloc-sys]
+workspace = true
+optional = true
+
+[build-dependencies]
+streamfusion-native-build = { path = "../native-build" }
+
+[features]
+default = []
+mimalloc = ["dep:libmimalloc-sys", "libmimalloc-sys/v2"]
+
+[dev-dependencies]
+criterion = "0.5"
+serde = { version = "1", features = ["derive"] }
+sonic-rs = "0.5.8"
+
+[[bench]]
+name = "json_codecs"
+harness = false

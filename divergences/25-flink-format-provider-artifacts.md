@@ -34,9 +34,38 @@ Each library also exports only the JNI entry points of its own Java class. The J
 method, on its first call, to whichever loaded library exports the mangled symbol, so a connector
 library that also exported the core class's entry points could capture some of them once both were
 loaded, leaving the core's handle registry, captured JVM, and memory accounting split between two
-copies. The engine and the core class's entry points therefore sit behind the crate's `core` feature,
-on by default and left off when a connector or format library is built; the release build checks
-every extension library's exported symbols for a core entry point. This is the export half of the
+copies. The engine and each extension therefore have separate Cargo packages, each owning its
+Java class's entry points. Extensions have no dependency on the engine or DataFusion. A shared
+bridge crate supplies JNI guards, C Data ownership, numeric/text semantics, and ABI types;
+format lifecycle and composition live in a separate format-support crate without third-party codecs.
+The release build checks extension symbols, and CI verifies the package dependency boundaries.
+This is the export half of the
 ADBC driver discipline (one init symbol per driver, everything else through a table) without its
 manual loading, which we do not need because every library ships from one build at one version. The JVM byte-array boundary adds copies, but it keeps Kafka settings and runtime semantics
 identical to Flink and keeps each format independently installable, testable, and fallback-safe.
+
+## Workspace boundary decisions
+
+The split follows Comet's separate JNI bridge and engine crates, while retaining one statically
+linked bridge and allocator per deployable library. Rust decoder trait objects remain entirely
+inside their owning library; the format-driver contract still passes only C Data addresses and
+opaque handles. The driver init is handed out by its owner's JNI facade, so it needs no common
+unmangled symbol that would collide when Rust integration tests link multiple format crates.
+
+Kafka's existing sink encoders remain in the Kafka package. Moving encoding behind a new format ABI
+would change the runtime contract and is separate from enforcing the crate boundaries. The decoder
+packages do not depend on Kafka, and Kafka does not link their decoder implementations. The raw
+decoder primitive is shared with key/value composition because a keyed JSON value can contain a raw
+key; this needs no third-party codec dependency.
+
+Tests live with their owning packages, with connector/format round trips in an integration-test
+package. Java tests load the same distinct libraries as production, including separate handle
+registries; no all-features engine library can satisfy an extension's missing native methods.
+
+The migration's measurable benefit is dependency isolation. Parquet's normal dependency graph
+falls from 253 packages, including 30 DataFusion packages, to 79 with none from DataFusion.
+The historical large binary-size saving in issue #51 was not reproduced against the current
+pre-workspace build: Linux arm64 release+mimalloc on Rust 1.94.0 measured 8,119,360 bytes before
+and 8,404,984 bytes after the split. The prior JNI export gating already let the linker discard
+unused engine code. This workspace change is retained for independent builds and compile-time
+boundaries; it makes no throughput or binary-size improvement claim.

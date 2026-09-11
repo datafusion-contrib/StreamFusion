@@ -1,0 +1,30 @@
+[package]
+name = "streamfusion-protobuf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+chrono.workspace = true
+streamfusion-bridge = { path = "../bridge" }
+streamfusion-format-support = { path = "../format-support" }
+arrow.workspace = true
+jni.workspace = true
+prost-reflect.workspace = true
+prost.workspace = true
+prost-types.workspace = true
+
+[dependencies.libmimalloc-sys]
+workspace = true
+optional = true
+
+[build-dependencies]
+streamfusion-native-build = { path = "../native-build" }
+
+[features]
+default = []
+mimalloc = ["dep:libmimalloc-sys", "libmimalloc-sys/v2"]

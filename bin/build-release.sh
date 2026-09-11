@@ -36,17 +36,25 @@ host_architecture() {
   esac
 }
 
+native_package() {
+  case "$1" in
+    core) native_package_name=streamfusion; native_library=streamfusion ;;
+    *) native_package_name=streamfusion-$1; native_library=streamfusion_$1 ;;
+  esac
+}
+
 stage_host_library() {
   extension=$1
-  features=$2
   platform=$(host_platform)
   architecture=$(host_architecture)
   case "$platform" in
-    linux) library=libstreamfusion.so ;;
-    darwin) library=libstreamfusion.dylib ;;
+    linux) suffix=so ;;
+    darwin) suffix=dylib ;;
   esac
 
-  (cd "$native_dir" && cargo build --release --no-default-features --features "$features" \
+  native_package "$extension"
+  library=lib${native_library}.$suffix
+  (cd "$native_dir" && cargo build --release -p "$native_package_name" --features mimalloc \
     --target-dir "$native_dir/target/release-staging")
   stage_native_library \
     "$extension" "$platform" "$architecture" \
@@ -55,12 +63,12 @@ stage_host_library() {
 
 stage_darwin_library() {
   extension=$1
-  features=$2
-  target=$3
-  architecture=$4
-  library=libstreamfusion.dylib
+  target=$2
+  architecture=$3
+  native_package "$extension"
+  library=lib${native_library}.dylib
 
-  (cd "$native_dir" && cargo build --release --no-default-features --features "$features" \
+  (cd "$native_dir" && cargo build --release -p "$native_package_name" --features mimalloc \
     --target "$target" --target-dir "$native_dir/target/release-staging")
   stage_native_library \
     "$extension" darwin "$architecture" \
@@ -80,14 +88,14 @@ stage_darwin_libraries() {
   for target_and_architecture in aarch64-apple-darwin:aarch64 x86_64-apple-darwin:x86_64; do
     target=${target_and_architecture%:*}
     architecture=${target_and_architecture#*:}
-    stage_darwin_library core mimalloc,core,rocksdb-state "$target" "$architecture"
-    stage_darwin_library kafka mimalloc,kafka,csv,avro,protobuf,raw "$target" "$architecture"
-    stage_darwin_library json mimalloc,json "$target" "$architecture"
-    stage_darwin_library csv mimalloc,csv "$target" "$architecture"
-    stage_darwin_library raw mimalloc,raw "$target" "$architecture"
-    stage_darwin_library avro mimalloc,avro "$target" "$architecture"
-    stage_darwin_library protobuf mimalloc,protobuf "$target" "$architecture"
-    stage_darwin_library parquet mimalloc,parquet "$target" "$architecture"
+    stage_darwin_library core "$target" "$architecture"
+    stage_darwin_library kafka "$target" "$architecture"
+    stage_darwin_library json "$target" "$architecture"
+    stage_darwin_library csv "$target" "$architecture"
+    stage_darwin_library raw "$target" "$architecture"
+    stage_darwin_library avro "$target" "$architecture"
+    stage_darwin_library protobuf "$target" "$architecture"
+    stage_darwin_library parquet "$target" "$architecture"
   done
 }
 
@@ -154,12 +162,12 @@ stage_native_library() {
 
 # The JVM binds a native method to whichever loaded library exports its symbol, so an extension
 # library that also exported the core class's entry points could capture some of them and split the
-# core's state between two libraries. The extension builds leave the core feature off; this checks
-# that no core entry point slipped through.
+# core's state between two libraries. Separate Cargo packages own these exports; check the
+# linked artifacts as well as the compile-time dependency boundaries.
 assert_exports_only_its_own_entry_points() {
   library=$1
   if nm -g "$library" 2>/dev/null | grep -q ' _\{0,1\}Java_tech_streamfusion_Native_'; then
-    echo "$library exports core entry points; build it without the core feature" >&2
+    echo "$library exports core entry points; check its package dependencies" >&2
     exit 70
   fi
 }
@@ -167,14 +175,14 @@ assert_exports_only_its_own_entry_points() {
 rm -rf "$stage_dir"
 mkdir -p "$stage_dir"
 if [ "$host_only" = true ]; then
-  stage_host_library core mimalloc,core,rocksdb-state
-  stage_host_library kafka mimalloc,kafka,csv,avro,protobuf,raw
-  stage_host_library json mimalloc,json
-  stage_host_library csv mimalloc,csv
-  stage_host_library raw mimalloc,raw
-  stage_host_library avro mimalloc,avro
-  stage_host_library protobuf mimalloc,protobuf
-  stage_host_library parquet mimalloc,parquet
+  stage_host_library core
+  stage_host_library kafka
+  stage_host_library json
+  stage_host_library csv
+  stage_host_library raw
+  stage_host_library avro
+  stage_host_library protobuf
+  stage_host_library parquet
 else
   command -v docker >/dev/null 2>&1 || {
     echo "Docker is required to build the Linux release libraries." >&2

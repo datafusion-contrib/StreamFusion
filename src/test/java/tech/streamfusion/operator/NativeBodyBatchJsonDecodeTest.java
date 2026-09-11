@@ -1,10 +1,15 @@
 package tech.streamfusion.operator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import tech.streamfusion.Native;
+import tech.streamfusion.NativeExtensionLoader;
 import tech.streamfusion.format.NativeBodyBatchDecoder;
 import tech.streamfusion.format.NativeFormatContext;
 import tech.streamfusion.format.json.JsonFormatProvider;
+import tech.streamfusion.format.json.NativeJsonFormat;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,6 +35,17 @@ class NativeBodyBatchJsonDecodeTest {
       RowType.of(
           new LogicalType[] {new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH), new DoubleType()},
           new String[] {"id", "name", "score"});
+
+  @Test
+  void decoderHandlesBelongToTheFormatLibraryAndRemainVisibleToLeakChecks() throws Exception {
+    assertEquals("", NativeJsonFormat.liveNativeHandles());
+    try (NativeBodyBatchDecoder decoder = decoder()) {
+      assertTrue(NativeJsonFormat.liveNativeHandles().contains("MessageDecoder=1"));
+      assertFalse(Native.liveNativeHandles().contains("MessageDecoder"));
+      assertTrue(NativeExtensionLoader.liveNativeHandles().contains("json:MessageDecoder=1"));
+    }
+    assertEquals("", NativeJsonFormat.liveNativeHandles());
+  }
 
   @Test
   void decodesJsonBodiesToTypedBatch() throws Exception {

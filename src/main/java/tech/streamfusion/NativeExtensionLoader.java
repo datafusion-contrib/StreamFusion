@@ -2,18 +2,22 @@ package tech.streamfusion;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import org.slf4j.LoggerFactory;
 
 /** Loads an optional StreamFusion native extension from the JAR that declares its Java API. */
 public final class NativeExtensionLoader {
 
   private static final String RESOURCE_PREFIX = "/tech/streamfusion/native/";
+
+  private static final Map<String, Supplier<String>> HANDLE_PROBES = new ConcurrentHashMap<>();
 
   private NativeExtensionLoader() {}
 
@@ -26,9 +30,35 @@ public final class NativeExtensionLoader {
    * symbol, so only a probe named after the owner reads this extension's library rather than
    * another one loaded earlier.
    */
+  public static void load(
+      Class<?> owner,
+      String extension,
+      Supplier<String> loadedVersion,
+      Supplier<String> liveHandles) {
+    load(owner, extension, loadedVersion);
+    HANDLE_PROBES.put(extension, liveHandles);
+  }
+
+  /** Loads an extension built against the version-only loader API. */
   public static void load(Class<?> owner, String extension, Supplier<String> loadedVersion) {
     loadLibrary(owner, extension);
     verifyLoadedVersion(extension, loadedVersion);
+  }
+
+  /** Combines the engine and loaded extensions' independent native handle registries. */
+  public static String liveNativeHandles() {
+    String extensions =
+        HANDLE_PROBES.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .map(
+                entry -> {
+                  String handles = entry.getValue().get();
+                  return handles.isEmpty() ? "" : entry.getKey() + ":" + handles;
+                })
+            .filter(handles -> !handles.isEmpty())
+            .collect(Collectors.joining(","));
+    String core = Native.liveNativeHandles();
+    return core.isEmpty() ? extensions : extensions.isEmpty() ? core : core + "," + extensions;
   }
 
   private static void loadLibrary(Class<?> owner, String extension) {
@@ -37,41 +67,21 @@ public final class NativeExtensionLoader {
       System.loadLibrary(libraryName);
       return;
     } catch (UnsatisfiedLinkError libraryPathFailure) {
-      // A development build binds every extension class to the all-features development core
-      // library below; a release library left in a module's classes by an earlier release build
-      // must not be picked up next to it, or the tests would exercise that stale library instead.
+      // Source-tree tests load the same per-extension libraries from Cargo's output directory.
+      // Do not pick up a stale packaged payload when a local extension build is missing.
       if (!BuildVersion.developmentMode() && loadBundled(owner, extension, libraryName)) {
         return;
       }
-
-      // A release extension JAR must carry its own DSO — failing here beats silently binding
-      // to an unrelated library. Source-tree tests may see these classes through a reactor JAR
-      // (a sibling module's test classpath), so the build's test runner sets the development
-      // property to reach the all-features development core library below.
-      if (isPackaged(owner) && !BuildVersion.developmentMode()) {
-        UnsatisfiedLinkError error =
-            new UnsatisfiedLinkError(
-                "No bundled native library for StreamFusion extension '"
-                    + extension
-                    + "' on "
-                    + Native.nativePlatform()
-                    + "/"
-                    + Native.nativeArchitecture());
-        error.initCause(libraryPathFailure);
-        throw error;
-      }
-
-      // A source-tree test build carries all enabled JNI entry points in the development core
-      // library. Release extension JARs never use this fallback: they include their own DSO.
-      try {
-        // Go through Native rather than System.loadLibrary directly so a packaged development
-        // core JAR gets the same bundled-resource extraction as a normal deployment.
-        Native.version();
-        return;
-      } catch (UnsatisfiedLinkError developmentLibraryFailure) {
-        developmentLibraryFailure.addSuppressed(libraryPathFailure);
-        throw developmentLibraryFailure;
-      }
+      UnsatisfiedLinkError error =
+          new UnsatisfiedLinkError(
+              "No native library for StreamFusion extension '"
+                  + extension
+                  + "' on "
+                  + Native.nativePlatform()
+                  + "/"
+                  + Native.nativeArchitecture());
+      error.initCause(libraryPathFailure);
+      throw error;
     }
   }
 
@@ -80,8 +90,7 @@ public final class NativeExtensionLoader {
     try {
       loaded = loadedVersion.get();
     } catch (UnsatisfiedLinkError versionUnavailable) {
-      // The development core library only exports the version probes of its enabled features, and
-      // a pre-stamping release library exports none; the former is fine, the latter is stale.
+      // A pre-stamping library cannot report a build version.
       loaded = null;
     }
     String libraryName = "streamfusion_" + extension;
@@ -94,11 +103,6 @@ public final class NativeExtensionLoader {
       return;
     }
     throw new UnsatisfiedLinkError(mismatch);
-  }
-
-  private static boolean isPackaged(Class<?> owner) {
-    URL classResource = owner.getResource(owner.getSimpleName() + ".class");
-    return classResource != null && "jar".equals(classResource.getProtocol());
   }
 
   private static boolean loadBundled(Class<?> owner, String extension, String libraryName) {

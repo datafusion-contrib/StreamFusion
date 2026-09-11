@@ -10,7 +10,10 @@
     </parent>
     <artifactId>streamfusion-paimon</artifactId>
     <name>StreamFusion Paimon</name>
-    <properties><native.test.resource.skip>true</native.test.resource.skip></properties>
+    <properties>
+        <native.cargo.packages>-p streamfusion -p streamfusion-parquet</native.cargo.packages>
+        <native.test.resource.skip>true</native.test.resource.skip>
+    </properties>
     <dependencies>
         <dependency>
             <groupId>tech.streamfusion</groupId>
@@ -83,6 +86,10 @@
             <resource><directory>${project.basedir}/src/main/resources</directory></resource>
         </resources>
         <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

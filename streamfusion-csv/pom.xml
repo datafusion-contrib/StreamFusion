@@ -4,13 +4,19 @@
     <parent><groupId>tech.streamfusion</groupId><artifactId>StreamFusion</artifactId><version>${revision}</version></parent>
     <artifactId>streamfusion-csv</artifactId>
     <name>StreamFusion CSV</name>
-    <properties><native.test.resource.skip>true</native.test.resource.skip></properties>
+    <properties>
+        <native.cargo.packages>-p streamfusion-csv</native.cargo.packages>
+        <native.library>streamfusion_csv</native.library>
+        <native.resource.path>tech/streamfusion/native/csv</native.resource.path>
+    </properties>
     <dependencies><dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-core</artifactId><version>${project.version}</version><scope>provided</scope></dependency></dependencies>
-    <build><sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory><resources combine.self="override"><resource><directory>${project.basedir}/src/main/resources</directory></resource></resources><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version><configuration><includes><include>tech/streamfusion/format/csv/**/*.java</include></includes></configuration></plugin></plugins></build>
+    <build><sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory><resources combine.self="override"><resource><directory>${project.basedir}/src/main/resources</directory></resource></resources><plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+            </plugin><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version><configuration><includes><include>tech/streamfusion/format/csv/**/*.java</include></includes></configuration></plugin></plugins></build>
 
-    <!-- The release library staged by bin/build-release.sh rides along only when the universal
-         deployment bundle is assembled; a source-tree test build loads the development core library
-         instead, and must not find a release library on its classpath next to it. -->
+    <!-- Universal releases package the payloads staged for each supported platform. -->
     <profiles>
         <profile>
             <id>universal</id>
@@ -24,7 +30,15 @@
                             <include>**/libstreamfusion_csv.dylib</include>
                         </includes>
                     </resource>
-                </resources>
+                    <resource>
+                <directory>${native.resource.directory}</directory>
+                <targetPath>${native.resource.path}</targetPath>
+                <includes>
+                    <include>lib${native.library}.so</include>
+                    <include>lib${native.library}.dylib</include>
+                </includes>
+            </resource>
+        </resources>
             </build>
         </profile>
     </profiles>

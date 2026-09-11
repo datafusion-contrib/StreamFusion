@@ -1,0 +1,16 @@
+[package]
+name = "streamfusion-integration-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+streamfusion-kafka = { path = "../kafka" }
+streamfusion-protobuf = { path = "../protobuf" }
+streamfusion-avro = { path = "../avro" }
+streamfusion-bridge = { path = "../bridge" }
+arrow.workspace = true
+prost-reflect.workspace = true

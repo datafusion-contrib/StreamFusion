@@ -6,13 +6,16 @@ import tech.streamfusion.NativeExtensionLoader;
 public final class NativeRawFormat {
 
   static {
-    NativeExtensionLoader.load(NativeRawFormat.class, "raw", NativeRawFormat::nativeBuildVersion);
+    NativeExtensionLoader.load(NativeRawFormat.class, "raw", NativeRawFormat::nativeBuildVersion, NativeRawFormat::liveNativeHandles);
   }
 
   private NativeRawFormat() {}
 
   /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
   private static native String nativeBuildVersion();
+
+  /** Live handles owned by this library, used by the shared leak sentinel. */
+  public static native String liveNativeHandles();
 
   /** Probes that this optional library has loaded. */
   public static native boolean isLoaded();

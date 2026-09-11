@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 class NativeParquetExtensionTest {
 
   @Test
-  void loadsTheParquetJniFacadeFromTheDevelopmentLibrary() {
+  void loadsTheParquetJniFacadeFromItsOwnLibrary() {
     assertTrue(NativeParquet.isLoaded());
   }
 }

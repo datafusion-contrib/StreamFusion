@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class NativeKafkaExtensionTest {
 
   @Test
-  void loadsTheKafkaSerializationFacadeFromTheDevelopmentLibrary() {
+  void loadsTheKafkaSerializationFacadeFromItsOwnLibrary() {
     assertTrue(NativeKafka.isLoaded());
     assertTrue(NativeKafka.encodeFormatSupported(FormatCodes.JSON));
   }
