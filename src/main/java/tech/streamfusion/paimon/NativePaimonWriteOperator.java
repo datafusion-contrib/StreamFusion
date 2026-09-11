@@ -16,6 +16,7 @@ import org.apache.paimon.flink.sink.StoreSinkWrite;
 import org.apache.paimon.flink.sink.StoreSinkWriteImpl;
 import org.apache.paimon.flink.sink.StoreSinkWriteState;
 import org.apache.paimon.flink.sink.TableWriteOperator;
+import org.apache.paimon.table.BucketMode;
 import org.apache.paimon.table.FileStoreTable;
 import tech.streamfusion.operator.BucketedArrowBatch;
 
@@ -31,6 +32,7 @@ public final class NativePaimonWriteOperator extends TableWriteOperator<Bucketed
 
   private final int partitionArity;
   private final boolean stateless;
+  private final boolean postpone;
   private final RowType rowType;
 
   private NativePaimonWriteOperator(
@@ -42,6 +44,7 @@ public final class NativePaimonWriteOperator extends TableWriteOperator<Bucketed
     super(parameters, table, storeSinkWriteProvider, initialCommitUser);
     this.partitionArity = table.partitionKeys().size();
     this.stateless = stateless;
+    this.postpone = table.bucketMode() == BucketMode.POSTPONE_MODE;
     this.rowType = LogicalTypeConversion.toLogicalType(table.rowType());
   }
 
@@ -69,7 +72,9 @@ public final class NativePaimonWriteOperator extends TableWriteOperator<Bucketed
     BucketedArrowBatch batch = element.getValue();
     BinaryRow partition = PaimonPartitions.fromBytes(batch.partition(), partitionArity);
     if (write instanceof NativeKeyValueSinkWrite) {
-      ((NativeKeyValueSinkWrite) write).writeBundle(partition, batch.bucket(), batch.root());
+      ((NativeKeyValueSinkWrite) write)
+          .writeBundle(
+              partition, postpone ? BucketMode.POSTPONE_BUCKET : batch.bucket(), batch.root());
       return;
     }
     try (VectorSchemaRoot root = batch.root()) {

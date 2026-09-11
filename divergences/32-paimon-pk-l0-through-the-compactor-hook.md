@@ -45,10 +45,11 @@ The sink owns the level-0 file of a primary-key bucket and nothing else:
   through the native path and through Paimon's writer into twin tables and compare rows read back,
   every file's metadata, and Parquet footers, across restarts and through in-job compaction.
 - **A whitelist, not a merge-engine port.** Only the shapes whose level-0 file the native merge
-  reproduces are admitted: fixed buckets, `deduplicate` with optional `ignore-delete`, the verified
+  reproduces are admitted: fixed or dynamic buckets, `deduplicate` with optional `ignore-delete`, the verified
   changelog producers and deletion vectors, no sequence field, no thin mode, and key types whose
   Arrow byte order equals Paimon's key comparator. Everything else falls back to the stock sink at
-  planning time.
+  planning time. Postpone staging retains every accepted input row instead of merging; its distinct
+  file and commit boundary is described in [34](34-paimon-dynamic-and-postpone-buckets.md).
 
 ## Consequences
 

@@ -335,7 +335,7 @@ class PaimonChangelogSinkWriteTest {
     private final int batchRows;
     private final StreamTableWrite router;
     private final StoreSinkWriteImpl delegate;
-    private final StoreSinkWrite write;
+    final StoreSinkWrite write;
     private final StreamTableCommit commit;
 
     Writer(FileStoreTable table, boolean nativeWriter, MemoryState state) {

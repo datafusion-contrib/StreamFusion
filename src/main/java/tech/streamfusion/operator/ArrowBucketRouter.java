@@ -1,6 +1,5 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.Native;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
@@ -11,14 +10,15 @@ import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import tech.streamfusion.Native;
 
 /**
- * Routes a sink's Arrow batches to Paimon write destinations. Each incoming batch is split
- * natively into one order-preserving sub-batch per distinct (partition, bucket) pair: the partition
- * is the {@code BinaryRow} of the partition columns and the bucket is Paimon's default bucket
- * function over the bucket-key columns, both computed on the columns in place so no row is ever
- * materialized on the JVM. Paimon's {@code BinaryRow} shares Flink's {@code BinaryRowData} layout
- * and hash, so the native Flink key encoder yields both byte for byte.
+ * Routes a sink's Arrow batches to Paimon write destinations. Each incoming batch is split natively
+ * into one order-preserving sub-batch per distinct (partition, bucket) pair: the partition is the
+ * {@code BinaryRow} of the partition columns and the bucket is Paimon's default bucket function
+ * over the bucket-key columns, both computed on the columns in place so no row is ever materialized
+ * on the JVM. Paimon's {@code BinaryRow} shares Flink's {@code BinaryRowData} layout and hash, so
+ * the native Flink key encoder yields both byte for byte.
  *
  * <p>An append table takes an insert-only stream. An upstream changelog operator still tags its
  * output with the hidden row-kind column, all inserts on such an edge, and the router drops it so
@@ -35,6 +35,7 @@ public class ArrowBucketRouter extends AbstractStreamOperator<BucketedArrowBatch
   private final int[] bucketTimestampPrecisions;
   private final int numBuckets;
   private final boolean keepRowKinds;
+  private final int numAssigners;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
@@ -51,12 +52,35 @@ public class ArrowBucketRouter extends AbstractStreamOperator<BucketedArrowBatch
       int[] bucketTimestampPrecisions,
       int numBuckets,
       boolean keepRowKinds) {
+    this(
+        partitionColumns,
+        partitionTimestampPrecisions,
+        bucketColumns,
+        bucketTimestampPrecisions,
+        numBuckets,
+        keepRowKinds,
+        -1);
+  }
+
+  /**
+   * A nonnegative assigner count selects dynamic (>0) or postpone (0) channel routing;
+   * {@code numBuckets} then denotes the number of destination channels.
+   */
+  public ArrowBucketRouter(
+      int[] partitionColumns,
+      int[] partitionTimestampPrecisions,
+      int[] bucketColumns,
+      int[] bucketTimestampPrecisions,
+      int numBuckets,
+      boolean keepRowKinds,
+      int numAssigners) {
     this.partitionColumns = partitionColumns;
     this.partitionTimestampPrecisions = partitionTimestampPrecisions;
     this.bucketColumns = bucketColumns;
     this.bucketTimestampPrecisions = bucketTimestampPrecisions;
     this.numBuckets = numBuckets;
     this.keepRowKinds = keepRowKinds;
+    this.numAssigners = numAssigners;
   }
 
   @Override
@@ -79,14 +103,24 @@ public class ArrowBucketRouter extends AbstractStreamOperator<BucketedArrowBatch
         ArrowSchema inSchema = ArrowSchema.allocateNew(inAllocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
       route =
-          Native.routeByBucket(
-              inArray.memoryAddress(),
-              inSchema.memoryAddress(),
-              partitionColumns,
-              partitionTimestampPrecisions,
-              bucketColumns,
-              bucketTimestampPrecisions,
-              numBuckets);
+          numAssigners >= 0
+              ? Native.routeByPaimonChannel(
+                  inArray.memoryAddress(),
+                  inSchema.memoryAddress(),
+                  partitionColumns,
+                  partitionTimestampPrecisions,
+                  bucketColumns,
+                  bucketTimestampPrecisions,
+                  numBuckets,
+                  numAssigners)
+              : Native.routeByBucket(
+                  inArray.memoryAddress(),
+                  inSchema.memoryAddress(),
+                  partitionColumns,
+                  partitionTimestampPrecisions,
+                  bucketColumns,
+                  bucketTimestampPrecisions,
+                  numBuckets);
     } finally {
       in.close();
     }

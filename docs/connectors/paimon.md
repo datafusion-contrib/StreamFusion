@@ -1,12 +1,14 @@
 # Apache Paimon
 
 **Status:** experimental. The optional `streamfusion-paimon` module accelerates streaming
-`INSERT INTO` jobs into Paimon **append-only tables** and **fixed-bucket primary-key tables** on
-the published Paimon `2.0.0` Flink 2.2 connector. Paimon keeps every table-level responsibility:
+`INSERT INTO` jobs into Paimon **append-only tables** and **primary-key tables with fixed,
+dynamic, or postpone buckets** on the published Paimon `2.0.0` Flink 2.2 connector.
+Paimon keeps every table-level responsibility:
 schema and catalog, bucket assignment rules, sequence numbering rules, file rolling, statistics,
 manifests, snapshots, commits, and compaction. StreamFusion replaces the per-row shuffle in front
 of the writers, the Parquet encoding of each data file, and, for primary-key tables, the sort and
-merge that turns a bucket's changelog into a level-0 file.
+merge that turns a bucket's changelog into a level-0 file. Postpone staging retains every accepted
+change for Paimon's separate compactor.
 
 ## What runs natively
 
@@ -42,7 +44,7 @@ Supported:
 
 ### Primary-key tables
 
-A fixed-bucket primary-key table takes the changelog Flink infers for it (`+I`/`+U`/`-D`; Paimon's
+A fixed- or dynamic-bucket primary-key table takes the changelog Flink infers for it (`+I`/`+U`/`-D`; Paimon's
 sink declares that it needs no `UPDATE_BEFORE`). The routed batches keep their row kinds and are
 held per bucket in a native buffer. At a checkpoint, or once a task's buffers exceed
 `write-buffer-size` (largest bucket first, as Paimon's memory pool spills), a bucket's rows are
@@ -63,7 +65,7 @@ with a scan of the bucket's committed files, the same cost Paimon's dedicated co
 `write-only = true` the hand-off is inert and a dedicated compaction job (`CALL sys.compact` or a
 compaction action) picks the level-0 files up unchanged.
 
-Supported: `bucket >= 1` with the default or an explicit `bucket-key`, `merge-engine =
+Supported: `bucket >= 1` with the default or an explicit `bucket-key`, or dynamic `bucket = -1`, `merge-engine =
 deduplicate`, `changelog-producer` `none`/`input`/`lookup`/`full-compaction`, `ignore-delete`,
 `write-only`, `file.compression*` and
 the `parquet.*` writer keys as for append tables, and key columns of type `BOOLEAN`,
@@ -72,7 +74,47 @@ the `parquet.*` writer keys as for append tables, and key columns of type `BOOLE
 Paimon's key comparator for exactly these types). An insert-only stream into a primary-key table
 is taken as all inserts.
 
+### Dynamic buckets
+
+For primary-key tables with `bucket = -1`, the first native shuffle computes Paimon's assigner
+channel from the partition and trimmed primary-key hashes. Paimon's released `HashBucketAssigner`
+assigns bucket IDs from those hashes, and a second native gather and Arrow shuffle sends each
+partition/bucket batch to its writer. `dynamic-bucket.target-row-num`,
+`dynamic-bucket.assigner-parallelism`, `dynamic-bucket.initial-buckets`, and
+`dynamic-bucket.max-buckets` retain Paimon's behavior.
+
+Each native flush also supplies its distinct keys to Paimon's `DynamicBucketIndexMaintainer`.
+The hash-index files are committed with the data files, so updates after restart or rescaling
+return to the persisted buckets. Assigner commit-user state and checkpoint cleanup follow
+Paimon's Flink operator. The changelog producers, deletion vectors, and writer options supported
+for fixed buckets also apply here. Cross-partition primary keys (`KEY_DYNAMIC`) still fall back.
+
+### Postpone buckets
+
+Streaming `bucket = -2` tables write every accepted change in arrival order, without sorting or
+deduplication, with Paimon's unknown sequence number (`-1`). The shuffle follows Paimon's
+partition/primary-key channel formula, or its partition-only routing with
+`partition.sink-strategy = hash`. Files retain Paimon's commit-user and writer-ID prefix so its
+compactor can replay each writer's input in order. `ignore-delete` still filters retracts.
+Creation times increase by at least one millisecond per partition/writer, even when files roll
+within one clock tick. Recovery continues after that writer's committed staging files, so neither
+manifest scan order nor a stalled clock can reorder its changes.
+
+The native postpone files use Parquet. Stock Paimon 2.0.0 normally chooses Avro internally for
+these staging files, even when `file.format = parquet`; Paimon's released readers and compactor
+accept both. Native staging therefore differs in physical encoding while preserving the records,
+row kinds, replay order, and commit protocol. It uses the normal native Parquet option whitelist.
+
+Postpone ingestion does not produce the final merged table or changelog. Paimon's dedicated
+compaction job (`CALL sys.compact` in batch mode) assigns real buckets and applies the configured
+merge, changelog, and deletion-vector behavior. Default reads omit uncompacted postpone files;
+Paimon's batch `postpone.merge-on-read` reader can include them. The native writer preserves the
+stock stateless writer and restore-only committer lifecycle. Batch writes and primary keys that
+omit partition columns remain outside the native whitelist.
+
 ### Changelog producers and deletion vectors
+
+For fixed and dynamic buckets:
 
 - **Input:** the same native sort returns every retained input row before deduplication, ordered
   by primary key and then arrival sequence. These rows, including `UPDATE_BEFORE` and deletes,
@@ -106,18 +148,24 @@ The native sink uses the released Java connector for these lifecycles; see
 Files written natively are row-, metadata-, statistics-, and footer-schema-identical to the stock
 writer's (verified against twin tables in `PaimonSinkParityTest`, `NativePaimonParquetWriterTest`,
 `NativePaimonKeyValueFileWriterTest`, `NativeKeyValueSinkWriteTest`, and
-`PaimonChangelogSinkWriteTest`), and
+`PaimonChangelogSinkWriteTest`), except for the postpone staging encoding described above, and
 `bin/flink-suite.sh paimon` runs Paimon's own unchanged append-table SQL integration tests with the
 native sink installed (see [the upstream suite](../upstream-flink-suite.md)). The
 one known statistics difference: a `DOUBLE`/`FLOAT` column whose minimum is a negative zero is
 recorded as `-0.0` by parquet-rs and `0.0` by parquet-mr.
 
+The regular CI Paimon job runs SQL parity for dynamic and postpone buckets, including reopened
+jobs, assigner/writer rescaling, and Paimon's SQL compaction of native postpone files. A recovery
+harness discards an uncommitted dynamic checkpoint, restores the assigner state, replays the
+input, and compares the resulting hash-to-bucket index and changelog with stock Paimon. A larger
+SQL fixture verifies postpone replay across rolled files. These are ordinary correctness tests;
+the performance diagnostics below are opt-in.
+
 ## Falls back to stock Paimon on
 
 Each of these declines at planning time with a reason visible in `NativePlanner.explain`:
 
-- Dynamic-bucket, cross-partition, and postpone-bucket modes (so every primary-key table with
-  `bucket = -1`).
+- Cross-partition dynamic keys (`KEY_DYNAMIC`) and postpone primary keys that omit partition columns.
 - A changelog (retracting or updating) input into an append table, a sink Flink plans with a
   `SinkUpsertMaterializer` (`table.exec.sink.upsert-materialize`; Paimon itself refuses that
   operator), `INSERT OVERWRITE`, and batch-mode inserts (the substitution only exists in the
@@ -205,6 +253,40 @@ Full compaction is slower in this row-fed diagnostic. It retains Paimon's rowwis
 adds the native path's conversion and file hand-off costs. Its admission adds coverage for columnar
 pipelines; these measurements do not establish a throughput improvement for that mode.
 
+### Dynamic and postpone SQL diagnostic
+
+The opt-in bucket-mode diagnostic measures streaming SQL ingestion from the same row fixture,
+including table creation, planning, job startup, RowData-to-Arrow conversion, shuffles, and commit.
+It uses one source task, two sink writers, ten changes per key, one warmup, and the best of three
+measured runs, alternating engine order. Dynamic buckets target 5,000 rows per bucket. Each run
+compares the resulting table contents. For postpone tables, SQL compaction makes the rows visible
+and validates replay **outside the ingestion timer**; these numbers do not measure the complete
+ingestion-and-compaction lifecycle. Stock postpone staging uses Avro, while native staging uses
+Parquet, as described above.
+
+```bash
+SF_PAIMON_BUCKET_BENCHMARK=true SF_PAIMON_BUCKET_ROWS=1000000 \
+  mvn test -Ppaimon,bench -pl :streamfusion-paimon -am \
+  -Dtest=PaimonBucketModeBenchmark -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+Local release measurements on 2026-09-11 with Paimon 2.0.0:
+
+| Mode | Stock, 1M changes | Native, 1M changes | Speedup, 1M | Speedup, 200K |
+|---|---:|---:|---:|---:|
+| Dynamic buckets | 3.025 s | 3.139 s | 0.96× | 1.05× |
+| Postpone buckets | 2.618 s | 3.229 s | 0.81× | 0.89× |
+
+These timings precede the final postpone creation-time ordering fix; its metadata counter and
+restoration scan were validated separately and have not been rebenchmarked.
+
+These row-fed results do not establish a throughput improvement. Dynamic assignment still calls
+Paimon's Java index per key, and postpone staging pays for conversion and Parquet encoding without
+the reduction in output rows that native deduplication normally provides. Admission adds coverage
+for existing columnar pipelines and a boundary for future optimization; faster ingestion from an
+Arrow source has not been measured. The default fixture size is 200,000 changes. The Nexmark
+harness is unchanged.
+
 ## Deployment
 
 Install the published `paimon-flink-2.2-2.0.0.jar`, `streamfusion-parquet`, and
@@ -228,7 +310,6 @@ Each remaining gap has its own issue:
 (thin mode, key-only deletes, local merge, external paths, managed memory, snapshot sequence init),
 [a Paimon bundle entry for the merge-tree writer](https://github.com/datafusion-contrib/StreamFusion/issues/49)
 that would remove the compaction hand-off and the idle-writer rescan,
-[dynamic and postpone buckets](https://github.com/datafusion-contrib/StreamFusion/issues/34),
 [ORC data files](https://github.com/datafusion-contrib/StreamFusion/issues/35),
 [the writer and commit coordinators](https://github.com/datafusion-contrib/StreamFusion/issues/36),
 [clustering and the dynamic partition sink strategy](https://github.com/datafusion-contrib/StreamFusion/issues/37),

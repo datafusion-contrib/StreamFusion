@@ -101,6 +101,15 @@ public final class KeyedUpsertBuffer implements AutoCloseable {
 
   /** Also returns the input changelog in key and arrival order when requested. */
   public Flushed flush(boolean includeChangelog) {
+    return flush(includeChangelog, true);
+  }
+
+  /** Postpone files retain input order and Paimon's unknown sequence number (-1). */
+  public Flushed flushUnmerged() {
+    return flush(false, false);
+  }
+
+  private Flushed flush(boolean includeChangelog, boolean mergeRows) {
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator);
         ArrowArray changelogArray = includeChangelog ? ArrowArray.allocateNew(allocator) : null;
@@ -114,7 +123,8 @@ public final class KeyedUpsertBuffer implements AutoCloseable {
                 array.memoryAddress(),
                 schema.memoryAddress(),
                 includeChangelog ? changelogArray.memoryAddress() : 0,
-                includeChangelog ? changelogSchema.memoryAddress() : 0);
+                includeChangelog ? changelogSchema.memoryAddress() : 0,
+                mergeRows);
         if (summary[0] == 0) {
           return null;
         }

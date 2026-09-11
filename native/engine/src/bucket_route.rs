@@ -24,16 +24,27 @@ pub(crate) fn route_batch(
     bucket_precisions: &[i32],
     num_buckets: i32,
 ) -> Vec<RoutedBatch> {
-    let mut groups: Vec<(Vec<u8>, i32, Vec<u32>)> = Vec::new();
-    let mut by_partition: HashMap<Vec<u8>, HashMap<i32, usize>> = HashMap::new();
-    let mut partitions = BinaryRowBatchEncoder::new(batch, partition_columns, partition_precisions);
     let mut bucket_keys = BinaryRowBatchEncoder::new(batch, bucket_columns, bucket_precisions);
-    for row in 0..batch.num_rows() {
-        let bucket = if num_buckets > 0 {
+    route_with_buckets(batch, partition_columns, partition_precisions, |row| {
+        if num_buckets > 0 {
             (bucket_keys.hash(row) % num_buckets).abs()
         } else {
             0
-        };
+        }
+    })
+}
+
+fn route_with_buckets(
+    batch: &RecordBatch,
+    partition_columns: &[usize],
+    partition_precisions: &[i32],
+    mut bucket_for_row: impl FnMut(usize) -> i32,
+) -> Vec<RoutedBatch> {
+    let mut groups: Vec<(Vec<u8>, i32, Vec<u32>)> = Vec::new();
+    let mut by_partition: HashMap<Vec<u8>, HashMap<i32, usize>> = HashMap::new();
+    let mut partitions = BinaryRowBatchEncoder::new(batch, partition_columns, partition_precisions);
+    for row in 0..batch.num_rows() {
+        let bucket = bucket_for_row(row);
         let partition = partitions.encode(row);
         let buckets = match by_partition.get_mut(partition) {
             Some(buckets) => buckets,
@@ -67,6 +78,74 @@ pub(crate) fn route_batch(
             }
         })
         .collect()
+}
+
+/// Paimon's dynamic assigner channel, or its postpone writer channel when num_assigners is zero.
+fn channel(partition_hash: i32, key_hash: i32, channels: i32, num_assigners: i32) -> i32 {
+    assert!(channels > 0);
+    if num_assigners > 0 {
+        ((partition_hash % channels).abs() + (key_hash % num_assigners).abs()) % channels
+    } else {
+        (partition_hash.wrapping_add(key_hash) % channels).abs()
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_routeByPaimonChannel<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    array: jlong,
+    schema: jlong,
+    partition_columns: JIntArray<'local>,
+    partition_precisions: JIntArray<'local>,
+    key_columns: JIntArray<'local>,
+    key_precisions: JIntArray<'local>,
+    channels: jint,
+    num_assigners: jint,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |env| {
+        let batch = import_record_batch(array, schema);
+        let parts: Vec<usize> = read_i32_array(env, &partition_columns)
+            .into_iter()
+            .map(|v| v as usize)
+            .collect();
+        let keys: Vec<usize> = read_i32_array(env, &key_columns)
+            .into_iter()
+            .map(|v| v as usize)
+            .collect();
+        let part_precisions = read_i32_array(env, &partition_precisions);
+        let key_precisions = read_i32_array(env, &key_precisions);
+        let mut partitions = BinaryRowBatchEncoder::new(&batch, &parts, &part_precisions);
+        let mut keys = BinaryRowBatchEncoder::new(&batch, &keys, &key_precisions);
+        let routed = route_with_buckets(&batch, &parts, &part_precisions, |row| {
+            channel(
+                partitions.hash(row),
+                keys.hash(row),
+                channels,
+                num_assigners,
+            )
+        });
+        into_handle(RouteState { routed, cursor: 0 })
+    })
+}
+
+/// Regroups one partition's Arrow rows by the bucket IDs returned by Paimon's assigner.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_routeByAssignedBuckets<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    array: jlong,
+    schema: jlong,
+    buckets: JIntArray<'local>,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |env| {
+        let batch = import_record_batch(array, schema);
+        let buckets = read_i32_array(env, &buckets);
+        assert_eq!(buckets.len(), batch.num_rows());
+        assert!(buckets.iter().all(|&bucket| bucket >= 0));
+        let routed = route_with_buckets(&batch, &[], &[], |row| buckets[row]);
+        into_handle(RouteState { routed, cursor: 0 })
+    })
 }
 
 /// Holds the routed sub-batches of one batch, pulled out one at a time by the JVM.
@@ -204,6 +283,29 @@ mod tests {
             .expect("v")
             .values()
             .to_vec()
+    }
+
+    #[test]
+    fn channel_formulas_keep_java_overflow_and_negative_hash_semantics() {
+        assert_eq!(channel(-17, -11, 5, 3), 4);
+        assert_eq!(channel(i32::MIN, i32::MAX, 5, 3), 4);
+        assert_eq!(channel(i32::MAX, 2, 5, 0), 2);
+        assert_eq!(channel(-17, -11, 5, 0), 3);
+    }
+
+    #[test]
+    fn assigned_buckets_keep_every_row_in_arrival_order() {
+        let batch = batch();
+        let buckets = [7, 2, 7, 2, 7, 9];
+        let routed = route_with_buckets(&batch, &[], &[], |row| buckets[row]);
+        assert_eq!(
+            routed.iter().map(|r| r.bucket).collect::<Vec<_>>(),
+            vec![7, 2, 9]
+        );
+        assert_eq!(
+            routed.iter().map(values).collect::<Vec<_>>(),
+            vec![vec![0, 2, 4], vec![1, 3], vec![5]]
+        );
     }
 
     #[test]

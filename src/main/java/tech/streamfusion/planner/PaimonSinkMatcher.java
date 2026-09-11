@@ -38,8 +38,8 @@ import tech.streamfusion.paimon.PaimonKeyValueLayout;
  * own Flink factory resolves it, so every option the stock sink would see — DDL, hints, and the
  * table-scoped dynamic options — shapes the native topology identically. An append table takes an
  * insert-only input; a primary-key table takes a changelog, and is admitted only in the shape the
- * native level-0 writer reproduces: fixed buckets, the deduplicate merge engine with Paimon's own
- * compaction and changelog production.
+ * native level-0 writer reproduces: the deduplicate merge engine with Paimon's own compaction and
+ * changelog production.
  */
 final class PaimonSinkMatcher {
   private PaimonSinkMatcher() {}
@@ -100,10 +100,17 @@ final class PaimonSinkMatcher {
     CoreOptions coreOptions = table.coreOptions();
     Options options = coreOptions.toConfiguration();
     BucketMode bucketMode = table.bucketMode();
-    if (bucketMode != BucketMode.HASH_FIXED && bucketMode != BucketMode.BUCKET_UNAWARE) {
+    if (bucketMode != BucketMode.HASH_FIXED
+        && bucketMode != BucketMode.BUCKET_UNAWARE
+        && bucketMode != BucketMode.HASH_DYNAMIC
+        && bucketMode != BucketMode.POSTPONE_MODE) {
       return Planned.fallback("bucket mode " + bucketMode + " is not supported");
     }
     if (primaryKey) {
+      if (bucketMode == BucketMode.POSTPONE_MODE
+          && !table.primaryKeys().containsAll(table.partitionKeys())) {
+        return Planned.fallback("cross-partition postpone updates are not supported");
+      }
       String reason = primaryKeyFallbackReason(table, coreOptions, options);
       if (reason != null) {
         return Planned.fallback(reason);
@@ -162,9 +169,11 @@ final class PaimonSinkMatcher {
     }
     int[] partitionColumns = ordinals(fieldNames, table.partitionKeys());
     int[] bucketColumns =
-        bucketMode == BucketMode.HASH_FIXED
-            ? ordinals(fieldNames, table.schema().bucketKeys())
-            : new int[0];
+        bucketMode == BucketMode.HASH_DYNAMIC || bucketMode == BucketMode.POSTPONE_MODE
+            ? ordinals(fieldNames, table.schema().trimmedPrimaryKeys())
+            : bucketMode == BucketMode.HASH_FIXED
+                ? ordinals(fieldNames, table.schema().bucketKeys())
+                : new int[0];
     return new Planned(
         table,
         primaryKey,

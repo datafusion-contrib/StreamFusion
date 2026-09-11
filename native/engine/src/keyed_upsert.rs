@@ -107,6 +107,10 @@ impl KeyedUpsertBuffer {
     /// Merges everything pushed so far into one sorted key-value batch and empties the buffer.
     /// Returns `None` when no row survives.
     pub(crate) fn flush(&mut self, include_changelog: bool) -> Option<MergedBatch> {
+        self.flush_inner(include_changelog, true)
+    }
+
+    fn flush_inner(&mut self, include_changelog: bool, merge_rows: bool) -> Option<MergedBatch> {
         let batches = std::mem::take(&mut self.batches);
         let sequences = std::mem::take(&mut self.sequences);
         self.rows = 0;
@@ -118,6 +122,27 @@ impl KeyedUpsertBuffer {
             .flat_map(|(batch, first)| *first..*first + batch.num_rows() as i64)
             .collect();
         let batch = concat_batches(&schema, &batches).expect("concat pending upserts");
+        if !merge_rows {
+            let kinds = batch
+                .column(self.kind_column)
+                .as_any()
+                .downcast_ref::<Int8Array>()
+                .expect("row kinds");
+            let delete_rows = kinds
+                .values()
+                .iter()
+                .filter(|&&kind| is_retract(kind))
+                .count();
+            let sequence = Arc::new(Int64Array::from(vec![-1; batch.num_rows()])) as ArrayRef;
+            let all = UInt32Array::from_iter_values(0..batch.num_rows() as u32);
+            return Some(MergedBatch {
+                batch: self.key_value_batch(&batch, &sequence, &all),
+                changelog: None,
+                delete_rows,
+                min_sequence: -1,
+                max_sequence: -1,
+            });
+        }
         let key_arrays: Vec<&ArrayRef> = self
             .key_columns
             .iter()
@@ -306,10 +331,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_keyedUpsertBufferFlush<'loc
     out_schema_address: jlong,
     changelog_array_address: jlong,
     changelog_schema_address: jlong,
+    merge_rows: jboolean,
 ) -> jni::sys::jlongArray {
     crate::bridge::jni_guard(env, move |env| {
         let buffer = unsafe { &mut *(handle as *mut KeyedUpsertBuffer) };
-        let summary = match buffer.flush(changelog_array_address != 0) {
+        let flushed = if merge_rows != 0 {
+            buffer.flush(changelog_array_address != 0)
+        } else {
+            buffer.flush_inner(false, false)
+        };
+        let summary = match flushed {
             Some(merged) => {
                 let summary = [
                     merged.batch.num_rows() as jlong,
@@ -465,6 +496,25 @@ mod tests {
         assert_eq!(i8s(&changelog, 2), vec![3, 0, 0, 1, 2]);
         assert_eq!(strings(&flushed.batch, 4), vec!["inserted", "new"]);
         assert!(buffer.flush(true).is_none());
+    }
+
+    #[test]
+    fn postpone_flush_keeps_arrival_order_duplicates_and_unknown_sequences() {
+        let mut buffer = KeyedUpsertBuffer::new(vec![0], 2, Keep::Last, false);
+        buffer.push(
+            batch(&[(5, "old", 0), (2, "deleted", 3), (5, "before", 1)]),
+            10,
+        );
+        buffer.push(batch(&[(5, "new", 2)]), 13);
+        let flushed = buffer.flush_inner(false, false).expect("rows");
+        assert_eq!(i64s(&flushed.batch, 0), vec![5, 2, 5, 5]);
+        assert_eq!(i64s(&flushed.batch, 1), vec![-1; 4]);
+        assert_eq!(i8s(&flushed.batch, 2), vec![0, 3, 1, 2]);
+        assert_eq!(flushed.delete_rows, 2);
+        assert_eq!(flushed.min_sequence, -1);
+        assert_eq!(flushed.max_sequence, -1);
+        assert!(flushed.changelog.is_none());
+        assert!(buffer.flush_inner(false, false).is_none());
     }
 
     #[test]

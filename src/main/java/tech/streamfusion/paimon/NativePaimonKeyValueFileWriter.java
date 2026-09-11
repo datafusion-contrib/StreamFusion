@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Supplier;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -14,6 +15,7 @@ import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.data.BinaryRow;
+import org.apache.paimon.data.Timestamp;
 import org.apache.paimon.format.FileFormat;
 import org.apache.paimon.format.FormatWriter;
 import org.apache.paimon.format.FormatWriterFactory;
@@ -34,14 +36,15 @@ import tech.streamfusion.operator.KeyedUpsertBuffer;
 import tech.streamfusion.operator.NativeAllocator;
 
 /**
- * Writes a merged key-value batch as level-0 data files of a primary-key table. The batch is
- * already sorted by key with one row per key, so it is cut into files at the table's target file
- * size and each file is described the way Paimon's own key-value file writer describes one: key
- * bounds from its first and last row, footer statistics through Paimon's extractor, sequence range
- * and delete count from its rows. Paimon derives that metadata while walking rows one by one; a
- * batch written whole computes it column-wise here. An input-changelog batch uses the same layout
- * and sort but retains every input row; its files roll independently and enter the changelog
- * increment with their own compression and statistics settings.
+ * Writes a key-value batch as level-0 data files of a primary-key table. Normal buckets are sorted
+ * with one row per key; postpone buckets retain every row in arrival order. Each batch is cut into
+ * files at the table's target file size and each file is described the way Paimon's own key-value
+ * file writer describes one: key bounds from its first and last row, footer statistics through
+ * Paimon's extractor, sequence range and delete count from its rows. Paimon derives that metadata
+ * while walking rows one by one; a batch written whole computes it column-wise here. An
+ * input-changelog batch uses the same layout and sort but retains every input row; its files roll
+ * independently and enter the changelog increment with their own compression and statistics
+ * settings.
  */
 public final class NativePaimonKeyValueFileWriter {
 
@@ -93,20 +96,33 @@ public final class NativePaimonKeyValueFileWriter {
   /** Writes and closes both outputs of a bucket's flush, returning data and changelog metadata. */
   public DataIncrement write(BinaryRow partition, int bucket, KeyedUpsertBuffer.Flushed flushed)
       throws IOException {
+    return write(partition, bucket, flushed, () -> Timestamp.now().toMillisTimestamp());
+  }
+
+  DataIncrement write(
+      BinaryRow partition,
+      int bucket,
+      KeyedUpsertBuffer.Flushed flushed,
+      Supplier<Timestamp> creationTime)
+      throws IOException {
     DataFilePathFactory paths =
         table.store().pathFactory().createDataFilePathFactory(partition, bucket);
     try (flushed) {
-      List<DataFileMeta> data = write(flushed.root, paths, false);
+      List<DataFileMeta> data = write(flushed.root, paths, false, creationTime);
       List<DataFileMeta> changelog =
           flushed.changelog == null
               ? Collections.emptyList()
-              : write(flushed.changelog, paths, true);
+              : write(flushed.changelog, paths, true, creationTime);
       return new DataIncrement(data, Collections.emptyList(), changelog);
     }
   }
 
   private List<DataFileMeta> write(
-      VectorSchemaRoot root, DataFilePathFactory paths, boolean changelog) throws IOException {
+      VectorSchemaRoot root,
+      DataFilePathFactory paths,
+      boolean changelog,
+      Supplier<Timestamp> creationTime)
+      throws IOException {
     List<DataFileMeta> files = new ArrayList<>();
     List<WrittenFile> written = new ArrayList<>();
     int start = 0;
@@ -124,7 +140,8 @@ public final class NativePaimonKeyValueFileWriter {
               keyBounds[2 * i],
               keyBounds[2 * i + 1],
               paths,
-              changelog ? changelogLayout : layout));
+              changelog ? changelogLayout : layout,
+              creationTime.get()));
     }
     return files;
   }
@@ -161,7 +178,8 @@ public final class NativePaimonKeyValueFileWriter {
       BinaryRow minKey,
       BinaryRow maxKey,
       DataFilePathFactory paths,
-      PaimonKeyValueLayout layout)
+      PaimonKeyValueLayout layout,
+      Timestamp creationTime)
       throws IOException {
     BigIntVector sequences = (BigIntVector) root.getVector(layout.sequenceColumn());
     TinyIntVector kinds = (TinyIntVector) root.getVector(layout.kindColumn());
@@ -196,6 +214,7 @@ public final class NativePaimonKeyValueFileWriter {
         schemaId,
         0,
         Collections.emptyList(),
+        creationTime,
         deleteRows,
         null,
         FileSource.APPEND,

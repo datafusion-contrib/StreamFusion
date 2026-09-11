@@ -10,7 +10,8 @@ import tech.streamfusion.operator.BucketedArrowBatch;
  * formula Paimon applies per row: fixed-bucket tables spread (partition, bucket) pairs across the
  * writers, and hash-partitioned unaware tables pin each partition to one writer.
  */
-public final class BucketedArrowBatchChannelComputer implements ChannelComputer<BucketedArrowBatch> {
+public final class BucketedArrowBatchChannelComputer
+    implements ChannelComputer<BucketedArrowBatch> {
   private static final long serialVersionUID = 1L;
 
   private final int partitionArity;
@@ -28,6 +29,19 @@ public final class BucketedArrowBatchChannelComputer implements ChannelComputer<
 
   public static BucketedArrowBatchChannelComputer byPartition(int partitionArity) {
     return new BucketedArrowBatchChannelComputer(partitionArity, false);
+  }
+
+  /** The native first shuffle already computed its destination channel for every batch. */
+  public static ChannelComputer<BucketedArrowBatch> byChannel() {
+    return new ChannelComputer<BucketedArrowBatch>() {
+      @Override
+      public void setup(int numChannels) {}
+
+      @Override
+      public int channel(BucketedArrowBatch batch) {
+        return batch.bucket();
+      }
+    };
   }
 
   @Override

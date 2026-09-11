@@ -15,11 +15,13 @@ import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.flink.sink.Committable;
 import org.apache.paimon.flink.sink.GlobalFullCompactionSinkWrite;
 import org.apache.paimon.flink.sink.StoreSinkWrite;
+import org.apache.paimon.index.IndexFileMeta;
 import org.apache.paimon.io.CompactIncrement;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.DataIncrement;
 import org.apache.paimon.manifest.ManifestEntry;
 import org.apache.paimon.operation.WriteRestore;
+import org.apache.paimon.table.BucketMode;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.sink.CommitMessageImpl;
 import org.apache.paimon.table.sink.SinkRecord;
@@ -44,6 +46,10 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  * with the new data and input-changelog files, preserving all compaction and index metadata. Under
  * {@code write-only} the same hand-off is a no-op and a dedicated compaction job compacts the files
  * through the identical entry.
+ *
+ * <p>Dynamic buckets also commit Paimon's hash index over the retained keys. Postpone buckets skip
+ * merging and the compaction hand-off: their arrival-ordered files and unknown sequence numbers are
+ * replayed by Paimon's dedicated compactor, using its writer naming convention.
  */
 public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoCloseable {
 
@@ -53,6 +59,8 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
     final BinaryRow partition;
     final int bucket;
     final KeyedUpsertBuffer buffer;
+    PaimonDynamicBucketIndex index;
+    PaimonPostponeFileOrder postponeFileOrder;
     final List<DataFileMeta> pendingFiles = new ArrayList<>();
     final List<DataFileMeta> pendingChangelog = new ArrayList<>();
     long nextSequence;
@@ -68,6 +76,8 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   private FileStoreTable table;
   private final StoreSinkWrite delegate;
   private final boolean inputChangelog;
+  private final boolean postpone;
+  private final String postponePrefix;
   private final PaimonKeyValueLayout layout;
   private final int kindColumn;
   private final boolean ignoreDelete;
@@ -77,16 +87,35 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   private NativePaimonKeyValueFileWriter files;
 
   public NativeKeyValueSinkWrite(FileStoreTable table, StoreSinkWrite delegate) {
+    this(table, delegate, null);
+  }
+
+  NativeKeyValueSinkWrite(FileStoreTable table, StoreSinkWrite delegate, String postponePrefix) {
     this.delegate = delegate;
     CoreOptions options = table.coreOptions();
     this.table = table;
-    this.inputChangelog = options.changelogProducer() == CoreOptions.ChangelogProducer.INPUT;
-    this.layout = PaimonKeyValueLayout.of(table);
+    this.postpone = table.bucketMode() == BucketMode.POSTPONE_MODE;
+    this.postponePrefix = postpone ? java.util.Objects.requireNonNull(postponePrefix) : null;
+    this.inputChangelog =
+        !postpone && options.changelogProducer() == CoreOptions.ChangelogProducer.INPUT;
+    FileStoreTable fileTable = fileTable(table);
+    this.layout = PaimonKeyValueLayout.of(fileTable);
     this.kindColumn = table.rowType().getFieldCount();
     this.ignoreDelete = options.ignoreDelete();
     this.bufferBudget = options.writeBufferSize();
     this.totalBuckets = table.bucketSpec().getNumBuckets();
-    this.files = new NativePaimonKeyValueFileWriter(table, layout);
+    this.files = new NativePaimonKeyValueFileWriter(fileTable, layout);
+  }
+
+  private FileStoreTable fileTable(FileStoreTable table) {
+    return postpone
+        ? table.copy(
+            Map.of(
+                CoreOptions.DATA_FILE_PREFIX.key(),
+                postponePrefix,
+                CoreOptions.METADATA_STATS_MODE.key(),
+                "none"))
+        : table;
   }
 
   /**
@@ -102,10 +131,16 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
     if (root.getFieldVectors().size() == kindColumn) {
       root = withInsertKinds(root);
     }
-    BucketBuffer buffer =
-        buffers
-            .computeIfAbsent(partition, p -> new HashMap<>())
-            .computeIfAbsent(bucket, b -> open(partition, bucket));
+    BucketBuffer buffer;
+    try {
+      buffer =
+          buffers
+              .computeIfAbsent(partition, p -> new HashMap<>())
+              .computeIfAbsent(bucket, b -> open(partition, bucket));
+    } catch (Throwable failure) {
+      root.close();
+      throw failure;
+    }
     buffer.nextSequence += buffer.buffer.push(root, buffer.nextSequence);
     if (bufferedBytes() > bufferBudget) {
       flush(largestBuffer());
@@ -130,16 +165,30 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   }
 
   private BucketBuffer open(BinaryRow partition, int bucket) {
-    return new BucketBuffer(
-        partition,
-        bucket,
-        new KeyedUpsertBuffer(
-            NativeAllocator.SHARED, layout.keyColumns, kindColumn, true, ignoreDelete),
-        maxCommittedSequence(partition, bucket) + 1);
+    long firstSequence = maxCommittedSequence(partition, bucket) + 1;
+    PaimonDynamicBucketIndex index =
+        table.bucketMode() == BucketMode.HASH_DYNAMIC
+            ? new PaimonDynamicBucketIndex(table, partition, bucket, layout)
+            : null;
+    PaimonPostponeFileOrder fileOrder =
+        postpone ? new PaimonPostponeFileOrder(table, partition, postponePrefix) : null;
+    BucketBuffer buffer =
+        new BucketBuffer(
+            partition,
+            bucket,
+            new KeyedUpsertBuffer(
+                NativeAllocator.SHARED, layout.keyColumns, kindColumn, true, ignoreDelete),
+            firstSequence);
+    buffer.index = index;
+    buffer.postponeFileOrder = fileOrder;
+    return buffer;
   }
 
   /** The largest sequence number in the bucket's committed files, or -1 for an empty bucket. */
   private long maxCommittedSequence(BinaryRow partition, int bucket) {
+    if (postpone) {
+      return -1;
+    }
     long max = -1;
     for (ManifestEntry entry :
         table.store().newScan().withPartitionBucket(partition, bucket).plan().files()) {
@@ -171,9 +220,21 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   }
 
   private void flush(BucketBuffer buffer) throws IOException {
-    KeyedUpsertBuffer.Flushed flushed = buffer.buffer.flush(inputChangelog);
+    KeyedUpsertBuffer.Flushed flushed =
+        postpone ? buffer.buffer.flushUnmerged() : buffer.buffer.flush(inputChangelog);
     if (flushed != null) {
-      DataIncrement increment = files.write(buffer.partition, buffer.bucket, flushed);
+      if (buffer.index != null) {
+        try {
+          buffer.index.add(flushed.root);
+        } catch (Throwable failure) {
+          flushed.close();
+          throw failure;
+        }
+      }
+      DataIncrement increment =
+          postpone
+              ? files.write(buffer.partition, buffer.bucket, flushed, buffer.postponeFileOrder)
+              : files.write(buffer.partition, buffer.bucket, flushed);
       buffer.pendingFiles.addAll(increment.newFiles());
       buffer.pendingChangelog.addAll(increment.changelogFiles());
     }
@@ -185,7 +246,7 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
     for (Map<Integer, BucketBuffer> partition : buffers.values()) {
       for (BucketBuffer buffer : partition.values()) {
         flush(buffer);
-        if (!buffer.pendingFiles.isEmpty()) {
+        if (!postpone && !buffer.pendingFiles.isEmpty()) {
           delegate.notifyNewFiles(
               NEW_FILES_SNAPSHOT, buffer.partition, buffer.bucket, buffer.pendingFiles);
           if (delegate instanceof GlobalFullCompactionSinkWrite) {
@@ -245,16 +306,16 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
     data.addAll(buffer.pendingFiles);
     List<DataFileMeta> changelog = new ArrayList<>(existing.changelogFiles());
     changelog.addAll(buffer.pendingChangelog);
+    List<IndexFileMeta> indexes = new ArrayList<>(existing.newIndexFiles());
+    if (buffer.index != null) {
+      indexes.addAll(buffer.index.prepareCommit());
+    }
     return new CommitMessageImpl(
         buffer.partition,
         buffer.bucket,
         totalBuckets,
         new DataIncrement(
-            data,
-            existing.deletedFiles(),
-            changelog,
-            existing.newIndexFiles(),
-            existing.deletedIndexFiles()),
+            data, existing.deletedFiles(), changelog, indexes, existing.deletedIndexFiles()),
         compaction);
   }
 
@@ -303,7 +364,7 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   public void replace(FileStoreTable newTable) throws Exception {
     delegate.replace(newTable);
     table = newTable;
-    files = new NativePaimonKeyValueFileWriter(newTable, layout);
+    files = new NativePaimonKeyValueFileWriter(fileTable(newTable), layout);
   }
 
   @Override

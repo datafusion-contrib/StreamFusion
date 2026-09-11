@@ -14,7 +14,7 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
  * the web UI's rate, backpressure attribution, any alert built on them — is off by the same factor.
  * Emitting through here charges the batch's remaining rows so the totals mean what they say.
  */
-final class ColumnarRecordMetrics {
+public final class ColumnarRecordMetrics {
 
   private ColumnarRecordMetrics() {}
 
@@ -28,7 +28,7 @@ final class ColumnarRecordMetrics {
   }
 
   /** Forwards an existing record while charging the logical rows carried by it. */
-  static <T> void forward(
+  public static <T> void forward(
       Output<StreamRecord<T>> output,
       OperatorMetricGroup metrics,
       StreamRecord<T> record,
@@ -38,7 +38,7 @@ final class ColumnarRecordMetrics {
   }
 
   /** Charges an ingested batch's rows; call once per record the operator is handed. */
-  static void countIngested(OperatorMetricGroup metrics, int rows) {
+  public static void countIngested(OperatorMetricGroup metrics, int rows) {
     countRows(metrics.getIOMetricGroup().getNumRecordsInCounter(), rows);
   }
 

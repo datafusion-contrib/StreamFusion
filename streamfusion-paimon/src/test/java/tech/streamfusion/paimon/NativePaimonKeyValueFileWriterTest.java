@@ -203,6 +203,84 @@ class NativePaimonKeyValueFileWriterTest {
   }
 
   @Test
+  void postponeReplayKeepsFileOrderWhenTheClockStallsAndManifestOrderChanges() throws Exception {
+    String prefix = "data-u-writer-s-0-w-";
+    FileStoreTable table =
+        PaimonTestTables.createPrimaryKeyTable(
+            Files.createTempDirectory("paimon-postpone-file-order"),
+            Map.of(
+                "bucket",
+                "-2",
+                "target-file-size",
+                "1 kb",
+                "data-file.prefix",
+                prefix,
+                "metadata.stats-mode",
+                "none"));
+    var extractor = new org.apache.paimon.table.sink.RowPartitionKeyExtractor(table.schema());
+    List<Object[]> changes = PaimonTestTables.changelog(20_000, KEYS);
+    BinaryRow partition =
+        extractor.partition(PaimonTestTables.primaryKeyPaimonRow(changes.get(0))).copy();
+    List<RowData> rows =
+        changes.stream()
+            .filter(
+                row ->
+                    extractor
+                        .partition(PaimonTestTables.primaryKeyPaimonRow(row))
+                        .equals(partition))
+            .map(PaimonTestTables::primaryKeyFlinkRow)
+            .toList();
+    PaimonKeyValueLayout layout = PaimonKeyValueLayout.of(table);
+    long time = org.apache.paimon.data.Timestamp.now().getMillisecond();
+    PaimonPostponeFileOrder order =
+        new PaimonPostponeFileOrder(table, partition, prefix, () -> time);
+    org.apache.paimon.io.DataIncrement increment;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedUpsertBuffer buffer =
+            new KeyedUpsertBuffer(
+                allocator, layout.keyColumns, table.rowType().getFieldCount(), true, false)) {
+      buffer.push(
+          RowDataArrowConverter.write(
+              rows, PaimonTestTables.PRIMARY_KEY_FLINK_TYPE, allocator, true),
+          0);
+      increment =
+          new NativePaimonKeyValueFileWriter(table, layout)
+              .write(partition, -2, buffer.flushUnmerged(), order);
+    }
+    List<DataFileMeta> written = increment.newFiles();
+    assertTrue(written.size() > 1, "multiple files described with a fixed wall clock");
+    List<DataFileMeta> reversed = new ArrayList<>(written);
+    java.util.Collections.reverse(reversed);
+    var split =
+        org.apache.paimon.table.source.DataSplit.builder()
+            .withSnapshot(1)
+            .withPartition(partition)
+            .withBucket(-2)
+            .withBucketPath(table.location().toString())
+            .withTotalBuckets(-2)
+            .withDataFiles(reversed)
+            .isStreaming(false)
+            .build();
+    assertEquals(
+        written,
+        org.apache.paimon.table.PostponeUtils.groupPostponeFiles(List.of(split))
+            .get(0)
+            .dataFiles());
+    try (StreamTableCommit commit =
+        table.newStreamWriteBuilder().withCommitUser("writer").newCommit()) {
+      commit.commit(
+          1,
+          List.of(
+              new CommitMessageImpl(
+                  partition, -2, -2, increment, CompactIncrement.emptyIncrement())));
+    }
+    var restored = new PaimonPostponeFileOrder(table, partition, prefix, () -> time - 1000);
+    assertTrue(
+        restored.get().compareTo(written.get(written.size() - 1).creationTime()) > 0,
+        "recovery continues after committed files even if the clock moves backwards");
+  }
+
+  @Test
   void inputChangelogRollsIndependentlyWithoutLosingRepeatedKeys() throws Exception {
     Map<String, String> options =
         Map.of("bucket", "1", "target-file-size", "1 kb", "changelog-producer", "input");

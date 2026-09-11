@@ -565,16 +565,35 @@ public final class Native {
   public static native int nextBucketRoute(
       long handle, long outArrayAddress, long outSchemaAddress);
 
-  /** The partition BinaryRow bytes of the sub-batch returned by the latest {@link #nextBucketRoute}. */
+  /**
+   * The partition BinaryRow bytes of the sub-batch returned by the latest {@link #nextBucketRoute}.
+   */
   public static native byte[] currentBucketRoutePartition(long handle);
+
+  /**
+   * Routes to Paimon's assigner channels, or postpone writer channels when numAssigners is zero.
+   */
+  public static native long routeByPaimonChannel(
+      long arrayAddress,
+      long schemaAddress,
+      int[] partitionColumns,
+      int[] partitionTimestampPrecisions,
+      int[] keyColumns,
+      int[] keyTimestampPrecisions,
+      int numChannels,
+      int numAssigners);
+
+  /** Splits one partition's rows by preassigned bucket IDs, preserving arrival order. */
+  public static native long routeByAssignedBuckets(
+      long arrayAddress, long schemaAddress, int[] buckets);
 
   /** Releases a route handle. */
   public static native void closeBucketRoute(long handle);
 
   /**
-   * Flink's {@code BinaryRowData} bytes of the requested rows projected to the key columns, one byte
-   * array per row, for callers that need a few encoded keys (a file's first and last key) rather
-   * than every row's hash. Same key-column and precision-sidecar contract as {@link
+   * Flink's {@code BinaryRowData} bytes of the requested rows projected to the key columns, one
+   * byte array per row, for callers that need a few encoded keys (a file's first and last key)
+   * rather than every row's hash. Same key-column and precision-sidecar contract as {@link
    * #flinkBinaryRowHashes}.
    */
   public static native byte[][] flinkBinaryRows(
@@ -611,14 +630,17 @@ public final class Native {
    * Merges the pending rows into one sorted key-value batch exported into the consumer-allocated C
    * structs and empties the buffer. Returns {@code {rows, deleteRows, minSequence, maxSequence}};
    * when {@code rows} is 0 nothing was exported. Nonzero changelog addresses also receive all input
-   * rows sorted by key and sequence, before merging.
+   * rows sorted by key and sequence, before merging. With {@code mergeRows = false}, emits every
+   * retained row in arrival order with unknown sequence numbers (-1); changelog addresses must then
+   * be zero.
    */
   public static native long[] keyedUpsertBufferFlush(
       long handle,
       long outArrayAddress,
       long outSchemaAddress,
       long changelogArrayAddress,
-      long changelogSchemaAddress);
+      long changelogSchemaAddress,
+      boolean mergeRows);
 
   /** Releases a keyed-upsert buffer and its pending rows. */
   public static native void closeKeyedUpsertBuffer(long handle);

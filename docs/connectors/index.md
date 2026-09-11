@@ -5,8 +5,8 @@ the native [formats](#formats) listed below. It's covered in depth in this secti
 
 [Parquet](parquet.md) (stock Flink reads plus native sink encoding to any filesystem Flink
 supports), [Delta Lake](delta.md) (path-based append and merge-on-read sinks), and
-[Apache Paimon](paimon.md) (append-only and fixed-bucket primary-key table sinks with Paimon's own
-compaction kept in the job)
+[Apache Paimon](paimon.md) (append-only and primary-key table sinks, including fixed, dynamic,
+and postpone buckets, with Paimon's own compaction)
 also have native paths, but they have not seen the same production hardening as Kafka — treat them
 as experimental.
 

@@ -10,7 +10,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 
-/** Columnar physical Paimon append sink; Paimon still owns its files, manifests, and commits. */
+/** Columnar physical Paimon sink; Paimon retains its manifests, compaction, and commits. */
 public final class StreamPhysicalNativePaimonSink extends StreamPhysicalNativeSingleRel
     implements ColumnarInput {
   private final PaimonSinkMatcher.Planned planned;
