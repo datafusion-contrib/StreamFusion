@@ -6,9 +6,9 @@ dynamic, or postpone buckets** on the published Paimon `2.0.0` Flink 2.2 connect
 Paimon keeps every table-level responsibility:
 schema and catalog, bucket assignment rules, sequence numbering rules, file rolling, statistics,
 manifests, snapshots, commits, and compaction. StreamFusion replaces the per-row shuffle in front
-of the writers, the Parquet encoding of each data file, and, for primary-key tables, the sort and
-merge that turns a bucket's changelog into a level-0 file. Postpone staging retains every accepted
-change for Paimon's separate compactor.
+of the writers, append buffering and spilling, the Parquet encoding of each data file, and, for
+primary-key tables, the sort and merge that turns a bucket's changelog into a level-0 file. Postpone
+staging retains every accepted change for Paimon's separate compactor.
 
 ## What runs natively
 
@@ -41,6 +41,44 @@ Supported:
   aliased projections (`SELECT a AS x ...`) and casts the planner inserts are written under the
   table's names and nullability, and an insert-only stream coming out of a changelog-capable
   operator (a join, an aggregate) is accepted with its hidden row-kind column dropped.
+
+### Append buffering and local spill
+
+Each active table-partition/bucket pair needs a file writer. To limit encoder memory when a task
+touches many destinations, Paimon switches append writers to buffering when opening a writer would
+exceed `write-max-writers-to-spill` (default 10). StreamFusion uses the same threshold, finishes the
+existing native files, and retains subsequent Arrow batches in Rust. The mode stays enabled for
+the rest of the writer's life, including after checkpoints and writer-option refreshes.
+
+When retained Arrow memory exceeds `write-buffer-size`, the largest bucket spills to an Arrow IPC
+stream in Flink's task-local spilling directories. Spills support `spill-compression = lz4`
+and `zstd` (the default), including `spill-compression.zstd-level` (default 1). These settings control
+temporary spill files; `file.compression` controls final data files. At a checkpoint the writer drains each
+bucket's spills and then its in-memory batches in arrival order, through the native Parquet encoder.
+Only one bucket's encoder is open during this drain. Paimon still owns file metadata, compaction,
+checkpoint state, and commits. Local spills are temporary: drain and cancellation delete them;
+recovery uses checkpointed Paimon files and source replay.
+
+`write-buffer-spill.max-disk-size` is a soft per-bucket limit, checked before another spill as in
+Paimon. A full disk allowance flushes the bucket to final data files. Memory pressure is checked
+after accepting a batch, so the budget can temporarily be exceeded by one incoming batch and
+encoding/IPC working memory. Automatic writer-count spilling enables disk spill even when
+`write-buffer-spillable = false`, as Paimon's automatic transition does.
+
+`sink.use-managed-memory-allocator` defaults to `false`, giving the sink an independent buffer
+budget controlled by `write-buffer-size`. Enabling it obtains the buffer budget and memory segments
+from Flink's managed memory pool. Native Arrow allocations do not participate in that pool, so
+append sinks with this option enabled use stock Paimon.
+
+Paimon rereads and rewrites unfinished files at the transition; StreamFusion retains those valid
+files. This avoids a row conversion and repeated encoding, but file boundaries, per-file statistics,
+and absolute sequence numbers can differ from a stock run after the transition. Rows, destination
+buckets, schema, codecs, and sequence-number progression within each bucket writer are preserved.
+The focused `NativeAppendSinkWriteTest` checks multiple checkpoints, writer refresh/reopen, disk
+limits, native footers, and spill cleanup; `PaimonSinkParityTest` covers SQL, coordinator commits,
+and checkpoint failure/recovery.
+The [release spill diagnostic](../optimizations/paimon-append-spill.md) measured **1.12× throughput**
+against the previous native path that reverted to Java spilling and encoding.
 
 ### Primary-key tables
 
@@ -148,8 +186,9 @@ The native sink uses the released Java connector for these lifecycles; see
 Files written natively are row-, metadata-, statistics-, and footer-schema-identical to the stock
 writer's (verified against twin tables in `PaimonSinkParityTest`, `NativePaimonParquetWriterTest`,
 `NativePaimonKeyValueFileWriterTest`, `NativeKeyValueSinkWriteTest`, and
-`PaimonChangelogSinkWriteTest`), except for the postpone staging encoding described above and
-the random per-file row distribution with `PARTITION_DYNAMIC` described below, and
+`PaimonChangelogSinkWriteTest`), except for the postpone staging encoding and append-buffer
+transition described above, and the random per-file row distribution with `PARTITION_DYNAMIC`
+described below.
 `bin/flink-suite.sh paimon` runs Paimon's own unchanged append-table SQL integration tests with the
 native sink installed (see [the upstream suite](../upstream-flink-suite.md)). The
 one known statistics difference: a `DOUBLE`/`FLOAT` column whose minimum is a negative zero is
@@ -232,6 +271,9 @@ Each of these declines at planning time with a reason visible in `NativePlanner.
   `sink.use-managed-memory-allocator`; or a `FLOAT`/`DOUBLE` key column.
 - `file.format` other than `parquet`, `file.format.per.level`, `write-buffer-for-append = true`,
   file indexes (`file-index.*`), `row-tracking.enabled`, `data-evolution.enabled`, `BLOB` columns.
+- Append tables with `spill-compression` other than `lz4`/`zstd`, or
+  `sink.use-managed-memory-allocator = true` (the native buffer uses Arrow memory).
+  Released Paimon 2.0.0 fails when actually spilling with `none`; it remains on the stock path.
 - A nullable query field assigned to a `NOT NULL` target, or a bounded `CHAR`/`VARCHAR` or
   `BINARY`/`VARBINARY` target while `table.exec.sink.type-length-enforcer` is enabled. The stock
   sink path preserves Flink's configured fail/drop and trim/pad/error behavior.
@@ -242,16 +284,9 @@ Each of these declines at planning time with a reason visible in `NativePlanner.
   multithreaded zstd, and any per-column (`parquet.*#column`) or unrecognised writer key.
 - The `parquet` format identifier resolving to Paimon's own factory (see deployment below).
 
-Two runtime situations route rows through Paimon's stock Parquet writer inside an otherwise native
-job, keeping the output identical to stock Paimon at the cost of the native speed-up for those
-files: compaction rewrites (in-job or from a dedicated compaction job), and, for append tables,
-Paimon's buffer-spill mode, which a writer task enters once it holds more than
-`write-max-writers-to-spill` (default 10) partition-bucket writers and which re-buffers and
-rewrites what those writers had already written. In spill mode the absolute sequence numbers in
-file metadata differ from a stock run (Paimon reassigns them on the rewrite, and it triggers after
-whole routed batches rather than single rows); rows, statistics, and footers are unchanged.
-Primary-key buckets never enter that mode: their rows live in the native buffers, which spill by
-size into level-0 files.
+Compaction rewrites (in-job or from a dedicated compaction job) still use Paimon's stock Parquet
+writer. Append buffer spilling retains native encoding as described above. Primary-key buckets
+use their existing native buffers, which flush by size into level-0 files.
 
 ## Benchmark
 
@@ -361,8 +396,7 @@ Each remaining gap has its own issue:
 (thin mode, key-only deletes, local merge, external paths, managed memory, snapshot sequence init),
 [a Paimon bundle entry for the merge-tree writer](https://github.com/datafusion-contrib/StreamFusion/issues/49)
 that would remove the compaction hand-off and the idle-writer rescan,
-[ORC data files](https://github.com/datafusion-contrib/StreamFusion/issues/35),
-and [native encoding through the buffered spill mode](https://github.com/datafusion-contrib/StreamFusion/issues/40).
+[ORC data files](https://github.com/datafusion-contrib/StreamFusion/issues/35).
 Released Paimon 2.0.0 walks a bundle row by row before the format writer; a Paimon release that
 passes bundles through takes the same writer's direct path with no change here
 ([#39](https://github.com/datafusion-contrib/StreamFusion/issues/39)). The jar-ordering requirement

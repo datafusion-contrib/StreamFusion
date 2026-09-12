@@ -21,10 +21,10 @@ import tech.streamfusion.parquet.NativeParquet;
  * A Paimon data-file writer that encodes Arrow bundles natively. The first record decides the file:
  * an {@link ArrowBatchBundle} opens the native encoder over Paimon's output stream and every later
  * bundle is appended to it column-wise, while a plain row hands the whole file to Paimon's stock
- * Parquet writer. Paimon's released append writer feeds a bundle to its format writer one cursor row
- * at a time, so the cursor path recognises each bundle once and encodes it whole; a Paimon that
- * passes the bundle through takes the direct path. Rows Paimon has buffered and re-read (its spill
- * path, or a compaction rewrite) arrive as plain rows and take the stock path. The footer stays a
+ * Parquet writer. Paimon's released append writer feeds a bundle to its format writer one cursor
+ * row at a time, so the cursor path recognises each bundle once and encodes it whole; a Paimon that
+ * passes the bundle through takes the direct path. Compaction rewrites arrive as plain rows and
+ * take the stock path; the native append spill buffer drains Arrow bundles. The footer stays a
  * standard parquet-rs footer, so Paimon extracts statistics from it exactly as from its own files.
  */
 public final class NativePaimonParquetWriter implements BundleFormatWriter {

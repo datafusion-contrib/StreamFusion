@@ -39,8 +39,10 @@ built against the suite's Flink version, and fails unless it proves both that a 
 wrote an append-table data file from a native Arrow bundle and that one wrote a primary-key
 level-0 file natively. The native-write markers are emitted only after the write returns successfully.
 Streaming inserts covered by the [Paimon connector whitelist](connectors/paimon.md)
-can take the native sink, including coordinated writers, coordinator commits, and dynamic
-partition routing. Batch inserts,
+can take the native sink, including coordinated writers, coordinator commits, dynamic
+partition routing, and automatic append-buffer spilling. The regular StreamFusion SQL parity
+suite forces Arrow spilling and checkpoint failure/recovery; the unchanged upstream streaming
+tests exercise the surrounding writer lifecycle. Batch inserts,
 unsupported primary-key options, and compaction rewrites use stock Paimon. `CoordinatorCommitITCase`
 checks removal of the global committer, coordinator metrics, committed rows, and snapshot watermark
 parity for active and idle inputs. Because

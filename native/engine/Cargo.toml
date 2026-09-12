@@ -30,6 +30,8 @@ memchr.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 simd-json.workspace = true
+zstd = "0.13"
+lz4_flex = "0.13"
 
 [dependencies.libmimalloc-sys]
 workspace = true

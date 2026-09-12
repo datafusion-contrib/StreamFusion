@@ -103,14 +103,8 @@ class PaimonSinkParityTest {
     assertBucketsMatchPaimonsExtractor(nativeTable);
   }
 
-  /**
-   * Past {@code write-max-writers-to-spill} writers in one task Paimon re-buffers what it has
-   * written and spills through its stock row writer. Files stay identical apart from the sequence
-   * numbers Paimon reassigns on that rewrite, which depend on how many rows each writer had already
-   * taken: one row at a time on the stock path, one routed batch at a time on ours.
-   */
   @Test
-  void manyWritersInOneTaskSpillThroughTheStockWriterLikeStock() throws Exception {
+  void manyWritersInOneTaskKeepTheNativeEncoder() throws Exception {
     java.nio.file.Path warehouse = Files.createTempDirectory("paimon-sink-spill");
     String options = "'bucket' = '4', 'bucket-key' = 'id,ts'";
     FileStoreTable nativeTable = insertFixture(warehouse, "PARTITIONED BY (pt)", options, 1, true);
@@ -118,6 +112,22 @@ class PaimonSinkParityTest {
 
     assertSameTables(stockTable, nativeTable, false, ROWS);
     assertBucketsMatchPaimonsExtractor(nativeTable);
+    NativeAppendSinkWriteTest.assertNativeFiles(nativeTable);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"lz4", "zstd"})
+  void appendSpillsArrowBatchesUnderMemoryPressure(String codec) throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-arrow-spill-sql");
+    String options =
+        "'bucket' = '-1', 'write-only' = 'true', 'write-max-writers-to-spill' = '0',"
+            + " 'write-buffer-size' = '16 kb', 'page-size' = '4 kb', 'spill-compression' = '"
+            + codec
+            + "'";
+    FileStoreTable stock = insertFixture(warehouse, "PARTITIONED BY (pt)", options, 1, false);
+    FileStoreTable ours = insertFixture(warehouse, "PARTITIONED BY (pt)", options, 1, true);
+    assertSameTables(stock, ours, true, ROWS);
+    NativeAppendSinkWriteTest.assertNativeFiles(ours);
   }
 
   @Test
@@ -471,7 +481,13 @@ class PaimonSinkParityTest {
 
   @ParameterizedTest
   @ValueSource(
-      strings = {"append", "fixed-primary-key", "dynamic-primary-key", "dynamic-partition"})
+      strings = {
+        "append",
+        "fixed-primary-key",
+        "dynamic-primary-key",
+        "dynamic-partition",
+        "append-spill"
+      })
   @Timeout(120)
   void writerCoordinatorRecoversAfterACompletedCheckpoint(String mode) throws Exception {
     java.nio.file.Path warehouse = Files.createTempDirectory("paimon-coordinated-checkpoint");
@@ -504,6 +520,10 @@ class PaimonSinkParityTest {
                       ? "'bucket' = '-1', 'dynamic-bucket.target-row-num' = '10'"
                       : "'bucket' = '2', 'bucket-key' = 'id'")
               + ", 'sink.parallelism' = '2', 'sink.writer-coordinator.enabled' = 'true',"
+              + (mode.equals("append-spill")
+                  ? " 'write-max-writers-to-spill' = '0', 'write-buffer-size' = '16 kb',"
+                      + " 'page-size' = '4 kb',"
+                  : "")
               + " 'sink.writer-coordinator.page-size' = '10 b')");
       DataStream<Row> rows =
           env.fromSequence(0, 999)
@@ -557,6 +577,63 @@ class PaimonSinkParityTest {
         throw new RuntimeException("intentional failure after checkpoint " + checkpointId);
       }
     }
+  }
+
+  @Test
+  @Timeout(120)
+  void coordinatorCommitsBufferedAppendBatches() throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-spill-coordinator");
+    List<List<String>> contents = new ArrayList<>();
+    for (boolean nativeWriter : new boolean[] {false, true}) {
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      env.enableCheckpointing(100);
+      StreamTableEnvironment tableEnv = catalogEnvironment(env, warehouse);
+      String name = nativeWriter ? "buffered_native" : "buffered_stock";
+      tableEnv.executeSql(
+          "CREATE TABLE "
+              + name
+              + " (id BIGINT) WITH ('bucket' = '-1', 'write-only' = 'true',"
+              + " 'sink.coordinator-commit.enabled' = 'true','write-max-writers-to-spill' = '0',"
+              + " 'write-buffer-size' = '16 kb', 'page-size' = '4 kb')");
+      DataStream<Row> rows =
+          env.fromSequence(0, Long.MAX_VALUE)
+              .map(
+                  value -> {
+                    LockSupport.parkNanos(1_000_000);
+                    return value;
+                  })
+              .returns(Types.LONG)
+              .filter(value -> value < 1000)
+              .map(value -> Row.of(value))
+              .returns(Types.ROW_NAMED(new String[] {"id"}, Types.LONG));
+      tableEnv.createTemporaryView(
+          "buffer_source",
+          tableEnv.fromDataStream(rows, Schema.newBuilder().column("id", "BIGINT").build()));
+      PhysicalPlanScan scan = nativeWriter ? NativePlanner.install(tableEnv) : null;
+      TableResult result =
+          tableEnv.executeSql("INSERT INTO " + name + " SELECT * FROM buffer_source");
+      FileStoreTable table = openTable(warehouse, name);
+      // Like Paimon's coordinator SQL harness, keep the stream alive until checkpoints commit
+      // the input. Released 2.0.0 does not commit a bounded stream's final partial checkpoint.
+      try {
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
+        while (PaimonTestTables.readRows(table, table.rowType()).size() != 1000) {
+          assertTrue(
+              System.nanoTime() < deadline, "all rows must be committed by a streaming checkpoint");
+          Thread.sleep(50);
+        }
+      } finally {
+        result.getJobClient().orElseThrow().cancel().get();
+      }
+      if (nativeWriter) {
+        assertAccelerated(scan);
+        NativeAppendSinkWriteTest.assertNativeFiles(table);
+      }
+      contents.add(PaimonTestTables.readRows(table, table.rowType()));
+    }
+    assertEquals(1000, contents.get(0).size());
+    assertEquals(contents.get(0), contents.get(1));
   }
 
   @ParameterizedTest
@@ -1096,6 +1173,18 @@ class PaimonSinkParityTest {
 
   static Stream<Arguments> declinedTables() {
     return Stream.of(
+        Arguments.of(
+            "(id BIGINT, v INT)",
+            "'bucket' = '-1', 'spill-compression' = 'none'",
+            "spill-compression"),
+        Arguments.of(
+            "(id BIGINT, v INT)",
+            "'bucket' = '-1', 'sink.use-managed-memory-allocator' = 'true'",
+            "sink.use-managed-memory-allocator"),
+        Arguments.of(
+            "(id BIGINT, v INT)",
+            "'bucket' = '-1', 'spill-compression' = 'lzo'",
+            "spill-compression"),
         Arguments.of(
             "(id BIGINT NOT NULL, v INT, pt STRING, PRIMARY KEY (id) NOT ENFORCED) PARTITIONED BY"
                 + " (pt)",

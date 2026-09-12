@@ -15,11 +15,12 @@ import tech.streamfusion.arrow.ArrowConversion;
  * An Arrow batch offered to Paimon's writer as one bundle of insert records. The batch is borrowed:
  * the operator that owns the root keeps it alive until the write call returns and closes it after.
  *
- * <p>Iterating the bundle yields one {@link Cursor} per row: a zero-copy view over the Arrow columns
- * behind Paimon's own Flink row adapter, so Paimon reads exactly the values it would have read from
- * a stock row. The direct write path only walks rows to count them and hands the whole batch to the
- * native encoder once; Paimon's buffered spill path, entered when one task holds more writers than
- * {@code write-max-writers-to-spill}, serializes the views row by row just as it would stock rows.
+ * <p>Iterating the bundle yields one {@link Cursor} per row: a zero-copy view over the Arrow
+ * columns behind Paimon's own Flink row adapter, so Paimon reads exactly the values it would have
+ * read from a stock row. The direct write path only walks rows to count them and hands the whole
+ * batch to the native encoder once. The native append sink retains Arrow batches before this entry
+ * when its writer-count threshold enables buffering, and feeds bundles here when those buffers
+ * drain.
  */
 public final class ArrowBatchBundle implements BundleRecords {
 

@@ -83,6 +83,10 @@ public final class NativePaimonWriteOperator extends TableWriteOperator<Bucketed
   static void writeAppendBundle(
       StoreSinkWrite write, BinaryRow partition, BucketedArrowBatch batch, RowType rowType)
       throws Exception {
+    if (write instanceof NativeAppendSinkWrite) {
+      ((NativeAppendSinkWrite) write).writeBundle(partition, batch.bucket(), batch.root());
+      return;
+    }
     try (VectorSchemaRoot root = batch.root()) {
       ((StoreSinkWriteImpl) write)
           .getWrite()

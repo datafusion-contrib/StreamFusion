@@ -10,11 +10,11 @@ import tech.streamfusion.operator.BucketedArrowBatch;
 
 /**
  * Paimon's fixed- or dynamic-bucket sink with the row-fed write operator swapped for the bundle-fed
- * one. An append table keeps Paimon's own sink write, which takes bundles; a primary-key table gets
- * the native key-value wrapper, which buffers and writes level-0 files while retaining Paimon's
- * selected sink write for compaction, changelog production, and recovery. The native planner only
- * substitutes streaming inserts and never writes with a sink materializer or an overwrite, the
- * three facts Paimon's own provider would otherwise derive from the job.
+ * one. An append table wraps Paimon's sink write with native Arrow spill buffering; a primary-key
+ * table gets the native key-value wrapper, which buffers and writes level-0 files while retaining
+ * Paimon's selected sink write for compaction, changelog production, and recovery. The native
+ * planner only substitutes streaming inserts and never writes with a sink materializer or an
+ * overwrite, the three facts Paimon's own provider would otherwise derive from the job.
  */
 public final class NativePaimonBucketSink extends FlinkWriteSink<BucketedArrowBatch> {
   private static final long serialVersionUID = 1L;
@@ -30,7 +30,9 @@ public final class NativePaimonBucketSink extends FlinkWriteSink<BucketedArrowBa
   protected OneInputStreamOperatorFactory<BucketedArrowBatch, Committable>
       createWriteOperatorFactory(StoreSinkWrite.Provider writeProvider, String commitUser) {
     StoreSinkWrite.Provider provider =
-        primaryKey ? keyValueWriteProvider(writeProvider) : writeProvider;
+        primaryKey
+            ? keyValueWriteProvider(writeProvider)
+            : NativeAppendSinkWrite.provider(writeProvider);
     return table
             .coreOptions()
             .toConfiguration()

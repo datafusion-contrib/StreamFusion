@@ -125,6 +125,16 @@ final class PaimonSinkMatcher {
     if (options.get(CoreOptions.WRITE_BUFFER_FOR_APPEND)) {
       return Planned.fallback("write-buffer-for-append is not supported");
     }
+    if (!primaryKey && options.get(FlinkConnectorOptions.SINK_USE_MANAGED_MEMORY)) {
+      return Planned.fallback(
+          "sink.use-managed-memory-allocator is not supported by the native Arrow buffer");
+    }
+    if (!primaryKey
+        && !java.util.Set.of("lz4", "zstd")
+            .contains(
+                coreOptions.spillCompressOptions().compress().toLowerCase(java.util.Locale.ROOT))) {
+      return Planned.fallback("spill-compression is not supported by the native Arrow buffer");
+    }
     if (!new FileIndexOptions(coreOptions).isEmpty()) {
       return Planned.fallback("file indexes are not supported");
     }

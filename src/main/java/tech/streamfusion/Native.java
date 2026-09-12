@@ -645,6 +645,27 @@ public final class Native {
   /** Releases a keyed-upsert buffer and its pending rows. */
   public static native void closeKeyedUpsertBuffer(long handle);
 
+  /** Arrival-ordered Arrow buffers with temporary spill files in the task's local directories. */
+  public static native long createAppendBuffer(
+      String[] directories, int codec, int zstdLevel, long maxDiskBytes);
+
+  public static native void appendBufferPush(
+      long handle, int bucket, long arrayAddress, long schemaAddress);
+
+  public static native long appendBufferBytes(long handle);
+
+  /**
+   * Spills the largest buffer, or returns its bucket ID when its disk allowance requires a flush.
+   */
+  public static native int appendBufferSpillLargest(long handle);
+
+  /** Drains one batch in arrival order; false removes the now-empty bucket. */
+  public static native boolean appendBufferNext(
+      long handle, int bucket, long arrayAddress, long schemaAddress);
+
+  /** Releases retained batches and deletes all temporary spill files. */
+  public static native void closeAppendBuffer(long handle);
+
   /**
    * Concatenates several exported batches — row subsets of one exchange edge, so they share a
    * schema — into a single batch exported back into the consumer-allocated C structs. The merge

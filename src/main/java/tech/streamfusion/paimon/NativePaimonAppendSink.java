@@ -27,6 +27,7 @@ public final class NativePaimonAppendSink extends AppendTableSink<BucketedArrowB
   @Override
   protected OneInputStreamOperatorFactory<BucketedArrowBatch, Committable>
       createWriteOperatorFactory(StoreSinkWrite.Provider writeProvider, String commitUser) {
+    writeProvider = NativeAppendSinkWrite.provider(writeProvider);
     if (coordinatorCommitEnabled()) {
       return new NativePaimonCoordinatorCommitOperator.Factory(
           table, writeProvider, commitUser, createCommitterFactory());

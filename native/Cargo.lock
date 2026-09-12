@@ -3259,6 +3259,7 @@ dependencies = [
  "jni",
  "libmimalloc-sys",
  "log",
+ "lz4_flex",
  "md-5",
  "memchr",
  "num-bigint",
@@ -3273,6 +3274,7 @@ dependencies = [
  "streamfusion-bridge",
  "streamfusion-native-build",
  "tokio",
+ "zstd",
 ]
 
 [[package]]

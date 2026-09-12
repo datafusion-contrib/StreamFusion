@@ -116,6 +116,7 @@ nav:
       - Zero-copy JNI handover: optimizations/zero-copy-jni-handover.md
       - Columnar flow, transposes at edges: optimizations/columnar-flow-transposes-at-edges.md
       - Native columnar exchange: optimizations/native-columnar-exchange.md
+      - Paimon append spill: optimizations/paimon-append-spill.md
       - Zero-copy local shuffle: optimizations/zero-copy-local-shuffle.md
       - Columnar changelog operators: optimizations/columnar-changelog-operators.md
       - Expression compile-once: optimizations/expression-compile-once.md
