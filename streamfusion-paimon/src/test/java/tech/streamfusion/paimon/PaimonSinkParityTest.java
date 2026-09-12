@@ -116,7 +116,7 @@ class PaimonSinkParityTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"lz4", "zstd"})
+  @ValueSource(strings = {"lz4", "zstd", "lzo"})
   void appendSpillsArrowBatchesUnderMemoryPressure(String codec) throws Exception {
     java.nio.file.Path warehouse = Files.createTempDirectory("paimon-arrow-spill-sql");
     String options =
@@ -1181,10 +1181,6 @@ class PaimonSinkParityTest {
             "(id BIGINT, v INT)",
             "'bucket' = '-1', 'sink.use-managed-memory-allocator' = 'true'",
             "sink.use-managed-memory-allocator"),
-        Arguments.of(
-            "(id BIGINT, v INT)",
-            "'bucket' = '-1', 'spill-compression' = 'lzo'",
-            "spill-compression"),
         Arguments.of(
             "(id BIGINT NOT NULL, v INT, pt STRING, PRIMARY KEY (id) NOT ENFORCED) PARTITIONED BY"
                 + " (pt)",

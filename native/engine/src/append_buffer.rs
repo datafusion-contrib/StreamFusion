@@ -2,9 +2,12 @@ use crate::*;
 use arrow::ipc::{reader::StreamReader, writer::StreamWriter};
 use datafusion::common::Result;
 use datafusion::execution::disk_manager::{DiskManager, DiskManagerMode, RefCountedTempFile};
+use jni::objects::JObject;
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
+
+mod lzo;
 
 struct Spill {
     file: RefCountedTempFile,
@@ -29,6 +32,7 @@ struct AppendBuffer {
     codec: i32,
     zstd_level: i32,
     max_disk_bytes: u64,
+    lzo_compressor: Option<lzo::Compressor>,
 }
 
 impl AppendBuffer {
@@ -38,7 +42,7 @@ impl AppendBuffer {
         zstd_level: i32,
         max_disk_bytes: u64,
     ) -> Result<Self> {
-        assert!((0..=2).contains(&codec), "unsupported Arrow spill codec");
+        assert!((0..=3).contains(&codec), "unsupported Arrow spill codec");
         Ok(Self {
             buckets: HashMap::default(),
             disk: Arc::new(
@@ -52,6 +56,7 @@ impl AppendBuffer {
             codec,
             zstd_level,
             max_disk_bytes,
+            lzo_compressor: None,
         })
     }
 
@@ -104,6 +109,17 @@ impl AppendBuffer {
                     .map_err(std::io::Error::other)?
                     .flush()?;
             }
+            3 => {
+                let compressor = self
+                    .lzo_compressor
+                    .as_mut()
+                    .expect("LZO compressor must be supplied");
+                let writer = BufWriter::with_capacity(
+                    lzo::BLOCK_SIZE,
+                    lzo::Encoder::new(output, compressor),
+                );
+                write_batches(writer, &bucket.batches)?.flush()?;
+            }
             _ => unreachable!(),
         }
         let bytes = std::fs::metadata(file.path())?.len();
@@ -129,6 +145,7 @@ impl AppendBuffer {
                     0 => Box::new(input),
                     1 => Box::new(zstd::stream::read::Decoder::new(input)?),
                     2 => Box::new(lz4_flex::frame::FrameDecoder::new(input)),
+                    3 => Box::new(lzo::Decoder::new(input)),
                     _ => unreachable!(),
                 };
                 bucket.reader = Some(StreamReader::try_new(input, None)?);
@@ -179,17 +196,22 @@ pub extern "system" fn Java_tech_streamfusion_Native_createAppendBuffer<'local>(
     codec: jint,
     zstd_level: jint,
     max_disk_bytes: jlong,
+    lzo_compressor: JObject<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |env| {
-        into_handle(
-            AppendBuffer::new(
-                read_string_array(env, &directories),
-                codec,
-                zstd_level,
-                max_disk_bytes as u64,
-            )
-            .expect("create Arrow spill buffer"),
+        let mut buffer = AppendBuffer::new(
+            read_string_array(env, &directories),
+            codec,
+            zstd_level,
+            max_disk_bytes as u64,
         )
+        .expect("create Arrow spill buffer");
+        if codec == 3 {
+            assert!(!lzo_compressor.is_null(), "LZO compressor must be supplied");
+            buffer.lzo_compressor =
+                Some(lzo::java_compressor(env, lzo_compressor).expect("retain LZO compressor"));
+        }
+        into_handle(buffer)
     })
 }
 
@@ -271,13 +293,21 @@ mod tests {
     use super::*;
 
     fn buffer(codec: i32, disk_limit: u64) -> AppendBuffer {
-        AppendBuffer::new(
+        let mut buffer = AppendBuffer::new(
             vec![std::env::temp_dir().to_string_lossy().into_owned()],
             codec,
             3,
             disk_limit,
         )
-        .unwrap()
+        .unwrap();
+        if codec == 3 {
+            let mut dictionary = lzokay::compress::Dict::new();
+            buffer.lzo_compressor = Some(Box::new(move |input, output| {
+                lzokay::compress::compress_no_alloc(input, output, &mut dictionary)
+                    .map_err(std::io::Error::other)
+            }));
+        }
+        buffer
     }
 
     fn batch(start: i64, count: usize) -> RecordBatch {
@@ -290,7 +320,7 @@ mod tests {
 
     #[test]
     fn drains_multiple_spills_before_memory_in_arrival_order_for_every_codec() {
-        for codec in 0..=2 {
+        for codec in 0..=3 {
             let mut buffer = buffer(codec, u64::MAX);
             buffer.push(0, batch(0, 3));
             buffer.push(1, batch(100, 1));
@@ -344,6 +374,19 @@ mod tests {
         buffer.spill_largest().unwrap();
         let path = buffer.buckets[&0].spills[0].file.path().to_owned();
         buffer.next(0).unwrap();
+        drop(buffer);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn lzo_spills_batches_across_block_boundaries_and_cleans_up_on_cancel() {
+        let mut buffer = buffer(3, u64::MAX);
+        let first = batch(0, 20_000);
+        buffer.push(0, first.clone());
+        buffer.push(0, batch(20_000, 20_000));
+        buffer.spill_largest().unwrap();
+        let path = buffer.buckets[&0].spills[0].file.path().to_owned();
+        assert_eq!(buffer.next(0).unwrap().unwrap(), first);
         drop(buffer);
         assert!(!path.exists());
     }

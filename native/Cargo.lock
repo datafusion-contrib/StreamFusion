@@ -2349,6 +2349,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lzokay"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "953d350dc065718bb00b61ea2118274ffe2fdf6488f32f720422bcd1c9d6025f"
+dependencies = [
+ "zerocopy",
+]
+
+[[package]]
 name = "md-5"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3260,6 +3269,7 @@ dependencies = [
  "libmimalloc-sys",
  "log",
  "lz4_flex",
+ "lzokay",
  "md-5",
  "memchr",
  "num-bigint",

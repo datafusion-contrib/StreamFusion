@@ -51,8 +51,10 @@ existing native files, and retains subsequent Arrow batches in Rust. The mode st
 the rest of the writer's life, including after checkpoints and writer-option refreshes.
 
 When retained Arrow memory exceeds `write-buffer-size`, the largest bucket spills to an Arrow IPC
-stream in Flink's task-local spilling directories. Spills support `spill-compression = lz4`
-and `zstd` (the default), including `spill-compression.zstd-level` (default 1). These settings control
+stream in Flink's task-local spilling directories. Spills support `spill-compression = lz4`, `lzo`,
+and `zstd` (the default), including `spill-compression.zstd-level` (default 1). LZO uses Paimon's
+Java compressor on 64 KiB IPC byte blocks and a native decoder, with reusable codec buffers;
+the data stays columnar and a whole spill need not fit in memory. These settings control
 temporary spill files; `file.compression` controls final data files. At a checkpoint the writer drains each
 bucket's spills and then its in-memory batches in arrival order, through the native Parquet encoder.
 Only one bucket's encoder is open during this drain. Paimon still owns file metadata, compaction,
@@ -271,7 +273,7 @@ Each of these declines at planning time with a reason visible in `NativePlanner.
   `sink.use-managed-memory-allocator`; or a `FLOAT`/`DOUBLE` key column.
 - `file.format` other than `parquet`, `file.format.per.level`, `write-buffer-for-append = true`,
   file indexes (`file-index.*`), `row-tracking.enabled`, `data-evolution.enabled`, `BLOB` columns.
-- Append tables with `spill-compression` other than `lz4`/`zstd`, or
+- Append tables with `spill-compression` other than `lz4`/`lzo`/`zstd`, or
   `sink.use-managed-memory-allocator = true` (the native buffer uses Arrow memory).
   Released Paimon 2.0.0 fails when actually spilling with `none`; it remains on the stock path.
 - A nullable query field assigned to a `NOT NULL` target, or a bounded `CHAR`/`VARCHAR` or

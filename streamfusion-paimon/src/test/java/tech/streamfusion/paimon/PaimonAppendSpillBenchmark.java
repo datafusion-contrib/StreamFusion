@@ -31,6 +31,7 @@ class PaimonAppendSpillBenchmark {
   @Test
   void comparePreviousAndNativeSpill() throws Exception {
     int count = Integer.parseInt(System.getenv().getOrDefault("SF_PAIMON_SPILL_ROWS", "131072"));
+    String codec = System.getenv().getOrDefault("SF_PAIMON_SPILL_CODEC", "zstd");
     List<Object[]> values = PaimonTestTables.values(count);
     for (int i = 0; i < count; i++) {
       values.get(i)[13] = "partition-" + (i % 16);
@@ -44,7 +45,9 @@ class PaimonAppendSpillBenchmark {
             "write-only",
             "true",
             "write-buffer-size",
-            "1 mb");
+            "1 mb",
+            "spill-compression",
+            codec);
     double[] best = {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY};
     List<String> expected = null;
     for (int iteration = 0; iteration < 4; iteration++) {
@@ -131,7 +134,7 @@ class PaimonAppendSpillBenchmark {
       }
     }
     System.out.printf(
-        "PAIMON_SPILL rows=%d writers=64 previous_s=%.3f native_s=%.3f speedup=%.2fx%n",
-        count, best[0], best[1], best[0] / best[1]);
+        "PAIMON_SPILL codec=%s rows=%d writers=64 previous_s=%.3f native_s=%.3f speedup=%.2fx%n",
+        codec, count, best[0], best[1], best[0] / best[1]);
   }
 }

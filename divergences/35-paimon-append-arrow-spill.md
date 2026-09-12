@@ -17,14 +17,21 @@ The native temporary-file ownership follows Comet's
 `native/shuffle/src/writers/local/spill.rs`: DataFusion's disk manager owns local files, and dropping
 the buffer removes them even after failure or cancellation. Arrow batches cross JNI through the
 existing Comet-style C Data ownership pattern (`NativeUtil.scala`); they are never serialized as
-Java rows for spilling. Spill streams use released Zstandard/LZ4 crates already in our dependency
-graph; compression surrounds Arrow IPC so Paimon's configured Zstandard level can be honored.
+Java rows for spilling. Compression surrounds Arrow IPC so Paimon's configured Zstandard level
+can be honored. LZO follows the block-compression approach used in `paimon-rust`'s
+`crates/paimon/src/btree/block.rs`. Compression calls Paimon's released Java codec with reusable
+byte buffers; JNI borrows direct buffers synchronously and retains only the compressor object
+for the native writer's lifetime. This follows the existing JNI Parquet output adapter's bounded
+Java byte-transfer approach. Rows stay columnar. Decoding uses released `lzokay`, whose fixed-size
+output slice bounds allocations even on corrupt input. Our local framing uses 64 KiB blocks with
+uncompressed/compressed lengths; these disposable spill files are consumed by the same native
+writer and do not need Java's spill-file framing.
 
 The buffer uses the table's Arrow memory budget rather than Paimon's Java memory segments.
-Managed-memory append sinks consequently keep the stock planner path. Paimon's LZO spill codec
-also keeps the stock path. The released Java spill writer dereferences a null compressor with
-`spill-compression = none`; that setting stays stock as well rather than silently changing its
-failure behavior. Primary-key buffering and batch execution retain their existing paths.
+Managed-memory append sinks consequently keep the stock planner path. The released Java spill
+writer dereferences a null compressor with `spill-compression = none`; that setting stays stock
+as well rather than silently changing its failure behavior. Primary-key buffering and batch
+execution retain their existing paths.
 There is no corresponding Arroyo Paimon sink operator to port.
 
 Coverage and configuration are described in [the Paimon connector page](../docs/connectors/paimon.md).

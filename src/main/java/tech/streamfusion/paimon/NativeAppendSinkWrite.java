@@ -90,7 +90,8 @@ public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseabl
                   directories,
                   spillCodec(options),
                   options.spillCompressOptions().zstdLevel(),
-                  options.writeBufferSpillDiskSize().getBytes());
+                  options.writeBufferSpillDiskSize().getBytes(),
+                  spillCodec(options) == 3 ? new PaimonLzoCompressor() : null);
         }
       }
       if (handle == 0) {
@@ -128,6 +129,7 @@ public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseabl
       case "none" -> 0;
       case "zstd" -> 1;
       case "lz4" -> 2;
+      case "lzo" -> 3;
       default -> throw new IllegalArgumentException("Unsupported native Arrow spill compression");
     };
   }
@@ -250,7 +252,8 @@ public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseabl
               directories,
               spillCodec(options),
               options.spillCompressOptions().zstdLevel(),
-              options.writeBufferSpillDiskSize().getBytes());
+              options.writeBufferSpillDiskSize().getBytes(),
+              spillCodec(options) == 3 ? new PaimonLzoCompressor() : null);
     }
   }
 

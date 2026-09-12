@@ -647,7 +647,7 @@ public final class Native {
 
   /** Arrival-ordered Arrow buffers with temporary spill files in the task's local directories. */
   public static native long createAppendBuffer(
-      String[] directories, int codec, int zstdLevel, long maxDiskBytes);
+      String[] directories, int codec, int zstdLevel, long maxDiskBytes, Object lzoCompressor);
 
   public static native void appendBufferPush(
       long handle, int bucket, long arrayAddress, long schemaAddress);

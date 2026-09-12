@@ -130,7 +130,7 @@ final class PaimonSinkMatcher {
           "sink.use-managed-memory-allocator is not supported by the native Arrow buffer");
     }
     if (!primaryKey
-        && !java.util.Set.of("lz4", "zstd")
+        && !java.util.Set.of("lz4", "zstd", "lzo")
             .contains(
                 coreOptions.spillCompressOptions().compress().toLowerCase(java.util.Locale.ROOT))) {
       return Planned.fallback("spill-compression is not supported by the native Arrow buffer");

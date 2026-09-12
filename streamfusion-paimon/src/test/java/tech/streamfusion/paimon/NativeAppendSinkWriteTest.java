@@ -95,7 +95,7 @@ class NativeAppendSinkWriteTest {
             nativeCommit.commit(checkpoint + 1, messages);
             stockCommit.commit(checkpoint + 1, stockWrite.prepareCommit(true, checkpoint + 1));
             write.snapshotState();
-            write.replace(table.copy(Map.of("spill-compression", "lz4")));
+            write.replace(table.copy(Map.of("spill-compression", "lzo")));
             assertEquals(
                 PaimonTestTables.readRows(stock, stock.rowType()),
                 PaimonTestTables.readRows(table, table.rowType()));

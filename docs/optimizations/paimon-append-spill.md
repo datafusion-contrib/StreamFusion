@@ -21,14 +21,25 @@ are compared with the previous path, and native Parquet footers are required on 
 The separate SQL and writer parity tests compare with stock Paimon row ingestion.
 
 On the release build, the previous path took **1.514 s** and native Arrow spilling took
-**1.353 s**: **1.12× throughput** on this workload. This measures the transition and spill path;
-it is not a speedup claim for sinks that stay below the writer-count threshold.
+**1.353 s** with the default Zstandard codec: **1.12× throughput** on this workload.
+This measures the transition and spill path; it is not a speedup claim for sinks that stay below
+the writer-count threshold.
 
 ```bash
 SF_PAIMON_SPILL_BENCHMARK=true mvn test -Pbench,paimon \
   -pl :streamfusion-paimon -am -Dtest=PaimonAppendSpillBenchmark \
   -Dsurefire.failIfNoSpecifiedTests=false -Dsf.testForks=1
 ```
+
+Set `SF_PAIMON_SPILL_CODEC=lzo` or `lz4` to run the same diagnostic with that codec on both paths.
+With LZO, the release run measured **1.732 s** for the previous path and **1.441 s** for columnar
+spilling: **1.20× throughput**, with identical rows and native Parquet footers on the new path.
+
+LZO uses Paimon's released Java compressor on bounded 64 KiB IPC byte blocks, with reusable input
+and output arrays. JNI transfers bytes without converting them to rows. The native read side
+validates block sizes before allocating and decompresses into bounded buffers. The initial
+`lzokay` compressor took 4.706 s against 1.646 s for stock spilling on this diagnostic, so the
+write side uses Paimon's faster codec; `lzokay` provides only production decompression.
 
 See [Paimon coverage](../connectors/paimon.md#append-buffering-and-local-spill) for the memory and
 disk limits, supported codecs, and file-layout differences at the transition.
