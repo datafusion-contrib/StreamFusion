@@ -144,12 +144,6 @@ final class PaimonSinkMatcher {
     if (coreOptions.partitionSinkStrategy() == PartitionSinkStrategy.PARTITION_DYNAMIC) {
       return Planned.fallback("partition.sink-strategy PARTITION_DYNAMIC is not supported");
     }
-    if (options.get(FlinkConnectorOptions.SINK_WRITER_COORDINATOR_ENABLED)) {
-      return Planned.fallback("sink.writer-coordinator.enabled is not supported");
-    }
-    if (options.get(FlinkConnectorOptions.SINK_COORDINATOR_COMMIT_ENABLED)) {
-      return Planned.fallback("sink.coordinator-commit.enabled is not supported");
-    }
     RelDataType inputType = sink.getInput().getRowType();
     List<String> fieldNames = table.rowType().getFieldNames();
     if (inputType.getFieldCount() != fieldNames.size()) {

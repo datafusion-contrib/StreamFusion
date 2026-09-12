@@ -1,6 +1,7 @@
 package tech.streamfusion.paimon;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -12,10 +13,16 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.apache.flink.api.common.functions.RichMapFunction;
+import org.apache.flink.api.common.state.CheckpointListener;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.RestartStrategyOptions;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.JsonNode;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -42,6 +49,7 @@ import org.apache.paimon.table.source.Split;
 import org.apache.paimon.types.RowType;
 import org.apache.paimon.utils.InternalRowUtils;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -309,6 +317,187 @@ class PaimonSinkParityTest {
     FileStoreTable stockTable = upsertFixture(warehouse, "pk_stock", options, 1, false, 0);
 
     assertSameTables(stockTable, nativeTable, true, mergedRows(false));
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "'bucket' = '2'",
+        "'bucket' = '2', 'changelog-producer' = 'input'",
+        "'bucket' = '2', 'changelog-producer' = 'lookup'",
+        "'bucket' = '2', 'changelog-producer' = 'full-compaction'",
+        "'bucket' = '2', 'deletion-vectors.enabled' = 'true'",
+        "'bucket' = '-1', 'dynamic-bucket.target-row-num' = '10'"
+      })
+  void writerCoordinatorRestoresPrimaryKeyFilesAcrossSqlJobs(String mode) throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-coordinated-restore");
+    String options =
+        mode
+            + ", 'sink.writer-coordinator.enabled' = 'true',"
+            + " 'sink.writer-coordinator.page-size' = '10 b'";
+    for (int job = 0; job < 2; job++) {
+      FileStoreTable stock = upsertFixture(warehouse, "coordinated_stock", options, 2, false, job);
+      FileStoreTable ours = upsertFixture(warehouse, "coordinated_native", options, 2, true, job);
+      assertEquals(
+          PaimonTestTables.readRows(stock, stock.rowType()),
+          PaimonTestTables.readRows(ours, ours.rowType()));
+      assertEquals(
+          PaimonChangelogSinkWriteTest.changelogRows(stock),
+          PaimonChangelogSinkWriteTest.changelogRows(ours));
+      assertEquals(
+          stock.latestSnapshot().get().commitKind(), ours.latestSnapshot().get().commitKind());
+    }
+  }
+
+  @Test
+  void writerCoordinatorRestoresFixedBucketAppendFilesAcrossSqlJobs() throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-append-coordinated-restore");
+    String options =
+        "'bucket' = '2', 'bucket-key' = 'id', 'sink.writer-coordinator.enabled' = 'true',"
+            + " 'sink.writer-coordinator.page-size' = '10 b'";
+    for (int job = 0; job < 2; job++) {
+      FileStoreTable stock = insertFixture(warehouse, "", options, 2, false);
+      FileStoreTable ours = insertFixture(warehouse, "", options, 2, true);
+      assertSameTables(stock, ours, true, (job + 1) * ROWS);
+    }
+  }
+
+  private static final AtomicBoolean COORDINATED_JOB_FAILED = new AtomicBoolean();
+  private static final AtomicBoolean COORDINATED_JOB_RESTARTED = new AtomicBoolean();
+
+  @ParameterizedTest
+  @ValueSource(strings = {"append", "fixed-primary-key", "dynamic-primary-key"})
+  @Timeout(120)
+  void writerCoordinatorRecoversAfterACompletedCheckpoint(String mode) throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-coordinated-checkpoint");
+    List<List<String>> contents = new ArrayList<>();
+    boolean primaryKey = !mode.equals("append");
+    for (boolean nativeWriter : new boolean[] {false, true}) {
+      COORDINATED_JOB_FAILED.set(false);
+      COORDINATED_JOB_RESTARTED.set(false);
+      Configuration configuration = new Configuration();
+      configuration.set(RestartStrategyOptions.RESTART_STRATEGY, "fixed-delay");
+      configuration.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_ATTEMPTS, 5);
+      configuration.set(
+          RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_DELAY, java.time.Duration.ZERO);
+      StreamExecutionEnvironment env =
+          StreamExecutionEnvironment.getExecutionEnvironment(configuration);
+      env.setParallelism(1);
+      env.enableCheckpointing(100);
+      StreamTableEnvironment tableEnv = catalogEnvironment(env, warehouse);
+      String name = nativeWriter ? "recovered_native" : "recovered_stock";
+      tableEnv.executeSql(
+          "CREATE TABLE "
+              + name
+              + " (id BIGINT NOT NULL, v BIGINT"
+              + (primaryKey ? ", PRIMARY KEY (id) NOT ENFORCED" : "")
+              + ") WITH ("
+              + (mode.equals("dynamic-primary-key")
+                  ? "'bucket' = '-1', 'dynamic-bucket.target-row-num' = '10'"
+                  : "'bucket' = '2', 'bucket-key' = 'id'")
+              + ", 'sink.parallelism' = '2', 'sink.writer-coordinator.enabled' = 'true',"
+              + " 'sink.writer-coordinator.page-size' = '10 b')");
+      DataStream<Row> rows =
+          env.fromSequence(0, 999)
+              .map(new FailAfterCheckpoint())
+              .returns(Types.ROW_NAMED(new String[] {"id", "v"}, Types.LONG, Types.LONG));
+      tableEnv.createTemporaryView(
+          "recovery_source",
+          tableEnv.fromDataStream(
+              rows,
+              Schema.newBuilder().column("id", "BIGINT NOT NULL").column("v", "BIGINT").build()));
+      PhysicalPlanScan scan = nativeWriter ? NativePlanner.install(tableEnv) : null;
+      tableEnv
+          .executeSql(
+              "INSERT INTO "
+                  + name
+                  + " SELECT "
+                  + (primaryKey ? "MOD(id, 100)" : "id")
+                  + ", v FROM recovery_source")
+          .await();
+      if (nativeWriter) {
+        assertAccelerated(scan);
+      }
+      assertTrue(COORDINATED_JOB_FAILED.get(), "the job must fail after a completed checkpoint");
+      assertTrue(COORDINATED_JOB_RESTARTED.get(), "the source must replay after recovery");
+      FileStoreTable table = openTable(warehouse, name);
+      contents.add(PaimonTestTables.readRows(table, table.rowType()));
+    }
+    assertEquals(primaryKey ? 100 : 1000, contents.get(0).size());
+    assertEquals(contents.get(0), contents.get(1));
+  }
+
+  private static final class FailAfterCheckpoint extends RichMapFunction<Long, Row>
+      implements CheckpointListener {
+    private int seen;
+
+    @Override
+    public Row map(Long id) {
+      seen++;
+      if (getRuntimeContext().getTaskInfo().getAttemptNumber() > 0) {
+        COORDINATED_JOB_RESTARTED.set(true);
+      }
+      LockSupport.parkNanos(2_000_000);
+      return Row.of(id, id * 10);
+    }
+
+    @Override
+    public void notifyCheckpointComplete(long checkpointId) {
+      if (seen >= 100 && COORDINATED_JOB_FAILED.compareAndSet(false, true)) {
+        throw new RuntimeException("intentional failure after checkpoint " + checkpointId);
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "checkpointing",
+        "write-only",
+        "precommit-compact",
+        "sink.savepoint.auto-tag",
+        "execution.checkpointing.max-concurrent-checkpoints"
+      })
+  void coordinatorCommitKeepsPaimonsConfigurationChecks(String invalid) throws Exception {
+    List<String> failures = new ArrayList<>();
+    for (boolean nativeWriter : new boolean[] {false, true}) {
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      if (!invalid.equals("checkpointing")) {
+        env.enableCheckpointing(100);
+      }
+      if (invalid.equals("execution.checkpointing.max-concurrent-checkpoints")) {
+        env.getCheckpointConfig().setMaxConcurrentCheckpoints(2);
+      }
+      StreamTableEnvironment tableEnv =
+          catalogEnvironment(env, Files.createTempDirectory("paimon-coordinator-invalid"));
+      tableEnv.executeSql(
+          "CREATE TABLE rejected (id BIGINT, v BIGINT) WITH ("
+              + "'bucket' = '-1', 'sink.coordinator-commit.enabled' = 'true', 'write-only' = '"
+              + !invalid.equals("write-only")
+              + "'"
+              + (invalid.equals("precommit-compact") || invalid.equals("sink.savepoint.auto-tag")
+                  ? ", '" + invalid + "' = 'true'"
+                  : "")
+              + ")");
+      if (nativeWriter) {
+        NativePlanner.install(tableEnv);
+      }
+      Exception failure =
+          assertThrows(
+              Exception.class,
+              () ->
+                  tableEnv.explainSql(
+                      "INSERT INTO rejected SELECT CAST(1 AS BIGINT), CAST(2 AS BIGINT)",
+                      ExplainDetail.JSON_EXECUTION_PLAN));
+      Throwable cause = failure;
+      while (cause.getCause() != null) {
+        cause = cause.getCause();
+      }
+      assertTrue(cause.getMessage().contains(invalid), cause::getMessage);
+      failures.add(cause.getMessage());
+    }
+    assertEquals(failures.get(0), failures.get(1));
   }
 
   @ParameterizedTest
@@ -872,14 +1061,6 @@ class PaimonSinkParityTest {
             "'bucket' = '-1', 'sink.clustering.by-columns' = 'v'",
             "clustering"),
         Arguments.of(
-            "(id BIGINT, v INT)",
-            "'bucket' = '-1', 'sink.writer-coordinator.enabled' = 'true'",
-            "sink.writer-coordinator.enabled"),
-        Arguments.of(
-            "(id BIGINT, v INT)",
-            "'bucket' = '-1', 'write-only' = 'true', 'sink.coordinator-commit.enabled' = 'true'",
-            "sink.coordinator-commit.enabled"),
-        Arguments.of(
             "(id BIGINT, v INT, pt STRING) PARTITIONED BY (pt)",
             "'bucket' = '-1', 'partition.sink-strategy' = 'PARTITION_DYNAMIC'",
             "PARTITION_DYNAMIC"),
@@ -950,7 +1131,15 @@ class PaimonSinkParityTest {
     env.setParallelism(parallelism);
     StreamTableEnvironment tableEnv = catalogEnvironment(env, warehouse);
     tableEnv.executeSql(
-        "CREATE TABLE " + name + " (" + COLUMNS + ") " + partitioning + " WITH (" + options + ")");
+        "CREATE TABLE IF NOT EXISTS "
+            + name
+            + " ("
+            + COLUMNS
+            + ") "
+            + partitioning
+            + " WITH ("
+            + options
+            + ")");
     DataStream<Row> stream = env.fromData(fixtureTypeInformation(), fixtureRows());
     Table source = tableEnv.fromDataStream(stream, fixtureSchema());
     tableEnv.createTemporaryView("fixture_source", source);

@@ -161,6 +161,35 @@ input, and compares the resulting hash-to-bucket index and changelog with stock 
 SQL fixture verifies postpone replay across rolled files. These are ordinary correctness tests;
 the performance diagnostics below are opt-in.
 
+### Writer and commit coordinators
+
+Both coordinator options retain Paimon 2.0.0's Java implementations while the data writer consumes
+Arrow batches. No coordinator logic is implemented in Rust.
+
+`sink.writer-coordinator.enabled = true` selects Paimon's coordinated restore factory for fixed
+and dynamic buckets. The JobManager serves restored files through Paimon's paged requests and
+metadata cache. The native primary-key writer uses this same restore service to continue sequence
+numbers; Paimon's selected writer retains compaction, changelog, and deletion-vector restoration.
+As in stock Paimon, unaware append and postpone writers do not use the writer restore coordinator.
+
+`sink.coordinator-commit.enabled = true` selects Paimon's committing writer coordinator for
+bucket-unaware append tables. Its existing writer lifecycle owns pending committables, checkpoint
+events, watermark and idle status, replay, and the deliberate restart after recovering an
+uncommitted snapshot. The native subclass replaces only record ingestion with bundle ingestion.
+Paimon's sink builder removes the downstream global committer and retains its configuration checks:
+streaming checkpointing must be enabled, `write-only = true`, `precommit-compact = false`,
+`sink.savepoint.auto-tag = false`, and at most one checkpoint may run concurrently. This does
+not add bounded end-input commit support beyond the released connector. The option is ignored by
+Paimon's fixed-bucket and primary-key sinks, and StreamFusion preserves that behavior.
+
+SQL parity tests reopen fixed and dynamic primary-key tables with paged coordinated restoration,
+including input/lookup/full-compaction changelogs and deletion vectors, and compare append-file
+metadata and sequence numbers across jobs. SQL failover tests replay append and fixed/dynamic
+primary-key writes after a completed checkpoint. The commit recovery harness compares stock and native
+rows and snapshot histories after a lost checkpoint and replay, including an already-committed
+snapshot whose acknowledgement was lost. The upstream SQL suite includes Paimon's unchanged
+`CoordinatorCommitITCase` for topology, commit metrics, committed rows, and idle-watermark parity.
+
 ## Falls back to stock Paimon on
 
 Each of these declines at planning time with a reason visible in `NativePlanner.explain`:
@@ -179,8 +208,7 @@ Each of these declines at planning time with a reason visible in `NativePlanner.
   `sink.use-managed-memory-allocator`; or a `FLOAT`/`DOUBLE` key column.
 - `file.format` other than `parquet`, `file.format.per.level`, `write-buffer-for-append = true`,
   file indexes (`file-index.*`), `row-tracking.enabled`, `data-evolution.enabled`, `BLOB` columns.
-- `sink.clustering.*`, `partition.sink-strategy = PARTITION_DYNAMIC`,
-  `sink.writer-coordinator.enabled`, `sink.coordinator-commit.enabled`.
+- `sink.clustering.*`, `partition.sink-strategy = PARTITION_DYNAMIC`.
 - A nullable query field assigned to a `NOT NULL` target, or a bounded `CHAR`/`VARCHAR` or
   `BINARY`/`VARBINARY` target while `table.exec.sink.type-length-enforcer` is enabled. The stock
   sink path preserves Flink's configured fail/drop and trim/pad/error behavior.
@@ -311,7 +339,6 @@ Each remaining gap has its own issue:
 [a Paimon bundle entry for the merge-tree writer](https://github.com/datafusion-contrib/StreamFusion/issues/49)
 that would remove the compaction hand-off and the idle-writer rescan,
 [ORC data files](https://github.com/datafusion-contrib/StreamFusion/issues/35),
-[the writer and commit coordinators](https://github.com/datafusion-contrib/StreamFusion/issues/36),
 [clustering and the dynamic partition sink strategy](https://github.com/datafusion-contrib/StreamFusion/issues/37),
 and [native encoding through the buffered spill mode](https://github.com/datafusion-contrib/StreamFusion/issues/40).
 Released Paimon 2.0.0 walks a bundle row by row before the format writer; a Paimon release that

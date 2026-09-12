@@ -33,14 +33,16 @@ Paimon Flink connector's `AppendOnlyTableITCase`, `AppendTableITCase`, `BatchFil
 `ComputedColumnAndWatermarkTableITCase`, `ContinuousFileStoreITCase`, `ReadWriteTableITCase`,
 `PrimaryKeyFileStoreTableITCase`, `CompositePkAndMultiPartitionedTableITCase`,
 `FullCompactionFileStoreITCase`, `FlinkJobRecoveryITCase`, `RescaleBucketITCase`,
-`ScanBucketITCase`, `KeyOnlyDeletesITCase`, and `FirstRowITCase` from the pinned Paimon release,
+`ScanBucketITCase`, `KeyOnlyDeletesITCase`, `FirstRowITCase`, and `CoordinatorCommitITCase` from the
+pinned Paimon release,
 built against the suite's Flink version, and fails unless it proves both that a streaming insert
 wrote an append-table data file from a native Arrow bundle and that one wrote a primary-key
-level-0 file natively. Only the streaming inserts into append tables and into fixed-bucket
-deduplicate primary-key tables without a changelog producer can take the native sink; batch
-inserts, the other primary-key shapes those classes exercise (changelog producers, first-row and
-key-only deletes, dynamic buckets), and compaction rewrites run stock Paimon, which is what the
-tests then have to agree with. Because
+level-0 file natively. The native-write markers are emitted only after the write returns successfully.
+Streaming inserts covered by the [Paimon connector whitelist](connectors/paimon.md)
+can take the native sink, including coordinated writers and coordinator commits. Batch inserts,
+unsupported primary-key options, and compaction rewrites use stock Paimon. `CoordinatorCommitITCase`
+checks removal of the global committer, coordinator metrics, committed rows, and snapshot watermark
+parity for active and idle inputs. Because
 Surefire appends StreamFusion's classpath in no fixed order, the agent also resolves Paimon's
 `parquet` format identifier to the StreamFusion factory whenever the module is present, standing in
 for the `01-streamfusion-paimon.jar` ordering a deployment relies on. Paimon's module declares the
@@ -70,7 +72,8 @@ them, so every upstream test module resolves Flink's patched Calcite classes thr
 dependency, ahead of stock Calcite. Surefire does not preserve the order of the StreamFusion classpath
 it appends, so nothing may depend on that order for class resolution. Suite-only artifacts remain
 under `.flink-suite`; production build outputs and the developer's normal Maven repository are not
-replaced.
+replaced. Test JVMs load the engine and optional native libraries from the isolated source build's
+`native/target/debug` directory through `java.library.path`, as required by development mode.
 
 Flink's plan unit tests assert stock physical operator names, so an accelerator necessarily changes
 their golden output. Run `bin/flink-suite.sh diagnostic` to include those tests when inspecting plan
@@ -101,6 +104,14 @@ FLINK_SUITE_TEST='org.apache.flink.table.planner.runtime.stream.sql.CalcITCase,o
 
 The same `FLINK_SUITE_TEST` and `FLINK_SUITE_REUSE_BUILD=true` controls apply to `formats`,
 `parquet`, `kafka`, and `paimon`. Reuse mode requires that the selected mode has been built once normally.
+
+The focused Paimon coordinator run includes its four paged writer-restoration cases, three
+commit-coordinator cases, and a deterministic primary-key write to verify native file creation:
+
+```bash
+FLINK_SUITE_TEST='org.apache.paimon.flink.CoordinatorCommitITCase,org.apache.paimon.flink.BatchFileStoreITCase#testWriteRestoreCoordinator*,org.apache.paimon.flink.ReadWriteTableITCase#testStreamingReadWriteWithPartitionedRecordsWithPk' \
+  bin/flink-suite.sh paimon
+```
 
 The Flink checkout remains byte-for-byte unchanged. A scheduled and manually dispatchable GitHub
 Actions workflow runs the same command, keeping the full compatibility suite out of the pull-request

@@ -11,6 +11,7 @@ import net.bytebuddy.asm.Advice;
 import net.bytebuddy.implementation.bytecode.assign.Assigner;
 
 import static net.bytebuddy.matcher.ElementMatchers.named;
+import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 import static net.bytebuddy.matcher.ElementMatchers.takesArguments;
 
 /**
@@ -113,7 +114,8 @@ public final class StreamFusionSuiteAgent {
             (builder, type, classLoader, module, protectionDomain) ->
                 builder.visit(
                     Advice.to(ReportNativePaimonLevelZeroFile.class)
-                        .on(named("write").and(takesArguments(3)))))
+                        .on(named("write")
+                            .and(takesArgument(0, named("org.apache.paimon.data.BinaryRow"))))))
         .installOn(instrumentation);
   }
 
@@ -370,8 +372,8 @@ public final class StreamFusionSuiteAgent {
 
     private ReportNativePaimonBundle() {}
 
-    @Advice.OnMethodEnter
-    static void enter() {
+    @Advice.OnMethodExit
+    static void exit() {
       if (StreamFusionSuiteAgent.reportNativePaimonBundle()) {
         System.err.println("StreamFusion upstream Paimon suite wrote a native Paimon bundle");
       }
@@ -382,8 +384,8 @@ public final class StreamFusionSuiteAgent {
 
     private ReportNativePaimonLevelZeroFile() {}
 
-    @Advice.OnMethodEnter
-    static void enter() {
+    @Advice.OnMethodExit
+    static void exit() {
       if (StreamFusionSuiteAgent.reportNativePaimonLevelZeroFile()) {
         System.err.println("StreamFusion upstream Paimon suite wrote a native Paimon level-0 file");
       }

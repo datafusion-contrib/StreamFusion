@@ -85,6 +85,7 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   private final Integer totalBuckets;
   private final Map<BinaryRow, Map<Integer, BucketBuffer>> buffers = new LinkedHashMap<>();
   private NativePaimonKeyValueFileWriter files;
+  private WriteRestore writeRestore;
 
   public NativeKeyValueSinkWrite(FileStoreTable table, StoreSinkWrite delegate) {
     this(table, delegate, null);
@@ -188,6 +189,13 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   private long maxCommittedSequence(BinaryRow partition, int bucket) {
     if (postpone) {
       return -1;
+    }
+    if (writeRestore != null) {
+      List<DataFileMeta> restored =
+          writeRestore.restoreFiles(partition, bucket, false, false, false).dataFiles();
+      return restored == null
+          ? -1
+          : restored.stream().mapToLong(DataFileMeta::maxSequenceNumber).max().orElse(-1);
     }
     long max = -1;
     for (ManifestEntry entry :
@@ -321,6 +329,7 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
 
   @Override
   public void setWriteRestore(WriteRestore restore) {
+    writeRestore = restore;
     delegate.setWriteRestore(restore);
   }
 

@@ -77,6 +77,12 @@ public final class NativePaimonWriteOperator extends TableWriteOperator<Bucketed
               partition, postpone ? BucketMode.POSTPONE_BUCKET : batch.bucket(), batch.root());
       return;
     }
+    writeAppendBundle(write, partition, batch, rowType);
+  }
+
+  static void writeAppendBundle(
+      StoreSinkWrite write, BinaryRow partition, BucketedArrowBatch batch, RowType rowType)
+      throws Exception {
     try (VectorSchemaRoot root = batch.root()) {
       ((StoreSinkWriteImpl) write)
           .getWrite()
@@ -115,6 +121,31 @@ public final class NativePaimonWriteOperator extends TableWriteOperator<Bucketed
       return (T)
           new NativePaimonWriteOperator(
               parameters, table, storeSinkWriteProvider, initialCommitUser, stateless);
+    }
+
+    @Override
+    public Class<? extends StreamOperator> getStreamOperatorClass(ClassLoader classLoader) {
+      return NativePaimonWriteOperator.class;
+    }
+  }
+
+  public static final class CoordinatedFactory
+      extends TableWriteOperator.CoordinatedFactory<BucketedArrowBatch> {
+
+    public CoordinatedFactory(
+        FileStoreTable table,
+        StoreSinkWrite.Provider storeSinkWriteProvider,
+        String initialCommitUser) {
+      super(table, storeSinkWriteProvider, initialCommitUser);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T extends TableWriteOperator<BucketedArrowBatch>> T createStreamOperatorImpl(
+        StreamOperatorParameters<Committable> parameters) {
+      return (T)
+          new NativePaimonWriteOperator(
+              parameters, table, storeSinkWriteProvider, initialCommitUser, false);
     }
 
     @Override

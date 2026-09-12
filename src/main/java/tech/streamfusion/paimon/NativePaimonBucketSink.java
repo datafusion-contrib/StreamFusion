@@ -1,6 +1,7 @@
 package tech.streamfusion.paimon;
 
 import org.apache.flink.streaming.api.operators.OneInputStreamOperatorFactory;
+import org.apache.paimon.flink.FlinkConnectorOptions;
 import org.apache.paimon.flink.sink.Committable;
 import org.apache.paimon.flink.sink.FlinkWriteSink;
 import org.apache.paimon.flink.sink.StoreSinkWrite;
@@ -28,11 +29,14 @@ public final class NativePaimonBucketSink extends FlinkWriteSink<BucketedArrowBa
   @Override
   protected OneInputStreamOperatorFactory<BucketedArrowBatch, Committable>
       createWriteOperatorFactory(StoreSinkWrite.Provider writeProvider, String commitUser) {
-    return new NativePaimonWriteOperator.Factory(
-        table,
-        primaryKey ? keyValueWriteProvider(writeProvider) : writeProvider,
-        commitUser,
-        false);
+    StoreSinkWrite.Provider provider =
+        primaryKey ? keyValueWriteProvider(writeProvider) : writeProvider;
+    return table
+            .coreOptions()
+            .toConfiguration()
+            .get(FlinkConnectorOptions.SINK_WRITER_COORDINATOR_ENABLED)
+        ? new NativePaimonWriteOperator.CoordinatedFactory(table, provider, commitUser)
+        : new NativePaimonWriteOperator.Factory(table, provider, commitUser, false);
   }
 
   private static StoreSinkWrite.Provider keyValueWriteProvider(StoreSinkWrite.Provider provider) {
