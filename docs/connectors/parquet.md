@@ -32,9 +32,10 @@ configuration for compression, row-group/page/dictionary sizes, dictionary encod
 writer version, and timestamp unit. Known Flink no-op keys are ignored explicitly; an unknown
 `parquet.*` writer key falls back instead of being silently accepted. Flink still owns rolling,
 partition commit, and filesystem-specific options without translation. `ROW`, `ARRAY`, `MAP`, and
-`MULTISET` are encoded recursively with Flink's exact three-level Parquet list/map layout; nested
-dates, decimals, times, and timestamps use the same host-compatible leaf encoding as top-level
-columns.
+`MULTISET` are encoded recursively with Flink's exact three-level Parquet list/map layout,
+including the legacy `MAP_KEY_VALUE` annotation on each repeated `key_value` group. Nested dates,
+decimals, times, and timestamps use the same host-compatible leaf encoding as top-level columns.
+The partitioned SQL parity test compares stock and native footer schemas and rows with MAP columns.
 
 Falls back to Flink on:
 

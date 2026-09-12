@@ -12,8 +12,10 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.TreeSet;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -37,7 +39,8 @@ import org.junit.jupiter.api.Test;
 class FlinkPartitionedParquetSinkSqlHarnessTest {
 
   private static final String COLUMNS =
-      "dt STRING, v INT, price DECIMAL(10, 2), big DECIMAL(38, 10), dy DATE, ts TIMESTAMP(6)";
+      "dt STRING, v INT, price DECIMAL(10, 2), big DECIMAL(38, 10), dy DATE, ts TIMESTAMP(6),"
+          + " attrs MAP<STRING, BIGINT>";
 
   @Test
   void partitionedNativeParquetSinkMatchesHost() throws Exception {
@@ -85,28 +88,32 @@ class FlinkPartitionedParquetSinkSqlHarnessTest {
                   "source_price",
                   "source_big",
                   "source_date",
-                  "source_timestamp"
+                  "source_timestamp",
+                  "source_attrs"
                 },
                 Types.STRING,
                 Types.INT,
                 Types.BIG_DEC,
                 Types.BIG_DEC,
                 Types.LOCAL_DATE,
-                Types.LOCAL_DATE_TIME),
+                Types.LOCAL_DATE_TIME,
+                Types.MAP(Types.STRING, Types.LONG)),
             Row.of(
                 "a",
                 1,
                 new BigDecimal("12.34"),
                 new BigDecimal("1234567890.0123456789"),
                 LocalDate.of(2024, 5, 1),
-                LocalDateTime.of(2024, 5, 1, 12, 0, 0, 123_456_000)),
+                LocalDateTime.of(2024, 5, 1, 12, 0, 0, 123_456_000),
+                Map.of("x", 10L)),
             Row.of(
                 "a",
                 2,
                 new BigDecimal("-99999999.99"),
                 new BigDecimal("-1.0000000000"),
                 LocalDate.of(1969, 1, 1),
-                LocalDateTime.of(1969, 12, 31, 23, 59, 59, 998_500_000)),
+                LocalDateTime.of(1969, 12, 31, 23, 59, 59, 998_500_000),
+                Collections.singletonMap("y", null)),
             // No null partition value here: Flink's own partitioned SOURCE cannot read a
             // __DEFAULT_PARTITION__ directory back (its path re-generation throws on the restored
             // null), in either engine. Null routing parity is covered at the operator level, where
@@ -117,7 +124,8 @@ class FlinkPartitionedParquetSinkSqlHarnessTest {
                 new BigDecimal("0.01"),
                 new BigDecimal("0.0000000000"),
                 LocalDate.of(2024, 5, 2),
-                LocalDateTime.of(2024, 5, 2, 0, 0)));
+                LocalDateTime.of(2024, 5, 2, 0, 0),
+                Map.of()));
     tEnv.createTemporaryView(
         "s",
         source,
@@ -130,6 +138,7 @@ class FlinkPartitionedParquetSinkSqlHarnessTest {
             .column("source_big", DataTypes.DECIMAL(38, 10))
             .column("source_date", DataTypes.DATE())
             .column("source_timestamp", DataTypes.TIMESTAMP(6))
+            .column("source_attrs", DataTypes.MAP(DataTypes.STRING(), DataTypes.BIGINT()))
             .build());
 
     PhysicalPlanScan scan = useNative ? NativePlanner.install(tEnv) : null;

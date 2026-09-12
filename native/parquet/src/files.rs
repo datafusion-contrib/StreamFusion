@@ -545,14 +545,11 @@ fn host_parquet_type(field: &Field, shape: SchemaShape) -> parquet::schema::type
                 .with_name("key")
                 .with_nullable(false);
             let value = fields[1].as_ref().clone().with_name("value");
-            // parquet-mr's ConversionPatterns.mapType, which Paimon's schema converter uses, still
-            // stamps the legacy MAP_KEY_VALUE converted type on the repeated group.
+            // Both Flink and Paimon use parquet-mr's ConversionPatterns.mapType, which stamps
+            // the legacy MAP_KEY_VALUE converted type on the repeated group.
             let repeated = ParquetType::group_type_builder("key_value")
                 .with_repetition(Repetition::REPEATED)
-                .with_converted_type(match shape {
-                    SchemaShape::Paimon => parquet::basic::ConvertedType::MAP_KEY_VALUE,
-                    SchemaShape::Flink => parquet::basic::ConvertedType::NONE,
-                })
+                .with_converted_type(parquet::basic::ConvertedType::MAP_KEY_VALUE)
                 .with_fields(vec![
                     Arc::new(host_parquet_type(&key, shape)),
                     Arc::new(host_parquet_type(&value, shape)),
@@ -1291,6 +1288,15 @@ mod parquet_encoder_tests {
 
     #[test]
     fn schema_descriptor_matches_flink_shape() {
+        let mut map = arrow::array::MapBuilder::new(
+            None,
+            arrow::array::StringBuilder::new(),
+            arrow::array::Int64Builder::new(),
+        );
+        map.keys().append_value("x");
+        map.values().append_value(10);
+        map.append(true).unwrap();
+        let map = map.finish();
         let schema = Arc::new(Schema::new(vec![
             Field::new("b", DataType::Boolean, true),
             Field::new("i8", DataType::Int8, true),
@@ -1308,26 +1314,10 @@ mod parquet_encoder_tests {
                 DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None),
                 true,
             ),
+            Field::new("attrs", map.data_type().clone(), true),
         ]));
         let batch = RecordBatch::try_new(
-            Arc::new(Schema::new(vec![
-                Field::new("b", DataType::Boolean, true),
-                Field::new("i8", DataType::Int8, true),
-                Field::new("i16", DataType::Int16, false),
-                Field::new("small_dec", DataType::Decimal128(5, 2), true),
-                Field::new("large_dec", DataType::Decimal128(38, 10), true),
-                Field::new("d", DataType::Date32, true),
-                Field::new(
-                    "t",
-                    DataType::Time64(arrow::datatypes::TimeUnit::Microsecond),
-                    true,
-                ),
-                Field::new(
-                    "ts",
-                    DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None),
-                    true,
-                ),
-            ])),
+            schema.clone(),
             vec![
                 Arc::new(BooleanArray::from(vec![Some(true)])),
                 Arc::new(Int8Array::from(vec![Some(1i8)])),
@@ -1345,6 +1335,7 @@ mod parquet_encoder_tests {
                 Arc::new(Date32Array::from(vec![Some(19000)])),
                 Arc::new(Time64MicrosecondArray::from(vec![Some(1_500i64)])),
                 Arc::new(TimestampNanosecondArray::from(vec![Some(1_000_000_000i64)])),
+                Arc::new(map),
             ],
         )
         .unwrap();
@@ -1405,6 +1396,22 @@ mod parquet_encoder_tests {
                 unit: parquet::basic::TimeUnit::MICROS
             })
         );
+        let attrs = &descriptor.root_schema().get_fields()[8];
+        assert_eq!(
+            attrs.get_basic_info().logical_type_ref(),
+            Some(&LogicalType::Map)
+        );
+        let entries = &attrs.get_fields()[0];
+        assert_eq!(entries.name(), "key_value");
+        assert_eq!(entries.get_basic_info().repetition(), Repetition::REPEATED);
+        assert_eq!(
+            entries.get_basic_info().converted_type(),
+            ConvertedType::MAP_KEY_VALUE
+        );
+        assert_eq!(leaf(8).name(), "key");
+        assert_eq!(leaf(8).get_basic_info().repetition(), Repetition::REQUIRED);
+        assert_eq!(leaf(9).name(), "value");
+        assert_eq!(leaf(9).get_basic_info().repetition(), Repetition::OPTIONAL);
     }
 
     #[test]
@@ -1540,7 +1547,7 @@ mod parquet_encoder_tests {
     }
 
     #[test]
-    fn paimon_map_groups_carry_the_legacy_map_key_value_annotation() {
+    fn host_map_groups_carry_the_legacy_map_key_value_annotation() {
         let entries = Arc::new(Field::new(
             "entries",
             DataType::Struct(
@@ -1562,7 +1569,10 @@ mod parquet_encoder_tests {
             repeated_of(SchemaShape::Paimon),
             ConvertedType::MAP_KEY_VALUE
         );
-        assert_eq!(repeated_of(SchemaShape::Flink), ConvertedType::NONE);
+        assert_eq!(
+            repeated_of(SchemaShape::Flink),
+            ConvertedType::MAP_KEY_VALUE
+        );
     }
 
     #[test]
