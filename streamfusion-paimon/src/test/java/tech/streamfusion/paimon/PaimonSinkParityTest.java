@@ -835,8 +835,18 @@ class PaimonSinkParityTest {
     List<Object[]> changes = PaimonTestTables.changelog(30_000, 90);
     FileStoreTable ours =
         writePrimaryKeyFixture(warehouse, "pk_native", options, 1, true, true, true, changes);
+    // Stock postpone files can share a millisecond timestamp and replay out of order. Use its
+    // ordinary merge-tree writer as the arrival-order oracle for this rolled-file regression.
     FileStoreTable stock =
-        writePrimaryKeyFixture(warehouse, "pk_stock", options, 1, false, true, true, changes);
+        writePrimaryKeyFixture(
+            warehouse,
+            "pk_stock",
+            options.replace("'bucket' = '-2'", "'bucket' = '2'"),
+            1,
+            false,
+            true,
+            true,
+            changes);
     assertTrue(
         ours.store().newScan().plan().files().size() > 4,
         "postpone data must span multiple files per writer");
@@ -1171,6 +1181,58 @@ class PaimonSinkParityTest {
   private static final String PK_SCHEMA =
       "(id BIGINT NOT NULL, v INT, PRIMARY KEY (id) NOT ENFORCED)";
 
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "'merge-engine' = 'first-row', 'changelog-producer' = 'lookup'",
+        "'merge-engine' = 'partial-update'",
+        "'merge-engine' = 'aggregation', 'fields.v.aggregate-function' = 'sum'",
+        "'sequence.field' = 'v'",
+        "'rowkind.field' = 'op'"
+      })
+  void primaryKeyMergeOptionsRunThroughTheNativeSqlSink(String options) throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-merge-sql");
+    List<List<String>> contents = new ArrayList<>();
+    for (boolean nativeWriter : new boolean[] {false, true}) {
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      env.enableCheckpointing(1000);
+      StreamTableEnvironment tableEnv = catalogEnvironment(env, warehouse);
+      String name = nativeWriter ? "merge_native" : "merge_stock";
+      tableEnv.executeSql(
+          "CREATE TABLE "
+              + name
+              + " (id BIGINT NOT NULL, v INT, op STRING, PRIMARY KEY (id) NOT ENFORCED)"
+              + " WITH ('bucket' = '2', "
+              + options
+              + ")");
+      tableEnv.createTemporaryView(
+          "merge_source",
+          tableEnv.fromDataStream(
+              env.fromData(
+                  Types.ROW_NAMED(
+                      new String[] {"id", "v", "op"}, Types.LONG, Types.INT, Types.STRING),
+                  Row.of(1L, 9, "+I"),
+                  Row.of(2L, 4, "+I"),
+                  Row.of(1L, 2, "+I"),
+                  Row.of(1L, null, "+I"),
+                  Row.of(2L, 7, "+I")),
+              Schema.newBuilder()
+                  .column("id", "BIGINT NOT NULL")
+                  .column("v", "INT")
+                  .column("op", "STRING")
+                  .build()));
+      PhysicalPlanScan scan = nativeWriter ? NativePlanner.install(tableEnv) : null;
+      tableEnv.executeSql("INSERT INTO " + name + " SELECT * FROM merge_source").await();
+      if (scan != null) {
+        assertAccelerated(scan);
+      }
+      FileStoreTable table = openTable(warehouse, name);
+      contents.add(PaimonTestTables.readRows(table, table.rowType()));
+    }
+    assertEquals(contents.get(0), contents.get(1));
+  }
+
   static Stream<Arguments> declinedTables() {
     return Stream.of(
         Arguments.of(
@@ -1209,12 +1271,22 @@ class PaimonSinkParityTest {
                 + " 'brotli'",
             "compression BROTLI"),
         Arguments.of(
-            PK_SCHEMA,
-            "'bucket' = '2', 'merge-engine' = 'partial-update'",
-            "merge-engine partial-update"),
+            "(id BIGINT NOT NULL, v DOUBLE, PRIMARY KEY (id) NOT ENFORCED)",
+            "'bucket' = '2', 'sequence.field' = 'v'",
+            "sequence.field"),
         Arguments.of(
-            PK_SCHEMA, "'bucket' = '2', 'merge-engine' = 'first-row'", "merge-engine first-row"),
-        Arguments.of(PK_SCHEMA, "'bucket' = '2', 'sequence.field' = 'v'", "sequence.field"),
+            PK_SCHEMA,
+            "'bucket' = '2', 'merge-engine' = 'aggregation', 'sequence.field' = 'v'",
+            "sequence.field with aggregation"),
+        Arguments.of(
+            PK_SCHEMA,
+            "'bucket' = '2', 'merge-engine' = 'partial-update', 'sequence.field' = 'v'",
+            "sequence.field with partial-update"),
+        Arguments.of(
+            "(id BIGINT NOT NULL, v ARRAY<INT>, PRIMARY KEY (id) NOT ENFORCED)",
+            "'bucket' = '2', 'merge-engine' = 'aggregation', 'fields.v.aggregate-function' ="
+                + " 'collect'",
+            "aggregate function collect"),
         Arguments.of(
             PK_SCHEMA,
             "'bucket' = '2', 'local-merge-buffer-size' = '1 mb'",
@@ -1299,6 +1371,9 @@ class PaimonSinkParityTest {
   }
 
   private static String selectFor(String schema) {
+    if (schema.contains("ARRAY<INT>")) {
+      return "ARRAY[v] AS v";
+    }
     if (schema.contains("k DOUBLE")) {
       return "CAST(v AS DOUBLE) AS k";
     }

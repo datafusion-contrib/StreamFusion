@@ -1,4 +1,6 @@
 use crate::*;
+mod merge;
+use merge::{Engine, Options as MergeOptions, Reducer};
 
 /// Which row of a key survives a flush.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -19,6 +21,8 @@ pub(crate) struct KeyedUpsertBuffer {
     kind_column: usize,
     keep: Keep,
     ignore_retracts: bool,
+    merge: MergeOptions,
+    defaults: Option<RecordBatch>,
     batches: Vec<RecordBatch>,
     sequences: Vec<i64>,
     rows: usize,
@@ -58,6 +62,8 @@ impl KeyedUpsertBuffer {
             kind_column,
             keep,
             ignore_retracts,
+            merge: MergeOptions::default(),
+            defaults: None,
             batches: Vec::new(),
             sequences: Vec::new(),
             rows: 0,
@@ -68,7 +74,9 @@ impl KeyedUpsertBuffer {
     /// Retains a batch whose rows take the sequence numbers `first_sequence..` in arrival order and
     /// returns how many rows were retained.
     pub(crate) fn push(&mut self, batch: RecordBatch, first_sequence: i64) -> usize {
-        let batch = if self.ignore_retracts {
+        let batch = self.with_defaults(batch);
+        let batch = self.merge.row_kinds(batch, self.kind_column);
+        let batch = if self.ignore_retracts || self.merge.ignore_update_before {
             self.without_retracts(&batch)
         } else {
             batch
@@ -83,6 +91,36 @@ impl KeyedUpsertBuffer {
         retained
     }
 
+    fn with_defaults(&self, batch: RecordBatch) -> RecordBatch {
+        for (field, column) in batch.schema().fields().iter().zip(batch.columns()) {
+            assert!(
+                field.is_nullable() || column.null_count() == 0,
+                "Cannot write null to non-null column({})",
+                field.name()
+            );
+        }
+        let Some(defaults) = &self.defaults else {
+            return batch;
+        };
+        let mut columns = batch.columns().to_vec();
+        for (column, value) in columns.iter_mut().zip(defaults.columns()) {
+            if value.is_valid(0) && column.null_count() > 0 {
+                let indices: Vec<(usize, usize)> = (0..column.len())
+                    .map(|row| {
+                        if column.is_null(row) {
+                            (1, 0)
+                        } else {
+                            (0, row)
+                        }
+                    })
+                    .collect();
+                *column = arrow::compute::interleave(&[column.as_ref(), value.as_ref()], &indices)
+                    .expect("fill Paimon column defaults");
+            }
+        }
+        RecordBatch::try_new(batch.schema(), columns).expect("defaulted Paimon row")
+    }
+
     fn without_retracts(&self, batch: &RecordBatch) -> RecordBatch {
         let kinds = batch
             .column(self.kind_column)
@@ -91,7 +129,13 @@ impl KeyedUpsertBuffer {
             .expect("row kind column");
         let keep: BooleanArray = kinds
             .iter()
-            .map(|kind| Some(!is_retract(kind.unwrap())))
+            .map(|kind| {
+                let kind = kind.unwrap();
+                Some(
+                    !(self.ignore_retracts && is_retract(kind)
+                        || self.merge.ignore_update_before && kind == UPDATE_BEFORE),
+                )
+            })
             .collect();
         filter_record_batch(batch, &keep).expect("drop ignored retracts")
     }
@@ -152,12 +196,25 @@ impl KeyedUpsertBuffer {
             .convert_columns(&key_arrays.iter().map(|a| (*a).clone()).collect::<Vec<_>>())
             .expect("encode upsert keys");
         let mut order: Vec<usize> = (0..batch.num_rows()).collect();
+        let user_sequences = self.merge.user_sequences(&batch);
         order.sort_unstable_by(|&a, &b| {
             keys.row(a)
                 .cmp(&keys.row(b))
+                .then_with(|| {
+                    user_sequences
+                        .as_ref()
+                        .map_or(std::cmp::Ordering::Equal, |rows| {
+                            rows.row(a).cmp(&rows.row(b))
+                        })
+                })
                 .then(sequence.value(a).cmp(&sequence.value(b)))
         });
         let mut selected: Vec<u32> = Vec::new();
+        let mut reducer = matches!(
+            self.merge.engine,
+            Engine::PartialUpdate | Engine::Aggregation
+        )
+        .then(|| Reducer::new(&self.merge, &batch, self.kind_column));
         let mut group_start = 0;
         while group_start < order.len() {
             let mut group_end = group_start + 1;
@@ -166,7 +223,24 @@ impl KeyedUpsertBuffer {
             {
                 group_end += 1;
             }
-            let survivor = match self.keep {
+            if self.merge.engine == Engine::FirstRow && group_end - group_start > 1 {
+                let kinds = batch
+                    .column(self.kind_column)
+                    .as_any()
+                    .downcast_ref::<Int8Array>()
+                    .expect("row kinds");
+                assert!(order[group_start..group_end].iter().all(|&row| !is_retract(kinds.value(row))),
+                    "First row merge engine cannot accept DELETE/UPDATE_BEFORE records; configure ignore-delete=true");
+            }
+            if let Some(reducer) = &mut reducer {
+                reducer.add_group(&order[group_start..group_end]);
+            }
+            let keep = if self.merge.engine == Engine::FirstRow {
+                Keep::First
+            } else {
+                self.keep
+            };
+            let survivor = match keep {
                 Keep::Last => order[group_end - 1],
                 Keep::First => order[group_start],
             };
@@ -184,7 +258,18 @@ impl KeyedUpsertBuffer {
                 &UInt32Array::from_iter_values(order.iter().map(|&row| row as u32)),
             )
         });
-        let merged = self.key_value_batch(&batch, &sequence, &UInt32Array::from(selected));
+        let selected = UInt32Array::from(selected);
+        let merged = if let Some(reducer) = reducer {
+            let reduced = reducer.finish();
+            let reduced_sequence = take(&sequence, &selected, None).expect("merged sequences");
+            self.key_value_batch(
+                &reduced,
+                &reduced_sequence,
+                &UInt32Array::from_iter_values(0..reduced.num_rows() as u32),
+            )
+        } else {
+            self.key_value_batch(&batch, &sequence, &selected)
+        };
         let sequence_values = merged
             .column(self.key_columns.len())
             .as_any()
@@ -260,9 +345,10 @@ pub extern "system" fn Java_tech_streamfusion_Native_createKeyedUpsertBuffer<'lo
     kind_column: jint,
     keep_last: jboolean,
     ignore_retracts: jboolean,
+    merge_options: JString<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |env| {
-        into_handle(KeyedUpsertBuffer::new(
+        let mut buffer = KeyedUpsertBuffer::new(
             read_columns(env, &key_columns),
             kind_column as usize,
             if keep_last != 0 {
@@ -271,7 +357,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_createKeyedUpsertBuffer<'lo
                 Keep::First
             },
             ignore_retracts != 0,
-        ))
+        );
+        let json: String = env
+            .get_string(&merge_options)
+            .expect("merge options")
+            .into();
+        buffer.merge = serde_json::from_str(&json).expect("native Paimon merge options");
+        into_handle(buffer)
     })
 }
 
@@ -292,6 +384,22 @@ pub extern "system" fn Java_tech_streamfusion_Native_keyedUpsertBufferPush<'loca
             import_record_batch(in_array_address, in_schema_address),
             first_sequence,
         ) as jlong
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_keyedUpsertBufferDefaults<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    array_address: jlong,
+    schema_address: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| {
+        let defaults = import_record_batch(array_address, schema_address);
+        assert_eq!(defaults.num_rows(), 1, "one row of Paimon defaults");
+        let buffer = unsafe { &mut *(handle as *mut KeyedUpsertBuffer) };
+        buffer.defaults = Some(defaults);
     })
 }
 

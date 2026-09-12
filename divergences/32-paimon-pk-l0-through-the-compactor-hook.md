@@ -17,7 +17,7 @@ The sink owns the level-0 file of a primary-key bucket and nothing else:
 
 - **Merge natively.** Each bucket's routed batches, row kinds included, sit in a native buffer that
   stamps arrival sequence numbers and, on flush, sorts by the memcomparable key rows already used
-  for keyed state, keeps the last row per key, and drops ignored retracts before numbering, as
+  for keyed state, applies the configured merge engine, and drops ignored retracts before numbering, as
   Paimon's table write drops them before its writer sees a row. The flush is a batch in Paimon's
   key-value layout (key columns, sequence number, row kind, full row) with every key once, which is
   the invariant Paimon's merge reader requires of a file.
@@ -44,9 +44,9 @@ The sink owns the level-0 file of a primary-key bucket and nothing else:
 - **Identical results by construction.** Module and MiniCluster tests write the same changelog
   through the native path and through Paimon's writer into twin tables and compare rows read back,
   every file's metadata, and Parquet footers, across restarts and through in-job compaction.
-- **A whitelist, not a merge-engine port.** Only the shapes whose level-0 file the native merge
-  reproduces are admitted: fixed or dynamic buckets, `deduplicate` with optional `ignore-delete`, the verified
-  changelog producers and deletion vectors, no sequence field, no thin mode, and key types whose
+- **Whitelist admission.** Only the shapes whose level-0 file the native merge
+  reproduces are admitted: fixed or dynamic buckets, the verified merge engines and field functions,
+  changelog producers and deletion vectors, no thin mode, and key/sequence types whose
   Arrow byte order equals Paimon's key comparator. Everything else falls back to the stock sink at
   planning time. Postpone staging retains every accepted input row instead of merging; its distinct
   file and commit boundary is described in [34](34-paimon-dynamic-and-postpone-buckets.md).
@@ -68,7 +68,7 @@ The sink owns the level-0 file of a primary-key bucket and nothing else:
 ## Changelog production and reuse of upstream writers
 
 Input changelog uses the same sort as the data file: every input row is retained in key and
-arrival-sequence order, while the data output keeps the last row per key. This follows both
+user-sequence and arrival-sequence order, while the data output reduces each key. This follows both
 Paimon 2.0.0's `SortBufferWriteBuffer` and paimon-rust's `KeyValueFileWriter`. In released Java
 Paimon these are independently rolled changelog files in the commit's data increment, not extra
 files attached to individual data files. Their compression and statistics settings are resolved

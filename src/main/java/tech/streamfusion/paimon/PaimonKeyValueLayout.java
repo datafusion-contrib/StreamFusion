@@ -116,7 +116,7 @@ public final class PaimonKeyValueLayout {
     return null;
   }
 
-  private static boolean comparableNatively(DataType type) {
+  static boolean comparableNatively(DataType type) {
     switch (type.getTypeRoot()) {
       case BOOLEAN:
       case TINYINT:

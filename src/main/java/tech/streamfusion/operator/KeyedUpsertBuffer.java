@@ -11,7 +11,7 @@ import tech.streamfusion.Native;
  * Pending changelog rows of one write destination, held natively and merged per key on {@link
  * #flush}. A pushed batch is handed over whole (the buffer owns it afterwards) and its rows take
  * consecutive sequence numbers in arrival order; the flush sorts by key, keeps one row per key (the
- * last or the first to arrive), and returns the rows in a key-value layout: the key columns, the
+ * result of the configured merge), and returns the rows in a key-value layout: the key columns, the
  * sequence number, the row kind, then every table column. Paimon's merge-on-read requires exactly
  * that shape of a file, so a flush is what a level-0 file is written from.
  */
@@ -65,8 +65,20 @@ public final class KeyedUpsertBuffer implements AutoCloseable {
       int kindColumn,
       boolean keepLast,
       boolean ignoreRetracts) {
+    this(allocator, keyColumns, kindColumn, keepLast, ignoreRetracts, "{}");
+  }
+
+  public KeyedUpsertBuffer(
+      BufferAllocator allocator,
+      int[] keyColumns,
+      int kindColumn,
+      boolean keepLast,
+      boolean ignoreRetracts,
+      String mergeOptions) {
     this.allocator = allocator;
-    this.handle = Native.createKeyedUpsertBuffer(keyColumns, kindColumn, keepLast, ignoreRetracts);
+    this.handle =
+        Native.createKeyedUpsertBuffer(
+            keyColumns, kindColumn, keepLast, ignoreRetracts, mergeOptions);
   }
 
   /**
@@ -86,6 +98,19 @@ public final class KeyedUpsertBuffer implements AutoCloseable {
     }
   }
 
+  /** Installs a single row of parsed column defaults, taking ownership of its buffers. */
+  public void defaults(VectorSchemaRoot root) {
+    if (root == null) {
+      return;
+    }
+    try (root;
+        ArrowArray array = ArrowArray.allocateNew(allocator);
+        ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
+      Data.exportVectorSchemaRoot(allocator, root, NativeAllocator.DICTIONARIES, array, schema);
+      Native.keyedUpsertBufferDefaults(handle, array.memoryAddress(), schema.memoryAddress());
+    }
+  }
+
   public long bytes() {
     return Native.keyedUpsertBufferBytes(handle);
   }
@@ -99,7 +124,7 @@ public final class KeyedUpsertBuffer implements AutoCloseable {
     return flush(false);
   }
 
-  /** Also returns the input changelog in key and arrival order when requested. */
+  /** Also returns the input changelog in key, user sequence and arrival order when requested. */
   public Flushed flush(boolean includeChangelog) {
     return flush(includeChangelog, true);
   }

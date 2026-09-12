@@ -15,7 +15,6 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalS
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.CoreOptions.ChangelogProducer;
-import org.apache.paimon.CoreOptions.MergeEngine;
 import org.apache.paimon.CoreOptions.SequenceNumberInitMode;
 import org.apache.paimon.catalog.CatalogContext;
 import org.apache.paimon.fileindex.FileIndexOptions;
@@ -31,14 +30,14 @@ import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.table.Table;
 import tech.streamfusion.paimon.NativePaimonParquetFormat;
 import tech.streamfusion.paimon.PaimonKeyValueLayout;
+import tech.streamfusion.paimon.PaimonMergeOptions;
 
 /**
  * Whitelist-first admission for the columnar Paimon sink. The table is resolved the way Paimon's
  * own Flink factory resolves it, so every option the stock sink would see — DDL, hints, and the
  * table-scoped dynamic options — shapes the native topology identically. An append table takes an
  * insert-only input; a primary-key table takes a changelog, and is admitted only in the shape the
- * native level-0 writer reproduces: the deduplicate merge engine with Paimon's own compaction and
- * changelog production.
+ * native level-0 writer reproduces, with Paimon's own compaction and changelog production.
  */
 final class PaimonSinkMatcher {
   private PaimonSinkMatcher() {}
@@ -189,15 +188,16 @@ final class PaimonSinkMatcher {
 
   /**
    * The primary-key shapes whose files the native level-0 writer reproduces exactly: rows merged by
-   * last arrival (Paimon's deduplicate engine, optionally ignoring deletes), compaction left to the
-   * Paimon writer selected for the table's changelog producer, and sequence numbers continued from
-   * the committed files. Input changelog shares the native sort and encoding; lookup, full
-   * compaction, and deletion vectors retain Paimon's writer lifecycle.
+   * the verified merge functions and sequence comparators, compaction left to the Paimon writer
+   * selected for the table's changelog producer, and sequence numbers continued from the committed
+   * files. Input changelog shares the native sort and encoding; lookup, full compaction, and
+   * deletion vectors retain Paimon's writer lifecycle.
    */
   private static String primaryKeyFallbackReason(
       FileStoreTable table, CoreOptions coreOptions, Options options) {
-    if (coreOptions.mergeEngine() != MergeEngine.DEDUPLICATE) {
-      return "merge-engine " + coreOptions.mergeEngine() + " is not supported";
+    String mergeFallback = PaimonMergeOptions.unsupportedReason(table);
+    if (mergeFallback != null) {
+      return mergeFallback;
     }
     if (coreOptions.changelogProducer() != ChangelogProducer.NONE
         && coreOptions.changelogProducer() != ChangelogProducer.INPUT
@@ -215,12 +215,6 @@ final class PaimonSinkMatcher {
         || !coreOptions.primaryKeyBTreeIndexColumns().isEmpty()
         || !coreOptions.primaryKeyBitmapIndexColumns().isEmpty()) {
       return "primary-key indexes are not supported";
-    }
-    if (!coreOptions.sequenceField().isEmpty()) {
-      return "sequence.field is not supported";
-    }
-    if (coreOptions.rowkindField().isPresent()) {
-      return "rowkind.field is not supported";
     }
     if (coreOptions.localMergeEnabled()) {
       return "local-merge-buffer-size is not supported";

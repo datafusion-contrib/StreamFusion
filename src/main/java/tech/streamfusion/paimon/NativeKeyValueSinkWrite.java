@@ -81,6 +81,7 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   private final PaimonKeyValueLayout layout;
   private final int kindColumn;
   private final boolean ignoreDelete;
+  private final String mergeOptions;
   private final long bufferBudget;
   private final Integer totalBuckets;
   private final Map<BinaryRow, Map<Integer, BucketBuffer>> buffers = new LinkedHashMap<>();
@@ -103,6 +104,7 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
     this.layout = PaimonKeyValueLayout.of(fileTable);
     this.kindColumn = table.rowType().getFieldCount();
     this.ignoreDelete = options.ignoreDelete();
+    this.mergeOptions = PaimonMergeOptions.encode(table);
     this.bufferBudget = options.writeBufferSize();
     this.totalBuckets = table.bucketSpec().getNumBuckets();
     this.files = new NativePaimonKeyValueFileWriter(fileTable, layout);
@@ -178,10 +180,21 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
             partition,
             bucket,
             new KeyedUpsertBuffer(
-                NativeAllocator.SHARED, layout.keyColumns, kindColumn, true, ignoreDelete),
+                NativeAllocator.SHARED,
+                layout.keyColumns,
+                kindColumn,
+                true,
+                ignoreDelete,
+                mergeOptions),
             firstSequence);
     buffer.index = index;
     buffer.postponeFileOrder = fileOrder;
+    try {
+      buffer.buffer.defaults(PaimonMergeOptions.defaults(table, NativeAllocator.SHARED));
+    } catch (Throwable failure) {
+      buffer.buffer.close();
+      throw failure;
+    }
     return buffer;
   }
 

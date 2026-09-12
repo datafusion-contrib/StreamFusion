@@ -88,8 +88,8 @@ A fixed- or dynamic-bucket primary-key table takes the changelog Flink infers fo
 sink declares that it needs no `UPDATE_BEFORE`). The routed batches keep their row kinds and are
 held per bucket in a native buffer. At a checkpoint, or once a task's buffers exceed
 `write-buffer-size` (largest bucket first, as Paimon's memory pool spills), a bucket's rows are
-sorted by key and arrival, reduced to the last row per key (Paimon's `deduplicate` merge engine;
-`ignore-delete` drops the retracts first), and written straight into level-0 data files in Paimon's
+sorted by key, optional user sequence, and arrival, reduced by the table's merge engine,
+and written straight into level-0 data files in Paimon's
 key-value layout with the native Parquet encoder, rolled at `target-file-size`. Every file carries
 the metadata Paimon's own writer records: key bounds, key and value statistics from the footer,
 sequence range, delete count, level 0. Sequence numbers continue from the bucket's committed files
@@ -106,13 +106,48 @@ with a scan of the bucket's committed files, the same cost Paimon's dedicated co
 compaction action) picks the level-0 files up unchanged.
 
 Supported: `bucket >= 1` with the default or an explicit `bucket-key`, or dynamic `bucket = -1`, `merge-engine =
-deduplicate`, `changelog-producer` `none`/`input`/`lookup`/`full-compaction`, `ignore-delete`,
+deduplicate`/`first-row`/`partial-update`/`aggregation`,
+`changelog-producer` `none`/`input`/`lookup`/`full-compaction`, `ignore-delete`, `ignore-update-before`,
 `write-only`, `file.compression*` and
 the `parquet.*` writer keys as for append tables, and key columns of type `BOOLEAN`,
 `TINYINT`..`BIGINT`, `DECIMAL`, `CHAR`/`VARCHAR`, `BINARY`/`VARBINARY`, `DATE`, `TIMESTAMP`, and
 `TIMESTAMP_LTZ` (the native sort orders keys by their Arrow byte encoding, which agrees with
 Paimon's key comparator for exactly these types). An insert-only stream into a primary-key table
 is taken as all inserts.
+
+#### Merge engines and input ordering
+
+- `deduplicate` keeps the last row in merge order; `first-row` keeps the first. Paimon's normal
+  first-row restrictions still apply, including its lookup producer and delete handling.
+- For `deduplicate`, `sequence.field` compares one or more value columns before the arrival number, including
+  ascending or descending `sequence.field.sort-order`. Nulls sort first in both directions;
+  equal user sequences are resolved by arrival. The stored `_SEQUENCE_NUMBER` continues to count
+  accepted arrivals. Sequence columns use the same type whitelist as primary keys above.
+- `rowkind.field` reads `+I`, `-U`, `+U`, or `-D` from a string column. Filtering of ignored deletes
+  and update-before rows happens after this override and before assigning sequence numbers.
+  Null or invalid kind strings fail as in Paimon.
+- `partial-update` merges non-null values. Sequence groups (`fields.<sequence columns>.sequence-group`)
+  can replace protected values with null, retract only their columns, and use the supported field
+  aggregates. Both `partial-update.remove-record-on-delete` and
+  `partial-update.remove-record-on-sequence-group` follow the released writer's behavior.
+- `aggregation` reduces each field with its configured aggregate. Supported functions are `sum`
+  on integer, floating-point and decimal columns; `product` on integer and floating-point columns;
+  `min`/`max` on the comparable types above; `bool_and`/`bool_or`; non-distinct string `listagg`
+  with `fields.<column>.list-agg-delimiter`; and `first_value`, `last_value`,
+  `first_non_null_value` (also `first_not_null_value`), and `last_non_null_value` on all supported
+  value types, including nested columns. Paimon's default aggregate selection,
+  `fields.<column>.ignore-retract`, and `aggregation.remove-record-on-delete` are preserved.
+- Column defaults are parsed by released Java Paimon and fill null values in Arrow before merging.
+  Defaults on primary-key, partition or bucket-key columns fall back because they affect routing.
+
+As in Paimon's level-0 writer, a key with just one buffered row passes through without invoking
+the merge function. This preserves its original row kind and values. Multiple-row partial and
+aggregate reductions produce the same insert/delete kind as Paimon. Compaction and subsequent
+reads apply Paimon's merge functions to these files.
+
+`PaimonMergeEngineTest` compares native and stock writers over checkpoints and restarts, including
+file sequence ranges, delete counts, nested values, defaults, input changelogs and compaction.
+`PaimonSinkParityTest` also checks streaming SQL admission and results for each feature.
 
 ### Dynamic buckets
 
@@ -157,7 +192,7 @@ omit partition columns remain outside the native whitelist.
 For fixed and dynamic buckets:
 
 - **Input:** the same native sort returns every retained input row before deduplication, ordered
-  by primary key and then arrival sequence. These rows, including `UPDATE_BEFORE` and deletes,
+  by primary key, user sequence when configured, and then arrival sequence. These rows, including `UPDATE_BEFORE` and deletes,
   are encoded into separate Parquet changelog files and committed through Paimon's changelog
   manifests. They are not data-file extras, and their rolling boundaries are independent of the
   merged data files. `ignore-delete` removes retracts before both outputs and before numbering.
@@ -202,6 +237,9 @@ harness discards an uncommitted dynamic checkpoint, restores the assigner state,
 input, and compares the resulting hash-to-bucket index and changelog with stock Paimon. A larger
 SQL fixture verifies postpone replay across rolled files. These are ordinary correctness tests;
 the performance diagnostics below are opt-in.
+That rolled-file fixture uses stock fixed-bucket ingestion as its arrival-order oracle: released
+Java postpone writers can give two files the same millisecond creation time and replay them out
+of order. Native postpone files use strictly increasing creation times as described above.
 
 ### Dynamic partition routing and clustering options
 
@@ -264,10 +302,13 @@ Each of these declines at planning time with a reason visible in `NativePlanner.
   `SinkUpsertMaterializer` (`table.exec.sink.upsert-materialize`; Paimon itself refuses that
   operator), `INSERT OVERWRITE`, and batch-mode inserts (the substitution only exists in the
   streaming planner).
-- Primary-key tables with `merge-engine` `first-row`, `partial-update`, or `aggregation`;
+- Primary-key tables with field aggregate/type combinations outside the merge whitelist above
+  (including specialized collection/map/nested/sketch aggregates, distinct `listagg`, decimal
+  `product`, and floating-point `min`/`max`); sequence fields or sequence groups outside the
+  comparable-type whitelist; `sequence.field` combined with `partial-update` or `aggregation`;
+  defaults on routing columns;
   input changelog with `changelog-file.format` other than `parquet` or unsupported changelog
-  compression; primary-key vector, full-text, BTree, or bitmap indexes; `sequence.field`,
-  `rowkind.field`, `local-merge-buffer-size`,
+  compression; primary-key vector, full-text, BTree, or bitmap indexes; `local-merge-buffer-size`,
   `data-file.thin-mode`, `data-file.external-paths`, `sink.key-only-deletes.enabled`,
   `precommit-compact`, `write.sequence-number-init-mode = snapshot`,
   `sink.use-managed-memory-allocator`; or a `FLOAT`/`DOUBLE` key column.
@@ -341,6 +382,34 @@ Full compaction is slower in this row-fed diagnostic. It retains Paimon's rowwis
 adds the native path's conversion and file hand-off costs. Its admission adds coverage for columnar
 pipelines; these measurements do not establish a throughput improvement for that mode.
 
+### Merge-engine writer diagnostic
+
+`PaimonMergeBenchmark` measures row routing, the RowData-to-Arrow conversion, merging, level-0
+Parquet encoding and commit against the released stock writer. It uses 131,072 rows, 16,384 keys,
+two buckets and nine columns including nulls and nested arrays. `write-only` isolates ingestion
+from compaction. Writer setup, close and result verification are outside the timer. After one
+warmup per mode, three measured runs alternate engine order and report the best of each.
+
+On the same local machine with release native libraries:
+
+| Mode | Stock | Native | Throughput ratio |
+|---|---:|---:|---:|
+| First row | 0.116 s | 0.093 s | 1.24× |
+| Partial update with a sequence group | 0.145 s | 0.120 s | 1.21× |
+| Aggregation with sum | 0.127 s | 0.106 s | 1.20× |
+| Deduplicate with two sequence fields | 0.108 s | 0.085 s | 1.27× |
+
+Every run verifies the final table contents against its stock twin. This is a writer diagnostic,
+not an end-to-end Flink job benchmark. Run it with:
+
+```bash
+SF_PAIMON_MERGE_BENCHMARK=true mvn test -Pbench,paimon \
+  -pl :streamfusion-paimon -am -Dtest=PaimonMergeBenchmark \
+  -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+`SF_PAIMON_MERGE_ROWS` changes the input count.
+
 ### Dynamic and postpone SQL diagnostic
 
 The opt-in bucket-mode diagnostic measures streaming SQL ingestion from the same row fixture,
@@ -393,7 +462,7 @@ Paimon.
 ## Outlook
 
 Each remaining gap has its own issue:
-[the other merge engines, `sequence.field`, and `rowkind.field`](https://github.com/datafusion-contrib/StreamFusion/issues/47),
+[remaining merge combinations and specialized field aggregates](https://github.com/datafusion-contrib/StreamFusion/issues/47),
 [the remaining primary-key writer options](https://github.com/datafusion-contrib/StreamFusion/issues/48)
 (thin mode, key-only deletes, local merge, external paths, managed memory, snapshot sequence init),
 [a Paimon bundle entry for the merge-tree writer](https://github.com/datafusion-contrib/StreamFusion/issues/49)

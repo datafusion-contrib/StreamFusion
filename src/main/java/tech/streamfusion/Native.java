@@ -605,13 +605,21 @@ public final class Native {
 
   /**
    * Creates a buffer that retains changelog batches for one write destination and merges them per
-   * key on flush: sorted by key, one surviving row per key (the last or the first by arrival), in
-   * Paimon's key-value file layout. {@code kindColumn} is the hidden row-kind byte column; when
-   * {@code ignoreRetracts} is set, update-before and delete rows are dropped before the merge.
-   * Released with {@link #closeKeyedUpsertBuffer}.
+   * key on flush: sorted by key, one reduced row per key, in Paimon's key-value file layout. {@code
+   * kindColumn} is the hidden row-kind byte column; when {@code ignoreRetracts} is set,
+   * update-before and delete rows are dropped before the merge. {@code mergeOptions} is the
+   * connector's resolved merge plan. Released with {@link #closeKeyedUpsertBuffer}.
    */
   public static native long createKeyedUpsertBuffer(
-      int[] keyColumns, int kindColumn, boolean keepLast, boolean ignoreRetracts);
+      int[] keyColumns,
+      int kindColumn,
+      boolean keepLast,
+      boolean ignoreRetracts,
+      String mergeOptions);
+
+  /** Takes ownership of one Arrow row containing parsed column defaults. */
+  public static native void keyedUpsertBufferDefaults(
+      long handle, long arrayAddress, long schemaAddress);
 
   /**
    * Takes ownership of a batch the JVM exported and assigns its rows the sequence numbers starting
