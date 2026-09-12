@@ -30,6 +30,7 @@ import tech.streamfusion.paimon.BucketedArrowBatchChannelComputer;
 import tech.streamfusion.paimon.NativePaimonAppendSink;
 import tech.streamfusion.paimon.NativePaimonBucketAssigner;
 import tech.streamfusion.paimon.NativePaimonBucketSink;
+import tech.streamfusion.paimon.NativePaimonDynamicPartitionOperator;
 import tech.streamfusion.paimon.NativePaimonPostponeSink;
 
 /**
@@ -169,6 +170,24 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
         shuffled =
             FlinkStreamPartitioner.partition(
                 routed, BucketedArrowBatchChannelComputer.byPartition(partitionArity), parallelism);
+      } else if (partitionArity > 0
+          && table.coreOptions().partitionSinkStrategy()
+              == PartitionSinkStrategy.PARTITION_DYNAMIC) {
+        DataStream<BucketedArrowBatch> assigned =
+            routed
+                .transform(
+                    "Collect Statistics: " + table.name(),
+                    BucketedArrowBatchTypeInformation.INSTANCE,
+                    new NativePaimonDynamicPartitionOperator.Factory(
+                        table.schema(), writerParallelism))
+                .setParallelism(routed.getParallelism());
+        shuffled =
+            FlinkStreamPartitioner.partition(
+                    assigned, BucketedArrowBatchChannelComputer.byChannel(), parallelism)
+                .map(batch -> new BucketedArrowBatch(batch.root(), batch.partition(), 0))
+                .returns(BucketedArrowBatchTypeInformation.INSTANCE)
+                .name("Strip Channel")
+                .setParallelism(writerParallelism);
       }
       end = new NativePaimonAppendSink(table, parallelism).sinkFrom(shuffled);
     }

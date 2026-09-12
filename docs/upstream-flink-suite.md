@@ -39,7 +39,8 @@ built against the suite's Flink version, and fails unless it proves both that a 
 wrote an append-table data file from a native Arrow bundle and that one wrote a primary-key
 level-0 file natively. The native-write markers are emitted only after the write returns successfully.
 Streaming inserts covered by the [Paimon connector whitelist](connectors/paimon.md)
-can take the native sink, including coordinated writers and coordinator commits. Batch inserts,
+can take the native sink, including coordinated writers, coordinator commits, and dynamic
+partition routing. Batch inserts,
 unsupported primary-key options, and compaction rewrites use stock Paimon. `CoordinatorCommitITCase`
 checks removal of the global committer, coordinator metrics, committed rows, and snapshot watermark
 parity for active and idle inputs. Because
@@ -110,6 +111,14 @@ commit-coordinator cases, and a deterministic primary-key write to verify native
 
 ```bash
 FLINK_SUITE_TEST='org.apache.paimon.flink.CoordinatorCommitITCase,org.apache.paimon.flink.BatchFileStoreITCase#testWriteRestoreCoordinator*,org.apache.paimon.flink.ReadWriteTableITCase#testStreamingReadWriteWithPartitionedRecordsWithPk' \
+  bin/flink-suite.sh paimon
+```
+
+The focused streaming dynamic-partition run uses Paimon's unchanged skewed-input SQL test,
+alongside a primary-key write to satisfy the suite's two native-write checks:
+
+```bash
+FLINK_SUITE_TEST='org.apache.paimon.flink.AppendTableITCase#testPartitionDynamicStreaming,org.apache.paimon.flink.ReadWriteTableITCase#testStreamingReadWriteWithPartitionedRecordsWithPk' \
   bin/flink-suite.sh paimon
 ```
 

@@ -16,7 +16,6 @@ import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.CoreOptions.ChangelogProducer;
 import org.apache.paimon.CoreOptions.MergeEngine;
-import org.apache.paimon.CoreOptions.PartitionSinkStrategy;
 import org.apache.paimon.CoreOptions.SequenceNumberInitMode;
 import org.apache.paimon.catalog.CatalogContext;
 import org.apache.paimon.fileindex.FileIndexOptions;
@@ -138,11 +137,11 @@ final class PaimonSinkMatcher {
     if (!CoreOptions.blobField(table.options()).isEmpty()) {
       return Planned.fallback("BLOB columns are not supported");
     }
-    if (!coreOptions.clusteringColumns().isEmpty()) {
-      return Planned.fallback("sink clustering is not supported");
-    }
-    if (coreOptions.partitionSinkStrategy() == PartitionSinkStrategy.PARTITION_DYNAMIC) {
-      return Planned.fallback("partition.sink-strategy PARTITION_DYNAMIC is not supported");
+    // Paimon parses these typed arguments before skipping clustering in STREAMING mode.
+    if (!coreOptions.clusteringIncrementalEnabled()
+        || coreOptions.clusteringIncrementalOptimizeWrite()) {
+      options.get(FlinkConnectorOptions.CLUSTERING_SORT_IN_CLUSTER);
+      options.get(FlinkConnectorOptions.CLUSTERING_SAMPLE_FACTOR);
     }
     RelDataType inputType = sink.getInput().getRowType();
     List<String> fieldNames = table.rowType().getFieldNames();

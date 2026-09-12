@@ -148,7 +148,8 @@ The native sink uses the released Java connector for these lifecycles; see
 Files written natively are row-, metadata-, statistics-, and footer-schema-identical to the stock
 writer's (verified against twin tables in `PaimonSinkParityTest`, `NativePaimonParquetWriterTest`,
 `NativePaimonKeyValueFileWriterTest`, `NativeKeyValueSinkWriteTest`, and
-`PaimonChangelogSinkWriteTest`), except for the postpone staging encoding described above, and
+`PaimonChangelogSinkWriteTest`), except for the postpone staging encoding described above and
+the random per-file row distribution with `PARTITION_DYNAMIC` described below, and
 `bin/flink-suite.sh paimon` runs Paimon's own unchanged append-table SQL integration tests with the
 native sink installed (see [the upstream suite](../upstream-flink-suite.md)). The
 one known statistics difference: a `DOUBLE`/`FLOAT` column whose minimum is a negative zero is
@@ -160,6 +161,29 @@ harness discards an uncommitted dynamic checkpoint, restores the assigner state,
 input, and compares the resulting hash-to-bucket index and changelog with stock Paimon. A larger
 SQL fixture verifies postpone replay across rolled files. These are ordinary correctness tests;
 the performance diagnostics below are opt-in.
+
+### Dynamic partition routing and clustering options
+
+Partitioned bucket-unaware append tables support `partition.sink-strategy = PARTITION_DYNAMIC`.
+Paimon's Java statistics operator reports partition row counts at checkpoints; its existing
+coordinator aggregates and broadcasts them, and its weighted channel selector distributes each
+partition across writers. Before statistics arrive, a partition uses up to four writers. Recovery
+starts collecting fresh statistics, just as in stock Paimon. Only the partition keys enter this
+Java logic; payloads stay in Arrow batches, split natively by the selected channel. The writer
+still receives Paimon's unaware bucket 0, independently of its shuffle channel.
+
+The choices are random in stock Paimon, so individual file contents, sizes, and statistics may
+differ between equivalent executions. Table rows, partition keys, bucket identity, footer schema,
+and codecs retain parity. Tests cover statistics replacement, null partitions, row order within
+each channel, different writer parallelisms, watermarks, and recovery after a completed checkpoint.
+Other bucket modes and unpartitioned tables retain their normal routing, as in stock Paimon.
+
+`sink.clustering.*` (including the `clustering.columns` and `clustering.strategy` names) does not
+force fallback. Paimon 2.0.0 skips range clustering in **STREAMING execution mode**, even for a
+bounded source, so these options do not insert a shuffle or sort. Typed option values are still
+parsed as in Paimon, so malformed booleans and sample factors remain errors. Incremental-clustering
+table settings retain Paimon's Java write and compaction behavior. StreamFusion accelerates only the
+streaming planner; batch range clustering and separate clustering jobs remain stock Paimon.
 
 ### Writer and commit coordinators
 
@@ -208,7 +232,6 @@ Each of these declines at planning time with a reason visible in `NativePlanner.
   `sink.use-managed-memory-allocator`; or a `FLOAT`/`DOUBLE` key column.
 - `file.format` other than `parquet`, `file.format.per.level`, `write-buffer-for-append = true`,
   file indexes (`file-index.*`), `row-tracking.enabled`, `data-evolution.enabled`, `BLOB` columns.
-- `sink.clustering.*`, `partition.sink-strategy = PARTITION_DYNAMIC`.
 - A nullable query field assigned to a `NOT NULL` target, or a bounded `CHAR`/`VARCHAR` or
   `BINARY`/`VARBINARY` target while `table.exec.sink.type-length-enforcer` is enabled. The stock
   sink path preserves Flink's configured fail/drop and trim/pad/error behavior.
@@ -339,7 +362,6 @@ Each remaining gap has its own issue:
 [a Paimon bundle entry for the merge-tree writer](https://github.com/datafusion-contrib/StreamFusion/issues/49)
 that would remove the compaction hand-off and the idle-writer rescan,
 [ORC data files](https://github.com/datafusion-contrib/StreamFusion/issues/35),
-[clustering and the dynamic partition sink strategy](https://github.com/datafusion-contrib/StreamFusion/issues/37),
 and [native encoding through the buffered spill mode](https://github.com/datafusion-contrib/StreamFusion/issues/40).
 Released Paimon 2.0.0 walks a bundle row by row before the format writer; a Paimon release that
 passes bundles through takes the same writer's direct path with no change here

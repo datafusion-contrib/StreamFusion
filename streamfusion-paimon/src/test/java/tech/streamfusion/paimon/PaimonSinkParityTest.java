@@ -87,10 +87,15 @@ class PaimonSinkParityTest {
           .map(column -> column[0] + " " + column[1])
           .collect(Collectors.joining(", "));
 
-  @Test
-  void fixedBucketPartitionedTableMatchesTheStockTwin() throws Exception {
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "",
+        ", 'partition.sink-strategy' = 'PARTITION_DYNAMIC', 'clustering.columns' = 'id'"
+      })
+  void fixedBucketPartitionedTableMatchesTheStockTwin(String extra) throws Exception {
     java.nio.file.Path warehouse = Files.createTempDirectory("paimon-sink-fixed");
-    String options = "'bucket' = '2', 'bucket-key' = 'id,ts'";
+    String options = "'bucket' = '2', 'bucket-key' = 'id,ts'" + extra;
     FileStoreTable nativeTable = insertFixture(warehouse, "PARTITIONED BY (pt)", options, 1, true);
     FileStoreTable stockTable = insertFixture(warehouse, "PARTITIONED BY (pt)", options, 1, false);
 
@@ -134,6 +139,105 @@ class PaimonSinkParityTest {
     FileStoreTable stockTable = insertFixture(warehouse, "PARTITIONED BY (pt)", options, 2, false);
 
     assertSameTables(stockTable, nativeTable, true, ROWS);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 3, 7})
+  void dynamicPartitionRoutingPreservesRowsAndUnawareBuckets(int writers) throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-partition-dynamic");
+    String options =
+        "'bucket' = '-1', 'partition.sink-strategy' = 'PARTITION_DYNAMIC', 'sink.parallelism' = '"
+            + writers
+            + "'";
+    FileStoreTable stock = insertFixture(warehouse, "PARTITIONED BY (pt)", options, 2, false);
+    FileStoreTable ours = insertFixture(warehouse, "PARTITIONED BY (pt)", options, 2, true);
+    assertEquals(ROWS, PaimonTestTables.readRows(ours, ours.rowType()).size());
+    assertEquals(
+        PaimonTestTables.readRows(stock, stock.rowType()),
+        PaimonTestTables.readRows(ours, ours.rowType()));
+    assertEquals(
+        PaimonTestTables.dataFiles(stock).keySet(), PaimonTestTables.dataFiles(ours).keySet());
+    // Weighted random routing changes rows per file, even between two stock executions.
+    assertEquals(footerSchemasAndCodecs(stock), footerSchemasAndCodecs(ours));
+  }
+
+  private static Map<String, java.util.Set<String>> footerSchemasAndCodecs(FileStoreTable table)
+      throws Exception {
+    return PaimonTestTables.footers(table).entrySet().stream()
+        .collect(
+            Collectors.toMap(
+                Map.Entry::getKey,
+                entry ->
+                    entry.getValue().stream()
+                        .map(footer -> footer.replaceAll("rows=\\d+", "rows"))
+                        .collect(Collectors.toSet())));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"order", "zorder", "hilbert"})
+  void sinkClusteringOptionsAreIgnoredInStreamingLikeStock(String strategy) throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-streaming-clustering");
+    // Batch clustering would reject the absent column and low sample factor. Streaming skips
+    // clustering before validating either option, even when its source happens to be bounded.
+    String options =
+        "'bucket' = '-1', 'sink.clustering.by-columns' = 'missing_column',"
+            + " 'sink.clustering.strategy' = '"
+            + strategy
+            + "', 'sink.clustering.sort-in-cluster' = 'true',"
+            + " 'sink.clustering.sample-factor' = '1'";
+    FileStoreTable stock = insertFixture(warehouse, "", options, 1, false);
+    FileStoreTable ours = insertFixture(warehouse, "", options, 1, true);
+    assertSameTables(stock, ours, true, ROWS);
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void incrementalClusteringKeepsStockStreamingWriteBehavior(boolean optimizeWrite)
+      throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-incremental-clustering");
+    String options =
+        "'bucket' = '-1', 'clustering.columns' = 'id',"
+            + " 'clustering.incremental' = 'true', 'clustering.incremental.optimize-write' = '"
+            + optimizeWrite
+            + "'";
+    FileStoreTable stock = insertFixture(warehouse, "PARTITIONED BY (pt)", options, 1, false);
+    FileStoreTable ours = insertFixture(warehouse, "PARTITIONED BY (pt)", options, 1, true);
+    assertSameTables(stock, ours, true, ROWS);
+  }
+
+  @Test
+  void dynamicPartitionStrategyWithoutPartitionsIsIgnoredLikeStock() throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-dynamic-unpartitioned");
+    String options = "'bucket' = '-1', 'partition.sink-strategy' = 'PARTITION_DYNAMIC'";
+    FileStoreTable stock = insertFixture(warehouse, "", options, 1, false);
+    FileStoreTable ours = insertFixture(warehouse, "", options, 1, true);
+    assertSameTables(stock, ours, true, ROWS);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"sink.clustering.sample-factor", "sink.clustering.sort-in-cluster"})
+  void streamingClusteringStillParsesTypedOptions(String option) throws Exception {
+    List<String> failures = new ArrayList<>();
+    for (boolean nativeSink : new boolean[] {false, true}) {
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      StreamTableEnvironment tableEnv =
+          catalogEnvironment(env, Files.createTempDirectory("paimon-clustering-invalid"));
+      tableEnv.executeSql(
+          "CREATE TABLE invalid (id BIGINT) WITH ('bucket' = '-1', '"
+              + option
+              + "' = 'not-a-value')");
+      tableEnv.createTemporaryView(
+          "input_rows", tableEnv.fromDataStream(env.fromSequence(1, 2)).as("id"));
+      if (nativeSink) NativePlanner.install(tableEnv);
+      Throwable failure =
+          assertThrows(
+              Throwable.class,
+              () -> tableEnv.executeSql("INSERT INTO invalid SELECT id FROM input_rows").await());
+      while (failure.getCause() != null) failure = failure.getCause();
+      failures.add(failure.getMessage());
+    }
+    assertEquals(failures.get(0), failures.get(1));
   }
 
   @Test
@@ -366,12 +470,13 @@ class PaimonSinkParityTest {
   private static final AtomicBoolean COORDINATED_JOB_RESTARTED = new AtomicBoolean();
 
   @ParameterizedTest
-  @ValueSource(strings = {"append", "fixed-primary-key", "dynamic-primary-key"})
+  @ValueSource(
+      strings = {"append", "fixed-primary-key", "dynamic-primary-key", "dynamic-partition"})
   @Timeout(120)
   void writerCoordinatorRecoversAfterACompletedCheckpoint(String mode) throws Exception {
     java.nio.file.Path warehouse = Files.createTempDirectory("paimon-coordinated-checkpoint");
     List<List<String>> contents = new ArrayList<>();
-    boolean primaryKey = !mode.equals("append");
+    boolean primaryKey = mode.contains("primary-key");
     for (boolean nativeWriter : new boolean[] {false, true}) {
       COORDINATED_JOB_FAILED.set(false);
       COORDINATED_JOB_RESTARTED.set(false);
@@ -391,10 +496,13 @@ class PaimonSinkParityTest {
               + name
               + " (id BIGINT NOT NULL, v BIGINT"
               + (primaryKey ? ", PRIMARY KEY (id) NOT ENFORCED" : "")
-              + ") WITH ("
-              + (mode.equals("dynamic-primary-key")
-                  ? "'bucket' = '-1', 'dynamic-bucket.target-row-num' = '10'"
-                  : "'bucket' = '2', 'bucket-key' = 'id'")
+              + (mode.equals("dynamic-partition") ? ", pt BIGINT) PARTITIONED BY (pt)" : ")")
+              + " WITH ("
+              + (mode.equals("dynamic-partition")
+                  ? "'bucket' = '-1', 'partition.sink-strategy' = 'PARTITION_DYNAMIC'"
+                  : mode.equals("dynamic-primary-key")
+                      ? "'bucket' = '-1', 'dynamic-bucket.target-row-num' = '10'"
+                      : "'bucket' = '2', 'bucket-key' = 'id'")
               + ", 'sink.parallelism' = '2', 'sink.writer-coordinator.enabled' = 'true',"
               + " 'sink.writer-coordinator.page-size' = '10 b')");
       DataStream<Row> rows =
@@ -413,7 +521,9 @@ class PaimonSinkParityTest {
                   + name
                   + " SELECT "
                   + (primaryKey ? "MOD(id, 100)" : "id")
-                  + ", v FROM recovery_source")
+                  + ", v"
+                  + (mode.equals("dynamic-partition") ? ", MOD(id, 5)" : "")
+                  + " FROM recovery_source")
           .await();
       if (nativeWriter) {
         assertAccelerated(scan);
@@ -541,6 +651,7 @@ class PaimonSinkParityTest {
   static Stream<String> dynamicBucketOptions() {
     return Stream.of(
         "",
+        ", 'partition.sink-strategy' = 'PARTITION_DYNAMIC', 'clustering.columns' = 'id'",
         ", 'dynamic-bucket.assigner-parallelism' = '3', 'dynamic-bucket.initial-buckets' = '2'",
         ", 'dynamic-bucket.assigner-parallelism' = '1'",
         ", 'dynamic-bucket.max-buckets' = '2'",
@@ -598,6 +709,7 @@ class PaimonSinkParityTest {
       strings = {
         "",
         ", 'partition.sink-strategy' = 'hash'",
+        ", 'partition.sink-strategy' = 'PARTITION_DYNAMIC', 'clustering.columns' = 'id'",
         ", 'ignore-delete' = 'true'",
         ", 'changelog-producer' = 'input'",
         ", 'changelog-producer' = 'lookup'",
@@ -1056,14 +1168,6 @@ class PaimonSinkParityTest {
             "(id BIGINT, v INT)",
             "'bucket' = '-1', 'row-tracking.enabled' = 'true'",
             "row tracking"),
-        Arguments.of(
-            "(id BIGINT, v INT)",
-            "'bucket' = '-1', 'sink.clustering.by-columns' = 'v'",
-            "clustering"),
-        Arguments.of(
-            "(id BIGINT, v INT, pt STRING) PARTITIONED BY (pt)",
-            "'bucket' = '-1', 'partition.sink-strategy' = 'PARTITION_DYNAMIC'",
-            "PARTITION_DYNAMIC"),
         Arguments.of("(id BIGINT, v TIMESTAMP(9))", "'bucket' = '-1'", "INT96"),
         Arguments.of(
             "(id BIGINT, v INT)",
