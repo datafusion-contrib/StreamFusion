@@ -12,13 +12,9 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 
 /**
- * Number↔string (and string-length) casts in a Calc: the native engine can't reproduce Java's
- * formatting/parsing byte-for-byte (double rendering is even JDK-version-dependent), so these run
- * Flink's own {@code CastExecutor} through the columnar JVM upcall — trailing zeros,
- * scientific-notation thresholds, and trim semantics are the host's own by construction, while the
- * rest of the expression stays native. Covers both directions over every numeric type incl. decimal,
- * the narrowing {@code VARCHAR(n)} / padding {@code CHAR(n)} string casts, and the (previously
- * approximate-flag-gated) float/double→DECIMAL cast.
+ * Mixed native INT/string and host-exact casts in a Calc. The remaining numeric families and
+ * string-length casts use Flink's {@code CastExecutor} through the columnar JVM upcall, including
+ * JDK-dependent double rendering and float/double-to-DECIMAL conversion.
  */
 class FlinkStringCastSqlHarnessTest {
 

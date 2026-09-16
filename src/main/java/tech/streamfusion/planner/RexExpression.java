@@ -95,6 +95,9 @@ final class RexExpression {
   private static final int KIND_LIT_TEMPORAL = 24;
   private static final int KIND_CLOCK = 25;
   private static final int KIND_LIT_TIMESTAMP = 29;
+  private static final int KIND_CAST_STRING_INT = 30;
+  // The payload is the SQL VARCHAR length; Arrow Utf8 alone cannot carry this constraint.
+  private static final int KIND_CAST_INT_STRING = 31;
   // Fused exact arithmetic: payload is the declared result precision*100 + scale; two children.
   private static final int KIND_DECIMAL_ADD = 26;
   private static final int KIND_DECIMAL_SUBTRACT = 27;
@@ -175,9 +178,12 @@ final class RexExpression {
   }
 
   static RexExpression encode(RexNode node, org.apache.calcite.rel.RelNode context) {
+    return encode(node, org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(context));
+  }
+
+  static RexExpression encode(RexNode node, org.apache.flink.table.api.TableConfig config) {
     RexExpression encoder = new RexExpression();
-    encoder.configure(
-        org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(context));
+    encoder.configure(config);
     return encoder.emit(node) ? encoder : null;
   }
 
@@ -1226,6 +1232,9 @@ final class RexExpression {
     if (!(node instanceof RexCall call)) {
       return false;
     }
+    if (call.getKind() == SqlKind.CAST && isStringToIntCast(call)) {
+      return true;
+    }
     if (call.getType().getSqlTypeName().getFamily() == SqlTypeFamily.NUMERIC
         && call.getType().getSqlTypeName() != SqlTypeName.FLOAT
         && call.getType().getSqlTypeName() != SqlTypeName.REAL
@@ -1643,6 +1652,10 @@ final class RexExpression {
     if (n < 2) {
       return false;
     }
+    if (operands.stream().anyMatch(RexExpression::containsStringToIntCast)) {
+      // Flink can materialize these arguments before COALESCE; a lazy CASE would hide failures.
+      return reject("String-to-INT casts under COALESCE require Flink's evaluation order");
+    }
     // CASE operands are [when1, then1, …, else]; each leading arg becomes an IS NOT NULL guard and
     // the same arg as its result, with the final arg the else.
     add(KIND_CALL, opCode(SqlKind.CASE), 2 * (n - 1) + 1);
@@ -1658,12 +1671,7 @@ final class RexExpression {
     return emit(operands.get(n - 1));
   }
 
-  /**
-   * Emits a cast, but only a widening numeric one (integer to a wider integer, integer to
-   * float/double, float to double, or an identity cast). Those are lossless and evaluate
-   * identically on both sides; narrowing, float-to-integer, and string casts differ in
-   * overflow/rounding/parsing semantics, so they are not admitted and the expression falls back.
-   */
+  /** Uses verified native kernels first, then the host-exact cast bridge for remaining pairs. */
   private boolean emitCast(RexCall call) {
     if (call.getOperands().size() != 1) {
       return reject("unsupported CAST arity");
@@ -1720,6 +1728,18 @@ final class RexExpression {
       add(KIND_CAST_NARROW, narrowTarget, 1);
       return emit(call.getOperands().get(0));
     }
+    if (Boolean.FALSE.equals(legacyCastBehaviour)) {
+      if (isStringToIntCast(call)) {
+        add(KIND_CAST_STRING_INT, 0, 1);
+        return emit(call.getOperands().get(0));
+      }
+      if (source == SqlTypeName.INTEGER
+          && targetType == SqlTypeName.VARCHAR
+          && resultType.getPrecision() > 0) {
+        add(KIND_CAST_INT_STRING, resultType.getPrecision(), 1);
+        return emit(call.getOperands().get(0));
+      }
+    }
     // The casts whose formatting/parsing the native engine cannot reproduce byte-for-byte — a
     // number
     // (incl. decimal) to/from a string, narrowing a string / padding to CHAR(n), and the inexact
@@ -1730,6 +1750,20 @@ final class RexExpression {
       return emitHostCast(call, sourceType, resultType);
     }
     return reject("unsupported CAST " + source + "→" + targetType);
+  }
+
+  private static boolean isStringToIntCast(RexCall call) {
+    if (call.getOperands().size() != 1 || call.getType().getSqlTypeName() != SqlTypeName.INTEGER) {
+      return false;
+    }
+    SqlTypeName source = call.getOperands().get(0).getType().getSqlTypeName();
+    return source == SqlTypeName.VARCHAR || source == SqlTypeName.CHAR;
+  }
+
+  private static boolean containsStringToIntCast(RexNode node) {
+    return node instanceof RexCall call
+        && ((call.getKind() == SqlKind.CAST && isStringToIntCast(call))
+            || call.getOperands().stream().anyMatch(RexExpression::containsStringToIntCast));
   }
 
   /**

@@ -29,6 +29,7 @@ mod ascii;
 mod binary_strings;
 mod charset;
 mod chr;
+pub(crate) mod integer_cast;
 pub(crate) mod integer_divide;
 mod is_json;
 mod json_exists;

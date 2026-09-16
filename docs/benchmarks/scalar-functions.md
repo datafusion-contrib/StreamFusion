@@ -783,3 +783,113 @@ JSON_EXISTS:
 |---|---:|---:|
 | ASCII values, no NULLs | 1.703 | 1.226 |
 | Unicode values, NULL every eighth row | 1.445 | 1.097 |
+
+
+## Integer casts (2026-09-16)
+
+Measured on an Apple M3 Pro (18 GiB), JDK 17.0.14, UTC, Flink 2.2.1, DataFusion 54.0.0,
+and the release/mimalloc native build. These measurements concern the default-mode INT/string
+kernels only; they do not extend the [cast admission contract](../operators/calc-filter.md#integerstring-kernels).
+
+### Batch boundary comparison
+
+`IntegerCastBatchBenchmark` compares the new Rust expression with the existing production
+`HostCastFunction` in the **same build and JVM**, alternating execution order on every trial.
+The host branch explicitly registers the old JVM UDF node; the Rust branch has no JVM UDF nodes.
+The two branches use identical prebuilt Arrow inputs, two warmups and five measured trials.
+Each trial runs 256 batches. Input construction and expression registration are outside the timer;
+Calc evaluation, outer JNI/Arrow export/import, output materialization/close, and the host branch's
+nested JVM/Arrow callback are inside it. No row/Arrow transpose is measured by this diagnostic.
+The Java importer consumes the output C structs, so each batch owns fresh structs on both branches.
+
+String samples cover zero, positive/negative values, INT bounds, signs/leading zeros/ASCII spaces,
+and decimal text (`12.9`). Integer samples are the corresponding parsed values. A separate JVM
+repeats the experiment with every eighth row NULL. Batch sizes are 128, 1,024 and 4,096;
+all trials are in [the raw batch data](integer-cast-batches-2026-09-16.csv).
+The table shows median milliseconds for 256 batches of 4,096 rows (1,048,576 rows per trial):
+
+| Expression | NULL every | Host cast (ms) | Rust cast (ms) | Host/Rust |
+|---|---:|---:|---:|---:|
+| STRING -> INT | 0 | 85.213 | 13.790 | 6.18x |
+| INT -> STRING | 0 | 46.039 | 22.000 | 2.09x |
+| INT -> VARCHAR(2) | 0 | 107.268 | 21.893 | 4.90x |
+| STRING -> INT -> STRING | 0 | 136.768 | 36.839 | 3.71x |
+| STRING -> INT | 8 | 81.426 | 14.959 | 5.44x |
+| INT -> STRING | 8 | 48.746 | 23.764 | 2.05x |
+| INT -> VARCHAR(2) | 8 | 86.267 | 23.180 | 3.72x |
+| STRING -> INT -> STRING | 8 | 126.276 | 35.664 | 3.54x |
+
+Reproduce each scenario in a fresh JVM, with no other build, test or benchmark running:
+
+```sh
+TZ=UTC SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench \
+  -Dnative.cargo.packages='-p streamfusion' -Dtest=IntegerCastBatchBenchmark \
+  -Dcast.batchSizes=128,1024,4096 -Dcast.batches=256 -Dcast.warmup=2 -Dcast.runs=5 \
+  -Dcast.nullEvery=0 -Dcast.output=target/integer-cast-batches.csv
+```
+
+Repeat with `cast.nullEvery=8` and a different output file. The benchmark verifies input/output
+row counts and closes every result; semantic validation belongs to the released-Flink differential
+tests, not to timing assertions. These ratios are not end-to-end Flink speedups.
+
+### Complete-job before/after comparison
+
+The same `ScalarFunctionBenchmark` harness runs four projections over 2,000,000 rows,
+parallelism 1, two warmups and five measured trials per JVM, alternating Flink/native order. Two
+rounds use fresh JVMs: before then after in round 1, after then before in round 2. The before
+build is `ebe550c69122909cd08fca8ee89380478a92cc5c` with the identical benchmark and shared-fixture
+files applied;
+the after build includes the integer/string kernels. Both use release/mimalloc. Native plans
+must contain `NativeCalc`, `RowDataToArrow` and `ArrowToRowData`; the source remains rowwise
+and the sink remains Flink's blackhole sink. Times include planning and job startup/teardown.
+
+The two INT formatting cases use alternating nonnegative/negative sequence values. STRING-to-INT
+cycles the batch diagnostic's valid string samples. The nested projection uses the issue's exact
+`LPAD(CAST(CAST(SUBSTR(s, 11, 2) AS INT) / 15 * 15 AS VARCHAR), 2, '0')` expression over
+`timestamp:00`, `timestamp:17`, `timestamp:29`, and `timestamp:59`. The substring must be
+`00`, `17`, `29`, and `59`, respectively, and the final output must be `00`, `15`, `15`, and `45`.
+Both engines verify these expected results using the shared fixtures before any timing; the regular
+SQL parity suite runs the same check without enabling benchmarks. This exercises zero and nonzero
+buckets and both LPAD padding and no-padding paths. These dedicated inputs do not use `scalar.bytes`;
+the retained generic CSV field is not their actual string length. This complete-job run has no NULLs.
+
+All four projections were remeasured on both builds after correcting the nested projection's fixtures.
+The earlier date-formatted fixtures put a space at position 11 and collapsed every bucket to zero;
+those measurements are superseded, not mixed into this data. No other Java/Rust build or test process
+was observed during the retained measurement rounds. All recorded trials, including job-lifecycle
+outliers, are retained in [the raw job data](integer-cast-jobs-2026-09-16.csv).
+The CSV identifies each round separately. The table uses pooled medians of all ten trials per
+build/engine in seconds, not best-of timings:
+
+| Projection | Flink before | Native before | Flink after | Native after | Native before/after |
+|---|---:|---:|---:|---:|---:|
+| CAST_STRING_INT | 0.481 | 0.854 | 0.542 | 0.794 | 1.08x |
+| CAST_INT_STRING | 0.435 | 0.807 | 0.444 | 0.765 | 1.05x |
+| CAST_INT_VARCHAR2 | 0.551 | 0.968 | 0.611 | 0.806 | 1.20x |
+| CAST_INTEGER_PIPELINE | 0.729 | 1.128 | 0.743 | 0.938 | 1.20x |
+
+These before/after differences include complete-job variability; source-matched identity controls
+and both sets of Flink timings remain in the CSV. They must not be confused with the isolated
+callback comparison above, nor treated as a guarantee that every standalone native CAST beats
+stock Flink. In particular, STRING-to-INT's per-round native before/after ratios were 0.74x and
+1.24x, so the pooled 1.08x is not evidence of a stable standalone-job speedup. The corrected nested
+pipeline's per-round ratios were 1.33x and 1.09x; the pooled result replaces the earlier 1.52x
+measurement on all-zero buckets. No slower round or lifecycle outlier was removed.
+The batch comparison isolates the removed callback more directly, while these jobs
+retain the perimeter cost that can dominate a small projection.
+All four after-build native jobs remain slower than their paired stock Flink runs in this measurement.
+
+```sh
+TZ=UTC SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench \
+  -Dnative.cargo.packages='-p streamfusion' \
+  '-Dtest=ScalarFunctionBenchmark#individualFunctions' \
+  -Dscalar.functions=CAST_STRING_INT,CAST_INT_STRING,CAST_INT_VARCHAR2,CAST_INTEGER_PIPELINE \
+  -Dscalar.rows=2000000 -Dscalar.warmup=2 -Dscalar.runs=5 \
+  -Dscalar.output=target/integer-cast-jobs.csv
+```
+
+The same-build batch benchmark remains the reproducible old/new comparison after the planner
+switch ships; reproducing the job-level before numbers requires the stated baseline plus the
+identical benchmark-only fixtures, not disabling native execution altogether. Run the command in a
+fresh JVM for each build in each round, reversing build order in the second round and preserving
+separate output files before pooling the trials.

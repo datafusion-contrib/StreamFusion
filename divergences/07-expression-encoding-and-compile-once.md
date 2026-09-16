@@ -185,9 +185,12 @@ strict NULL propagation applied to `CONCAT` below.
   the low bits, two's-complement) or **saturates** (a float/double source rounds toward zero and clamps
   to the INT/BIGINT range, `NaN`→0); byte/short targets then keep the low bits of that INT.
   A dedicated kernel uses staged Rust `as` casts to reproduce the two-step Java conversion; parity is
-  tested at the `2³¹`/`2³²+1` integer boundaries and the `NaN`/`±∞`/`±1e20` float boundaries. **String
-  casts still fall back:** number→string / string→number (formatting/parsing diverges from Arrow),
-  narrowing a `VARCHAR` (truncation), and casting *to* `CHAR(n)` (space-padding). A **`CHAR`/`VARCHAR`→
+  tested at the `2³¹`/`2³²+1` integer boundaries and the `NaN`/`±∞`/`±1e20` float boundaries.
+  Under default cast behavior, **STRING/VARCHAR/CHAR to INT and INT to STRING/VARCHAR(n)** now use
+  Flink-compatible Rust kernels, rather than Arrow's different parsing rules or a JVM upcall.
+  Other number/string pairs, narrowing strings to VARCHAR, and casting to CHAR(n) retain the
+  host-exact cast bridge. Legacy mode and unverified evaluation contexts fall back at planning time;
+  the precise gates live in `docs/operators/calc-filter.md`. A **`CHAR`/`VARCHAR`→
   `VARCHAR`** cast with target length ≥ source is admitted as an unpadded passthrough (Flink stores both
   unpadded and neither pads nor truncates a widening string cast), which is what lets `COALESCE(s,'x')`
   (its `CHAR` literal branch unified up to `VARCHAR`) route.

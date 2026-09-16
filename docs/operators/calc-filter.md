@@ -188,15 +188,41 @@ FLOAT/DOUBLE to TINYINT or SMALLINT first performs that INT conversion, then kee
 low 8 or 16 bits. Thus `128.75` becomes TINYINT `-128`, and positive infinity becomes
 TINYINT/SMALLINT `-1`. NULL remains NULL for every target.
 
+### Integer/string kernels
+
+Under the default, non-legacy cast behavior, **`STRING`/`VARCHAR`/`CHAR` to `INT`** and
+**`INT` to `STRING`/`VARCHAR(n)`** execute entirely in Rust. They do not register a host cast
+or call the JVM scalar bridge. NULL propagates, including for bounded VARCHAR results.
+
+Parsing follows released Flink 2.2.1, not Rust's integer parser or a generic Arrow cast:
+only ASCII spaces at the ends are removed; an optional sign and ASCII digits are accepted;
+a decimal fraction is validated and truncated toward zero. Even `.`, `+.` and `-.` yield zero.
+Tabs, newlines, Unicode whitespace/digits, scientific notation, malformed text and integer overflow
+fail the job. Integer formatting uses canonical decimal text, then truncates to the VARCHAR length
+without padding (`CAST(-123 AS VARCHAR(1))` is `'-'`).
+
+A string-to-INT cast below `AND`/`OR` falls back at planning time so invalid values on rows
+skipped by Flink's short-circuit evaluation cannot fail a native batch. String-to-INT beneath
+COALESCE also falls back: Flink can materialize its arguments eagerly, whereas lowering it to a
+lazy CASE could hide a cast failure. CASE uses selected-row evaluation, and a Calc filters before
+evaluating its projections. Integer-to-string formatting needs neither extra gate. The existing
+conservative string/numeric equality gate still rejects a direct cast operand of `=` or `<>`,
+including explicit `CAST(s AS INT) = 42`; ordered comparisons such as `CAST(s AS INT) > 0` are
+admitted. This change does not broaden comparison coercions.
+
+Legacy or unknown cast mode keeps its existing fallback. `TRY_CAST` is not admitted by these
+kernels and continues to run in Flink. Other integer widths, FLOAT/DOUBLE/DECIMAL conversions,
+casts to `CHAR(n)`, and string-length casts retain the paths described below.
+
 ### The host-exact JVM upcall
 
-A second group of casts is **native by default, and this is not a fallback** — it's a real JNI call
+The remaining admitted casts are **native by default, and this is not a fallback** — it's a real JNI call
 back into Flink's own cast machinery (`CastExecutor`/`CastRuleProvider`) for the one column being
 cast, with the rest of the expression tree still evaluated natively around it:
 
-- **Number ↔ string, both directions** — `CAST(x AS VARCHAR)`, `CAST(s AS INT)`, decimals
-  included.
-- **Narrowing a `VARCHAR`** (truncation).
+- **Remaining number ↔ string pairs**, including TINYINT/SMALLINT/BIGINT, floating point
+  and decimal conversions, except the native INT pairs above.
+- **Narrowing a string to `VARCHAR(n)`** (truncation).
 - **Casting to `CHAR(n)`** (space-padding).
 - **`→ DECIMAL` from a `float`/`double`.**
 

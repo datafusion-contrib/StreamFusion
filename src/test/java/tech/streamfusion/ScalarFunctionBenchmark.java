@@ -109,6 +109,15 @@ class ScalarFunctionBenchmark {
               SCALAR_FUNCTIONS,
               SEARCH_FUNCTIONS,
               ENCODING_FUNCTIONS,
+              List.of(
+                  new Query("CAST_STRING_INT", "cast_integer", "CAST(s AS INT)", "INT"),
+                  new Query("CAST_INT_STRING", "integer", "CAST(n AS STRING)", "STRING"),
+                  new Query("CAST_INT_VARCHAR2", "integer", "CAST(n AS VARCHAR(2))", "STRING"),
+                  new Query(
+                      "CAST_INTEGER_PIPELINE",
+                      "cast_timestamp",
+                      IntegerCastBenchmarkInputs.PIPELINE_EXPRESSION,
+                      "STRING")),
               TextTimeFunctions.QUERIES,
               List.of(
                   new Query("SHA1", "tt_text", "SHA1(s)"),
@@ -170,6 +179,9 @@ class ScalarFunctionBenchmark {
       throw new IllegalArgumentException("scalar.engine must be both, flink, or native");
     }
     List<Query> selected = selected();
+    if (selected.stream().anyMatch(query -> query.name().equals("CAST_INTEGER_PIPELINE"))) {
+      IntegerCastBenchmarkInputs.verifyPipeline();
+    }
     Map<String, Query> baselines = new LinkedHashMap<>();
     for (Query query : selected) {
       if (query.input().startsWith("tt_")) {
@@ -367,6 +379,9 @@ class ScalarFunctionBenchmark {
   private static TableEnvironment environment(String input) {
     if (input.startsWith("tt_")) {
       return TextTimeBenchmarkInputs.environment(input, ROWS, BYTES, UNICODE, NULL_EVERY);
+    }
+    if (input.startsWith("cast_")) {
+      return IntegerCastBenchmarkInputs.environment(input, ROWS, NULL_EVERY);
     }
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);

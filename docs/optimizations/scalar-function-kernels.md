@@ -16,6 +16,31 @@ cargo bench --manifest-path native/Cargo.toml -p streamfusion --features mimallo
 
 Run one benchmark at a time. Kernel diagnostics and complete SQL jobs measure different work.
 
+## Integer/string CAST
+
+Default-mode STRING/VARCHAR/CHAR-to-INT and INT-to-STRING/VARCHAR(n) use local Rust scalar
+functions instead of registering `HostCastFunction`. This eliminates the nested JVM transition,
+Arrow C Data export/import, Java column materialization, and reflective per-row cast invocation.
+The ordinary Calc entry/exit boundaries remain unchanged.
+
+The parser scans borrowed UTF-8 bytes, trims only ASCII spaces and accumulates negatively with
+checked arithmetic, preserving Flink 2.2.1's decimal-text truncation and INT_MIN handling.
+Formatting reuses one small decimal-text buffer per batch and writes directly to an Arrow string
+builder, truncating ASCII output to the SQL VARCHAR length. Scalar arguments remain scalar.
+
+Admission is deliberately narrower than all numeric casts. Legacy mode, TRY_CAST and fallible
+boolean/COALESCE contexts retain the documented fallback, while other numeric families and CHAR
+output retain the host bridge. See [the exact cast contract](../operators/calc-filter.md#integerstring-kernels)
+and [release measurements](../benchmarks/scalar-functions.md#integer-casts-2026-09-16).
+
+On the recorded M3 Pro release run, 4,096-row batches are 2.09x to 6.18x faster than the same-build
+host-cast path without NULLs (2.05x to 5.44x with one NULL every eight rows). Corrected two-million-row
+job fixtures cover zero and nonzero buckets, verified against explicit results before timing. Pooled
+medians across two fresh-JVM rounds are 1.05x to 1.20x faster than the previous native implementation,
+including 1.20x for the nested pipeline. STRING-to-INT varies from 0.74x to 1.24x across rounds, so
+its pooled 1.08x does not establish a stable standalone-job speedup. All four jobs still trail their
+paired stock Flink runs: eliminating an internal callback does not remove the row/Arrow perimeter cost.
+
 ## LOCATE
 
 The two-argument form reverses operands into DataFusion strpos. The three-argument Rust kernel follows DataFusion's batch ASCII detection, one reusable memmem::Finder for literal needles, and memmem searches for column needles. Constant needles/starts stay scalar, following Comet's contains pattern. Shared positioning code preserves Flink's empty-needle and signed-start rules; no JVM callback is added.

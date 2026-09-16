@@ -121,6 +121,24 @@ pub(crate) fn build_expr(
             datafusion::logical_expr::ScalarUDF::new_from_impl(NarrowingCast::new(target))
                 .call(vec![child])
         }
+        30 | 31 => {
+            let cast = if kinds[node] == 30 {
+                crate::flink_functions::integer_cast::IntegerStringCast::parse()
+            } else {
+                crate::flink_functions::integer_cast::IntegerStringCast::format(arg)
+            };
+            let child = build_expr(
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
+            );
+            datafusion::logical_expr::ScalarUDF::new_from_impl(cast).call(vec![child])
+        }
         6 => {
             let op = payload[node];
             let count = child_counts[node] as usize;
