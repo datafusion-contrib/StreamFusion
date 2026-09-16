@@ -32,10 +32,18 @@ in the replacement still fails the query when the first argument is non-NULL. Th
 short-circuiting `COALESCE`/`CASE`, so IFNULL uses a separate eager columnar kernel. Selection
 uses Arrow validity and preserves decimal precision/scale; an all-valid input reuses its array.
 
+Eager evaluation applies only to rows that pass the Calc filter. When a batch has no
+surviving rows, Calc builds correctly typed empty output columns without evaluating
+projections, including scalar replacement expressions such as `1 / 0`. A zero-row input
+also skips condition evaluation. Changelog tags retain their empty column and schema.
+For example, `SELECT IFNULL(id, 1 / 0) FROM src WHERE id = 99` returns no rows when all
+runtime ids are `2`, `0` or NULL; it still fails if a row survives the filter.
+
 Admission checks the resolved built-in definition. A registered user function named IFNULL keeps
 its own implementation through the existing scalar-UDF bridge. Unsupported child expressions
 still retain their normal fallback rules. SQL tests cover values, schemas, exception behavior,
-volatile argument evaluation and an IFNULL projection/filter composed with native Top-1.
+volatile argument evaluation, all-filtered batches, and an IFNULL projection/filter composed
+with native Top-1.
 
 ## RAND and RAND_INTEGER
 

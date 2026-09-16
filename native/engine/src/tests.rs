@@ -6667,6 +6667,96 @@ fn calc_filtered_literal_projection_preserves_selected_row_count() {
         .is_empty());
 }
 
+#[test]
+fn calc_empty_filtered_batch_skips_failing_projection_and_keeps_schema() {
+    let input = ab_batch();
+    let mut fields = input.schema().fields().to_vec();
+    fields.push(Arc::new(Field::new(ROW_KIND_COLUMN, DataType::Int8, false)));
+    let mut columns = input.columns().to_vec();
+    columns.push(Arc::new(Int8Array::from(vec![0, 1, 2])));
+    let input = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
+    let mut calc = CalcExpression {
+        // a > 99; IFNULL(a, 1 / 0), DECIMAL(12,3) literal, b
+        kinds: vec![6, 0, 1, 6, 0, 6, 1, 1, 16, 0],
+        payload: vec![10, 0, 0, 158, 0, 3, 1, 2, 0, 1],
+        child_counts: vec![2, 0, 0, 2, 0, 2, 0, 0, 0, 0],
+        longs: vec![99, 1, 0],
+        doubles: vec![],
+        strings: vec![Some("1234|12|3".to_string())],
+        projection_roots: vec![3, 8, 9],
+        condition_root: 0,
+        output_names: vec!["v".into(), "d".into(), "b".into()],
+        compiled: None,
+    };
+    let expected = Schema::new(vec![
+        Field::new("v", DataType::Int64, true),
+        Field::new("d", DataType::Decimal128(12, 3), true),
+        Field::new("b", DataType::Int64, true),
+        Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+    ]);
+    for batch in [input.clone(), input.slice(0, 0), input] {
+        let out = calc.evaluate(batch);
+        assert_eq!(out.num_rows(), 0);
+        assert_eq!(out.schema().as_ref(), &expected);
+    }
+}
+
+#[test]
+fn calc_empty_input_skips_failing_condition() {
+    let mut calc = CalcExpression {
+        // (1 / 0) = a; projection: b
+        kinds: vec![6, 6, 1, 1, 0, 0],
+        payload: vec![14, 3, 0, 1, 0, 1],
+        child_counts: vec![2, 2, 0, 0, 0, 0],
+        longs: vec![1, 0],
+        doubles: vec![],
+        strings: vec![],
+        projection_roots: vec![5],
+        condition_root: 0,
+        output_names: vec!["b".into()],
+        compiled: None,
+    };
+    let out = calc.evaluate(ab_batch().slice(0, 0));
+    assert_eq!(out.num_rows(), 0);
+    assert_eq!(
+        out.schema().field(0),
+        &Field::new("b", DataType::Int64, true)
+    );
+}
+
+#[test]
+fn calc_empty_constant_projection_does_not_hide_later_survivor_errors() {
+    let mut calc = CalcExpression {
+        // a > 1; projection: 1 / 0, with no projection input columns.
+        kinds: vec![6, 0, 1, 6, 1, 1],
+        payload: vec![10, 0, 0, 3, 0, 1],
+        child_counts: vec![2, 0, 0, 2, 0, 0],
+        longs: vec![1, 0],
+        doubles: vec![],
+        strings: vec![],
+        projection_roots: vec![3],
+        condition_root: 0,
+        output_names: vec!["v".into()],
+        compiled: None,
+    };
+    let out = calc.evaluate(ab_batch().slice(0, 1));
+    assert_eq!(out.num_rows(), 0);
+    assert_eq!(out.schema().field(0).data_type(), &DataType::Int64);
+    assert!(calc
+        .compiled
+        .as_ref()
+        .unwrap()
+        .projection_input_indices
+        .is_empty());
+    let error = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        calc.evaluate(ab_batch());
+    }));
+    assert!(
+        error.is_err(),
+        "surviving rows must still evaluate the projection"
+    );
+}
+
 // A Calc projects a field pulled out of a ROW/struct column (kind 13 → get_field), the Nexmark
 // view shape (`bid.price`).
 #[test]

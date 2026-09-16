@@ -318,7 +318,7 @@ impl CalcExpression {
                 .expect("failed to prune Calc projection inputs")
         };
         let filtered = match condition {
-            Some(predicate) => {
+            Some(predicate) if batch.num_rows() > 0 => {
                 let evaluated = predicate
                     .evaluate(&batch)
                     .expect_flink("failed to evaluate condition")
@@ -334,17 +334,27 @@ impl CalcExpression {
                     filter_record_batch(&projected, mask).expect("failed to filter batch")
                 }
             }
-            None => projected,
+            _ => projected,
         };
         let rows = filtered.num_rows();
         let mut columns: Vec<ArrayRef> = Vec::with_capacity(projections.len());
         let mut fields: Vec<Field> = Vec::with_capacity(projections.len());
         for (i, projection) in projections.iter().enumerate() {
-            let array = projection
-                .evaluate(&filtered)
-                .expect_flink("failed to evaluate projection")
-                .into_array(rows)
-                .expect("failed to materialize projection");
+            // Scalar arguments can fail before a kernel sees the empty array. Flink never
+            // evaluates a projection without a surviving row, but the output must keep its type.
+            let array = if rows == 0 {
+                arrow::array::new_empty_array(
+                    &projection
+                        .data_type(filtered.schema().as_ref())
+                        .expect("failed to infer empty projection type"),
+                )
+            } else {
+                projection
+                    .evaluate(&filtered)
+                    .expect_flink("failed to evaluate projection")
+                    .into_array(rows)
+                    .expect("failed to materialize projection")
+            };
             fields.push(Field::new(
                 &self.output_names[i],
                 array.data_type().clone(),

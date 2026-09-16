@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Locale;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -15,6 +16,8 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.table.functions.ScalarFunction;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
 
@@ -86,6 +89,36 @@ class FlinkIfNullSqlHarnessTest {
         assertTrue(scan.substitutions() > 0, scan.fallbackReasons().toString());
       }
     }
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"id", "CAST(id AS BIGINT)", "CAST(id AS DECIMAL(12,3))"})
+  void allFilteredRowsSkipFailingScalarReplacement(String input) throws Exception {
+    NativeParity.assertKindedParity(
+        FlinkIfNullSqlHarnessTest::nullableIds,
+        "SELECT IFNULL(" + input + ", 1 / 0) FROM src WHERE id = 99",
+        List.of());
+  }
+
+  @Test
+  void replacementOnlyEvaluatesForSurvivingRows() throws Exception {
+    NativeParity.assertParity(
+        FlinkIfNullSqlHarnessTest::nullableIds, "SELECT IFNULL(id, 1 / id) FROM src WHERE id = 2");
+  }
+
+  private static TableEnvironment nullableIds() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment table = StreamTableEnvironment.create(env);
+    table.createTemporaryView(
+        "src",
+        env.fromData(
+            Types.ROW_NAMED(new String[] {"id"}, Types.INT),
+            Row.of(2),
+            Row.of(0),
+            Row.of((Object) null)),
+        Schema.newBuilder().column("id", DataTypes.INT()).build());
+    return table;
   }
 
   @Test
