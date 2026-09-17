@@ -1,6 +1,17 @@
 use crate::*;
 use arrow::datatypes::TimeUnit;
 
+fn encoded_field_type(encoded: &str) -> DataType {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .expect("Arrow schema encoding");
+    let schema =
+        arrow::ipc::convert::try_schema_from_ipc_buffer(&bytes).expect("encoded Arrow schema");
+    assert_eq!(schema.fields().len(), 1, "encoded schema field count");
+    schema.field(0).data_type().clone()
+}
+
 /// Builds a DataFusion expression from the JVM's pre-order encoding (ticket 19): `kinds`, `payload`,
 /// and `child_counts` describe each node, with literals drawn from the typed pools by `payload`.
 pub(crate) fn build_expr(
@@ -29,18 +40,12 @@ pub(crate) fn build_expr(
         4 => logical_lit(longs[arg] != 0),
         // An untyped NULL; the surrounding expression's coercion (e.g. a CASE branch) types it.
         5 => datafusion::prelude::Expr::Literal(ScalarValue::Null, None),
-        31 => {
-            use base64::Engine;
-            let bytes = base64::engine::general_purpose::STANDARD
-                .decode(strings[arg].as_deref().expect("typed NULL schema"))
-                .expect("typed NULL schema encoding");
-            let schema = arrow::ipc::convert::try_schema_from_ipc_buffer(&bytes)
-                .expect("typed NULL Arrow schema");
-            assert_eq!(schema.fields().len(), 1, "typed NULL schema field count");
-            logical_lit(
-                ScalarValue::try_from(schema.field(0).data_type()).expect("typed NULL scalar type"),
-            )
-        }
+        31 => logical_lit(
+            ScalarValue::try_from(&encoded_field_type(
+                strings[arg].as_deref().expect("typed NULL schema"),
+            ))
+            .expect("typed NULL scalar type"),
+        ),
         // Narrow integer literals carry their declared width so arithmetic evaluates in the same
         // type as the host (e.g. `int * 2` stays int32 and wraps), not a widened type.
         7 => logical_lit(longs[arg] as i32),
@@ -234,9 +239,18 @@ pub(crate) fn build_expr(
         }
         // A JVM UDF node: `arg` indexes the long pool at [udf id, return-type code]; the children are the
         // argument expressions. Builds a JvmUdf scalar function that upcalls the JVM per batch.
-        17 => {
+        17 | 38 => {
             let id = longs[arg] as i32;
-            let return_type = udf_data_type(longs[arg + 1]);
+            let row_result = kinds[node] == 38;
+            let return_type = if row_result {
+                encoded_field_type(
+                    strings[longs[arg + 1] as usize]
+                        .as_deref()
+                        .expect("row UDF schema"),
+                )
+            } else {
+                udf_data_type(longs[arg + 1])
+            };
             let count = child_counts[node] as usize;
             let mut children = Vec::with_capacity(count);
             for _ in 0..count {
@@ -251,8 +265,12 @@ pub(crate) fn build_expr(
                     cursor,
                 ));
             }
-            datafusion::logical_expr::ScalarUDF::new_from_impl(JvmUdf::new(id, return_type))
-                .call(children)
+            datafusion::logical_expr::ScalarUDF::new_from_impl(JvmUdf::new(
+                id,
+                return_type,
+                row_result,
+            ))
+            .call(children)
         }
         // Preserve the legacy literal encoding used by native timestamp arithmetic. The generated
         // temporal evaluator uses kind 24 for its signed millisecond interval arguments instead.
@@ -1887,16 +1905,20 @@ pub(crate) struct JvmUdf {
     id: i32,
     return_type: DataType,
     signature: datafusion::logical_expr::Signature,
+    row_result: bool,
 }
 
 impl JvmUdf {
-    fn new(id: i32, return_type: DataType) -> Self {
+    fn new(id: i32, return_type: DataType, row_result: bool) -> Self {
         Self {
             id,
             return_type,
-            signature: datafusion::logical_expr::Signature::variadic_any(
-                datafusion::logical_expr::Volatility::Immutable,
-            ),
+            row_result,
+            signature: datafusion::logical_expr::Signature::variadic_any(if row_result {
+                datafusion::logical_expr::Volatility::Volatile
+            } else {
+                datafusion::logical_expr::Volatility::Immutable
+            }),
         }
     }
 }
@@ -1918,7 +1940,14 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
         use datafusion::common::DataFusionError;
         use datafusion::logical_expr::ColumnarValue;
         let exec = |e: String| DataFusionError::Execution(e);
-        let arrays = ColumnarValue::values_to_arrays(&args.args)?;
+        let arrays = if self.row_result {
+            args.args
+                .into_iter()
+                .map(|value| value.into_array(args.number_rows))
+                .collect::<datafusion::common::Result<Vec<_>>>()?
+        } else {
+            ColumnarValue::values_to_arrays(&args.args)?
+        };
         // Pack the argument columns into one batch (arg0..argN-1) to hand across the boundary at once.
         let fields: Vec<Field> = arrays
             .iter()
@@ -1927,6 +1956,7 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
             .collect();
         let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays)
             .map_err(|e| exec(e.to_string()))?;
+        let rows = batch.num_rows();
         let struct_data = StructArray::from(batch).to_data();
 
         // Export the args; the JVM imports and releases them within the call. Allocate empty output
@@ -1962,6 +1992,13 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
             unsafe { from_ffi(out_array, &out_schema) }.map_err(|e| exec(e.to_string()))?;
         data.align_buffers();
         let result = StructArray::from(data);
+        if self.row_result
+            && (result.len() != rows || result.column(0).data_type() != &self.return_type)
+        {
+            return Err(exec(
+                "row UDF returned an unexpected row count or type".into(),
+            ));
+        }
         Ok(ColumnarValue::Array(result.column(0).clone()))
     }
 }

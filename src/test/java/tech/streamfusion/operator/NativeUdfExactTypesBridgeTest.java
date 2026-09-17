@@ -2,6 +2,7 @@ package tech.streamfusion.operator;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
@@ -9,9 +10,15 @@ import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.vector.DecimalVector;
+import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.complex.StructVector;
+import org.apache.flink.table.data.GenericRowData;
+import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.functions.ScalarFunction;
+import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.logical.VarBinaryType;
 import org.junit.jupiter.api.Test;
 
 class NativeUdfExactTypesBridgeTest {
@@ -25,6 +32,94 @@ class NativeUdfExactTypesBridgeTest {
     public byte[] eval(byte[] value) {
       return value;
     }
+  }
+
+  public static class SharedBinaryRow extends ScalarFunction implements NativeUdf.RowResult {
+    private final byte[] buffer = new byte[1];
+    private final GenericRowData row = new GenericRowData(2);
+
+    public RowData eval(Integer value) {
+      if (value == 0) return null;
+      if (value == -1) throw new IllegalArgumentException("row evaluation failed");
+      buffer[0] = value.byteValue();
+      row.setField(0, buffer);
+      buffer[0]++;
+      row.setField(1, buffer);
+      return row;
+    }
+
+    @Override
+    public RowType rowResultType() {
+      return RowType.of(new VarBinaryType(), new VarBinaryType());
+    }
+  }
+
+  @Test
+  void completeRowsRetainAliasesAndSurviveSlicedInputRelease() throws Exception {
+    long before = NativeAllocator.SHARED.getAllocatedMemory();
+    var function = new SharedBinaryRow();
+    int id =
+        NativeUdf.register(
+            function,
+            SharedBinaryRow.class.getMethod("eval", Integer.class),
+            new int[] {NativeUdf.TYPE_INT},
+            NativeUdf.TYPE_ROW);
+    try (ArrowArray output = ArrowArray.allocateNew(NativeAllocator.SHARED);
+        ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+      try (IntVector values = new IntVector("id", NativeAllocator.SHARED);
+          VectorSchemaRoot input = VectorSchemaRoot.of(values)) {
+        values.allocateNew();
+        for (int i = 0; i < 5; i++) values.setSafe(i, new int[] {99, 1, 0, 3, 4}[i]);
+        input.setRowCount(5);
+        try (VectorSchemaRoot slice = input.slice(1, 4)) {
+          invoke(id, slice, output, schema);
+        }
+      }
+      function.eval(100);
+      try (VectorSchemaRoot result =
+          Data.importVectorSchemaRoot(
+              NativeAllocator.SHARED, output, schema, NativeAllocator.DICTIONARIES)) {
+        StructVector rows = (StructVector) result.getVector(0);
+        assertEquals(4, result.getRowCount());
+        assertTrue(rows.isNull(1));
+        for (var child : rows.getChildrenFromFields()) {
+          var bytes = (VarBinaryVector) child;
+          assertArrayEquals(new byte[] {2}, bytes.get(0));
+          assertArrayEquals(new byte[] {4}, bytes.get(2));
+          assertArrayEquals(new byte[] {5}, bytes.get(3));
+        }
+      }
+    } finally {
+      NativeUdf.unregister(id);
+    }
+    assertEquals(before, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
+  @Test
+  void failedRowEvaluationReleasesPartiallyWrittenOutput() throws Exception {
+    long before = NativeAllocator.SHARED.getAllocatedMemory();
+    int id =
+        NativeUdf.register(
+            new SharedBinaryRow(),
+            SharedBinaryRow.class.getMethod("eval", Integer.class),
+            new int[] {NativeUdf.TYPE_INT},
+            NativeUdf.TYPE_ROW);
+    try (ArrowArray output = ArrowArray.allocateNew(NativeAllocator.SHARED);
+        ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED);
+        IntVector values = new IntVector("id", NativeAllocator.SHARED);
+        VectorSchemaRoot input = VectorSchemaRoot.of(values)) {
+      values.allocateNew();
+      values.setSafe(0, 1);
+      values.setSafe(1, -1);
+      input.setRowCount(2);
+      var failure =
+          assertThrows(IllegalArgumentException.class, () -> invoke(id, input, output, schema));
+      assertEquals("row evaluation failed", failure.getMessage());
+    } finally {
+      NativeUdf.unregister(id);
+      NativeUdf.propagateUpcallFailure(new IllegalStateException("native upcall failed"));
+    }
+    assertEquals(before, NativeAllocator.SHARED.getAllocatedMemory());
   }
 
   @Test

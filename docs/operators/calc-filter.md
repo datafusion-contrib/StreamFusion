@@ -116,11 +116,36 @@ Generated and direct calls share function instances and a single task lifecycle,
 serialization. Code generation and runtime initialization use Flink's user-code classloader.
 
 `VARBINARY` uses raw bytes, preserving empty values, embedded zeros, arbitrary non-text bytes, and
-NULL. Results are copied into Arrow before the next row is evaluated, so a single call can reuse
-its result buffer. More than one binary UDF call in a Calc, including nested calls, falls back:
-Flink may retain a shared mutable array between call sites until the row is emitted, which a
-column-at-a-time evaluation does not reproduce. Removing this gate is tracked in
-[the shared binary result issue](https://github.com/datafusion-contrib/StreamFusion/issues/116).
+NULL. Results are copied into Arrow before the next row is evaluated. A Calc with multiple
+binary UDF calls, including nested calls and calls shared between predicates and projections,
+uses Flink's generated code for the **complete row**. This preserves call order and shared mutable
+arrays until every result field has been evaluated. For example, if `shared(id)` reuses its own
+four-byte buffer, `SELECT shared(id), shared(id + 1)` retains the second call's bytes in both
+columns, exactly as Flink does. Copying each call immediately would change that result.
+
+The generated Calc evaluates its predicate before projections and returns one nullable Arrow
+struct per input row through the existing batch bridge. A NULL struct drops the row; NULL
+fields remain ordinary output values. Native Calc selects the matching changelog tags and
+exposes the struct's child columns to the next columnar operator. Zero-column projections,
+zero-argument functions, and fully filtered batches preserve their row counts. Function identity,
+serialization, lifecycle and exceptions use the same task binding as other scalar calls.
+
+This complete-row path executes on the JVM, including sibling expressions. It admits only
+inputs and outputs supported by the scalar bridge: primitive numeric/boolean, character,
+VARBINARY, DECIMAL, date/time/timestamp and interval values. Collection and nested ROW inputs
+or outputs still fall back, as do unsupported UDF signatures and specialized functions. Temporal
+columns and builtin expressions are supported here; temporal **user-function signatures** retain
+the restriction above. The path preserves columnar operator boundaries and avoids a separate
+host Calc between native operators; it does not turn Java UDFs into Rust kernels.
+
+The release/mimalloc diagnostic for `SELECT id, shared(id), shared(id + 1)` measured
+**0.342965s Flink / 0.694285s native** (0.494× Flink/native), using one million generated rows,
+parallelism one, two warmups and five alternating measured trials per engine. The native plan
+includes both RowData→Arrow and Arrow→RowData transposes and the same rowwise blackhole sink.
+The isolated projection is slower: this extension preserves correctness and enables composition
+with neighboring native operators, with no standalone speedup claimed. Reproduce with
+`SF_BENCHMARK=true mvn -Pbench -pl :streamfusion-runtime -am -Dtest=SharedBinaryUdfBenchmark
+-Dsurefire.failIfNoSpecifiedTests=false test`.
 
 Registered scalar functions take precedence over builtin names, including in nested expressions
 and filters. A function registered as `UPPER`, for example, invokes the registered Java function
@@ -135,14 +160,19 @@ Runtime parity tests cover mixed projections, repeated decimal calls, nullable p
 values, scale normalization, overflow and its pre-conversion nullness, nested external values,
 conditional consumers, exception parity, typed NULL arguments, shadowed builtin names, shared
 lifecycle-dependent functions, and 5,003-row inputs. C Data tests
-cover sliced inputs, output survival after input release, and reclamation of Arrow allocations.
+cover sliced inputs, output survival after input release, shared-array mutation after export,
+and reclamation of Arrow allocations after success or a partially written row result fails.
+Shared binary SQL regressions compare ordered raw changelogs against released Flink and require
+executed native Calc metrics, including nested calls, conditional evaluation, distinct instances,
+NULL/empty buffers, zero-argument stateful calls and multi-batch inputs.
 
 Non-deterministic scalar UDF instances shared by multiple independently evaluated expression
 nodes fall back with a per-row invocation-order diagnostic. This covers separate projections,
 predicate/projection sharing, nested calls and CASE branches: column-at-a-time evaluation can
 otherwise change a function's state before another call observes it. The identity is Flink's
 function identifier, as used by generated expressions. Repeated calls contained in one complete
-generated expression remain native because that callback preserves row order. Single calls,
+generated expression, including a complete Calc fused for multiple binary calls, remain native
+because that callback preserves row order. Single calls,
 independent instances and deterministic scalar functions retain native admission. Builtin random
 and clock functions are unaffected. Tests compare values and filtered rows across native batches
 and retain lifecycle checks on both native and fallback paths.

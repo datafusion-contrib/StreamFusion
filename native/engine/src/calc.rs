@@ -247,6 +247,10 @@ pub(crate) struct CalcExpression {
 }
 
 impl CalcExpression {
+    fn is_row_udf(&self) -> bool {
+        self.projection_roots.len() == 1 && self.kinds[self.projection_roots[0]] == 38
+    }
+
     fn compiled(&mut self, schema: &SchemaRef) -> &CompiledCalc {
         if self.compiled.is_none() {
             let df_schema =
@@ -336,25 +340,23 @@ impl CalcExpression {
             }
             _ => projected,
         };
-        let rows = filtered.num_rows();
+        if self.is_row_udf() {
+            let projected = evaluate_projection(&projections[0], &filtered);
+            return row_udf_output(
+                projected
+                    .as_any()
+                    .downcast_ref::<StructArray>()
+                    .expect("row UDF must return a struct"),
+                &self.output_names,
+                filtered.column_by_name(ROW_KIND_COLUMN),
+            );
+        }
         let mut columns: Vec<ArrayRef> = Vec::with_capacity(projections.len());
         let mut fields: Vec<Field> = Vec::with_capacity(projections.len());
         for (i, projection) in projections.iter().enumerate() {
             // Scalar arguments can fail before a kernel sees the empty array. Flink never
             // evaluates a projection without a surviving row, but the output must keep its type.
-            let array = if rows == 0 {
-                arrow::array::new_empty_array(
-                    &projection
-                        .data_type(filtered.schema().as_ref())
-                        .expect("failed to infer empty projection type"),
-                )
-            } else {
-                projection
-                    .evaluate(&filtered)
-                    .expect_flink("failed to evaluate projection")
-                    .into_array(rows)
-                    .expect("failed to materialize projection")
-            };
+            let array = evaluate_projection(projection, &filtered);
             fields.push(Field::new(
                 &self.output_names[i],
                 array.data_type().clone(),
@@ -372,6 +374,111 @@ impl CalcExpression {
         }
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build output")
+    }
+}
+
+fn evaluate_projection(projection: &Arc<dyn PhysicalExpr>, batch: &RecordBatch) -> ArrayRef {
+    if batch.num_rows() == 0 {
+        arrow::array::new_empty_array(
+            &projection
+                .data_type(batch.schema().as_ref())
+                .expect("failed to infer empty projection type"),
+        )
+    } else {
+        projection
+            .evaluate(batch)
+            .expect_flink("failed to evaluate projection")
+            .into_array(batch.num_rows())
+            .expect("failed to materialize projection")
+    }
+}
+
+fn row_udf_output(
+    rows: &StructArray,
+    names: &[String],
+    row_kind: Option<&ArrayRef>,
+) -> RecordBatch {
+    assert_eq!(rows.num_columns(), names.len(), "row UDF output width");
+    let mut fields = rows
+        .fields()
+        .iter()
+        .zip(names)
+        .map(|(field, name)| field.as_ref().clone().with_name(name))
+        .collect::<Vec<_>>();
+    let mut columns = rows.columns().to_vec();
+    if let Some(kind) = row_kind {
+        fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
+        columns.push(kind.clone());
+    }
+    let batch = RecordBatch::try_new_with_options(
+        Arc::new(Schema::new(fields)),
+        columns,
+        &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(rows.len())),
+    )
+    .expect("failed to build row UDF output");
+    if rows.null_count() == 0 {
+        batch
+    } else {
+        let selected = BooleanArray::new(rows.nulls().unwrap().inner().clone(), None);
+        filter_record_batch(&batch, &selected).expect("failed to select row UDF output")
+    }
+}
+
+#[cfg(test)]
+mod row_udf_tests {
+    use super::*;
+    use arrow::buffer::NullBuffer;
+
+    #[test]
+    fn selection_keeps_null_values_and_matching_changelog_tags() {
+        let values: ArrayRef = Arc::new(Int32Array::from(vec![Some(11), Some(12), Some(13), None]));
+        let rows = StructArray::new(
+            vec![Field::new("internal", DataType::Int32, true)].into(),
+            vec![values],
+            Some(NullBuffer::from(vec![true, false, false, true])),
+        );
+        let kinds: ArrayRef = Arc::new(Int8Array::from(vec![0, 1, 2, 3]));
+        let result = row_udf_output(&rows, &["value".to_owned()], Some(&kinds));
+        assert_eq!(result.schema().field(0).name(), "value");
+        assert_eq!(result.num_rows(), 2);
+        assert_eq!(
+            result.column(0).as_ref(),
+            &Int32Array::from(vec![Some(11), None])
+        );
+        assert_eq!(result.column(1).as_ref(), &Int8Array::from(vec![0, 3]));
+    }
+
+    #[test]
+    fn filtered_and_empty_results_keep_declared_fields() {
+        for len in [0, 3] {
+            let rows = StructArray::new_null(
+                vec![Field::new("internal", DataType::Binary, true)].into(),
+                len,
+            );
+            let result = row_udf_output(&rows, &["bytes".to_owned()], None);
+            assert_eq!(result.num_rows(), 0);
+            assert_eq!(
+                result.schema().field(0),
+                &Field::new("bytes", DataType::Binary, true)
+            );
+        }
+    }
+
+    #[test]
+    fn zero_column_projections_preserve_selected_row_count() {
+        for validity in [
+            vec![true, true, true],
+            vec![true, false, true],
+            vec![false; 3],
+            vec![],
+        ] {
+            let expected = validity.iter().filter(|&&valid| valid).count();
+            let rows =
+                StructArray::new_empty_fields(validity.len(), Some(NullBuffer::from(validity)));
+            let result = row_udf_output(&rows, &[], None);
+            assert_eq!(result.num_columns(), 0);
+            assert_eq!(result.num_rows(), expected);
+        }
     }
 }
 
@@ -473,6 +580,21 @@ pub(crate) fn infer_calc_output_schema(
                 ))
             }
         }
+    }
+    if expression.is_row_udf() {
+        return match infer(expression.projection_roots[0]) {
+            Ok(DataType::Struct(fields)) if fields.len() == expression.output_names.len() => {
+                Ok(Schema::new(
+                    fields
+                        .iter()
+                        .zip(&expression.output_names)
+                        .map(|(field, name)| field.as_ref().clone().with_name(name))
+                        .collect::<Vec<_>>(),
+                ))
+            }
+            Ok(other) => Err(format!("row UDF has an unexpected output type: {other}")),
+            Err(error) => Err(format!("row UDF does not compile natively: {error}")),
+        };
     }
     let fields = expression
         .projection_roots

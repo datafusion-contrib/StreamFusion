@@ -52,10 +52,9 @@ class FlinkUdfExactTypesSqlHarnessTest {
 
   @Test
   void sharedBinaryBuffersAcrossCallSitesRetainHostEvaluationOrder() throws Exception {
-    NativeParity.assertFallbackReasonContains(
-        () -> environment(32),
-        "SELECT id, reusable_binary(id), reusable_binary(id + 1) FROM src",
-        "multiple binary UDF calls");
+    NativeParity.assertParity(
+        () -> environment(5003),
+        "SELECT id, reusable_binary(id), reusable_binary(id + 1) FROM src");
   }
 
   @Test

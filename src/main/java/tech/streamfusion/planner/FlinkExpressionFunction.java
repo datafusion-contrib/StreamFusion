@@ -20,7 +20,8 @@ import org.apache.flink.table.types.logical.RowType;
 
 /** Flink's generated expression code, called once per argument batch through the scalar bridge. */
 public final class FlinkExpressionFunction extends ScalarFunction
-    implements tech.streamfusion.operator.NativeUdf.FunctionDependencies {
+    implements tech.streamfusion.operator.NativeUdf.FunctionDependencies,
+        tech.streamfusion.operator.NativeUdf.RowResult {
   private static final long serialVersionUID = 1L;
 
   public interface Evaluator extends Function {
@@ -34,6 +35,7 @@ public final class FlinkExpressionFunction extends ScalarFunction
   private final GeneratedFunction<Evaluator> generated;
   private final LogicalType[] argumentTypes;
   private final List<ScalarFunction> functions;
+  private final RowType rowResultType;
   private transient Evaluator evaluator;
   private transient GenericRowData input;
 
@@ -42,11 +44,79 @@ public final class FlinkExpressionFunction extends ScalarFunction
       LogicalType[] argumentTypes,
       ReadableConfig config,
       ClassLoader classLoader) {
-    this.argumentTypes = argumentTypes;
+    this(
+        scalarBody(expression, argumentTypes, config, classLoader),
+        argumentTypes,
+        config,
+        classLoader);
+  }
+
+  FlinkExpressionFunction(
+      List<RexNode> projections,
+      RexNode condition,
+      LogicalType[] argumentTypes,
+      RowType resultType,
+      ReadableConfig config,
+      ClassLoader classLoader) {
+    this(
+        rowBody(projections, condition, argumentTypes, resultType, config, classLoader),
+        argumentTypes,
+        config,
+        classLoader);
+  }
+
+  private record Body(Context context, String code, RowType rowType) {}
+
+  private static Body scalarBody(
+      RexNode expression,
+      LogicalType[] argumentTypes,
+      ReadableConfig config,
+      ClassLoader classLoader) {
     var context = new Context(config, classLoader);
     var generator = new ExprCodeGenerator(context, false);
     generator.bindInput(RowType.of(argumentTypes), "input", scala.Option.empty());
     var result = generator.generateExpression(expression);
+    return new Body(
+        context,
+        context.reuseInputUnboxingCode()
+            + result.code()
+            + "\nif ("
+            + result.nullTerm()
+            + ") { return null; }\nreturn "
+            + result.resultTerm()
+            + ";\n",
+        null);
+  }
+
+  private static Body rowBody(
+      List<RexNode> projections,
+      RexNode condition,
+      LogicalType[] argumentTypes,
+      RowType resultType,
+      ReadableConfig config,
+      ClassLoader classLoader) {
+    var context = new Context(config, classLoader);
+    String process =
+        org.apache.flink.table.planner.codegen.CalcCodeGenerator$.MODULE$.generateProcessCode(
+            context,
+            RowType.of(argumentTypes),
+            resultType,
+            GenericRowData.class,
+            scala.collection.JavaConverters.asScalaBuffer(projections).toSeq(),
+            scala.Option.apply(condition),
+            "input",
+            "this",
+            true,
+            false,
+            true);
+    return new Body(context, "rowResult = null;\n" + process + "\nreturn rowResult;\n", resultType);
+  }
+
+  private FlinkExpressionFunction(
+      Body body, LogicalType[] argumentTypes, ReadableConfig config, ClassLoader classLoader) {
+    this.argumentTypes = argumentTypes;
+    this.rowResultType = body.rowType();
+    var context = body.context();
     functions = List.copyOf(context.functionInstances.values());
     String className = "FlinkExpressionEvaluator" + context.getNameCounter().getAndIncrement();
     String code =
@@ -56,6 +126,13 @@ public final class FlinkExpressionFunction extends ScalarFunction
             + Evaluator.class.getCanonicalName()
             + " {\n"
             + context.reuseMemberCode()
+            + (rowResultType == null
+                ? ""
+                : "private "
+                    + RowData.class.getCanonicalName()
+                    + " rowResult;\npublic void collect("
+                    + RowData.class.getCanonicalName()
+                    + " row) { rowResult = row; }\n")
             + "public "
             + className
             + "(Object[] references) throws Exception {\n"
@@ -72,13 +149,8 @@ public final class FlinkExpressionFunction extends ScalarFunction
             + " input) throws Exception {\n"
             + context.reusePerRecordCode()
             + context.reuseLocalVariableCode(context.reuseLocalVariableCode$default$1())
-            + context.reuseInputUnboxingCode()
-            + result.code()
-            + "\nif ("
-            + result.nullTerm()
-            + ") { return null; }\nreturn "
-            + result.resultTerm()
-            + ";\n}\n"
+            + body.code()
+            + "}\n"
             + "public void close() throws Exception {\n"
             + context.reuseCloseCode()
             + "}\n"
@@ -88,6 +160,11 @@ public final class FlinkExpressionFunction extends ScalarFunction
         scala.collection.JavaConverters.seqAsJavaList(context.references()).toArray();
     generated = new GeneratedFunction<>(className, code, references, config);
     generated.compile(classLoader);
+  }
+
+  @Override
+  public RowType rowResultType() {
+    return rowResultType;
   }
 
   @Override

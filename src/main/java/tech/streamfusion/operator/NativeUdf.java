@@ -61,6 +61,11 @@ public final class NativeUdf {
     List<ScalarFunction> functions();
   }
 
+  /** A complete generated Calc returns one row after all of its call sites have run. */
+  public interface RowResult {
+    org.apache.flink.table.types.logical.RowType rowResultType();
+  }
+
   // Native value-type codes for a UDF argument or result column (mirrored by the JVM encoder in
   // RexExpression). Kept independent of the aggregate value codes — this is the UDF marshalling ABI.
   public static final int TYPE_STRING = 0;
@@ -79,6 +84,7 @@ public final class NativeUdf {
   public static final int TYPE_INTERVAL_MONTHS = 12;
   public static final int TYPE_INTERVAL_MILLIS = 13;
   public static final int TYPE_BINARY = 14;
+  public static final int TYPE_ROW = 15;
 
   // DECIMAL(p, s) argument/result values, marshalled as BigDecimal. The precision and scale ride in
   // the code itself so one int carries the full type: 1000 + p*100 + s. Used by the host-exact
@@ -384,8 +390,17 @@ public final class NativeUdf {
       for (int a = 0; a < arity; a++) {
         argVectors[a] = in.getFieldVectors().get(a);
       }
-      try (VectorSchemaRoot out = resultRoot(udf.returnType, rows)) {
+      try (VectorSchemaRoot out = resultRoot(udf, rows)) {
         FieldVector result = out.getFieldVectors().get(0);
+        var rowWriter =
+            udf.returnType == TYPE_ROW
+                ? tech.streamfusion.arrow.ArrowConversion.createRowDataArrowWriter(
+                    out,
+                    org.apache.flink.table.types.logical.RowType.of(
+                        ((RowResult) udf.function).rowResultType().copy(true)))
+                : null;
+        var rowResult =
+            rowWriter == null ? null : new org.apache.flink.table.data.GenericRowData(1);
         // Each argument column is materialized once with a monomorphic typed loop; reading value
         // by value inside the row loop instead put a megamorphic isNull/type dispatch per (row,
         // arg) on the hot path — 14% of q21's parity run in the vector interface calls alone.
@@ -414,9 +429,15 @@ public final class NativeUdf {
             }
           }
           Object value = udf.eval.invoke(udf.function, invokeArgs);
-          writeValue(result, udf.returnType, row, value);
+          if (rowWriter == null) {
+            writeValue(result, udf.returnType, row, value);
+          } else {
+            rowResult.setField(0, value);
+            rowWriter.write(rowResult);
+          }
         }
-        out.setRowCount(rows);
+        if (rowWriter == null) out.setRowCount(rows);
+        else rowWriter.finish();
         try (ArrowArray outArray = ArrowArray.wrap(outArrayAddress);
             ArrowSchema outSchema = ArrowSchema.wrap(outSchemaAddress)) {
           Data.exportVectorSchemaRoot(
@@ -435,8 +456,19 @@ public final class NativeUdf {
     }
   }
 
-
-  private static VectorSchemaRoot resultRoot(int returnType, int rows) {
+  private static VectorSchemaRoot resultRoot(Registered udf, int rows) {
+    int returnType = udf.returnType;
+    if (returnType == TYPE_ROW) {
+      var rowType =
+          org.apache.flink.table.types.logical.RowType.of(
+              ((RowResult) udf.function).rowResultType().copy(true));
+      var root =
+          VectorSchemaRoot.create(
+              tech.streamfusion.arrow.ArrowConversion.toArrowSchema(rowType),
+              NativeAllocator.SHARED);
+      root.getVector(0).setInitialCapacity(rows);
+      return root;
+    }
     Field field = returnType == TYPE_TIMESTAMP_DATA
         ? tech.streamfusion.arrow.TimestampAccessor.field("result", true)
         : new Field("result", FieldType.nullable(arrowType(returnType)), null);

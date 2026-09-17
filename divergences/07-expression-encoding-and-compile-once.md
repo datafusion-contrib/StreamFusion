@@ -60,12 +60,42 @@ Code generation uses the planner's user-code classloader, and task initializatio
 FunctionContext classloader. The generated evaluator exposes its scalar-function dependencies
 to the existing task binding. Generated references preserve identity with direct call sites
 instead of retaining CodeGeneratorContext's independent copies; each function opens and closes
-once, including after operator serialization and failed initialization. The signature,
-specialization and shared-binary-buffer gates apply inside generated expressions as well.
+once, including after operator serialization and failed initialization. The signature
+and specialization gates apply inside generated expressions as well. Multiple binary calls in a
+Calc use the complete-row evaluation described below.
 
 The expression itself still executes on the JVM. This is a parity and composition extension,
 not a claim that the decimal UDF or its consumers execute as Rust kernels. The measured cost
 includes both perimeter transposes; see the scalar benchmark page.
+
+## Complete-row evaluation for shared binary UDF results
+
+Arroyo's synchronous UDF host and Comet's JVM bridge dispatch Arrow argument batches through
+one callback. We retain that boundary, task-scoped binding, and C Data ownership. Neither a
+column-per-call result nor eager copying preserves Flink's mutable `byte[]` aliases across
+call sites: released Flink evaluates a complete row before its collector observes the arrays.
+
+When a Calc contains multiple binary scalar calls, compile its predicate and projections with
+released Flink's Calc code generator. Its generated row runs once per input row inside the
+existing batch callback. Copy the finished row into a nullable Arrow struct before advancing
+to the next row. Struct validity represents the predicate's selection independently of each
+result field's nullness; native Calc applies the same selection to the changelog sidecar and
+returns the child columns. A dedicated expression tag carries the struct's Arrow IPC schema,
+without another JNI entry point or rowwise operator boundary. The callback is volatile and
+expands scalar arguments to the batch's row count, including zero-argument stateful functions.
+
+This differs from independently dispatched expression kernels because preserving aliasing
+requires Flink's entire row evaluation order, including condition/projection sharing and
+short-circuit branches. Existing UDF signature and specialization gates remain in force, and
+complex inputs/outputs remain outside this scalar marshalling path. The generated evaluator
+retains the original function instances for task lifecycle and serialization. Java owns output
+vectors until C Data export transfers buffer references; copying after row evaluation prevents
+later calls from changing an exported batch. Tests release sliced inputs before reading outputs
+and verify allocator balance after mid-batch exceptions.
+
+This is a correctness and composition extension. The whole Calc executes in JVM code while its
+operator boundaries remain Arrow; benchmark results on the Calc page include both transposes
+and a rowwise sink, and do not imply that Java calls execute as Rust kernels.
 
 ## Plan-time type verification (diverges from Comet)
 

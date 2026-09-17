@@ -101,6 +101,8 @@ final class RexExpression {
   private static final int KIND_DECIMAL_TRUNCATE = 35;
   private static final int KIND_FROM_UNIXTIME = 36;
   private static final int KIND_DECIMAL_FLOAT = 37;
+  // Whole-row JVM evaluation; long pool [udf id, output Arrow schema string index].
+  private static final int KIND_ROW_UDF = 38;
   // A typed NULL carries a one-field Arrow IPC schema in the string pool.
   private static final int KIND_LIT_TYPED_NULL = 31;
   // Fused exact arithmetic: payload is the declared result precision*100 + scale; two children.
@@ -164,6 +166,7 @@ final class RexExpression {
   // Root of the projection currently being encoded; null for conditions and bare predicates.
   private RexNode projectionRoot;
   private int binaryUdfCalls;
+  private boolean rowFusion;
   private final java.util.Set<String> statefulUdfEvaluations = new java.util.HashSet<>();
   private ClassLoader expressionClassLoader = RexExpression.class.getClassLoader();
 
@@ -344,6 +347,7 @@ final class RexExpression {
 
   private boolean emitCalc(Calc calc) {
     RexProgram program = calc.getProgram();
+    if (binaryUdfCallCount(program) > 1) return emitRowCalc(calc);
     projectionRoot = null;
     if (program.getCondition() != null) {
       RexNode condition =
@@ -370,6 +374,123 @@ final class RexExpression {
     }
     outputNames = calc.getRowType().getFieldNames().toArray(new String[0]);
     return true;
+  }
+
+  private static int binaryUdfCallCount(RexProgram program) {
+    int[] count = {0};
+    var visitor =
+        new org.apache.calcite.rex.RexVisitorImpl<Void>(true) {
+          @Override
+          public Void visitCall(RexCall call) {
+            if (call.getType().getSqlTypeName() == SqlTypeName.VARBINARY
+                && call.getOperator()
+                    instanceof
+                    org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction function
+                && function.getDefinition()
+                    instanceof org.apache.flink.table.functions.ScalarFunction) {
+              count[0]++;
+            }
+            return super.visitCall(call);
+          }
+        };
+    if (program.getCondition() != null)
+      program.expandLocalRef(program.getCondition()).accept(visitor);
+    for (RexLocalRef project : program.getProjectList())
+      program.expandLocalRef(project).accept(visitor);
+    return count[0];
+  }
+
+  private boolean emitRowCalc(Calc calc) {
+    rowFusion = true;
+    RexProgram program = calc.getProgram();
+    List<RexNode> arguments = new ArrayList<>();
+    List<org.apache.flink.table.types.logical.LogicalType> types = new ArrayList<>();
+    List<Integer> codes = new ArrayList<>();
+    Map<Integer, RexInputRef> inputs = new java.util.LinkedHashMap<>();
+    var remap =
+        new org.apache.calcite.rex.RexShuttle() {
+          @Override
+          public RexNode visitInputRef(RexInputRef input) {
+            return inputs.computeIfAbsent(
+                input.getIndex(),
+                ignored -> {
+                  int code = hostCastTypeCode(input.getType());
+                  if (code < 0)
+                    throw new IllegalArgumentException(
+                        "row-fused UDF input type is not supported: " + input.getType());
+                  RexInputRef replacement = new RexInputRef(arguments.size(), input.getType());
+                  arguments.add(input);
+                  types.add(
+                      org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalType(
+                          input.getType()));
+                  codes.add(code);
+                  return replacement;
+                });
+          }
+        };
+    try {
+      RexNode condition =
+          program.getCondition() == null
+              ? null
+              : RexUtil.expandSearch(
+                  calc.getCluster().getRexBuilder(),
+                  null,
+                  program.expandLocalRef(program.getCondition()));
+      if (condition != null) {
+        if (!validateGeneratedExpression(condition)) return false;
+        condition = condition.accept(remap);
+      }
+      List<RexNode> projections = new ArrayList<>();
+      for (RexLocalRef ref : program.getProjectList()) {
+        RexNode projection =
+            RexUtil.expandSearch(
+                calc.getCluster().getRexBuilder(), null, program.expandLocalRef(ref));
+        if (!validateGeneratedExpression(projection)) return false;
+        if (hostCastTypeCode(projection.getType()) < 0)
+          return reject("row-fused UDF output type is not supported: " + projection.getType());
+        projections.add(projection.accept(remap));
+      }
+      if (arguments.isEmpty()) {
+        types.add(new org.apache.flink.table.types.logical.IntType());
+        codes.add(tech.streamfusion.operator.NativeUdf.TYPE_INT);
+      }
+      var resultType =
+          org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalRowType(
+              calc.getRowType());
+      var function =
+          new FlinkExpressionFunction(
+              projections,
+              condition,
+              types.toArray(org.apache.flink.table.types.logical.LogicalType[]::new),
+              resultType,
+              temporalConfig,
+              expressionClassLoader);
+      Method eval = FlinkExpressionFunction.class.getMethod("eval", Object[].class);
+      int index =
+          addUdf(
+              tech.streamfusion.operator.NativeUdf.Descriptor.forFunction(
+                  function,
+                  eval,
+                  codes.stream().mapToInt(Integer::intValue).toArray(),
+                  tech.streamfusion.operator.NativeUdf.TYPE_ROW));
+      projectionRoots.add(kinds.size());
+      add(KIND_ROW_UDF, longs.size(), Math.max(1, arguments.size()));
+      longs.add((long) index);
+      longs.add((long) strings.size());
+      var schema =
+          tech.streamfusion.arrow.ArrowConversion.toArrowSchema(
+              org.apache.flink.table.types.logical.RowType.of(resultType.copy(true)));
+      strings.add(Base64.getEncoder().encodeToString(schema.serializeAsMessage()));
+      if (arguments.isEmpty()) {
+        add(KIND_LIT_INT, longs.size(), 0);
+        longs.add(0L);
+      }
+      for (RexNode argument : arguments) if (!emit(argument)) return false;
+      outputNames = calc.getRowType().getFieldNames().toArray(new String[0]);
+      return true;
+    } catch (Exception unsupported) {
+      return reject("host Calc cannot be generated: " + unsupported.getMessage());
+    }
   }
 
   private String reasonOrDefault() {
@@ -2560,7 +2681,7 @@ final class RexExpression {
     org.apache.flink.table.functions.ScalarFunction scalar =
         (org.apache.flink.table.functions.ScalarFunction) def;
     SqlTypeName resultType = call.getType().getSqlTypeName();
-    if (resultType == SqlTypeName.VARBINARY && ++binaryUdfCalls > 1) {
+    if (!rowFusion && resultType == SqlTypeName.VARBINARY && ++binaryUdfCalls > 1) {
       return rejectUdfMethod("multiple binary UDF calls may share mutable result buffers");
     }
     int returnCode = udfTypeCode(call.getType());
