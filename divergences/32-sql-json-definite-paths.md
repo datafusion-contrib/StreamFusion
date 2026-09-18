@@ -1,4 +1,30 @@
-# Flink SQL/JSON paths
+# Flink SQL/JSON evaluation
+
+## Calc JVM prototype
+
+SQL/JSON Calcs now use the existing Comet-style batch UDF bridge and Flink's generated
+Calc evaluator. Comet's `native/spark-expr/src/jvm_udf/mod.rs`, JNI UDF bridge, and
+`CometUdfBridge.java` supply the task-scoped Arrow import/export and function-lifecycle
+pattern. Arroyo's planner `extract_json` separates a scalar path from the column but does
+not implement Flink SQL/JSON policies. Neither is a semantic substitute for Flink.
+
+The entire filter and projection list is generated together: separate column upcalls
+would reorder row evaluation, shared-UDF state, short-circuiting, and Jackson buffer
+history. Output uses the same BoxedWrapperRowData representation as Flink's generated
+Calc; GenericRowData incorrectly avoided host primitive-unboxing failures. Parent-null
+rows encode rejection, so the native bridge filters them and their changelog tags before
+constructing a RecordBatch with nonnullable fields. JNI still runs once per batch.
+
+This experiment replaces Calc routing only. Native SQL/JSON kernels, literal-path
+admission and their tests remain for non-Calc encoders, including residual join
+expressions. Their implementation is documented below. No new native JSON grammar is
+added; JSON connector serialization is unaffected. Before deleting the remaining kernels,
+move those expression contexts to generated evaluation and verify their own ordering
+and exception contracts. The UTF-16-to-UTF-8 identity gate at operator boundaries also
+remains. See the [coverage page](../docs/operators/calc-filter.md#sqljson-evaluation)
+and [measurements](../docs/benchmarks/scalar-functions.md).
+
+## Retained native expression implementation
 
 Comet's `native/spark-expr/src/string_funcs/get_json_object.rs` separates scalar paths from
 column inputs and streams through each document instead of building a DOM on its common

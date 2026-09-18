@@ -1,16 +1,17 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.NativeUdf;
 import java.util.List;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexProgram;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
+import tech.streamfusion.operator.NativeUdf;
 
 /**
  * Physical node standing in for a {@link org.apache.calcite.rel.core.Calc} the native operator runs:
@@ -101,6 +102,15 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
 
   RexProgram sourceProgram() {
     return sourceProgram;
+  }
+
+  @Override
+  public RelWriter explainTerms(RelWriter writer) {
+    return super.explainTerms(writer)
+        .itemIf(
+            "jsonEvaluation",
+            "JVM",
+            sourceProgram != null && RexExpression.containsSqlJson(sourceProgram));
   }
 
   @Override

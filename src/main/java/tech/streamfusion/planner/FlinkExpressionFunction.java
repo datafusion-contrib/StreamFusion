@@ -101,7 +101,7 @@ public final class FlinkExpressionFunction extends ScalarFunction
             context,
             RowType.of(argumentTypes),
             resultType,
-            GenericRowData.class,
+            org.apache.flink.table.data.BoxedWrapperRowData.class,
             scala.collection.JavaConverters.asScalaBuffer(projections).toSeq(),
             scala.Option.apply(condition),
             "input",

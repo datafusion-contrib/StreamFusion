@@ -49,13 +49,7 @@ class FlinkJsonUnquoteSqlHarnessTest {
         causes.append(cause).append('\n');
       }
       org.junit.jupiter.api.Assertions.assertTrue(
-          causes
-              .toString()
-              .contains(
-                  nativeEnabled
-                      ? "JSON_UNQUOTE truncated Unicode escape"
-                      : "StringIndexOutOfBoundsException"),
-          causes.toString());
+          causes.toString().contains("StringIndexOutOfBoundsException"), causes.toString());
       if (scan != null) {
         org.junit.jupiter.api.Assertions.assertTrue(scan.substitutions() > 0);
       }

@@ -1,6 +1,5 @@
 package tech.streamfusion;
 
-import static tech.streamfusion.NativeParity.assertFallback;
 import static tech.streamfusion.NativeParity.assertParity;
 
 import org.junit.jupiter.api.Test;
@@ -118,11 +117,11 @@ class FlinkJsonValueSqlHarnessTest {
   }
 
   @Test
-  void nullAndNonCharacterDefaultsFallBack() throws Exception {
-    assertFallback(
+  void nullAndNonCharacterDefaultsMatchFlink() throws Exception {
+    assertParity(
         JsonFunctionTestInputs::documents,
         "SELECT id, JSON_VALUE(s, '$.a' DEFAULT CAST(NULL AS STRING) ON ERROR) FROM inputs");
-    assertFallback(
+    assertParity(
         JsonFunctionTestInputs::documents,
         "SELECT id, JSON_VALUE(s, '$.a' DEFAULT 12 ON ERROR) FROM inputs");
   }
@@ -145,8 +144,8 @@ class FlinkJsonValueSqlHarnessTest {
   }
 
   @Test
-  void unverifiedPathsFallBack() throws Exception {
-    assertFallback(
+  void complexPathsRunThroughFlink() throws Exception {
+    assertParity(
         JsonFunctionTestInputs::documents, "SELECT id, JSON_VALUE(s, '$[*][1:2]') FROM inputs");
   }
 }

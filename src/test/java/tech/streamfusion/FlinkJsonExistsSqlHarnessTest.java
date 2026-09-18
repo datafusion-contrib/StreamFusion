@@ -1,6 +1,5 @@
 package tech.streamfusion;
 
-import static tech.streamfusion.NativeParity.assertFallback;
 import static tech.streamfusion.NativeParity.assertParity;
 
 import org.junit.jupiter.api.Test;
@@ -66,16 +65,21 @@ class FlinkJsonExistsSqlHarnessTest {
 
   @Test
   void unknownBooleanContextsKeepFlinkBoxedNullFailure() {
-    JsonFunctionTestInputs.assertFallbackFails(
-        "null", "JSON_EXISTS(s, '$' UNKNOWN ON ERROR) IS TRUE", "NullPointerException");
+    NativeFailureParity.run(
+            () -> TextTimeFunctionTestInputs.textRows("null"),
+            "SELECT JSON_EXISTS(s, '$' UNKNOWN ON ERROR) IS TRUE FROM inputs")
+        .assertFailure(
+            NullPointerException.class,
+            "booleanValue",
+            NativeFailureParity.Phase.ROW_EVALUATION,
+            NativeFailureParity.Route.NATIVE);
   }
 
   @Test
   void errorPolicyKeepsFlinkRowShortCircuiting() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+    NativeParity.assertParity(
         () -> TextTimeFunctionTestInputs.textRows("{\"a\":1}", "invalid"),
-        "SELECT id, id = 1 OR JSON_EXISTS(s, '$.a' ERROR ON ERROR) FROM inputs",
-        "row short-circuiting");
+        "SELECT id, id = 1 OR JSON_EXISTS(s, '$.a' ERROR ON ERROR) FROM inputs");
   }
 
   @Test
@@ -101,10 +105,10 @@ class FlinkJsonExistsSqlHarnessTest {
   }
 
   @Test
-  void slicedWildcardAndRecursivePathsFallBack() throws Exception {
-    assertFallback(
+  void slicedWildcardAndRecursivePathsMatchFlink() throws Exception {
+    assertParity(
         JsonFunctionTestInputs::documents, "SELECT id, JSON_EXISTS(s, '$[*][1:2]') FROM inputs");
-    assertFallback(
+    assertParity(
         JsonFunctionTestInputs::documents, "SELECT id, JSON_EXISTS(s, '$..a') FROM inputs");
   }
 

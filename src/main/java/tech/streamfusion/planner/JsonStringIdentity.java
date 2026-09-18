@@ -26,6 +26,7 @@ final class JsonStringIdentity {
     if (!(expression instanceof RexCall call)) return false;
     if (SqlTypeFamily.CHARACTER.contains(call.getType())
         && (call.getOperator().getName().equals("JSON_VALUE")
+            || call.getOperator().getName().equals("JSON_QUERY")
             || call.getOperator().getName().equals("JSON_UNQUOTE"))) {
       return true;
     }

@@ -184,11 +184,8 @@ class FlinkJsonPathGrammarSqlHarnessTest {
         "$[1] \t",
         "$['a'] \n"
       })
-  void unsupportedSelectorsRetainExplicitFallback(String path) throws Exception {
-    NativeParity.assertFallbackReasonContains(
-        FlinkJsonPathGrammarSqlHarnessTest::documents,
-        select(path),
-        "literal definite member/index path");
+  void complexAndInvalidSelectorsUseHostSemantics(String path) throws Exception {
+    NativeParity.assertParity(FlinkJsonPathGrammarSqlHarnessTest::documents, select(path));
   }
 
   @Test

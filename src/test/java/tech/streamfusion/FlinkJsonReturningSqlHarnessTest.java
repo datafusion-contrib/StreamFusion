@@ -1,6 +1,5 @@
 package tech.streamfusion;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -90,7 +89,7 @@ class FlinkJsonReturningSqlHarnessTest {
   }
 
   @Test
-  void typedDefaultsAndUnsupportedDefaultsAreExplicitlyGated() throws Exception {
+  void typedDefaultsPreserveHostResultsAndFailures() throws Exception {
     String[] expressions = {
       "JSON_VALUE(s, '$' RETURNING DOUBLE DEFAULT 0.5 ON ERROR)",
       "JSON_VALUE(s, '$' RETURNING DOUBLE DEFAULT CAST(0.5 AS DOUBLE) ON ERROR)",
@@ -99,12 +98,21 @@ class FlinkJsonReturningSqlHarnessTest {
       "JSON_VALUE(s, '$' RETURNING BOOLEAN DEFAULT 'true' ON ERROR)"
     };
     for (String expression : expressions) {
-      String plan =
-          NativePlanner.explain(
-              TextTimeFunctionTestInputs.textRows("1", null),
-              "SELECT " + expression + " FROM inputs");
-      assertFalse(plan.contains("NativeCalc"), plan);
-      assertTrue(plan.contains("DEFAULT"), plan);
+      for (String document : new String[] {"invalid", null, "1"}) {
+        var result =
+            NativeFailureParity.run(
+                () -> TextTimeFunctionTestInputs.textRows(document),
+                "SELECT " + expression + " FROM inputs");
+        if (result.host().failure() == null) {
+          result.assertSuccess(NativeFailureParity.Route.NATIVE);
+        } else {
+          result.assertFailure(
+              ClassCastException.class,
+              "cannot be cast",
+              NativeFailureParity.Phase.ROW_EVALUATION,
+              NativeFailureParity.Route.NATIVE);
+        }
+      }
     }
   }
 
@@ -116,38 +124,23 @@ class FlinkJsonReturningSqlHarnessTest {
       "CASE WHEN JSON_VALUE(s, '$' RETURNING BOOLEAN) THEN 1 ELSE 0 END"
     };
     for (String expression : expressions) {
-      assertFalse(
-          NativePlanner.explain(
-                  TextTimeFunctionTestInputs.textRows("null"),
-                  "SELECT " + expression + " FROM inputs")
-              .contains("NativeCalc"));
+      NativeFailureParity.run(
+              () -> TextTimeFunctionTestInputs.textRows("null"),
+              "SELECT " + expression + " FROM inputs")
+          .assertFailure(
+              NullPointerException.class,
+              "booleanValue",
+              NativeFailureParity.Phase.ROW_EVALUATION,
+              NativeFailureParity.Route.NATIVE);
     }
-    String sql = "SELECT id FROM inputs WHERE JSON_VALUE(s, '$' RETURNING BOOLEAN)";
-    String plan = NativePlanner.explain(TextTimeFunctionTestInputs.textRows("null"), sql);
-    assertFalse(plan.contains("NativeCalc"), plan);
-    assertFalse(plan.contains("NativeFilter"), plan);
-    assertTrue(plan.contains("direct projection"), plan);
-    for (boolean nativeEnabled : new boolean[] {false, true}) {
-      var tables = TextTimeFunctionTestInputs.textRows("null");
-      if (nativeEnabled) {
-        NativePlanner.install(tables);
-      }
-      Exception failure =
-          org.junit.jupiter.api.Assertions.assertThrows(
-              Exception.class,
-              () -> {
-                try (var rows = tables.executeSql(sql).collect()) {
-                  while (rows.hasNext()) {
-                    rows.next();
-                  }
-                }
-              });
-      StringBuilder causes = new StringBuilder();
-      for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
-        causes.append(cause);
-      }
-      assertTrue(causes.toString().contains("NullPointerException"), causes.toString());
-    }
+    NativeFailureParity.run(
+            () -> TextTimeFunctionTestInputs.textRows("null"),
+            "SELECT id FROM inputs WHERE JSON_VALUE(s, '$' RETURNING BOOLEAN)")
+        .assertFailure(
+            NullPointerException.class,
+            "booleanValue",
+            NativeFailureParity.Phase.ROW_EVALUATION,
+            NativeFailureParity.Route.NATIVE);
   }
 
   @Test
@@ -165,10 +158,9 @@ class FlinkJsonReturningSqlHarnessTest {
   @ParameterizedTest
   @ValueSource(strings = {"id = 1 OR", "id = 0 AND"})
   void typedConversionsKeepFlinkLogicalShortCircuit(String prefix) throws Exception {
-    NativeParity.assertFallbackReasonContains(
+    NativeParity.assertParity(
         () -> TextTimeFunctionTestInputs.textRows("1", "\"unused\""),
-        "SELECT id, " + prefix + " JSON_VALUE(s, '$' RETURNING INTEGER) > 0 FROM inputs",
-        "row short-circuiting");
+        "SELECT id, " + prefix + " JSON_VALUE(s, '$' RETURNING INTEGER) > 0 FROM inputs");
   }
 
   @Test

@@ -145,15 +145,14 @@ class FlinkJsonEscapedPathSqlHarnessTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"\\uD800", "\\uDC00", "\\uD800x\\uDC00", "\\u12", "\\uGGGG"})
-  void unverifiedEscapesKeepExplicitFallback(String name) throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void invalidAndSurrogateEscapesUseHostSemantics(String name) throws Exception {
+    NativeParity.assertParity(
         () -> documents("?", 19),
         "SELECT JSON_VALUE(s, '$[\""
             + name
             + "\"]'), JSON_EXISTS(s, '$[\""
             + name
-            + "\"]') FROM inputs",
-        "literal definite member/index path");
+            + "\"]') FROM inputs");
   }
 
   private static String json(String text) {

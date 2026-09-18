@@ -61,15 +61,14 @@ class FlinkJsonStringSqlHarnessTest {
   }
 
   @Test
-  void unverifiedScalarAndContainerTypesFallBack() throws Exception {
+  void additionalScalarAndContainerTypesUseHostSemantics() throws Exception {
     for (String expression :
         new String[] {"CAST(n AS DOUBLE)", "ARRAY[n]", "JSON_OBJECT('n' VALUE n)"}) {
-      NativeParity.assertFallbackReasonContains(
+      NativeParity.assertParity(
           StringFunctionTestInputs::encodings,
-          "SELECT id, JSON_STRING(" + expression + ") FROM encodings",
-          "JSON_STRING");
+          "SELECT id, JSON_STRING(" + expression + ") FROM encodings");
     }
-    NativeParity.assertFallbackReasonContains(
-        TextTimeFunctionTestInputs::bytes, "SELECT id, JSON_STRING(b) FROM inputs", "JSON_STRING");
+    NativeParity.assertParity(
+        TextTimeFunctionTestInputs::bytes, "SELECT id, JSON_STRING(b) FROM inputs");
   }
 }

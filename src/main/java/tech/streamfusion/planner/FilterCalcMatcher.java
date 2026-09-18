@@ -24,7 +24,9 @@ final class FilterCalcMatcher {
 
   static boolean matches(Calc calc) {
     RexProgram program = calc.getProgram();
-    if (program.getCondition() == null || projection(calc) == null) {
+    if (program.getCondition() == null
+        || projection(calc) == null
+        || RexExpression.containsSqlJson(program)) {
       return false;
     }
     if (!convertibleRow(calc.getInput().getRowType())) {

@@ -399,6 +399,19 @@ fn row_udf_output(
     row_kind: Option<&ArrayRef>,
 ) -> RecordBatch {
     assert_eq!(rows.num_columns(), names.len(), "row UDF output width");
+    // Rejected rows have null children, including NOT NULL outputs. Remove the parent-null
+    // rows before exposing those children as top-level RecordBatch columns.
+    let selection = rows
+        .nulls()
+        .filter(|_| rows.null_count() > 0)
+        .map(|nulls| BooleanArray::new(nulls.inner().clone(), None));
+    let selected_rows = selection.as_ref().map(|selected| {
+        arrow::compute::filter(rows, selected).expect("failed to select row UDF output")
+    });
+    let rows = selected_rows
+        .as_ref()
+        .map(|selected| selected.as_any().downcast_ref::<StructArray>().unwrap())
+        .unwrap_or(rows);
     let mut fields = rows
         .fields()
         .iter()
@@ -408,26 +421,45 @@ fn row_udf_output(
     let mut columns = rows.columns().to_vec();
     if let Some(kind) = row_kind {
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
-        columns.push(kind.clone());
+        columns.push(match &selection {
+            Some(selected) => arrow::compute::filter(kind, selected)
+                .expect("failed to select row UDF changelog tags"),
+            None => kind.clone(),
+        });
     }
-    let batch = RecordBatch::try_new_with_options(
+    RecordBatch::try_new_with_options(
         Arc::new(Schema::new(fields)),
         columns,
         &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(rows.len())),
     )
-    .expect("failed to build row UDF output");
-    if rows.null_count() == 0 {
-        batch
-    } else {
-        let selected = BooleanArray::new(rows.nulls().unwrap().inner().clone(), None);
-        filter_record_batch(&batch, &selected).expect("failed to select row UDF output")
-    }
+    .expect("failed to build row UDF output")
 }
 
 #[cfg(test)]
 mod row_udf_tests {
     use super::*;
     use arrow::buffer::NullBuffer;
+
+    #[test]
+    fn rejected_rows_do_not_violate_nonnullable_output_fields() {
+        for valid in [vec![true, false, true], vec![false, false, false]] {
+            let expected = valid.iter().filter(|&&value| value).count();
+            let rows = StructArray::new(
+                vec![Field::new("internal", DataType::Int32, false)].into(),
+                vec![Arc::new(Int32Array::from(vec![Some(11), None, Some(13)]))],
+                Some(NullBuffer::from(valid)),
+            );
+            let kinds: ArrayRef = Arc::new(Int8Array::from(vec![0, 1, 3]));
+            let result = row_udf_output(&rows, &["value".to_owned()], Some(&kinds));
+            assert_eq!(result.num_rows(), expected);
+            assert!(!result.schema().field(0).is_nullable());
+            assert_eq!(result.column(0).null_count(), 0);
+            if expected > 0 {
+                assert_eq!(result.column(0).as_ref(), &Int32Array::from(vec![11, 13]));
+                assert_eq!(result.column(1).as_ref(), &Int8Array::from(vec![0, 3]));
+            }
+        }
+    }
 
     #[test]
     fn selection_keeps_null_values_and_matching_changelog_tags() {

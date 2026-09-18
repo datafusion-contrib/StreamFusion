@@ -347,7 +347,7 @@ final class RexExpression {
 
   private boolean emitCalc(Calc calc) {
     RexProgram program = calc.getProgram();
-    if (binaryUdfCallCount(program) > 1) return emitRowCalc(calc);
+    if (binaryUdfCallCount(program) > 1 || containsSqlJson(program)) return emitRowCalc(calc);
     projectionRoot = null;
     if (program.getCondition() != null) {
       RexNode condition =
@@ -398,6 +398,41 @@ final class RexExpression {
     for (RexLocalRef project : program.getProjectList())
       program.expandLocalRef(project).accept(visitor);
     return count[0];
+  }
+
+  static boolean containsSqlJson(RexProgram program) {
+    if (program.getCondition() != null
+        && containsSqlJson(program.expandLocalRef(program.getCondition()))) return true;
+    return program.getProjectList().stream()
+        .anyMatch(project -> containsSqlJson(program.expandLocalRef(project)));
+  }
+
+  private static boolean containsSqlJson(RexNode node) {
+    if (node instanceof org.apache.calcite.rex.RexFieldAccess access) {
+      return containsSqlJson(access.getReferenceExpr());
+    }
+    if (!(node instanceof RexCall call)) return false;
+    return switch (call.getOperator().getName().toUpperCase(Locale.ROOT)) {
+      case "JSON_VALUE",
+          "JSON_EXISTS",
+          "JSON_QUERY",
+          "JSON_QUOTE",
+          "JSON_UNQUOTE",
+          "JSON_STRING",
+          "JSON_OBJECT",
+          "JSON_ARRAY",
+          "JSON",
+          "IS JSON VALUE",
+          "IS NOT JSON VALUE",
+          "IS JSON OBJECT",
+          "IS NOT JSON OBJECT",
+          "IS JSON ARRAY",
+          "IS NOT JSON ARRAY",
+          "IS JSON SCALAR",
+          "IS NOT JSON SCALAR" ->
+          true;
+      default -> call.getOperands().stream().anyMatch(RexExpression::containsSqlJson);
+    };
   }
 
   private boolean emitRowCalc(Calc calc) {

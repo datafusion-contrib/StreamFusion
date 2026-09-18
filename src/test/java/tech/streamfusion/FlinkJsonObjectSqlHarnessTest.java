@@ -73,7 +73,7 @@ class FlinkJsonObjectSqlHarnessTest {
   }
 
   @Test
-  void unverifiedValuesAndNestedRawJsonFallBack() throws Exception {
+  void containersAndNestedRawJsonUseHostSemantics() throws Exception {
     for (String expression :
         new String[] {
           "CAST(n AS DOUBLE)",
@@ -82,10 +82,9 @@ class FlinkJsonObjectSqlHarnessTest {
           "JSON_ARRAY(n)",
           "JSON(CASE WHEN n > 0 THEN '{}' ELSE '[]' END)"
         }) {
-      NativeParity.assertFallbackReasonContains(
+      NativeParity.assertParity(
           StringFunctionTestInputs::encodings,
-          "SELECT id, JSON_OBJECT('value' VALUE " + expression + ") FROM encodings",
-          "JSON_OBJECT");
+          "SELECT id, JSON_OBJECT('value' VALUE " + expression + ") FROM encodings");
     }
   }
 }
