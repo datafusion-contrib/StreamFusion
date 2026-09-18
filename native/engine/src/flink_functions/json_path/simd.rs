@@ -93,6 +93,7 @@ fn select<'a>(tape: &Tape<'a>, steps: &[Step<'_>]) -> Option<Value<'a>> {
     for step in steps {
         nodes = match (nodes.first()?, step) {
             (_, Step::Wildcard) => return Some(Value::Container),
+            (Node::Array { .. }, Step::IndexUnion) => return Some(Value::Container),
             (Node::Object { len, .. }, Step::Member(name)) => {
                 let mut rest = &nodes[1..];
                 let mut selected = None;
@@ -174,10 +175,17 @@ mod tests {
     }
 
     #[test]
-    fn wildcards_keep_missing_properties_and_skipped_indexes_distinct() {
+    fn indefinite_paths_keep_missing_properties_and_skipped_indexes_distinct() {
         let mut reader = Reader::new(4000);
         for mode in ["strict", "lax"] {
             for suffix in [
+                "[0,1]",
+                ".a[0,0]",
+                ".a[0,1].x[*]",
+                ".a[1].x[0,1]",
+                ".a[-2].missing[0,1]",
+                "[0,1][*]",
+                "[*][0,1]",
                 "[*]",
                 ".a[*]",
                 ".a[1][*]",
@@ -209,6 +217,10 @@ mod tests {
                 "[-2].missing[*]",
                 "[0].a[*]",
                 "[0].missing[*]",
+                "[0,1]",
+                "[1].missing[0,1]",
+                "[0].a[0,1]",
+                "[0].missing[0,1]",
             ] {
                 let text = format!("{mode} ${suffix}");
                 let path = Path::parse(&text, "13.0").unwrap();

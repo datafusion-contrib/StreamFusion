@@ -895,7 +895,7 @@ characters, including strict/lax and error policies. Backslashes before literal 
 control characters preserve those characters: `\用户` selects `用户`, and a backslash before
 a literal newline selects a newline in the member name. The decoded name must still be
 well-formed Unicode; the existing canonical encoding carries control characters safely to Rust.
-Recursive descent, filters, slices, multi-selectors, invalid/incomplete Unicode
+Recursive descent, filters, slices, member-name unions, invalid/incomplete Unicode
 escapes, unescaped ASCII controls inside bracket-quoted names,
 unpaired surrogates and dynamic paths fall back. Quoted `'*'` is an ordinary member name,
 not a wildcard.
@@ -919,7 +919,7 @@ JSON_VALUE nor JSON_EXISTS exposes them. SQL parity covers empty/single/multiple
 scalar/null inputs, nested signed indexes, duplicate ancestors, escaped names, typed defaults,
 all error policies, predicates and independent definite/wildcard projections. Retained operator
 metrics verify 5,003 rows entering and leaving native Calc. Recursive descent, filters, slices,
-multi-selectors, path functions and JSON_QUERY remain outside this extension.
+member-name unions, path functions and JSON_QUERY remain outside this extension.
 
 The wildcard benchmark reads `$.a[*]` from 32-element arrays with 264 bytes of padding.
 Release/mimalloc on an Apple M1 Max, one million rowwise inputs, two warmups and five alternating
@@ -929,6 +929,39 @@ trials measured **3.869019s / 1.573674s** for JSON_VALUE (Flink/native, **2.459�
 (0.549×). Both transposes and the rowwise blackhole sink are included. Reproduce with
 `ScalarFunctionBenchmark#individualFunctions`, `-Pbench`,
 `-Dscalar.functions=JSON_VALUE_WILDCARD,JSON_EXISTS_WILDCARD`,
+`-Dscalar.rows=1000000 -Dscalar.bytes=264 -Dscalar.warmup=2 -Dscalar.runs=5`, and
+`SF_BENCHMARK=true`.
+
+**Array-index unions** (`$[0,2,-1]`, `$.a[0,0]`) are native for JSON_VALUE and JSON_EXISTS.
+Each index uses ASCII decimal digits and must fit signed INT; leading zeros, negative zero,
+duplicates and ASCII spaces around commas are accepted. Trailing U+0000–U+0020 controls after the final index follow the
+same rule as a single index. Empty entries, plus signs, controls between entries, mixed member/index
+selectors and out-of-range index literals retain fallback.
+
+A union always produces a collection, including duplicate indexes and zero or one matches.
+JSON_EXISTS therefore returns TRUE for a successful collection; JSON_VALUE applies ON EMPTY
+in lax mode or ON ERROR in strict mode. Unlike a wildcard, the first union requires an array:
+a scalar, object or nested null at that step is an error in strict mode and an empty collection
+in lax mode. Missing members before the union follow the same policy; an out-of-range preceding
+single index skips its branch and returns an empty collection in either mode. Root JSON null
+and malformed documents keep their separate context/parse policies.
+
+Unions compose with members, single indexes, wildcards and further unions. Once a wildcard or
+union has branched, missing or wrong-type continuation steps skip that branch without changing
+the collection result. Both native readers validate the complete document and path, retain
+last-duplicate-member behavior, and avoid materializing selected elements. Released-Flink SQL
+parity covers these combinations and error/default policies; counters require 5,003 rows to
+enter and leave native Calc with independent union, wildcard and definite selections.
+
+The union benchmark selects `$.a[0,16,-1]` from the same 32-element arrays with 264 bytes of
+padding. Release/mimalloc on an Apple M1 Max, one million rowwise inputs, two warmups and five
+alternating trials measured **2.058325s / 1.551007s** for JSON_VALUE (Flink/native, **1.327
+&times;**) and **1.919062s / 1.464042s** for JSON_EXISTS (**1.311 &times;**). The matching
+no-expression baseline was **0.431934s / 0.840174s**. All timings include the row source,
+row sink and both transposes; the baseline is reported separately, without subtraction.
+Reproduce with `mvn -pl :streamfusion-runtime -am -Pbench
+-Dtest=ScalarFunctionBenchmark#individualFunctions -Dsurefire.failIfNoSpecifiedTests=false test`,
+`-Dscalar.functions=JSON_VALUE_INDEX_UNION,JSON_EXISTS_INDEX_UNION`,
 `-Dscalar.rows=1000000 -Dscalar.bytes=264 -Dscalar.warmup=2 -Dscalar.runs=5`, and
 `SF_BENCHMARK=true`.
 

@@ -227,6 +227,16 @@ class ScalarFunctionBenchmark {
                       "JSON_EXISTS(s, '$.a[*]')",
                       "BOOLEAN"),
                   new Query(
+                      "JSON_VALUE_INDEX_UNION",
+                      "tt_json_negative",
+                      "JSON_VALUE(s, 'lax $.a[0,16,-1]' DEFAULT 'empty' ON EMPTY)",
+                      "STRING"),
+                  new Query(
+                      "JSON_EXISTS_INDEX_UNION",
+                      "tt_json_negative",
+                      "JSON_EXISTS(s, '$.a[0,16,-1]')",
+                      "BOOLEAN"),
+                  new Query(
                       "JSON_VALUE_INDEX_WHITESPACE",
                       "tt_json_negative",
                       "JSON_VALUE(s, '$.a[31\t\n ]')",

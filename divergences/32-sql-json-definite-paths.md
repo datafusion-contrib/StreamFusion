@@ -117,8 +117,8 @@ calls the removed `Subject.getSubject` API before any query is executed.
 
 ## Admission
 
-Constant member/index paths and wildcards are admitted. Recursion, predicates, slices,
-multi-selectors, functions and dynamic paths remain on Flink. Unicode dot members
+Constant member/index paths, array-index unions and wildcards are admitted. Recursion, predicates, slices,
+member-name unions, functions and dynamic paths remain on Flink. Unicode dot members
 and single/double-quoted bracket members follow Flink's released Jayway parser. Quotes delimit a literal member:
 punctuation such as `.` or `*` inside them is part of the key. Empty quoted names are ordinary
 object keys, distinct from names containing spaces. The existing streaming and SIMD member
@@ -202,3 +202,21 @@ continuations without enumerating matches. It is specific to JSON_VALUE and JSON
 JSON_QUERY would need the actual collection, and functions can change its result shape, so
 neither is admitted by this rule. The released-Flink matrix checks these continuations against
 scalar/null/container inputs, empty/multiple matches and conflicting duplicate ancestors.
+
+## Array-index unions
+
+Released Jayway 2.9.0's `ArrayIndexOperation` validates each signed INT index without
+collapsing duplicates. `ArrayIndexToken` marks a multiple-index operation indefinite;
+`ArrayPathToken.checkArrayModel` still requires an array when its upstream path is definite.
+A wrong-type input at the first union therefore differs from a wildcard. After branching,
+`PathToken` and `ArrayPathToken` skip missing/wrong-type continuations instead of failing.
+These source contracts were checked before extending the readers.
+
+We retain the scalar-path/column-input structure of Arroyo's `extract_json`, consulted again
+for this extension. JSON_VALUE and JSON_EXISTS expose only the collection classification,
+so the native grammar validates every index and continuation but stores only the first
+branching selector and its definite prefix. The union marker checks for an array in both
+the streaming reader and SIMD tape; it neither enumerates matches nor reinterprets a union
+as a wildcard. Document validation and the shared Jackson buffer contract stay unchanged.
+No JNI or Arrow ownership change is required. Member-name unions and JSON_QUERY need
+separate result-shape contracts and remain outside this admission.

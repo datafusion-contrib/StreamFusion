@@ -23,7 +23,7 @@ final class JsonPathSpec {
               + "|\\[ *\"(?<quoted>(?:[^\"\\\\\\x00-\\x1f]|"
               + ESCAPE
               + ")*)\" *\\]"
-              + "|\\[ *(?<index>-?[0-9]+)[\\x00-\\x20]*\\]");
+              + "|\\[ *(?<index>-?[0-9]+(?: *, *-?[0-9]+)*)[\\x00-\\x20]*\\]");
 
   private JsonPathSpec() {}
 
@@ -67,12 +67,15 @@ final class JsonPathSpec {
       if (step.group("wildcard") != null) {
         normalized.append("[*]");
       } else if (step.group("index") != null) {
-        try {
-          Integer.parseInt(step.group("index"));
-        } catch (NumberFormatException e) {
-          return null;
+        String[] indexes = step.group("index").split(" *, *", -1);
+        for (String index : indexes) {
+          try {
+            Integer.parseInt(index);
+          } catch (NumberFormatException e) {
+            return null;
+          }
         }
-        normalized.append('[').append(step.group("index")).append(']');
+        normalized.append('[').append(String.join(",", indexes)).append(']');
       } else if (step.group("dot") != null) {
         String name = step.group("dot");
         if (IDENTIFIER.matcher(name).matches()) {
