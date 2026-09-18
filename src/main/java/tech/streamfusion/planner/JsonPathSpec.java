@@ -10,10 +10,12 @@ final class JsonPathSpec {
   private static final Pattern MODE =
       Pattern.compile("^\\s*(strict|lax)\\s+(.+)$", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
   private static final String ESCAPE = "\\\\(?:u[0-9a-fA-F]{4}|[^u])";
+  private static final Pattern IDENTIFIER = Pattern.compile("[\\p{L}_][\\p{L}\\p{N}_]*");
+  // Dot names keep literal characters up to a separator or function call; a leading * is a selector.
   // Jayway skips only spaces before an index, then String.trim() removes trailing ASCII controls.
   private static final Pattern STEP =
       Pattern.compile(
-          "\\.(?<dot>[\\p{L}_][\\p{L}\\p{N}_]*)"
+          "\\.(?<dot>[^.\\[(* ][^.\\[( ]*)"
               + "|\\[ *'(?<single>(?:[^'\\\\\\x00-\\x1f]|"
               + ESCAPE
               + ")*)' *\\]"
@@ -69,7 +71,17 @@ final class JsonPathSpec {
         }
         normalized.append('[').append(step.group("index")).append(']');
       } else if (step.group("dot") != null) {
-        normalized.append('.').append(step.group("dot"));
+        String name = step.group("dot");
+        if (IDENTIFIER.matcher(name).matches()) {
+          normalized.append('.').append(name);
+        } else {
+          // Jayway's dot token keeps punctuation, controls and backslashes literal. Quote the
+          // name for the native wire grammar without running the bracket-name unescaper.
+          normalized
+              .append("[\"")
+              .append(JsonStringEncoder.getInstance().quoteAsString(name))
+              .append("\"]");
+        }
       } else {
         boolean single = step.group("single") != null;
         String name = step.group(single ? "single" : "quoted");

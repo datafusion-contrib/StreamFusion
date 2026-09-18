@@ -782,8 +782,13 @@ dot members such as `$.user.name`, bracket members such as `$['user name']`, and
 32-bit array indexes such as `$.users[0].name` and `$.users[-1].name`. Negative indexes count
 from the array end: `-1` selects the last element, while `-0` is index zero. Leading zeros
 are accepted, and an index beyond either end follows the normal missing-path policies.
-Dot names use Unicode letters, numbers and
-underscores, with a letter/underscore first. Bracket names use single or double quotes and
+Dot names also accept numeric names, punctuation and well-formed Unicode, including literal
+controls: `$.order-id.123` and `$.a*b` select literal object keys. A dot name ends at `.` or `[`,
+and `(` starts function syntax, which remains on Flink. ASCII spaces are invalid within the name,
+and a leading `*` remains outside the definite-path grammar.
+Backslashes in dot names are literal: `$.a\u0061` selects the key `a\u0061`, without decoding
+the escape. The planner canonically quotes these names for the existing native reader.
+Bracket names use single or double quotes and
 accept well-formed Unicode, spaces and punctuation, including the other quote character.
 Empty bracket names (`$['']` and `$[""]`) select the empty object key, including in nested
 member/index paths. They remain distinct from a name containing a space (`$[' ']`).
@@ -805,7 +810,7 @@ control characters preserve those characters: `\用户` selects `用户`, and a 
 a literal newline selects a newline in the member name. The decoded name must still be
 well-formed Unicode; the existing canonical encoding carries control characters safely to Rust.
 Wildcards, recursive descent, filters, slices, multi-selectors, invalid/incomplete Unicode
-escapes, unescaped ASCII controls,
+escapes, unescaped ASCII controls inside bracket-quoted names,
 unpaired surrogates and dynamic paths fall back. Quoted `'*'` is an ordinary member name,
 not a wildcard.
 
@@ -815,19 +820,34 @@ digit and before its closing `]`, the planner also removes any sequence of chara
 through U+0020, matching Jayway's `String.trim()` on the index expression. Thus `$[1\t\n ]`
 (where `\t` and `\n` stand for literal tab and newline) uses the same native selector as `$[1]`.
 This works with negative indexes, leading zeros and nested paths. Before the index, only ASCII
-spaces are admitted; controls within digits, before an index, after a quoted member, or outside
-the brackets still fall back. DEL, non-breaking space and other Unicode whitespace also remain
+spaces are admitted; controls within digits, before an index, or after a bracket step still
+fall back. DEL, non-breaking space and other Unicode whitespace also remain
 outside this index suffix grammar.
 
 The planner removes only these verified syntactic characters; spaces inside quoted names
 remain significant. An explicit case-insensitive `strict`/`lax` prefix accepts Flink's
-mode-separating whitespace. Leading whitespace without a mode and other tabs/newlines in the
-path stay on Flink: Jayway handles them differently depending on the preceding token, so general
-whitespace trimming would change the selected value. Runtime tests exercise every ASCII control
+mode-separating whitespace. Tabs and newlines within or at the end of a dot member are literal
+key characters, including `$.a\t` (where `\t` is a literal tab). Leading whitespace without a mode
+and unsupported whitespace after other tokens stay on Flink. General whitespace trimming
+would change the selected value. Runtime tests exercise every ASCII control
 suffix against released Flink, preserve strict/lax and error policies, and verify 5,003 rows
 consumed and emitted by native Calc. Normalized literal paths register no JVM UDF callback.
+The dot-member matrix also compares every admitted ASCII character, representative Unicode,
+nested paths, duplicate keys, missing/null/scalar/container values and malformed unselected
+fields. It verifies error policies, typed conversion failures, and 5,003 rows through native
+Calc; literal-path encoding registers no JVM callback.
 Remaining path extensions are tracked in
 [#91](https://github.com/datafusion-contrib/StreamFusion/issues/91).
+
+The dot-member benchmark selects `$.order-id.123.a\tb` (a literal tab in the final name)
+from documents with 264 bytes of padding. Release/mimalloc on an Apple M1 Max, one million
+rowwise inputs, two warmups and five alternating trials measured **1.099021s / 0.968465s**
+for JSON_VALUE (Flink/native, 1.135×) and **1.051865s / 0.788609s** for JSON_EXISTS (1.334×).
+The same-source identity control measured 0.373978s / 0.660353s (0.566×). Both transposes and
+the rowwise blackhole sink are included. Reproduce with `ScalarFunctionBenchmark#individualFunctions`,
+`-Pbench -Dscalar.functions=JSON_VALUE_DOT_MEMBER,JSON_EXISTS_DOT_MEMBER`,
+`-Dscalar.rows=1000000 -Dscalar.bytes=264 -Dscalar.warmup=2 -Dscalar.runs=5`, and
+`SF_BENCHMARK=true`.
 
 The trailing-index-control benchmark selects `$.a[31\t\n ]` from 32-element arrays with
 264 bytes of padding. Release/mimalloc, one million rowwise inputs, two warmups and five

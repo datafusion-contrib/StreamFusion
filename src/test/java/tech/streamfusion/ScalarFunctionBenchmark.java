@@ -202,6 +202,16 @@ class ScalarFunctionBenchmark {
                       "JSON_VALUE(s, '$.a[-1]')",
                       "STRING"),
                   new Query(
+                      "JSON_VALUE_DOT_MEMBER",
+                      "tt_json_dot_member",
+                      "JSON_VALUE(s, '$.order-id.123.a\tb')",
+                      "STRING"),
+                  new Query(
+                      "JSON_EXISTS_DOT_MEMBER",
+                      "tt_json_dot_member",
+                      "JSON_EXISTS(s, '$.order-id.123.a\tb')",
+                      "BOOLEAN"),
+                  new Query(
                       "JSON_VALUE_INDEX_WHITESPACE",
                       "tt_json_negative",
                       "JSON_VALUE(s, '$.a[31\t\n ]')",

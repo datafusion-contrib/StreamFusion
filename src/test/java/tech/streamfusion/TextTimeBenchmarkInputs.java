@@ -246,6 +246,11 @@ final class TextTimeBenchmarkInputs {
                   "{\"a\\\\b\":{\"a\\nb\":\"Alice\"},\"padding\":\"" + text[0] + "\"}",
                   "{\"a\\\\b\":{\"a\\nb\":\"Bob\"},\"padding\":\"" + text[1] + "\"}"
                 };
+            case "tt_json_dot_member" ->
+                new String[] {
+                  "{\"order-id\":{\"123\":{\"a\\tb\":\"Alice\"}},\"padding\":\"" + text[0] + "\"}",
+                  "{\"order-id\":{\"123\":{\"a\\tb\":\"Bob\"}},\"padding\":\"" + text[1] + "\"}"
+                };
             case "tt_json_negative" -> {
               StringBuilder elements = new StringBuilder();
               for (int i = 0; i < 31; i++) elements.append("\"value").append(i).append("\",");
