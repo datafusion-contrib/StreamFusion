@@ -158,7 +158,7 @@ class FlinkJsonPathGrammarSqlHarnessTest {
       strings = {
         "$[-2147483649]",
         "$[+1]",
-        "$[1,2]",
+        "$[1,2:3]",
         "$[1:2]",
         "$[*][1:2]",
         "$..a",

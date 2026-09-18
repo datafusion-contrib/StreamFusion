@@ -75,6 +75,42 @@ class JsonPathSpecTest {
   }
 
   @Test
+  void arrayIndexUnionsValidateEveryIndexAndNormalizeSpaces() {
+    for (String path :
+        List.of(
+            "$[0,2,-1]",
+            "$[0,0]",
+            "$[-0,0001]",
+            "$[-2147483648,2147483647]",
+            "$.a[1,2].b[*][-1,0]",
+            "$[*][1,2]")) {
+      assertEquals("strict " + path, JsonPathSpec.normalize(path));
+    }
+    assertEquals("lax $.a[0,-01,2].x", JsonPathSpec.normalize("lax $.a[ 0 , -01 , 2 ].x"));
+    for (int c = 0; c <= 0x20; c++) {
+      assertEquals("strict $[0,-1]", JsonPathSpec.normalize("$[0,-1" + (char) c + "]"));
+    }
+    for (String path :
+        List.of(
+            "$[0,]",
+            "$[,0]",
+            "$[0,,1]",
+            "$[0,+1]",
+            "$[0,1 2]",
+            "$[0,-]",
+            "$[0,2147483648]",
+            "$[*][0,-2147483649]",
+            "$[0,\t1]",
+            "$[0\t,1]",
+            "$[\t0,1]",
+            "$[0,1]\t",
+            "$[0,1:2]",
+            "$[0,'a']")) {
+      assertNull(JsonPathSpec.normalize(path), path);
+    }
+  }
+
+  @Test
   void literalDotNamesPreservePunctuationAndControls() {
     assertEquals("strict $[\"order-id\"][\"123\"]", JsonPathSpec.normalize("$.order-id.123"));
     assertEquals("strict $[\"a\\tb\"]", JsonPathSpec.normalize("$.a\tb"));
@@ -169,6 +205,8 @@ class JsonPathSpecTest {
                 "$.a",
                 "$.*",
                 "$.a[*].b[-1].*",
+                "$.a[0,2,-1].b",
+                "$[*][0,1]",
                 "$.a[-1][ * ]",
                 "$.order-id.123",
                 "$.a\tb",

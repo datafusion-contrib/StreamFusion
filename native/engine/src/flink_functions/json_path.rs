@@ -20,10 +20,11 @@ enum Step<'a> {
     Member(Cow<'a, str>),
     Index(i32),
     Wildcard,
+    IndexUnion,
 }
 
 fn indefinite(steps: &[Step<'_>]) -> bool {
-    matches!(steps.last(), Some(Step::Wildcard))
+    matches!(steps.last(), Some(Step::Wildcard | Step::IndexUnion))
 }
 
 impl<'a> Path<'a> {
@@ -97,21 +98,24 @@ impl<'a> Path<'a> {
             } else {
                 let rest = text.strip_prefix('[')?;
                 let end = rest.find(']')?;
-                let index = &rest[..end];
-                let digits = index.strip_prefix('-').unwrap_or(index);
-                if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-                    return None;
+                let mut indexes = rest[..end].split(',');
+                let mut step = Step::Index(parse_index(indexes.next()?)?);
+                for index in indexes {
+                    parse_index(index)?;
+                    step = Step::IndexUnion;
                 }
-                let index: i32 = index.parse().ok()?;
-                steps.push(Step::Index(index));
+                steps.push(step);
                 text = &rest[end + 1..];
             }
         }
-        // Every admitted continuation after a wildcard still returns a collection. Jayway
-        // skips missing member/index branches after that point. These two SQL functions
-        // observe only the collection marker, so validate the entire path, then retain its
-        // definite prefix and first wildcard without allocating or enumerating matches.
-        if let Some(index) = steps.iter().position(|step| matches!(step, Step::Wildcard)) {
+        // Every admitted continuation after a wildcard or index union returns a collection.
+        // Jayway skips missing member/index branches after that point. These SQL functions
+        // observe only the collection marker: validate every step, then retain the definite
+        // prefix and first branching selector without allocating or enumerating matches.
+        if let Some(index) = steps
+            .iter()
+            .position(|step| matches!(step, Step::Wildcard | Step::IndexUnion))
+        {
             steps.truncate(index + 1);
         }
         Some(Self {
@@ -158,6 +162,14 @@ impl<'a> Path<'a> {
             Err(()) => Err(()),
         }
     }
+}
+
+fn parse_index(text: &str) -> Option<i32> {
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    text.parse().ok()
 }
 
 fn is_identifier(name: &str) -> bool {
@@ -267,6 +279,7 @@ impl<'a> Parser<'a> {
         let mut result = if path.is_some_and(|steps| {
             steps.is_empty()
                 || matches!(steps, [Step::Wildcard])
+                || (!object && matches!(steps, [Step::IndexUnion]))
                 // Jayway skips out-of-range indexes, even in strict mode. An indefinite
                 // path then returns an empty collection; missing properties still fail.
                 || (!object && matches!(steps.first(), Some(Step::Index(_))) && indefinite(steps))
@@ -612,6 +625,9 @@ mod tests {
             "$.a[-1][*]",
             "$[*].a",
             "$[*][*][-1]",
+            "$[0,2,-1]",
+            "$[-2147483648,2147483647].a[*]",
+            "$[*][0,0]",
         ] {
             assert!(Path::parse(text, "13.0").is_some(), "{text}");
         }
@@ -626,6 +642,12 @@ mod tests {
             "$[-2147483649]",
             "$[2147483648]",
             "$[]",
+            "$[0,]",
+            "$[,1]",
+            "$[0,+1]",
+            "$[0,2147483648]",
+            "$[*][0,-2147483649]",
+            "$[0,1:2]",
             "$['a\\b']",
             "$[\"a\",\"b\"]",
             "$['a\n']",
@@ -678,6 +700,56 @@ mod tests {
             );
         }
         for text in ["$[*]", "$.a[*]", "$[1].missing[*]"] {
+            for input in ["null", "null trailing"] {
+                assert_eq!(path(text).read(input), Err(()));
+                assert_eq!(path(&format!("lax {text}")).read(input), Err(()));
+            }
+            for input in [
+                "invalid",
+                r#"{"a":[],"bad":[}"#,
+                r#"{"a":[],"bad":1e2147483648}"#,
+            ] {
+                assert_eq!(path(text).read(input), Err(()));
+                assert_eq!(path(&format!("lax {text}")).read(input), Ok(Value::Missing));
+            }
+        }
+    }
+
+    #[test]
+    fn index_unions_require_arrays_but_keep_empty_and_duplicate_results_as_collections() {
+        for (text, input, matched) in [
+            ("$[0,1]", "[]", true),
+            ("$[0,0]", "[null]", true),
+            ("$[-2147483648,2147483647]", "[]", true),
+            ("$[0,1]", "{}", false),
+            ("$[0,1]", "1", false),
+            ("$.a[0,1]", r#"{"a":null}"#, false),
+            ("$.a[0,1]", r#"{"a":{}}"#, false),
+            ("$.a[0,1]", r#"{"a":[]}"#, true),
+            ("$.a[0,1]", r#"{"a":[],"a":{}}"#, false),
+            ("$.a[0,1]", r#"{"a":{},"a":[]}"#, true),
+            ("$[9].missing[0,1]", "[]", true),
+            ("$[-2].missing[0,1]", "[{}]", true),
+            ("$[-2].missing[0,1]", "[{},{}]", false),
+            ("$[0,1].missing[0,1]", "[{},null]", true),
+            ("$[*][0,1]", "{}", true),
+            ("$[0,1][*]", "{}", false),
+        ] {
+            assert_eq!(
+                path(text).read(input),
+                if matched {
+                    Ok(Value::Container)
+                } else {
+                    Err(())
+                },
+                "{text}: {input}"
+            );
+            assert_eq!(
+                path(&format!("lax {text}")).read(input),
+                Ok(Value::Container)
+            );
+        }
+        for text in ["$[0,1]", "$.a[0,1]", "$[*][0,1]"] {
             for input in ["null", "null trailing"] {
                 assert_eq!(path(text).read(input), Err(()));
                 assert_eq!(path(&format!("lax {text}")).read(input), Err(()));

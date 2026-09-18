@@ -20,10 +20,48 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
-class FlinkJsonWildcardSqlHarnessTest {
+class FlinkJsonIndefinitePathSqlHarnessTest {
   @ParameterizedTest
   @ValueSource(
       strings = {
+        "$[0,1]",
+        "$[0,0]",
+        "$[-1,-1]",
+        "$[-0,01]",
+        "$[-2147483648,2147483647]",
+        "$[ 0 , -01 , 2 ]",
+        "$[0,2\t\n ]",
+        "$[0,1]  ",
+        "$[99,100].missing",
+        "$[0,1].a",
+        "$[0,1][0]",
+        "$[0,1][*]",
+        "$[0,1][0,2]",
+        "$[0,1].missing[1,2]",
+        "$[0,1]['\\u0061']",
+        "$[0,1].order-id",
+        "$[0,1]['']",
+        "$[*][0,1]",
+        "$[*].a[0,1]",
+        "$[1][0,1]",
+        "$[-2].a[0,1]",
+        "$[2147483647].missing[0,1]",
+        "$[-2147483648].missing[0,1]",
+        "$.a[0,1]",
+        "$.a[0,0]",
+        "$.a[-1,0,-2]",
+        "$.a[0,1].x",
+        "$.a[0,1].x[-1]",
+        "$.a[0,1].x[*]",
+        "$.a[0,1].x[0,1]",
+        "$.a[*].x[0,1]",
+        "$.a[1].x[0,1]",
+        "$.a[-2].x[0,1]",
+        "$.a.missing[0,1]",
+        "$['*'][0,1]",
+        "$[''][0,1]",
+        "$.用户[0,1]",
+        "$['\\u0061'][0,1]",
         "$.*",
         "$[*]",
         "$[ * ]",
@@ -67,11 +105,11 @@ class FlinkJsonWildcardSqlHarnessTest {
         "$[*]['\\u0061']",
         "$[*].order-id"
       })
-  void wildcardsMatchReleasedFlinkAcrossPolicies(String path) throws Exception {
+  void indefinitePathsMatchReleasedFlinkAcrossPolicies(String path) throws Exception {
     String strict = literal("strict " + path);
     String lax = literal("lax " + path);
     NativeParity.assertParity(
-        FlinkJsonWildcardSqlHarnessTest::documents,
+        FlinkJsonIndefinitePathSqlHarnessTest::documents,
         "SELECT id, JSON_VALUE(s, "
             + strict
             + " DEFAULT 'empty' ON EMPTY DEFAULT 'error' ON ERROR), JSON_VALUE(s, "
@@ -115,14 +153,36 @@ class FlinkJsonWildcardSqlHarnessTest {
   }
 
   @Test
-  void predicateDistinguishesInvalidDocumentsAndMissingPaths() throws Exception {
+  void indexUnionsRequireAnArrayBeforeBranching() throws Exception {
     NativeParity.assertParity(
-        FlinkJsonWildcardSqlHarnessTest::documents,
-        "SELECT id FROM inputs WHERE JSON_EXISTS(s, 'lax $.a[*]')");
+        () -> TextTimeFunctionTestInputs.textRows(null, "[]", "[null]", "[1]", "[{},null,1]"),
+        "SELECT JSON_EXISTS(s, '$[0,1].missing[-1,0]' ERROR ON ERROR), "
+            + "JSON_EXISTS(s, '$[9].missing[0,1]' ERROR ON ERROR), "
+            + "JSON_EXISTS(s, '$[0,0]' ERROR ON ERROR) FROM inputs");
+    for (String document :
+        new String[] {"{}", "{\"a\":null}", "{\"a\":{}}", "{\"a\":1}", "invalid", "null"}) {
+      JsonFunctionTestInputs.assertFailsLikeFlink(
+          document, "JSON_EXISTS(s, '$.a[0,1]' ERROR ON ERROR)");
+    }
+    JsonFunctionTestInputs.assertFailsLikeFlink(
+        "null", "JSON_EXISTS(s, 'lax $[0,1]' ERROR ON ERROR)");
+    JsonFunctionTestInputs.assertFails(
+        "[1]", "JSON_VALUE(s, '$[0,0]' ERROR ON ERROR)", "JSON_VALUE ERROR");
+    JsonFunctionTestInputs.assertFails(
+        "{}", "JSON_VALUE(s, 'lax $.a[0,1]' ERROR ON EMPTY)", "JSON_VALUE EMPTY");
   }
 
   @Test
-  void wildcardsExecuteNativeCalcAcrossBatches() throws Exception {
+  void predicateDistinguishesInvalidDocumentsAndMissingPaths() throws Exception {
+    for (String path : new String[] {"lax $.a[*]", "$.a[0,1]", "lax $.a[0,1]"}) {
+      NativeParity.assertParity(
+          FlinkJsonIndefinitePathSqlHarnessTest::documents,
+          "SELECT id FROM inputs WHERE JSON_EXISTS(s, " + literal(path) + ")");
+    }
+  }
+
+  @Test
+  void indefiniteSelectorsExecuteNativeCalcAcrossBatches() throws Exception {
     var reporter = InMemoryReporter.createWithRetainedMetrics();
     var cluster =
         new MiniClusterResource(
@@ -154,11 +214,25 @@ class FlinkJsonWildcardSqlHarnessTest {
           table.executeSql(
               "SELECT id, JSON_EXISTS(s, '$.a[*]'), "
                   + "JSON_EXISTS(s, 'lax $.a[*]'), JSON_VALUE(s, '$.*' DEFAULT 'error' ON ERROR), "
-                  + "JSON_VALUE(s, 'lax $[*]' DEFAULT 'empty' ON EMPTY) FROM inputs");
+                  + "JSON_VALUE(s, 'lax $[*]' DEFAULT 'empty' ON EMPTY), "
+                  + "JSON_EXISTS(s, '$.a[0,1]'), JSON_EXISTS(s, 'lax $.a[0,1]'), "
+                  + "JSON_VALUE(s, 'lax $[0,0]' DEFAULT 'union-empty' ON EMPTY), "
+                  + "JSON_VALUE(s, '$[0,1]' DEFAULT 'union-error' ON ERROR) FROM inputs");
       long count = 0;
       try (var rows = result.collect()) {
         while (rows.hasNext()) {
-          assertEquals(Row.of(count, count % 4 < 2, true, "error", "empty"), rows.next());
+          assertEquals(
+              Row.of(
+                  count,
+                  count % 4 < 2,
+                  true,
+                  "error",
+                  "empty",
+                  count % 4 == 0,
+                  true,
+                  "union-empty",
+                  "union-error"),
+              rows.next());
           count++;
         }
       }
