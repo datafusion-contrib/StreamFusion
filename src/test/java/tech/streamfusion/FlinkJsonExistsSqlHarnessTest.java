@@ -101,9 +101,9 @@ class FlinkJsonExistsSqlHarnessTest {
   }
 
   @Test
-  void wildcardAndRecursivePathsFallBack() throws Exception {
+  void slicedWildcardAndRecursivePathsFallBack() throws Exception {
     assertFallback(
-        JsonFunctionTestInputs::documents, "SELECT id, JSON_EXISTS(s, '$.*') FROM inputs");
+        JsonFunctionTestInputs::documents, "SELECT id, JSON_EXISTS(s, '$[*][1:2]') FROM inputs");
     assertFallback(
         JsonFunctionTestInputs::documents, "SELECT id, JSON_EXISTS(s, '$..a') FROM inputs");
   }

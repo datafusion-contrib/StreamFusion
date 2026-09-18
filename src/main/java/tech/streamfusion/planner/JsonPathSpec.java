@@ -5,17 +5,18 @@ import java.util.regex.Pattern;
 import org.apache.flink.shaded.com.jayway.jsonpath.internal.Utils;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.io.JsonStringEncoder;
 
-/** Admission grammar shared with the native SQL/JSON definite-path reader. */
+/** Admission grammar shared with the native SQL/JSON path reader. */
 final class JsonPathSpec {
   private static final Pattern MODE =
       Pattern.compile("^\\s*(strict|lax)\\s+(.+)$", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
   private static final String ESCAPE = "\\\\(?:u[0-9a-fA-F]{4}|[^u])";
   private static final Pattern IDENTIFIER = Pattern.compile("[\\p{L}_][\\p{L}\\p{N}_]*");
-  // Dot names keep literal characters up to a separator or function call; a leading * is a selector.
+  // Dot names end at a separator or function call; a leading * is a selector.
   // Jayway skips only spaces before an index, then String.trim() removes trailing ASCII controls.
   private static final Pattern STEP =
       Pattern.compile(
-          "\\.(?<dot>[^.\\[(* ][^.\\[( ]*)"
+          "(?<wildcard>\\.\\*|\\[ *\\* *\\])"
+              + "|\\.(?<dot>[^.\\[(* ][^.\\[( ]*)"
               + "|\\[ *'(?<single>(?:[^'\\\\\\x00-\\x1f]|"
               + ESCAPE
               + ")*)' *\\]"
@@ -63,7 +64,9 @@ final class JsonPathSpec {
       if (!step.lookingAt()) {
         return null;
       }
-      if (step.group("index") != null) {
+      if (step.group("wildcard") != null) {
+        normalized.append("[*]");
+      } else if (step.group("index") != null) {
         try {
           Integer.parseInt(step.group("index"));
         } catch (NumberFormatException e) {

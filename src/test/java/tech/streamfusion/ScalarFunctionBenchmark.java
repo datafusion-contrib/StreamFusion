@@ -217,6 +217,16 @@ class ScalarFunctionBenchmark {
                       "JSON_EXISTS(s, '$.order-id.123.a\tb')",
                       "BOOLEAN"),
                   new Query(
+                      "JSON_VALUE_WILDCARD",
+                      "tt_json_negative",
+                      "JSON_VALUE(s, 'lax $.a[*]' DEFAULT 'empty' ON EMPTY)",
+                      "STRING"),
+                  new Query(
+                      "JSON_EXISTS_WILDCARD",
+                      "tt_json_negative",
+                      "JSON_EXISTS(s, '$.a[*]')",
+                      "BOOLEAN"),
+                  new Query(
                       "JSON_VALUE_INDEX_WHITESPACE",
                       "tt_json_negative",
                       "JSON_VALUE(s, '$.a[31\t\n ]')",

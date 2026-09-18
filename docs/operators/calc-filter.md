@@ -862,7 +862,8 @@ opt-in is needed. This validates the document directly, without applying JSON pa
 The direct Rust kernel is enabled by default for the following verified shapes; no compatibility
 opt-in is needed. The fused JVM consumer path below retains Flink's own selector and policy rules.
 
-Character input with a non-null literal definite path is native. Supported paths are `$`,
+Character input with a non-null literal path is native for the following selectors.
+Definite paths support `$`,
 dot members such as `$.user.name`, bracket members such as `$['user name']`, and signed
 32-bit array indexes such as `$.users[0].name` and `$.users[-1].name`. Negative indexes count
 from the array end: `-1` selects the last element, while `-0` is index zero. Leading zeros
@@ -870,7 +871,7 @@ are accepted, and an index beyond either end follows the normal missing-path pol
 Dot names also accept numeric names, punctuation and well-formed Unicode, including literal
 controls: `$.order-id.123` and `$.a*b` select literal object keys. A dot name ends at `.` or `[`,
 and `(` starts function syntax, which remains on Flink. ASCII spaces are invalid within the name,
-and a leading `*` remains outside the definite-path grammar.
+and a leading `*` is a wildcard selector rather than a literal member.
 Backslashes in dot names are literal: `$.a\u0061` selects the key `a\u0061`, without decoding
 the escape. The planner canonically quotes these names for the existing native reader.
 Bracket names use single or double quotes and
@@ -894,10 +895,42 @@ characters, including strict/lax and error policies. Backslashes before literal 
 control characters preserve those characters: `\用户` selects `用户`, and a backslash before
 a literal newline selects a newline in the member name. The decoded name must still be
 well-formed Unicode; the existing canonical encoding carries control characters safely to Rust.
-Wildcards, recursive descent, filters, slices, multi-selectors, invalid/incomplete Unicode
+Recursive descent, filters, slices, multi-selectors, invalid/incomplete Unicode
 escapes, unescaped ASCII controls inside bracket-quoted names,
 unpaired surrogates and dynamic paths fall back. Quoted `'*'` is an ordinary member name,
 not a wildcard.
+
+**Wildcards** (`$.*`, `$[*]`, `$.a[-1][*]`) compose with native member/index selectors,
+including continuations such as `$.a[*].b[-1]` and repeated wildcards such as `$[*][*].b`.
+ASCII spaces inside their brackets are accepted (`$[ * ]`). Both spellings select object values
+or array elements.
+Flink returns a collection even for zero or one matches: JSON_EXISTS is TRUE for that collection,
+JSON_VALUE uses ON EMPTY in lax mode, and JSON_VALUE uses ON ERROR in strict mode. A scalar or
+JSON null reached by the wildcard yields an empty collection; root JSON null still fails to
+construct a path context. Missing properties or wrong-type steps before the first wildcard are errors
+in strict mode and empty collections in lax mode. Out-of-range indexes before the wildcard
+instead produce an empty collection in both modes. Malformed documents retain the existing
+strict/lax parsing policy, including validation of fields outside the selected path. After a
+wildcard, missing or wrong-type member/index branches are skipped and the result remains a
+collection, even when all branches are skipped.
+
+The native readers track that collection result without allocating its elements, since neither
+JSON_VALUE nor JSON_EXISTS exposes them. SQL parity covers empty/single/multiple matches,
+scalar/null inputs, nested signed indexes, duplicate ancestors, escaped names, typed defaults,
+all error policies, predicates and independent definite/wildcard projections. Retained operator
+metrics verify 5,003 rows entering and leaving native Calc. Recursive descent, filters, slices,
+multi-selectors, path functions and JSON_QUERY remain outside this extension.
+
+The wildcard benchmark reads `$.a[*]` from 32-element arrays with 264 bytes of padding.
+Release/mimalloc on an Apple M1 Max, one million rowwise inputs, two warmups and five alternating
+trials measured **3.869019s / 1.573674s** for JSON_VALUE (Flink/native, **2.459×**) and
+**3.164764s / 1.439500s** for JSON_EXISTS (**2.199×**). JSON_VALUE uses lax mode with an
+`'empty'` ON EMPTY default. The same-source identity control measured 0.458588s / 0.834914s
+(0.549×). Both transposes and the rowwise blackhole sink are included. Reproduce with
+`ScalarFunctionBenchmark#individualFunctions`, `-Pbench`,
+`-Dscalar.functions=JSON_VALUE_WILDCARD,JSON_EXISTS_WILDCARD`,
+`-Dscalar.rows=1000000 -Dscalar.bytes=264 -Dscalar.warmup=2 -Dscalar.runs=5`, and
+`SF_BENCHMARK=true`.
 
 ASCII spaces around a bracket member or index are native, for example `$[ 'user' ][ -01 ]`.
 Trailing ASCII spaces after a complete path are also accepted. After an array index's final

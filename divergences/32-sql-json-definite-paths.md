@@ -1,8 +1,8 @@
-# Flink SQL/JSON definite paths
+# Flink SQL/JSON paths
 
 Comet's `native/spark-expr/src/string_funcs/get_json_object.rs` separates scalar paths from
 column inputs and streams through each document instead of building a DOM on its common
-path. StreamFusion follows that structure: the path and policies remain scalar, a definite
+path. StreamFusion follows that structure: the path and policies remain scalar, a
 path is parsed once per batch, and unescaped selected strings borrow their input span until
 appended to the Arrow result. Every field is validated, including fields outside the selected
 path. JSON_VALUE, JSON_EXISTS and IS JSON share this parser under the scalar-function registry.
@@ -115,17 +115,18 @@ That disables the automatic MiniCluster extension, which these direct comparison
 need. The full SQL harness cannot start on JDK 24 because the current Hadoop dependency
 calls the removed `Subject.getSubject` API before any query is executed.
 
-## Initial admission
+## Admission
 
-Only constant definite member/index paths are admitted. Wildcards, recursion, predicates,
-slices and dynamic paths remain on Flink. Unicode dot members and single/double-quoted
-bracket members follow Flink's released Jayway parser. Quotes delimit a literal member:
+Constant member/index paths and wildcards are admitted. Recursion, predicates, slices,
+multi-selectors, functions and dynamic paths remain on Flink. Unicode dot members
+and single/double-quoted bracket members follow Flink's released Jayway parser. Quotes delimit a literal member:
 punctuation such as `.` or `*` inside them is part of the key. Empty quoted names are ordinary
 object keys, distinct from names containing spaces. The existing streaming and SIMD member
 selectors handle them, including last-duplicate replacement and nested empty ancestors;
-only the planner and compact path grammar need to admit them. Backslash escapes, controls
-and unpaired surrogates are excluded before crossing JNI. The native grammar
-retains borrowed member slices, with no per-row path parsing or change to JSON validation.
+only the planner and compact path grammar need to admit them. Verified Jayway bracket escapes
+are decoded and canonically JSON-quoted by the planner; dot-member backslashes and controls
+remain literal. Invalid Unicode escapes and unpaired-surrogate path names are excluded before
+crossing JNI. The native grammar retains borrowed member slices, with no per-row path parsing or change to JSON validation.
 
 The planner normalizes ASCII spaces around bracket members/indexes and at the end of the
 literal path before passing it to the compact native grammar. Quoted member content and
@@ -136,8 +137,9 @@ Flink-specific parser remains necessary.
 
 General whitespace trimming is deliberately excluded. Jayway trims ASCII spaces but can
 interpret a trailing tab as part of a dot member, ignore a single character after a bracket,
-or reject a longer trailing sequence. Tabs/newlines inside or after a path therefore remain
-outside native admission, as does leading whitespace without an explicit mode. Whitespace
+or reject a longer trailing sequence. Only verified forms are admitted: trailing U+0000–U+0020
+controls inside array-index brackets are trimmed, while controls within dot names remain literal. Other whitespace forms stay outside
+native admission, including leading whitespace without an explicit mode. Whitespace
 around the optional strict/lax mode continues to follow Flink's mode regex. SQL regressions
 compare compact/spaced selectors, quoted member spaces, missing/null/scalar/container values,
 duplicate members, invalid unselected fields, independent paths and INTEGER defaults.
@@ -175,3 +177,28 @@ FALSE and TRUE ON ERROR remain composable. Regression probes verify the host fai
 the successful short-circuited results that would otherwise diverge in native execution.
 JSON_EXISTS supports all four ON ERROR behaviors. Both functions are ordinary scalar
 expressions; no operator or converter changes are required.
+
+## Wildcards
+
+Arroyo's `arroyo-planner/src/functions.rs::extract_json` parses a scalar `serde_json_path` path
+once and emits an Arrow list of serialized matches. Flink's JSON_VALUE/JSON_EXISTS have a
+different observable contract: every indefinite result is a collection, even with zero or one
+matches, and neither function returns its elements. We retain Arroyo's scalar-path/column-input
+structure while carrying only the collection marker through our existing readers. No result list,
+new JNI call or operator is needed; every JSON field is still validated.
+
+The reference is released Jayway 2.9.0's `WildcardPathToken`, `PathToken`, and `ArrayPathToken`,
+plus Flink 2.2.1's `SqlJsonUtils`. A wildcard over a scalar or nested null produces an
+empty collection. Strict mode rejects missing properties and wrong-type selectors in the definite
+prefix, but skips an out-of-range array index and returns an empty collection. Lax mode suppresses
+path failures into an empty collection while malformed JSON remains a null context; root JSON null
+still fails context construction. Both the streaming cursor and SIMD tape preserve these distinct
+outcomes, including last-duplicate replacement.
+
+After the first wildcard, Jayway skips missing or wrong-type member/index branches and always
+returns a collection. We validate the entire path grammar, then retain only the definite prefix
+and first wildcard for evaluation. This also covers repeated wildcards and member/index
+continuations without enumerating matches. It is specific to JSON_VALUE and JSON_EXISTS;
+JSON_QUERY would need the actual collection, and functions can change its result shape, so
+neither is admitted by this rule. The released-Flink matrix checks these continuations against
+scalar/null/container inputs, empty/multiple matches and conflicting duplicate ancestors.

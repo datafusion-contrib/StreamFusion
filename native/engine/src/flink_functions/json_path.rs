@@ -1,4 +1,4 @@
-//! Definite SQL/JSON paths and first-document parsing for Flink's Jackson/Jayway runtime.
+//! SQL/JSON paths and first-document parsing for Flink's Jackson/Jayway runtime.
 
 use std::borrow::Cow;
 
@@ -19,10 +19,15 @@ pub(super) struct Path<'a> {
 enum Step<'a> {
     Member(Cow<'a, str>),
     Index(i32),
+    Wildcard,
+}
+
+fn indefinite(steps: &[Step<'_>]) -> bool {
+    matches!(steps.last(), Some(Step::Wildcard))
 }
 
 impl<'a> Path<'a> {
-    // The Java encoder normalizes the mode and admits this same definite-path grammar.
+    // The Java encoder normalizes the mode and admits this same path grammar.
     pub fn parse(path: &'a str, unicode: &str) -> Option<Self> {
         static IDENTIFIERS: std::sync::LazyLock<[regex::Regex; 3]> =
             std::sync::LazyLock::new(|| {
@@ -46,7 +51,10 @@ impl<'a> Path<'a> {
         text = text.strip_prefix('$')?;
         let mut steps = Vec::new();
         while !text.is_empty() {
-            if let Some(rest) = text.strip_prefix('.') {
+            if let Some(rest) = text.strip_prefix("[*]") {
+                steps.push(Step::Wildcard);
+                text = rest;
+            } else if let Some(rest) = text.strip_prefix('.') {
                 let end = rest.find(['.', '[']).unwrap_or(rest.len());
                 let name = &rest[..end];
                 if !is_identifier(name) {
@@ -99,6 +107,13 @@ impl<'a> Path<'a> {
                 text = &rest[end + 1..];
             }
         }
+        // Every admitted continuation after a wildcard still returns a collection. Jayway
+        // skips missing member/index branches after that point. These two SQL functions
+        // observe only the collection marker, so validate the entire path, then retain its
+        // definite prefix and first wildcard without allocating or enumerating matches.
+        if let Some(index) = steps.iter().position(|step| matches!(step, Step::Wildcard)) {
+            steps.truncate(index + 1);
+        }
         Some(Self {
             lax,
             steps,
@@ -134,6 +149,9 @@ impl<'a> Path<'a> {
     fn apply_policy<'s>(&self, parsed: Result<(Value<'s>, bool), ()>) -> Result<Value<'s>, ()> {
         match parsed {
             Ok((_, true)) => Err(()), // Jayway cannot construct a context from Java null.
+            // Suppressed path failures return an empty collection for an indefinite path.
+            // Invalid documents still follow the separate parse-error arm below.
+            Ok((Value::Missing, _)) if self.lax && indefinite(&self.steps) => Ok(Value::Container),
             Ok((Value::Missing | Value::Null, _)) if !self.lax => Err(()),
             Ok((value, _)) => Ok(value),
             Err(()) if self.lax => Ok(Value::Missing),
@@ -231,7 +249,13 @@ impl<'a> Parser<'a> {
             b'-' | b'0'..=b'9' => Value::Number(self.number(depth == 0)?),
             _ => return Err(()),
         };
-        Ok(if selected { value } else { Value::Missing })
+        Ok(if matches!(path, Some([Step::Wildcard])) {
+            Value::Container
+        } else if selected {
+            value
+        } else {
+            Value::Missing
+        })
     }
 
     fn container(&mut self, path: Option<&[Step<'_>]>, depth: usize) -> Result<Value<'a>, ()> {
@@ -240,7 +264,13 @@ impl<'a> Parser<'a> {
             self.pos += 1; // '[' was checked by value().
         }
         let end = if object { b'}' } else { b']' };
-        let mut result = if path.is_some_and(|steps| steps.is_empty()) {
+        let mut result = if path.is_some_and(|steps| {
+            steps.is_empty()
+                || matches!(steps, [Step::Wildcard])
+                // Jayway skips out-of-range indexes, even in strict mode. An indefinite
+                // path then returns an empty collection; missing properties still fail.
+                || (!object && matches!(steps.first(), Some(Step::Index(_))) && indefinite(steps))
+        }) {
             Value::Container
         } else {
             Value::Missing
@@ -578,6 +608,10 @@ mod tests {
             "$['a\"b']",
             "$['']",
             "$[\"\"][''].a[0]",
+            "$[*]",
+            "$.a[-1][*]",
+            "$[*].a",
+            "$[*][*][-1]",
         ] {
             assert!(Path::parse(text, "13.0").is_some(), "{text}");
         }
@@ -585,6 +619,9 @@ mod tests {
             "",
             "a",
             "$.a.*",
+            "$[*].length()",
+            "$[*][1:2]",
+            "$[*][?(@.a)]",
             "$..a",
             "$[-2147483649]",
             "$[2147483648]",
@@ -594,6 +631,65 @@ mod tests {
             "$['a\n']",
         ] {
             assert!(Path::parse(text, "13.0").is_none(), "{text}");
+        }
+    }
+
+    #[test]
+    fn wildcards_keep_collections_and_path_errors_distinct() {
+        for (text, input, matched) in [
+            ("$[*]", "{}", true),
+            ("$[*]", "[]", true),
+            ("$[*]", "false", true),
+            ("$[*]", "1", true),
+            ("$.a[*]", r#"{"a":null}"#, true),
+            ("$.a[*]", r#"{"a":[null,1,2]}"#, true),
+            ("$.a[*]", "{}", false),
+            ("$.a[*]", "[]", false),
+            ("$.a[*]", "false", false),
+            ("$[1].missing[*]", "[]", true),
+            ("$[-2].missing[*]", "[{}]", true),
+            ("$[-2].missing[*]", "[{},{}]", false),
+            ("$.a[1][*]", r#"{"a":null}"#, false),
+            ("$.a[1][*]", r#"{"a":{}}"#, false),
+            ("$.a[1][*]", r#"{"a":[]}"#, true),
+            ("$.a[1].x[*]", r#"{"a":[{},{}],"a":[]}"#, true),
+            ("$.a[1].x[*]", r#"{"a":[],"a":[{},{}]}"#, false),
+            (
+                "$[*].missing[-1][*]",
+                r#"[{},null,1,{"missing":[]} ]"#,
+                true,
+            ),
+            ("$.a[*].x[0]", r#"{"a":{}}"#, true),
+            ("$.a[*].x[0]", r#"{"a":null}"#, true),
+            ("$.a[*].x[0]", "{}", false),
+        ] {
+            assert_eq!(
+                path(text).read(input),
+                if matched {
+                    Ok(Value::Container)
+                } else {
+                    Err(())
+                },
+                "{text}: {input}"
+            );
+            assert_eq!(
+                path(&format!("lax {text}")).read(input),
+                Ok(Value::Container)
+            );
+        }
+        for text in ["$[*]", "$.a[*]", "$[1].missing[*]"] {
+            for input in ["null", "null trailing"] {
+                assert_eq!(path(text).read(input), Err(()));
+                assert_eq!(path(&format!("lax {text}")).read(input), Err(()));
+            }
+            for input in [
+                "invalid",
+                r#"{"a":[],"bad":[}"#,
+                r#"{"a":[],"bad":1e2147483648}"#,
+            ] {
+                assert_eq!(path(text).read(input), Err(()));
+                assert_eq!(path(&format!("lax {text}")).read(input), Ok(Value::Missing));
+            }
         }
     }
 

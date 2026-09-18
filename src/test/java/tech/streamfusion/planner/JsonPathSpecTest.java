@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 
 class JsonPathSpecTest {
   @Test
-  void onlyDefiniteMemberAndSignedIndexPathsAreAdmitted() {
+  void definiteMemberAndSignedIndexPathsAreAdmitted() {
     for (String path :
         List.of(
             "$",
@@ -43,7 +43,7 @@ class JsonPathSpecTest {
         List.of(
             "",
             "a",
-            "$.*",
+            "$[*][1:2]",
             "$..a",
             "$[-2147483649]",
             "$[--1]",
@@ -59,6 +59,22 @@ class JsonPathSpecTest {
   }
 
   @Test
+  void wildcardsComposeWithMembersAndSignedIndexes() {
+    for (String path : List.of("$.*", "$[*]", "$[ * ]", "$[  *  ]")) {
+      assertEquals("strict $[*]", JsonPathSpec.normalize(path));
+      assertEquals("lax $.a[-1][*]", JsonPathSpec.normalize("lax $.a[-1]" + path.substring(1)));
+    }
+    assertEquals("strict $[*].a", JsonPathSpec.normalize("$.*.a"));
+    assertEquals("strict $[*][0][*]", JsonPathSpec.normalize("$[ * ][0].*"));
+    assertEquals("strict $[*][*]", JsonPathSpec.normalize("$.*.*"));
+    for (String path :
+        List.of(
+            "$[*][1:2]", "$[*].length()", "$.*[?(@.a)]", "$[**]", "$[*x]", "$[\t*]", "$[*\t]")) {
+      assertNull(JsonPathSpec.normalize(path), path);
+    }
+  }
+
+  @Test
   void literalDotNamesPreservePunctuationAndControls() {
     assertEquals("strict $[\"order-id\"][\"123\"]", JsonPathSpec.normalize("$.order-id.123"));
     assertEquals("strict $[\"a\\tb\"]", JsonPathSpec.normalize("$.a\tb"));
@@ -67,7 +83,7 @@ class JsonPathSpecTest {
     assertEquals("strict $[\"a\\\\u0061\"]", JsonPathSpec.normalize("$.a\\u0061"));
     assertEquals("strict $[\"😀\"]", JsonPathSpec.normalize("$.😀"));
     for (String path :
-        List.of("$.*", "$.*name", "$..name", "$.name()", "$.a b", "$.a.", "$.a[", "$.\ud800")) {
+        List.of("$.*name", "$..name", "$.name()", "$.a b", "$.a.", "$.a[", "$.\ud800")) {
       assertNull(JsonPathSpec.normalize(path), path);
     }
   }
@@ -151,6 +167,9 @@ class JsonPathSpecTest {
         for (String path :
             List.of(
                 "$.a",
+                "$.*",
+                "$.a[*].b[-1].*",
+                "$.a[-1][ * ]",
                 "$.order-id.123",
                 "$.a\tb",
                 "$.a\\u0061",

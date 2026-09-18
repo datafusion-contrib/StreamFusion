@@ -1,4 +1,4 @@
-use super::{Path, Step, Value};
+use super::{indefinite, Path, Step, Value};
 use simd_json::{tape::Tape, Buffers, Node, StaticNode};
 
 /// Reuses SIMD scratch space across rows, retaining the scalar parser for Jackson edges.
@@ -92,6 +92,7 @@ fn select<'a>(tape: &Tape<'a>, steps: &[Step<'_>]) -> Option<Value<'a>> {
     let mut nodes = tape.0.as_slice();
     for step in steps {
         nodes = match (nodes.first()?, step) {
+            (_, Step::Wildcard) => return Some(Value::Container),
             (Node::Object { len, .. }, Step::Member(name)) => {
                 let mut rest = &nodes[1..];
                 let mut selected = None;
@@ -119,7 +120,11 @@ fn select<'a>(tape: &Tape<'a>, steps: &[Step<'_>]) -> Option<Value<'a>> {
                     Some(*index as usize)
                 };
                 let Some(offset) = offset.filter(|offset| offset < len) else {
-                    return Some(Value::Missing);
+                    return Some(if indefinite(steps) {
+                        Value::Container
+                    } else {
+                        Value::Missing
+                    });
                 };
                 let mut rest = &nodes[1..];
                 for _ in 0..offset {
@@ -165,6 +170,52 @@ mod tests {
                 assert_eq!(actual, super::super::unescape(expected));
             }
             (actual, expected) => assert_eq!(actual, expected, "{input}"),
+        }
+    }
+
+    #[test]
+    fn wildcards_keep_missing_properties_and_skipped_indexes_distinct() {
+        let mut reader = Reader::new(4000);
+        for mode in ["strict", "lax"] {
+            for suffix in [
+                "[*]",
+                ".a[*]",
+                ".a[1][*]",
+                ".a[-2].x[*]",
+                ".missing[*]",
+                "[1][*]",
+                ".a[*].x",
+                "[*][0].x[*]",
+            ] {
+                let text = format!("{mode} ${suffix}");
+                let path = Path::parse(&text, "13.0").unwrap();
+                for value in [
+                    "null",
+                    "false",
+                    "[]",
+                    "[{}]",
+                    "[{},{}]",
+                    "{}",
+                    r#"{"x":[]}"#,
+                ] {
+                    let input = format!(r#"{{"a":[{{}},{{}}]{},"a":{value}}}"#, fields());
+                    assert!(candidate(&input));
+                    equivalent(&path, &input, &mut reader);
+                }
+            }
+            for suffix in [
+                "[*]",
+                "[1][*]",
+                "[-2].missing[*]",
+                "[0].a[*]",
+                "[0].missing[*]",
+            ] {
+                let text = format!("{mode} ${suffix}");
+                let path = Path::parse(&text, "13.0").unwrap();
+                let input = format!(r#"[{{"a":[]{}}}]"#, fields());
+                assert!(candidate(&input));
+                equivalent(&path, &input, &mut reader);
+            }
         }
     }
 

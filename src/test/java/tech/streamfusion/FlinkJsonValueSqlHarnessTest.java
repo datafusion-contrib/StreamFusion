@@ -147,6 +147,6 @@ class FlinkJsonValueSqlHarnessTest {
   @Test
   void unverifiedPathsFallBack() throws Exception {
     assertFallback(
-        JsonFunctionTestInputs::documents, "SELECT id, JSON_VALUE(s, '$.*') FROM inputs");
+        JsonFunctionTestInputs::documents, "SELECT id, JSON_VALUE(s, '$[*][1:2]') FROM inputs");
   }
 }
