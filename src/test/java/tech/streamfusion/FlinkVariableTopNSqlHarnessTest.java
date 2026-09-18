@@ -76,7 +76,7 @@ class FlinkVariableTopNSqlHarnessTest {
     NativeParity.assertFallbackReasonContains(
         () -> environment(false, false),
         sql,
-        "variable rank bounds over update-fast input require verified rank buffers");
+        "variable rank bound must be derived from partition keys");
   }
 
   @ParameterizedTest

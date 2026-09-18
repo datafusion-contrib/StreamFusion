@@ -18,12 +18,21 @@ class VariableTopNBenchmark {
   private static final int WARMUP = Integer.getInteger("variabletopn.warmup", 2);
   private static final int RUNS = Integer.getInteger("variabletopn.runs", 5);
   private static final boolean RETRACTING = Boolean.getBoolean("variabletopn.retracting");
+  private static final boolean UPDATE_FAST = Boolean.getBoolean("variabletopn.updateFast");
   private static final String SQL =
-      "INSERT INTO sink SELECT k, v, rn FROM (SELECT k, v, MOD(k, 3) + 1 AS rank_end, ROW_NUMBER()"
-          + " OVER (PARTITION BY k ORDER BY v DESC) AS rn FROM src) WHERE rn <= rank_end";
+      UPDATE_FAST
+          ? "INSERT INTO sink SELECT k, n AS v, rn FROM (SELECT k, v, n, MOD(k, 3) + 1 AS rank_end,"
+              + " ROW_NUMBER() OVER (PARTITION BY k ORDER BY n DESC, v ASC) AS rn"
+              + " FROM (SELECT k, v, COUNT(*) AS n FROM src GROUP BY k, v)) WHERE rn <= rank_end"
+          : "INSERT INTO sink SELECT k, v, rn FROM (SELECT k, v, MOD(k, 3) + 1 AS rank_end,"
+                + " ROW_NUMBER() OVER (PARTITION BY k ORDER BY v DESC) AS rn FROM src) WHERE rn <="
+                + " rank_end";
 
   @Test
   void variableTopN() throws Exception {
+    if (UPDATE_FAST && !environment().explainSql(SQL).contains("UpdateFastStrategy")) {
+      throw new IllegalStateException("Expected Flink's update-fast strategy");
+    }
     String plan = NativePlanner.explain(environment(), SQL);
     if (!plan.contains("NativeColumnarTopN")
         || !plan.contains("RowDataToArrow")
@@ -49,9 +58,10 @@ class VariableTopNBenchmark {
     double nativeTime = median(times[1]);
     System.out.printf(
         Locale.ROOT,
-        "[variable-top-n] retracting=%s rows=%d Flink=%.6fs Native=%.6fs ratio=%.3fx host_trials=%s"
-            + " native_trials=%s%n",
+        "[variable-top-n] retracting=%s update_fast=%s rows=%d Flink=%.6fs Native=%.6fs ratio=%.3fx"
+            + " host_trials=%s native_trials=%s%n",
         RETRACTING,
+        UPDATE_FAST,
         ROWS,
         host,
         nativeTime,
@@ -74,6 +84,7 @@ class VariableTopNBenchmark {
         env.fromSequence(0, ROWS - 1)
             .map(
                 i -> {
+                  if (UPDATE_FAST) return Row.of(i % 4096, (i / 4096) % 16);
                   if (!RETRACTING) return Row.of(i % 4096, i);
                   long cycle = i / 16384;
                   return Row.ofKind(

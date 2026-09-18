@@ -2001,6 +2001,118 @@ class RocksDBNativeStateBackendAllOperatorsTest {
         batch -> 0, Types.INT, 1, 1, 0);
   }
 
+  @ParameterizedTest
+  @EnumSource(StateTransition.class)
+  void stateTransitionPreservesVariableUpdateFastRows(StateTransition transition) throws Exception {
+    for (boolean rank : new boolean[] {false, true}) {
+      OperatorSubtaskState snapshot;
+      try (BufferAllocator allocator = new RootAllocator();
+          var harness = variableUpdateFastHarness(rank)) {
+        transition.configureSource(harness);
+        harness.setup(new ArrowBatchSerializer());
+        harness.open();
+        harness.processElement(
+            new StreamRecord<>(
+                new ArrowBatch(
+                    RowDataArrowConverter.write(
+                        List.of(
+                            GenericRowData.of(2L, 1L, 5L),
+                            GenericRowData.of(2L, 2L, 5L),
+                            GenericRowData.of(2L, 3L, 5L),
+                            GenericRowData.of(1L, 1L, 5L)),
+                        UPDATE_FAST_ROW,
+                        allocator))));
+        collectVariableUpdateFast(harness, rank);
+        snapshot = transition.snapshot(harness);
+      }
+      try (BufferAllocator allocator = new RootAllocator();
+          var harness = variableUpdateFastHarness(rank)) {
+        transition.configureRestore(harness);
+        harness.setup(new ArrowBatchSerializer());
+        harness.initializeState(snapshot);
+        harness.open();
+        // With rank projected, the third tied row was retained beyond N and must still move
+        // as an existing unique key. Without rank it was evicted and re-enters as a fresh row.
+        harness.processElement(
+            new StreamRecord<>(
+                new ArrowBatch(
+                    RowDataArrowConverter.write(
+                        List.of(GenericRowData.of(2L, 3L, 1L), GenericRowData.of(1L, 1L, 5L)),
+                        UPDATE_FAST_ROW,
+                        allocator))));
+        var expected =
+            rank
+                ? List.of(
+                    List.of(RowKind.UPDATE_BEFORE, 2L, 1L, 5L, 1L),
+                    List.of(RowKind.UPDATE_AFTER, 2L, 3L, 1L, 1L),
+                    List.of(RowKind.UPDATE_BEFORE, 2L, 2L, 5L, 2L),
+                    List.of(RowKind.UPDATE_AFTER, 2L, 1L, 5L, 2L),
+                    List.of(RowKind.UPDATE_BEFORE, 1L, 1L, 5L, 1L),
+                    List.of(RowKind.UPDATE_AFTER, 1L, 1L, 5L, 1L))
+                : List.of(
+                    List.of(RowKind.DELETE, 2L, 2L, 5L),
+                    List.of(RowKind.INSERT, 2L, 3L, 1L),
+                    List.of(RowKind.UPDATE_BEFORE, 1L, 1L, 5L),
+                    List.of(RowKind.UPDATE_AFTER, 1L, 1L, 5L));
+        assertEquals(expected, collectVariableUpdateFast(harness, rank));
+      }
+    }
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      variableUpdateFastHarness(boolean rank) throws Exception {
+    return new KeyedOneInputStreamOperatorTestHarness<>(
+        new NativeColumnarTopNOperator(
+            new int[] {0},
+            new int[] {-1},
+            UPDATE_FAST_ROW,
+            new int[] {2},
+            new int[] {1},
+            new int[] {0},
+            0,
+            Long.MAX_VALUE,
+            rank,
+            false,
+            new int[] {0, 1},
+            new int[] {-1, -1},
+            true,
+            false,
+            -1,
+            0,
+            MAX_PARALLELISM,
+            0),
+        batch -> 0,
+        Types.INT,
+        MAX_PARALLELISM,
+        1,
+        0);
+  }
+
+  private static List<List<Object>> collectVariableUpdateFast(
+      KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness,
+      boolean rank) {
+    if (!rank) return collectUpdateFast(harness);
+    List<List<Object>> rows = new ArrayList<>();
+    var output = RowType.of(new BigIntType(), new BigIntType(), new BigIntType(), new BigIntType());
+    while (!harness.getOutput().isEmpty()) {
+      Object event = harness.getOutput().poll();
+      if (event instanceof StreamRecord) {
+        try (VectorSchemaRoot root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
+          for (RowData row : RowDataArrowConverter.read(root, output)) {
+            rows.add(
+                List.of(
+                    row.getRowKind(),
+                    row.getLong(0),
+                    row.getLong(1),
+                    row.getLong(2),
+                    row.getLong(3)));
+          }
+        }
+      }
+    }
+    return rows;
+  }
+
   private static final RowType UPDATE_FAST_ROW =
       RowType.of(
           new LogicalType[] {new BigIntType(), new BigIntType(), new BigIntType()},

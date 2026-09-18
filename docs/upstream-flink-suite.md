@@ -111,7 +111,7 @@ async-state variant. Its unchanged CDC input includes a delete whose final windo
 insert; the upstream negative-count expectation remains intact.
 `RankITCase.testTopNWithGroupByAndRetract` requires nonempty native updates from both the
 grouped aggregate and Top-N. Its variable-size counterpart, `testTopNWithVariableTopSize`,
-requires the explicit update-fast variable-bound fallback. Top-N input is credited only
+requires the explicit nullable-bound fallback; its aggregated bound also lacks a partition-invariance proof. Top-N input is credited only
 after its native push returns, including when an input coalescer delays that call.
 Other upstream cases still check
 result parity without a per-test acceleration contract; planner installation alone does not prove

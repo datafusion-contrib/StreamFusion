@@ -3427,6 +3427,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBUpdateFastTopN
     sort_nulls_first: JIntArray<'local>,
     offset: jlong,
     limit: jlong,
+    rank_end_column: jint,
     output_rank_number: jboolean,
     generate_update_before: jboolean,
     state_ttl_millis: jlong,
@@ -3482,6 +3483,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBUpdateFastTopN
                 generate_update_before != 0,
             )
             .with_offset(offset)
+            .with_rank_end_column(rank_end_column)
             .with_state_ttl(state_ttl_millis)
             .with_converters(converters)
             .with_payload_schema(schema)

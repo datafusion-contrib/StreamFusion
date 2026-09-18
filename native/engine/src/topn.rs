@@ -2425,18 +2425,18 @@ fn diff_top(
 }
 
 /// Update-fast streaming Top-N — Flink's `UpdatableTopNFunction` (and `FastTop1Function` for
-/// `limit == 1`): a rank over a changelog whose rows are replaced in place by a unique key (which
-/// contains the partition key) with a sort key the planner proved monotonic, so no retraction ever
-/// arrives — an update is just a new version of its row key. Only the top-N rows are kept per
-/// partition, exactly Flink's state shape: a row displaced past rank N is deleted, and a row
-/// arriving beyond rank N never enters (its later versions can only improve toward the top). The
-/// emitted changelog is the per-input-row diff of the top-N before vs after the mutation — the
+/// a constant `limit == 1`): rows are replaced in place by a unique key containing the partition
+/// key, with a sort key the planner proved monotonic, so no retraction ever
+/// arrives — an update is just a new version of its row key. Constant bounds keep only the top-N
+/// rows. Variable bounds use Flink's 100-row admission threshold; with a projected rank, they
+/// retain the first sort-key group beyond N as well. A retained row's later versions preserve its
+/// update identity even while outside the visible ranks. The emitted changelog is the per-input-row diff of the top-N before vs after the mutation — the
 /// retracting ranker's contract, materially identical to Flink's cascade. A tracked row whose sort
 /// key moves the wrong way (possible when upstream state expired) re-sorts like any change —
 /// Flink's lenient path.
 ///
-/// `limit == 1` replicates `FastTop1Function`, which never consults the unique key: a record that
-/// does not strictly improve on the current top-1 is dropped without touching state or output, so
+/// A constant `limit == 1` replicates `FastTop1Function`, which never consults the unique key:
+/// a record that does not strictly improve on the current top-1 is dropped without touching state or output, so
 /// a same-sort-key update keeps the stale payload. Matching Flink's materialized result means
 /// reproducing exactly that.
 pub(crate) struct UpdatableRow {
@@ -2564,6 +2564,7 @@ pub(crate) struct UpdatableTopNRanker<
     row_key_timestamp_precisions: Vec<i32>,
     sort_columns: Vec<SortColumn>,
     limit: i64,
+    rank_end_column: Option<usize>,
     offset: i64,
     output_rank_number: bool,
     generate_update_before: bool,
@@ -2599,6 +2600,7 @@ impl UpdatableTopNRanker {
             row_key_timestamp_precisions,
             sort_columns,
             limit,
+            rank_end_column: None,
             offset: 0,
             output_rank_number,
             generate_update_before,
@@ -2613,6 +2615,11 @@ impl UpdatableTopNRanker {
 }
 
 impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
+    pub(crate) fn with_rank_end_column(mut self, column: i32) -> Self {
+        self.rank_end_column = (column >= 0).then_some(column as usize);
+        self
+    }
+
     pub(crate) fn with_offset(mut self, offset: i64) -> Self {
         assert!(
             offset >= 0 && offset <= self.limit,
@@ -2635,6 +2642,7 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
             row_key_timestamp_precisions: self.row_key_timestamp_precisions,
             sort_columns: self.sort_columns,
             limit: self.limit,
+            rank_end_column: self.rank_end_column,
             offset: self.offset,
             output_rank_number: self.output_rank_number,
             generate_update_before: self.generate_update_before,
@@ -2753,8 +2761,10 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
             .convert_columns(&data_arrays)
             .expect("encode payload");
 
-        let limit = self.limit as usize;
-        let top1 = limit == 1;
+        let rank_ends = self
+            .rank_end_column
+            .map(|index| integral_rank_ends(batch.column(index)));
+        let top1 = self.rank_end_column.is_none() && self.limit == 1;
         let offset = self.offset as usize;
         let positional_updates = self.output_rank_number || offset > 0;
         let track = self.memory.tracking();
@@ -2770,6 +2780,14 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
         let mut out_ranks: Vec<i64> = Vec::new();
 
         for row in 0..batch.num_rows() {
+            let rank_end = rank_ends
+                .as_ref()
+                .map_or(self.limit, |ends| ends.value(row));
+            // Flink's projected-rank iteration never visits a sort-key group for negative N.
+            if rank_end < 0 && positional_updates {
+                continue;
+            }
+            let limit = rank_end.max(0) as usize;
             let key_row = keys.row(row);
             let part = parts.encode(row);
             let buffer = match groups.get_mut(part) {
@@ -2790,12 +2808,14 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
             // Retain the skipped prefix so a later update can move one of its keys into view.
             let old_top: Vec<Arc<OwnedRow>> = buffer[offset.min(buffer.len())..]
                 .iter()
+                .take(limit.saturating_sub(offset))
                 .map(|e| Arc::clone(&e.payload))
                 .collect();
             // UpdatableTopNFunction treats a new version of an already-buffered unique key as an
             // UPDATE, even when its sort position changes. Preserve that changelog identity instead
             // of reducing the transition to an anonymous membership delete/insert pair.
             let mut direct_update: Option<(Arc<OwnedRow>, Arc<OwnedRow>, i64)> = None;
+            let mut trim_overflow = false;
             if top1 {
                 // FastTop1Function: only a strict improvement replaces the buffered row.
                 match buffer.first() {
@@ -2833,6 +2853,10 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
                 let row_key = row_keys.encode(row);
                 match buffer.iter().position(|e| &*e.row_key.0 == row_key) {
                     Some(index) => {
+                        trim_overflow = rank_ends.is_some()
+                            && positional_updates
+                            && index >= limit
+                            && key_row < buffer[index].sort.row();
                         let old_payload = Arc::clone(&buffer[index].payload);
                         if buffer[index].sort.row() == key_row {
                             // Same sort key: replace the payload in place, preserving the row's
@@ -2872,14 +2896,21 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
                     }
                     None => {
                         let pos = buffer.partition_point(|e| e.sort.row() <= key_row);
-                        if pos >= limit {
-                            continue; // beyond rank N — never enters, never tracked
+                        if rank_ends.is_some() {
+                            if buffer.len() >= 100
+                                && buffer.last().is_some_and(|last| key_row >= last.sort.row())
+                            {
+                                continue;
+                            }
+                        } else if pos >= limit {
+                            continue;
                         }
+                        let input = Arc::new(payloads.row(row).owned());
                         buffer.insert(
                             pos,
                             UpdatableRow {
                                 sort: key_row.owned(),
-                                payload: Arc::new(payloads.row(row).owned()),
+                                payload: Arc::clone(&input),
                                 row_key: ByteKey::from(row_key),
                                 ts_ms: stamp,
                             },
@@ -2887,17 +2918,44 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
                         if track {
                             delta += updatable_entry_bytes(&buffer[pos]) as isize;
                         }
-                        if buffer.len() > limit {
-                            let evicted = buffer.pop().expect("buffer over limit is non-empty");
-                            if track {
-                                delta -= updatable_entry_bytes(&evicted) as isize;
+                        if rank_ends.is_some() && positional_updates {
+                            trim_overflow = true;
+                        } else {
+                            if buffer.len() > limit {
+                                let evicted = buffer.pop().expect("buffer over limit is non-empty");
+                                if rank_ends.is_some() {
+                                    out_rows.push(Arc::clone(&evicted.payload));
+                                    out_kinds.push(3);
+                                }
+                                if track {
+                                    delta -= updatable_entry_bytes(&evicted) as isize;
+                                }
+                            }
+                            if rank_ends.is_some() {
+                                // Even an immediately evicted input produces DELETE then INSERT in
+                                // Flink's variable-bound path without a projected row number.
+                                out_rows.push(input);
+                                out_kinds.push(0);
+                                continue;
                             }
                         }
                     }
                 }
             }
+            // Flink retains the first sort-key group beyond N after a new arrival or an
+            // improvement from outside N. Equal-sort updates and moves within N keep the buffer.
+            if trim_overflow && buffer.len() > limit {
+                let boundary = buffer[limit].sort.row();
+                let keep = buffer.partition_point(|entry| entry.sort.row() <= boundary);
+                for evicted in buffer.drain(keep..) {
+                    if track {
+                        delta -= updatable_entry_bytes(&evicted) as isize;
+                    }
+                }
+            }
             let new_top: Vec<Arc<OwnedRow>> = buffer[offset.min(buffer.len())..]
                 .iter()
+                .take(limit.saturating_sub(offset))
                 .map(|e| Arc::clone(&e.payload))
                 .collect();
             if !positional_updates {
@@ -2928,7 +2986,7 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
             // value-level no-op.
             if positional_updates && out_rows.len() == output_start {
                 if let Some((old, new, old_rank)) = &direct_update {
-                    if *old_rank <= self.offset {
+                    if *old_rank <= self.offset || *old_rank > limit as i64 {
                         continue;
                     }
                     if self.generate_update_before {
@@ -4548,6 +4606,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createUpdateFastTopNRanker<
     sort_nulls_first: JIntArray<'local>,
     offset: jlong,
     limit: jlong,
+    rank_end_column: jint,
     output_rank_number: jboolean,
     generate_update_before: jboolean,
     state_ttl_millis: jlong,
@@ -4571,6 +4630,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createUpdateFastTopNRanker<
                 generate_update_before != 0,
             )
             .with_offset(offset)
+            .with_rank_end_column(rank_end_column)
             .with_state_ttl(state_ttl_millis),
         );
         boxed_or_throw(&mut env, handle.with_memory_budget(memory_budget_bytes))
@@ -4593,6 +4653,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreUpdateFastTopNRanker
     sort_nulls_first: JIntArray<'local>,
     offset: jlong,
     limit: jlong,
+    rank_end_column: jint,
     output_rank_number: jboolean,
     generate_update_before: jboolean,
     state_ttl_millis: jlong,
@@ -4634,6 +4695,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreUpdateFastTopNRanker
                 now_millis,
             )
             .with_offset(offset)
+            .with_rank_end_column(rank_end_column)
             .with_state_ttl(state_ttl_millis),
         )
         .with_memory_budget(memory_budget_bytes);
@@ -4655,6 +4717,68 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeTopNRanker<'local>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn variable_update_fast_improvement_trims_overflow_tie_keys() {
+        use super::*;
+        let batch = |ids: Vec<i64>, values: Vec<i64>| {
+            let bounds = vec![2; ids.len()];
+            RecordBatch::try_from_iter(vec![
+                ("id", Arc::new(Int64Array::from(ids)) as ArrayRef),
+                ("value", Arc::new(Int64Array::from(values)) as ArrayRef),
+                ("bound", Arc::new(Int64Array::from(bounds)) as ArrayRef),
+            ])
+            .unwrap()
+        };
+        let mut ranker = UpdatableTopNRanker::new(
+            vec![],
+            vec![],
+            vec![0],
+            vec![-1],
+            vec![SortColumn {
+                index: 1,
+                ascending: true,
+                nulls_first: false,
+            }],
+            i64::MAX,
+            true,
+            true,
+        )
+        .with_rank_end_column(2);
+        // The first overflow sort group is retained in full, until admission reaches 100 rows.
+        let mut values = vec![10, 20];
+        values.extend(vec![30; 100]);
+        ranker.push(&batch((1..=102).collect(), values), 0).unwrap();
+        assert_eq!(
+            ranker
+                .groups
+                .iter()
+                .map(|(_, rows)| rows.len())
+                .sum::<usize>(),
+            100
+        );
+        let updated = ranker.push(&batch(vec![3], vec![1]), 0).unwrap();
+        assert_eq!(row_kind_column(&updated).unwrap().values(), &[1, 2, 1, 2]);
+        assert_eq!(
+            updated
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .values(),
+            &[1, 3, 2, 1]
+        );
+        // Moving a retained overflow key to rank 1 shifts the retained boundary to sort key 20.
+        // The other 97 keys at sort key 30 must be evicted, including from checkpoint state.
+        assert_eq!(
+            ranker
+                .groups
+                .iter()
+                .map(|(_, rows)| rows.len())
+                .sum::<usize>(),
+            3
+        );
+    }
+
     #[test]
     fn update_fast_offset_preserves_output_schema_and_positional_updates() {
         use super::*;

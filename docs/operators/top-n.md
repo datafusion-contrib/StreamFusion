@@ -21,7 +21,7 @@ three natively:
   top rows. TTL expires per sort-key list — every list write refreshes all of that list's tie rows.
 - **Update-fast ranker** — the input carries a unique key and the sort key is inferred monotonic
   against updates on that key (e.g. ranking by a descending `COUNT(*)`), mirroring Flink's
-  `UpdatableTopNFunction`. For the `rn <= 1` special case this is `FastTop1Function`: rather than
+  `UpdatableTopNFunction`. For the constant `rn <= 1` special case this is `FastTop1Function`: rather than
   keeping bounded state for every row, a new row for a key is dropped immediately — no state
   update, no emission — the moment it fails to outrank the currently-held top row, since a
   monotonic sort key means a non-improving challenger can never later become the top row. TTL
@@ -60,7 +60,7 @@ whose final materialized value is unchanged.
 
 ## Data-dependent bounds
 
-Insert-only and general retracting value-ordered `ROW_NUMBER` can use a non-null SMALLINT, INT or BIGINT upper bound
+All three value-ordered `ROW_NUMBER` strategies can use a non-null SMALLINT, INT or BIGINT upper bound
 that is fixed within each partition. The bound must be a partition key itself, or a pure numeric
 expression of directly projected partition keys in the preceding Calc. The current proof admits
 arithmetic, MOD, casts and COALESCE. For example, a non-null `k` supports
@@ -72,32 +72,43 @@ Released Flink stores the first bound per partition and ignores later changes wh
 Arrow row and reuse its existing rank-buffer state, TTL and memory/RocksDB checkpoint formats.
 The proof retains Calc expressions through native substitution and input pruning. Independently
 changing bounds retain an explicit fallback until their first-bound state and separate TTL
-contract are implemented. Variable bounds on the unique-key update-fast strategy also retain
-a fallback pending verification of that ranker's bounded buffers. Nullable bounds remain on Flink because its
-primitive row access does not express ordinary SQL null propagation here.
+contract are implemented. Nullable bounds remain on Flink because its primitive row access does not express ordinary SQL null propagation here.
 
-Zero and negative bounds emit no rows. For insert-only input, large bounds preserve Flink 2.2.1's variable-range
-admission rule: after 100 retained rows, a new sort key must strictly improve on the current worst
+Zero and negative bounds select no materialized rows. For insert-only and update-fast input,
+large bounds preserve Flink 2.2.1's variable-range admission rule: after 100 retained rows, a new sort key must strictly improve on the current worst
 key, even when the selected bound is greater than 100. This is an admission threshold, not a
-100-row output cap; improving arrivals can grow the retained set up to the selected bound.
+100-row output cap; improving arrivals can fill the selected range.
 The general retracting strategy retains the full sorted buffer, so a retraction can promote
 rows beyond the selected range. Its partition-derived bound applies to both per-record changes
 and mini-batch output. Every retained row carries that same bound; a bundle flush can recover
 it from the retained payload without a separate keyed state entry. Empty buffers emit the
 retractions for their former selected rows.
 
+Update-fast variable bounds use `UpdatableTopNFunction` semantics even when N is one:
+a same-sort-key update refreshes the payload and emits an update. With a projected rank,
+the buffer also retains the first sort-key group extending beyond N, so a later improvement
+still recognizes those unique keys. Without a projected rank, an admitted arrival that is
+immediately evicted emits DELETE followed by INSERT, including for nonpositive bounds.
+These pairs cancel in the materialized result but remain in the raw changelog.
+
 SQL tests compare exact changelog order, NULL payloads, ties, integral widths and signed 64-bit
 boundaries. Updating cases cover replacements, deletions, empty groups and mini-batch
 materializations. Checkpoint tests continue the selected windows across memory/RocksDB
 transitions, including a partially filled bundle flushed before the checkpoint barrier.
+Update-fast coverage also verifies rescaling, restored TTL timestamps, equal-sort updates at
+N=1, and retained overflow ties. A retained-metrics SQL test requires nonempty native Top-N
+input and output. Mini-batch aggregate comparisons use an explicit tie-breaker because each
+engine may emit a bundle's groups in a different map order; tied arrivals are checked with
+ordered per-record changelogs.
 
-The unchanged Flink 2.2.1 `RankITCase`, `DeduplicateITCase`, `LimitITCase` and `SortLimitITCase`
-also pass with StreamFusion injected: 131 passed, seven skipped. The state-suite run verifies
+The unchanged Flink 2.2.1 streaming `RankITCase`, `DeduplicateITCase`, `LimitITCase` and
+`SortLimitITCase` also pass with StreamFusion injected: 131 passed, seven skipped. The matching
+batch rank/limit classes add 27 passing cases. The state-suite run verifies
 both native memory and RocksDB initialization. These are broader rank regressions; the local
 SQL tests explicitly assert native routing for the newly admitted variable-bound queries.
 The upstream retracting GROUP BY/Top-N case additionally requires successful nonempty native
-updates from both operators. The upstream independently changing bound case must retain its
-explicit fallback; loading the agent or opening an operator alone cannot satisfy either contract.
+updates from both operators. The upstream nullable, independently changing bound case must retain its
+explicit nullable-bound fallback; loading the agent or opening an operator alone cannot satisfy either contract.
 
 A row-fed release measurement on an Apple M1 Max used 1,000,000 rows, 4,096 keys,
 `MOD(k, 3) + 1` bounds, descending value order, projected rank and parallelism 1.
@@ -113,6 +124,13 @@ The general retracting variant uses the same setup and one million changelog row
 inserts and deletes in groups of 16,384 rows (four values per key). Release/mimalloc medians
 were **0.926187 s Flink / 0.447620 s native (2.069x)** with both transposes included.
 Add `-Dvariabletopn.retracting=true` to reproduce it.
+
+The update-fast variant ranks a grouped `COUNT(*)` with 16 row IDs per partition and an ID
+sort tie-breaker, using the same one million rows, 4,096 partitions and variable bounds.
+Release/mimalloc medians after two warmups and five alternating trials were
+**2.598992 s Flink / 0.458960 s native (5.663x)**. This measures the complete GROUP BY → Top-N
+pipeline, including both transposes and the row blackhole sink; it does not isolate the ranker
+from the aggregate. Add `-Dvariabletopn.updateFast=true` to reproduce it.
 
 ## Processing-time first-N
 
@@ -150,8 +168,8 @@ Reproduce with `SF_BENCHMARK=true mvn -Pbench -pl :streamfusion-runtime -am test
   exchanges and batch markers remain native. Preserving the upstream bundle order is the
   remaining composition work in [#102](https://github.com/datafusion-contrib/StreamFusion/issues/102).
 
-- A variable rank range outside the insert-only or general retracting, non-null, partition-derived
-  forms above. Update-fast, nullable and independently changing bounds remain in
+- A variable rank range outside the non-null, partition-derived forms above.
+  Nullable and independently changing bounds remain in
   [#104](https://github.com/datafusion-contrib/StreamFusion/issues/104).
 - A row type the native converter can't carry.
 - Time-ordered ranks beyond the existing rank-1 dedup forms and the processing-time first-N

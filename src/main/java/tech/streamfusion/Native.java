@@ -1986,6 +1986,7 @@ public final class Native {
       int[] sortNullsFirst,
       long offset,
       long limit,
+      int rankEndColumn,
       boolean outputRankNumber,
       boolean generateUpdateBefore,
       long stateTtlMillis,
@@ -2554,11 +2555,11 @@ public final class Native {
       long memoryBudgetBytes);
 
   /**
-   * Creates an update-fast streaming Top-N ranker — Flink's {@code UpdatableTopNFunction} /
-   * {@code FastTop1Function} shape: a changelog whose rows are replaced in place by a unique key
-   * (no retractions arrive; the planner proved the sort key monotonic). Only the top-N rows are
-   * kept per partition. The handle is served by the shared Top-N push/flush/snapshot/close entry
-   * points.
+   * Creates an update-fast streaming Top-N ranker — Flink's {@code UpdatableTopNFunction} / {@code
+   * FastTop1Function} shape: a changelog whose rows are replaced in place by a unique key (no
+   * retractions arrive; the planner proved the sort key monotonic). Variable bounds with projected
+   * ranks also retain the first sort-key group beyond N. The handle uses the shared Top-N
+   * push/flush/snapshot/close entry points.
    *
    * @param rowKeyColumns the unique-key column indices identifying the row a record replaces
    * @param stateTtlMillis idle-state retention ({@code table.exec.state.ttl}); {@code 0} disables
@@ -2575,6 +2576,7 @@ public final class Native {
       int[] sortNullsFirst,
       long offset,
       long limit,
+      int rankEndColumn,
       boolean outputRankNumber,
       boolean generateUpdateBefore,
       long stateTtlMillis,
@@ -2595,6 +2597,7 @@ public final class Native {
       int[] sortNullsFirst,
       long offset,
       long limit,
+      int rankEndColumn,
       boolean outputRankNumber,
       boolean generateUpdateBefore,
       long stateTtlMillis,

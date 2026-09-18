@@ -540,6 +540,106 @@ class NativeColumnarTopNOperatorTest {
     }
   }
 
+  private static NativeColumnarTopNOperator variableUpdateFastOperator(long ttl) {
+    return new NativeColumnarTopNOperator(
+        new int[] {0},
+        new int[] {-1},
+        UPDATE_FAST_SCHEMA,
+        new int[] {2},
+        new int[] {1},
+        new int[] {0},
+        0,
+        Long.MAX_VALUE,
+        false,
+        false,
+        new int[] {0, 1},
+        new int[] {-1, -1},
+        false,
+        false,
+        -1,
+        ttl,
+        MAX_PARALLELISM,
+        0);
+  }
+
+  @Test
+  void variableUpdateFastBoundsAndUniqueKeysSurviveRescale() throws Exception {
+    long[] keys = keysForBothSubtasks();
+    for (int task = 0; task < keys.length; task++) {
+      if (keys[task] == 0) {
+        long candidate = 1;
+        while (destinationForKey(candidate) != task) candidate++;
+        keys[task] = candidate;
+      }
+    }
+    OperatorSubtaskState snapshot;
+    try (BufferAllocator allocator = new RootAllocator();
+        var before = harness(variableUpdateFastOperator(0), 1, 0)) {
+      before.setup(new ArrowBatchSerializer());
+      before.open();
+      List<RowData> initial = new ArrayList<>();
+      for (long key : keys) for (long id = 0; id < key; id++) initial.add(row3(key, id, id));
+      before.processElement(
+          new StreamRecord<>(updateFastBatch(allocator, initial.toArray(RowData[]::new))));
+      snapshot = before.snapshot(1, 1);
+      collect3(before);
+    }
+    for (int task = 0; task < 2; task++) {
+      long key = keys[task];
+      try (BufferAllocator allocator = new RootAllocator();
+          var restored = harness(variableUpdateFastOperator(0), 2, task)) {
+        restored.setup(new ArrowBatchSerializer());
+        restored.initializeState(
+            AbstractStreamOperatorTestHarness.repartitionOperatorState(
+                snapshot, MAX_PARALLELISM, 1, 2, task));
+        restored.open();
+        restored.processElement(
+            new StreamRecord<>(
+                new ArrowBatch(
+                    RowDataArrowConverter.write(
+                        List.of(row3(key, 0, -1), row3(key, 0, -1), row3(key, 100, 999)),
+                        UPDATE_FAST_SCHEMA,
+                        allocator,
+                        true),
+                    task)));
+        assertEquals(
+            List.of(
+                change3(RowKind.UPDATE_AFTER, key, 0, -1),
+                change3(RowKind.UPDATE_AFTER, key, 0, -1),
+                change3(RowKind.DELETE, key, 100, 999),
+                change3(RowKind.INSERT, key, 100, 999)),
+            collect3(restored));
+      }
+    }
+  }
+
+  @Test
+  void variableUpdateFastTtlExpiresFromOriginalWriteAfterRestore() throws Exception {
+    OperatorSubtaskState snapshot;
+    try (BufferAllocator allocator = new RootAllocator();
+        var before = harness(variableUpdateFastOperator(1000), 1, 0)) {
+      before.setup(new ArrowBatchSerializer());
+      before.open();
+      before.setProcessingTime(5000);
+      before.processElement(new StreamRecord<>(updateFastBatch(allocator, row3(1, 1, 1))));
+      snapshot = before.snapshot(1, 1);
+      collect3(before);
+    }
+    for (long time : new long[] {5999, 6000}) {
+      try (BufferAllocator allocator = new RootAllocator();
+          var restored = harness(variableUpdateFastOperator(1000), 1, 0)) {
+        restored.setup(new ArrowBatchSerializer());
+        restored.initializeState(snapshot);
+        restored.open();
+        restored.setProcessingTime(time);
+        restored.processElement(new StreamRecord<>(updateFastBatch(allocator, row3(1, 1, 1))));
+        assertEquals(
+            List.of(change3(time == 5999 ? RowKind.UPDATE_AFTER : RowKind.INSERT, 1, 1, 1)),
+            collect3(restored));
+      }
+    }
+  }
+
   private static RowData row3(long partition, long key, long sort) {
     GenericRowData row = new GenericRowData(3);
     row.setField(0, partition);

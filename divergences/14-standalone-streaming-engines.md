@@ -76,3 +76,12 @@ confirmed and where we deliberately differ.
   and list-length counts; new snapshots retain the additional metadata. The planner's UPDATE_BEFORE flag travels through create and restore on both backends;
   ownership and exception handling retain the Comet-derived JNI pattern, and retained metadata
   uses the existing native memory budget.
+
+- **Variable update-fast Top-N follows Flink's retained-key contract.** Arroyo's consulted
+  `arrow/window_fn.rs` executes window functions over watermark-delimited batches; it has no
+  equivalent continuously updating unique-key rank. We extend the existing columnar ranker
+  with released Flink 2.2.1's variable-range admission threshold and overflow tie-group retention.
+  A non-null bound proven invariant within its partition can be read from the Arrow row;
+  retained unique keys, row TTL and checkpoint bytes reuse the existing state representation.
+  The bound-column index is immutable configuration on every create/restore route, following
+  Comet's task-scoped JNI handles. This adds no row callback or alternate ownership path.
