@@ -260,13 +260,60 @@ class FlinkRetractingWindowSqlHarnessTest {
   }
 
   @ParameterizedTest
+  @CsvSource({
+    "ONE_PHASE,TINYINT", "TWO_PHASE,TINYINT",
+    "ONE_PHASE,SMALLINT", "TWO_PHASE,SMALLINT",
+    "ONE_PHASE,INT", "TWO_PHASE,INT",
+    "ONE_PHASE,BIGINT", "TWO_PHASE,BIGINT",
+    "ONE_PHASE,FLOAT", "TWO_PHASE,FLOAT",
+    "ONE_PHASE,DOUBLE", "TWO_PHASE,DOUBLE",
+    "ONE_PHASE,'DECIMAL(12,2)'", "TWO_PHASE,'DECIMAL(12,2)'"
+  })
+  void filteredExtremaKeepNullAndRejectedGroups(String phase, String type) throws Exception {
+    for (String window :
+        List.of(
+            "TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '5' SECOND)",
+            "HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)",
+            "CUMULATE(TABLE src, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)")) {
+      String sql =
+          "SELECT k, window_end, MIN(CAST(v AS "
+              + type
+              + ")) FILTER (WHERE v > 10), "
+              + "MAX(CAST(v AS "
+              + type
+              + ")) FILTER (WHERE v < 20), "
+              + "MIN(CAST(v AS "
+              + type
+              + ")) FILTER (WHERE v < 0) "
+              + "FROM TABLE("
+              + window
+              + ") GROUP BY k, window_start, window_end";
+      var host = collect(environment(phase), sql).rows();
+      assertTrue(
+          host.stream()
+              .anyMatch(
+                  row ->
+                      (Integer) row.getField(0) == 3
+                          && row.getField(2) == null
+                          && row.getField(3) == null));
+      assertTrue(host.stream().allMatch(row -> row.getField(4) == null));
+      var table = environment(phase);
+      var scan = NativePlanner.install(table);
+      var result = collect(table, sql);
+      assertEquals(host, result.rows());
+      assertTrue(scan.fallbackReasons().isEmpty(), scan.explainSummary());
+      assertWindowRows(result.job(), phase);
+    }
+  }
+
+  @ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(strings = {"ONE_PHASE", "TWO_PHASE"})
   void unsupportedFilteredWindowsRemainOnFlink(String phase) throws Exception {
     for (String sql :
         List.of(
-            "SELECT k, MIN(v) FILTER (WHERE v > 10) FROM TABLE(TUMBLE(TABLE src,"
+            "SELECT k, MIN(v) FILTER (WHERE v > 10) FROM TABLE(TUMBLE(TABLE ranked,"
                 + " DESCRIPTOR(rt), INTERVAL '5' SECOND)) GROUP BY k, window_start, window_end",
-            "SELECT k, MAX(v) FILTER (WHERE v > 10) FROM TABLE(TUMBLE(TABLE src,"
+            "SELECT k, MAX(v) FILTER (WHERE v > 10) FROM TABLE(TUMBLE(TABLE ranked,"
                 + " DESCRIPTOR(rt), INTERVAL '5' SECOND)) GROUP BY k, window_start, window_end",
             "SELECT k, COUNT(*) FILTER (WHERE v > 10) FROM TABLE(SESSION(TABLE src PARTITION BY k,"
                 + " DESCRIPTOR(rt), INTERVAL '5' SECOND)) GROUP BY k, window_start, window_end",

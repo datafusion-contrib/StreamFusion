@@ -809,7 +809,11 @@ final class WindowAggregateMatcher {
     if (call.filterArg < 0) return true;
     int kind = aggregateKind(call.getAggregation().getKind());
     return !call.isDistinct()
-        && (kind == KIND_SUM || kind == KIND_AVG || kind == KIND_COUNT)
+        && (kind == KIND_SUM
+            || kind == KIND_AVG
+            || kind == KIND_COUNT
+            || kind == KIND_MIN
+            || kind == KIND_MAX)
         && call.filterArg < inputType.getFieldCount()
         && inputType.getFieldList().get(call.filterArg).getType().getSqlTypeName()
             == SqlTypeName.BOOLEAN;

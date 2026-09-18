@@ -32,6 +32,24 @@ checkpoint restore and when the late row introduces a new key. TUMBLE drops the 
 its single final window has closed. Tests compare explicit watermarks, mixed ordinary/distinct
 aggregates and both aggregation phases against released Flink.
 
+## Filtered MIN/MAX on append-only input
+
+Aligned event-time TUMBLE/HOP/CUMULATE admit `MIN(value) FILTER (WHERE predicate)` and
+`MAX(value) FILTER (WHERE predicate)` for the existing numeric value types: integer widths,
+FLOAT/DOUBLE and DECIMAL. Both single-phase and local/global execution apply each predicate
+independently. FALSE or NULL masks the aggregate value, while the row still establishes its
+window and group. A group with no selected non-NULL values emits NULL extrema.
+
+The existing Arrow validity-mask preparation and extrema accumulators are reused. Local
+partials already contain the filtered extrema; the global merge does not reapply the
+predicate. No native buffer, checkpoint or JNI layout changes. SQL parity covers all numeric
+types and window shapes, with native work required from each selected stage. Floating tests
+cover selected/rejected NaNs, infinities and signed-zero ties. Memory and RocksDB restore
+checks retain independent extrema and windows whose predicates reject every value.
+
+Updating input still requires a retractable extrema state and falls back. Processing-time,
+attached, session and legacy filtered windows also retain their current gates.
+
 ## Retracting COUNT/SUM/AVG and grouping-only windows
 
 Aligned event-time TUMBLE, HOP and CUMULATE accept updating input, including native Top-N,
@@ -269,8 +287,8 @@ enables columnar composition with downstream consumers; it is not a standalone t
 - Windowed DISTINCT other than unfiltered, single-argument COUNT over the types listed above:
   SUM/AVG DISTINCT, filtered COUNT DISTINCT, FLOAT/DOUBLE, BOOLEAN, TIME and complex values.
   Non-windowed DISTINCT has separate coverage; see [GROUP BY](group-by.md).
-- Filtered MIN/MAX, and filtered aggregates in processing-time, attached, session or legacy
-  windows. Filtered DISTINCT remains outside the value-set path described above.
+- Filtered MIN/MAX on updating input, and filtered aggregates in processing-time, attached,
+  session or legacy windows. Filtered DISTINCT remains outside the value-set path described above.
 - Retracting input outside aligned event-time TUMBLE/HOP/CUMULATE with grouping-only,
   numeric SUM/AVG, numeric COUNT(value), and COUNT(*) with optional FILTER.
   DISTINCT, MIN/MAX, processing-time, attached, session
@@ -438,6 +456,32 @@ These local measurements cover repeated nullable BIGINT values in overlapping wi
 they do not establish a gain for every distinct value type or cardinality. They were rerun
 with the late-slice correction. This on-time workload is a performance control for that
 correctness fix, not a measurement of late-data throughput or a before/after speedup.
+
+### Filtered extrema benchmark (2026-09-18)
+
+With `-Dwindow.filteredExtrema=true`, this mixed workload keeps COUNT/AVG/SUM and applies
+`MOD(v, 2) = 0` to MIN and `MOD(v, 3) = 0` to MAX. Apple M1 Max, JDK 17, released Flink
+2.2.1, release/mimalloc, 1 million rows, parallelism 2, 64 keys, two warmups and five
+alternating trials measured:
+
+| Filtered extrema phase | Flink seconds | Native seconds | Flink/native |
+| --- | ---: | ---: | ---: |
+| Single | 0.498391 | 0.494711 | 1.007× |
+| Local/global | 0.608975 | 0.516241 | 1.180× |
+
+The single-phase result is effectively tied; local/global was faster on this workload.
+These are complete mixed-query measurements, including the row source, both transposes
+and the rowwise blackhole sink, with no competing local builds or tests. They do not
+isolate extrema or filter-mask cost or establish a gain at other cardinalities/selectivities.
+[Raw measured trials](../benchmarks/filtered-window-extrema-2026-09-18.csv) accompany the medians.
+Reproduce after building the release native library with:
+
+```sh
+SF_BENCHMARK=true mvn -B -ntp -Pbench -pl :streamfusion-runtime -am \
+  -Dnative.build.skip=true -Dtest=MixedWindowAvgBenchmark \
+  -Dsurefire.failIfNoSpecifiedTests=false -Dwindow.filteredExtrema=true \
+  -Dwindow.rows=1000000 -Dwindow.warmup=2 -Dwindow.runs=5 test
+```
 
 ## Idle-state TTL
 

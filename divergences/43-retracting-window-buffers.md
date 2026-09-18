@@ -63,3 +63,10 @@ References consulted before implementation:
 - Comet `spark/src/main/scala/org/apache/spark/sql/comet/execution/arrow/ColumnarBatchArrowReader.scala`
   and `native/jni-bridge/src/arrow_array_stream.rs` at
   `ef62b46306e925bc51e7d7f29922c1870eb729e7`.
+
+Filtered numeric MIN/MAX reuses the same validity-mask preparation for append-only aligned
+event-time windows. Arroyo's existing tumbling partial/final structure remains the model;
+this admission extension adds no new state representation or Arrow ownership behavior.
+Unselected values do not initialize extrema, but their input rows still establish groups.
+The updating-input gate remains because ordinary extrema do not retain retractable value
+multiplicities.

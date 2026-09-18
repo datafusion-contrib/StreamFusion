@@ -167,6 +167,101 @@ class NativeColumnarWindowAggregateOperatorTest {
     }
   }
 
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void filteredExtremaRestoreIndependentStateAndEmptySelections(boolean rocks) throws Exception {
+    RowType input =
+        RowType.of(
+            new BigIntType(),
+            new LocalZonedTimestampType(3),
+            new org.apache.flink.table.types.logical.BooleanType(),
+            new org.apache.flink.table.types.logical.BooleanType());
+    RowType output =
+        RowType.of(new BigIntType(), new BigIntType(), new TimestampType(3), new TimestampType(3));
+    OperatorSubtaskState checkpoint;
+    try (BufferAllocator allocator = new RootAllocator();
+        var before = extremaHarness(output, rocks)) {
+      before.setup(new ArrowBatchSerializer());
+      before.open();
+      before.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(
+                          GenericRowData.of(10L, TimestampData.fromEpochMillis(1), true, false),
+                          GenericRowData.of(20L, TimestampData.fromEpochMillis(1), false, true),
+                          GenericRowData.of(-999L, TimestampData.fromEpochMillis(1), null, null),
+                          GenericRowData.of(7L, TimestampData.fromEpochMillis(1001), false, null)),
+                      input,
+                      allocator))));
+      checkpoint = before.snapshot(1L, 1L);
+    }
+    try (BufferAllocator allocator = new RootAllocator();
+        var restored = extremaHarness(output, rocks)) {
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(checkpoint);
+      restored.open();
+      restored.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(
+                          GenericRowData.of(5L, TimestampData.fromEpochMillis(1), true, false),
+                          GenericRowData.of(999L, TimestampData.fromEpochMillis(1), false, null)),
+                      input,
+                      allocator))));
+      restored.processWatermark(new Watermark(2000));
+      List<RowData> rows = new ArrayList<>();
+      while (!restored.getOutput().isEmpty()) {
+        Object event = restored.getOutput().poll();
+        if (event instanceof StreamRecord<?> record) {
+          try (var root = ((ArrowBatch) record.getValue()).root()) {
+            rows.addAll(RowDataArrowConverter.read(root, output));
+          }
+        }
+      }
+      rows.sort(java.util.Comparator.comparingLong(row -> row.getTimestamp(2, 3).getMillisecond()));
+      assertEquals(2, rows.size());
+      assertEquals(5L, rows.get(0).getLong(0));
+      assertEquals(20L, rows.get(0).getLong(1));
+      assertEquals(0L, rows.get(0).getTimestamp(2, 3).getMillisecond());
+      assertTrue(rows.get(1).isNullAt(0));
+      assertTrue(rows.get(1).isNullAt(1));
+      assertEquals(1000L, rows.get(1).getTimestamp(2, 3).getMillisecond());
+    }
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      extremaHarness(RowType output, boolean rocks) throws Exception {
+    var operator =
+        new NativeColumnarWindowAggregateOperator(
+            false,
+            1000,
+            1000,
+            1,
+            new int[] {0, 0},
+            new int[] {2, 3},
+            new int[0],
+            new int[0],
+            new int[] {0, 0},
+            new int[] {1, 2},
+            "UTC",
+            true,
+            "UTC",
+            output,
+            false,
+            new int[0],
+            MAX_PARALLELISM);
+    var harness = rawHarness(operator);
+    if (rocks)
+      harness.setStateBackend(
+          new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
+              .createFromConfig(
+                  new org.apache.flink.configuration.Configuration(),
+                  NativeColumnarWindowAggregateOperatorTest.class.getClassLoader()));
+    return harness;
+  }
+
   @Test
   void emitsWindowAggregatesFromArrowBatches() throws Exception {
     NativeColumnarWindowAggregateOperator operator =
