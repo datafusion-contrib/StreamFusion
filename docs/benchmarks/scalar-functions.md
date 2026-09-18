@@ -29,9 +29,9 @@ an entire JSON Calc with Flink when that fails. Existing simple paths retain the
 kernels; slices and JSON_QUERY below use one JVM callback per Arrow batch. The scalar
 bridge boundary and intermediate JSON string identity restrictions still apply.
 
-This release/mimalloc measurement uses the same machine, Flink/JDK versions, 1,000,000
-rows, 264-byte budget, two warmups, five alternating trials and row source/sink with both
-transposes as the prototype below. No other local test or benchmark ran concurrently.
+This release/mimalloc measurement ran on Apple M1 Max with the same Flink/JDK versions,
+1,000,000 rows, 264-byte budget, two warmups, five alternating trials and row source/sink
+with both transposes as the prototype below. No other local test or benchmark ran concurrently.
 The unchanged simple functions act as regression controls; their small differences from
 the earlier native measurements are not an optimization claim.
 
@@ -60,7 +60,7 @@ StreamFusion's existing batch UDF bridge. It preserves row evaluation order and 
 Calc's native path-grammar gate. It does **not** remove the Rust kernels, alter JSON format
 connectors, or establish that a whole-query JVM replacement should ship.
 
-On Apple M4 Pro, JDK 17, UTC and Flink 2.2.1, each case processes 1,000,000 rows at
+On Apple Silicon, JDK 17, UTC and Flink 2.2.1, each case processes 1,000,000 rows at
 parallelism 1, with a 264-byte payload budget, no injected NULLs, two warmups and five
 measured trials. The common native library is built in release mode with mimalloc. Each
 route runs in a separate JVM, alternating against stock Flink within that JVM. The JVM
@@ -84,12 +84,12 @@ JSON_VALUE takes the lax EMPTY path; this is not a scalar-extraction speedup com
 The steady paired Flink and identity controls help compare the separate JVMs, but the
 experiment does not measure stateful downstream pipelines or wider/more complex JSON.
 
-The results argue against blanket replacement of the measured Rust fast paths. The JVM
-bridge is a candidate for general coverage—dynamic paths, JSON_QUERY, complex selectors
-and exact error handling—without more native parser extensions. A production admission
-policy and a representative larger-pipeline benchmark remain separate work. The broad replacement was rejected. Current routing retains native encoding first and
-uses the generated JVM Calc only when a JSON Calc exceeds that admission. The table above
-records the rejected blanket replacement, not the current routing of those four cases.
+The blanket replacement was rejected. Current routing retains native encoding first and
+uses the generated JVM Calc only when a JSON Calc exceeds that admission. The bridge adds
+dynamic paths, JSON_QUERY, complex selectors and exact error handling without more native
+parser extensions. A representative larger-pipeline benchmark remains future work. The
+table above records the rejected blanket replacement, not the current routing of those
+four cases.
 
 Raw trials: [JVM route](sql-json-jvm-2026-09-18.csv) and
 [existing native route](sql-json-native-2026-09-18.csv). In each CSV, `engine=native`
