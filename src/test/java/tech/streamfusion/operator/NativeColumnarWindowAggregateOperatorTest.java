@@ -9,6 +9,7 @@ import java.util.List;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.BigIntVector;
+import org.apache.arrow.vector.BitVector;
 import org.apache.arrow.vector.TimeStampVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.types.TimeUnit;
@@ -96,6 +97,75 @@ class NativeColumnarWindowAggregateOperatorTest {
             new BigIntType(), new BigIntType(), new TimestampType(3), new TimestampType(3)
           },
           new String[] {"key", "total", "window_start", "window_end"});
+
+  @Test
+  void nullableFiltersPreserveWindowLivenessAcrossArrowVectorGrowth() throws Exception {
+    RowType output =
+        RowType.of(
+            new BigIntType(),
+            new BigIntType(),
+            new BigIntType(),
+            new TimestampType(3),
+            new TimestampType(3));
+    var operator =
+        new NativeColumnarWindowAggregateOperator(
+            false,
+            1000,
+            1000,
+            1,
+            new int[] {-1, 0, -1},
+            new int[] {2, 3, -1},
+            new int[0],
+            new int[0],
+            new int[] {0, 0, 0},
+            new int[] {
+              NativeWindowOperatorCore.KIND_RETRACT_COUNT,
+              NativeWindowOperatorCore.KIND_RETRACT_SUM,
+              NativeWindowOperatorCore.KIND_LIVE_COUNT
+            },
+            "UTC",
+            true,
+            "UTC",
+            output,
+            false,
+            new int[0],
+            MAX_PARALLELISM);
+    try (BufferAllocator allocator = new RootAllocator();
+        var harness = rawHarness(operator)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      BigIntVector value = new BigIntVector("value", allocator);
+      TimeStampVector rt =
+          (TimeStampVector)
+              new Field(
+                      "rt",
+                      FieldType.nullable(new ArrowType.Timestamp(TimeUnit.MILLISECOND, null)),
+                      List.of())
+                  .createVector(allocator);
+      BitVector accepted = new BitVector("accepted", allocator);
+      BitVector unknown = new BitVector("unknown", allocator);
+      VectorSchemaRoot input = VectorSchemaRoot.of(value, rt, accepted, unknown);
+      input.allocateNew();
+      for (int i = 0; i < 8193; i++) {
+        value.setSafe(i, 1);
+        rt.setSafe(i, 1);
+        accepted.setSafe(i, i % 3 == 2 ? 0 : 1);
+        if (i % 3 == 0) accepted.setNull(i);
+        unknown.setSafe(i, 1);
+        unknown.setNull(i);
+      }
+      input.setRowCount(8193);
+      harness.processElement(new StreamRecord<>(new ArrowBatch(input)));
+      harness.processWatermark(new Watermark(1000));
+      try (VectorSchemaRoot root = outputRoot(harness)) {
+        RowData row = RowDataArrowConverter.read(root, output).get(0);
+        assertEquals(1, root.getRowCount());
+        assertEquals(2731, row.getLong(0));
+        assertTrue(row.isNullAt(1));
+        assertEquals(8193, row.getLong(2));
+      }
+    }
+  }
 
   @Test
   void emitsWindowAggregatesFromArrowBatches() throws Exception {

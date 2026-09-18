@@ -1,6 +1,5 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.Native;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -8,6 +7,7 @@ import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.TaskInfo;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import tech.streamfusion.Native;
 
 /**
  * Columnar local half of two-phase window aggregation: the same per-slice pre-aggregate as {@link
@@ -35,6 +35,7 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
   private final int windowStartColumn;
   private final int windowEndColumn;
   private final int[] valueColumns;
+  private final int[] filterColumns;
   private final int[] keyColumns;
   private final int[] keyTypes;
 
@@ -45,6 +46,38 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
       int windowStartColumn,
       int windowEndColumn,
       int[] valueColumns,
+      int[] keyColumns,
+      int[] keyTypes,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      String timeZoneId,
+      int[] keyTimestampPrecisions,
+      int maxParallelism) {
+    this(
+        windowMillis,
+        slideMillis,
+        timeColumn,
+        windowStartColumn,
+        windowEndColumn,
+        valueColumns,
+        null,
+        keyColumns,
+        keyTypes,
+        valueTypes,
+        aggregateKinds,
+        timeZoneId,
+        keyTimestampPrecisions,
+        maxParallelism);
+  }
+
+  public NativeColumnarLocalWindowAggregateOperator(
+      long windowMillis,
+      long slideMillis,
+      int timeColumn,
+      int windowStartColumn,
+      int windowEndColumn,
+      int[] valueColumns,
+      int[] filterColumns,
       int[] keyColumns,
       int[] keyTypes,
       int[] valueTypes,
@@ -65,6 +98,7 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
     this.windowStartColumn = windowStartColumn;
     this.windowEndColumn = windowEndColumn;
     this.valueColumns = valueColumns;
+    this.filterColumns = filterColumns;
     this.keyColumns = keyColumns;
     this.keyTypes = keyTypes;
   }
@@ -92,7 +126,7 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
         updateColumnarAttached(
             in, windowStartColumn, windowEndColumn, valueColumns, keyColumns, keyTypes);
       } else {
-        updateColumnar(in, timeColumn, valueColumns, keyColumns, keyTypes);
+        updateColumnar(in, timeColumn, valueColumns, filterColumns, keyColumns, keyTypes);
       }
     }
     publishStateBytes();

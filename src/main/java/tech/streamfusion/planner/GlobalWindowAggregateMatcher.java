@@ -80,7 +80,7 @@ final class GlobalWindowAggregateMatcher {
           || !windowing.isRowtime()
           || !WindowAggregateMatcher.supportedRetractingAggregates(
               aggregate.aggCalls(), aggregate.inputRowTypeOfLocalAgg())) {
-        return "global window aggregate: retracting input requires grouping-only, unfiltered"
+        return "global window aggregate: retracting input requires grouping-only,"
             + " numeric SUM/AVG or numeric COUNT";
       }
       int fields = WindowAggregateMatcher.partialFieldCount(aggregate.aggCalls(), true);

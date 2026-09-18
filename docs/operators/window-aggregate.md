@@ -35,17 +35,31 @@ aggregates and both aggregation phases against released Flink.
 ## Retracting COUNT/SUM/AVG and grouping-only windows
 
 Aligned event-time TUMBLE, HOP and CUMULATE accept updating input, including native Top-N,
-for unfiltered SUM/AVG over all numeric types, COUNT over the
+for SUM/AVG over all numeric types, COUNT over the
 supported numeric value columns, COUNT(*), and grouping-only windows without aggregate
 functions. Both single-phase and local/global execution remain columnar.
 
 Every input retains its INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE sign. SUM carries Flink's
 nullable sum and signed non-NULL count; COUNT carries a signed count. A separate live-row
-count, or an existing COUNT(*), suppresses a final group only when that count equals zero.
+count, or an existing unfiltered COUNT(*), suppresses a final group only when that count equals zero.
 A live all-NULL group therefore emits COUNT 0/SUM NULL, while an unmatched delete can produce
 negative counts and sums as it does in released Flink. Integer sums preserve their declared
 width and wrapping behavior. Top-1 replacing 10 with 20 leaves SUM 20, and moving the last
 live row out of a window removes its old group.
+
+`FILTER (WHERE predicate)` is supported for these COUNT/SUM/AVG forms on both insert-only
+and updating input, in either aggregation phase. Each aggregate uses its own predicate:
+FALSE and NULL skip that aggregate's addition or retraction, while TRUE retains the value's
+normal NULL behavior. Every row still contributes to window membership. A filtered COUNT(*)
+therefore cannot replace the unfiltered live-row count: an all-rejected live group emits
+COUNT 0 and SUM/AVG NULL, and only removal of its last live row removes the group.
+
+Filters are applied to each aggregate's Arrow value validity during the existing batch
+preparation. Local operators apply them before emitting partials; global operators merge
+those partials without filtering them again. Accumulator and checkpoint formats are unchanged.
+Tests compare numeric widths, independent filters, NULL predicates, explicit late watermarks,
+and recovery on memory and RocksDB backends with released Flink, and require native input/output
+counters for each expected window stage.
 
 FLOAT SUM rounds every addition/subtraction at FLOAT precision; DOUBLE SUM uses DOUBLE
 precision. Both retain a nullable sum and signed BIGINT count. The first non-NULL insertion
@@ -255,9 +269,11 @@ enables columnar composition with downstream consumers; it is not a standalone t
 - Windowed DISTINCT other than unfiltered, single-argument COUNT over the types listed above:
   SUM/AVG DISTINCT, filtered COUNT DISTINCT, FLOAT/DOUBLE, BOOLEAN, TIME and complex values.
   Non-windowed DISTINCT has separate coverage; see [GROUP BY](group-by.md).
+- Filtered MIN/MAX, and filtered aggregates in processing-time, attached, session or legacy
+  windows. Filtered DISTINCT remains outside the value-set path described above.
 - Retracting input outside aligned event-time TUMBLE/HOP/CUMULATE with grouping-only,
-  unfiltered numeric SUM/AVG, numeric COUNT(value), and COUNT(*).
-  DISTINCT, MIN/MAX, filters, processing-time, attached, session
+  numeric SUM/AVG, numeric COUNT(value), and COUNT(*) with optional FILTER.
+  DISTINCT, MIN/MAX, processing-time, attached, session
   and legacy windows still fall back on updating input. Admission checks the **input**
   changelog even when final output is append-only.
   The diagnostic names the supported retracting forms. Remaining coverage is tracked in
@@ -298,6 +314,20 @@ measurement. Medians:
 Both sizes were slower than Flink. This implementation establishes native changelog and
 checkpoint coverage for complete updating pipelines and future batching improvements.
 These whole-query results do not isolate the cost of Top-N, window accumulation or exchanges.
+
+With `-Dwindow.filtered=true`, both COUNT and SUM accept only even values using aggregate
+FILTER clauses. The same release/mimalloc setup, 1 million rows, parallelism 2, 64 keys,
+two warmups and five interleaved measured runs gave these medians:
+
+| Strategy | Flink (s) | Native (s) | Flink / native |
+| --- | ---: | ---: | ---: |
+| Single-phase | 0.490809 | 0.488290 | 1.005× |
+| Local/global | 0.591475 | 0.479669 | 1.233× |
+
+Single-phase was approximately even; local/global was faster for this workload. Both
+transposes, native Top-N/window stages and the rowwise sink remain in the measured plan.
+No competing builds or tests ran during measurement. These whole-query results do not
+isolate filter-mask overhead or establish a gain for other selectivities and cardinalities.
 
 With `-Dwindow.groupingOnly=true`, the same benchmark selects only the grouping key, retaining
 Top-N, both transposes and the rowwise sink. On an M1 Max, a release build (`-Pbench`, mimalloc),

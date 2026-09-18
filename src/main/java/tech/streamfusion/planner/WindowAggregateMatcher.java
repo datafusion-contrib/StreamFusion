@@ -169,6 +169,7 @@ final class WindowAggregateMatcher {
       scala.collection.Seq<AggregateCall> aggCalls,
       RelDataType inputType) {
     if (!insertOnlyInput(node)
+        || hasFilters(aggCalls)
         || !(windowing instanceof WindowAttachedWindowingStrategy)
         || !windowing.isRowtime()) {
       return false;
@@ -232,7 +233,9 @@ final class WindowAggregateMatcher {
       int[] grouping,
       scala.collection.Seq<AggregateCall> aggCalls,
       RelDataType inputType) {
-    if (!insertOnlyInput(node) || !(windowing.getWindow() instanceof SessionWindowSpec)) {
+    if (hasFilters(aggCalls)
+        || !insertOnlyInput(node)
+        || !(windowing.getWindow() instanceof SessionWindowSpec)) {
       return false;
     }
     if (!WindowZoneGate.admits(node, windowing)) {
@@ -286,7 +289,7 @@ final class WindowAggregateMatcher {
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
       int kind = aggregateKind(call.getAggregation().getKind());
-      if (kind < 0) {
+      if (kind < 0 || !supportedFilter(call, inputType)) {
         return false;
       }
       if (call.isDistinct()) {
@@ -584,7 +587,8 @@ final class WindowAggregateMatcher {
     // Always columnar: the keyed shuffle stays Arrow where it sits on a columnar
     // producer (a native exchange splits the batch by the grouping keys), otherwise the transition
     // pass inserts a row→Arrow transpose at the boundary. The exchange only co-locates each key's
-    // rows on one channel — the window re-groups by key itself — so its hash need not match Flink's.
+    // rows on one channel — the window re-groups by key itself — so its hash need not match
+    // Flink's.
     return new StreamPhysicalNativeColumnarWindowAggregate(
         agg.getCluster(),
         agg.getTraitSet(),
@@ -595,6 +599,7 @@ final class WindowAggregateMatcher {
         WindowAggregateMatcher.windowSlide(agg.windowing()),
         WindowAggregateMatcher.timeColumn(agg.windowing()),
         values,
+        filterColumns(agg.aggCalls(), kinds.length),
         keyColumns,
         types,
         kinds,
@@ -689,6 +694,7 @@ final class WindowAggregateMatcher {
         windowStartColumn,
         windowEndColumn,
         valueColumns,
+        filterColumns(agg.aggCalls(), kinds.length),
         WindowAggregateMatcher.keyColumns(agg.grouping()),
         valueTypes,
         kinds,
@@ -735,8 +741,8 @@ final class WindowAggregateMatcher {
   static String unsupportedReason(RelNode node, WindowingStrategy windowing) {
     if (!insertOnlyInput(node)) {
       return "window aggregate: retracting input supports only aligned event-time"
-          + " TUMBLE/HOP/CUMULATE with grouping-only, unfiltered numeric SUM/AVG,"
-          + " numeric COUNT(value), or COUNT(*)";
+          + " TUMBLE/HOP/CUMULATE with grouping-only, numeric SUM/AVG,"
+          + " numeric COUNT(value), or COUNT(*) (optional FILTER)";
     }
     if (windowing instanceof WindowAttachedWindowingStrategy) {
       return "window aggregate: attached-window aggregation requires two-phase execution";
@@ -760,6 +766,7 @@ final class WindowAggregateMatcher {
       WindowingStrategy windowing,
       scala.collection.Seq<AggregateCall> calls,
       RelDataType inputType) {
+    if (hasFilters(calls) && !windowing.isRowtime()) return false;
     return insertOnlyInput(node)
         || (windowing.isRowtime() && supportedRetractingAggregates(calls, inputType));
   }
@@ -770,7 +777,7 @@ final class WindowAggregateMatcher {
       AggregateCall call = calls.apply(i);
       int kind = aggregateKind(call.getAggregation().getKind());
       if (call.isDistinct()
-          || call.filterArg >= 0
+          || !supportedFilter(call, inputType)
           || (kind != KIND_SUM && kind != KIND_AVG && kind != KIND_COUNT)) return false;
       if (kind == KIND_COUNT && call.getArgList().isEmpty()) continue;
       if (call.getArgList().size() != 1) return false;
@@ -791,6 +798,30 @@ final class WindowAggregateMatcher {
     return true;
   }
 
+  static boolean hasFilters(scala.collection.Seq<AggregateCall> calls) {
+    for (int i = 0; i < calls.size(); i++) {
+      if (calls.apply(i).filterArg >= 0) return true;
+    }
+    return false;
+  }
+
+  private static boolean supportedFilter(AggregateCall call, RelDataType inputType) {
+    if (call.filterArg < 0) return true;
+    int kind = aggregateKind(call.getAggregation().getKind());
+    return !call.isDistinct()
+        && (kind == KIND_SUM || kind == KIND_AVG || kind == KIND_COUNT)
+        && call.filterArg < inputType.getFieldCount()
+        && inputType.getFieldList().get(call.filterArg).getType().getSqlTypeName()
+            == SqlTypeName.BOOLEAN;
+  }
+
+  private static int[] filterColumns(scala.collection.Seq<AggregateCall> calls, int length) {
+    int[] columns = new int[length];
+    Arrays.fill(columns, -1);
+    for (int i = 0; i < calls.size(); i++) columns[i] = calls.apply(i).filterArg;
+    return columns;
+  }
+
   static int[] retractingKinds(scala.collection.Seq<AggregateCall> calls) {
     int[] kinds = new int[calls.size()];
     boolean hasLiveCount = false;
@@ -800,7 +831,7 @@ final class WindowAggregateMatcher {
         kinds[i] = KIND_RETRACT_SUM;
       } else if (call.getAggregation().getKind() == SqlKind.AVG) {
         kinds[i] = KIND_AVG;
-      } else if (call.getArgList().isEmpty() && !hasLiveCount) {
+      } else if (call.getArgList().isEmpty() && call.filterArg < 0 && !hasLiveCount) {
         kinds[i] = KIND_LIVE_COUNT;
         hasLiveCount = true;
       } else {

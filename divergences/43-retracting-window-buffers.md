@@ -43,6 +43,16 @@ producer vectors must not be closed through a second owning root. The window pro
 therefore copies the change-kind byte into a vector owned by its exported root, just as
 it owns its projected values and keys. The original input keeps its own lifetime.
 
+Filtered COUNT/SUM/AVG use the same buffers. Released Flink 2.2.1 guards both accumulation
+and retraction with the aggregate's predicate, and only an unfiltered COUNT(*) can serve as
+its live-row count (`AggregateUtil.insertCountStarAggCall`). We mask rejected values to NULL
+while preparing the existing canonical Arrow batch, including the synthesized COUNT(*) value.
+We retain every input row for assignment and liveness, and never reapply filters to partials.
+This avoids a new JNI configuration or checkpoint layout. Arroyo's tumbling partial/final plan
+structure remains intact; its updating-input restriction still prevents direct transplantation.
+Comet's Arrow writer and FFI ownership guidance were consulted before this extension: masks
+are written into the projection's owned vectors, never into producer-owned input buffers.
+
 References consulted before implementation:
 
 - Arroyo `crates/arroyo-worker/src/arrow/tumbling_aggregating_window.rs` and

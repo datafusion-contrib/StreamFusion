@@ -357,7 +357,17 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
    */
   protected final void updateColumnar(
       VectorSchemaRoot in, int timeColumn, int[] valueColumns, int[] keyColumns, int[] keyTypes) {
-    updateColumnarInternal(in, timeColumn, 0L, valueColumns, keyColumns, keyTypes);
+    updateColumnar(in, timeColumn, valueColumns, null, keyColumns, keyTypes);
+  }
+
+  protected final void updateColumnar(
+      VectorSchemaRoot in,
+      int timeColumn,
+      int[] valueColumns,
+      int[] filterColumns,
+      int[] keyColumns,
+      int[] keyTypes) {
+    updateColumnarInternal(in, timeColumn, 0L, valueColumns, filterColumns, keyColumns, keyTypes);
   }
 
   /**
@@ -367,7 +377,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
    */
   protected final void updateColumnarProctime(
       VectorSchemaRoot in, long nowMillis, int[] valueColumns, int[] keyColumns, int[] keyTypes) {
-    updateColumnarInternal(in, -1, nowMillis, valueColumns, keyColumns, keyTypes);
+    updateColumnarInternal(in, -1, nowMillis, valueColumns, null, keyColumns, keyTypes);
   }
 
   /**
@@ -434,6 +444,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
       int timeColumn,
       long proctimeMillis,
       int[] valueColumns,
+      int[] filterColumns,
       int[] keyColumns,
       int[] keyTypes) {
     boolean proctime = timeColumn < 0;
@@ -441,12 +452,16 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
     BigIntVector ts = new BigIntVector("ts", allocator);
     FieldVector[] values = new FieldVector[valueColumns.length];
     FieldVector[] srcValues = new FieldVector[valueColumns.length];
+    BitVector[] filters = new BitVector[valueColumns.length];
     FieldVector[] keys = new FieldVector[keyColumns.length];
     List<FieldVector> vectors = new ArrayList<>();
     vectors.add(ts);
     for (int a = 0; a < valueColumns.length; a++) {
       values[a] = newValueVector("value" + a, valueTypes[a]);
       srcValues[a] = valueColumns[a] < 0 ? null : in.getFieldVectors().get(valueColumns[a]);
+      if (filterColumns != null && filterColumns[a] >= 0) {
+        filters[a] = (BitVector) in.getVector(filterColumns[a]);
+      }
       vectors.add(values[a]);
     }
     for (int j = 0; j < keyColumns.length; j++) {
@@ -467,7 +482,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
         ts.setSafe(i, proctime ? proctimeMillis : srcTs.getMillis(i));
         if (changes != null) changes.setSafe(i, sourceKinds.get(i));
         for (int a = 0; a < valueColumns.length; a++) {
-          if (valueColumns[a] < 0) {
+          // Preserve every change for window liveness; FILTER masks only this aggregate.
+          if (filters[a] != null && (filters[a].isNull(i) || filters[a].get(i) == 0)) {
+            values[a].setNull(i);
+          } else if (valueColumns[a] < 0) {
             ((BigIntVector) values[a]).setSafe(i, 1L); // COUNT(*): a non-null constant counts rows
           } else {
             copyValue(values[a], i, srcValues[a], valueTypes[a]);
