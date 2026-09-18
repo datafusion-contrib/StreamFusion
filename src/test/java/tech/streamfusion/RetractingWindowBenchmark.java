@@ -21,6 +21,8 @@ class RetractingWindowBenchmark {
   private static final int WARMUP = Integer.getInteger("window.warmup", 2);
   private static final int RUNS = Integer.getInteger("window.runs", 5);
   private static final boolean GROUPING_ONLY = Boolean.getBoolean("window.groupingOnly");
+  private static final boolean FILTERED = Boolean.getBoolean("window.filtered");
+  private static final String FILTER = FILTERED ? " FILTER (WHERE MOD(v, 2) = 0)" : "";
   private static final boolean AVERAGE = Boolean.getBoolean("window.average");
   private static final String AVERAGE_TYPE = System.getProperty("window.averageType", "BIGINT");
   private static final String AVERAGE_RESULT_TYPE = averageResultType();
@@ -32,8 +34,8 @@ class RetractingWindowBenchmark {
           + (GROUPING_ONLY
               ? ""
               : AVERAGE
-                  ? ", COUNT(v), AVG(CAST(v AS " + AVERAGE_TYPE + "))"
-                  : ", COUNT(v), SUM(CAST(v AS " + SUM_TYPE + "))")
+                  ? ", COUNT(v)" + FILTER + ", AVG(CAST(v AS " + AVERAGE_TYPE + "))" + FILTER
+                  : ", COUNT(v)" + FILTER + ", SUM(CAST(v AS " + SUM_TYPE + "))" + FILTER)
           + " FROM TABLE(HOP(TABLE ranked, DESCRIPTOR(rt), "
           + "INTERVAL '2' SECOND, INTERVAL '10' SECOND)) GROUP BY k, window_start, window_end";
 
@@ -69,9 +71,11 @@ class RetractingWindowBenchmark {
     double nativeTime = median(times[1]);
     System.out.printf(
         Locale.ROOT,
-        "[retracting-window] groupingOnly=%s average=%s averageType=%s sumType=%s phase=%s rows=%d"
-            + " Flink=%.6fs Native=%.6fs ratio=%.3fx host_trials=%s native_trials=%s%n",
+        "[retracting-window] groupingOnly=%s filtered=%s average=%s averageType=%s sumType=%s"
+            + " phase=%s rows=%d Flink=%.6fs Native=%.6fs ratio=%.3fx host_trials=%s"
+            + " native_trials=%s%n",
         GROUPING_ONLY,
+        FILTERED,
         AVERAGE,
         AVERAGE_TYPE,
         SUM_TYPE,

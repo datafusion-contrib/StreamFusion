@@ -1,12 +1,11 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.Native;
-import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.flink.api.common.operators.ProcessingTimeService.ProcessingTimeCallback;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.Native;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
  * Columnar single-phase window aggregation: the same native aggregator as {@link
@@ -31,6 +30,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
   private final boolean proctime;
   private final int timeColumn;
   private final int[] valueColumns;
+  private final int[] filterColumns;
   private final int[] keyColumns;
   private final int[] keyTypes;
 
@@ -83,6 +83,44 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
       boolean proctime,
       int[] keyTimestampPrecisions,
       int maxParallelism) {
+    this(
+        cumulative,
+        windowMillis,
+        slideMillis,
+        timeColumn,
+        valueColumns,
+        null,
+        keyColumns,
+        keyTypes,
+        valueTypes,
+        aggregateKinds,
+        timeZoneId,
+        timestampLtz,
+        sessionTimeZoneId,
+        outputType,
+        proctime,
+        keyTimestampPrecisions,
+        maxParallelism);
+  }
+
+  public NativeColumnarWindowAggregateOperator(
+      boolean cumulative,
+      long windowMillis,
+      long slideMillis,
+      int timeColumn,
+      int[] valueColumns,
+      int[] filterColumns,
+      int[] keyColumns,
+      int[] keyTypes,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      String timeZoneId,
+      boolean timestampLtz,
+      String sessionTimeZoneId,
+      RowType outputType,
+      boolean proctime,
+      int[] keyTimestampPrecisions,
+      int maxParallelism) {
     super(
         "window aggregate",
         windowMillis,
@@ -98,6 +136,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
     this.cumulative = cumulative;
     this.timeColumn = timeColumn;
     this.valueColumns = valueColumns;
+    this.filterColumns = filterColumns;
     this.keyColumns = keyColumns;
     this.keyTypes = keyTypes;
     this.proctime = proctime;
@@ -171,7 +210,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
         maxOpenEnd = Math.max(maxOpenEnd, latestWindowEnd(now));
         scheduleNextTimer(now);
       } else {
-        updateColumnar(in, timeColumn, valueColumns, keyColumns, keyTypes);
+        updateColumnar(in, timeColumn, valueColumns, filterColumns, keyColumns, keyTypes);
         reportLateRecords(Native.tumblingAggregatorLateDrops(handle));
       }
     }

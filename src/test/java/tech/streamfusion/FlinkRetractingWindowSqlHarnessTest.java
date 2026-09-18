@@ -72,15 +72,18 @@ class FlinkRetractingWindowSqlHarnessTest {
 
   @ParameterizedTest
   @CsvSource({
-    "ONE_PHASE,TUMBLE,false", "TWO_PHASE,TUMBLE,false",
-    "ONE_PHASE,HOP,false", "TWO_PHASE,HOP,false",
-    "ONE_PHASE,CUMULATE,false", "TWO_PHASE,CUMULATE,false",
-    "ONE_PHASE,TUMBLE,true", "TWO_PHASE,TUMBLE,true",
-    "ONE_PHASE,HOP,true", "TWO_PHASE,HOP,true",
-    "ONE_PHASE,CUMULATE,true", "TWO_PHASE,CUMULATE,true"
+    "ONE_PHASE,TUMBLE,false,true", "TWO_PHASE,TUMBLE,false,true",
+    "ONE_PHASE,HOP,false,true", "TWO_PHASE,HOP,false,true",
+    "ONE_PHASE,CUMULATE,false,true", "TWO_PHASE,CUMULATE,false,true",
+    "ONE_PHASE,TUMBLE,false,false", "TWO_PHASE,TUMBLE,false,false",
+    "ONE_PHASE,HOP,false,false", "TWO_PHASE,HOP,false,false",
+    "ONE_PHASE,CUMULATE,false,false", "TWO_PHASE,CUMULATE,false,false",
+    "ONE_PHASE,TUMBLE,true,false", "TWO_PHASE,TUMBLE,true,false",
+    "ONE_PHASE,HOP,true,false", "TWO_PHASE,HOP,true,false",
+    "ONE_PHASE,CUMULATE,true,false", "TWO_PHASE,CUMULATE,true,false"
   })
-  void lateRetractionsChangeOnlyUnfiredWindows(String phase, String shape, boolean groupingOnly)
-      throws Exception {
+  void lateRetractionsChangeOnlyUnfiredWindows(
+      String phase, String shape, boolean groupingOnly, boolean filtered) throws Exception {
     String window =
         switch (shape) {
           case "TUMBLE" -> "TUMBLE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
@@ -99,6 +102,21 @@ class FlinkRetractingWindowSqlHarnessTest {
             + " FROM TABLE("
             + window
             + ") GROUP BY k, window_start, window_end";
+    if (filtered) {
+      for (String aggregate :
+          List.of(
+              "SUM(v)",
+              "COUNT(*)",
+              "AVG(v)",
+              "AVG(CAST(v AS FLOAT))",
+              "AVG(CAST(v AS DOUBLE))",
+              "SUM(CAST(v AS FLOAT))",
+              "SUM(CAST(v AS DOUBLE))",
+              "SUM(CAST(v AS DECIMAL(38,2)))",
+              "AVG(CAST(v AS DECIMAL(38,3)))")) {
+        sql = sql.replace(aggregate, aggregate + " FILTER (WHERE v > 10)");
+      }
+    }
     var expected = new ArrayList<Row>();
     expected.add(Row.of(1, LocalDateTime.ofEpochSecond(5, 0, ZoneOffset.UTC), 10L, 1L));
     if (!shape.equals("TUMBLE")) {
@@ -107,6 +125,13 @@ class FlinkRetractingWindowSqlHarnessTest {
     }
     if (shape.equals("CUMULATE")) {
       expected.add(Row.of(2, LocalDateTime.ofEpochSecond(15, 0, ZoneOffset.UTC), null, 1L));
+    }
+    if (filtered) {
+      expected.replaceAll(
+          row ->
+              row.getField(2) == null || (Long) row.getField(2) <= 10
+                  ? Row.of(row.getField(0), row.getField(1), null, 0L)
+                  : row);
     }
     if (groupingOnly) {
       expected.replaceAll(row -> Row.project(row, new int[] {0, 1}));
@@ -196,6 +221,64 @@ class FlinkRetractingWindowSqlHarnessTest {
     assertTrue(scan.substitutions() > 0, scan.fallbackReasons().toString());
     assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
     assertWindowRows(nativeResult.job(), phase);
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "ONE_PHASE,TINYINT", "TWO_PHASE,TINYINT",
+    "ONE_PHASE,SMALLINT", "TWO_PHASE,SMALLINT",
+    "ONE_PHASE,INT", "TWO_PHASE,INT",
+    "ONE_PHASE,BIGINT", "TWO_PHASE,BIGINT",
+    "ONE_PHASE,FLOAT", "TWO_PHASE,FLOAT",
+    "ONE_PHASE,DOUBLE", "TWO_PHASE,DOUBLE",
+    "ONE_PHASE,'DECIMAL(12,2)'", "TWO_PHASE,'DECIMAL(12,2)'"
+  })
+  void filteredNumericWindowsMatchFlinkForAppendAndUpdatingInput(String phase, String type)
+      throws Exception {
+    for (String input : List.of("src", "ranked")) {
+      String sql =
+          "SELECT k, SUM(CAST(v AS "
+              + type
+              + ")) FILTER (WHERE v > 10),"
+              + " AVG(CAST(v AS "
+              + type
+              + ")) FILTER (WHERE v < 20),"
+              + " COUNT(v) FILTER (WHERE v IS NULL), COUNT(*) FILTER (WHERE v >= 0)"
+              + " FROM TABLE(HOP(TABLE "
+              + input
+              + ", DESCRIPTOR(rt),"
+              + " INTERVAL '5' SECOND, INTERVAL '10' SECOND))"
+              + " GROUP BY k, window_start, window_end";
+      List<Row> host = collect(environment(phase), sql).rows();
+      var table = environment(phase);
+      var scan = NativePlanner.install(table);
+      Result result = collect(table, sql);
+      assertEquals(host, result.rows());
+      assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
+      assertWindowRows(result.job(), phase);
+    }
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"ONE_PHASE", "TWO_PHASE"})
+  void unsupportedFilteredWindowsRemainOnFlink(String phase) throws Exception {
+    for (String sql :
+        List.of(
+            "SELECT k, MIN(v) FILTER (WHERE v > 10) FROM TABLE(TUMBLE(TABLE src,"
+                + " DESCRIPTOR(rt), INTERVAL '5' SECOND)) GROUP BY k, window_start, window_end",
+            "SELECT k, MAX(v) FILTER (WHERE v > 10) FROM TABLE(TUMBLE(TABLE src,"
+                + " DESCRIPTOR(rt), INTERVAL '5' SECOND)) GROUP BY k, window_start, window_end",
+            "SELECT k, COUNT(*) FILTER (WHERE v > 10) FROM TABLE(SESSION(TABLE src PARTITION BY k,"
+                + " DESCRIPTOR(rt), INTERVAL '5' SECOND)) GROUP BY k, window_start, window_end",
+            "SELECT k, SUM(v) FILTER (WHERE v > 10) FROM src"
+                + " GROUP BY k, TUMBLE(rt, INTERVAL '5' SECOND)")) {
+      List<Row> host = collect(environment(phase), sql).rows();
+      var table = environment(phase);
+      var scan = NativePlanner.install(table);
+      assertEquals(host, collect(table, sql).rows());
+      assertEquals(0, scan.substitutions(), sql);
+      assertTrue(!scan.fallbackReasons().isEmpty(), sql);
+    }
   }
 
   @BeforeAll
@@ -302,6 +385,63 @@ class FlinkRetractingWindowSqlHarnessTest {
           });
     }
     expected.sort(Comparator.comparing(Row::toString));
+    assertRecoveredWindowRows(phase, rocks, sql, expected);
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "ONE_PHASE,TUMBLE,false,false", "TWO_PHASE,TUMBLE,false,false",
+    "ONE_PHASE,HOP,false,false", "TWO_PHASE,HOP,false,false",
+    "ONE_PHASE,CUMULATE,false,false", "TWO_PHASE,CUMULATE,false,false",
+    "ONE_PHASE,TUMBLE,true,false", "TWO_PHASE,TUMBLE,true,false",
+    "ONE_PHASE,HOP,true,false", "TWO_PHASE,HOP,true,false",
+    "ONE_PHASE,CUMULATE,true,false", "TWO_PHASE,CUMULATE,true,false",
+    "ONE_PHASE,HOP,false,true", "TWO_PHASE,HOP,false,true",
+    "ONE_PHASE,HOP,true,true", "TWO_PHASE,HOP,true,true"
+  })
+  void filteredChangesPreserveIndependentAccumulatorsAndWindowLivenessAfterRecovery(
+      String phase, String shape, boolean rocks, boolean visibleLiveCount) throws Exception {
+    String window =
+        switch (shape) {
+          case "TUMBLE" -> "TUMBLE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
+          case "HOP" ->
+              "HOP(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
+          default ->
+              "CUMULATE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
+        };
+    String sql =
+        "SELECT k, window_end, COUNT(*) FILTER (WHERE v > 10),"
+            + " COUNT(v) FILTER (WHERE v >= 0), SUM(v) FILTER (WHERE v < 10),"
+            + " AVG(CAST(v AS DECIMAL(38,3))) FILTER (WHERE v > 10),"
+            + " COUNT(*) FILTER (WHERE v IS NULL)"
+            + (visibleLiveCount ? ", COUNT(*)" : "")
+            + " FROM TABLE("
+            + window
+            + ") GROUP BY k, window_start, window_end";
+    List<Row> expected = new ArrayList<>();
+    int end = shape.equals("TUMBLE") ? 5 : shape.equals("HOP") ? 10 : 15;
+    for (int boundary = 5; boundary <= end; boundary += 5) {
+      LocalDateTime timestamp = LocalDateTime.ofEpochSecond(boundary, 0, ZoneOffset.UTC);
+      List<Row> groups =
+          List.of(
+              Row.of(1, timestamp, 1L, 1L, null, new BigDecimal("20.000000"), 0L, 1L),
+              Row.of(2, timestamp, 0L, 0L, null, null, 1L, 1L),
+              Row.of(4, timestamp, 0L, 1L, 5L, null, 0L, 1L),
+              Row.of(5, timestamp, 0L, -1L, -3L, null, 0L, -1L),
+              Row.of(6, timestamp, 0L, 0L, Long.MIN_VALUE, null, 0L, -1L),
+              Row.of(
+                  7, timestamp, 2L, 2L, null, new BigDecimal("9223372036854775807.000000"), 0L, 2L),
+              Row.of(8, timestamp, 1L, 2L, null, new BigDecimal("11.000000"), 0L, 2L));
+      for (Row row : groups) {
+        expected.add(visibleLiveCount ? row : Row.project(row, new int[] {0, 1, 2, 3, 4, 5, 6}));
+      }
+    }
+    expected.sort(Comparator.comparing(Row::toString));
+    assertRecoveredWindowRows(phase, rocks, sql, expected);
+  }
+
+  private void assertRecoveredWindowRows(
+      String phase, boolean rocks, String sql, List<Row> expected) throws Exception {
     for (boolean nativeEnabled : new boolean[] {false, true}) {
       String id = UUID.randomUUID().toString();
       RecoveryProof proof = new RecoveryProof();

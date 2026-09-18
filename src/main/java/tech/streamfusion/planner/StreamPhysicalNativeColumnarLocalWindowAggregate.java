@@ -25,6 +25,7 @@ public class StreamPhysicalNativeColumnarLocalWindowAggregate extends StreamPhys
   private final int windowStartColumn;
   private final int windowEndColumn;
   private final int[] valueColumns;
+  private final int[] filterColumns;
   private final int[] keyColumns;
   private final int[] valueTypes;
   private final int[] aggregateKinds;
@@ -40,6 +41,7 @@ public class StreamPhysicalNativeColumnarLocalWindowAggregate extends StreamPhys
       int windowStartColumn,
       int windowEndColumn,
       int[] valueColumns,
+      int[] filterColumns,
       int[] keyColumns,
       int[] valueTypes,
       int[] aggregateKinds,
@@ -50,6 +52,7 @@ public class StreamPhysicalNativeColumnarLocalWindowAggregate extends StreamPhys
     this.windowStartColumn = windowStartColumn;
     this.windowEndColumn = windowEndColumn;
     this.valueColumns = valueColumns;
+    this.filterColumns = filterColumns;
     this.keyColumns = keyColumns;
     this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
@@ -73,6 +76,7 @@ public class StreamPhysicalNativeColumnarLocalWindowAggregate extends StreamPhys
         windowStartColumn,
         windowEndColumn,
         valueColumns,
+        filterColumns,
         keyColumns,
         valueTypes,
         aggregateKinds,
@@ -91,6 +95,7 @@ public class StreamPhysicalNativeColumnarLocalWindowAggregate extends StreamPhys
         windowStartColumn,
         windowEndColumn,
         valueColumns,
+        filterColumns,
         keyColumns,
         valueTypes,
         aggregateKinds,

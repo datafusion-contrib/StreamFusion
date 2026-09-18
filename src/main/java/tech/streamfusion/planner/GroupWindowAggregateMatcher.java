@@ -71,6 +71,9 @@ final class GroupWindowAggregateMatcher {
             FlinkTypeFactory$.MODULE$.toLogicalRowType(agg.getRowType()))) {
       return "legacy group-window: an input or output column type the boundary cannot carry";
     }
+    if (WindowAggregateMatcher.hasFilters(agg.aggCalls())) {
+      return "legacy group-window: filtered aggregates are unsupported";
+    }
     if (!WindowAggregateMatcher.supportedAggregates(
         agg.grouping(), agg.aggCalls(), agg.getInput().getRowType())) {
       return "legacy group-window: unsupported grouping key, aggregate, or aggregate value type";
@@ -220,6 +223,7 @@ final class GroupWindowAggregateMatcher {
         slide(agg).toMillis(),
         timeColumn(agg),
         WindowAggregateMatcher.valueColumns(agg.aggCalls()),
+        null,
         keyColumns,
         WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType()),
         WindowAggregateMatcher.kinds(agg.aggCalls()),

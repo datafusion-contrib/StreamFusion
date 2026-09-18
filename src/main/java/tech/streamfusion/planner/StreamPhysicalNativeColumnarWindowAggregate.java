@@ -25,6 +25,7 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends StreamPhysicalN
   private final long slideMillis;
   private final int timeColumn;
   private final int[] valueColumns;
+  private final int[] filterColumns;
   private final int[] keyColumns;
   private final int[] valueTypes;
   private final int[] aggregateKinds;
@@ -41,6 +42,7 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends StreamPhysicalN
       long slideMillis,
       int timeColumn,
       int[] valueColumns,
+      int[] filterColumns,
       int[] keyColumns,
       int[] valueTypes,
       int[] aggregateKinds,
@@ -52,6 +54,7 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends StreamPhysicalN
     this.slideMillis = slideMillis;
     this.timeColumn = timeColumn;
     this.valueColumns = valueColumns;
+    this.filterColumns = filterColumns;
     this.keyColumns = keyColumns;
     this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
@@ -76,6 +79,7 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends StreamPhysicalN
         slideMillis,
         timeColumn,
         valueColumns,
+        filterColumns,
         keyColumns,
         valueTypes,
         aggregateKinds,
@@ -95,6 +99,7 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends StreamPhysicalN
         slideMillis,
         timeColumn,
         valueColumns,
+        filterColumns,
         keyColumns,
         valueTypes,
         aggregateKinds,

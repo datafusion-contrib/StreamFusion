@@ -1,10 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.ArrowBatch;
-import tech.streamfusion.operator.ArrowBatchTypeInformation;
-import tech.streamfusion.operator.ConstantArrowBatchKeySelector;
-import tech.streamfusion.operator.NativeColumnarLocalWindowAggregateOperator;
-import tech.streamfusion.operator.NativeWindowOperatorCore;
 import java.util.Collections;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.dag.Transformation;
@@ -19,6 +14,11 @@ import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTransl
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.ConstantArrowBatchKeySelector;
+import tech.streamfusion.operator.NativeColumnarLocalWindowAggregateOperator;
+import tech.streamfusion.operator.NativeWindowOperatorCore;
 
 /** Wraps the columnar local (pre-aggregate) window operator into the plan; Arrow batches in and out. */
 public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatch>
@@ -31,6 +31,7 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
   private final int windowStartColumn;
   private final int windowEndColumn;
   private final int[] valueColumns;
+  private final int[] filterColumns;
   private final int[] keyColumns;
   private final int[] valueTypes;
   private final int[] aggregateKinds;
@@ -47,6 +48,7 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
       int windowStartColumn,
       int windowEndColumn,
       int[] valueColumns,
+      int[] filterColumns,
       int[] keyColumns,
       int[] valueTypes,
       int[] aggregateKinds,
@@ -64,6 +66,7 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
     this.windowStartColumn = windowStartColumn;
     this.windowEndColumn = windowEndColumn;
     this.valueColumns = valueColumns;
+    this.filterColumns = filterColumns;
     this.keyColumns = keyColumns;
     this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
@@ -100,6 +103,7 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
                 windowStartColumn,
                 windowEndColumn,
                 valueColumns,
+                filterColumns,
                 keyColumns,
                 NativeWindowOperatorCore.keyTypes((RowType) getOutputType(), keyColumns.length),
                 valueTypes,
