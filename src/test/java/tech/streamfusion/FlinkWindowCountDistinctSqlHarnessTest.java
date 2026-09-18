@@ -21,6 +21,25 @@ import tech.streamfusion.planner.NativePlanner;
 
 class FlinkWindowCountDistinctSqlHarnessTest {
   @ParameterizedTest
+  @ValueSource(strings = {"TUMBLE", "HOP", "CUMULATE"})
+  void splitDistinctRetainsOnlyTheUnimplementedWindowFallback(String shape) throws Exception {
+    String sql = "SELECT k, window_start, window_end, COUNT(DISTINCT i), COUNT(DISTINCT s) "
+        + "FROM TABLE(" + window(shape) + ") GROUP BY k, window_start, window_end";
+    java.util.function.Supplier<TableEnvironment> factory = () -> {
+      var table = environment("TWO_PHASE");
+      table.getConfig().set("table.optimizer.distinct-agg.split.enabled", "true");
+      return table;
+    };
+    var table = factory.get();
+    var scan = NativePlanner.install(table);
+    table.explainSql(sql);
+    assertTrue(scan.fallbackReasons().stream().noneMatch(reason -> reason.contains("HASH_CODE")),
+        scan.fallbackReasons().toString());
+    NativeParity.assertFallbackReasonContains(factory, sql,
+        "attached-window aggregation requires two-phase execution");
+  }
+
+  @ParameterizedTest
   @CsvSource({
     "ONE_PHASE,TUMBLE",
     "TWO_PHASE,TUMBLE",

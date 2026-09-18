@@ -58,6 +58,9 @@ class ScalarFunctionBenchmark {
 
   private static final List<Query> SCALAR_FUNCTIONS =
       List.of(
+          new Query("HASH_CODE_STRING", "text", "HASH_CODE(s)", "INT"),
+          new Query("HASH_CODE_BIGINT", "bigint", "HASH_CODE(n)", "INT"),
+          new Query("HASH_CODE_DECIMAL", "tt_decimal", "HASH_CODE(n)", "INT"),
           new Query("STRING_TO_INT", "integer_text", "CAST(s AS INT)", "INT"),
           new Query(
               "TRY_STRING_TO_DECIMAL", "integer_text", "TRY_CAST(s AS DECIMAL(38,9))", "DECIMAL(38,9)"),

@@ -33,6 +33,7 @@ mod ascii;
 mod binary_strings;
 mod charset;
 mod chr;
+mod hash_code;
 mod if_null;
 mod instr;
 pub(crate) mod integer_divide;
@@ -179,6 +180,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         159 => string_to_boolean::function(false),
         160 => string_to_boolean::function(true),
         161 => instr::function(arity),
+        162 => hash_code::function(),
         _ => return None,
     })
 }

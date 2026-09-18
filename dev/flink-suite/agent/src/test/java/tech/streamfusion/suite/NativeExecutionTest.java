@@ -156,14 +156,14 @@ class NativeExecutionTest {
   @Test
   void expectedFallbackRequiresItsSpecificReasonAndNoNativeWork() {
     NativeExecution.Scope scope = NativeExecution.begin(WINDOW, new WindowFixture(true));
-    NativeExecution.fallback("Calc: unsupported function/operator: HASH_CODE");
+    NativeExecution.fallback("window aggregate: attached-window aggregation requires two-phase execution");
     NativeExecution.finish(scope);
     scope = NativeExecution.begin(WINDOW, new WindowFixture(true));
     NativeExecution.fallback("different unsupported function");
     NativeExecution.Scope wrongReason = scope;
     assertThrows(AssertionError.class, () -> NativeExecution.finish(wrongReason));
     scope = NativeExecution.begin(WINDOW, new WindowFixture(true));
-    NativeExecution.fallback("Calc: unsupported function/operator: HASH_CODE");
+    NativeExecution.fallback("window aggregate: attached-window aggregation requires two-phase execution");
     Object window = new NativeColumnarWindowAggregateOperator();
     NativeExecution.opened(window);
     NativeExecution.completed(window, 1);

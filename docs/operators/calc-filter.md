@@ -259,6 +259,50 @@ Both engines are timed through planning, source generation, and job completion; 
 also includes both transposes. These are end-to-end diagnostics on this machine rather than
 isolated kernel timings.
 
+## HASH_CODE
+
+`HASH_CODE(value)` runs as a native scalar for CHAR/VARCHAR, BOOLEAN, integral types,
+FLOAT/DOUBLE, DECIMAL, DATE, TIME and plain TIMESTAMP. NULL remains NULL. The result
+matches Flink's SQL function: strings use Java UTF-16 hashing and wrapping absolute
+value, BIGINT folds its high and low words, DECIMAL includes the declared scale, and
+TIMESTAMP retains milliseconds and nanoseconds within the millisecond. This function
+does not change the hash used internally by native exchanges or keyed state.
+
+Admission checks Flink's resolved operator identity; a user function named HASH_CODE
+keeps its own implementation. Binary, complex types and TIMESTAMP_LTZ are outside this
+scalar admission. SQL parity tests cover integer boundaries, Unicode and embedded NUL,
+the negative minimum string hash, precision-38 decimals with several scales, NULLs,
+filters, and timestamps outside Arrow's nanosecond epoch range.
+
+Supporting this scalar removes the HASH_CODE Calc blocker in split-distinct plans.
+The remaining window layouts still fall back and are tracked in
+[#166](https://github.com/datafusion-contrib/StreamFusion/issues/166).
+
+Release/mimalloc benchmark on Apple Silicon/JDK 17, parallelism 1, 2,000,000
+runtime rows, NULL every seventh row, two warmups and five interleaved measured
+runs per engine. Both row/Arrow transposes are asserted; strings use a 264-byte
+payload budget. Medians in seconds:
+
+| Expression | Flink | Native | Flink/native |
+| --- | ---: | ---: | ---: |
+| String identity control | 0.759980 | 1.373877 | 0.553x |
+| BIGINT identity control | 0.251243 | 0.424932 | 0.591x |
+| DECIMAL identity control | 0.256370 | 0.626968 | 0.409x |
+| `HASH_CODE(s)` | 0.700423 | 1.217803 | 0.575x |
+| `HASH_CODE(n)` on BIGINT | 0.274135 | 0.421497 | 0.650x |
+| `HASH_CODE(n)` on DECIMAL | 0.303444 | 0.451720 | 0.672x |
+
+Standalone row-fed hashing is slower than Flink. This change removes an expression
+admission blocker so hashes can compose within native pipelines; these measurements
+do not establish a speedup for a larger pipeline or split-distinct aggregation.
+
+```bash
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=ScalarFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dscalar.functions=HASH_CODE_STRING,HASH_CODE_BIGINT,HASH_CODE_DECIMAL \
+  -Dscalar.rows=2000000 -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
+```
+
 ## Declared-type guard
 
 Admitting every node in a tree is not the same as producing the type Flink declared for the tree:

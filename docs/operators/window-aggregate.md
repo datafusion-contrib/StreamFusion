@@ -267,8 +267,10 @@ enables columnar composition with downstream consumers; it is not a standalone t
   plans retain fallback in both aggregation phases; the individual direct aggregate forms
   above remain supported.
 - Flink's optional `table.optimizer.distinct-agg.split.enabled=true` rewrite. The unchanged
-  split-distinct IT variants introduce an unsupported `HASH_CODE` Calc and extra window layers,
-  including attached single-phase aggregation and partial layouts outside current admission.
+  split-distinct IT variants introduce extra window layers, including attached single-phase
+  aggregation and partial layouts outside current admission. `HASH_CODE` itself is supported;
+  the remaining physical window layouts are tracked in
+  [#166](https://github.com/datafusion-contrib/StreamFusion/issues/166).
   Those variants fall back as a complete pipeline. The same queries with distinct splitting
   disabled use the native value-set path; upstream execution contracts verify both routes.
 

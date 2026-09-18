@@ -916,6 +916,15 @@ final class RexExpression {
             == org.apache.flink.table.functions.BuiltInFunctionDefinitions.IF_NULL) {
       return emitBuiltinCall(call, 158);
     }
+    if (call.getOperator()
+        == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.HASH_CODE) {
+      if (call.getOperands().size() != 1) return reject("HASH_CODE requires one operand");
+      return switch (call.getOperands().get(0).getType().getSqlTypeName()) {
+        case BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, REAL, DOUBLE,
+            DECIMAL, CHAR, VARCHAR, DATE, TIME, TIMESTAMP -> emitBuiltinCall(call, 162);
+        default -> reject("HASH_CODE requires a verified scalar type");
+      };
+    }
     if ("ENCODE".equals(functionName)) {
       return emitCharsetFunction(call, 120, SqlTypeFamily.CHARACTER);
     }

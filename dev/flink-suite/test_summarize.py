@@ -114,7 +114,7 @@ class NativeExecutionSummaryTest(unittest.TestCase):
             self.WINDOW,
             "",
             variant="splitDistinct=true",
-            reasons="Calc: unsupported function/operator: HASH_CODE",
+            reasons="window aggregate: attached-window aggregation requires two-phase execution",
         )
         self.assertEqual((0, 1, []), self.check({self.WINDOW: 1}))
         self.record(
@@ -125,7 +125,7 @@ class NativeExecutionSummaryTest(unittest.TestCase):
             self.WINDOW,
             "NativeColumnarWindowAggregateOperator=1",
             variant="splitDistinct=true",
-            reasons="Calc: unsupported function/operator: HASH_CODE",
+            reasons="window aggregate: attached-window aggregation requires two-phase execution",
         )
         self.assertTrue(self.check({self.WINDOW: 1})[2])
 
@@ -134,7 +134,7 @@ class NativeExecutionSummaryTest(unittest.TestCase):
             self.WINDOW,
             "",
             variant="splitDistinct=false",
-            reasons="Calc: unsupported function/operator: HASH_CODE",
+            reasons="window aggregate: attached-window aggregation requires two-phase execution",
         )
         self.assertTrue(self.check({self.WINDOW: 1})[2])
 
