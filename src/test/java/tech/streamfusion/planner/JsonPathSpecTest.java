@@ -59,6 +59,20 @@ class JsonPathSpecTest {
   }
 
   @Test
+  void literalDotNamesPreservePunctuationAndControls() {
+    assertEquals("strict $[\"order-id\"][\"123\"]", JsonPathSpec.normalize("$.order-id.123"));
+    assertEquals("strict $[\"a\\tb\"]", JsonPathSpec.normalize("$.a\tb"));
+    assertEquals("strict $[\"a\\t\"]", JsonPathSpec.normalize("$.a\t"));
+    assertEquals("strict $[\"a*b\"]", JsonPathSpec.normalize("$.a*b"));
+    assertEquals("strict $[\"a\\\\u0061\"]", JsonPathSpec.normalize("$.a\\u0061"));
+    assertEquals("strict $[\"😀\"]", JsonPathSpec.normalize("$.😀"));
+    for (String path :
+        List.of("$.*", "$.*name", "$..name", "$.name()", "$.a b", "$.a.", "$.a[", "$.\ud800")) {
+      assertNull(JsonPathSpec.normalize(path), path);
+    }
+  }
+
+  @Test
   void verifiedEscapesUseCanonicalJsonNamesWithoutLosingIdentity() {
     assertEquals("strict $[\"a\\\\b\"]", JsonPathSpec.normalize("$['a\\\\b']"));
     assertEquals("strict $[\"a'b\"]", JsonPathSpec.normalize("$['a\\'b']"));
@@ -85,8 +99,7 @@ class JsonPathSpecTest {
     assertEquals("lax $[' a b '][1]", JsonPathSpec.normalize(" \tLaX $[ ' a b ' ][ 1 ]  "));
     assertEquals("strict $[\"a'b\"]", JsonPathSpec.normalize("$[ \"a'b\" ]"));
     assertEquals("strict $[''][\"\"]", JsonPathSpec.normalize("$[ '' ][ \"\" ]"));
-    for (String path :
-        List.of(" $[1]", "$[\t1]", "$[\t'a']", "$[1 2]", "$.a\t", "$[1]\t", "$[1] \n")) {
+    for (String path : List.of(" $[1]", "$[\t1]", "$[\t'a']", "$[1 2]", "$[1]\t", "$[1] \n")) {
       assertNull(JsonPathSpec.normalize(path), path);
     }
   }
@@ -138,6 +151,9 @@ class JsonPathSpecTest {
         for (String path :
             List.of(
                 "$.a",
+                "$.order-id.123",
+                "$.a\tb",
+                "$.a\\u0061",
                 "$[-1]",
                 "$[-2147483648]",
                 "$[-0]",
@@ -156,7 +172,7 @@ class JsonPathSpecTest {
           long[] constants = encoded.longs();
           try {
             assertSame(
-                constants, binding.bind(constants), "literal indexes must register no JVM UDF");
+                constants, binding.bind(constants), "literal paths must register no JVM UDF");
           } finally {
             binding.unbind();
           }

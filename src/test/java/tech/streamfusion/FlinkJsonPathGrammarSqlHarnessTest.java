@@ -181,7 +181,6 @@ class FlinkJsonPathGrammarSqlHarnessTest {
         " $ ",
         "$[1]\t",
         "$[1]\n",
-        "$.a\t",
         "$[1] \t",
         "$['a'] \n"
       })
