@@ -22,6 +22,37 @@ TO_TIMESTAMP and temporal FLOOR/CEIL/CEILING were outside that measurement's cov
 subsequent implementation is measured in the [temporal diagnostic below](#temporal-coverage-diagnostic-2026-09-15).
 See [Calc / filter](../operators/calc-filter.md) for the complete argument gates.
 
+## SQL/JSON native-first routing (2026-09-18)
+
+The production admission policy tries the existing native encoding first, then generates
+an entire JSON Calc with Flink when that fails. Existing simple paths retain their Rust
+kernels; slices and JSON_QUERY below use one JVM callback per Arrow batch. The scalar
+bridge boundary and intermediate JSON string identity restrictions still apply.
+
+This release/mimalloc measurement uses the same machine, Flink/JDK versions, 1,000,000
+rows, 264-byte budget, two warmups, five alternating trials and row source/sink with both
+transposes as the prototype below. No other local test or benchmark ran concurrently.
+The unchanged simple functions act as regression controls; their small differences from
+the earlier native measurements are not an optimization claim.
+
+| Case | Flink (s) | StreamFusion (s) | Flink / StreamFusion | JSON evaluator |
+|---|---:|---:|---:|---|
+| Simple-source identity | 0.390342 | 0.655438 | 0.596x | none |
+| Array-source identity | 0.474533 | 0.852896 | 0.556x | none |
+| JSON_VALUE, simple path | 1.106959 | 0.796195 | 1.390x | Rust |
+| JSON_EXISTS, simple path | 1.093376 | 0.739060 | 1.479x | Rust |
+| `JSON_QUERY(s, '$.a[0:2]')` | 1.951007 | 2.823455 | 0.691x | JVM |
+| `JSON_EXISTS(s, '$.a[0:2]')` | 1.744556 | 2.484502 | 0.702x | JVM |
+
+The newly admitted functions are slower than stock Flink in isolation. This is a coverage
+route that avoids more handwritten parser semantics and permits surrounding operators to
+remain columnar; it is not evidence of a whole-query speedup. A larger stateful pipeline
+has not been benchmarked here. Identity controls are reported without subtraction.
+[Raw trials](sql-json-hybrid-2026-09-18.csv) retain every measured iteration.
+
+Use the reproduction command below with
+`-Dscalar.functions=JSON_VALUE,JSON_EXISTS,JSON_QUERY_SLICE,JSON_EXISTS_SLICE`.
+
 ## SQL/JSON JVM bridge prototype (2026-09-18)
 
 This experiment routes a complete SQL/JSON Calc through Flink-generated JVM code using
@@ -56,9 +87,9 @@ experiment does not measure stateful downstream pipelines or wider/more complex 
 The results argue against blanket replacement of the measured Rust fast paths. The JVM
 bridge is a candidate for general coverage—dynamic paths, JSON_QUERY, complex selectors
 and exact error handling—without more native parser extensions. A production admission
-policy and a representative larger-pipeline benchmark remain separate work. This branch
-keeps the broad replacement as a draft experiment rather than silently changing main's
-performance policy.
+policy and a representative larger-pipeline benchmark remain separate work. The broad replacement was rejected. Current routing retains native encoding first and
+uses the generated JVM Calc only when a JSON Calc exceeds that admission. The table above
+records the rejected blanket replacement, not the current routing of those four cases.
 
 Raw trials: [JVM route](sql-json-jvm-2026-09-18.csv) and
 [existing native route](sql-json-native-2026-09-18.csv). In each CSV, `engine=native`

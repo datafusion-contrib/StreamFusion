@@ -1,9 +1,9 @@
 # Flink SQL/JSON evaluation
 
-## Calc JVM prototype
+## JVM coverage beyond native admission
 
-SQL/JSON Calcs now use the existing Comet-style batch UDF bridge and Flink's generated
-Calc evaluator. Comet's `native/spark-expr/src/jvm_udf/mod.rs`, JNI UDF bridge, and
+SQL/JSON Calcs that cannot use the existing native expression encoding try the Comet-style
+batch UDF bridge and Flink's generated Calc evaluator. Comet's `native/spark-expr/src/jvm_udf/mod.rs`, JNI UDF bridge, and
 `CometUdfBridge.java` supply the task-scoped Arrow import/export and function-lifecycle
 pattern. Arroyo's planner `extract_json` separates a scalar path from the column but does
 not implement Flink SQL/JSON policies. Neither is a semantic substitute for Flink.
@@ -15,13 +15,13 @@ Calc; GenericRowData incorrectly avoided host primitive-unboxing failures. Paren
 rows encode rejection, so the native bridge filters them and their changelog tags before
 constructing a RecordBatch with nonnullable fields. JNI still runs once per batch.
 
-This experiment replaces Calc routing only. Native SQL/JSON kernels, literal-path
-admission and their tests remain for non-Calc encoders, including residual join
-expressions. Their implementation is documented below. No new native JSON grammar is
-added; JSON connector serialization is unaffected. Before deleting the remaining kernels,
-move those expression contexts to generated evaluation and verify their own ordering
-and exception contracts. The UTF-16-to-UTF-8 identity gate at operator boundaries also
-remains. See the [coverage page](../docs/operators/calc-filter.md#sqljson-evaluation)
+The broad-replacement prototype cost 2.09–3.02× the measured Rust paths, so native
+encoding remains the first choice. A failed attempt is discarded, including its partial
+expression pools and UDF descriptors, before a fresh encoder generates the complete Calc.
+No new native JSON grammar is added. Non-Calc contexts, including residual join predicates,
+retain their existing native/fused-expression admission. The UTF-16-to-UTF-8 identity gate
+at operator boundaries remains; JSON_QUERY now participates in that gate too. JSON
+connector serialization is unaffected. See the [coverage page](../docs/operators/calc-filter.md#sqljson-evaluation)
 and [measurements](../docs/benchmarks/scalar-functions.md).
 
 ## Retained native expression implementation

@@ -110,7 +110,9 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
         .itemIf(
             "jsonEvaluation",
             "JVM",
-            sourceProgram != null && RexExpression.containsSqlJson(sourceProgram));
+            sourceProgram != null
+                && RexExpression.containsSqlJson(sourceProgram)
+                && RexExpression.isRowCalc(kinds));
   }
 
   @Override

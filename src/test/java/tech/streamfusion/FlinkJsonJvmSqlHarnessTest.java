@@ -1,9 +1,18 @@
 package tech.streamfusion;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.metrics.Counter;
+import org.apache.flink.runtime.testutils.InMemoryReporter;
+import org.apache.flink.runtime.testutils.MiniClusterResource;
+import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.util.TestStreamEnvironment;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.TableEnvironment;
@@ -96,6 +105,33 @@ class FlinkJsonJvmSqlHarnessTest {
     org.junit.jupiter.api.Assertions.assertTrue(plan.contains("jsonEvaluation=[JVM]"), plan);
   }
 
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "JSON_VALUE(s, '$.a')",
+        "JSON_EXISTS(s, '$.a')",
+        "s IS JSON VALUE",
+        "JSON_QUOTE(s)",
+        "JSON_UNQUOTE(s)",
+        "JSON_STRING(s)",
+        "JSON_OBJECT('a' VALUE s)"
+      })
+  void verifiedFastPathsKeepTheirNativeEvaluator(String expression) throws Exception {
+    String sql = "SELECT " + expression + " FROM inputs";
+    String plan = tech.streamfusion.planner.NativePlanner.explain(dynamicPaths(), sql);
+    org.junit.jupiter.api.Assertions.assertTrue(plan.contains("NativeCalc"), plan);
+    org.junit.jupiter.api.Assertions.assertFalse(plan.contains("jsonEvaluation=[JVM]"), plan);
+    NativeParity.assertParity(FlinkJsonJvmSqlHarnessTest::dynamicPaths, sql);
+  }
+
+  @Test
+  void simpleJsonPredicateKeepsTheNativeFilter() throws Exception {
+    String sql = "SELECT id FROM inputs WHERE JSON_EXISTS(s, '$.a')";
+    String plan = tech.streamfusion.planner.NativePlanner.explain(dynamicPaths(), sql);
+    org.junit.jupiter.api.Assertions.assertTrue(plan.contains("NativeFilter"), plan);
+    NativeParity.assertParity(FlinkJsonJvmSqlHarnessTest::dynamicPaths, sql);
+  }
+
   @Test
   void complexInputRetainsTheScalarBridgeBoundary() throws Exception {
     NativeParity.assertFallbackReasonContains(
@@ -120,6 +156,50 @@ class FlinkJsonJvmSqlHarnessTest {
         FlinkJsonJvmSqlHarnessTest::dynamicPaths,
         "SELECT JSON_QUERY(s, '$.a'), COUNT(*) FROM inputs GROUP BY JSON_QUERY(s, '$.a')",
         "JSON string identity requires a final projection");
+  }
+
+  @Test
+  void mixedJsonCalcExecutesAcrossBatchesAndFiltersBeforeEvaluation() throws Exception {
+    var reporter = InMemoryReporter.createWithRetainedMetrics();
+    var cluster =
+        new MiniClusterResource(
+            new MiniClusterResourceConfiguration.Builder()
+                .setConfiguration(reporter.addToConfiguration(new Configuration()))
+                .setNumberTaskManagers(1)
+                .setNumberSlotsPerTaskManager(2)
+                .build());
+    cluster.before();
+    try {
+      var env = new TestStreamEnvironment(cluster.getMiniCluster(), 1);
+      var table = StreamTableEnvironment.create(env);
+      table.createTemporaryView(
+          "inputs",
+          env.fromSequence(0, 5002)
+              .map(id -> Row.of(id, id % 3 == 0 ? "invalid" : "{\"a\":[1,2,3],\"n\":" + id + "}"))
+              .returns(Types.ROW_NAMED(new String[] {"id", "s"}, Types.LONG, Types.STRING)));
+      String sql =
+          "SELECT id, JSON_QUERY(s, '$.a[0:2]' ERROR ON ERROR), "
+              + "JSON_VALUE(s, '$.n' ERROR ON ERROR) FROM inputs WHERE MOD(id, 3) <> 0";
+      var scan = tech.streamfusion.planner.NativePlanner.install(table);
+      assertTrue(table.explainSql(sql).contains("jsonEvaluation=[JVM]"));
+      var result = table.executeSql(sql);
+      try (var rows = result.collect()) {
+        for (long id = 0; id < 5003; id++) {
+          if (id % 3 != 0) assertEquals(Row.of(id, "[1,2]", Long.toString(id)), rows.next());
+        }
+        org.junit.jupiter.api.Assertions.assertFalse(rows.hasNext());
+      }
+      assertTrue(scan.fallbackReasons().isEmpty(), scan.explainSummary());
+      var groups =
+          reporter.findOperatorMetricGroups(
+              result.getJobClient().orElseThrow().getJobID(), "(?i)NativeCalcExecNode");
+      assertEquals(1, groups.size());
+      var metrics = reporter.getMetricsByGroup(groups.iterator().next());
+      assertEquals(5003, ((Counter) metrics.get("numRecordsIn")).getCount());
+      assertEquals(3335, ((Counter) metrics.get("numRecordsOut")).getCount());
+    } finally {
+      cluster.after();
+    }
   }
 
   private static TableEnvironment dynamicPaths() {

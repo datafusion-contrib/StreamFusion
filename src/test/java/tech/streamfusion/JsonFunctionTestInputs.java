@@ -87,8 +87,8 @@ final class JsonFunctionTestInputs {
         "{\"\u7528\u6237\":{\"\u59d3.\u540d\":\"ok\"},\"bad\":[}");
   }
 
-  static void assertFails(String document, String expression, String scenario) {
-    assertFails(document, expression, scenario, true);
+  static void assertFails(String document, String expression, String nativeMessage) {
+    assertFails(document, expression, nativeMessage, true);
   }
 
   static void assertFailsLikeFlink(String document, String expression) {
@@ -124,22 +124,30 @@ final class JsonFunctionTestInputs {
   }
 
   private static void assertFails(
-      String document, String expression, String scenario, boolean admitted) {
-    var comparison =
-        NativeFailureParity.run(
-            () -> TextTimeFunctionTestInputs.textRows(document),
-            "SELECT " + expression + " FROM inputs");
-    var host = comparison.host();
-    var actual = comparison.nativeRun();
-    org.junit.jupiter.api.Assertions.assertNotNull(host.failure(), scenario);
-    org.junit.jupiter.api.Assertions.assertNotNull(actual.failure(), comparison.toString());
-    assertEquals(host.rootCause().getClass(), actual.rootCause().getClass(), comparison.toString());
-    assertEquals(
-        host.rootCause().getMessage(), actual.rootCause().getMessage(), comparison.toString());
-    assertEquals(host.phase(), actual.phase(), comparison.toString());
-    assertEquals(
-        admitted ? NativeFailureParity.Route.NATIVE : NativeFailureParity.Route.FALLBACK,
-        actual.route(),
-        comparison.toString());
+      String document, String expression, String nativeMessage, boolean admitted) {
+    for (boolean nativeEnabled : new boolean[] {false, true}) {
+      TableEnvironment tables = TextTimeFunctionTestInputs.textRows(document);
+      PhysicalPlanScan scan = nativeEnabled ? NativePlanner.install(tables) : null;
+      Exception error =
+          assertThrows(
+              Exception.class,
+              () -> {
+                try (var rows =
+                    tables.executeSql("SELECT " + expression + " FROM inputs").collect()) {
+                  while (rows.hasNext()) {
+                    rows.next();
+                  }
+                }
+              });
+      if (nativeEnabled) {
+        StringBuilder causes = new StringBuilder();
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+          causes.append(cause).append('\n');
+        }
+        assertTrue(causes.toString().contains(nativeMessage), causes.toString());
+        assertEquals(
+            admitted, scan.substitutions() > 0, scan.fallbackReasons().toString());
+      }
+    }
   }
 }

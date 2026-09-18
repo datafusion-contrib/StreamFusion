@@ -63,8 +63,10 @@ The matrix expands the Cartesian product of all declared parameter dimensions an
 empty or duplicate variants. Five **new representative** JSON paths are declared:
 `$[-1]`, `$[-2147483648]`, `$[--1]`, `$[1 2]`, and `$[`. Each executes in both `lax` and
 `strict` mode with explicit default policies. These are not asserted to be the exact five
-paths from the unavailable audit. The two valid negative indexes must use native Calc;
-the malformed selectors must retain the definite-path fallback reason.
+paths from the unavailable audit. All ten expanded cases must stay in the native pipeline and match Flink. The two valid
+negative indexes retain the Rust evaluator; malformed selectors use the generated JVM Calc
+and Flink's default policies. Native pipeline classification does not imply that the JSON
+computation itself executes in Rust.
 
 Preflight rejects unresolved `$JSON_PATH`, `${...}` and `{{...}}` placeholders, missing
 declared tables/functions, and changed table settings before query planning. Temporal

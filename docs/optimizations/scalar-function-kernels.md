@@ -88,8 +88,8 @@ A successful safe Arrow Utf8 construction validates the BinaryArray once and reu
 
 Combines first-token JSON validation and unescaping in one scan, writes UTF-8 directly, and retains only a pending high surrogate instead of a whole intermediate UTF-16 vector. Flink's treatment of trailing text remains covered by SQL differential tests.
 
-Calc no longer selects this native kernel in the JVM prototype. JSON_UNQUOTE and all
-expressions in its Calc fuse into a Flink-generated evaluator; strings passed to another operator
+This kernel serves direct projections. JSON_UNQUOTE and its scalar consumers fuse into a Flink
+expression when intermediate UTF-16 identity is observable; strings passed to another operator
 fall back under the [Calc/filter restrictions](../operators/calc-filter.md#json_value).
 
 [Complete-job Flink/native results](../benchmarks/scalar-functions.md#json_unquote).

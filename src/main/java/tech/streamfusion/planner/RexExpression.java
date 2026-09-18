@@ -220,8 +220,8 @@ final class RexExpression {
    * operation the native engine does not admit, so the Calc falls back to the host.
    */
   static RexExpression encodeCalc(Calc calc) {
-    RexExpression encoder = new RexExpression();
-    return encoder.tryEncodeCalc(calc) ? encoder : null;
+    CalcEncoding encoded = tryEncodeCalc(calc);
+    return encoded.supported() ? encoded.encoder() : null;
   }
 
   static RexExpression encodeProjections(List<RexNode> projections, List<String> names) {
@@ -321,15 +321,35 @@ final class RexExpression {
    * null if it can — for surfacing fallback reasons (ticket 29).
    */
   static String reasonForCalc(Calc calc) {
-    RexExpression encoder = new RexExpression();
-    return encoder.tryEncodeCalc(calc) ? null : encoder.reasonOrDefault();
+    CalcEncoding encoded = tryEncodeCalc(calc);
+    return encoded.supported() ? null : encoded.encoder().reasonOrDefault();
   }
 
-  private boolean tryEncodeCalc(Calc calc) {
-    expressionClassLoader = org.apache.flink.table.planner.utils.ShortcutUtils.unwrapClassLoader(calc);
-    configure(org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(calc));
-    watermarkAvailable = true;
-    return emitCalc(calc);
+  private record CalcEncoding(RexExpression encoder, boolean supported) {}
+
+  private static CalcEncoding tryEncodeCalc(Calc calc) {
+    RexExpression encoder = forCalc(calc);
+    boolean supported = encoder.emitCalc(calc);
+    if (!supported && containsSqlJson(calc.getProgram())) {
+      // A failed native attempt may have populated pools and UDF bindings. Generate the complete
+      // Calc in a fresh encoder so short-circuiting and row evaluation order stay with Flink.
+      encoder = forCalc(calc);
+      supported = encoder.emitRowCalc(calc);
+    }
+    return new CalcEncoding(encoder, supported);
+  }
+
+  private static RexExpression forCalc(Calc calc) {
+    RexExpression encoder = new RexExpression();
+    encoder.expressionClassLoader =
+        org.apache.flink.table.planner.utils.ShortcutUtils.unwrapClassLoader(calc);
+    encoder.configure(org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(calc));
+    encoder.watermarkAvailable = true;
+    return encoder;
+  }
+
+  static boolean isRowCalc(int[] kinds) {
+    return kinds.length > 0 && kinds[0] == KIND_ROW_UDF;
   }
 
   private void configure(org.apache.flink.table.api.TableConfig tableConfig) {
@@ -347,7 +367,7 @@ final class RexExpression {
 
   private boolean emitCalc(Calc calc) {
     RexProgram program = calc.getProgram();
-    if (binaryUdfCallCount(program) > 1 || containsSqlJson(program)) return emitRowCalc(calc);
+    if (binaryUdfCallCount(program) > 1) return emitRowCalc(calc);
     projectionRoot = null;
     if (program.getCondition() != null) {
       RexNode condition =

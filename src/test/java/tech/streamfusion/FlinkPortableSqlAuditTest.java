@@ -183,8 +183,8 @@ class FlinkPortableSqlAuditTest {
               sql,
               "test_input",
               "",
-              JSON_PATHS.indexOf(path) < 2 ? NATIVE_PARITY : EXPLICIT_FALLBACK,
-              "literal definite member/index path",
+              NATIVE_PARITY,
+              "",
               List.of()));
     }
 

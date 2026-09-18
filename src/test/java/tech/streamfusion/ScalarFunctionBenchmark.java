@@ -63,8 +63,12 @@ class ScalarFunctionBenchmark {
           new Query("HASH_CODE_DECIMAL", "tt_decimal", "HASH_CODE(n)", "INT"),
           new Query("STRING_TO_INT", "integer_text", "CAST(s AS INT)", "INT"),
           new Query(
-              "TRY_STRING_TO_DECIMAL", "integer_text", "TRY_CAST(s AS DECIMAL(38,9))", "DECIMAL(38,9)"),
-          new Query("TRY_DECIMAL_NARROW", "tt_decimal", "TRY_CAST(n AS DECIMAL(20,2))", "DECIMAL(20,2)"),
+              "TRY_STRING_TO_DECIMAL",
+              "integer_text",
+              "TRY_CAST(s AS DECIMAL(38,9))",
+              "DECIMAL(38,9)"),
+          new Query(
+              "TRY_DECIMAL_NARROW", "tt_decimal", "TRY_CAST(n AS DECIMAL(20,2))", "DECIMAL(20,2)"),
           new Query("INT_TO_STRING", "integer", "CAST(n AS STRING)", "STRING"),
           new Query("RAND_LITERAL", "integer", "RAND(42)", "DOUBLE"),
           new Query("RAND_DYNAMIC", "integer", "RAND(n)", "DOUBLE"),
@@ -215,6 +219,12 @@ class ScalarFunctionBenchmark {
                       "JSON_EXISTS_DOT_MEMBER",
                       "tt_json_dot_member",
                       "JSON_EXISTS(s, '$.order-id.123.a\tb')",
+                      "BOOLEAN"),
+                  new Query("JSON_QUERY_SLICE", "tt_json_negative", "JSON_QUERY(s, '$.a[0:2]')"),
+                  new Query(
+                      "JSON_EXISTS_SLICE",
+                      "tt_json_negative",
+                      "JSON_EXISTS(s, '$.a[0:2]')",
                       "BOOLEAN"),
                   new Query(
                       "JSON_VALUE_WILDCARD",

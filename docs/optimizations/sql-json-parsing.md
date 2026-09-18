@@ -1,11 +1,10 @@
 # SQL/JSON parsing
 
-SQL/JSON Calcs now use a prototype JVM route through Flink's generated evaluator. The
-technique below remains implemented in the native expression registry for non-Calc
-contexts, including residual join expressions; it no longer describes Calc projections
-or filters. The earlier benchmark results measure the native route before this change.
-See [current coverage](../operators/calc-filter.md#sqljson-evaluation) and the
-[JVM comparison](../benchmarks/scalar-functions.md).
+The native techniques below remain the first choice for verified expressions. SQL/JSON
+Calcs that exceed native admission use Flink-generated evaluation through the batch JVM
+bridge. The [comparison](../benchmarks/scalar-functions.md#sqljson-jvm-bridge-prototype-2026-09-18)
+found a 2.09–3.02× elapsed-time cost for replacing the measured native fast paths, so they
+are retained. See [coverage and bridge limits](../operators/calc-filter.md#sqljson-evaluation).
 
 JSON_VALUE, non-throwing JSON_EXISTS policies and IS JSON use a shared native reader with two parsing paths. The streaming
 path borrows selected tokens and validates the first JSON document with Flink/Jackson rules.
@@ -22,7 +21,9 @@ input bytes. A successful tape must contain at most 1000 nodes, with no floating
 Unicode escapes and selected numbers use the streaming path. Those bounds preserve Jackson's
 resource limits, BigDecimal spelling and UTF-16 escape behavior. Invalid SIMD input also goes
 through the streaming parser, retaining Flink's first-document and trailing-content behavior.
-The native encoders retain their verified expression shapes outside Calc. JSON-derived
+These functions are admitted by default for their verified SQL shapes.
+Consumers of STRING JSON_VALUE results use a fused Flink expression to preserve intermediate
+UTF-16 identity; the native reader described here remains the direct-projection path. JSON-derived
 strings crossing operator boundaries fall back as described in [Calc/filter](../operators/calc-filter.md#json_value).
 A document rejected after tape construction is parsed again by the streaming path. The
 multi-member measurements use string members; they do not establish an improvement for
