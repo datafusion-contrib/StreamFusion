@@ -10,7 +10,9 @@ real-cluster upgrade checks and required CI/release matrix in
 The blocking CI matrix covers both Java lines, each native format/connector module, Paimon
 Parquet and ORC, and the optimized qualified artifacts with real-loader tests. The upstream matrix
 runs both lines, with Delta acceleration restricted to 2.2 and a separate 1.18 host-only Delta
-audit. Full 1.18 baselines and real-cluster upgrade validation are still being verified.
+audit. Each run records result totals and distinguishes native execution, expected fallback and
+cases without an execution contract. Passing this matrix does not establish real-cluster
+cross-line upgrade support or enable publication of the experimental line.
 
 ## Building and installing
 

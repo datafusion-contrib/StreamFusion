@@ -109,10 +109,12 @@ The 1.18 execution contract resource names methods verified in that release's un
 It retains scalar, aggregate, rank, distinct-window and lookup witnesses; it excludes the
 retracting window TVF method absent from that release and the unavailable Delta suite. Agent and
 report summarizer select the same resource. The upstream CI matrix includes both lines and its
-required aggregate check requires every leg to succeed. Full 1.18 baselines remain under
-verification in [#189](https://github.com/datafusion-contrib/StreamFusion/issues/189); adding the
-matrix does not announce production support. Java, module, image and qualified-artifact jobs
-also exercise both lines as blocking checks.
+required aggregate check requires every leg to succeed. Each leg archives its own result totals,
+execution-contract counts and diagnostics; the two lines have different upstream corpora and
+host-capability skips. Java, module, image and qualified-artifact jobs also exercise both lines as
+blocking checks. Production support additionally requires the real-cluster upgrade and publication
+work tracked in [#188](https://github.com/datafusion-contrib/StreamFusion/issues/188) and
+[#189](https://github.com/datafusion-contrib/StreamFusion/issues/189).
 
 Selected upstream SQL tests also have **per-invocation native execution contracts**, declared in
 `dev/flink-suite/agent/src/main/resources/native-execution.tsv`. The unchanged `CalcITCase.testNotIn`
