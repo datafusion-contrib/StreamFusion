@@ -105,6 +105,12 @@ identify its module and requested Flink line in its manifest; renaming or copyin
 the other line is rejected. Duplicate payloads and a missing core also fail this check.
 Delta has no admitted 1.18 payload and is rejected before cloning.
 
+Kafka 3.2 normally isolates the planner behind `flink-table-planner-loader`. Its 1.18 test
+invocation instead puts the same unshaded planner used by the Flink suites in the test JVM,
+beside the injected native planner. The runner excludes the isolated loader and orders stock
+Calcite after Flink's patched classes. This changes only the harness classpath; the pinned
+connector sources, SQL and result assertions remain unchanged.
+
 The 1.18 execution contract resource names methods verified in that release's unchanged source.
 It retains scalar, aggregate, rank, distinct-window and lookup witnesses; it excludes the
 retracting window TVF method absent from that release and the unavailable Delta suite. Agent and
@@ -313,12 +319,20 @@ omit it after source changes so the upstream tests execute the current implement
 
 The validated Flink 2.2.1 baseline is 8,619 tests: 8,570 passed, 48 skipped by Flink, zero unexpected
 failures or errors, and the one independently reproduced `CURRENT_DATE` xfail described above.
+The September 19, 2026 Flink 1.18.1 runtime baseline is 5,686 cases: 5,661 passed, 25 upstream
+skips and no failures or errors. Its 65 execution contracts passed, with 31 native and 34
+expected-fallback invocations; uncontracted cases remain unclassified. The full 1.18 state run
+has 1,120 passed and 16 upstream skips, with 18 native and 12 expected-fallback witnesses.
 The format baseline is 185 tests: 175 passed and 10 skipped by Flink. The Kafka SQL baseline is 86
 tests, all passed. The Parquet sink baseline is 8 tests, all passed, including the suite's explicit
 proof that Flink instantiated the native Parquet writer. The complete Paimon baseline is 265
 tests, all passed with native source sharing, including native append-write, primary-key-write,
 and snapshot-merge markers. The complete-plan hook also passed 816 targeted Flink join, Calc and
 JSON function cases.
+The Kafka 3.2 / Flink 1.18 baseline is 72 cases, all passed with no skips. That release contains
+the changelog, table and upsert classes; `DynamicKafkaTableITCase` belongs to the newer Kafka
+suite. Kafka invocations do not yet have individual native-route contracts, so their passing
+total is not a native-coverage percentage.
 The portable Delta SQL baseline is four tests, all passed: native write evidence covers 5,000
 unpartitioned rows and 1,000 partitioned rows, with one explicit `TIME(0)` fallback contract.
 The ORC Java-writer validation on September 14, 2026 passed all 46 unchanged Flink ORC SQL tests.

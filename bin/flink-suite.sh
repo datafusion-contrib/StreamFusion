@@ -423,13 +423,19 @@ if [[ "${SUITE_MODE}" == "paimon" ]]; then
     fi
     TEST_MODULES=":paimon-flink-common"
   fi
-  # Paimon declares the planner's test-jar before the planner itself, which places stock
-  # calcite-core ahead of Flink's patched Calcite classes in Surefire's resolved classpath. Drop the
-  # resolved calcite-core and append it instead, so the planner's copies win as in Flink's own build.
+fi
+if [[ "${SUITE_MODE}" == "kafka" && "${FLINK_LINE}" == "1.18" ]]; then
+  # Kafka 3.2 otherwise isolates the planner in planner-loader while the agent and native
+  # planner live in the test JVM. Use the same unshaded planner as the other upstream suites.
+  STREAMFUSION_CLASSPATH="${UNSHADED_PLANNER_JAR},${STREAMFUSION_CLASSPATH}"
+fi
+if [[ "${SUITE_MODE}" == "paimon" || ( "${SUITE_MODE}" == "kafka" && "${FLINK_LINE}" == "1.18" ) ]]; then
+  # These connector fixtures resolve stock Calcite before the planner. Put it after the
+  # planner's patched classes, preserving the ordering used by Flink's own test build.
   CALCITE_CORE_JAR="$(find "${SUITE_MAVEN_REPO}/org/apache/calcite/calcite-core" -name 'calcite-core-*.jar' \
     ! -name '*-sources.jar' ! -name '*-tests.jar' | head -n 1)"
   if [[ -z "${CALCITE_CORE_JAR}" ]]; then
-    echo "The isolated suite repository holds no calcite-core jar for the Paimon suite classpath." >&2
+    echo "The isolated suite repository holds no calcite-core jar for the connector suite classpath." >&2
     exit 2
   fi
   STREAMFUSION_CLASSPATH="${STREAMFUSION_CLASSPATH},${CALCITE_CORE_JAR}"
@@ -478,6 +484,11 @@ if [[ "${SUITE_MODE}" == "kafka" ]]; then
     -Dflink.version="${FLINK_VERSION}"
     -Dflink.surefire.baseArgLine="${FLINK_MODULE_CONFIG}"
   )
+  if [[ "${FLINK_LINE}" == "1.18" ]]; then
+    MAVEN_TEST_ARGS+=(
+      -Dmaven.test.dependency.excludes=org.apache.flink:flink-table-planner-loader,org.apache.calcite:calcite-core
+    )
+  fi
 elif [[ "${SUITE_MODE}" == "delta" ]]; then
   MAVEN_TEST_ARGS+=(
     -f "${DELTA_TEST_POM}"
