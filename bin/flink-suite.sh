@@ -41,6 +41,9 @@ readonly FLINK_ROOT="${SUITE_ROOT}/flink-${FLINK_VERSION}"
 readonly KAFKA_CONNECTOR_ROOT="${SUITE_ROOT}/flink-connector-kafka-${KAFKA_CONNECTOR_VERSION}"
 readonly PAIMON_ROOT="${SUITE_ROOT}/paimon-${PAIMON_VERSION}"
 readonly PAIMON_MODULE="paimon-flink/paimon-flink-common"
+readonly PAIMON_LINE_MODULE="paimon-flink/paimon-flink-${FLINK_LINE}"
+readonly PAIMON_118_SHARED_TESTS="${REPO_ROOT}/dev/flink-suite/paimon-flink118-shared-tests.txt"
+readonly PAIMON_118_LINE_CLASSES="org.apache.paimon.flink.AppendTableITCase,org.apache.paimon.flink.ContinuousFileStoreITCase,org.apache.paimon.flink.RemoveOrphanFilesActionITCase,org.apache.paimon.flink.procedure.ProcedurePositionalArgumentsITCase,org.apache.paimon.flink.iceberg.Flink118IcebergITCase"
 readonly DELTA_ROOT="${SUITE_ROOT}/delta-${DELTA_VERSION}"
 readonly DELTA_TEST_POM="${REPO_ROOT}/dev/flink-suite/delta/pom.xml"
 readonly DELTA_TEST_OUTPUT="${SUITE_ROOT}/delta-tests/target"
@@ -158,9 +161,13 @@ case "${SUITE_MODE}" in
     REPORT_ROOT="${PAIMON_ROOT}/${PAIMON_MODULE}/target/surefire-reports"
     if [[ -z "${FLINK_SUITE_TEST:-}" ]]; then
       paimon_selector="${PAIMON_SQL_TESTS}"
-      for isolated_test in "${PAIMON_ISOLATED_TESTS[@]}"; do
-        paimon_selector+=",!${isolated_test}"
-      done
+      if [[ "${FLINK_LINE}" == "1.18" ]]; then
+        paimon_selector="$(paste -sd, "${PAIMON_118_SHARED_TESTS}")"
+      else
+        for isolated_test in "${PAIMON_ISOLATED_TESTS[@]}"; do
+          paimon_selector+=",!${isolated_test}"
+        done
+      fi
       TEST_SELECTOR_ARGS=("-Dtest=${paimon_selector}")
     fi
     ;;
@@ -284,6 +291,11 @@ if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" == "true" ]]; then
     echo "Cannot reuse the Paimon-suite build; run bin/flink-suite.sh paimon once without FLINK_SUITE_REUSE_BUILD." >&2
     exit 2
   fi
+  if [[ "${SUITE_MODE}" == "paimon" && "${FLINK_LINE}" == "1.18" ]] \
+      && [[ ! -f "${PAIMON_ROOT}/${PAIMON_LINE_MODULE}/target/test-classes/org/apache/paimon/flink/procedure/ProcedurePositionalArgumentsITCase.class" ]]; then
+    echo "Cannot reuse the Paimon 1.18 suite before its version-specific tests have been compiled." >&2
+    exit 2
+  fi
   echo "Reusing the existing Flink suite and StreamFusion build artifacts..."
 else
   echo "Building the test-JVM planner injection agent..."
@@ -381,6 +393,12 @@ else
     mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${PAIMON_ROOT}/pom.xml" \
       -Dmaven.repo.local="${SUITE_MAVEN_REPO}" "${PAIMON_BUILD_ARGS[@]}" \
       -pl "${PAIMON_MODULE}" -am -DskipTests install || exit $?
+    if [[ "${FLINK_LINE}" == "1.18" ]]; then
+      # Compile version-specific tests without replacing the released production JAR.
+      mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${PAIMON_ROOT}/pom.xml" \
+        -Dmaven.repo.local="${SUITE_MAVEN_REPO}" "${PAIMON_BUILD_ARGS[@]}" \
+        -pl "${PAIMON_LINE_MODULE}" -DskipTests test-compile || exit $?
+    fi
   fi
 fi
 python3 "${REPO_ROOT}/bin/check-flink-suite-classpath.py" "${CLASSPATH_FILE}" "${FLINK_LINE}" || exit $?
@@ -509,7 +527,38 @@ elif [[ "${SUITE_MODE}" == "delta" ]]; then
 elif [[ "${SUITE_MODE}" == "paimon" ]]; then
   mvn "${MAVEN_TEST_ARGS[@]}"
   paimon_status=$?
-  if [[ -z "${FLINK_SUITE_TEST:-}" ]]; then
+  if [[ -z "${FLINK_SUITE_TEST:-}" && "${FLINK_LINE}" == "1.18" ]]; then
+    line_pom="${DIAGNOSTIC_ROOT}/paimon-line-pom.xml"
+    line_reports="${PAIMON_ROOT}/${PAIMON_LINE_MODULE}/target/surefire-reports"
+    python3 "${REPO_ROOT}/dev/flink-suite/prepare_paimon_runtime_pom.py" \
+      "${PAIMON_ROOT}/${PAIMON_LINE_MODULE}/pom.xml" "${PAIMON_RUNTIME_JAR}" \
+      "${line_pom}" || exit $?
+    mkdir -p "${line_reports}"
+    find "${line_reports}" -type f -delete
+    echo "Running Paimon's complete unchanged Flink 1.18 module in separate JVMs..."
+    line_args=("${MAVEN_TEST_ARGS[@]}")
+    for index in "${!line_args[@]}"; do
+      case "${line_args[index]}" in
+        -f) line_args[index+1]="${line_pom}" ;;
+        -pl) line_args[index+1]=:streamfusion-upstream-paimon-line-tests ;;
+        -Dtest=*) line_args[index]="-Dtest=${PAIMON_118_LINE_CLASSES}" ;;
+        -Dsurefire.failIfNoSpecifiedTests=*) line_args[index]=-Dsurefire.failIfNoSpecifiedTests=true ;;
+      esac
+    done
+    mvn "${line_args[@]}"
+    line_status=$?
+    line_summary=("${line_reports}" --contracts "${CONTRACT_FILE}" --process-exit "${line_status}"
+      --audit-output "${DIAGNOSTIC_ROOT}/paimon-line-execution-audit.json")
+    while IFS= read -r line_test; do
+      line_summary+=(--require-test-class "${line_test}")
+    done < <(printf '%s\n' "${PAIMON_118_LINE_CLASSES}" | tr ',' '\n')
+    python3 "${REPO_ROOT}/dev/flink-suite/summarize.py" "${line_summary[@]}"
+    line_status=$?
+    if [[ ${line_status} -ne 0 ]]; then paimon_status=${line_status}; fi
+    # Two upstream classes share names with common fixtures; retain both sets of XML.
+    mkdir -p "${REPORT_ROOT}/flink-1.18"
+    cp -R "${line_reports}/." "${REPORT_ROOT}/flink-1.18/" || exit $?
+  elif [[ -z "${FLINK_SUITE_TEST:-}" ]]; then
     # Cancelled upstream compactors can kill their shared MiniCluster during cleanup. Run each
     # unchanged standalone compaction test in its own fork to contain that lifecycle race.
     mkdir -p "${REPORT_ROOT}/shared-cluster"
@@ -574,7 +623,8 @@ if [[ "${SUITE_MODE}" == "paimon" && ${TEST_STATUS} -eq 0 ]]; then
   done
 fi
 
-SUMMARY_ARGS=("${REPORT_ROOT}" --contracts "${CONTRACT_FILE}" --native-reports "${NATIVE_REPORT_ROOT}" --process-exit "${TEST_STATUS}")
+SUMMARY_ARGS=("${REPORT_ROOT}" --contracts "${CONTRACT_FILE}" --native-reports "${NATIVE_REPORT_ROOT}" --process-exit "${TEST_STATUS}"
+  --audit-output "${DIAGNOSTIC_ROOT}/execution-audit.json")
 if [[ "${SUITE_MODE}" == "runtime" || "${SUITE_MODE}" == "diagnostic" ]]; then
   SUMMARY_ARGS+=(--maven-result "${DIAGNOSTIC_ROOT}/maven-result.tsv")
   if [[ "${FLINK_LINE}" == "2.2" ]]; then
@@ -597,6 +647,11 @@ if [[ "${SUITE_MODE}" == "state" && -z "${FLINK_SUITE_TEST:-}" ]]; then
       SUMMARY_ARGS+=(--require-contract-prefix "${state_test}#")
     fi
   done
+fi
+if [[ "${SUITE_MODE}" == "paimon" && "${FLINK_LINE}" == "1.18" && -z "${FLINK_SUITE_TEST:-}" ]]; then
+  while IFS= read -r shared_test; do
+    SUMMARY_ARGS+=(--require-test-method "${shared_test}")
+  done < "${PAIMON_118_SHARED_TESTS}"
 fi
 python3 "${REPO_ROOT}/dev/flink-suite/summarize.py" "${SUMMARY_ARGS[@]}"
 exit $?

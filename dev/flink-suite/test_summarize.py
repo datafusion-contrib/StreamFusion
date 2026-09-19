@@ -82,6 +82,23 @@ class NativeExecutionSummaryTest(unittest.TestCase):
                 with patch.object(sys, "argv", arguments), redirect_stdout(io.StringIO()):
                     self.assertEqual(expected, summarize.main())
 
+    def test_required_method_includes_parameters_but_not_skips_or_similar_names(self):
+        full_class = "org.apache.paimon.flink.ReadWriteTableITCase"
+        arguments = ["summarize.py", str(self.root), "--require-test-method", full_class + "#testRows"]
+        for name, skipped, expected in (
+            ("testRows", False, 0), ("testRows(boolean)[1]", False, 0),
+            ("testRows[HEAP]", False, 0), ("testRows(boolean)[1]", True, 1),
+            ("testRowsOther", False, 1),
+        ):
+            with self.subTest(name=name, skipped=skipped):
+                (self.root / "TEST-method.xml").write_text(
+                    f'<testsuite tests="1" skipped="{int(skipped)}">'
+                    f'<testcase classname="{full_class}" name="{name}">'
+                    + ('<skipped/>' if skipped else '') + '</testcase></testsuite>'
+                )
+                with patch.object(sys, "argv", arguments), redirect_stdout(io.StringIO()):
+                    self.assertEqual(expected, summarize.main())
+
     def test_zero_rows_and_wrong_operator_fail(self):
         for counts in (
             "",

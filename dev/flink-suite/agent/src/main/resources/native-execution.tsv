@@ -4,6 +4,11 @@
 org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testNotIn	*	NativeFilterOperator|NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testLongProjectionList	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testIfFunction	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testCastNumericToBooleanInCondition	*	NativeFilterOperator|NativeCalcOperator
+org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testIn	*	NativeFilterOperator|NativeCalcOperator
+org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testSearch	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testLikeWithConditionContainsDoubleQuotationMark	*	NativeFilterOperator|NativeCalcOperator
+org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testNonMergeableRandCall	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg	*	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithGroupByAndRetract	*	NativeColumnarGroupAggregateOperator+NativeColumnarTopNOperator
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithVariableTopSize	*	!Top-N: nullable variable rank bounds require Flink's row-access semantics

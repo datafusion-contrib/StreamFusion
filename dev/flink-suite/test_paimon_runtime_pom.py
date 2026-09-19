@@ -41,6 +41,14 @@ class PaimonRuntimePomTest(unittest.TestCase):
             self.assertEqual(str(module.resolve()), config.findtext("m:workingDirectory", namespaces=ns))
             with self.assertRaisesRegex(ValueError, "remain unchanged"):
                 prepare(source, runtime, source)
+            source.write_text(original.replace("<artifactId>common</artifactId>",
+                                               "<artifactId>paimon-flink-1.18</artifactId>"))
+            prepare(source, runtime, output)
+            line_pom = ET.parse(output).getroot()
+            self.assertEqual("streamfusion-upstream-paimon-line-tests",
+                             line_pom.findtext("m:artifactId", namespaces=ns))
+            self.assertEqual("paimon-flink-1.18", line_pom.findtext(
+                "m:dependencies/m:dependency/m:artifactId", namespaces=ns))
             wrong_line = runtime.with_name("paimon-flink-2.2-2.0.0.jar")
             wrong_line.touch()
             with self.assertRaisesRegex(ValueError, "canonical released Flink 1.18"):

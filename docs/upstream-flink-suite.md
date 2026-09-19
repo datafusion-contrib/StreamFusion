@@ -38,7 +38,7 @@ columnar ORC writer marker (the writer now uses the host's Java ORC vectors). Th
 `KafkaTableITCase`, and `UpsertKafkaTableITCase` from the pinned Kafka connector release. The Kafka
 suite starts broker containers and therefore requires a working Docker daemon. Its changelog
 tests replay Debezium, Canal and Maxwell events through SQL; the format suite also replays Ogg
-events. These test change-event handling, not capture from a live database. `paimon` runs the
+events. These test change-event handling, not capture from a live database. On Flink 2.2, `paimon` runs the
 Paimon Flink connector's `AppendOnlyTableITCase`, `AppendTableITCase`, `BatchFileStoreITCase`,
 `ComputedColumnAndWatermarkTableITCase`, `ContinuousFileStoreITCase`, `ReadWriteTableITCase`,
 `PrimaryKeyFileStoreTableITCase`, `CompositePkAndMultiPartitionedTableITCase`,
@@ -93,7 +93,7 @@ runtime integration suite serially in one fork, then summarizes Surefire failure
 keeps concurrently created MiniClusters from exhausting a developer machine or CI runner.
 
 The experimental 1.18 runner selects Flink `release-1.18.1`, Kafka connector `v3.2.0-rc1`, and
-Paimon's `flink1` profile. Paimon 2.0's shared sources compile against its released 1.20.1 baseline; its compiled SQL tests then run with the 1.18.1 dependencies and matching StreamFusion payload. Kafka 3.2 uses the installed Maven because its release has no Maven wrapper. Kafka's final candidate tag (`d12f73c8`) matches the
+Paimon's `flink1` profile. The 1.18 Paimon suite runs its complete version-specific module plus the explicitly listed shared compatibility regressions described below. Shared fixtures compile against their declared 1.20.1 API; both test sets execute with released 1.18.1 dependencies and the matching StreamFusion payload. Kafka 3.2 uses the installed Maven because its release has no Maven wrapper. Kafka's final candidate tag (`d12f73c8`) matches the
 [official 3.2.0 source archive](https://archive.apache.org/dist/flink/flink-connector-kafka-3.2.0/);
 that release has no `v3.2.0` tag. Run `FLINK_VERSION=1.18.1 bin/flink-suite.sh config`
 to inspect the selection, then replace `config` with the desired suite. Each line has separate
@@ -143,6 +143,9 @@ The 1.18 contracts also cover legacy upsert sinks after joins and Top-N: native 
 RocksDB variants must perform join/rank work, while stock RocksDB or changelog-state variants
 must report their explicit backend fallback. The host still validates and consumes the original
 proven sink keys.
+Calc contracts also cover numeric-to-boolean predicates, IN and SEARCH predicates, quoted LIKE
+patterns, and reuse of one RAND value across expressions. Each requires nonempty native Calc or
+filter work while retaining the unchanged upstream result assertions.
 Other upstream cases still check
 result parity without a per-test acceleration contract; planner installation alone does not prove
 that any particular query ran natively.
@@ -162,6 +165,28 @@ an upstream test cannot silently shrink this coverage. Focused selections requir
 for their selected methods.
 The full `state` run requires at least one executed, non-skipped test in every selected stateful class and every contracted method in those classes. Native witnesses remain explicitly bounded to the methods in the contract resource; classes without contracts still retain their unchanged result assertions,
 and `all` includes that native RocksDB run as well as the ordinary runtime suite.
+
+The summary also writes `.flink-suite/<line>/diagnostics/<suite>/execution-audit.json`, uploaded with
+those CI diagnostics. Schema version 1 retains every parsed Surefire case (including duplicates,
+skips and failures), its report-relative location, and whether that method is contracted. The
+summary reports the complete executed denominator, the contracted subset, and the executed
+cases outside that scope. For example, 32 passing Calc cases with eight execution witnesses mean
+eight contracted executions and 24 unclassified executions, not 32 accelerated tests.
+
+Validated evidence retains the fixture selector, per-operator native input counts, expected
+contract and recorded fallback reasons. Routes distinguish native work, mixed native work plus
+recorded fallback, full fallback, and unclassified evidence. Counts are explicitly evidence-record
+counts: parameterized XML cases and witness files share method-level totals but do not have a
+common invocation identifier, so the artifact does not invent one-to-one matches. A satisfied
+individual record cannot override stale/duplicate evidence or a failed overall summary.
+
+Outside the declared contracts, passing cases remain unclassified. The artifact does not infer
+batch-only, deliberately unmodified, scan-only or host-failure routes from class names or JUnit
+outcomes. Those classifications and broader per-invocation collection remain
+[#168](https://github.com/datafusion-contrib/StreamFusion/issues/168). Agent unit-test output is
+outside the suite's report/evidence directories and contributes no SQL cases. The summary writes
+failed artifacts for missing or malformed reports/evidence and retains process failures; an
+earlier build or installation failure can stop the runner before the summary is reached.
 
 These checks prove native data-path execution, not a speedup. Release benchmarks measure performance
 separately. The ordinary Java job also tests the evidence collector and summarizer, including
@@ -224,18 +249,19 @@ The same `FLINK_SUITE_TEST` and `FLINK_SUITE_REUSE_BUILD=true` controls apply to
 `parquet`, `orc`, `kafka`, `paimon`, and `delta`. Reuse mode requires that the selected mode has been built once normally.
 
 The focused Paimon coordinator run includes its four paged writer-restoration cases, three
-commit-coordinator cases, and a deterministic primary-key write to verify native file creation:
+commit-coordinator cases, a deterministic primary-key write to verify native file creation,
+and continuous-read cases to exercise native snapshot merging:
 
 ```bash
-FLINK_SUITE_TEST='org.apache.paimon.flink.CoordinatorCommitITCase,org.apache.paimon.flink.BatchFileStoreITCase#testWriteRestoreCoordinator*,org.apache.paimon.flink.ReadWriteTableITCase#testStreamingReadWriteWithPartitionedRecordsWithPk' \
+FLINK_SUITE_TEST='org.apache.paimon.flink.CoordinatorCommitITCase,org.apache.paimon.flink.BatchFileStoreITCase#testWriteRestoreCoordinator*,org.apache.paimon.flink.ReadWriteTableITCase#testStreamingReadWriteWithPartitionedRecordsWithPk,org.apache.paimon.flink.ContinuousFileStoreITCase' \
   bin/flink-suite.sh paimon
 ```
 
 The focused streaming dynamic-partition run uses Paimon's unchanged skewed-input SQL test,
-alongside a primary-key write to satisfy the suite's two native-write checks:
+alongside a primary-key write and continuous-read cases to satisfy all three native write/read checks:
 
 ```bash
-FLINK_SUITE_TEST='org.apache.paimon.flink.AppendTableITCase#testPartitionDynamicStreaming,org.apache.paimon.flink.ReadWriteTableITCase#testStreamingReadWriteWithPartitionedRecordsWithPk' \
+FLINK_SUITE_TEST='org.apache.paimon.flink.AppendTableITCase#testPartitionDynamicStreaming,org.apache.paimon.flink.ReadWriteTableITCase#testStreamingReadWriteWithPartitionedRecordsWithPk,org.apache.paimon.flink.ContinuousFileStoreITCase' \
   bin/flink-suite.sh paimon
 ```
 
@@ -429,9 +455,25 @@ backend for configurations without changelog state, preserving the fixture's che
 and incremental-checkpoint setting. Changelog-enabled fixtures retain the stock backend.
 Its own contract manifest requires native work for admitted replaced cases as well.
 
-The 1.18 Paimon suite compiles the unchanged common tests against their declared 1.20 API,
-then runs them on Flink 1.18.1 with the released `paimon-flink-1.18:2.0.0` production JAR
-in place of the common module's production classes. A generated test POM under diagnostics
+The 1.18 Paimon suite runs every integration-test class in Paimon's
+[`paimon-flink-1.18` module](https://github.com/apache/paimon/tree/release-2.0.0-rc10/paimon-flink/paimon-flink-1.18/src/test/java):
+append compaction, managed memory, orphan removal, positional SQL procedures and Iceberg
+interoperability. This is the module selected by
+[Paimon's own 1.x CI](https://github.com/apache/paimon/blob/release-2.0.0-rc10/.github/workflows/utitcase-flink-1.x-others.yml).
+It also runs the eleven shared methods listed in `dev/flink-suite/paimon-flink118-shared-tests.txt`
+(22 parameterized invocations) for catalog construction, native writes and snapshot reads,
+branch isolation, schema history, savepoint recovery and bucket rescaling. Every listed method
+and every version-specific class must execute a non-skipped case; missing coverage fails the job.
+The version-specific module runs in separate JVMs and a separate report directory so its two
+class names shared with common fixtures cannot shadow each other's tests or overwrite results.
+All failures in either test set block the suite, as do missing native bundle, level-zero writer
+or snapshot-reader witnesses. These suite-wide witnesses do not classify every case as native.
+A fresh complete build and combined run has 75 cases: 71 pass and four are upstream skips
+for named-argument variants that the 1.18 host does not support. The version-specific module
+accounts for 53 cases and the shared regressions for 22.
+
+Shared fixtures compile against their declared 1.20 API; both sets run on Flink 1.18.1 with the
+released `paimon-flink-1.18:2.0.0` production JAR in place of locally compiled production classes. A generated test POM under diagnostics
 puts that released Maven dependency first and retains the original dependencies, compiled test
 directory, resources and working directory. The common main output is an empty directory, so
 its 1.20 helpers cannot shadow the released runtime; the published JAR is loaded directly.
@@ -448,23 +490,22 @@ sink-parallelism variants remain in the blocking suite. Flink 2.2 executes the o
 The recovery fixture also maps its three moved checkpoint-setting field references to the
 released 1.18 option and enum locations. Both recovery and bucket-rescaling fixtures map their
 restore-path key to `execution.savepoint.path`.
-The agent also applies those restore settings to the generated stream graph only while this
-a recovery or bucket-rescaling fixture is executing: the 1.18 executor does not propagate restore options from mutable
-table configuration into its execution environment. Without both adaptations, the source starts
+The agent also applies those restore settings to the generated stream graph only while a
+recovery or bucket-rescaling fixture is executing: the 1.18 executor does not propagate restore
+options from mutable table configuration into its execution environment. Without both adaptations, the source starts
 again without restoring its checkpoint. Retention values and the ignore-unclaimed-state behavior
 are preserved; setup SQL, savepoint operations and recovery assertions are retained. Neither fixture adapter is applied
 on 2.2.
 
-The 1.18 Paimon matrix is still experimental and blocking. Its complete local baseline has
-262 invocations: 238 pass, 22 fail, and 2 are upstream skips. A combined focused rerun passes
-22 cases covering catalog construction, checkpoint restore, bucket rescaling, statement hints,
-historical schemas and native writer/reader evidence; it does not establish a complete-suite pass. The remaining
-named-procedure and overwrite-layout failures require resolution before this line is supported.
-A control run with StreamFusion's agent and all its JARs removed reproduces
-`BatchFileStoreITCase.testIgnoreDelete`, `testIgnoreUpdateBeforeWithRowKindField`, and
-`testNoOverwriteUpgradeWhenFilesOverlapped`. The first two fail in Flink's named-procedure
-operand validation; the third retains the upstream file-layout assertion failure. The full
-baseline also failed `RescaleBucketITCase.testRescaleCatalogTable` on its randomized named-CALL
-path. `ContinuousFileStoreITCase.testScanFromOldSchema` timed out in the full baseline and passes
-focused reruns, so its full-suite reliability remains unverified. These cases remain selected
-and failures have not been converted to skips or expected failures.
+The broader cross-version probe remains a failed diagnostic, not a passing 1.18 suite.
+Running the full selected 1.20 common corpus on 1.18 initially produced 262 invocations:
+238 passed, 22 failed and two were upstream skips. The fixture adapters and statement-hint
+fix resolve the catalog, recovery and branch failures. Stock-only controls, with every
+StreamFusion JAR and the agent removed, reproduce the remaining named-compaction, randomized
+named-rescale and overwrite-file-layout failures. Paimon documents that
+[Flink 1.18 procedures accept positional arguments only](https://github.com/apache/paimon/blob/release-2.0.0-rc10/docs/docs/flink/procedures.md);
+its own 1.18 procedure fixtures cover that released API. The common 1.20 corpus is not the
+1.18 acceptance suite, and none of its failed SQL or assertions has been rewritten to pass.
+The historical-schema timeout in that probe passes focused reruns and remains selected in the
+shared compatibility regressions. The two release lines therefore have different Paimon test
+corpora; a green 1.18 run does not claim that the full 1.20 common corpus passes on 1.18.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run unchanged common tests with the released, line-specific Paimon runtime."""
+"""Run unchanged upstream tests with the released, line-specific Paimon runtime."""
 
 from pathlib import Path
 import sys
@@ -36,6 +36,9 @@ def prepare(source, runtime, output):
     classes.mkdir(parents=True)
     tree = ET.parse(source)
     root = tree.getroot()
+    if root.findtext(f"{{{NS}}}artifactId") == artifact:
+        # A test-only POM must not depend on its own production coordinates.
+        child(root, "artifactId").text = "streamfusion-upstream-paimon-line-tests"
     dependency = ET.Element(f"{{{NS}}}dependency")
     for name, value in {"groupId": "org.apache.paimon", "artifactId": artifact,
                         "version": version, "scope": "test"}.items():

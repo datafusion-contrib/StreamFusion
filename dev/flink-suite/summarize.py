@@ -6,9 +6,12 @@ from __future__ import annotations
 import argparse
 import base64
 from collections import Counter
+import json
+import os
 import pathlib
 import re
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 
 
@@ -45,6 +48,7 @@ def check_execution(
     directory: pathlib.Path | None,
     executed: Counter,
     contracts: dict[str, dict[str, str]],
+    observations: list[dict] | None = None,
 ) -> tuple[int, int, list[str]]:
     observed = Counter()
     problems = []
@@ -71,9 +75,11 @@ def check_execution(
                 counts[operator] = int(count)
             observed[test] += 1
             contract = contracts[test][variant]
+            matched = False
             if contract.startswith("!"):
                 if not counts and contract[1:] in reasons:
                     fallback += 1
+                    matched = True
                 else:
                     problems.append(
                         f"{test} [{variant}]: expected full fallback with reason {contract[1:]}"
@@ -83,10 +89,28 @@ def check_execution(
                 for route in contract.split("|")
             ):
                 proved += 1
+                matched = True
             else:
                 problems.append(
                     f"{test}: missing native execution; observed {counts} ({path.name})"
                 )
+            if observations is not None:
+                native_work = any(count > 0 for count in counts.values())
+                route = (
+                    "mixed" if native_work and reasons else
+                    "native" if native_work else
+                    "full_fallback" if reasons else "unclassified"
+                )
+                observations.append({
+                    "test": test,
+                    "variant": variant,
+                    "evidence_file": path.name,
+                    "native_input_rows": counts,
+                    "fallback_reasons": reasons,
+                    "observed_route": route,
+                    "expected_contract": contract,
+                    "contract_satisfied": matched,
+                })
         except (OSError, ValueError) as exc:
             problems.append(f"{path}: invalid native execution evidence: {exc}")
     for test in sorted(executed.keys() | observed.keys()):
@@ -115,6 +139,38 @@ def process_result(status: int, evidence: pathlib.Path | None, expected_only: bo
     return status or 1
 
 
+def write_audit(path: pathlib.Path | None, audit: dict) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as output:
+            temporary = pathlib.Path(output.name)
+            json.dump(audit, output, indent=2, sort_keys=True)
+            output.write("\n")
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def empty_audit() -> dict:
+    return {
+        "schema_version": 1,
+        "status": "failed",
+        "scope": {
+            "contract_source": "dev/flink-suite/agent/src/main/resources/native-execution.tsv",
+            "evidence_granularity": "test_method_and_contract_variant",
+            "outside_contract_scope": "unclassified",
+        },
+        "summary": {},
+        "testcases": [],
+        "execution_evidence": [],
+        "validation_problems": [],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("reports", type=pathlib.Path)
@@ -125,13 +181,19 @@ def main() -> int:
     parser.add_argument("--require-contract-prefix", action="append", default=[])
     parser.add_argument("--require-test", action="append", default=[])
     parser.add_argument("--require-test-class", action="append", default=[])
+    parser.add_argument("--require-test-method", action="append", default=[])
     parser.add_argument("--process-exit", type=int, default=0)
     parser.add_argument("--maven-result", type=pathlib.Path)
+    parser.add_argument("--audit-output", type=pathlib.Path)
     args = parser.parse_args()
 
+    audit = empty_audit()
     files = sorted(args.reports.rglob("TEST-*.xml"))
     if not files:
         print("No Surefire XML reports found.")
+        audit["validation_problems"].append("No Surefire XML reports found.")
+        audit["summary"] = {"reports_found": 0, "tests": 0, "executed": 0}
+        write_audit(args.audit_output, audit)
         return args.process_exit or 2
 
     tests = failures = errors = skipped = 0
@@ -141,6 +203,7 @@ def main() -> int:
     contracts = execution_contracts(args.contracts)
     executed = Counter()
     executed_tests = Counter()
+    executed_methods = Counter()
     executed_classes = Counter()
 
     for report in files:
@@ -162,7 +225,7 @@ def main() -> int:
         failures += int(suite.attrib.get("failures", 0))
         errors += int(suite.attrib.get("errors", 0))
         skipped += int(suite.attrib.get("skipped", 0))
-        for case in suite.findall("testcase"):
+        for case_index, case in enumerate(suite.findall("testcase")):
             suite_name = suite.attrib.get("name", "unknown")
             class_name = case.attrib.get("classname", suite_name)
             # Surefire 3.0.0-M5 emits simple class names for JUnit 4 parameterized tests.
@@ -173,8 +236,21 @@ def main() -> int:
                 + "#"
                 + case.attrib.get("name", "unknown")
             )
+            outcome = next(
+                (kind for kind in ("skipped", "failure", "error") if case.find(kind) is not None),
+                "passed",
+            )
+            audit["testcases"].append({
+                "test": case_key,
+                "report": str(report.relative_to(args.reports)),
+                "case_index": case_index,
+                "outcome": outcome,
+                "contracted": case_key in contracts,
+                "expected_failure": outcome == "failure" and case_key in args.xfail,
+            })
             if case.find("skipped") is None:
                 executed_tests[case_key] += 1
+                executed_methods[case_key.split("(", 1)[0].split("[", 1)[0]] += 1
                 executed_classes[class_name] += 1
                 if case_key in contracts:
                     executed[case_key] += 1
@@ -201,7 +277,7 @@ def main() -> int:
     unexpected_failures = failures - expected_failures
     unexpected_errors = errors - expected_errors
     proved, fallback, execution_problems = check_execution(
-        args.native_reports, executed, contracts
+        args.native_reports, executed, contracts, audit["execution_evidence"]
     )
     required = set(contracts) if args.require_all_contracts else set()
     for prefix in args.require_contract_prefix:
@@ -218,6 +294,12 @@ def main() -> int:
         f"{test}: required test did not execute"
         for test in args.require_test
         if not executed_tests[test]
+    )
+
+    execution_problems.extend(
+        f"{test}: required test method did not execute"
+        for test in args.require_test_method
+        if not executed_methods[test]
     )
 
     execution_problems.extend(
@@ -277,7 +359,38 @@ def main() -> int:
     status = process_result(
         args.process_exit, args.maven_result, bool(expected) and not summary_failed
     )
-    return status or int(summary_failed)
+    result = status or int(summary_failed)
+    valid_routes = Counter(
+        record["observed_route"] for record in audit["execution_evidence"]
+        if record["contract_satisfied"]
+    )
+    audit["status"] = "failed" if result else "passed"
+    audit["summary"] = {
+        "reports_found": len(files),
+        "reports_parsed": len(files) - len(malformed),
+        "tests": tests,
+        "executed": sum(executed_tests.values()),
+        "passed": tests - failures - errors - skipped,
+        "failures": failures,
+        "errors": errors,
+        "skipped": skipped,
+        "expected_failures": len(expected),
+        "contracted_executed": sum(executed.values()),
+        "unclassified_outside_contract_scope": sum(executed_tests.values()) - sum(executed.values()),
+        "evidence_records": len(audit["execution_evidence"]),
+        "satisfied_evidence_records_by_route": dict(sorted(valid_routes.items())),
+        "process_exit": args.process_exit,
+        "result_exit": result,
+    }
+    audit["validation_problems"] = [
+        *execution_problems,
+        *(f"{report.relative_to(args.reports)}: {detail}" for report, detail in malformed),
+        *(f"{name}#{test}: {kind}: {detail}" for name, test, kind, detail in problems),
+    ]
+    if status:
+        audit["validation_problems"].append(f"Maven/process validation failed with exit {status}")
+    write_audit(args.audit_output, audit)
+    return result
 
 
 if __name__ == "__main__":
