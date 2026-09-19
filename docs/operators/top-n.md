@@ -71,8 +71,7 @@ The rank column can be projected or omitted, and mini-batch materializations rem
 
 The proof recognizes an entire computed key as invariant; it does not infer that the key's inputs
 are constant. Several different values of `k` can share `PARTITION BY MOD(k, 3)`, so a bound of
-`k` requires first-bound state for append-only or general retracting input and still falls back
-for update-fast input. Repeated UDF calls do not establish invariance, even when the function
+`k` requires first-bound state. Update-fast input additionally requires disabled state TTL. Repeated UDF calls do not establish invariance, even when the function
 declares itself deterministic. The whitelist checks the built-in COALESCE identity,
 rather than accepting a function by name.
 
@@ -85,8 +84,8 @@ Released Flink stores the first bound per partition and ignores later changes wh
 Arrow row and reuse its existing rank-buffer state, TTL and memory/RocksDB checkpoint formats.
 The proof retains Calc expressions through native substitution and input pruning.
 
-Append-only and general retracting input also admit a non-null integral bound that changes
-independently of the partition keys. Native state retains the first bound per partition, ignores later proposals,
+Append-only, general retracting and update-fast input also admit a non-null integral bound that changes
+independently of the partition keys. Update-fast input requires disabled state TTL (the default). Native state retains the first bound per partition, ignores later proposals,
 and increments `topn.invalidTopSize` for every mismatch, including rows that fail rank admission.
 Retractions count mismatches too, and deleting the last row leaves the bound intact. Even a
 first retraction with no matching row establishes the bound. The emitted payload keeps each row's
@@ -104,10 +103,14 @@ Memory checkpoints, RocksDB checkpoints, canonical savepoints and rescaling pres
 bound and its independent timestamp. Mismatch counts return through the existing batch JNI call;
 there is no JNI call per row. Partition-invariant bounds keep their existing net-diff optimization
 and row-only checkpoint layout. Nullable bounds remain on Flink because its primitive row access
-does not express ordinary SQL null propagation here. Independently changing update-fast bounds
-remain in [#104](https://github.com/datafusion-contrib/StreamFusion/issues/104).
+does not express ordinary SQL null propagation here. Changing update-fast bounds with positive
+TTL remain on Flink: its cached rows can acquire a fresh write timestamp when checkpointed,
+independently of the bound's creation clock. The native store currently timestamps rows at ingestion.
+A controlled-clock oracle exposed different retained rows after checkpoint and expiry; this
+combination is not admitted until those clocks match. The remaining work is tracked in
+[#104](https://github.com/datafusion-contrib/StreamFusion/issues/104).
 
-With mini-batching, independently changing retracting bounds require input whose per-record order
+With mini-batching, independently changing retracting or update-fast bounds require input whose per-record order
 is preserved: changelog sources through projections, filters, exchanges and batch markers qualify.
 Upstream aggregates or other stateful operators fall back because their bundle emission order can
 change which row establishes the first bound. Without mini-batching, grouped retractions are
@@ -135,7 +138,12 @@ SQL tests compare exact changelog order, NULL payloads, ties, integral widths an
 boundaries. Updating cases cover replacements, deletions, empty groups and mini-batch
 materializations. Checkpoint tests continue the selected windows across memory/RocksDB
 transitions, including a partially filled bundle flushed before the checkpoint barrier.
-Update-fast coverage also verifies rescaling, restored TTL timestamps, equal-sort updates at
+Changing update-fast bounds are compared against Flink 2.2.1's released operator with TTL disabled,
+with and without projected rank and UPDATE_BEFORE. The oracle continues across memory/RocksDB
+checkpoints, canonical backend changes and scaling 1→2→1, including bound-only partitions.
+SQL checks cover negative, zero, large and changing bounds, NULL payloads and equal-sort ties;
+retained metrics require native rows and nonzero mismatch counts.
+Partition-invariant update-fast coverage also verifies rescaling, restored TTL timestamps, equal-sort updates at
 N=1, and retained overflow ties. A retained-metrics SQL test requires nonempty native Top-N
 input and output. Mini-batch aggregate comparisons use an explicit tie-breaker because each
 engine may emit a bundle's groups in a different map order; tied arrivals are checked with
@@ -206,6 +214,17 @@ Release/mimalloc medians after two warmups and five alternating trials were
 pipeline, including both transposes and the row blackhole sink; it does not isolate the ranker
 from the aggregate. Add `-Dvariabletopn.updateFast=true` to reproduce it.
 
+The independently changing update-fast variant uses the same grouped workload but computes
+`MOD(COALESCE(v, 0), 3) + 1` from the row ID. At 2M input rows, 4,096 partitions and 16 IDs per
+partition, Flink took **3.749s** and native **0.779s** (**4.814x**). This 2026-09-19 M1 Max/JDK 17
+run used release + mimalloc, parallelism one, disabled TTL, two warmups and five interleaved
+measured trials, reporting medians. Both row/Arrow transposes and the grouped aggregate remain in
+the measured pipeline. Add `-Dvariabletopn.updateFast=true -Dvariabletopn.changingBound=true
+-Dvariabletopn.rows=2000000` to the existing benchmark command. This is one workload, not an
+isolated rank-kernel speedup. The [raw trials](../benchmarks/update-fast-changing-bound-topn-2026-09-19.csv)
+retain every measured duration; ordered SQL and released-operator tests establish correctness
+separately from the benchmark's blackhole sink.
+
 ## Processing-time first-N
 
 An insert-only `ROW_NUMBER() OVER (PARTITION BY key ORDER BY pt ASC)` filtered to
@@ -242,8 +261,8 @@ Reproduce with `SF_BENCHMARK=true mvn -Pbench -pl :streamfusion-runtime -am test
   exchanges and batch markers remain native. Preserving the upstream bundle order is the
   remaining composition work in [#102](https://github.com/datafusion-contrib/StreamFusion/issues/102).
 
-- Nullable variable bounds, independently changing bounds on update-fast input, and changing
-  retracting bounds after upstream stateful mini-batch operators that can reorder proposals.
+- Nullable variable bounds, changing update-fast bounds with positive state TTL, and changing
+  bounds after upstream stateful mini-batch operators that can reorder proposals.
   These remain in [#104](https://github.com/datafusion-contrib/StreamFusion/issues/104).
 - A row type the native converter can't carry.
 - Time-ordered ranks beyond the existing rank-1 dedup forms and the processing-time first-N

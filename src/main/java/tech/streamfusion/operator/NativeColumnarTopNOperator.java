@@ -145,9 +145,12 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
     this.sortNullsFirst = sortNullsFirst;
     this.offset = offset;
     this.limit = limit;
-    if (firstBound && (rankEndColumn < 0 || offset != 0 || rowKeyColumns != null)) {
+    if (firstBound && (rankEndColumn < 0 || offset != 0)) {
       throw new IllegalArgumentException(
-          "first-bound state requires append-only or retracting variable Top-N");
+          "first-bound state requires variable Top-N without OFFSET");
+    }
+    if (firstBound && rowKeyColumns != null && stateTtlMillis > 0) {
+      throw new IllegalArgumentException("changing update-fast bounds require disabled state TTL");
     }
     this.rankEndColumn = rankEndColumn;
     this.firstBound = firstBound;

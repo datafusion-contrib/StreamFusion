@@ -45,9 +45,6 @@ class VariableTopNBenchmark {
 
   @Test
   void variableTopN() throws Exception {
-    if (CHANGING_BOUND && UPDATE_FAST) {
-      throw new IllegalArgumentException("Changing bounds are unsupported for update-fast input");
-    }
     if (UPDATE_FAST && !environment().explainSql(SQL).contains("UpdateFastStrategy")) {
       throw new IllegalStateException("Expected Flink's update-fast strategy");
     }

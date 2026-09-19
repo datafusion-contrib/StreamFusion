@@ -291,3 +291,97 @@ fn deleting_the_last_row_does_not_reset_the_first_bound_or_its_clock() {
         5000
     );
 }
+
+fn update_fast_ranker() -> UpdatableTopNRanker {
+    let mut ranker = UpdatableTopNRanker::new(
+        vec![0],
+        vec![-1],
+        vec![0, 1],
+        vec![-1, -1],
+        vec![SortColumn {
+            index: 1,
+            ascending: true,
+            nulls_first: true,
+        }],
+        i64::MAX,
+        true,
+        true,
+    )
+    .with_rank_end_column(2);
+    ranker.enable_first_bound(true);
+    ranker
+}
+
+#[test]
+fn update_fast_bound_only_partition_survives_canonical_restore() {
+    let mut before = update_fast_ranker();
+    assert_eq!(
+        before
+            .push(&batch(&[(1, 20.0, -1)]), 5000)
+            .unwrap()
+            .num_rows(),
+        0
+    );
+    assert!(before.groups.iter().next().unwrap().1.is_empty());
+    let snapshots: Vec<_> = before.snapshot_partitions(128).into_values().collect();
+    let mut after = update_fast_ranker();
+    for snapshot in snapshots {
+        after.load_snapshot(&snapshot, 9000);
+    }
+    assert_eq!(after.groups.iter().count(), 1);
+    assert_eq!(
+        after
+            .push(&batch(&[(1, 10.0, 3)]), 10000)
+            .unwrap()
+            .num_rows(),
+        0
+    );
+    assert_eq!(after.invalid_top_size, 1);
+    assert_eq!(
+        after
+            .groups
+            .iter()
+            .next()
+            .unwrap()
+            .1
+            .first_rank_end
+            .unwrap()
+            .value,
+        -1
+    );
+}
+
+#[test]
+fn update_fast_bound_only_state_obeys_memory_budget() {
+    let mut ranker = update_fast_ranker().with_memory_budget(1).unwrap();
+    assert!(ranker.push(&batch(&[(1, 20.0, -1)]), 0).is_err());
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn update_fast_codec_preserves_bound_only_state_and_old_raw_rows() {
+    use crate::state::RocksStateCodec;
+    for bound in [-1, 2] {
+        let mut ranker = update_fast_ranker();
+        ranker.push(&batch(&[(1, 20.0, bound)]), 5000).unwrap();
+        let codec = UpdatableTopNStateCodec::new(ranker.converters.as_ref().unwrap());
+        for (_, state) in ranker.groups.iter() {
+            let mut bytes = Vec::new();
+            codec.raw_write(state, &mut bytes);
+            assert_eq!(codec.value_bytes(state), bytes.len());
+            let restored = codec.from_raw(&bytes);
+            assert_eq!(restored.len(), state.len());
+            assert_eq!(restored.first_rank_end.unwrap().value, bound);
+            assert_eq!(restored.first_rank_end.unwrap().written_at, 5000);
+            for (before, after) in state.iter().zip(restored.iter()) {
+                assert_eq!(before.payload, after.payload);
+                assert!(before.row_key == after.row_key);
+            }
+            // The prefix is exactly the pre-bound codec: no trailer, no new row layout.
+            bytes.truncate(bytes.len() - 24);
+            let legacy = codec.from_raw(&bytes);
+            assert!(legacy.first_rank_end.is_none());
+            assert_eq!(legacy.len(), state.len());
+        }
+    }
+}
