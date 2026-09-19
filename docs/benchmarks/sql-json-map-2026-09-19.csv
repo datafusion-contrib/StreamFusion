@@ -1,0 +1,31 @@
+function,input,output_type,payload_bytes,json_fields,unicode,null_every,rows,engine,trial,seconds
+BASELINE_tt_json_map,tt_json_map,"MAP<STRING NOT NULL, STRING>",264,0,false,7,2000000,flink,0,1.326055
+BASELINE_tt_json_map,tt_json_map,"MAP<STRING NOT NULL, STRING>",264,0,false,7,2000000,native,0,2.398234
+BASELINE_tt_json_map,tt_json_map,"MAP<STRING NOT NULL, STRING>",264,0,false,7,2000000,native,1,2.370823
+BASELINE_tt_json_map,tt_json_map,"MAP<STRING NOT NULL, STRING>",264,0,false,7,2000000,flink,1,1.324978
+BASELINE_tt_json_map,tt_json_map,"MAP<STRING NOT NULL, STRING>",264,0,false,7,2000000,flink,2,1.303962
+BASELINE_tt_json_map,tt_json_map,"MAP<STRING NOT NULL, STRING>",264,0,false,7,2000000,native,2,2.357196
+BASELINE_tt_json_map,tt_json_map,"MAP<STRING NOT NULL, STRING>",264,0,false,7,2000000,native,3,2.378952
+BASELINE_tt_json_map,tt_json_map,"MAP<STRING NOT NULL, STRING>",264,0,false,7,2000000,flink,3,1.318076
+BASELINE_tt_json_map,tt_json_map,"MAP<STRING NOT NULL, STRING>",264,0,false,7,2000000,flink,4,1.303520
+BASELINE_tt_json_map,tt_json_map,"MAP<STRING NOT NULL, STRING>",264,0,false,7,2000000,native,4,2.407260
+JSON_STRING_MAP,tt_json_map,"STRING",264,0,false,7,2000000,flink,0,2.748544
+JSON_STRING_MAP,tt_json_map,"STRING",264,0,false,7,2000000,native,0,4.213936
+JSON_STRING_MAP,tt_json_map,"STRING",264,0,false,7,2000000,native,1,4.173463
+JSON_STRING_MAP,tt_json_map,"STRING",264,0,false,7,2000000,flink,1,2.733266
+JSON_STRING_MAP,tt_json_map,"STRING",264,0,false,7,2000000,flink,2,2.726742
+JSON_STRING_MAP,tt_json_map,"STRING",264,0,false,7,2000000,native,2,4.192609
+JSON_STRING_MAP,tt_json_map,"STRING",264,0,false,7,2000000,native,3,4.179333
+JSON_STRING_MAP,tt_json_map,"STRING",264,0,false,7,2000000,flink,3,2.713187
+JSON_STRING_MAP,tt_json_map,"STRING",264,0,false,7,2000000,flink,4,2.715054
+JSON_STRING_MAP,tt_json_map,"STRING",264,0,false,7,2000000,native,4,4.141088
+JSON_QUERY_MAP_RESULT,tt_json_map,"ROW<items MAP<STRING NOT NULL, STRING>, json_result STRING>",264,0,false,7,2000000,flink,0,2.602456
+JSON_QUERY_MAP_RESULT,tt_json_map,"ROW<items MAP<STRING NOT NULL, STRING>, json_result STRING>",264,0,false,7,2000000,native,0,5.611931
+JSON_QUERY_MAP_RESULT,tt_json_map,"ROW<items MAP<STRING NOT NULL, STRING>, json_result STRING>",264,0,false,7,2000000,native,1,5.587792
+JSON_QUERY_MAP_RESULT,tt_json_map,"ROW<items MAP<STRING NOT NULL, STRING>, json_result STRING>",264,0,false,7,2000000,flink,1,2.641495
+JSON_QUERY_MAP_RESULT,tt_json_map,"ROW<items MAP<STRING NOT NULL, STRING>, json_result STRING>",264,0,false,7,2000000,flink,2,2.601597
+JSON_QUERY_MAP_RESULT,tt_json_map,"ROW<items MAP<STRING NOT NULL, STRING>, json_result STRING>",264,0,false,7,2000000,native,2,5.598744
+JSON_QUERY_MAP_RESULT,tt_json_map,"ROW<items MAP<STRING NOT NULL, STRING>, json_result STRING>",264,0,false,7,2000000,native,3,5.594735
+JSON_QUERY_MAP_RESULT,tt_json_map,"ROW<items MAP<STRING NOT NULL, STRING>, json_result STRING>",264,0,false,7,2000000,flink,3,2.611287
+JSON_QUERY_MAP_RESULT,tt_json_map,"ROW<items MAP<STRING NOT NULL, STRING>, json_result STRING>",264,0,false,7,2000000,flink,4,2.624480
+JSON_QUERY_MAP_RESULT,tt_json_map,"ROW<items MAP<STRING NOT NULL, STRING>, json_result STRING>",264,0,false,7,2000000,native,4,5.611542

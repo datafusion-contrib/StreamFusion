@@ -247,9 +247,12 @@ as a wildcard. Document validation and the shared Jackson buffer contract stay u
 No JNI or Arrow ownership change is required. Member-name unions and JSON_QUERY need
 separate result-shape contracts and remain outside this admission.
 
-The whole-Calc JVM bridge also carries verified nested ARRAY/ROW boundaries. It follows Comet's
+The whole-Calc JVM bridge also carries verified nested ARRAY/ROW/MAP/MULTISET boundaries. It follows Comet's
 import/evaluate/export lifetime: the imported argument batch owns nested views until generated
 Flink evaluation and synchronous output writing finish; output vectors own the exported result.
 No nested view escapes into the returned native batch, and JNI remains one call per batch. MAP
-and MULTISET boundaries are still outside this admission. This extends host-exact coverage rather
+keys and MULTISET elements must be declared non-null because Arrow maps require non-null keys.
+The planner rejects nullable keys recursively instead of inferring safety from observed values.
+The existing Flink map reader supplies borrowed MapData, and its writer copies nested output
+into owned vectors within the same import/evaluate/export scope. This extends host-exact coverage rather
 than replacing the measured native JSON fast paths.

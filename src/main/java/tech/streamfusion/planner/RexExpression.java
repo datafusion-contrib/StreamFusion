@@ -459,6 +459,13 @@ final class RexExpression {
     boolean nested =
         switch (type.getSqlTypeName()) {
           case ARRAY -> rowCalcTypeCode(type.getComponentType()) >= 0;
+          case MAP ->
+              !type.getKeyType().isNullable()
+                  && rowCalcTypeCode(type.getKeyType()) >= 0
+                  && rowCalcTypeCode(type.getValueType()) >= 0;
+          case MULTISET ->
+              !type.getComponentType().isNullable()
+                  && rowCalcTypeCode(type.getComponentType()) >= 0;
           case ROW ->
               type.getFieldList().stream().allMatch(field -> rowCalcTypeCode(field.getType()) >= 0);
           default -> false;
