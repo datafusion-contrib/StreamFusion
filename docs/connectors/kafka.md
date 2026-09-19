@@ -13,6 +13,34 @@ The `streamfusion-kafka` connector extension and the matching `streamfusion-*` f
 must both be installed. A missing extension is a planner fallback, never a linkage failure. See
 [Deployment](../deployment.md).
 
+## Flink release lines
+
+Each Flink line selects the Kafka connector release published for it, together with the Kafka
+client that connector was built against.
+
+| | Default build | `flink-1.18` build |
+| --- | --- | --- |
+| Flink | 2.2.1 | 1.18.1 |
+| Kafka connector | `flink-connector-kafka:5.0.0-2.2` | `flink-connector-kafka:3.2.0-1.18` |
+| Kafka client | 4.2.0 | 3.4.0 |
+
+Pinning the client matters because a direct dependency is needed for source compilation, and
+naming another version silently overrides the connector's transitive client and changes producer
+semantics.
+
+`3.2.0-1.18` is built against Flink **1.18.0** while the StreamFusion 1.18 build targets
+**1.18.1**, and it is the final Kafka connector release published for the 1.18 line. Later
+connector releases target 1.19 and newer, so Kafka fixes do not reach this line. That combination
+is admitted deliberately rather than by default: it is exercised on every change by the
+`streamfusion-kafka` module suite under `-Pflink-1.18`, and by Flink's own unchanged
+`DynamicKafkaTableITCase`, `KafkaChangelogTableITCase`, `KafkaTableITCase` and
+`UpsertKafkaTableITCase` running against real brokers in the upstream `kafka` suite on the 1.18
+line. Both prove native execution rather than only passing.
+
+Because Flink owns every broker interaction, a Kafka defect on this line is fixed by the
+connector, not by StreamFusion. Deployments that need a newer Kafka connector need a newer Flink
+line.
+
 ## Source: Flink consumption, native decode
 
 Flink continues to own topic enumeration, split assignment, offsets, checkpoints, authentication,
