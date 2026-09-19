@@ -16,6 +16,8 @@
     <properties>
         <native.cargo.packages>--workspace</native.cargo.packages>
         <sf.orc.test.groups>streamfusion-orc</sf.orc.test.groups>
+        <skipTests>false</skipTests>
+        <sf.runtime.tests.skip>${skipTests}</sf.runtime.tests.skip>
     </properties>
 
     <!-- Keep the repository layout stable while exposing a conventional runtime Maven module. -->
@@ -106,6 +108,9 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <skipTests>${sf.runtime.tests.skip}</skipTests>
+                </configuration>
                 <executions>
                     <execution>
                         <id>default-test</id>

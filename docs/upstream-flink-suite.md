@@ -229,6 +229,15 @@ additions are included automatically; new independent test jobs must be added to
 aggregate's `needs` list. These two check names are part of the merge contract and must stay aligned
 with the GitHub ruleset. The existing PR and other branch-protection rules remain in place.
 
+The Java job owns the complete runtime suite, including its separate ORC classpath. Delta and
+Paimon jobs compile the runtime and its shared test fixtures but pass `-Dsf.runtime.tests.skip=true`
+to avoid repeating that suite in each lake connector job. Each lake job still runs its complete
+connector suite; **All CI tests** requires both the Java job and every lake job. Ordinary `mvn test`
+continues to run the runtime tests, and the standard `-DskipTests` still skips all test execution.
+Updating a pull request cancels its superseded upstream run so the current revision can start;
+pushes to `main` retain their running upstream checks. Merge requirements always apply to the
+pull request's current revision.
+
 Before committing operator changes, run the relevant unchanged upstream integration classes
 alongside the local SQL parity and recovery tests. Record the class selection and actual result
 in the commit. A selected run is not the full upstream suite, and pending CI is not a passing result.

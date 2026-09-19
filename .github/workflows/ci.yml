@@ -132,7 +132,7 @@ jobs:
           SF_PAIMON_FILE_FORMAT: ${{ matrix.format || 'parquet' }}
         run: >
           mvn -B -ntp -P${{ matrix.profile }}
-          -pl :${{ matrix.module }} -am test
+          -pl :${{ matrix.module }} -am test -Dsf.runtime.tests.skip=true
 
   image-integration:
     name: Flink image integration (optimized native build)
