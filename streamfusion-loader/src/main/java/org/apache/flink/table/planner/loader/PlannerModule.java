@@ -84,9 +84,7 @@ public class PlannerModule {
                   "org.apache.hadoop"))
           .toArray(String[]::new);
 
-  private static final String[] COMPONENT_CLASSPATH = {
-    "org.apache.flink", "tech.streamfusion"
-  };
+  private static final String[] COMPONENT_CLASSPATH = {"org.apache.flink", "tech.streamfusion"};
 
   private static final Map<String, String> KNOWN_MODULE_ASSOCIATIONS = new HashMap<>();
 
@@ -165,6 +163,20 @@ public class PlannerModule {
     return PlannerComponentsHolder.INSTANCE;
   }
 
+  /** Validates an installed image before its entrypoint starts any Flink daemon. */
+  public static void main(String[] args) throws IOException {
+    verifyFlinkVersion();
+    String line = FlinkPayloadIdentity.loaderLine();
+    URL core = PlannerModule.class.getClassLoader().getResource(STREAMFUSION_PLANNER_JAR);
+    if (core == null) {
+      throw new TableException(
+          "Could not find planner resource '" + STREAMFUSION_PLANNER_JAR + "'.");
+    }
+    FlinkPayloadIdentity.verify(core, FlinkPayloadIdentity.attributes(core), line);
+    extensionJars(line);
+    System.out.println("StreamFusion payloads verified for Flink " + line);
+  }
+
   private static void verifyFlinkVersion() throws IOException {
     String line = FlinkPayloadIdentity.loaderLine();
     Set<String> supportedVersions =
@@ -178,8 +190,9 @@ public class PlannerModule {
     if (version == null || !supportedVersions.contains(version)) {
       throw new TableException(
           String.format(
-              "StreamFusion's planner loader supports exactly Flink %s, but found %s."
+              "StreamFusion loader targets Flink %s (supported versions %s), but found %s."
                   + " Refusing to cross an unverified planner ABI boundary.",
+              line,
               supportedVersions,
               version == null ? "an unversioned Flink API" : "Flink " + version));
     }
@@ -246,8 +259,7 @@ public class PlannerModule {
       return;
     }
     try (Stream<Path> jars = Files.list(directory)) {
-      jars
-          .filter(Files::isRegularFile)
+      jars.filter(Files::isRegularFile)
           .filter(path -> path.getFileName().toString().endsWith(".jar"))
           .map(path -> path.toAbsolutePath().normalize())
           .forEach(installed::add);

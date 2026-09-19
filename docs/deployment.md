@@ -10,13 +10,29 @@ which installing them into `lib` on one shared image already ensures.
 
 Builds record the target Flink line and module identity in every payload's manifest. The loader
 checks its embedded core and installed StreamFusion JARs before creating the planner classloader,
-including renamed extensions. A different line or a missing marker fails startup with an explicit
+including renamed extensions. A different line or a missing marker fails loader initialization with an explicit
 compatibility error; rebuild or upgrade the loader, core and extensions together. The artifact
 coordinates for 2.2 remain unchanged. The `flink-1.18` development profile produces separate
 `streamfusion-*-flink1.18` coordinates and admits only Flink 1.18.1; release support remains gated
 by the outstanding validation in [#182](https://github.com/datafusion-contrib/StreamFusion/issues/182).
 See [Flink line compatibility](flink-compatibility.md) for build commands, dependency selections and
 known host differences. Builds and deployments require Java 17.
+
+Images built by `bin/build-flink-image.sh` perform the same checks before starting a JobManager,
+TaskManager, standalone application or history server. The entrypoint checks the host ABI, the
+loader's embedded core, and installed payload identities before handing control to Flink's
+original entrypoint. An incompatible image exits with a message naming the conflicting lines;
+it does not wait for a SQL query. The normal Flink configuration and command handling remain
+owned by the original entrypoint. Bare-metal installations and custom images retain the checks
+at loader initialization.
+
+The image suite injects conflicting identities into packaged loader, core and renamed extension
+JARs on both supported build lines, and verifies nonzero exit before the JobManager starts.
+These are startup-admission checks, not cross-version state recovery tests. Cross-line savepoint
+upgrade and downgrade validation remain pending in
+[#188](https://github.com/datafusion-contrib/StreamFusion/issues/188); no upgrade direction is
+announced as supported yet. Testcontainers selects the container runtime from its normal
+configuration, including a configured Podman endpoint, without a hard-coded socket path.
 
 Release artifacts are available from Maven Central and already contain the optimized native
 libraries. Fetch the loader and the separate runtime-visible core payload directly into a Flink
