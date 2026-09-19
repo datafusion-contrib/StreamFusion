@@ -246,3 +246,10 @@ the streaming reader and SIMD tape; it neither enumerates matches nor reinterpre
 as a wildcard. Document validation and the shared Jackson buffer contract stay unchanged.
 No JNI or Arrow ownership change is required. Member-name unions and JSON_QUERY need
 separate result-shape contracts and remain outside this admission.
+
+The whole-Calc JVM bridge also carries verified nested ARRAY/ROW boundaries. It follows Comet's
+import/evaluate/export lifetime: the imported argument batch owns nested views until generated
+Flink evaluation and synchronous output writing finish; output vectors own the exported result.
+No nested view escapes into the returned native batch, and JNI remains one call per batch. MAP
+and MULTISET boundaries are still outside this admission. This extends host-exact coverage rather
+than replacing the measured native JSON fast paths.

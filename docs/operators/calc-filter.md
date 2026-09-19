@@ -20,7 +20,7 @@ fallback.
 
 - **Unsupported function/operator** outside the admitted set normally declines the whole Calc.
   A [SQL/JSON Calc](#sqljson-evaluation) can instead use Flink generation for its complete program,
-  subject to the host code generator and scalar bridge boundary.
+  subject to the host code generator and the verified batch bridge types.
 
 ## COALESCE
 
@@ -817,10 +817,14 @@ Jackson buffer history. There is one JSON JVM callback per Arrow batch per Calc;
 iteration happens inside that callback. Rejected rows and changelog tags share a filter mask
 before Arrow validates nonnullable result fields.
 
-All referenced input and projected output columns must fit the scalar bridge: character,
-binary, boolean, numeric/decimal, date/time, interval, or supported timestamp types.
-ARRAY/MAP/ROW boundary columns still fall back. Constructing containers internally is
-allowed when the resulting boundary columns are scalars. Unsupported host code generation
+Referenced inputs and projected outputs can carry character, binary, boolean, numeric/decimal,
+date/time, interval, supported timestamp types, and recursively nested ARRAY/ROW values with
+those leaves. Nested arguments use Flink internal views over the imported Arrow batch; generated
+results are copied into owned Arrow output vectors before that batch closes. The callback still
+crosses JNI once per batch, including multi-column results and filtering.
+MAP/MULTISET boundary values, including maps nested inside an array or row, remain explicit
+fallback. Constructing containers internally is allowed when the resulting boundary types are
+admitted. Unsupported host code generation
 and UDF signatures retain explicit fallback. Flink 2.2.1 rejects dynamic JSON_EXISTS paths;
 that host failure is preserved. No configuration opt-in is required.
 
@@ -828,7 +832,9 @@ The JSON string identity gate below still applies, including to JSON_QUERY. Non-
 expression contexts, such as residual join predicates, retain their existing narrower
 native/fused-expression admission. JSON connector decoding is unaffected. This is general
 coverage, not a JSON speed optimization: the [release comparison](../benchmarks/scalar-functions.md#sqljson-jvm-bridge-prototype-2026-09-18)
-rejected replacing the measured native fast paths wholesale. The following function sections
+rejected replacing the measured native fast paths wholesale. The [nested-boundary comparison](../benchmarks/scalar-functions.md#nested-sqljson-batch-boundaries-2026-09-19)
+also measured slower row-fed execution (0.85× array serialization and 0.54× a nested result).
+The following function sections
 describe those retained fast paths and call out when the generated Calc extends them.
 
 ### JSON_QUERY
@@ -1187,7 +1193,7 @@ Admission first probes the shaded Jackson runtime once per class loader: version
 the default thread-local recycler pool, and successful buffer acquisition, cross-factory
 reuse and release are required. Missing methods/classes, a different version or pool,
 or probe failure decline the native parser for JSON_VALUE, JSON_EXISTS and IS JSON; Calc
-can use Flink generation when the host runtime and scalar boundary support it.
+can use Flink generation when the host runtime and batch boundary types support it.
 JobManagers and TaskManagers must use the same verified shaded Jackson runtime.
 They currently admit JDK 17, 21, 24 and 25, selecting the corresponding Unicode version for
 Jackson's token-termination rules; other JDKs use Flink generation in Calc. The profile is selected on the

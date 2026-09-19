@@ -1,0 +1,31 @@
+function,input,output_type,payload_bytes,json_fields,unicode,null_every,rows,engine,trial,seconds
+BASELINE_tt_json_array,tt_json_array,"ARRAY<STRING>",264,0,false,7,2000000,flink,0,1.232887
+BASELINE_tt_json_array,tt_json_array,"ARRAY<STRING>",264,0,false,7,2000000,native,0,2.007256
+BASELINE_tt_json_array,tt_json_array,"ARRAY<STRING>",264,0,false,7,2000000,native,1,1.993738
+BASELINE_tt_json_array,tt_json_array,"ARRAY<STRING>",264,0,false,7,2000000,flink,1,1.244039
+BASELINE_tt_json_array,tt_json_array,"ARRAY<STRING>",264,0,false,7,2000000,flink,2,1.231007
+BASELINE_tt_json_array,tt_json_array,"ARRAY<STRING>",264,0,false,7,2000000,native,2,1.968439
+BASELINE_tt_json_array,tt_json_array,"ARRAY<STRING>",264,0,false,7,2000000,native,3,1.958049
+BASELINE_tt_json_array,tt_json_array,"ARRAY<STRING>",264,0,false,7,2000000,flink,3,1.243185
+BASELINE_tt_json_array,tt_json_array,"ARRAY<STRING>",264,0,false,7,2000000,flink,4,1.244802
+BASELINE_tt_json_array,tt_json_array,"ARRAY<STRING>",264,0,false,7,2000000,native,4,1.967569
+JSON_STRING_ARRAY,tt_json_array,"STRING",264,0,false,7,2000000,flink,0,2.774218
+JSON_STRING_ARRAY,tt_json_array,"STRING",264,0,false,7,2000000,native,0,3.263164
+JSON_STRING_ARRAY,tt_json_array,"STRING",264,0,false,7,2000000,native,1,3.251184
+JSON_STRING_ARRAY,tt_json_array,"STRING",264,0,false,7,2000000,flink,1,2.768663
+JSON_STRING_ARRAY,tt_json_array,"STRING",264,0,false,7,2000000,flink,2,2.748841
+JSON_STRING_ARRAY,tt_json_array,"STRING",264,0,false,7,2000000,native,2,3.261315
+JSON_STRING_ARRAY,tt_json_array,"STRING",264,0,false,7,2000000,native,3,3.236009
+JSON_STRING_ARRAY,tt_json_array,"STRING",264,0,false,7,2000000,flink,3,2.778342
+JSON_STRING_ARRAY,tt_json_array,"STRING",264,0,false,7,2000000,flink,4,2.785393
+JSON_STRING_ARRAY,tt_json_array,"STRING",264,0,false,7,2000000,native,4,3.242993
+JSON_QUERY_ARRAY_RESULT,tt_json_array,"ROW<items ARRAY<STRING>, json_result STRING>",264,0,false,7,2000000,flink,0,2.660027
+JSON_QUERY_ARRAY_RESULT,tt_json_array,"ROW<items ARRAY<STRING>, json_result STRING>",264,0,false,7,2000000,native,0,4.942115
+JSON_QUERY_ARRAY_RESULT,tt_json_array,"ROW<items ARRAY<STRING>, json_result STRING>",264,0,false,7,2000000,native,1,4.859959
+JSON_QUERY_ARRAY_RESULT,tt_json_array,"ROW<items ARRAY<STRING>, json_result STRING>",264,0,false,7,2000000,flink,1,2.638240
+JSON_QUERY_ARRAY_RESULT,tt_json_array,"ROW<items ARRAY<STRING>, json_result STRING>",264,0,false,7,2000000,flink,2,2.639063
+JSON_QUERY_ARRAY_RESULT,tt_json_array,"ROW<items ARRAY<STRING>, json_result STRING>",264,0,false,7,2000000,native,2,4.891670
+JSON_QUERY_ARRAY_RESULT,tt_json_array,"ROW<items ARRAY<STRING>, json_result STRING>",264,0,false,7,2000000,native,3,4.823292
+JSON_QUERY_ARRAY_RESULT,tt_json_array,"ROW<items ARRAY<STRING>, json_result STRING>",264,0,false,7,2000000,flink,3,2.618583
+JSON_QUERY_ARRAY_RESULT,tt_json_array,"ROW<items ARRAY<STRING>, json_result STRING>",264,0,false,7,2000000,flink,4,2.668089
+JSON_QUERY_ARRAY_RESULT,tt_json_array,"ROW<items ARRAY<STRING>, json_result STRING>",264,0,false,7,2000000,native,4,5.207014

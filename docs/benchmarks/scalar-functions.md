@@ -116,6 +116,46 @@ Earlier SQL/JSON tables below describe the Rust route before this prototype, inc
 its former direct-projection admission. Current branch coverage is on
 [Calc/filter](../operators/calc-filter.md#sqljson-evaluation).
 
+## Nested SQL/JSON batch boundaries (2026-09-19)
+
+The generated JVM Calc now accepts recursive ARRAY/ROW inputs and results through the
+existing batch callback. This extends host-exact coverage inside a columnar plan; it does
+not establish a JSON speedup. MAP/MULTISET boundaries still use planner fallback.
+
+On Apple M1 Max, JDK 17 and Flink 2.2.1, each case processes 2,000,000 rows at parallelism 1
+with the release/mimalloc native library. The rowwise source provides arrays containing a
+264-byte ASCII string, a NULL element and `tail`, with the whole array NULL every seventh
+row. The second column is `{"items":[1,2,3]}`. Two warmups and five measured trials per engine
+alternate execution order. Plans require NativeCalc and both row/Arrow transposes, with a
+rowwise blackhole sink. No other local tests or benchmarks ran concurrently. Whole-job
+elapsed medians include planning; the identity control is not subtracted.
+
+| Case | Flink (s) | StreamFusion (s) | Flink / StreamFusion |
+|---|---:|---:|---:|
+| Array identity control | 1.243185 | 1.968439 | 0.632x |
+| `JSON_STRING(a)` | 2.774218 | 3.251184 | 0.853x |
+| `ROW(a, JSON_QUERY(s, '$.items[*]'))` | 2.639063 | 4.891670 | 0.539x |
+
+Both JSON cases are slower than their previous stock-Flink fallback in this row-fed
+comparison. The benefit is a verified batch boundary that avoids adding another JSON
+implementation and can compose with other columnar operators. A representative larger
+pipeline comparison remains future work; these results do not establish that such a
+pipeline is faster. The existing native JSON fast paths retain their current admission.
+
+Raw trials: [nested JSON batch comparison](sql-json-nested-2026-09-19.csv).
+`engine=native` means StreamFusion enabled, with Flink-generated JSON evaluation on the JVM.
+Build the release/mimalloc library, then reproduce with:
+
+```bash
+SF_BENCHMARK=true mvn -B -ntp -Pbench -pl :streamfusion-runtime -am \
+  -Dnative.build.skip=true '-Dtest=ScalarFunctionBenchmark#individualFunctions' \
+  -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dscalar.functions=JSON_STRING_ARRAY,JSON_QUERY_ARRAY_RESULT \
+  -Dscalar.rows=2000000 -Dscalar.bytes=264 -Dscalar.nullEvery=7 \
+  -Dscalar.warmup=2 -Dscalar.runs=5 \
+  -Dscalar.output=target/sql-json-nested.csv test
+```
+
 ## Spaced JSON paths diagnostic (2026-09-16)
 
 Definite bracket paths with ASCII spaces now stay in native Calc instead of falling back.

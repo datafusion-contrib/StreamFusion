@@ -455,6 +455,17 @@ final class RexExpression {
     };
   }
 
+  private static int rowCalcTypeCode(RelDataType type) {
+    boolean nested =
+        switch (type.getSqlTypeName()) {
+          case ARRAY -> rowCalcTypeCode(type.getComponentType()) >= 0;
+          case ROW ->
+              type.getFieldList().stream().allMatch(field -> rowCalcTypeCode(field.getType()) >= 0);
+          default -> false;
+        };
+    return nested ? tech.streamfusion.operator.NativeUdf.TYPE_INTERNAL : hostCastTypeCode(type);
+  }
+
   private boolean emitRowCalc(Calc calc) {
     rowFusion = true;
     RexProgram program = calc.getProgram();
@@ -469,7 +480,7 @@ final class RexExpression {
             return inputs.computeIfAbsent(
                 input.getIndex(),
                 ignored -> {
-                  int code = hostCastTypeCode(input.getType());
+                  int code = rowCalcTypeCode(input.getType());
                   if (code < 0)
                     throw new IllegalArgumentException(
                         "row-fused UDF input type is not supported: " + input.getType());
@@ -501,7 +512,7 @@ final class RexExpression {
             RexUtil.expandSearch(
                 calc.getCluster().getRexBuilder(), null, program.expandLocalRef(ref));
         if (!validateGeneratedExpression(projection)) return false;
-        if (hostCastTypeCode(projection.getType()) < 0)
+        if (rowCalcTypeCode(projection.getType()) < 0)
           return reject("row-fused UDF output type is not supported: " + projection.getType());
         projections.add(projection.accept(remap));
       }

@@ -20,6 +20,7 @@ final class TextTimeBenchmarkInputs {
       case "tt_boolean" -> "b";
       case "tt_decimal", "tt_unix_time" -> "n";
       case "tt_decimal_array" -> "a";
+      case "tt_json_array" -> "a";
       case "tt_timestamp" -> "ts";
       default -> "s";
     };
@@ -32,6 +33,7 @@ final class TextTimeBenchmarkInputs {
       case "tt_decimal" -> "DECIMAL(38,9)";
       case "tt_unix_time" -> "BIGINT";
       case "tt_decimal_array" -> "ARRAY<DECIMAL(38,9)>";
+      case "tt_json_array" -> "ARRAY<STRING>";
       case "tt_timestamp" -> "TIMESTAMP(9)";
       default -> "STRING";
     };
@@ -46,7 +48,16 @@ final class TextTimeBenchmarkInputs {
       payload(unicode ? " |\u4e2daB\ud83d\ude00| " : " |abCd| efGh| ", bytes),
       payload(unicode ? " |\u00e9dE\ud83d\ude42| " : " |deFg| abCd| ", bytes)
     };
-    if (input.equals("tt_unix_time")) {
+    if (input.equals("tt_json_array")) {
+      tables.createTemporaryView(
+          "inputs",
+          env.fromSequence(0, rows - 1)
+              .map(i -> Row.of(
+                  isNull(i, nullEvery) ? null : new String[] {text[(int) (i % 2)], null, "tail"},
+                  "{\"items\":[1,2,3]}"))
+              .returns(Types.ROW_NAMED(
+                  new String[] {"a", "s"}, Types.OBJECT_ARRAY(Types.STRING), Types.STRING)));
+    } else if (input.equals("tt_unix_time")) {
       tables.getConfig().setLocalTimeZone(java.time.ZoneOffset.UTC);
       tables.createTemporaryView(
           "inputs",
