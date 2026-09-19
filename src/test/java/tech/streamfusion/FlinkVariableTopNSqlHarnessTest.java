@@ -208,14 +208,15 @@ class FlinkVariableTopNSqlHarnessTest {
   }
 
   @Test
-  void updatingBoundsRetainFirstBoundFallback() throws Exception {
+  void updatingBoundsUseTheFirstProposal() throws Exception {
     String sql =
         "SELECT k, n, rn FROM (SELECT k, n, ROW_NUMBER() OVER (ORDER BY n DESC) AS rn FROM (SELECT"
             + " k, COUNT(*) AS n FROM src GROUP BY k)) WHERE rn <= k";
+    NativeParity.assertOrderedKindedParity(() -> environment(false, false), sql);
+    NativeParity.assertChangelogParity(() -> environment(false, false), sql);
     NativeParity.assertFallbackReasonContains(
-        () -> environment(false, false),
-        sql,
-        "update-fast variable rank bound must be derived from partition keys");
+        () -> environment(false, true), sql,
+        "changing bounds require unchanged upstream mini-batch changelog order");
   }
 
   @ParameterizedTest

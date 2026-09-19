@@ -66,8 +66,8 @@ ranker reads the bound from input or retained payloads and keeps its existing ro
 checkpoint formats. Mini-batch flushes recover the bound from a retained row; an empty buffer
 has no selected output.
 
-Independently changing non-null bounds use first-bound state for append-only and general retracting
-input. There is no corresponding Arroyo Top-N operator to reuse. The native store packs the bound and its creation
+Independently changing non-null bounds use first-bound state for all three rank strategies.
+The update-fast path is admitted only with TTL disabled. There is no corresponding Arroyo Top-N operator to reuse. The native store packs the bound and its creation
 timestamp beside the ranked rows in one partition value, while preserving Flink's independently
 expiring clocks. Bound-only values survive checkpoints and rescaling. The RocksDB storage TTL
 prefix uses the newest row or bound write: only when both have expired may it drop the whole value.
@@ -84,8 +84,17 @@ its existing Arrow export instead of calling Java for each row. Arrow ownership 
 This path preserves per-record output even under mini-batching: a net diff after bound expiry
 would manufacture deletions absent from Flink's stream. Mini-batched stateful producers also stay
 on Flink when they can reorder which proposal establishes the bound; source changelogs through
-row-local transformations and exchanges are supported. Nullable bounds and independently changing
-update-fast bounds remain gated under [#104](https://github.com/datafusion-contrib/StreamFusion/issues/104).
+row-local transformations and exchanges are supported. The update-fast persistent buffer uses
+this same optional bound trailer and canonical metadata, preserving the old row-only codec.
+
+The controlled-clock update-fast oracle exposed a separate cache-write issue: a row ingested at
+6000 with 1000 ms TTL and flushed by a checkpoint at 6001 remains in Flink's map state at 7000,
+where the native ingestion timestamp expires it. The bound's independent clock can expire in that
+interval too. This is not treated as harmless clock sampling: changing update-fast bounds with
+positive TTL stay on Flink until checkpoint/cache write semantics are implemented. Disabled TTL
+has no expiry clock and is covered by exact released-operator changelog and restore comparisons.
+Nullable bounds and changing update-fast bounds with TTL remain gated under
+[#104](https://github.com/datafusion-contrib/StreamFusion/issues/104).
 
 ## Proctime keep-last dedup: which Flink to match
 

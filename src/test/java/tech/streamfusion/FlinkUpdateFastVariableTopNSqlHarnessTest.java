@@ -51,6 +51,58 @@ class FlinkUpdateFastVariableTopNSqlHarnessTest {
     NativeParity.assertChangelogParity(() -> environment(false), sql);
   }
 
+  static Stream<Arguments> changingQueries() {
+    return Stream.of(
+            "MOD(id, 3) + 1",
+            "MOD(n, 3) + 1",
+            "CAST(MOD(n, 3) + 1 AS INT)",
+            "CAST(MOD(n, 3) + 1 AS SMALLINT)",
+            "CASE WHEN id = 0 THEN -1 ELSE 2 END",
+            "CASE WHEN id = 0 THEN 0 ELSE 2 END",
+            "CASE WHEN id = 0 THEN 200 ELSE 2 END")
+        .flatMap(
+            bound ->
+                Stream.of(false, true)
+                    .flatMap(
+                        rank ->
+                            Stream.of(false, true).map(ties -> Arguments.of(bound, rank, ties))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("changingQueries")
+  void changingBoundsKeepTheFirstProposalAndOriginalPayload(
+      String bound, boolean rank, boolean ties) throws Exception {
+    String sql =
+        query(bound, rank, ties)
+            .replace(
+                "SUM(id) AS payload",
+                "CASE WHEN MOD(COUNT(v), 2) = 0 THEN CAST(NULL AS STRING)"
+                    + " ELSE CAST(SUM(id) AS STRING) END AS payload");
+    String hostPlan = environment(false).explainSql(sql);
+    assertTrue(hostPlan.contains("UpdateFastStrategy"), hostPlan);
+    String plan = NativePlanner.explain(environment(false), sql);
+    assertTrue(plan.contains("NativeColumnarTopN"), plan);
+    NativeParity.assertOrderedKindedParity(() -> environment(false), sql);
+    NativeParity.assertChangelogParity(() -> environment(false), sql);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"MOD(id, 3) + 1", "MOD(n, 3) + 1"})
+  void changingBoundsWithTtlKeepTheHostsBufferedStateClock(String bound) throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        () -> {
+          var table = environment(false);
+          table.getConfig().setIdleStateRetention(java.time.Duration.ofSeconds(1));
+          return table;
+        },
+        query(bound, true, false),
+        "changing update-fast bounds require disabled state TTL");
+    NativeParity.assertFallbackReasonContains(
+        () -> environment(true),
+        query(bound, true, false),
+        "changing bounds require unchanged upstream mini-batch changelog order");
+  }
+
   @ParameterizedTest
   @MethodSource("computedPartitions")
   void computedPartitionBoundsOverGroupsMatchReleasedFlink(String partition, String bound)
@@ -92,8 +144,10 @@ class FlinkUpdateFastVariableTopNSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void variableBoundsActuallyProcessNativeRows(boolean computedPartition) throws Exception {
+  @ValueSource(strings = {"partition", "computed", "changing"})
+  void variableBoundsActuallyProcessNativeRows(String mode) throws Exception {
+    boolean computedPartition = mode.equals("computed");
+    boolean changing = mode.equals("changing");
     var reporter = InMemoryReporter.createWithRetainedMetrics();
     var cluster =
         new MiniClusterResource(
@@ -105,7 +159,7 @@ class FlinkUpdateFastVariableTopNSqlHarnessTest {
     cluster.before();
     try {
       var table = environment(new TestStreamEnvironment(cluster.getMiniCluster(), 1), false);
-      String sql = query("MOD(k, 3) + 1", true, false);
+      String sql = query(changing ? "MOD(n, 3) + 1" : "MOD(k, 3) + 1", true, false);
       if (computedPartition) sql = sql.replace("PARTITION BY k", "PARTITION BY MOD(k, 3)");
       String hostPlan = table.explainSql(sql);
       assertTrue(
@@ -124,7 +178,9 @@ class FlinkUpdateFastVariableTopNSqlHarnessTest {
       var metrics = reporter.getMetricsByGroup(groups.iterator().next());
       assertTrue(((Counter) metrics.get("numRecordsIn")).getCount() > 0);
       assertTrue(((Counter) metrics.get("numRecordsOut")).getCount() > 0);
-      assertEquals(0, ((Counter) metrics.get("topn.invalidTopSize")).getCount());
+      long invalid = ((Counter) metrics.get("topn.invalidTopSize")).getCount();
+      if (changing) assertTrue(invalid > 0, "later proposals must increment the mismatch counter");
+      else assertEquals(0, invalid);
     } finally {
       cluster.after();
     }

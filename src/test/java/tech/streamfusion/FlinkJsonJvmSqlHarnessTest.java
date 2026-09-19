@@ -158,8 +158,8 @@ class FlinkJsonJvmSqlHarnessTest {
   }
 
   @Test
-  void complexInputRetainsTheScalarBridgeBoundary() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void arrayInputUsesTheGeneratedBatchBridge() throws Exception {
+    NativeParity.assertParity(
         () -> {
           var env = StreamExecutionEnvironment.getExecutionEnvironment();
           env.setParallelism(1);
@@ -172,8 +172,7 @@ class FlinkJsonJvmSqlHarnessTest {
                   Types.ROW_NAMED(new String[] {"a"}, Types.OBJECT_ARRAY(Types.STRING))));
           return table;
         },
-        "SELECT JSON_STRING(a) FROM inputs",
-        "row-fused UDF input type is not supported");
+        "SELECT JSON_STRING(a) FROM inputs");
   }
 
   @Test
@@ -201,17 +200,35 @@ class FlinkJsonJvmSqlHarnessTest {
       table.createTemporaryView(
           "inputs",
           env.fromSequence(0, 5002)
-              .map(id -> Row.of(id, id % 3 == 0 ? "invalid" : "{\"a\":[1,2,3],\"n\":" + id + "}"))
-              .returns(Types.ROW_NAMED(new String[] {"id", "s"}, Types.LONG, Types.STRING)));
+              .map(
+                  id ->
+                      Row.of(
+                          id,
+                          id % 3 == 0 ? "invalid" : "{\"a\":[1,2,3],\"n\":" + id + "}",
+                          new String[] {id.toString(), null}))
+              .returns(
+                  Types.ROW_NAMED(
+                      new String[] {"id", "s", "a"},
+                      Types.LONG,
+                      Types.STRING,
+                      Types.OBJECT_ARRAY(Types.STRING))));
       String sql =
-          "SELECT id, JSON_QUERY(s, '$.a[0:2]' ERROR ON ERROR), "
-              + "JSON_VALUE(s, '$.n' ERROR ON ERROR) FROM inputs WHERE MOD(id, 3) <> 0";
+          "SELECT id, JSON_QUERY(s, '$.a[0:2]' ERROR ON ERROR), JSON_VALUE(s, '$.n' ERROR ON"
+              + " ERROR), JSON_STRING(a), a FROM inputs WHERE MOD(id, 3) <> 0";
       var scan = tech.streamfusion.planner.NativePlanner.install(table);
       assertTrue(table.explainSql(sql).contains("jsonEvaluation=[JVM]"));
       var result = table.executeSql(sql);
       try (var rows = result.collect()) {
         for (long id = 0; id < 5003; id++) {
-          if (id % 3 != 0) assertEquals(Row.of(id, "[1,2]", Long.toString(id)), rows.next());
+          if (id % 3 != 0)
+            assertEquals(
+                Row.of(
+                    id,
+                    "[1,2]",
+                    Long.toString(id),
+                    "[\"" + id + "\",null]",
+                    new String[] {Long.toString(id), null}),
+                rows.next());
         }
         org.junit.jupiter.api.Assertions.assertFalse(rows.hasNext());
       }

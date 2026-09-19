@@ -31,7 +31,8 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  * BY … ORDER BY …) BETWEEN rankStart AND rankEnd}, with or without the rank number projected.
  * Requires {@code ROW_NUMBER} (Flink rejects streaming RANK/DENSE_RANK), a constant or supported
  * variable rank range, and column types the conversion supports. Independently changing variable
- * bounds require append-only or general retracting input. The caller picks the ranker: the
+ * bounds require preserved proposal order; update-fast input also requires disabled state TTL.
+ * The caller picks the ranker: the
  * append-only one for an insert-only, no-offset query, or the retracting one (full buffer, rank
  * window {@code [offset+1, rankEnd]}) for a changelog input or an {@code OFFSET} (rank start > 1).
  */
@@ -58,8 +59,9 @@ final class TopNMatcher {
         default -> { return "Top-N: variable rank bounds require SMALLINT, INT or BIGINT"; }
       }
       if (!partitionInvariant(rank.getInput(), variable.getRankEndIndex(), rank.partitionKey())) {
-        if (rank.rankStrategy() instanceof RankProcessStrategy.UpdateFastStrategy) {
-          return "Top-N: update-fast variable rank bound must be derived from partition keys";
+        if (rank.rankStrategy() instanceof RankProcessStrategy.UpdateFastStrategy
+            && ShortcutUtils.unwrapTableConfig(rank).getIdleStateRetention().toMillis() > 0) {
+          return "Top-N: changing update-fast bounds require disabled state TTL";
         }
         if (mayReorderMiniBatchChangelog(rank.getInput())) {
           return "Top-N: changing bounds require unchanged upstream mini-batch changelog order";
@@ -235,7 +237,10 @@ final class TopNMatcher {
           TopNMatcher.outputRankNumber(rank),
           false,
           ((RankProcessStrategy.UpdateFastStrategy) rank.rankStrategy()).getPrimaryKeys(),
-          ChangelogPlanUtils.generateUpdateBefore(rank));
+          ChangelogPlanUtils.generateUpdateBefore(rank),
+          rank.rankRange() instanceof VariableRankRange variable
+              && !partitionInvariant(
+                  rank.getInput(), variable.getRankEndIndex(), rank.partitionKey()));
     }
     int[] partitionColumns = TopNMatcher.partitionColumns(rank);
     long offset = TopNMatcher.offset(rank);

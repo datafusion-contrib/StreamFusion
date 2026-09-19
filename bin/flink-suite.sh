@@ -396,14 +396,14 @@ PY
 fi
 if [[ "${SUITE_MODE}" == "paimon" ]]; then
   if [[ "${FLINK_LINE}" == "1.18" ]]; then
-    # The common tests compile against 1.20, while the released 1.18 connector supplies
-    # compatibility classes such as CatalogMaterializedTable for the actual 1.18 runtime.
+    # Common tests compile against 1.20. The released 1.18 runtime also replaces helpers
+    # with different host signatures; appending its JAR cannot override target/classes.
     PAIMON_RUNTIME_JAR="${SUITE_MAVEN_REPO}/org/apache/paimon/paimon-flink-${FLINK_LINE}/${PAIMON_VERSION}/paimon-flink-${FLINK_LINE}-${PAIMON_VERSION}.jar"
     if [[ ! -f "${PAIMON_RUNTIME_JAR}" ]]; then
       echo "Missing released Paimon compatibility artifact: ${PAIMON_RUNTIME_JAR}" >&2
       exit 2
     fi
-    STREAMFUSION_CLASSPATH="${STREAMFUSION_CLASSPATH},${PAIMON_RUNTIME_JAR}"
+    TEST_MODULES=":paimon-flink-common"
   fi
   # Paimon declares the planner's test-jar before the planner itself, which places stock
   # calcite-core ahead of Flink's patched Calcite classes in Surefire's resolved classpath. Drop the
@@ -470,8 +470,15 @@ elif [[ "${SUITE_MODE}" == "delta" ]]; then
     -Ddelta.test.jvm.args="${CONNECTOR_MODULE_CONFIG}"
   )
 elif [[ "${SUITE_MODE}" == "paimon" ]]; then
+  PAIMON_TEST_POM="${PAIMON_ROOT}/pom.xml"
+  if [[ "${FLINK_LINE}" == "1.18" ]]; then
+    PAIMON_TEST_POM="${DIAGNOSTIC_ROOT}/paimon-runtime-pom.xml"
+    python3 "${REPO_ROOT}/dev/flink-suite/prepare_paimon_runtime_pom.py" \
+      "${PAIMON_ROOT}/${PAIMON_MODULE}/pom.xml" "${PAIMON_RUNTIME_JAR}" \
+      "${PAIMON_TEST_POM}" || exit $?
+  fi
   MAVEN_TEST_ARGS+=(
-    -f "${PAIMON_ROOT}/pom.xml"
+    -f "${PAIMON_TEST_POM}"
     "${PAIMON_BUILD_ARGS[@]}"
     "-Dpaimon-flink-common.flink.version=${FLINK_VERSION}"
     -Dflink.forkCount="${FLINK_SUITE_IT_FORKS:-1}"

@@ -21,7 +21,8 @@ import org.apache.flink.table.types.logical.RowType;
 /** Flink's generated expression code, called once per argument batch through the scalar bridge. */
 public final class FlinkExpressionFunction extends ScalarFunction
     implements tech.streamfusion.operator.NativeUdf.FunctionDependencies,
-        tech.streamfusion.operator.NativeUdf.RowResult {
+        tech.streamfusion.operator.NativeUdf.RowResult,
+        tech.streamfusion.operator.NativeUdf.InternalArguments {
   private static final long serialVersionUID = 1L;
 
   public interface Evaluator extends Function {
@@ -160,6 +161,11 @@ public final class FlinkExpressionFunction extends ScalarFunction
         scala.collection.JavaConverters.seqAsJavaList(context.references()).toArray();
     generated = new GeneratedFunction<>(className, code, references, config);
     generated.compile(classLoader);
+  }
+
+  @Override
+  public LogicalType[] argumentTypes() {
+    return argumentTypes.clone();
   }
 
   @Override

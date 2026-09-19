@@ -224,27 +224,36 @@ struct FirstRankEnd {
     written_at: i64,
 }
 
-#[derive(Clone, Default)]
-pub(crate) struct TopNPartition {
-    rows: Vec<TopNRow>,
+#[derive(Clone)]
+pub(crate) struct TopNPartition<R = TopNRow> {
+    rows: Vec<R>,
     first_rank_end: Option<FirstRankEnd>,
 }
 
-impl std::ops::Deref for TopNPartition {
-    type Target = Vec<TopNRow>;
+impl<R> Default for TopNPartition<R> {
+    fn default() -> Self {
+        Self {
+            rows: Vec::new(),
+            first_rank_end: None,
+        }
+    }
+}
+
+impl<R> std::ops::Deref for TopNPartition<R> {
+    type Target = Vec<R>;
 
     fn deref(&self) -> &Self::Target {
         &self.rows
     }
 }
 
-impl std::ops::DerefMut for TopNPartition {
+impl<R> std::ops::DerefMut for TopNPartition<R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.rows
     }
 }
 
-impl TopNPartition {
+impl<R> TopNPartition<R> {
     fn has_state(&self) -> bool {
         !self.rows.is_empty() || self.first_rank_end.is_some()
     }
@@ -2674,6 +2683,8 @@ pub(crate) fn updatable_entry_bytes(entry: &UpdatableRow) -> usize {
         + GROUP_ENTRY_OVERHEAD
 }
 
+type UpdatableTopNPartition = TopNPartition<UpdatableRow>;
+
 /// The update-fast buffer's persistent backend: the generic persistent store under the raw
 /// whole-list codec.
 #[cfg(feature = "rocksdb-state")]
@@ -2700,15 +2711,19 @@ impl UpdatableTopNStateCodec {
 
 #[cfg(feature = "rocksdb-state")]
 impl crate::state::RocksStateCodec for UpdatableTopNStateCodec {
-    type Value = Vec<UpdatableRow>;
+    type Value = UpdatableTopNPartition;
     fn supported(&self) -> bool {
         true
     }
     fn value_fields(&self) -> Vec<(String, DataType)> {
         vec![("rows".to_string(), DataType::Binary)]
     }
-    fn value_bytes(&self, value: &Vec<UpdatableRow>) -> usize {
-        4 + value
+    fn value_bytes(&self, value: &UpdatableTopNPartition) -> usize {
+        4 + if value.first_rank_end.is_some() {
+            24
+        } else {
+            0
+        } + value
             .iter()
             .map(|entry| {
                 20 + entry.sort.row().data().len()
@@ -2717,33 +2732,62 @@ impl crate::state::RocksStateCodec for UpdatableTopNStateCodec {
             })
             .sum::<usize>()
     }
-    fn write_ms(&self, value: &Vec<UpdatableRow>) -> i64 {
-        value.iter().map(|entry| entry.ts_ms).max().unwrap_or(0)
+    fn write_ms(&self, value: &UpdatableTopNPartition) -> i64 {
+        value
+            .iter()
+            .map(|entry| entry.ts_ms)
+            .chain(value.first_rank_end.map(|bound| bound.written_at))
+            .max()
+            .unwrap_or(0)
     }
     fn raw(&self) -> bool {
         true
     }
-    fn raw_write(&self, value: &Vec<UpdatableRow>, out: &mut Vec<u8>) {
+    fn raw_write(&self, value: &UpdatableTopNPartition, out: &mut Vec<u8>) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        for entry in value {
+        for entry in value.iter() {
             write_length_prefixed(out, entry.sort.row().data());
             write_length_prefixed(out, entry.payload.row().data());
             write_length_prefixed(out, &entry.row_key.0);
             out.extend_from_slice(&entry.ts_ms.to_le_bytes());
         }
+        if let Some(bound) = value.first_rank_end {
+            out.extend_from_slice(FIRST_BOUND_MAGIC);
+            out.extend_from_slice(&bound.value.to_le_bytes());
+            out.extend_from_slice(&bound.written_at.to_le_bytes());
+        }
     }
-    fn from_raw(&self, bytes: &[u8]) -> Vec<UpdatableRow> {
+    fn from_raw(&self, bytes: &[u8]) -> UpdatableTopNPartition {
         let mut cursor = RawListCursor::new(bytes);
         let sort_parser = self.sort.parser();
         let payload_parser = self.payload.parser();
-        (0..cursor.u32())
+        let rows = (0..cursor.u32())
             .map(|_| UpdatableRow {
                 sort: sort_parser.parse(cursor.bytes()).owned(),
                 payload: Arc::new(payload_parser.parse(cursor.bytes()).owned()),
                 row_key: ByteKey::from(cursor.bytes()),
                 ts_ms: cursor.i64(),
             })
-            .collect()
+            .collect();
+        let first_rank_end = if cursor.bytes.is_empty() {
+            None
+        } else {
+            assert_eq!(cursor.bytes.len(), 24, "invalid first-bound state trailer");
+            assert_eq!(
+                &cursor.bytes[..8],
+                FIRST_BOUND_MAGIC,
+                "unknown first-bound state version"
+            );
+            cursor.bytes = &cursor.bytes[8..];
+            Some(FirstRankEnd {
+                value: cursor.i64(),
+                written_at: cursor.i64(),
+            })
+        };
+        TopNPartition {
+            rows,
+            first_rank_end,
+        }
     }
 }
 
@@ -2751,7 +2795,7 @@ impl crate::state::RocksStateCodec for UpdatableTopNStateCodec {
 /// next record for an expired row key is treated as a fresh insert (for `limit == 1` that means
 /// even a strictly worse row becomes the new top-1, exactly Flink's expired `ValueState` read).
 fn prune_expired_updatable_rows(
-    buffer: &mut Vec<UpdatableRow>,
+    buffer: &mut UpdatableTopNPartition,
     ttl: StateTtl,
     track: bool,
 ) -> isize {
@@ -2774,7 +2818,7 @@ fn prune_expired_updatable_rows(
 const RAW_SNAPSHOT_ROW_KEY: &str = "__row_key__";
 
 pub(crate) struct UpdatableTopNRanker<
-    S: KeyedStateStore<Vec<UpdatableRow>> = MemoryUpdatableTopNStore,
+    S: KeyedStateStore<UpdatableTopNPartition> = MemoryUpdatableTopNStore,
 > {
     partition_columns: Vec<usize>,
     key_timestamp_precisions: Vec<i32>,
@@ -2783,6 +2827,8 @@ pub(crate) struct UpdatableTopNRanker<
     sort_columns: Vec<SortColumn>,
     limit: i64,
     rank_end_column: Option<usize>,
+    first_bound: bool,
+    invalid_top_size: u64,
     offset: i64,
     output_rank_number: bool,
     generate_update_before: bool,
@@ -2798,7 +2844,7 @@ pub(crate) struct UpdatableTopNRanker<
 }
 
 /// The resident default backend for the update-fast buffer store (see `state/` for the seam).
-pub(crate) type MemoryUpdatableTopNStore = MemoryStateStore<Vec<UpdatableRow>>;
+pub(crate) type MemoryUpdatableTopNStore = MemoryStateStore<UpdatableTopNPartition>;
 
 impl UpdatableTopNRanker {
     pub(crate) fn new(
@@ -2819,6 +2865,8 @@ impl UpdatableTopNRanker {
             sort_columns,
             limit,
             rank_end_column: None,
+            first_bound: false,
+            invalid_top_size: 0,
             offset: 0,
             output_rank_number,
             generate_update_before,
@@ -2832,7 +2880,16 @@ impl UpdatableTopNRanker {
     }
 }
 
-impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
+impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
+    pub(crate) fn enable_first_bound(&mut self, generate_update_before: bool) {
+        assert!(
+            self.rank_end_column.is_some(),
+            "first-bound state requires a variable bound"
+        );
+        self.first_bound = true;
+        self.generate_update_before = generate_update_before;
+    }
+
     pub(crate) fn with_rank_end_column(mut self, column: i32) -> Self {
         self.rank_end_column = (column >= 0).then_some(column as usize);
         self
@@ -2849,7 +2906,7 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
 
     /// Moves this freshly built (empty, memory-backed) ranker's configuration onto another state
     /// backend (see the append-only ranker's `with_backend`).
-    pub(crate) fn with_backend<T: KeyedStateStore<Vec<UpdatableRow>>>(
+    pub(crate) fn with_backend<T: KeyedStateStore<UpdatableTopNPartition>>(
         self,
         groups: T,
     ) -> UpdatableTopNRanker<T> {
@@ -2861,6 +2918,8 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
             sort_columns: self.sort_columns,
             limit: self.limit,
             rank_end_column: self.rank_end_column,
+            first_bound: self.first_bound,
+            invalid_top_size: self.invalid_top_size,
             offset: self.offset,
             output_rank_number: self.output_rank_number,
             generate_update_before: self.generate_update_before,
@@ -2916,9 +2975,10 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
         let mut reclaimed = 0isize;
         self.groups.retain_live(&mut |key, buffer| {
             reclaimed += prune_expired_updatable_rows(buffer, ttl, track);
-            if buffer.is_empty() {
+            buffer.expire_rank_end(ttl);
+            if !buffer.has_state() {
                 if track {
-                    reclaimed += (key.len() + GROUP_ENTRY_OVERHEAD) as isize;
+                    reclaimed += (key.len() + GROUP_ENTRY_OVERHEAD + TOPN_BOUND_BYTES) as isize;
                 }
                 false
             } else {
@@ -2998,25 +3058,30 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
         let mut out_ranks: Vec<i64> = Vec::new();
 
         for row in 0..batch.num_rows() {
-            let rank_end = rank_ends
+            let proposed = rank_ends
                 .as_ref()
                 .map_or(self.limit, |ends| ends.value(row));
             // Flink's projected-rank iteration never visits a sort-key group for negative N.
-            if rank_end < 0 && positional_updates {
+            if proposed < 0 && positional_updates && !self.first_bound {
                 continue;
             }
-            let limit = rank_end.max(0) as usize;
             let key_row = keys.row(row);
             let part = parts.encode(row);
             let buffer = match groups.get_mut(part) {
                 Some(buffer) => buffer,
                 None => {
                     if track {
-                        delta += (part.len() + GROUP_ENTRY_OVERHEAD) as isize;
+                        delta += (part.len() + GROUP_ENTRY_OVERHEAD + TOPN_BOUND_BYTES) as isize;
                     }
-                    groups.insert(ByteKey::from(part), Vec::new())
+                    groups.insert(ByteKey::from(part), UpdatableTopNPartition::default())
                 }
             };
+            let rank_end = if self.first_bound {
+                buffer.rank_end(proposed, ttl, &mut self.invalid_top_size)
+            } else {
+                proposed
+            };
+            let limit = rank_end.max(0) as usize;
             // Per-row-key expiry, enforced before the preimage capture: an expired entry reads as
             // absent, so its row key's next record takes the fresh-insert path below.
             if ttl.enabled() && !pruned.contains(part) {
@@ -3163,8 +3228,12 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
             // Flink retains the first sort-key group beyond N after a new arrival or an
             // improvement from outside N. Equal-sort updates and moves within N keep the buffer.
             if trim_overflow && buffer.len() > limit {
-                let boundary = buffer[limit].sort.row();
-                let keep = buffer.partition_point(|entry| entry.sort.row() <= boundary);
+                let keep = if rank_end < 0 {
+                    0
+                } else {
+                    let boundary = buffer[limit].sort.row();
+                    buffer.partition_point(|entry| entry.sort.row() <= boundary)
+                };
                 for evicted in buffer.drain(keep..) {
                     if track {
                         delta -= updatable_entry_bytes(&evicted) as isize;
@@ -3263,17 +3332,35 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
 /// a trailing column only while TTL is on, so a TTL-off snapshot stays byte-identical to the
 /// pre-TTL format.
 fn write_raw_updatable_snapshot_partition<'a>(
-    entries: impl Iterator<Item = (&'a ByteKey, &'a Vec<UpdatableRow>)>,
+    entries: impl Iterator<Item = (&'a ByteKey, &'a UpdatableTopNPartition)>,
     schema: &SchemaRef,
     ttl_on: bool,
 ) -> Vec<u8> {
+    let entries: Vec<_> = entries.collect();
+    let has_bounds = entries
+        .iter()
+        .any(|(_, state)| state.first_rank_end.is_some());
+    let mut bounds = Int64Builder::new();
+    let mut bound_timestamps = Int64Builder::new();
     let mut keys = BinaryBuilder::new();
     let mut sorts = BinaryBuilder::new();
     let mut row_keys = BinaryBuilder::new();
     let mut rows = BinaryBuilder::new();
     let mut write_timestamps = Int64Builder::new();
     for (key, buffer) in entries {
-        for entry in buffer {
+        if buffer.is_empty() && buffer.first_rank_end.is_some() {
+            keys.append_value(&key.0);
+            sorts.append_null();
+            row_keys.append_null();
+            rows.append_null();
+            write_timestamps.append_value(0);
+            bounds.append_value(buffer.first_rank_end.unwrap().value);
+            bound_timestamps.append_value(buffer.first_rank_end.unwrap().written_at);
+        }
+        for (index, entry) in buffer.iter().enumerate() {
+            let bound = buffer.first_rank_end.filter(|_| index == 0);
+            bounds.append_option(bound.map(|bound| bound.value));
+            bound_timestamps.append_option(bound.map(|bound| bound.written_at));
             keys.append_value(&key.0);
             sorts.append_value(entry.sort.row().data());
             row_keys.append_value(&entry.row_key.0);
@@ -3283,12 +3370,16 @@ fn write_raw_updatable_snapshot_partition<'a>(
     }
     let mut fields = vec![
         Field::new(RAW_SNAPSHOT_KEY, DataType::Binary, false),
-        Field::new(RAW_SNAPSHOT_SORT, DataType::Binary, false),
-        Field::new(RAW_SNAPSHOT_ROW_KEY, DataType::Binary, false),
-        Field::new(RAW_SNAPSHOT_ROW, DataType::Binary, false),
+        Field::new(RAW_SNAPSHOT_SORT, DataType::Binary, has_bounds),
+        Field::new(RAW_SNAPSHOT_ROW_KEY, DataType::Binary, has_bounds),
+        Field::new(RAW_SNAPSHOT_ROW, DataType::Binary, has_bounds),
     ];
     if ttl_on {
         fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
+    }
+    if has_bounds {
+        fields.push(Field::new(RAW_RANK_END, DataType::Int64, true));
+        fields.push(Field::new(RAW_RANK_END_TS, DataType::Int64, true));
     }
     let raw_schema = Arc::new(Schema::new_with_metadata(
         fields,
@@ -3305,6 +3396,10 @@ fn write_raw_updatable_snapshot_partition<'a>(
     ];
     if ttl_on {
         columns.push(Arc::new(write_timestamps.finish()));
+    }
+    if has_bounds {
+        columns.push(Arc::new(bounds.finish()));
+        columns.push(Arc::new(bound_timestamps.finish()));
     }
     let batch =
         RecordBatch::try_new(raw_schema, columns).expect("raw update-fast top-n snapshot batch");
@@ -3324,7 +3419,7 @@ impl UpdatableTopNRanker<RocksUpdatableTopNStore> {
         let ttl_on = self.ttl_ms > 0;
         rocks_canonical_partitions(
             &mut self.groups,
-            |rows| !rows.is_empty(),
+            |rows| rows.has_state(),
             |entries| {
                 write_raw_updatable_snapshot_partition(
                     entries.iter().map(|&(key, buffer)| (key, buffer)),
@@ -3346,7 +3441,9 @@ impl UpdatableTopNRanker {
             .groups
             .iter()
             .map(|(key, buffer)| {
-                byte_key_bytes(&key.0) + buffer.iter().map(updatable_entry_bytes).sum::<usize>()
+                byte_key_bytes(&key.0)
+                    + TOPN_BOUND_BYTES
+                    + buffer.iter().map(updatable_entry_bytes).sum::<usize>()
             })
             .sum();
         self.memory
@@ -3358,9 +3455,10 @@ impl UpdatableTopNRanker {
         let Some(schema) = self.schema.as_ref() else {
             return BTreeMap::new();
         };
-        let mut partitions: BTreeMap<i32, Vec<(&ByteKey, &Vec<UpdatableRow>)>> = BTreeMap::new();
+        let mut partitions: BTreeMap<i32, Vec<(&ByteKey, &UpdatableTopNPartition)>> =
+            BTreeMap::new();
         for (key, buffer) in self.groups.iter() {
-            if buffer.is_empty() {
+            if !buffer.has_state() {
                 continue;
             }
             let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
@@ -3415,7 +3513,7 @@ impl UpdatableTopNRanker {
 
 /// Blob decode shared by the memory rebuild and the typed persistent import: every load goes
 /// through the state seam only.
-impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
+impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
     fn load_snapshot(&mut self, bytes: &[u8], restored_at_ms: i64) {
         for batch in read_ipc_if_present(bytes) {
             if self.schema.is_none() {
@@ -3441,12 +3539,36 @@ impl<S: KeyedStateStore<Vec<UpdatableRow>>> UpdatableTopNRanker<S> {
                 .column_by_name(TTL_TS_COLUMN)
                 .is_some()
                 .then(|| column_i64(&batch, TTL_TS_COLUMN));
+            let bounds = batch
+                .column_by_name(RAW_RANK_END)
+                .map(|_| column_i64(&batch, RAW_RANK_END));
+            let bound_timestamps = batch
+                .column_by_name(RAW_RANK_END_TS)
+                .map(|_| column_i64(&batch, RAW_RANK_END_TS));
             for row in 0..batch.num_rows() {
                 let part = keys.value(row);
                 let buffer = match self.groups.get_mut(part) {
                     Some(buffer) => buffer,
-                    None => self.groups.insert(ByteKey::from(part), Vec::new()),
+                    None => self
+                        .groups
+                        .insert(ByteKey::from(part), UpdatableTopNPartition::default()),
                 };
+                if let Some(bounds) = bounds.as_ref().filter(|bounds| !bounds.is_null(row)) {
+                    buffer.first_rank_end = Some(FirstRankEnd {
+                        value: bounds.value(row),
+                        written_at: if write_timestamps.is_some() {
+                            bound_timestamps
+                                .as_ref()
+                                .expect("rank bound clock")
+                                .value(row)
+                        } else {
+                            restored_at_ms
+                        },
+                    });
+                }
+                if rows.is_null(row) {
+                    continue;
+                }
                 buffer.push(UpdatableRow {
                     sort: sort_parser.parse(sorts.value(row)).owned(),
                     payload: Arc::new(payload_parser.parse(rows.value(row)).owned()),
@@ -3474,7 +3596,7 @@ impl TopNHandle {
         match self {
             Self::Append(ranker) => ranker.enable_first_bound(generate_update_before),
             Self::Retract(ranker) => ranker.enable_first_bound(generate_update_before),
-            Self::UpdateFast(_) => panic!("changing bounds are unsupported for update-fast Top-N"),
+            Self::UpdateFast(ranker) => ranker.enable_first_bound(generate_update_before),
         }
     }
 
@@ -3482,7 +3604,7 @@ impl TopNHandle {
         match self {
             Self::Append(ranker) => std::mem::take(&mut ranker.invalid_top_size),
             Self::Retract(ranker) => std::mem::take(&mut ranker.invalid_top_size),
-            _ => 0,
+            Self::UpdateFast(ranker) => std::mem::take(&mut ranker.invalid_top_size),
         }
     }
 
@@ -3601,7 +3723,7 @@ impl RocksTopNHandle {
         match self {
             Self::Append(ranker) => ranker.enable_first_bound(generate_update_before),
             Self::Retract(ranker) => ranker.enable_first_bound(generate_update_before),
-            Self::UpdateFast(_) => panic!("changing bounds are unsupported for update-fast Top-N"),
+            Self::UpdateFast(ranker) => ranker.enable_first_bound(generate_update_before),
         }
     }
 
@@ -3609,7 +3731,7 @@ impl RocksTopNHandle {
         match self {
             Self::Append(ranker) => std::mem::take(&mut ranker.invalid_top_size),
             Self::Retract(ranker) => std::mem::take(&mut ranker.invalid_top_size),
-            _ => 0,
+            Self::UpdateFast(ranker) => std::mem::take(&mut ranker.invalid_top_size),
         }
     }
 

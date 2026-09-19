@@ -14,14 +14,128 @@ import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.complex.StructVector;
+import org.apache.flink.table.data.ArrayData;
+import org.apache.flink.table.data.GenericArrayData;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.functions.ScalarFunction;
+import org.apache.flink.table.types.logical.ArrayType;
+import org.apache.flink.table.types.logical.IntType;
+import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.VarBinaryType;
 import org.junit.jupiter.api.Test;
 
 class NativeUdfExactTypesBridgeTest {
+  public static class NestedIdentity extends ScalarFunction
+      implements NativeUdf.RowResult, NativeUdf.InternalArguments {
+    private static final RowType NESTED = RowType.of(new IntType(), new ArrayType(new IntType()));
+    private static final RowType RESULT = RowType.of(new ArrayType(new IntType()), NESTED);
+
+    public RowData eval(ArrayData values, RowData record) {
+      if (record != null && record.getInt(0) < 0)
+        throw new IllegalArgumentException("nested evaluation failed");
+      return GenericRowData.of(values, record);
+    }
+
+    @Override
+    public LogicalType[] argumentTypes() {
+      return RESULT.getChildren().toArray(LogicalType[]::new);
+    }
+
+    @Override
+    public RowType rowResultType() {
+      return RESULT;
+    }
+  }
+
+  @Test
+  void nestedSlicesOwnTheirOutputAfterImportedArgumentsClose() throws Exception {
+    long before = NativeAllocator.SHARED.getAllocatedMemory();
+    int id =
+        NativeUdf.register(
+            new NestedIdentity(),
+            NestedIdentity.class.getMethod("eval", ArrayData.class, RowData.class),
+            new int[] {NativeUdf.TYPE_INTERNAL, NativeUdf.TYPE_INTERNAL},
+            NativeUdf.TYPE_ROW);
+    try (ArrowArray output = ArrowArray.allocateNew(NativeAllocator.SHARED);
+        ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+      try (VectorSchemaRoot input = nestedInput(false);
+          VectorSchemaRoot slice = input.slice(1, 3)) {
+        invoke(id, slice, output, schema);
+      }
+      try (VectorSchemaRoot result =
+          Data.importVectorSchemaRoot(
+              NativeAllocator.SHARED, output, schema, NativeAllocator.DICTIONARIES)) {
+        var reader =
+            tech.streamfusion.arrow.ArrowConversion.createArrowReader(
+                result, RowType.of(NestedIdentity.RESULT));
+        RowData first = reader.read(0).getRow(0, 2);
+        assertEquals(3, first.getArray(0).size());
+        assertEquals(1, first.getArray(0).getInt(0));
+        assertTrue(first.getArray(0).isNullAt(1));
+        assertEquals(3, first.getArray(0).getInt(2));
+        assertEquals(7, first.getRow(1, 2).getInt(0));
+        assertEquals(8, first.getRow(1, 2).getArray(1).getInt(0));
+        assertTrue(first.getRow(1, 2).getArray(1).isNullAt(1));
+        RowData second = reader.read(1).getRow(0, 2);
+        assertEquals(0, second.getArray(0).size());
+        assertTrue(second.isNullAt(1));
+        RowData third = reader.read(2).getRow(0, 2);
+        assertTrue(third.isNullAt(0));
+        assertEquals(9, third.getRow(1, 2).getInt(0));
+        assertEquals(0, third.getRow(1, 2).getArray(1).size());
+      }
+    } finally {
+      NativeUdf.unregister(id);
+    }
+    assertEquals(before, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
+  @Test
+  void failedNestedEvaluationReleasesInputViewsAndPartialOutput() throws Exception {
+    long before = NativeAllocator.SHARED.getAllocatedMemory();
+    int id =
+        NativeUdf.register(
+            new NestedIdentity(),
+            NestedIdentity.class.getMethod("eval", ArrayData.class, RowData.class),
+            new int[] {NativeUdf.TYPE_INTERNAL, NativeUdf.TYPE_INTERNAL},
+            NativeUdf.TYPE_ROW);
+    try (ArrowArray output = ArrowArray.allocateNew(NativeAllocator.SHARED);
+        ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED);
+        VectorSchemaRoot input = nestedInput(true)) {
+      var error =
+          assertThrows(IllegalArgumentException.class, () -> invoke(id, input, output, schema));
+      assertEquals("nested evaluation failed", error.getMessage());
+    } finally {
+      NativeUdf.unregister(id);
+      NativeUdf.propagateUpcallFailure(new IllegalStateException("native upcall failed"));
+    }
+    assertEquals(before, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
+  private static VectorSchemaRoot nestedInput(boolean fail) {
+    var root =
+        VectorSchemaRoot.create(
+            tech.streamfusion.arrow.ArrowConversion.toArrowSchema(NestedIdentity.RESULT),
+            NativeAllocator.SHARED);
+    root.allocateNew();
+    var writer =
+        tech.streamfusion.arrow.ArrowConversion.createRowDataArrowWriter(
+            root, NestedIdentity.RESULT);
+    writer.write(GenericRowData.of(new GenericArrayData(new int[] {99}), null));
+    writer.write(
+        GenericRowData.of(
+            new GenericArrayData(new Integer[] {1, null, 3}),
+            GenericRowData.of(7, new GenericArrayData(new Integer[] {8, null}))));
+    writer.write(GenericRowData.of(new GenericArrayData(new int[0]), null));
+    writer.write(
+        GenericRowData.of(
+            null, GenericRowData.of(fail ? -1 : 9, new GenericArrayData(new int[0]))));
+    writer.finish();
+    return root;
+  }
+
   public static class DecimalIdentity extends ScalarFunction {
     public BigDecimal eval(BigDecimal value) {
       return value;

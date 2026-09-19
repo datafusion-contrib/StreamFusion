@@ -30,26 +30,33 @@ public final class PaimonTestWatch {
 
   private PaimonTestWatch(String test, Object fixture) {
     this.test = test;
-    String options;
-    try {
-      var field = fixture.getClass().getDeclaredField("tableDefaultProperties");
-      field.setAccessible(true);
-      options = String.valueOf(field.get(fixture));
-    } catch (ReflectiveOperationException e) {
-      options = "unavailable: " + e;
-    }
     diagnostics.println(
         "StreamFusion upstream test started "
             + test
             + " at "
             + Instant.now()
             + "; randomized table defaults "
-            + options);
+            + tableDefaults(fixture));
     long delay = Long.getLong("streamfusion.flink-suite.diagnostic-delay-seconds", 120L);
     if (delay <= 0) {
       throw new IllegalArgumentException("The upstream diagnostic delay must be positive");
     }
     diagnostic = TIMER.schedule(this::dumpThreads, delay, TimeUnit.SECONDS);
+  }
+
+  private static String tableDefaults(Object fixture) {
+    for (Class<?> type = fixture.getClass(); type != null; type = type.getSuperclass()) {
+      try {
+        var field = type.getDeclaredField("tableDefaultProperties");
+        field.setAccessible(true);
+        return String.valueOf(field.get(fixture));
+      } catch (NoSuchFieldException ignored) {
+        // Most Paimon fixtures do not randomize table defaults.
+      } catch (IllegalAccessException failure) {
+        return "unavailable: " + failure;
+      }
+    }
+    return "none";
   }
 
   public static PaimonTestWatch start(String test, Object fixture) {

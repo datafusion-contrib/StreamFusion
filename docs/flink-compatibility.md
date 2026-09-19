@@ -84,6 +84,12 @@ The fallback parity tests check the complete bytes, including UTF-16 encodings a
 
 ## JSON and formats
 
+The shared nested ARRAY/ROW JSON parity fixtures use each release line's collection-source
+API with identical rows and type information, including multi-batch ownership checks.
+Flink 1.18 cannot generate `JSON_QUERY` with a column-valued path. Those cases assert the
+same host planning failure, then exercise the nested bridge with a literal selector; 2.2
+retains the dynamic selectors.
+
 The 1.18 Jackson runtime has no verified recycler-buffer contract for native SQL/JSON parsing.
 Its probe disables that parser path and the existing whole-Calc JVM evaluator handles the
 expressions through one callback per Arrow batch. Decimal-bearing `JSON_STRING` and `JSON_OBJECT`

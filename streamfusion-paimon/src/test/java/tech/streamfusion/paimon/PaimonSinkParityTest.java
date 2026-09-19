@@ -1468,6 +1468,69 @@ class PaimonSinkParityTest {
     assertDeclined(scan, "write-buffer-for-append");
   }
 
+  @Test
+  void statementHintOptionsShapeSinkAdmission() throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-sink-hints");
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment tableEnv = catalogEnvironment(env, warehouse);
+    tableEnv.executeSql("CREATE TABLE hinted (id BIGINT, v INT) WITH ('bucket' = '-1')");
+    tableEnv.executeSql(
+        "CREATE TEMPORARY TABLE src (id BIGINT, v INT) WITH ('connector' = 'datagen')");
+    PhysicalPlanScan scan = NativePlanner.install(tableEnv);
+
+    tableEnv.explainSql(
+        "INSERT INTO hinted /*+ OPTIONS('write-buffer-for-append'='true') */ SELECT * FROM src");
+
+    assertDeclined(scan, "write-buffer-for-append");
+  }
+
+  @Test
+  @Timeout(60)
+  void statementBranchHintKeepsWritesOffTheMainBranch() throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-branch-hints");
+    List<List<String>> mainRows = new ArrayList<>();
+    List<List<String>> branchRows = new ArrayList<>();
+    for (boolean nativeWriter : new boolean[] {false, true}) {
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      StreamTableEnvironment tableEnv = catalogEnvironment(env, warehouse);
+      String name = nativeWriter ? "branch_native" : "branch_stock";
+      tableEnv.executeSql(
+          "CREATE TABLE "
+              + name
+              + " (k INT PRIMARY KEY NOT ENFORCED, v STRING) WITH ('bucket'='2')");
+      PhysicalPlanScan scan = nativeWriter ? NativePlanner.install(tableEnv) : null;
+      tableEnv.executeSql("INSERT INTO " + name + " VALUES (1, 'main')").await();
+      if (scan != null) assertAccelerated(scan);
+      tableEnv.executeSql("CALL sys.create_tag('default." + name + "', 'tag1', 1, '5 d')").await();
+      tableEnv.executeSql("CALL sys.create_branch('default." + name + "', 'work', 'tag1')").await();
+      String branchInsert =
+          "INSERT INTO "
+              + name
+              + " /*+ OPTIONS('branch'='work') */ VALUES (2, 'branch'), (3, 'branch')";
+      if (nativeWriter) {
+        String plan = tableEnv.explainSql(branchInsert);
+        assertTrue(plan.contains("NativePaimonSink"), plan);
+      }
+      tableEnv.executeSql(branchInsert).await();
+      if (scan != null) assertAccelerated(scan);
+      FileStoreTable main = openTable(warehouse, name);
+      FileStoreTable branch = main.switchToBranch("work");
+      mainRows.add(PaimonTestTables.readRows(main, main.rowType()));
+      branchRows.add(PaimonTestTables.readRows(branch, branch.rowType()));
+      assertEquals(1, mainRows.get(mainRows.size() - 1).size());
+      assertEquals(3, branchRows.get(branchRows.size() - 1).size());
+      assertEquals(1L, main.snapshotManager().latestSnapshotId());
+      if (nativeWriter) {
+        NativeAppendSinkWriteTest.assertNativeFiles(main);
+        NativeAppendSinkWriteTest.assertNativeFiles(branch);
+      }
+    }
+    assertEquals(mainRows.get(0), mainRows.get(1));
+    assertEquals(branchRows.get(0), branchRows.get(1));
+  }
+
   private static String selectFor(String schema) {
     if (schema.contains("ARRAY<INT>")) {
       return schema.contains("pt STRING") ? "ARRAY[v] AS v, pt" : "ARRAY[v] AS v";

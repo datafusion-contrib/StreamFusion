@@ -360,6 +360,10 @@ Supported:
   `ROW` of those, recursively, with Paimon's field ids on every column.
 - Hint options (`/*+ OPTIONS(...) */`) and the `paimon.<catalog>.<db>.<table>.<option>` dynamic
   options from the job configuration, resolved the way Paimon's own factory resolves them.
+  Statement hints are read explicitly from the physical sink, including on Flink 1.18 where
+  the resolved catalog table retains its original options. They affect both admission and the
+  writer destination: a `branch` hint must leave the main branch unchanged. Table-scoped job
+  configuration overrides the hinted options, matching Paimon's factory precedence.
 - `sink.writer-refresh-detectors`: the writer re-reads the refreshed option groups (external data
   paths) after each checkpoint's commit preparation, exactly when the stock operator does.
 - Any insert-only query shape: columns bind to the table by position as in Flink's own sink, so

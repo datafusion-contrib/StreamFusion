@@ -252,6 +252,7 @@ final class PaimonSinkMatcher {
     ResolvedCatalogBaseTable<?> resolvedTable = resolved.getResolvedTable();
     CatalogBaseTable origin = resolvedTable.getOrigin();
     Map<String, String> options = new HashMap<>(resolvedTable.getOptions());
+    options.putAll(org.apache.flink.table.planner.hint.FlinkHints.getHintedOptions(sink.hints()));
     options.putAll(PaimonDynamicOptions.forTable(sink, resolved.getIdentifier()));
     FileStoreTable table;
     if (origin instanceof DataCatalogTable) {

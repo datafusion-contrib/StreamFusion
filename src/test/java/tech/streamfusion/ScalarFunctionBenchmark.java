@@ -177,6 +177,12 @@ class ScalarFunctionBenchmark {
                   new Query("UDF_BINARY", "tt_bytes", "binary_identity(b)", "BYTES"),
                   new Query("SHA1", "tt_text", "SHA1(s)"),
                   new Query("JSON_STRING_TEXT", "tt_text", "JSON_STRING(s)"),
+                  new Query("JSON_STRING_ARRAY", "tt_json_array", "JSON_STRING(a)"),
+                  new Query(
+                      "JSON_QUERY_ARRAY_RESULT",
+                      "tt_json_array",
+                      "ROW(a, JSON_QUERY(s, '$.items[*]'))",
+                      "ROW<items ARRAY<STRING>, json_result STRING>"),
                   new Query("JSON_STRING_BOOLEAN", "tt_boolean", "JSON_STRING(b)"),
                   new Query("JSON_STRING_INTEGER", "bigint", "JSON_STRING(n)", "STRING"),
                   new Query("JSON_STRING_DECIMAL", "tt_decimal", "JSON_STRING(n)", "STRING"),

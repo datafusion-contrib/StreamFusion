@@ -66,6 +66,10 @@ public final class NativeUdf {
     org.apache.flink.table.types.logical.RowType rowResultType();
   }
 
+  public interface InternalArguments {
+    org.apache.flink.table.types.logical.LogicalType[] argumentTypes();
+  }
+
   // Native value-type codes for a UDF argument or result column (mirrored by the JVM encoder in
   // RexExpression). Kept independent of the aggregate value codes — this is the UDF marshalling ABI.
   public static final int TYPE_STRING = 0;
@@ -85,6 +89,8 @@ public final class NativeUdf {
   public static final int TYPE_INTERVAL_MILLIS = 13;
   public static final int TYPE_BINARY = 14;
   public static final int TYPE_ROW = 15;
+  // Internal ARRAY/ROW views borrowed only while the imported argument batch remains open.
+  public static final int TYPE_INTERNAL = 16;
 
   // DECIMAL(p, s) argument/result values, marshalled as BigDecimal. The precision and scale ride in
   // the code itself so one int carries the full type: 1000 + p*100 + s. Used by the host-exact
@@ -405,8 +411,24 @@ public final class NativeUdf {
         // by value inside the row loop instead put a megamorphic isNull/type dispatch per (row,
         // arg) on the hot path — 14% of q21's parity run in the vector interface calls alone.
         Object[][] columns = new Object[arity][];
+        tech.streamfusion.arrow.ArrowReader argumentReader = null;
+        org.apache.flink.table.types.logical.LogicalType[] argumentTypes = null;
         for (int a = 0; a < arity; a++) {
-          columns[a] = readColumn(argVectors[a], udf.argTypes[a], udf.argAsStringData[a], rows);
+          if (udf.argTypes[a] == TYPE_INTERNAL) {
+            if (argumentReader == null) {
+              argumentTypes = ((InternalArguments) udf.function).argumentTypes();
+              argumentReader =
+                  tech.streamfusion.arrow.ArrowConversion.createArrowReader(
+                      in, org.apache.flink.table.types.logical.RowType.of(argumentTypes));
+            }
+            var getter = org.apache.flink.table.data.RowData.createFieldGetter(argumentTypes[a], a);
+            columns[a] = new Object[rows];
+            for (int row = 0; row < rows; row++) {
+              columns[a][row] = getter.getFieldOrNull(argumentReader.read(row));
+            }
+          } else {
+            columns[a] = readColumn(argVectors[a], udf.argTypes[a], udf.argAsStringData[a], rows);
+          }
         }
         Object[] args = new Object[arity];
         Object[] invokeArgs =
