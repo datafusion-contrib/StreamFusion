@@ -218,6 +218,19 @@ final class NativeParity {
     if (value instanceof byte[] bytes) {
       return HexFormat.of().formatHex(bytes);
     }
+    if (value instanceof Map<?, ?> map) {
+      Map<Object, Object> values = new java.util.LinkedHashMap<>();
+      map.entrySet().stream()
+          .sorted(Comparator.comparing(entry -> String.valueOf(comparableValue(entry.getKey()))))
+          .forEach(entry -> values.put(comparableValue(entry.getKey()), comparableValue(entry.getValue())));
+      return values;
+    }
+    if (value instanceof Row row) {
+      List<Object> fields = new ArrayList<>();
+      fields.add(row.getKind());
+      for (int i = 0; i < row.getArity(); i++) fields.add(comparableValue(row.getField(i)));
+      return fields;
+    }
     if (value != null && value.getClass().isArray()) {
       List<Object> values = new ArrayList<>();
       for (int i = 0; i < java.lang.reflect.Array.getLength(value); i++) {

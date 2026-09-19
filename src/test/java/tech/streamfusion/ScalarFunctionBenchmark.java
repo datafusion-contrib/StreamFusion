@@ -178,6 +178,10 @@ class ScalarFunctionBenchmark {
                   new Query("SHA1", "tt_text", "SHA1(s)"),
                   new Query("JSON_STRING_TEXT", "tt_text", "JSON_STRING(s)"),
                   new Query("JSON_STRING_ARRAY", "tt_json_array", "JSON_STRING(a)"),
+                  new Query("JSON_STRING_MAP", "tt_json_map", "JSON_STRING(m)"),
+                  new Query("JSON_QUERY_MAP_RESULT", "tt_json_map",
+                      "ROW(m, JSON_QUERY(s, '$.items[*]'))",
+                      "ROW<items MAP<STRING NOT NULL, STRING>, json_result STRING>"),
                   new Query(
                       "JSON_QUERY_ARRAY_RESULT",
                       "tt_json_array",

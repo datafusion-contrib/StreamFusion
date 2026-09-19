@@ -818,12 +818,14 @@ iteration happens inside that callback. Rejected rows and changelog tags share a
 before Arrow validates nonnullable result fields.
 
 Referenced inputs and projected outputs can carry character, binary, boolean, numeric/decimal,
-date/time, interval, supported timestamp types, and recursively nested ARRAY/ROW values with
-those leaves. Nested arguments use Flink internal views over the imported Arrow batch; generated
+date/time, interval, supported timestamp types, and recursively nested ARRAY/ROW/MAP/MULTISET
+values with those leaves. MAP keys and MULTISET elements must be declared non-null, matching the
+Arrow map key representation. Nullable map values, outer containers and nested array/row values
+remain supported. Nested arguments use Flink internal views over the imported Arrow batch; generated
 results are copied into owned Arrow output vectors before that batch closes. The callback still
 crosses JNI once per batch, including multi-column results and filtering.
-MAP/MULTISET boundary values, including maps nested inside an array or row, remain explicit
-fallback. Constructing containers internally is allowed when the resulting boundary types are
+Nullable MAP keys and nullable MULTISET elements remain explicit fallback, including when nested
+inside arrays or rows; observing only non-null keys in a fixture does not establish the type contract. Constructing containers internally is allowed when the resulting boundary types are
 admitted. Unsupported host code generation
 and UDF signatures retain explicit fallback. Flink 2.2.1 rejects dynamic JSON_EXISTS paths;
 that host failure is preserved. No configuration opt-in is required.

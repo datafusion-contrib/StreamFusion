@@ -89,7 +89,7 @@ public final class NativeUdf {
   public static final int TYPE_INTERVAL_MILLIS = 13;
   public static final int TYPE_BINARY = 14;
   public static final int TYPE_ROW = 15;
-  // Internal ARRAY/ROW views borrowed only while the imported argument batch remains open.
+  // Internal nested views borrowed only while the imported argument batch remains open.
   public static final int TYPE_INTERNAL = 16;
 
   // DECIMAL(p, s) argument/result values, marshalled as BigDecimal. The precision and scale ride in

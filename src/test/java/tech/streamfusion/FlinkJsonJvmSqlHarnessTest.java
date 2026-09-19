@@ -179,16 +179,32 @@ class FlinkJsonJvmSqlHarnessTest {
                       Row.of(
                           id,
                           id % 3 == 0 ? "invalid" : "{\"a\":[1,2,3],\"n\":" + id + "}",
-                          new String[] {id.toString(), null}))
+                          new String[] {id.toString(), null},
+                          java.util.Map.of("id", new String[] {id.toString(), null})))
               .returns(
                   Types.ROW_NAMED(
-                      new String[] {"id", "s", "a"},
+                      new String[] {"id", "s", "a", "m"},
                       Types.LONG,
                       Types.STRING,
-                      Types.OBJECT_ARRAY(Types.STRING))));
+                      Types.OBJECT_ARRAY(Types.STRING),
+                      Types.MAP(Types.STRING, Types.OBJECT_ARRAY(Types.STRING)))),
+          org.apache.flink.table.api.Schema.newBuilder()
+              .column("id", org.apache.flink.table.api.DataTypes.BIGINT())
+              .column("s", org.apache.flink.table.api.DataTypes.STRING())
+              .column(
+                  "a",
+                  org.apache.flink.table.api.DataTypes.ARRAY(
+                      org.apache.flink.table.api.DataTypes.STRING()))
+              .column(
+                  "m",
+                  org.apache.flink.table.api.DataTypes.MAP(
+                      org.apache.flink.table.api.DataTypes.STRING().notNull(),
+                      org.apache.flink.table.api.DataTypes.ARRAY(
+                          org.apache.flink.table.api.DataTypes.STRING())))
+              .build());
       String sql =
           "SELECT id, JSON_QUERY(s, '$.a[0:2]' ERROR ON ERROR), JSON_VALUE(s, '$.n' ERROR ON"
-              + " ERROR), JSON_STRING(a), a FROM inputs WHERE MOD(id, 3) <> 0";
+              + " ERROR), JSON_STRING(a), a, JSON_STRING(m), m FROM inputs WHERE MOD(id, 3) <> 0";
       var scan = tech.streamfusion.planner.NativePlanner.install(table);
       assertTrue(table.explainSql(sql).contains("jsonEvaluation=[JVM]"));
       var result = table.executeSql(sql);
@@ -196,13 +212,16 @@ class FlinkJsonJvmSqlHarnessTest {
         for (long id = 0; id < 5003; id++) {
           if (id % 3 != 0)
             assertEquals(
-                Row.of(
-                    id,
-                    "[1,2]",
-                    Long.toString(id),
-                    "[\"" + id + "\",null]",
-                    new String[] {Long.toString(id), null}),
-                rows.next());
+                NativeParity.comparableValue(
+                    Row.of(
+                        id,
+                        "[1,2]",
+                        Long.toString(id),
+                        "[\"" + id + "\",null]",
+                        new String[] {Long.toString(id), null},
+                        "{\"id\":[\"" + id + "\",null]}",
+                        java.util.Map.of("id", new String[] {Long.toString(id), null}))),
+                NativeParity.comparableValue(rows.next()));
         }
         org.junit.jupiter.api.Assertions.assertFalse(rows.hasNext());
       }
