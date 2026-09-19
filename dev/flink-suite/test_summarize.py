@@ -66,6 +66,22 @@ class NativeExecutionSummaryTest(unittest.TestCase):
         ), redirect_stdout(io.StringIO()):
             self.assertEqual(1, summarize.main())
 
+    def test_required_uncontracted_class_must_execute_not_only_skip(self):
+        full_class = "org.apache.flink.UncontractedITCase"
+        arguments = ["summarize.py", str(self.root), "--require-test-class", full_class]
+        for actual_class, skipped, expected in (
+            (full_class, False, 0), (full_class, True, 1),
+            ("org.apache.flink.DifferentITCase", False, 1),
+        ):
+            with self.subTest(actual_class=actual_class, skipped=skipped):
+                (self.root / "TEST-class.xml").write_text(
+                    f'<testsuite tests="1" skipped="{int(skipped)}">'
+                    f'<testcase classname="{actual_class}" name="testRows">'
+                    + ('<skipped/>' if skipped else '') + '</testcase></testsuite>'
+                )
+                with patch.object(sys, "argv", arguments), redirect_stdout(io.StringIO()):
+                    self.assertEqual(expected, summarize.main())
+
     def test_zero_rows_and_wrong_operator_fail(self):
         for counts in (
             "",

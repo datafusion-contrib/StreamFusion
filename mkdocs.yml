@@ -115,6 +115,7 @@ nav:
       - benchmarks.md
       - Scalar functions: benchmarks/scalar-functions.md
       - Decimal expressions: benchmarks/decimal-expressions.md
+      - Flink 1.18 compatibility: benchmarks/flink118-nexmark.md
   - Optimizations:
       - optimizations/index.md
       - Foundational bets: optimizations/foundational-bets.md

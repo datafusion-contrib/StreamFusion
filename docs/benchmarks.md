@@ -60,6 +60,8 @@ TZ=UTC SF_BENCHMARK=true SF_PROFILE_DECODE=true \
   -Dprofile.outputDir=target/profiles/protobuf-decode
 ```
 
+The experimental Flink 1.18 build has a separate [row-fed Nexmark compatibility baseline](benchmarks/flink118-nexmark.md). Its generator/blackhole results are not comparable to the Kafka headline workload below.
+
 ## Nexmark, parallelism 4
 
 Apple M1 Max, release + `mimalloc`, measured across all four backend/mode combinations. The memory

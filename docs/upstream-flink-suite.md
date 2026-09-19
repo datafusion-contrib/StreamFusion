@@ -93,7 +93,7 @@ runtime integration suite serially in one fork, then summarizes Surefire failure
 keeps concurrently created MiniClusters from exhausting a developer machine or CI runner.
 
 The experimental 1.18 runner selects Flink `release-1.18.1`, Kafka connector `v3.2.0-rc1`, and
-Paimon's `flink1` profile against 1.18.1. Kafka's final candidate tag (`d12f73c8`) matches the
+Paimon's `flink1` profile. Paimon 2.0's shared sources compile against its released 1.20.1 baseline; its compiled SQL tests then run with the 1.18.1 dependencies and matching StreamFusion payload. Kafka 3.2 uses the installed Maven because its release has no Maven wrapper. Kafka's final candidate tag (`d12f73c8`) matches the
 [official 3.2.0 source archive](https://archive.apache.org/dist/flink/flink-connector-kafka-3.2.0/);
 that release has no `v3.2.0` tag. Run `FLINK_VERSION=1.18.1 bin/flink-suite.sh config`
 to inspect the selection, then replace `config` with the desired suite. Each line has separate
@@ -160,7 +160,7 @@ the suite. The runner clears the selected suite's evidence before every run. Evi
 Each full suite also requires every method contracted for that suite to execute, so removing or renaming
 an upstream test cannot silently shrink this coverage. Focused selections require evidence only
 for their selected methods.
-The full `state` run requires every contracted method in its selected stateful test classes,
+The full `state` run requires at least one executed, non-skipped test in every selected stateful class and every contracted method in those classes. Native witnesses remain explicitly bounded to the methods in the contract resource; classes without contracts still retain their unchanged result assertions,
 and `all` includes that native RocksDB run as well as the ordinary runtime suite.
 
 These checks prove native data-path execution, not a speedup. Release benchmarks measure performance

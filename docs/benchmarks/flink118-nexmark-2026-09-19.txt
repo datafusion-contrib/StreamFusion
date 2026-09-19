@@ -1,0 +1,34 @@
+##### NEXMARK MATRIX (2000000 events, best of 2) #####
+
+===== q0 =====
+  generator  Flink  1.041s (1,921,160 ev/s)  |  Native  2.004s (998,096 ev/s)  0.52x
+
+===== q1 =====
+  generator  Flink  1.093s (1,830,132 ev/s)  |  Native  1.974s (1,013,023 ev/s)  0.55x
+  generator  [approximate decimal (incompatible)]  Native  1.965s (1,017,961 ev/s)  0.56x
+
+===== q2 =====
+  generator  Flink  0.986s (2,029,180 ev/s)  |  Native  1.262s (1,584,764 ev/s)  0.78x
+
+===== q3 =====
+  generator  Flink  0.810s (2,467,914 ev/s)  |  Native  2.107s (949,037 ev/s)  0.38x
+
+===== q7 =====
+  generator  Flink  2.435s (821,466 ev/s)  |  Native  3.948s (506,534 ev/s)  0.62x
+
+===== q8 =====
+  generator  Flink  0.754s (2,653,180 ev/s)  |  Native  2.677s (747,088 ev/s)  0.28x
+
+===== q19 =====
+  generator  Flink  3.961s (504,911 ev/s)  |  Native 10.200s (196,083 ev/s)  0.39x
+
+===== q20 =====
+  generator  Flink  1.983s (1,008,691 ev/s)  |  Native  3.656s (547,039 ev/s)  0.54x
+
+===== q5 =====
+  generator  Flink  1.873s (1,067,826 ev/s)  |  Native  3.015s (663,421 ev/s)  0.62x
+
+===== q21 =====
+  generator  Flink  2.135s (936,586 ev/s)  |  Native  2.436s (821,124 ev/s)  0.88x
+  generator  [native regex/case (incompatible)]  Native  1.721s (1,162,002 ev/s)  1.24x
+
