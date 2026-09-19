@@ -110,7 +110,8 @@ bytes = { version = "1" }
 # Each cdylib opts in through its `mimalloc` feature and pins the v2 branch: v3's lazy thread
 # initialization can crash when a JVM-created thread first allocates through the library.
 # native-build supplies library-local aliases; the hosting JVM keeps its own allocator.
-libmimalloc-sys = { version = "0.1" }
+# JNI libraries are loaded after JVM startup, so they cannot reserve initial-exec TLS.
+libmimalloc-sys = { version = "0.1", features = ["local_dynamic_tls"] }
 
 [profile.release]
 # Keep engine hot loops in one codegen unit for stable inlining and benchmark results.

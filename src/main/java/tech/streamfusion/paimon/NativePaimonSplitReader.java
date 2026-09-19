@@ -264,7 +264,7 @@ public final class NativePaimonSplitReader
         rowBatch.releaseBatch();
         rowBatch = null;
       } else {
-        batch.add(copy.copy(new FlinkRowData(row)));
+        batch.add(tech.streamfusion.compat.RuntimeCompat.copyRow(copy, new FlinkRowData(row)));
       }
     }
     return batch.isEmpty()

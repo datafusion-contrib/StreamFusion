@@ -395,6 +395,16 @@ PY
 )"
 fi
 if [[ "${SUITE_MODE}" == "paimon" ]]; then
+  if [[ "${FLINK_LINE}" == "1.18" ]]; then
+    # The common tests compile against 1.20, while the released 1.18 connector supplies
+    # compatibility classes such as CatalogMaterializedTable for the actual 1.18 runtime.
+    PAIMON_RUNTIME_JAR="${SUITE_MAVEN_REPO}/org/apache/paimon/paimon-flink-${FLINK_LINE}/${PAIMON_VERSION}/paimon-flink-${FLINK_LINE}-${PAIMON_VERSION}.jar"
+    if [[ ! -f "${PAIMON_RUNTIME_JAR}" ]]; then
+      echo "Missing released Paimon compatibility artifact: ${PAIMON_RUNTIME_JAR}" >&2
+      exit 2
+    fi
+    STREAMFUSION_CLASSPATH="${STREAMFUSION_CLASSPATH},${PAIMON_RUNTIME_JAR}"
+  fi
   # Paimon declares the planner's test-jar before the planner itself, which places stock
   # calcite-core ahead of Flink's patched Calcite classes in Surefire's resolved classpath. Drop the
   # resolved calcite-core and append it instead, so the planner's copies win as in Flink's own build.

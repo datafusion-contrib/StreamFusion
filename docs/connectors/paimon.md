@@ -922,3 +922,15 @@ source coverage is [issue #27](https://github.com/datafusion-contrib/StreamFusio
 
 Build with the `paimon` Maven profile. The module has no snapshot, local-Maven, path, or forked
 Paimon dependency.
+
+### Flink 1.18 nested fallback batches
+
+The experimental 1.18 Java reader copies each fallback row into owned binary storage before
+collecting an Arrow batch. Flink 1.18's serializer can otherwise reuse a nested custom-array
+buffer across rows, corrupting values when restoring a split between Java and native readers.
+Snapshot parity checks cover nested arrays, projections, and restore offsets on both lines.
+Compaction parity fixtures pass all eight positional procedure arguments on both lines, using
+empty strings for optional filters and the explicit `full` batch-compaction strategy. This avoids depending on named/optional
+argument annotations and null argument conversion that Flink 1.18 cannot interpret. Batch mode
+is explicit in the table configuration because 1.18 constructs the procedure’s execution
+environment from that configuration.

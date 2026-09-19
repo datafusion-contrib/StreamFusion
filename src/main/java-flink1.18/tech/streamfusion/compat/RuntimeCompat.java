@@ -9,6 +9,13 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 public final class RuntimeCompat {
   private RuntimeCompat() {}
 
+  public static org.apache.flink.table.data.RowData copyRow(
+      org.apache.flink.table.runtime.typeutils.RowDataSerializer serializer,
+      org.apache.flink.table.data.RowData row) {
+    // In 1.18, copying a custom ArrayData view can return the serializer's reused buffer.
+    return serializer.toBinaryRow(row).copy();
+  }
+
   public static int attempt(RuntimeContext context) {
     return context.getAttemptNumber();
   }

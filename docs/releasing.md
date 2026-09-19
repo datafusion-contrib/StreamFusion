@@ -93,7 +93,7 @@ objects. Linux artifact validation rejects packaged libraries requiring a newer 
 image execution. This baseline loads in the official Flink 1.18 and 2.2 images. The containerized
 cross-platform builder uses Rust 1.94 on Debian Bullseye to stay below that ABI floor. A `--host-only`
 build inherits its host's libc requirements; do not build a deployment for an older distribution
-on Ubuntu 24.04. The 1.18 Java payload also uses the host SLF4J 1.7 API and provider, avoiding a
+on Ubuntu 24.04. Both Java payload lines use the host SLF4J 1.7 API and provider, avoiding a
 conflicting SLF4J 2 API in Flink’s global classpath. The workflow merges those binaries into the release
 JARs, validates the artifact boundaries, signs and publishes the reactor through the Central Portal,
 and only then creates the GitHub release. A version containing a hyphen, such as `0.1.0-rc3`, becomes

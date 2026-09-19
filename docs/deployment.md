@@ -149,7 +149,10 @@ benchmarks. Build the portable optimized artifacts when developing or preparing 
 bin/build-release.sh
 ```
 
-The release build enables `mimalloc` by default.
+The release build enables `mimalloc` by default. Its thread-local allocator state uses dynamic
+TLS because the JVM loads JNI libraries after startup, potentially through more than one
+classloader. Linux artifact validation rejects libraries that require a reserved static TLS
+block; deployment does not require preloading libraries or changing glibc tunables.
 
 The ORC module builds its released `orc-rust` reader through the normal Cargo/Maven lifecycle
 on macOS and Linux. Writing uses the Java ORC library supplied by Flink or Paimon, with a shared
@@ -228,3 +231,11 @@ and load each packaged format/connector extension in its own JVM. Flink 1.18 use
 `state.backend` configuration key; 2.2 uses `state.backend.type`.
 The 1.18 line remains experimental: these smoke jobs do not establish cross-line savepoint
 upgrade support, which is tracked in [#188](https://github.com/datafusion-contrib/StreamFusion/issues/188).
+
+## Host logging ownership
+
+Flink owns the process logging API and binding. StreamFusion compiles against Flink's SLF4J
+1.7.36 API as a provided dependency and does not package SLF4J classes in its deployment JARs.
+This prevents Arrow's transitive SLF4J 2 API from shadowing Flink's binding and silently
+selecting a no-operation logger. Artifact validation rejects bundled logging API classes,
+and the image SQL smoke test requires a real logging provider before running native SQL.

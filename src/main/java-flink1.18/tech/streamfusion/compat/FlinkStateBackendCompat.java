@@ -34,7 +34,12 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
     if (backend instanceof org.apache.flink.runtime.state.hashmap.HashMapStateBackend
         || backend instanceof org.apache.flink.runtime.state.memory.MemoryStateBackend
         || backend instanceof org.apache.flink.runtime.state.filesystem.FsStateBackend
-        || backend instanceof tech.streamfusion.state.RocksDBNativeStateBackend) {
+        // The deployed planner and host load the same final backend in separate classloaders.
+        || (backend != null
+            && backend
+                .getClass()
+                .getName()
+                .equals(tech.streamfusion.state.RocksDBNativeStateBackend.class.getName()))) {
       return null;
     }
     var option = org.apache.flink.configuration.StateBackendOptions.STATE_BACKEND;

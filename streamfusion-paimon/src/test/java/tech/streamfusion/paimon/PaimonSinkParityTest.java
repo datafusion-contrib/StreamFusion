@@ -887,11 +887,16 @@ class PaimonSinkParityTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setRuntimeMode(org.apache.flink.api.common.RuntimeExecutionMode.BATCH);
     StreamTableEnvironment compactor = catalogEnvironment(env, warehouse);
+    compactor.getConfig().set(
+        org.apache.flink.configuration.ExecutionOptions.RUNTIME_MODE,
+        org.apache.flink.api.common.RuntimeExecutionMode.BATCH);
     compactor
         .getConfig()
         .set(org.apache.flink.table.api.config.TableConfigOptions.TABLE_DML_SYNC, true);
-    compactor.executeSql("CALL sys.compact(`table` => 'default.pk_native')").await();
-    compactor.executeSql("CALL sys.compact(`table` => 'default.pk_stock')").await();
+    // Flink 1.18 cannot infer Paimon's newer named/optional-argument annotations.
+    String optionalArguments = ", ''".repeat(6) + ", 'full'";
+    compactor.executeSql("CALL sys.compact('default.pk_native'" + optionalArguments + ")").await();
+    compactor.executeSql("CALL sys.compact('default.pk_stock'" + optionalArguments + ")").await();
   }
 
   @Test

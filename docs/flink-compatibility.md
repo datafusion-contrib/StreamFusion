@@ -41,7 +41,7 @@ loader admission together. Dependency enforcement rejects other Flink lines. Eac
 manifest records its module and line, and the loader checks the embedded core and installed
 extensions before implementation classes are loaded. Renaming a JAR cannot bypass this check.
 Install one complete line; a mixed install is an error.
-The 1.18 payload uses the host's SLF4J 1.7 API and binding; it does not bundle Arrow's transitive
+Both payload lines use the host's SLF4J 1.7 API and binding; it does not bundle Arrow's transitive
 SLF4J 2 API into Flink's global classpath.
 
 The Kernel-based Delta implementation belongs only to the 2.2 source root and does not enter
@@ -135,3 +135,9 @@ even when it wraps heap state. Its log replay recomputes key groups from seriali
 does not preserve StreamFusion's explicit canonical partition/group pairing. Stateless native
 operators remain admitted. Keep `state.changelog.enabled=false` for native keyed execution;
 the upstream suite retains Flink's randomization and asserts this fallback when it is enabled.
+
+The 1.18 state admission check recognizes the final StreamFusion RocksDB backend across the
+host/planner classloader boundary. A matching backend loaded by the host remains eligible for
+native keyed operators; stock RocksDB and changelog-state exclusions still apply. The loader
+regression creates the backend through the normal host configuration before checking the native
+aggregate plan, matching image submission rather than a single-classloader unit fixture.
