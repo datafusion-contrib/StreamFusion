@@ -189,3 +189,11 @@ roughly a third of the transpose CPU was per-accessor bounds/refcount checks:
 
 See [Configuration](configuration.md) for the full `-Dstreamfusion.*` runtime flag surface,
 including off-heap sizing for Arrow batches and native operator state.
+
+## Host logging ownership
+
+Flink owns the process logging API and binding. StreamFusion compiles against Flink's SLF4J
+1.7.36 API as a provided dependency and does not package SLF4J classes in its deployment JARs.
+This prevents Arrow's transitive SLF4J 2 API from shadowing Flink's binding and silently
+selecting a no-operation logger. Artifact validation rejects bundled logging API classes,
+and the image SQL smoke test requires a real logging provider before running native SQL.

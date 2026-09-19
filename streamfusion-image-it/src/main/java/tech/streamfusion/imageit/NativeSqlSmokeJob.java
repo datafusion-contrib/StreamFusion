@@ -17,6 +17,9 @@ public final class NativeSqlSmokeJob {
   private NativeSqlSmokeJob() {}
 
   public static void main(String[] args) throws Exception {
+    if (org.slf4j.LoggerFactory.getILoggerFactory().getClass().getName().contains("NOP")) {
+      throw new IllegalStateException("The deployed payload replaced Flink's logging provider");
+    }
     TableEnvironment tableEnvironment = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
     String sql = "SELECT c0 * 2 AS doubled FROM (VALUES (3), (4), (5)) AS t(c0)";
 

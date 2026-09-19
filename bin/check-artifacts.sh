@@ -92,6 +92,10 @@ for suffix in $modules; do
     exit 1
   fi
   assert_flink_identity "$jar_file" "$module"
+  if jar tf "$jar_file" | grep -q '^org/slf4j/'; then
+    echo "$module must use Flink's logging API instead of bundling SLF4J" >&2
+    exit 1
+  fi
   jar tf "$jar_file" | awk -v module="$module" \
     '/^tech\/streamfusion\/.*\.class$/ { print $0, module }' >>"$entries"
   if [ "$suffix" != core ] && jar tf "$jar_file" \
