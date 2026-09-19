@@ -27,3 +27,7 @@ COPY streamfusion-loader/target/streamfusion-loader${STREAMFUSION_ARTIFACT_SUFFI
      /opt/flink/lib/00-streamfusion-loader.jar
 COPY streamfusion-core/target/streamfusion-core${STREAMFUSION_ARTIFACT_SUFFIX}-${STREAMFUSION_VERSION}-runtime.jar \
      /opt/flink/lib/streamfusion-core.jar
+
+COPY --chmod=755 docker/streamfusion-entrypoint.sh /streamfusion-entrypoint.sh
+ENTRYPOINT ["/streamfusion-entrypoint.sh"]
+CMD ["help"]

@@ -50,12 +50,18 @@ class StreamFusionPlannerLoaderTest {
 
     try {
       System.setProperty("java.class.path", original + java.io.File.pathSeparator + renamed);
+      PlannerModule.main(new String[0]);
       var module = constructor.newInstance();
       try (var classLoader = module.getSubmoduleClassLoader()) {
         assertTrue(List.of(classLoader.getURLs()).contains(renamed.toUri().toURL()));
       }
 
       System.setProperty("java.class.path", original + java.io.File.pathSeparator + legacy);
+      var startupFailure =
+          assertThrows(
+              org.apache.flink.table.api.TableException.class,
+              () -> PlannerModule.main(new String[0]));
+      assertTrue(startupFailure.getMessage().contains("missing marker"));
       var failure = assertThrows(InvocationTargetException.class, constructor::newInstance);
       assertTrue(failure.getCause().getMessage().contains("missing marker"));
     } finally {
@@ -81,6 +87,12 @@ class StreamFusionPlannerLoaderTest {
 
     try {
       System.setProperty("java.class.path", original + java.io.File.pathSeparator + jar);
+      var startupFailure =
+          assertThrows(
+              org.apache.flink.table.api.TableException.class,
+              () -> PlannerModule.main(new String[0]));
+      assertTrue(startupFailure.getMessage().contains("loader targets Flink " + line));
+      assertTrue(startupFailure.getMessage().contains("targets Flink " + otherLine));
       var failure = assertThrows(InvocationTargetException.class, constructor::newInstance);
 
       assertTrue(failure.getCause().getMessage().contains("loader targets Flink " + line));
