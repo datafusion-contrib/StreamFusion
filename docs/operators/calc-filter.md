@@ -131,6 +131,13 @@ without claiming a standalone speedup. Reproduce with the `bench` profile and
 
 ## User scalar functions
 
+Table API plans that retain an `AS` wrapper around a scalar expression currently fall back with
+`Calc: unsupported function/operator: AS`. This includes upstream constructor-state, inline and
+non-static object UDF projection fixtures; ordinary SQL aliases that the planner removes are
+unaffected. The execution audit pins both these host routes and the native routes for rich UDF
+job parameters, combined functions and code-generation splitting. Alias admission remains part
+of the [coverage backlog](https://github.com/datafusion-contrib/StreamFusion/issues/110).
+
 Java `ScalarFunction` calls use the existing columnar JVM bridge: Arrow argument columns enter
 the function once per batch and an Arrow result column returns to the native island. Supported
 external Java types are `String`, boxed/primitive numeric and boolean values, `BigDecimal` for

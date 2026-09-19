@@ -25,3 +25,11 @@ io.delta.flink.sink.sql.FlinkSqlTest#testLoadIntoTableWithManyTypes	*	!delta sin
 org.apache.flink.table.planner.runtime.stream.sql.AsyncLookupJoinITCase#testAsyncJoinTemporalTable	*	NativeAsyncLookupJoinOperator
 org.apache.flink.table.planner.runtime.stream.sql.AsyncLookupJoinITCase#testAsyncJoinTemporalTableWithRetry	*	NativeAsyncLookupJoinOperator
 org.apache.flink.table.planner.runtime.stream.sql.LookupJoinITCase#testJoinTemporalTable	*	NativeLookupJoinOperator
+
+# Table API UDF fixtures retain their original lifecycle, parameters and result assertions.
+org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testFunctionSplitWhenCodegenOverLengthLimit	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testUserDefinedFunctionWithParameter	*	NativeFilterOperator|NativeCalcOperator
+org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testMultipleUserDefinedFunctions	*	NativeFilterOperator|NativeCalcOperator
+org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testScalarFunctionConstructorWithParams	*	!Calc: unsupported function/operator: AS
+org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testInlineScalarFunction	*	!Calc: unsupported function/operator: AS
+org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testNonStaticObjectScalarFunction	*	!Calc: unsupported function/operator: AS

@@ -173,6 +173,17 @@ summary reports the complete executed denominator, the contracted subset, and th
 cases outside that scope. For example, 32 passing Calc cases with eight execution witnesses mean
 eight contracted executions and 24 unclassified executions, not 32 accelerated tests.
 
+The unchanged Table API UDF fixtures also have explicit contracts. Job-parameter lifecycle,
+multiple rich functions, and the code-generation split case require native Calc/filter work.
+Constructor-state, inline and non-static object projection fixtures currently require full host
+fallback with `Calc: unsupported function/operator: AS`, because their retained alias wrappers
+are not admitted. Both heap and RocksDB fixture variants are checked; passing host results are
+not reported as native execution. These contracts measure native operator work, not JNI-call
+frequency or throughput.
+The complete Table API Calc class passes 56 of 57 reported cases, with one upstream skip;
+12 executed cases have contracts (6 native, 6 explicit fallback), leaving 44 executed cases
+unclassified. This is the audit denominator, not an overall acceleration percentage.
+
 Validated evidence retains the fixture selector, per-operator native input counts, expected
 contract and recorded fallback reasons. Routes distinguish native work, mixed native work plus
 recorded fallback, full fallback, and unclassified evidence. Counts are explicitly evidence-record
