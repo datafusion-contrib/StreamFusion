@@ -122,3 +122,15 @@ above restore such state into the generic snapshot store instead.
 The two-component timestamp layout changes native row bytes and increments the snapshot metadata
 version. Older snapshots fail with a format-version error; see the
 [timestamp layout upgrade](canonical-state.md#timestamp-layout-upgrade) before upgrading a stateful job.
+
+## Failed and aborted checkpoints
+
+If the native snapshot fails before returning its manifest, the backend removes its partial
+hard-link directory. If an upload or shared-file reuse notification fails, newly uploaded files
+are discarded and the attempt cannot become an incremental reuse base. Previously confirmed
+shared files stay owned by Flink's checkpoint coordinator. An aborted checkpoint is removed from
+reuse bookkeeping; discarding its returned handle releases its files. A subsequent checkpoint
+can succeed without reopening the operator.
+
+Regression tests inject failures after the first upload, during native snapshot preparation and
+in the storage factory's reuse callback, and check both file cleanup and the next checkpoint.

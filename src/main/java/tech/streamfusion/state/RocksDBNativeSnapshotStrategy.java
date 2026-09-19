@@ -148,8 +148,22 @@ final class RocksDBNativeSnapshotStrategy
 
   @Override
   public RocksDBSnapshotResources syncPrepareResources(long checkpointId) throws Exception {
-    long profileStart = System.nanoTime();
     File linkDir = new File(checkpointLinkRoot, "chk-" + checkpointId);
+    try {
+      return prepareResources(checkpointId, linkDir);
+    } catch (Exception | Error failure) {
+      try {
+        FileUtils.deleteDirectory(linkDir);
+      } catch (IOException cleanupFailure) {
+        failure.addSuppressed(cleanupFailure);
+      }
+      throw failure;
+    }
+  }
+
+  private RocksDBSnapshotResources prepareResources(long checkpointId, File linkDir)
+      throws Exception {
+    long profileStart = System.nanoTime();
     if (linkDir.exists()) {
       FileUtils.deleteDirectory(linkDir);
     }
@@ -157,8 +171,7 @@ final class RocksDBNativeSnapshotStrategy
     if (System.getenv("SF_STATE_PROFILE") != null) {
       System.err.printf(
           "SFPROF rocksdb barrier chk=%d sync_ms=%d%n",
-          checkpointId,
-          (System.nanoTime() - profileStart) / 1_000_000);
+          checkpointId, (System.nanoTime() - profileStart) / 1_000_000);
     }
     String snapshotToken = manifest[0];
     List<String> dataFiles = new ArrayList<>();
@@ -267,7 +280,8 @@ final class RocksDBNativeSnapshotStrategy
             reused.add(confirmed);
           } else {
             StreamStateHandle uploaded =
-                uploadFile(resources.linkDir, relPath, streamFactory, scope, snapshotCloseableRegistry);
+                uploadFile(
+                    resources.linkDir, relPath, streamFactory, scope, snapshotCloseableRegistry);
             uploadedNow.add(uploaded);
             sharedState.add(HandleAndLocalPath.of(uploaded, relPath));
             checkpointedSize += uploaded.getStateSize();
@@ -275,7 +289,8 @@ final class RocksDBNativeSnapshotStrategy
         }
         for (String relPath : resources.metaFiles) {
           StreamStateHandle uploaded =
-              uploadFile(resources.linkDir, relPath, streamFactory, scope, snapshotCloseableRegistry);
+              uploadFile(
+                  resources.linkDir, relPath, streamFactory, scope, snapshotCloseableRegistry);
           uploadedNow.add(uploaded);
           privateState.add(HandleAndLocalPath.of(uploaded, relPath));
           checkpointedSize += uploaded.getStateSize();
@@ -285,6 +300,8 @@ final class RocksDBNativeSnapshotStrategy
         uploadedNow.add(metaHandle);
         checkpointedSize += metaHandle.getStateSize();
 
+        // Reuse registration can fail. Keep ownership until the factory accepts the snapshot.
+        streamFactory.reusePreviousStateHandle(reused);
         if (sharing != SnapshotType.SharingFilesStrategy.NO_SHARING) {
           synchronized (uploadedFiles) {
             uploadedFiles.put(checkpointId, Collections.unmodifiableList(sharedState));
@@ -302,9 +319,7 @@ final class RocksDBNativeSnapshotStrategy
         completed = true;
         return SnapshotResult.of(handle);
       } finally {
-        if (completed) {
-          streamFactory.reusePreviousStateHandle(reused);
-        } else {
+        if (!completed) {
           for (StreamStateHandle handle : uploadedNow) {
             try {
               handle.discardState();
