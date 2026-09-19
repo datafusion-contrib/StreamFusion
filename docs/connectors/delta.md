@@ -114,3 +114,25 @@ geomean was **1.522×** the stock published-Delta path. Updating queries used De
 upserts; naturally append-only queries used append mode. See
 [Benchmarks](../benchmarks.md#parquet-delta-and-paimon-sink-diagnostics) for the exact method and
 reproduction commands.
+
+## Flink 1.18 compatibility audit
+
+The released `delta-flink:3.3.3` connector predates the Kernel-based integration above and declares
+Flink 1.16.2 dependencies. Its 70 unchanged portable SQL tests pass against released Flink 1.18.1
+in the isolated host audit:
+
+```sh
+bin/delta-legacy-audit.sh
+```
+
+This runs the in-memory catalog, SQL source, sink and end-to-end suites, preserving their fixtures,
+checkpoint/commit checks and expected results. Hive catalog tests require separate infrastructure
+and are outside this portable audit. Reports are written under
+`.flink-suite/delta-legacy-1.18/target/surefire-reports`. The host audit is a separate blocking
+CI job included in `All upstream integration tests`; the existing native Delta 4.4 suite still runs.
+
+The audit loads no StreamFusion planner or native library. It proves the selected host connector
+cases, not native Delta acceleration or a complete connector compatibility matrix. Delta 3.3.3
+uses its Standalone transaction API and lacks the Kernel path-table engine replacement used by
+StreamFusion's 4.4 integration. No Flink 1.18 Delta acceleration artifact is admitted; that remaining
+work is tracked in [the connector compatibility issue](https://github.com/datafusion-contrib/StreamFusion/issues/187).

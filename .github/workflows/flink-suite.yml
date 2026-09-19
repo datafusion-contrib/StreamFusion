@@ -61,10 +61,35 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
+  legacy-delta-audit:
+    name: Delta 3.3 / Flink 1.18 host audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Run unchanged legacy Delta SQL tests against released Flink 1.18
+        run: |
+          set -o pipefail
+          bin/delta-legacy-audit.sh 2>&1 | tee delta-legacy-audit.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: delta-legacy-flink118-${{ github.sha }}
+          path: |
+            delta-legacy-audit.log
+            .flink-suite/delta-legacy-1.18/target/surefire-reports/
+          include-hidden-files: true
+          retention-days: 7
+
   all-tests:
     name: All upstream integration tests
     if: ${{ always() }}
-    needs: upstream-suite
+    needs: [upstream-suite, legacy-delta-audit]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
