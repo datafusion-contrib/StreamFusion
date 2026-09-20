@@ -62,6 +62,7 @@ class ScalarFunctionBenchmark {
           new Query("EXACT_SIGN_DECIMAL", "tt_decimal", "SIGN(n)", "DECIMAL(38,9)"),
           new Query("GREATEST_RUNTIME_STRING", "text", "GREATEST(s, 'm')", "STRING"),
           new Query("IF_BOOLEAN", "integer", "IF(n > 0, TRUE, FALSE)", "BOOLEAN"),
+          new Query("BOOLEAN_TO_STRING", "integer", "CAST(n > 0 AS STRING)", "STRING"),
           new Query("HASH_CODE_STRING", "text", "HASH_CODE(s)", "INT"),
           new Query("HASH_CODE_BIGINT", "bigint", "HASH_CODE(n)", "INT"),
           new Query("HASH_CODE_DECIMAL", "tt_decimal", "HASH_CODE(n)", "INT"),

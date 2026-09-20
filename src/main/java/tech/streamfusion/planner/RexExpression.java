@@ -2172,7 +2172,7 @@ final class RexExpression {
     boolean targetNumeric = numericRank(target) >= 0 || target == SqlTypeName.DECIMAL;
     boolean sourceFloat =
         source == SqlTypeName.FLOAT || source == SqlTypeName.REAL || source == SqlTypeName.DOUBLE;
-    return (sourceNumeric && targetString)
+    return ((sourceNumeric || source == SqlTypeName.BOOLEAN) && targetString)
         || (sourceString && targetNumeric)
         || (sourceString && targetString)
         || (sourceFloat && target == SqlTypeName.DECIMAL);
@@ -2308,6 +2308,7 @@ final class RexExpression {
       case "ABS", "SIGN" -> exact;
       case "FLOOR", "CEIL", "CEILING" -> integral && call.getOperands().size() == 1;
       case "TRUNCATE" -> integral;
+      case "TRY_CAST" -> input == SqlTypeName.BOOLEAN && SqlTypeFamily.CHARACTER.contains(call.getType());
       case "GREATEST", "LEAST" ->
           SqlTypeFamily.CHARACTER.contains(call.getType())
               || temporalTypeCode(call.getType()) >= 0

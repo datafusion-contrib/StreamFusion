@@ -467,6 +467,10 @@ These scalar rules are separate from grouping-key equality and sort ordering.
 
 ## Casts
 
+BOOLEAN to STRING, bounded VARCHAR and CHAR runs Flink's cast executor through the batch JVM
+bridge inside native Calc. TRUE/FALSE use uppercase text, NULL stays NULL, and bounded targets
+retain Flink's truncation and CHAR padding. TRY_CAST follows the same released cast rules.
+
 Native, unconditionally, with no host involvement:
 
 - **Widening numeric** — integer→wider integer, integer→float/double, float→double.
@@ -515,7 +519,8 @@ an unselected failing cast. Default-mode casts nested under AND/OR still fall ba
 that Flink's row short-circuiting suppresses errors on unselected rows; legacy-mode
 casts can compose under AND/OR because malformed input returns NULL. A bare expression
 encoder without table configuration declines this cast instead of guessing the mode.
-BOOLEAN-to-string and BOOLEAN TRY_CAST remain unsupported.
+STRING-to-BOOLEAN TRY_CAST remains unsupported. The reverse BOOLEAN-to-character casts use
+the host-exact path described above.
 
 ### Integer/string casts
 
