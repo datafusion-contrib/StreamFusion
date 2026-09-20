@@ -756,11 +756,18 @@ Character inputs produce BYTES. Either hex letter case is accepted; invalid byte
 
 ### GREATEST
 
-Integers, BOOLEAN and matching-precision/scale DECIMAL are native, with strict NULL propagation. Strings require ASCII literals or CASE results composed entirely of ASCII literals. Unrestricted string columns fall back: Flink uses UTF-16 order for Java-backed strings and byte order after binary materialization. Floating point and mixed decimal scales fall back.
+Integers, BOOLEAN, matching-precision/scale DECIMAL, and ASCII-provable strings retain their Rust
+kernels and strict NULL propagation. Mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
+Flink-generated expressions through the batch JVM bridge, preserving coercions and nanoseconds.
+Runtime strings use that bridge when the Calc reads an external DataStream whose conversion
+produces Java-backed strings. Unknown or binary-backed input representations retain fallback:
+Flink can use UTF-16 ordering before serialization and byte ordering afterward. Floating-point
+extrema retain fallback.
 
 ### LEAST
 
-Uses the same type and ASCII-proof gates as GREATEST, with strict NULL propagation and minimum comparison.
+Uses the same kernels, generated-expression paths and string-representation gates as GREATEST,
+with strict NULL propagation and minimum comparison.
 
 ### INITCAP
 

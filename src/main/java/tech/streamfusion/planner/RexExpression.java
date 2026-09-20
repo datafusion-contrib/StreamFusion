@@ -167,6 +167,7 @@ final class RexExpression {
   private RexNode projectionRoot;
   private int binaryUdfCalls;
   private boolean rowFusion;
+  private boolean javaStringInputs;
   private final java.util.Set<String> statefulUdfEvaluations = new java.util.HashSet<>();
   private ClassLoader expressionClassLoader = RexExpression.class.getClassLoader();
 
@@ -345,6 +346,7 @@ final class RexExpression {
         org.apache.flink.table.planner.utils.ShortcutUtils.unwrapClassLoader(calc);
     encoder.configure(org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(calc));
     encoder.watermarkAvailable = true;
+    encoder.javaStringInputs = HostStringInputs.areJavaBacked(calc.getInput());
     return encoder;
   }
 
@@ -2306,6 +2308,13 @@ final class RexExpression {
       case "ABS", "SIGN" -> exact;
       case "FLOOR", "CEIL", "CEILING" -> integral && call.getOperands().size() == 1;
       case "TRUNCATE" -> integral;
+      case "GREATEST", "LEAST" ->
+          SqlTypeFamily.CHARACTER.contains(call.getType())
+              || temporalTypeCode(call.getType()) >= 0
+              || call.getType().getSqlTypeName() == SqlTypeName.DECIMAL
+                  && call.getOperands().stream().anyMatch(
+                      operand -> !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
+                          operand.getType(), call.getType()));
       default -> false;
     };
   }
@@ -2361,6 +2370,7 @@ final class RexExpression {
   }
 
   private boolean emitHostExpression(RexCall call, boolean fuseConsumers) {
+    if (!validateHostStringInputs(call)) return false;
     if (fuseConsumers && !validateGeneratedExpression(call)) return false;
     List<RexNode> arguments = new ArrayList<>();
     List<org.apache.flink.table.types.logical.LogicalType> types = new ArrayList<>();
@@ -2839,6 +2849,7 @@ final class RexExpression {
 
   private boolean validateGeneratedExpression(RexNode node) {
     if (!(node instanceof RexCall call)) return true;
+    if (!validateHostStringInputs(call)) return false;
     if (call.getOperator()
             instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction function
         && function.getDefinition() instanceof org.apache.flink.table.functions.ScalarFunction
@@ -2846,6 +2857,18 @@ final class RexExpression {
       return false;
     }
     return call.getOperands().stream().allMatch(this::validateGeneratedExpression);
+  }
+
+  private boolean validateHostStringInputs(RexNode node) {
+    if (!(node instanceof RexCall call)) return true;
+    String name = call.getOperator().getName().toUpperCase(Locale.ROOT);
+    if ((name.equals("GREATEST") || name.equals("LEAST"))
+        && SqlTypeFamily.CHARACTER.contains(call.getType())
+        && !javaStringInputs
+        && call.getOperands().stream().anyMatch(operand -> !isAsciiLiteralResult(operand))) {
+      return reject("string representation before Arrow is not proven Java-backed");
+    }
+    return call.getOperands().stream().allMatch(this::validateHostStringInputs);
   }
 
   /**

@@ -60,6 +60,7 @@ class ScalarFunctionBenchmark {
       List.of(
           new Query("EXACT_ABS_BIGINT", "bigint", "ABS(n)", "BIGINT"),
           new Query("EXACT_SIGN_DECIMAL", "tt_decimal", "SIGN(n)", "DECIMAL(38,9)"),
+          new Query("GREATEST_RUNTIME_STRING", "text", "GREATEST(s, 'm')", "STRING"),
           new Query("HASH_CODE_STRING", "text", "HASH_CODE(s)", "INT"),
           new Query("HASH_CODE_BIGINT", "bigint", "HASH_CODE(n)", "INT"),
           new Query("HASH_CODE_DECIMAL", "tt_decimal", "HASH_CODE(n)", "INT"),
