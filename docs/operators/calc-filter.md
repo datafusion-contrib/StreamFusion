@@ -113,7 +113,8 @@ As with Flink's generated random fields, stream state belongs to the running ope
 not keyed checkpoint state.
 
 Floating-point unary negation also runs natively, including `-RAND(seed)`, and preserves signed
-zero, infinities, NaN and NULL. Integer and DECIMAL unary negation retain their existing fallback.
+zero, infinities, NaN and NULL. Integer and DECIMAL unary negation use Flink-generated
+expressions through the batch JVM bridge inside native Calc.
 
 Release diagnostic on Apple M1 Max, JDK 17/Flink 2.2.1: two million rows, parallelism 1,
 two warmups and five interleaved trials, with rowwise source/sink and both transposes asserted:
@@ -589,6 +590,18 @@ Boolean-to-string casts and other pairs not listed above. Temporal casts now use
 expressions; see [temporal functions](temporal-functions.md).
 
 ## Decimal arithmetic
+
+### Exact unary and integral functions
+
+Integer and DECIMAL unary minus, ABS and SIGN execute Flink's generated expression code through
+the existing batch JVM bridge. Integral FLOOR, CEIL and TRUNCATE use the same path, including
+per-row TRUNCATE positions. This retains resolved widths, decimal precision/scale, NULL handling,
+and Java overflow behavior, including ABS of the minimum INT/BIGINT value. Adjacent supported
+host expressions fuse before crossing the Arrow boundary. These are host-evaluated functions
+inside a columnar native Calc, not pure-Rust kernels.
+
+DECIMAL FLOOR/CEIL retain fallback: the released-host collection path has unverified decimal
+precision behavior. Existing floating-point gates and decimal TRUNCATE/ROUND kernels are unchanged.
 
 ### Decimal ROUND, TRUNCATE and literals
 

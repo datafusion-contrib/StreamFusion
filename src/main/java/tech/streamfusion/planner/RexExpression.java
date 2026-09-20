@@ -895,7 +895,7 @@ final class RexExpression {
       strings.add(unixTimeFormat);
       return emit(call.getOperands().get(0));
     }
-    if (needsTemporalFunction(call) || needsExactPower(call)) {
+    if (needsTemporalFunction(call) || needsExactPower(call) || needsExactScalarFunction(call)) {
       return emitHostExpression(call, false);
     }
     if (call.getKind() == SqlKind.MINUS_PREFIX) {
@@ -2293,6 +2293,23 @@ final class RexExpression {
     };
   }
 
+  private static boolean needsExactScalarFunction(RexCall call) {
+    if (call.getOperands().isEmpty()) return false;
+    SqlTypeName input = call.getOperands().get(0).getType().getSqlTypeName();
+    boolean integral = switch (input) {
+      case TINYINT, SMALLINT, INTEGER, BIGINT -> true;
+      default -> false;
+    };
+    boolean exact = integral || input == SqlTypeName.DECIMAL;
+    if (call.getKind() == SqlKind.MINUS_PREFIX) return exact;
+    return switch (call.getOperator().getName().toUpperCase(Locale.ROOT)) {
+      case "ABS", "SIGN" -> exact;
+      case "FLOOR", "CEIL", "CEILING" -> integral && call.getOperands().size() == 1;
+      case "TRUNCATE" -> integral;
+      default -> false;
+    };
+  }
+
   private static long nativeRoundingWidth(RexCall call) {
     String name = call.getOperator().getName();
     if (!("FLOOR".equals(name) || "CEIL".equals(name) || "CEILING".equals(name))
@@ -2409,7 +2426,8 @@ final class RexExpression {
     if (node instanceof RexCall call
         && (fuseConsumers
             || needsTemporalFunction(call) && nativeUnixTimeFormat(call) == null
-            || needsExactPower(call))) {
+            || needsExactPower(call)
+            || needsExactScalarFunction(call))) {
       List<RexNode> operands = new ArrayList<>();
       for (RexNode operand : call.getOperands()) {
         operands.add(hostExpressionArguments(operand, arguments, types, codes, fuseConsumers));
