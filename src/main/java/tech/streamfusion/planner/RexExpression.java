@@ -984,7 +984,7 @@ final class RexExpression {
         == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.IF) {
       if (call.getOperands().size() != 3) return reject("IF requires three operands");
       boolean supportedType = switch (call.getType().getSqlTypeName()) {
-        case TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, REAL, DOUBLE, DECIMAL,
+        case BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, REAL, DOUBLE, DECIMAL,
             CHAR, VARCHAR, DATE, TIME, TIMESTAMP, BINARY, VARBINARY -> true;
         default -> false;
       };
