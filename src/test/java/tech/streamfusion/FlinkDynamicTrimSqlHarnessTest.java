@@ -9,6 +9,11 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 
 class FlinkDynamicTrimSqlHarnessTest {
+  @org.junit.jupiter.api.BeforeEach
+  void requireHostFunction() {
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("BTRIM");
+  }
+
   @Test
   void perRowSetsPreserveWhitespaceUnicodeAndNullsAcrossBatches() throws Exception {
     BuiltinFunctionParity.assertParity(this::environment,

@@ -9,6 +9,12 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 
 class FlinkBinaryStringBuiltinsSqlHarnessTest {
+  @org.junit.jupiter.api.BeforeEach
+  void requireHostFunctions() {
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("STARTSWITH");
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ELT");
+  }
+
   @Test
   void binaryPredicatesAndSelectionPreserveEveryByteAcrossBatches() throws Exception {
     BuiltinFunctionParity.assertParity(this::environment,

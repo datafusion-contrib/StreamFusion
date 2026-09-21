@@ -160,6 +160,13 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // Pass 1 substitutes native (columnar) operators.
     int previousSubstitutions = substitutions;
     RelNode substituted = rewrite(root, new PlanContext(this, repeatedSources));
+    if (root instanceof org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink
+        && substituted instanceof ColumnarInput
+        && JsonStringIdentity.projectsBinaryString(root)) {
+      substitutions = previousSubstitutions;
+      recordFallback("binary-backed STRING requires a row sink");
+      return root;
+    }
     // Whole-query all-or-nothing: every native operator but a source/sink is Arrow → Arrow.
     // If any operator other than a source (a leaf) or the sink (the plan root) is still row-wise,
     // the

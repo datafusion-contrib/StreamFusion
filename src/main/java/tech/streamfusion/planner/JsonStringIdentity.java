@@ -24,6 +24,8 @@ final class JsonStringIdentity {
       return containsSensitiveString(access.getReferenceExpr());
     }
     if (!(expression instanceof RexCall call)) return false;
+    if (call.getOperator().getName().equals("REGEXP_EXTRACT_ALL")
+        || call.getOperator().getName().equals("STR_TO_MAP")) return true;
     if (SqlTypeFamily.CHARACTER.contains(call.getType())
         && (call.getOperator().getName().equals("JSON_VALUE")
             || call.getOperator().getName().equals("JSON_QUERY")
@@ -76,6 +78,17 @@ final class JsonStringIdentity {
     return expression instanceof RexCall call
         && (call.getOperator().getName().equals("FROM_BASE64")
             || call.getOperands().stream().anyMatch(JsonStringIdentity::containsBinaryString));
+  }
+
+  static boolean projectsBinaryString(RelNode node) {
+    if (node instanceof StreamPhysicalCalc calc) {
+      var program = calc.getProgram();
+      for (var projection : program.getProjectList()) {
+        RexNode expression = program.expandLocalRef(projection);
+        if (containsCharacter(expression.getType()) && containsBinaryString(expression)) return true;
+      }
+    }
+    return node.getInputs().stream().anyMatch(JsonStringIdentity::projectsBinaryString);
   }
 
   static boolean containsCharacter(RelDataType type) {

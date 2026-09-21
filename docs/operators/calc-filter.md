@@ -19,7 +19,8 @@ default via a JVM upcall (and why that's not a fallback), what's opt-in, and wha
 fallback.
 
 - **Unsupported function/operator** outside the admitted set normally declines the whole Calc.
-  A [SQL/JSON Calc](#sqljson-evaluation) can instead use Flink generation for its complete program,
+  A [SQL/JSON Calc](#sqljson-evaluation) or a Calc containing the collection-returning string
+  functions below can instead use Flink generation for its complete program,
   subject to the host code generator and the verified batch bridge types.
 
 ## LIKE ESCAPE and SIMILAR TO
@@ -773,8 +774,9 @@ encoding raises the same host exception; empty input and NULL retain their host 
 STRING values may contain arbitrary bytes. Final scalar STRING projections therefore travel as
 Arrow Binary and are read as Flink StringData without UTF-8 normalization. Consumers such as
 comparison, length, casts and re-encoding fuse in Flink before Arrow export. Sensitive STRING
-results crossing another relational operator, or contained in whole-Calc complex outputs, retain
-fallback rather than exposing invalid Arrow Utf8.
+results crossing another relational operator, feeding a native columnar sink, or contained in
+whole-Calc complex outputs retain fallback rather than exposing invalid Arrow Utf8. Row sinks
+can consume the final decoded bytes through the Arrow-to-RowData transpose.
 
 `IS_DECIMAL`, `IS_DIGIT` and `IS_ALPHA` use the same generated evaluator, preserving Flink syntax
 and Unicode classification, including non-nullable FALSE for NULL and empty input.
@@ -785,8 +787,8 @@ Character inputs produce BYTES. Either hex letter case is accepted; invalid byte
 
 ### GREATEST
 
-Integers, BOOLEAN, matching-precision/scale DECIMAL, and ASCII-provable strings retain their Rust
-kernels and strict NULL propagation. Mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
+Integers, BOOLEAN and matching-precision/scale DECIMAL retain their Rust kernels and strict NULL
+propagation. Character results, mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
 Flink-generated expressions through the batch JVM bridge, preserving coercions and nanoseconds.
 Runtime strings use that bridge when the Calc reads an external DataStream whose conversion
 produces Java-backed strings. Unknown or binary-backed input representations retain fallback:
@@ -902,8 +904,9 @@ date/time, interval, supported timestamp types, and recursively nested ARRAY/ROW
 those leaves. Nested arguments use Flink internal views over the imported Arrow batch; generated
 results are copied into owned Arrow output vectors before that batch closes. The callback still
 crosses JNI once per batch, including multi-column results and filtering.
-MAP/MULTISET boundary values, including maps nested inside an array or row, remain explicit
-fallback. Constructing containers internally is allowed when the resulting boundary types are
+MAPs with character keys and character values are also admitted, including inside ARRAY/ROW.
+Other MAP and MULTISET boundary types remain explicit fallback.
+Constructing containers internally is allowed when the resulting boundary types are
 admitted. Unsupported host code generation
 and UDF signatures retain explicit fallback. Flink 2.2.1 rejects dynamic JSON_EXISTS paths;
 that host failure is preserved. No configuration opt-in is required.
@@ -1337,6 +1340,16 @@ Uses the same literal kernels and per-row set admission as LTRIM, trimming from 
 
 ## Case folding & regex
 
+`REGEXP_EXTRACT_ALL` and `STR_TO_MAP` use Flink-generated evaluation. ARRAY/MAP results use
+the whole-Calc batch JVM route with owned Arrow output vectors; scalar consumers can stay in
+one generated expression. Capture groups, unmatched optional groups, empty matches, invalid
+patterns/indices, NULL containers/elements, regex map delimiters, duplicate keys and missing
+values follow released Flink. Filters run before projections, including all-filtered batches.
+ARRAY and MAP lookups and cardinality inside the Calc retain the host's internal values.
+Character results from these functions crossing another relational operator retain the string
+identity fallback, as do whole-Calc character outputs containing arbitrary Base64-decoded bytes.
+The operator remains columnar; these functions themselves execute on the JVM.
+
 REGEXP, REGEXP_REPLACE, REGEXP_COUNT, REGEXP_INSTR and REGEXP_SUBSTR use Flink-generated
 expressions through the batch JVM bridge for literal and per-row patterns. Java lookaround,
 backreferences, UTF-16 positions, empty matches, literal replacement strings, invalid-pattern
@@ -1410,6 +1423,38 @@ implementation can't handle, even though the function itself is supported:
 
 See [Configuration](../configuration.md) for the full `allowIncompatible` flag surface referenced
 throughout this page.
+
+## Generated helper performance
+
+The generated functions above extend the expressions that can stay inside a columnar island.
+They are correctness/coverage work, not standalone scalar speedups: Flink still evaluates each
+row inside the batch callback. A release-only diagnostic on Apple M4 Pro on 2026-09-21 used 200,000 rows,
+64-byte text/binary payloads, parallelism 1, one warmup and three alternating measured runs per
+engine. Matched-source identity controls and both row/Arrow transposes remain in the measured
+path. Every query verifies native Calc admission before timing.
+
+| Expression workload | Flink seconds | Native seconds | Throughput ratio |
+|---|---:|---:|---:|
+| BIGINT ABS | 0.094 | 0.117 | 0.806x |
+| DECIMAL SIGN | 0.096 | 0.153 | 0.630x |
+| Runtime STRING GREATEST | 0.103 | 0.145 | 0.709x |
+| BOOLEAN IF | 0.095 | 0.104 | 0.911x |
+| BOOLEAN to STRING | 0.093 | 0.110 | 0.844x |
+| LIKE ESCAPE | 0.106 | 0.132 | 0.799x |
+| REGEXP_COUNT | 0.138 | 0.171 | 0.808x |
+| PARSE_URL | 0.134 | 0.174 | 0.771x |
+| PRINTF BIGINT | 0.168 | 0.184 | 0.913x |
+| Dynamic BTRIM | 0.117 | 0.178 | 0.659x |
+| IS_ALPHA | 0.096 | 0.136 | 0.706x |
+| Binary STARTSWITH | 0.089 | 0.131 | 0.681x |
+| REGEXP_EXTRACT_ALL | 0.200 | 0.279 | 0.718x |
+
+These short local timings measure the cost of the new coverage. They do not establish a gain
+for an entire native pipeline, and every standalone workload here is slower than Flink. The
+bridge is retained to allow composition with existing native operators; future performance
+claims require measuring that complete pipeline. Reproduce with `ScalarFunctionBenchmark`
+under `-Pbench`, `SF_BENCHMARK=true`, `-Dscalar.rows=200000 -Dscalar.bytes=64` and
+`-Dscalar.warmup=1 -Dscalar.runs=3`, selecting the corresponding `scalar.functions` names.
 
 ## Flink 1.18 compatibility
 

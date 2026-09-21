@@ -9,6 +9,12 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 
 class FlinkRegexBuiltinsSqlHarnessTest {
+  @org.junit.jupiter.api.BeforeEach
+  void requireHostFunctions() {
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("REGEXP_COUNT");
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("REGEXP_SUBSTR");
+  }
+
   @Test
   void javaPatternsTypesNullsAndLiteralReplacementSpanBatches() throws Exception {
     BuiltinFunctionParity.assertParity(

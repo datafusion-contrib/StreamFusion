@@ -332,7 +332,8 @@ final class RexExpression {
   private static CalcEncoding tryEncodeCalc(Calc calc) {
     RexExpression encoder = forCalc(calc);
     boolean supported = encoder.emitCalc(calc);
-    if (!supported && containsSqlJson(calc.getProgram())) {
+    if (!supported
+        && (containsSqlJson(calc.getProgram()) || containsCollectionStringFunction(calc.getProgram()))) {
       // A failed native attempt may have populated pools and UDF bindings. Generate the complete
       // Calc in a fresh encoder so short-circuiting and row evaluation order stay with Flink.
       encoder = forCalc(calc);
@@ -464,11 +465,29 @@ final class RexExpression {
     boolean nested =
         switch (type.getSqlTypeName()) {
           case ARRAY -> rowCalcTypeCode(type.getComponentType()) >= 0;
+          case MAP -> SqlTypeFamily.CHARACTER.contains(type.getKeyType())
+              && SqlTypeFamily.CHARACTER.contains(type.getValueType());
           case ROW ->
               type.getFieldList().stream().allMatch(field -> rowCalcTypeCode(field.getType()) >= 0);
           default -> false;
         };
     return nested ? tech.streamfusion.operator.NativeUdf.TYPE_INTERNAL : hostCastTypeCode(type);
+  }
+
+  private static boolean containsCollectionStringFunction(RexProgram program) {
+    return program.getCondition() != null
+            && containsCollectionStringFunction(program.expandLocalRef(program.getCondition()))
+        || program.getProjectList().stream()
+            .anyMatch(project -> containsCollectionStringFunction(program.expandLocalRef(project)));
+  }
+
+  private static boolean containsCollectionStringFunction(RexNode node) {
+    if (node instanceof org.apache.calcite.rex.RexFieldAccess access) {
+      return containsCollectionStringFunction(access.getReferenceExpr());
+    }
+    return node instanceof RexCall call
+        && (java.util.Set.of("REGEXP_EXTRACT_ALL", "STR_TO_MAP").contains(call.getOperator().getName())
+            || call.getOperands().stream().anyMatch(RexExpression::containsCollectionStringFunction));
   }
 
   private boolean emitRowCalc(Calc calc) {
@@ -2325,6 +2344,7 @@ final class RexExpression {
       case "TRUNCATE" -> integral;
       case "TRY_CAST" -> input == SqlTypeName.BOOLEAN && SqlTypeFamily.CHARACTER.contains(call.getType());
       case "REGEXP", "REGEXP_REPLACE", "REGEXP_COUNT", "REGEXP_INSTR", "REGEXP_SUBSTR" -> true;
+      case "REGEXP_EXTRACT_ALL", "STR_TO_MAP" -> true;
       case "PARSE_URL" -> true;
       case "PRINTF" -> true;
       case "STARTSWITH", "ENDSWITH" -> SqlTypeFamily.BINARY.contains(call.getOperands().get(0).getType());
