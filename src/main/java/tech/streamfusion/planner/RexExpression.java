@@ -2318,6 +2318,8 @@ final class RexExpression {
       case "REGEXP", "REGEXP_REPLACE", "REGEXP_COUNT", "REGEXP_INSTR", "REGEXP_SUBSTR" -> true;
       case "PARSE_URL" -> true;
       case "PRINTF" -> true;
+      case "BTRIM", "LTRIM", "RTRIM" ->
+          call.getOperands().size() == 2 && !(call.getOperands().get(1) instanceof RexLiteral);
       case "GREATEST", "LEAST" ->
           SqlTypeFamily.CHARACTER.contains(call.getType())
               || temporalTypeCode(call.getType()) >= 0
@@ -2883,7 +2885,9 @@ final class RexExpression {
           call.getOperands().stream().anyMatch(operand -> SqlTypeFamily.CHARACTER.contains(operand.getType()));
       default -> false;
     };
-    if ((stringOrdering || (name.equals("GREATEST") || name.equals("LEAST"))
+    boolean dynamicTrim = java.util.Set.of("BTRIM", "LTRIM", "RTRIM").contains(name)
+        && call.getOperands().size() == 2 && !(call.getOperands().get(1) instanceof RexLiteral);
+    if ((dynamicTrim || stringOrdering || (name.equals("GREATEST") || name.equals("LEAST"))
             && SqlTypeFamily.CHARACTER.contains(call.getType()))
         && !javaStringInputs
         && call.getOperands().stream().anyMatch(operand -> !isAsciiLiteralResult(operand))) {

@@ -793,7 +793,11 @@ Three character arguments. Mappings use Unicode codepoints, not graphemes. The f
 
 ### BTRIM
 
-One-argument space trimming and two-argument character-set trimming with a literal set are native. Empty sets preserve the input and NULL propagates. Column trim sets fall back because Flink can change their meaning after an exchange when the first set character is a space.
+One-argument space trimming and two-argument character-set trimming with a literal set retain
+their Rust kernels. Empty sets preserve the input and NULL propagates. Per-row sets use Flink's
+generated evaluator when the Calc reads a proven external Java-string conversion. Unknown or
+binary-backed representations retain fallback because Flink can change set behavior after an
+exchange when the first set character is a space.
 
 ### TRIM
 
@@ -1300,11 +1304,13 @@ by default. See the complete [temporal function inventory](temporal-functions.md
 
 ### LTRIM
 
-One-argument space trimming and two-argument trimming with a literal Unicode character set are native. Empty sets preserve the input; NULL propagates. Dynamic trim sets fall back because Flink semantics depend on whether strings are Java-backed or binary-backed.
+One-argument space trimming and literal Unicode sets retain their Rust kernels. Per-row sets
+use the same generated evaluator and source-representation gate as BTRIM. Empty sets preserve
+the input and NULL propagates.
 
 ### RTRIM
 
-Uses the same literal-set gate as LTRIM, trimming from the right. Dynamic trim sets fall back; one-argument space trimming is native.
+Uses the same literal kernels and per-row set admission as LTRIM, trimming from the right.
 
 ## Case folding & regex
 
@@ -1370,7 +1376,8 @@ A number of otherwise-admitted functions decline when called with an argument sh
 implementation can't handle, even though the function itself is supported:
 
 - An **unsupported literal type** anywhere in the expression.
-- **`TRIM`** — dynamic trim sets; all directions with literal sets are native.
+- **`TRIM`** — dynamic SQL trim sets; all directions with literal sets are native. Per-row
+  BTRIM/LTRIM/RTRIM sets use their documented external-Java-string admission.
 - **`POSITION`** — a `FROM` start offset.
 - **`SPLIT_INDEX`** — the numeric separator overload.
 - **`CURRENT_WATERMARK`** — requires a Calc watermark context; unsupported in standalone join or UNNEST residuals.
