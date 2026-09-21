@@ -65,6 +65,7 @@ class ScalarFunctionBenchmark {
           new Query("BOOLEAN_TO_STRING", "integer", "CAST(n > 0 AS STRING)", "STRING"),
           new Query("LIKE_ESCAPE", "text", "s LIKE '%!_%' ESCAPE '!'", "BOOLEAN"),
           new Query("REGEXP_COUNT", "text", "REGEXP_COUNT(s, 'a')", "INT"),
+          new Query("PARSE_URL", "text", "PARSE_URL(CONCAT('http://example.org/', s), 'PATH')", "STRING"),
           new Query("HASH_CODE_STRING", "text", "HASH_CODE(s)", "INT"),
           new Query("HASH_CODE_BIGINT", "bigint", "HASH_CODE(n)", "INT"),
           new Query("HASH_CODE_DECIMAL", "tt_decimal", "HASH_CODE(n)", "INT"),

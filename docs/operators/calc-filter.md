@@ -814,6 +814,13 @@ Character strings use Java form encoding: space becomes `+`, ASCII alphanumerics
 
 Character strings and integer positions, widened to BIGINT without losing bits. Preserves Java UTF-16 positions, length narrowing/overflow, and substring errors. Non-positive or beyond-end starts return the source; zero/negative lengths omit the suffix. Split surrogate pairs encode as `?`, like Flink. Any NULL argument returns NULL.
 
+### PARSE_URL
+
+The two- and three-argument overloads use Flink's generated evaluator through the batch JVM
+bridge, including runtime URL parts and query keys. Java URL component spelling, raw percent
+escapes, duplicate query keys, absent components and NULL/invalid-input behavior remain Flink's.
+No Rust URL normalization or query decoding is substituted.
+
 ### URL_DECODE
 
 One character argument is native. Form decoding preserves JDK UTF-8 replacement grouping and returns NULL for malformed escapes. The planner selects the runtime JDK rule: JDK 17/21 (and pre-25 runtimes) use Integer.parseInt, accepting signed one-digit escapes and BMP Unicode hex digits; JDK 25+ uses ASCII-only HexFormat rules.
