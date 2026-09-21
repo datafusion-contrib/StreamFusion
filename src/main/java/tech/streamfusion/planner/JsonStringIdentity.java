@@ -28,7 +28,8 @@ final class JsonStringIdentity {
         && (call.getOperator().getName().equals("JSON_VALUE")
             || call.getOperator().getName().equals("JSON_QUERY")
             || call.getOperator().getName().equals("JSON_UNQUOTE")
-            || call.getOperator().getName().equals("PRINTF"))) {
+            || call.getOperator().getName().equals("PRINTF")
+            || call.getOperator().getName().equals("FROM_BASE64"))) {
       return true;
     }
     return call.getOperands().stream().anyMatch(JsonStringIdentity::containsSensitiveString);
@@ -68,7 +69,16 @@ final class JsonStringIdentity {
     return false;
   }
 
-  private static boolean containsCharacter(RelDataType type) {
+  static boolean containsBinaryString(RexNode expression) {
+    if (expression instanceof RexFieldAccess access) {
+      return containsBinaryString(access.getReferenceExpr());
+    }
+    return expression instanceof RexCall call
+        && (call.getOperator().getName().equals("FROM_BASE64")
+            || call.getOperands().stream().anyMatch(JsonStringIdentity::containsBinaryString));
+  }
+
+  static boolean containsCharacter(RelDataType type) {
     if (SqlTypeFamily.CHARACTER.contains(type)) return true;
     if (type.getComponentType() != null && containsCharacter(type.getComponentType())) return true;
     if (type.getKeyType() != null && containsCharacter(type.getKeyType())) return true;

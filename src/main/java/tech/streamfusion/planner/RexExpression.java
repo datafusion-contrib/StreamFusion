@@ -151,6 +151,7 @@ final class RexExpression {
   private final List<Integer> udfIdSlots = new ArrayList<>();
 
   private final List<Integer> projectionRoots = new ArrayList<>();
+  private final java.util.Set<Integer> binaryStringProjections = new java.util.HashSet<>();
   private int conditionRoot = -1;
   private String[] outputNames = new String[0];
   // Why the encode declined, set at the first (innermost) un-admitted node; null if it succeeded.
@@ -516,6 +517,10 @@ final class RexExpression {
             RexUtil.expandSearch(
                 calc.getCluster().getRexBuilder(), null, program.expandLocalRef(ref));
         if (!validateGeneratedExpression(projection)) return false;
+        if (JsonStringIdentity.containsCharacter(projection.getType())
+            && JsonStringIdentity.containsBinaryString(projection)) {
+          return reject("binary-backed STRING requires a final scalar projection");
+        }
         if (rowCalcTypeCode(projection.getType()) < 0)
           return reject("row-fused UDF output type is not supported: " + projection.getType());
         projections.add(projection.accept(remap));
@@ -570,6 +575,10 @@ final class RexExpression {
   /** The pre-order node index of each projection tree's root. */
   int[] projectionRoots() {
     return toIntArray(projectionRoots);
+  }
+
+  boolean isBinaryStringProjection(int index) {
+    return binaryStringProjections.contains(index);
   }
 
   /** The condition tree's root node index, or -1 if the Calc has no condition. */
@@ -2318,6 +2327,10 @@ final class RexExpression {
       case "REGEXP", "REGEXP_REPLACE", "REGEXP_COUNT", "REGEXP_INSTR", "REGEXP_SUBSTR" -> true;
       case "PARSE_URL" -> true;
       case "PRINTF" -> true;
+      case "FROM_BASE64", "IS_DECIMAL", "IS_DIGIT", "IS_ALPHA" -> true;
+      case "SHA2" -> call.getOperands().size() == 2 && !(call.getOperands().get(1) instanceof RexLiteral);
+      case "SPLIT_INDEX" -> call.getOperands().size() == 3
+          && SqlTypeFamily.INTEGER.contains(call.getOperands().get(1).getType());
       case "BTRIM", "LTRIM", "RTRIM" ->
           call.getOperands().size() == 2 && !(call.getOperands().get(1) instanceof RexLiteral);
       case "GREATEST", "LEAST" ->
@@ -2388,6 +2401,7 @@ final class RexExpression {
   }
 
   private boolean emitHostExpression(RexCall call, boolean fuseConsumers) {
+    fuseConsumers |= needsExactScalarFunction(call);
     if (!validateHostStringInputs(call)) return false;
     if (fuseConsumers && !validateGeneratedExpression(call)) return false;
     List<RexNode> arguments = new ArrayList<>();
@@ -2400,6 +2414,17 @@ final class RexExpression {
       return reject(e.getMessage());
     }
     int returnCode = hostCastTypeCode(call.getType());
+    boolean binaryStringResult =
+        SqlTypeFamily.CHARACTER.contains(call.getType())
+            && JsonStringIdentity.containsBinaryString(call);
+    if (binaryStringResult) {
+      if (call != projectionRoot) {
+        return reject("binary-backed STRING requires a final scalar projection");
+      }
+      // Flink strings may contain arbitrary bytes, which Arrow Utf8 must never carry.
+      returnCode = tech.streamfusion.operator.NativeUdf.TYPE_BINARY;
+      binaryStringProjections.add(projectionRoots.size() - 1);
+    }
     if (returnCode < 0) {
       return reject("unsupported generated-expression result type " + call.getType());
     }
@@ -2415,7 +2440,8 @@ final class RexExpression {
               expression,
               types.toArray(org.apache.flink.table.types.logical.LogicalType[]::new),
               temporalConfig,
-              expressionClassLoader);
+              expressionClassLoader,
+              binaryStringResult);
       eval = FlinkExpressionFunction.class.getMethod("eval", Object[].class);
     } catch (Exception e) {
       return reject("host expression cannot be generated: " + e.getMessage());

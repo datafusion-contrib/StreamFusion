@@ -12,11 +12,20 @@ class FlinkDynamicTrimSqlHarnessTest {
   @Test
   void perRowSetsPreserveWhitespaceUnicodeAndNullsAcrossBatches() throws Exception {
     BuiltinFunctionParity.assertParity(this::environment,
+        "SELECT BTRIM(s,LEFT(c,1)), LTRIM(s,LEFT(c,1)), RTRIM(s,LEFT(c,1)) FROM src WHERE c <> ''");
+    BuiltinFunctionParity.assertParity(this::environment,
         "SELECT BTRIM(s,c), LTRIM(s,c), RTRIM(s,c), BTRIM(s,'ab') FROM src");
     BuiltinFunctionParity.assertParity(this::environment,
         "SELECT BTRIM(s,c) FROM src WHERE BTRIM(s,c) = 'XYZ'");
     BuiltinFunctionParity.assertParity(this::environment,
         "SELECT LTRIM(s,c), RTRIM(s,c) FROM src WHERE n = 99");
+  }
+
+  @Test
+  void computedEmptySetRetainsTheReleasedHostFailure() throws Exception {
+    NativeFailureParity.run(this::environment, "SELECT BTRIM(s,LEFT(c,1)) FROM src")
+        .assertFailure(ArithmeticException.class, "/ by zero", NativeFailureParity.Phase.ROW_EVALUATION,
+            NativeFailureParity.Route.NATIVE);
   }
 
   @Test

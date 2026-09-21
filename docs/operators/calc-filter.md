@@ -259,8 +259,9 @@ These functions run entirely in Rust by default, in projections, predicates, and
 | `SHA224(s)`, `SHA256(s)`, `SHA384(s)`, `SHA512(s)` | Lowercase hexadecimal SHA-2 of the UTF-8 bytes; NULL input produces NULL. |
 | `SHA2(s, bit_length)` | The two-argument form with a literal bit length of 224, 256, 384, or 512; equivalent to the corresponding fixed-width function. |
 
-A non-literal or NULL `SHA2` bit length, and other bit lengths, are not admitted. A dynamic bit length
-falls back; literal values are checked exactly, including `BIGINT`, without truncating to 32 bits.
+A dynamic `SHA2` bit length uses Flink-generated code through the batch JVM bridge, preserving
+NULLs and the released host's unsupported-algorithm failure. Literal values are checked exactly,
+including `BIGINT`, without truncating to 32 bits; unsupported or NULL literal widths fall back.
 For example, `SHA2(s, CAST(4294967520 AS BIGINT))` falls back and retains Flink's unsupported-algorithm
 failure instead of being treated as SHA-224. Flink 2.2 does not expose hash
 overloads with an explicit character set. Binary/collection concatenation is outside this
@@ -762,7 +763,17 @@ Character strings and binary columns are encoded as padded RFC 4648 Base64 witho
 Strings use their UTF-8 bytes; binary inputs preserve every byte, including invalid UTF-8.
 Both overloads share the direct-output encoder. Empty input stays empty and NULL propagates.
 VARBINARY literals are native; fixed-size BINARY literals retain the literal encoder's fallback.
-FROM_BASE64 falls back.
+
+`FROM_BASE64` accepts character and binary inputs through Flink-generated evaluation. Invalid
+encoding raises the same host exception; empty input and NULL retain their host results. Decoded
+STRING values may contain arbitrary bytes. Final scalar STRING projections therefore travel as
+Arrow Binary and are read as Flink StringData without UTF-8 normalization. Consumers such as
+comparison, length, casts and re-encoding fuse in Flink before Arrow export. Sensitive STRING
+results crossing another relational operator, or contained in whole-Calc complex outputs, retain
+fallback rather than exposing invalid Arrow Utf8.
+
+`IS_DECIMAL`, `IS_DIGIT` and `IS_ALPHA` use the same generated evaluator, preserving Flink syntax
+and Unicode classification, including non-nullable FALSE for NULL and empty input.
 
 ### UNHEX
 
@@ -1293,7 +1304,11 @@ Same input and boundary rules as LPAD, with padding appended on the right. Dynam
 
 ### SPLIT_INDEX
 
-Character separators and TINYINT/SMALLINT/INTEGER indices may be dynamic. Indices are zero-based; negative/out-of-range indices, empty input, or any NULL produce NULL. Whole separators preserve empty tokens. An empty separator uses Java Character.isWhitespace, including tabs and line separators but excluding non-breaking spaces. Numeric separators and BIGINT indices fall back.
+Character separators and TINYINT/SMALLINT/INTEGER indices may be dynamic. Indices are zero-based; negative/out-of-range indices, empty input, or any NULL produce NULL. Whole separators preserve empty tokens. An empty separator uses Java Character.isWhitespace, including tabs and line separators but excluding non-breaking spaces. Numeric separator overloads use Flink-generated code and interpret the integer as a character code. BIGINT indices with character separators fall back.
+
+Generated scalar helpers keep operand computations within the same Flink evaluator, retaining
+intermediate StringData representation. This also preserves the released host's failure for a
+computed empty trim set instead of silently changing it through a string conversion.
 
 ### Temporal parsing, extraction and rounding
 
@@ -1379,7 +1394,6 @@ implementation can't handle, even though the function itself is supported:
 - **`TRIM`** — dynamic SQL trim sets; all directions with literal sets are native. Per-row
   BTRIM/LTRIM/RTRIM sets use their documented external-Java-string admission.
 - **`POSITION`** — a `FROM` start offset.
-- **`SPLIT_INDEX`** — the numeric separator overload.
 - **`CURRENT_WATERMARK`** — requires a Calc watermark context; unsupported in standalone join or UNNEST residuals.
 - **Collection subscripts:** non-INT ARRAY indexes and literal indexes below one; runtime MAP keys
   of floating, collection or mismatched types; nullable non-compact decimal/timestamp MAP keys.

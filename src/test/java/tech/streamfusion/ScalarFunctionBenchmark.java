@@ -68,6 +68,7 @@ class ScalarFunctionBenchmark {
           new Query("PARSE_URL", "text", "PARSE_URL(CONCAT('http://example.org/', s), 'PATH')", "STRING"),
           new Query("PRINTF_BIGINT", "bigint", "PRINTF('n=%020d', n)", "STRING"),
           new Query("BTRIM_DYNAMIC", "text", "BTRIM(s, LEFT(s, 1))", "STRING"),
+          new Query("IS_ALPHA", "text", "IS_ALPHA(s)", "BOOLEAN"),
           new Query("HASH_CODE_STRING", "text", "HASH_CODE(s)", "INT"),
           new Query("HASH_CODE_BIGINT", "bigint", "HASH_CODE(n)", "INT"),
           new Query("HASH_CODE_DECIMAL", "tt_decimal", "HASH_CODE(n)", "INT"),
