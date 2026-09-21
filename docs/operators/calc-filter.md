@@ -701,9 +701,13 @@ benchmark results and do not disable otherwise verified expressions.
 
 ### STARTSWITH
 
+Binary overloads of STARTSWITH and ENDSWITH use released Flink code through the batch JVM
+bridge. They compare bytes directly, retaining empty-prefix/suffix and NULL behavior, and never
+decode binary inputs as text. Literal and runtime binary operands are supported within the
+generated expression.
+
 Two character arguments, literal or column. Matches a literal prefix, including Unicode and
 empty strings; any NULL argument returns NULL. Wildcard characters have no special meaning.
-Binary operands fall back.
 
 ### ENDSWITH
 
@@ -819,7 +823,11 @@ Column trim sets fall back for the same Flink representation-dependent behavior 
 
 ### ELT
 
-An INTEGER index and character alternatives are admitted. The index is 1-based; out-of-range and NULL indices return NULL. Only the selected alternative's NULL matters. Other index types and binary alternatives fall back: Flink casts its boxed index to Integer after its bounds check. Explicit casts to INTEGER follow the existing cast rules.
+The binary-result overload also runs through Flink-generated code. Dynamic INT indices retain
+one-based selection, out-of-range NULLs and NULL operands. Multiple binary result columns retain
+independent byte arrays across rows and batches.
+
+An INTEGER index and character alternatives are admitted. The index is 1-based; out-of-range and NULL indices return NULL. Only the selected alternative's NULL matters. Other index types fall back: Flink casts its boxed index to Integer after its bounds check. Explicit casts to INTEGER follow the existing cast rules.
 
 ### URL_ENCODE
 

@@ -2327,6 +2327,8 @@ final class RexExpression {
       case "REGEXP", "REGEXP_REPLACE", "REGEXP_COUNT", "REGEXP_INSTR", "REGEXP_SUBSTR" -> true;
       case "PARSE_URL" -> true;
       case "PRINTF" -> true;
+      case "STARTSWITH", "ENDSWITH" -> SqlTypeFamily.BINARY.contains(call.getOperands().get(0).getType());
+      case "ELT" -> input == SqlTypeName.INTEGER && SqlTypeFamily.BINARY.contains(call.getType());
       case "FROM_BASE64", "IS_DECIMAL", "IS_DIGIT", "IS_ALPHA" -> true;
       case "SHA2" -> call.getOperands().size() == 2 && !(call.getOperands().get(1) instanceof RexLiteral);
       case "SPLIT_INDEX" -> call.getOperands().size() == 3
