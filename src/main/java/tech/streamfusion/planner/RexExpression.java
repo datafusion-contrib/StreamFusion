@@ -847,6 +847,10 @@ final class RexExpression {
   }
 
   private boolean emitCall(RexCall call) {
+    if ((call.getKind() == SqlKind.AND || call.getKind() == SqlKind.OR)
+        && containsExactScalarFunction(call)) {
+      return emitHostExpression(call, true);
+    }
     if (call.getOperands().stream()
         .anyMatch(
             operand ->
@@ -2296,6 +2300,8 @@ final class RexExpression {
   }
 
   private static boolean needsExactScalarFunction(RexCall call) {
+    if (call.getKind() == SqlKind.LIKE && call.getOperands().size() == 3
+        || call.getKind() == SqlKind.SIMILAR) return true;
     if (call.getOperands().isEmpty()) return false;
     SqlTypeName input = call.getOperands().get(0).getType().getSqlTypeName();
     boolean integral = switch (input) {
@@ -2318,6 +2324,12 @@ final class RexExpression {
                           operand.getType(), call.getType()));
       default -> false;
     };
+  }
+
+  private static boolean containsExactScalarFunction(RexNode node) {
+    return node instanceof RexCall call
+        && (needsExactScalarFunction(call)
+            || call.getOperands().stream().anyMatch(RexExpression::containsExactScalarFunction));
   }
 
   private static long nativeRoundingWidth(RexCall call) {
@@ -2863,8 +2875,13 @@ final class RexExpression {
   private boolean validateHostStringInputs(RexNode node) {
     if (!(node instanceof RexCall call)) return true;
     String name = call.getOperator().getName().toUpperCase(Locale.ROOT);
-    if ((name.equals("GREATEST") || name.equals("LEAST"))
-        && SqlTypeFamily.CHARACTER.contains(call.getType())
+    boolean stringOrdering = switch (call.getKind()) {
+      case LESS_THAN, LESS_THAN_OR_EQUAL, GREATER_THAN, GREATER_THAN_OR_EQUAL ->
+          call.getOperands().stream().anyMatch(operand -> SqlTypeFamily.CHARACTER.contains(operand.getType()));
+      default -> false;
+    };
+    if ((stringOrdering || (name.equals("GREATEST") || name.equals("LEAST"))
+            && SqlTypeFamily.CHARACTER.contains(call.getType()))
         && !javaStringInputs
         && call.getOperands().stream().anyMatch(operand -> !isAsciiLiteralResult(operand))) {
       return reject("string representation before Arrow is not proven Java-backed");

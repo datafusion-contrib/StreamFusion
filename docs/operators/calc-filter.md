@@ -22,6 +22,14 @@ fallback.
   A [SQL/JSON Calc](#sqljson-evaluation) can instead use Flink generation for its complete program,
   subject to the host code generator and the verified batch bridge types.
 
+## LIKE ESCAPE and SIMILAR TO
+
+LIKE/NOT LIKE with an explicit literal or per-row ESCAPE, and SIMILAR TO/NOT SIMILAR TO,
+run Flink's generated SQL-pattern evaluator through the batch JVM bridge. Pattern grammar,
+Unicode, NULLs and invalid-escape failures are Flink's own. AND/OR consumers fuse with these
+expressions so invalid patterns are not evaluated on rows that Flink short-circuits; filtered-out
+batches do not evaluate projections. Existing two-argument LIKE keeps its current native path.
+
 ## COALESCE
 
 `COALESCE` retains the first non-NULL operand without evaluating it again. When an operand
