@@ -1292,6 +1292,12 @@ Uses the same literal-set gate as LTRIM, trimming from the right. Dynamic trim s
 
 ## Case folding & regex
 
+REGEXP, REGEXP_REPLACE, REGEXP_COUNT, REGEXP_INSTR and REGEXP_SUBSTR use Flink-generated
+expressions through the batch JVM bridge for literal and per-row patterns. Java lookaround,
+backreferences, UTF-16 positions, empty matches, literal replacement strings, invalid-pattern
+behavior and resolved INT/BOOLEAN/STRING types are retained. AND/OR consumers fuse with these
+calls to preserve Flink evaluation order. These functions do not use Rust's regex engine.
+
 **Native by default — not a fallback.** `UPPER`/`LOWER` and `REGEXP_EXTRACT` run natively by default
 via a columnar JVM upcall to Flink's own string routines — `BinaryStringData` case folding and
 `SqlFunctionUtils.regexpExtract` — so the result is byte-identical to the host, and the rest of the

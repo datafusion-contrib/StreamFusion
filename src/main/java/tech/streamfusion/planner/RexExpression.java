@@ -2315,6 +2315,7 @@ final class RexExpression {
       case "FLOOR", "CEIL", "CEILING" -> integral && call.getOperands().size() == 1;
       case "TRUNCATE" -> integral;
       case "TRY_CAST" -> input == SqlTypeName.BOOLEAN && SqlTypeFamily.CHARACTER.contains(call.getType());
+      case "REGEXP", "REGEXP_REPLACE", "REGEXP_COUNT", "REGEXP_INSTR", "REGEXP_SUBSTR" -> true;
       case "GREATEST", "LEAST" ->
           SqlTypeFamily.CHARACTER.contains(call.getType())
               || temporalTypeCode(call.getType()) >= 0
