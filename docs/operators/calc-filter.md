@@ -821,6 +821,15 @@ bridge, including runtime URL parts and query keys. Java URL component spelling,
 escapes, duplicate query keys, absent components and NULL/invalid-input behavior remain Flink's.
 No Rust URL normalization or query decoding is substituted.
 
+### PRINTF
+
+PRINTF uses Flink's generated formatter through the batch JVM bridge for supported scalar
+arguments, including STRING, integral and DECIMAL values and per-row formats. Argument indices,
+width, precision, locale, NULLs and invalid-format results follow the selected Flink runtime.
+Because character formatting can produce isolated UTF-16 surrogates, consumers fuse with PRINTF
+before Arrow conversion; a sensitive string crossing another operator retains the existing
+representation-protection fallback. Direct final projections are supported.
+
 ### URL_DECODE
 
 One character argument is native. Form decoding preserves JDK UTF-8 replacement grouping and returns NULL for malformed escapes. The planner selects the runtime JDK rule: JDK 17/21 (and pre-25 runtimes) use Integer.parseInt, accepting signed one-digit escapes and BMP Unicode hex digits; JDK 25+ uses ASCII-only HexFormat rules.

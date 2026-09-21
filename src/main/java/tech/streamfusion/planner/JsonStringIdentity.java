@@ -10,7 +10,7 @@ import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 
-/** Keeps Java UTF-16 JSON results inside a generated expression or at the final output boundary. */
+/** Keeps sensitive Java UTF-16 results inside a generated expression or at the final output boundary. */
 final class JsonStringIdentity {
   private JsonStringIdentity() {}
 
@@ -27,7 +27,8 @@ final class JsonStringIdentity {
     if (SqlTypeFamily.CHARACTER.contains(call.getType())
         && (call.getOperator().getName().equals("JSON_VALUE")
             || call.getOperator().getName().equals("JSON_QUERY")
-            || call.getOperator().getName().equals("JSON_UNQUOTE"))) {
+            || call.getOperator().getName().equals("JSON_UNQUOTE")
+            || call.getOperator().getName().equals("PRINTF"))) {
       return true;
     }
     return call.getOperands().stream().anyMatch(JsonStringIdentity::containsSensitiveString);

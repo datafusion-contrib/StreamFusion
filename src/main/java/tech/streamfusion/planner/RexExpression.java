@@ -2317,6 +2317,7 @@ final class RexExpression {
       case "TRY_CAST" -> input == SqlTypeName.BOOLEAN && SqlTypeFamily.CHARACTER.contains(call.getType());
       case "REGEXP", "REGEXP_REPLACE", "REGEXP_COUNT", "REGEXP_INSTR", "REGEXP_SUBSTR" -> true;
       case "PARSE_URL" -> true;
+      case "PRINTF" -> true;
       case "GREATEST", "LEAST" ->
           SqlTypeFamily.CHARACTER.contains(call.getType())
               || temporalTypeCode(call.getType()) >= 0
