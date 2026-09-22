@@ -1169,8 +1169,11 @@ impl TumblingAggregator {
                 starts.push(window.start);
                 keys.push(key.clone());
                 let mut column = 0;
-                for accumulator in accumulators.iter_mut() {
-                    for scalar in snapshot_accumulator_state(accumulator.as_mut()) {
+                for (aggregate, accumulator) in self.aggregates.iter().zip(accumulators.iter_mut())
+                {
+                    for scalar in
+                        snapshot_accumulator_state(accumulator, || aggregate.create_accumulator())
+                    {
                         state_columns[column].push(scalar);
                         column += 1;
                     }

@@ -695,8 +695,12 @@ impl SessionAggregator {
                 starts.push(*start);
                 ends.push(session.end);
                 let mut column = 0;
-                for accumulator in session.accumulators.iter_mut() {
-                    for scalar in snapshot_accumulator_state(accumulator.as_mut()) {
+                for (aggregate, accumulator) in
+                    self.aggregates.iter().zip(session.accumulators.iter_mut())
+                {
+                    for scalar in
+                        snapshot_accumulator_state(accumulator, || aggregate.create_accumulator())
+                    {
                         state_columns[column].push(scalar);
                         column += 1;
                     }
