@@ -1170,7 +1170,7 @@ impl TumblingAggregator {
                 keys.push(key.clone());
                 let mut column = 0;
                 for accumulator in accumulators.iter_mut() {
-                    for scalar in accumulator.state().expect("state") {
+                    for scalar in snapshot_accumulator_state(accumulator.as_mut()) {
                         state_columns[column].push(scalar);
                         column += 1;
                     }

@@ -868,6 +868,22 @@ pub(crate) fn scalars_to_array(scalars: Vec<ScalarValue>, data_type: &DataType) 
     }
 }
 
+/// Exports an accumulator's intermediate state without changing the live accumulator.
+/// DataFusion's `state` API is intentionally consuming for some implementations, such as
+/// string `COUNT(DISTINCT ...)`; merge the exported state back before the accumulator is used
+/// again after a checkpoint.
+pub(crate) fn snapshot_accumulator_state(accumulator: &mut dyn Accumulator) -> Vec<ScalarValue> {
+    let state = accumulator.state().expect("state");
+    let arrays: Vec<ArrayRef> = state
+        .iter()
+        .map(|scalar| scalar.to_array().expect("state array"))
+        .collect();
+    accumulator
+        .merge_batch(&arrays)
+        .expect("failed to restore live accumulator state");
+    state
+}
+
 /// A typed NULL scalar of the given type (the value an aggregate reports when it has no live input).
 pub(crate) fn null_scalar(data_type: &DataType) -> ScalarValue {
     ScalarValue::try_from(data_type).expect("null scalar of type")

@@ -2047,6 +2047,32 @@ fn session_aggregate_accepts_late_candidate_that_merges_into_open_session() {
 }
 
 #[test]
+fn session_snapshot_preserves_live_string_distinct_state() {
+    let batch = RecordBatch::try_from_iter(vec![
+        (
+            "ts",
+            Arc::new(Int64Array::from(vec![0i64, 500])) as ArrayRef,
+        ),
+        (
+            "key0",
+            Arc::new(Int64Array::from(vec![7i64, 7])) as ArrayRef,
+        ),
+        (
+            "value0",
+            Arc::new(StringArray::from(vec![Some("a"), Some("b")])) as ArrayRef,
+        ),
+    ])
+    .unwrap();
+    let mut aggregator = SessionAggregator::new(1000, vec![3], vec![7]);
+    aggregator.update(&batch).unwrap();
+
+    let _snapshots = aggregator.snapshot_partitions(128, &[-1]);
+    let output = aggregator.flush(2000).unwrap();
+
+    assert_eq!(column_i64(&output, "result0").values(), &[2]);
+}
+
+#[test]
 fn session_state_partitions_and_restores_by_flink_key_group() {
     let mut before = SessionAggregator::new(1000, vec![0], vec![0]);
     before.update(&keyed_window_batch(0, vec![1, 2])).unwrap();
