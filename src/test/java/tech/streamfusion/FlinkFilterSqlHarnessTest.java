@@ -110,10 +110,17 @@ class FlinkFilterSqlHarnessTest {
   }
 
   @Test
-  void unsupportedFunctionFallsBack() throws Exception {
-    // A function the expression encoder does not admit makes the whole filter fall back to the host.
-    NativeParity.assertFallback(
+  void absoluteValueFilterMatchesHost() throws Exception {
+    BuiltinFunctionParity.assertParity(
         FlinkFilterSqlHarnessTest::environment, "SELECT * FROM f WHERE ABS(v) > 20");
+  }
+
+  @Test
+  void unsupportedFunctionFallsBack() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        FlinkFilterSqlHarnessTest::environment,
+        "SELECT * FROM f WHERE TRY_CAST(CAST(v AS STRING) AS BOOLEAN)",
+        "TRY_CAST");
   }
 
   @Test

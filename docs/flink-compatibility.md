@@ -88,6 +88,15 @@ The following are host-line differences, not missing native substitutions:
 on Flink because the native boundary cannot treat arbitrary bytes as a one-byte fixed vector.
 The fallback parity tests check the complete bytes, including UTF-16 encodings and nulls.
 
+Scalar SQL regression tests assert native routing, resolved output schemas and collected results
+for admitted exact-numeric ABS, Java-backed string extrema and dynamic trims, BOOLEAN IF,
+PARSE_URL, dynamic SHA2, FROM_BASE64 and the released binary prefix/suffix overloads.
+The remaining floating-extrema, binary-backed string, oversized SHA2/ELT and fixed BINARY-result
+restrictions retain explicit fallback checks. Generic Calc/filter rejection fixtures use
+STRING-to-BOOLEAN TRY_CAST, which still falls back, rather than functions already admitted by
+the planner. A fallback assertion failure does not establish a result mismatch: routing and
+host/native result parity both need to pass.
+
 ## JSON and formats
 
 The shared nested ARRAY/ROW JSON parity fixtures use each release line's collection-source

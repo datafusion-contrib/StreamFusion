@@ -19,6 +19,9 @@ import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.NativePlannerTestEnvironment;
 
 class PaimonSourceSharingTest {
+  private static final String FALLBACK_ID_EXPRESSION =
+      "IF(TRY_CAST(CAST(id AS STRING) AS BOOLEAN), -id, id)";
+
   @ParameterizedTest
   @ValueSource(strings = {"parquet", "orc"})
   void sharedWatermarksCloseEveryBranchWindow(String format) throws Exception {
@@ -121,13 +124,25 @@ class PaimonSourceSharingTest {
       assertEquals(3, occurrences(plan, "NativePaimonSource("), plan);
       sql.getConfig().set(option, "true");
     }
+    var withAbs = sql.createStatementSet();
+    withAbs.addInsertSql("INSERT INTO out1 SELECT v FROM t");
+    withAbs.addInsertSql("INSERT INTO out2 SELECT n FROM t");
+    withAbs.addInsertSql("INSERT INTO out3 SELECT ABS(id) FROM t");
+    String absPlan = withAbs.compilePlan().explain();
+    assertTrue(absPlan.contains("NativeShare(consumers=[3]"), absPlan);
+    assertEquals(1, occurrences(absPlan, "NativePaimonSource("), absPlan);
+
     var mixed = sql.createStatementSet();
     mixed.addInsertSql("INSERT INTO out1 SELECT v FROM t");
     mixed.addInsertSql("INSERT INTO out2 SELECT n FROM t");
-    mixed.addInsertSql("INSERT INTO out3 SELECT ABS(id) FROM t");
+    mixed.addInsertSql("INSERT INTO out3 SELECT " + FALLBACK_ID_EXPRESSION + " FROM t");
     String mixedPlan = mixed.compilePlan().explain();
     assertTrue(mixedPlan.contains("NativeShare(consumers=[2]"), mixedPlan);
     assertTrue(mixedPlan.contains("TableSourceScan"), mixedPlan);
+    assertTrue(
+        tech.streamfusion.planner.NativePlanner.install(sql).fallbackReasons().stream()
+            .anyMatch(reason -> reason.contains("TRY_CAST")),
+        mixedPlan);
 
     var identical = sql.createStatementSet();
     identical.addInsertSql("INSERT INTO out2 SELECT id FROM t");
@@ -201,12 +216,21 @@ class PaimonSourceSharingTest {
         statements.addInsertSql("INSERT INTO left_sink SELECT id, v FROM t");
         statements.addInsertSql("INSERT INTO right_sink SELECT n, v FROM t");
         statements.addInsertSql(
-            "INSERT INTO third_sink SELECT " + (fallback ? "ABS(id)" : "id") + " + n, v FROM t");
+            "INSERT INTO third_sink SELECT "
+                + (fallback ? FALLBACK_ID_EXPRESSION : "ABS(id)")
+                + " + n, v FROM t");
         var compiled = statements.compilePlan();
         String plan = compiled.explain();
         if (nativePlanner) {
           assertTrue(plan.contains("NativeShare(consumers=[" + (fallback ? 2 : 3) + "]"), plan);
           assertEquals(1, occurrences(plan, "NativePaimonSource("), plan);
+          if (fallback) {
+            assertTrue(plan.contains("TableSourceScan"), plan);
+            assertTrue(
+                tech.streamfusion.planner.NativePlanner.install(sql).fallbackReasons().stream()
+                    .anyMatch(reason -> reason.contains("TRY_CAST")),
+                plan);
+          }
         }
         var job = compiled.execute().getJobClient().orElseThrow();
         try {

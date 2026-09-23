@@ -30,11 +30,10 @@ class FlinkGreatestSqlHarnessTest {
   }
 
   @Test
-  void unrestrictedUnicodeStringsFallBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void javaBackedUnicodeStringsMatchHost() throws Exception {
+    BuiltinFunctionParity.assertParity(
         () -> TextTimeFunctionTestInputs.textRows("\ufffd", "\ud83d\ude00", null),
-        "SELECT id, GREATEST(s, '\ud83d\ude00') FROM inputs",
-        "ASCII-provable");
+        "SELECT id, GREATEST(s, '\ud83d\ude00') FROM inputs");
   }
 
   @Test

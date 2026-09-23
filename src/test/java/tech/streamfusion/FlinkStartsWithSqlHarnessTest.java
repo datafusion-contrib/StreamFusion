@@ -24,11 +24,10 @@ class FlinkStartsWithSqlHarnessTest {
   }
 
   @Test
-  void unverifiedOverloadsFallBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void binaryPrefixMatchesHost() throws Exception {
+    BuiltinFunctionParity.assertParity(
         StringFunctionTestInputs::search,
-        "SELECT STARTSWITH(binary_value, X'FF') FROM searches",
-        "STARTSWITH requires");
+        "SELECT STARTSWITH(binary_value, X'FF') FROM searches");
   }
 
   private static void parity(String sql) throws Exception {
