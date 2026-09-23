@@ -191,6 +191,69 @@ fn distinct_window_partials_restore_union_and_expire() {
 }
 
 #[test]
+fn snapshot_preserves_live_string_distinct_state() {
+    let batch = RecordBatch::try_from_iter(vec![
+        (
+            "ts",
+            Arc::new(Int64Array::from(vec![500i64, 500])) as ArrayRef,
+        ),
+        (
+            "key0",
+            Arc::new(Int64Array::from(vec![7i64, 7])) as ArrayRef,
+        ),
+        (
+            "value0",
+            Arc::new(StringArray::from(vec![Some("a"), Some("b")])) as ArrayRef,
+        ),
+    ])
+    .unwrap();
+    let mut aggregator = TumblingAggregator::new(1000, 1000, false, vec![3], vec![7]);
+    aggregator.update(&batch).unwrap();
+
+    let _snapshot = aggregator.snapshot();
+    let output = aggregator.flush(1000).unwrap();
+
+    assert_eq!(column_i64(&output, "result0").values(), &[2]);
+}
+
+#[test]
+fn snapshot_preserves_live_builtin_aggregate_state() {
+    fn batch(values: &[i64]) -> RecordBatch {
+        let values = values.to_vec();
+        RecordBatch::try_from_iter(vec![
+            (
+                "ts",
+                Arc::new(Int64Array::from(vec![500; values.len()])) as ArrayRef,
+            ),
+            (
+                "key0",
+                Arc::new(Int64Array::from_value(7, values.len())) as ArrayRef,
+            ),
+            (
+                "value0",
+                Arc::new(Int64Array::from(values.clone())) as ArrayRef,
+            ),
+            (
+                "value1",
+                Arc::new(Int64Array::from(values.clone())) as ArrayRef,
+            ),
+            ("value2", Arc::new(Int64Array::from(values)) as ArrayRef),
+        ])
+        .unwrap()
+    }
+
+    let mut aggregator = TumblingAggregator::new(1000, 1000, false, vec![0, 0, 0], vec![3, 0, 4]);
+    aggregator.update(&batch(&[1, 4])).unwrap();
+    let _snapshot = aggregator.snapshot();
+    aggregator.update(&batch(&[10])).unwrap();
+
+    let output = aggregator.flush(1000).unwrap();
+    assert_eq!(column_i64(&output, "result0").values(), &[3]);
+    assert_eq!(column_i64(&output, "result1").values(), &[15]);
+    assert_eq!(column_i64(&output, "result2").values(), &[5]);
+}
+
+#[test]
 fn fixed_offset_assignment_preserves_payload_and_instant_window_time() {
     use streamfusion_bridge::timestamp::{timestamp_array, TimestampValue};
     let values = vec![
