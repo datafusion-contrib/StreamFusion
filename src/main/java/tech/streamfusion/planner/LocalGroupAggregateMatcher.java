@@ -16,7 +16,7 @@ import scala.collection.Seq;
  * Recognizes the local half of a two-phase non-windowed {@code GROUP BY}: a stateless per-batch
  * pre-aggregate that emits one partial row per key ({@code [grouping.., partial0..]}) for the
  * {@link GlobalGroupAggregateMatcher global half} to merge. Scope mirrors the single-phase
- * {@link GroupAggregateMatcher}: SUM/MIN/MAX/COUNT over bigint/int/double values, AVG over any of
+ * {@link GroupAggregateMatcher}: SUM/MIN/MAX/COUNT over integer/double/decimal values, AVG over any of
  * Flink's AvgAggFunction numerics (the narrow integers and float included — the sum partial widens
  * to bigint/double), and COUNT/SUM(DISTINCT) whose per-bundle value set rides a trailing view
  * column, with grouping keys the boundary carries. A FILTER clause is native: the boolean column
@@ -96,7 +96,7 @@ final class LocalGroupAggregateMatcher {
             return false;
           }
         } else if (kind == WindowAggregateMatcher.KIND_SUM) {
-          if ((valueType != SqlTypeName.BIGINT && valueType != SqlTypeName.INTEGER)
+          if (!GroupAggregateMatcher.isIntegerType(valueType)
               || partialType != valueType) {
             return false;
           }
@@ -168,7 +168,7 @@ final class LocalGroupAggregateMatcher {
         }
         continue;
       }
-      if (!isRunningType(valueType) || partialType != valueType) {
+      if (!GroupAggregateMatcher.isRunningType(valueType) || partialType != valueType) {
         return false;
       }
     }
@@ -305,12 +305,6 @@ final class LocalGroupAggregateMatcher {
     }
   }
 
-  private static boolean isRunningType(SqlTypeName type) {
-    return type == SqlTypeName.BIGINT
-        || type == SqlTypeName.INTEGER
-        || type == SqlTypeName.DOUBLE;
-  }
-
   /** True for a MIN/MAX over CHAR/VARCHAR — the string-extremes multiset path. */
   static boolean isStringExtreme(int kind, SqlTypeName valueType) {
     return (kind == WindowAggregateMatcher.KIND_MIN || kind == WindowAggregateMatcher.KIND_MAX)
@@ -414,15 +408,7 @@ final class LocalGroupAggregateMatcher {
         codes.add(0);
       } else {
         RelDataType valueRel = inputType.getFieldList().get(call.getArgList().get(0)).getType();
-        SqlTypeName valueType = valueRel.getSqlTypeName();
-        codes.add(
-            valueType == SqlTypeName.DECIMAL
-                ? decimalCode(valueRel)
-                : isStringExtreme(kind, valueType)
-                    ? 3
-                    : isTimestampExtreme(kind, valueType)
-                        ? 7
-                        : valueType == SqlTypeName.DOUBLE ? 1 : valueType == SqlTypeName.INTEGER ? 2 : 0);
+        codes.add(WindowAggregateMatcher.typeCode(valueRel));
       }
     }
     if (countStarInserted(agg)) {
@@ -464,7 +450,7 @@ final class LocalGroupAggregateMatcher {
   }
 
   static String unsupportedReason(StreamPhysicalLocalGroupAggregate agg) {
-    return "local group aggregate: needs SUM/MIN/MAX/COUNT over bigint/int/double values with no"
+    return "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/double/decimal values with no"
         + " widening of the partial, or AVG over any AvgAggFunction numeric, and"
         + " bigint/int/string/boolean/date/timestamp/decimal grouping keys";
   }

@@ -140,11 +140,16 @@ final class GroupAggregateMatcher {
     };
   }
 
-  /** The value types the native running aggregate folds directly: bigint, int, double. */
-  private static boolean isRunningType(SqlTypeName type) {
-    return type == SqlTypeName.BIGINT
-        || type == SqlTypeName.INTEGER
-        || type == SqlTypeName.DOUBLE;
+  static boolean isIntegerType(SqlTypeName type) {
+    return switch (type) {
+      case TINYINT, SMALLINT, INTEGER, BIGINT -> true;
+      default -> false;
+    };
+  }
+
+  /** Integer sums wrap at the input width; extrema retain that same type. */
+  static boolean isRunningType(SqlTypeName type) {
+    return isIntegerType(type) || type == SqlTypeName.DOUBLE;
   }
 
   /** The numeric types Flink's AvgAggFunction covers (its result casts back to the input type). */
@@ -176,9 +181,7 @@ final class GroupAggregateMatcher {
 
   /** Whether an insert-only MIN/MAX over this value type can run as a plain running extreme. */
   static boolean runningExtremeType(SqlTypeName type) {
-    return type == SqlTypeName.BIGINT
-        || type == SqlTypeName.INTEGER
-        || type == SqlTypeName.DOUBLE;
+    return isRunningType(type);
   }
 
   private static final int KIND_MIN = WindowAggregateMatcher.KIND_MIN;

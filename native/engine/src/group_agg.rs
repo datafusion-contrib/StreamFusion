@@ -35,6 +35,8 @@ impl std::hash::Hash for OrdF64 {
 pub(crate) enum MinMaxKey {
     I64(i64),
     I32(i32),
+    I16(i16),
+    I8(i8),
     F64(OrdF64),
     // A DECIMAL extreme as its unscaled i128. All values of one aggregate share a scale, so ordering
     // the raw i128 is the decimal ordering; the precision/scale are restored from the result type on
@@ -53,13 +55,12 @@ impl MinMaxKey {
         match num {
             Num::I64(v) => MinMaxKey::I64(v),
             Num::I32(v) => MinMaxKey::I32(v),
+            Num::I16(v) => MinMaxKey::I16(v),
+            Num::I8(v) => MinMaxKey::I8(v),
             Num::F64(v) => MinMaxKey::F64(OrdF64(v)),
             Num::I128(v) => MinMaxKey::Decimal128(v),
-            // The Extremes multiset (GROUP BY retractable MIN/MAX) is only built for the wider types
-            // its matcher admits; narrow ints / 4-byte float reach MIN/MAX only via the OVER running
-            // path (RunningAgg's narrow variants), never here.
-            Num::I16(_) | Num::I8(_) | Num::F32(_) => {
-                unreachable!("narrow MIN/MAX uses the running path, not the Extremes multiset")
+            Num::F32(_) => {
+                unreachable!("float MIN/MAX uses the running path, not the Extremes multiset")
             }
         }
     }
@@ -68,6 +69,8 @@ impl MinMaxKey {
         match scalar {
             ScalarValue::Int64(Some(v)) => MinMaxKey::I64(*v),
             ScalarValue::Int32(Some(v)) => MinMaxKey::I32(*v),
+            ScalarValue::Int16(Some(v)) => MinMaxKey::I16(*v),
+            ScalarValue::Int8(Some(v)) => MinMaxKey::I8(*v),
             ScalarValue::Float64(Some(v)) => MinMaxKey::F64(OrdF64(*v)),
             ScalarValue::Decimal128(Some(v), _, _) => MinMaxKey::Decimal128(*v),
             ScalarValue::Utf8(Some(v))
@@ -89,6 +92,8 @@ impl MinMaxKey {
         match self {
             MinMaxKey::I64(v) => ScalarValue::Int64(Some(*v)),
             MinMaxKey::I32(v) => ScalarValue::Int32(Some(*v)),
+            MinMaxKey::I16(v) => ScalarValue::Int16(Some(*v)),
+            MinMaxKey::I8(v) => ScalarValue::Int8(Some(*v)),
             MinMaxKey::F64(v) => ScalarValue::Float64(Some(v.0)),
             MinMaxKey::Decimal128(v) => match result_type {
                 DataType::Decimal128(p, s) => ScalarValue::Decimal128(Some(*v), *p, *s),

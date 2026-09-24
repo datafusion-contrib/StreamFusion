@@ -1428,9 +1428,11 @@ pub(crate) fn num_from_scalar(scalar: &ScalarValue) -> Option<Num> {
 }
 
 /// The numeric fold value of a distinct-SUM scalar — the value types the matcher admits for SUM
-/// (bigint/int/double, and DECIMAL as its unscaled i128).
+/// (all integer widths, double, and DECIMAL as its unscaled i128).
 pub(crate) fn distinct_num(value: &ScalarValue) -> Num {
     match value {
+        ScalarValue::Int8(Some(v)) => Num::I8(*v),
+        ScalarValue::Int16(Some(v)) => Num::I16(*v),
         ScalarValue::Int64(Some(v)) => Num::I64(*v),
         ScalarValue::Int32(Some(v)) => Num::I32(*v),
         ScalarValue::Float64(Some(v)) => Num::F64(*v),
