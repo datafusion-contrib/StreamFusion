@@ -30,6 +30,10 @@ boxing, Arrow conversion, Flink's string/decimal conversion, or the once-per-bat
 Failures retain the original cause through the existing native exception handover, including checked
 exceptions and `Error`s. Open/close and classloader ownership are unchanged.
 
+Focused validation runs 227 cases on released Flink 2.2.1 (all pass) and 1.18.1
+(216 pass, 11 version-capability skips). Coverage includes surrogate identity, shared-function
+ordering, decimal consumers, lifecycle, checked/runtime/Error causes and Arrow cleanup.
+
 An ARM64/JDK 17 release+mimalloc diagnostic on Flink 2.2.1 compares an INT identity through direct
 dispatch with a reflective wrapper invoking the same generated evaluator. It includes C Data
 import/export, argument/result conversion and result release, but excludes SQL/source/sink execution.
