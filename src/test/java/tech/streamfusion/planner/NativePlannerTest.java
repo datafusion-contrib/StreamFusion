@@ -102,16 +102,30 @@ class NativePlannerTest {
   }
 
   @Test
-  void leavesUnsupportedProjectionToHostEngine() throws Exception {
+  void substitutesNativeAbsoluteValueProjection() throws Exception {
     TableEnvironment tEnv = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
     PhysicalPlanScan scan = NativePlanner.install(tEnv);
 
-    // ABS is not an admitted expression op, so the whole projection falls back to the host.
     List<Integer> result =
-        collectInts(tEnv, "SELECT ABS(c0) AS a FROM (VALUES (3), (4), (5)) AS t(c0)");
+        collectInts(tEnv, "SELECT ABS(c0) AS a FROM (VALUES (-3), (4), (-5)) AS t(c0)");
+
+    assertTrue(scan.substitutions() > 0, "native operator was not substituted in");
+    assertEquals(List.of(3, 4, 5), result);
+  }
+
+  @Test
+  void leavesUnsupportedProjectionToHostEngine() throws Exception {
+    TableEnvironment tEnv = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
+    PhysicalPlanScan scan = NativePlanner.install(tEnv);
+    List<Integer> result =
+        collectInts(
+            tEnv,
+            "SELECT CASE WHEN TRY_CAST(CAST(c0 AS STRING) AS BOOLEAN) THEN c0 ELSE -c0 END"
+                + " FROM (VALUES (3), (4), (5)) AS t(c0)");
 
     assertEquals(0, scan.substitutions(), "an unsupported projection should not be substituted");
-    assertEquals(List.of(3, 4, 5), result);
+    assertTrue(scan.fallbackReasons().stream().anyMatch(reason -> reason.contains("TRY_CAST")));
+    assertEquals(List.of(-5, -4, -3), result);
   }
 
   /**

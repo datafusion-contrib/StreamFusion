@@ -20,9 +20,9 @@ class FlinkUrlDecodeSqlHarnessTest {
   }
 
   @Test
-  void unverifiedOverloadsFallBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
-        StringFunctionTestInputs::text, "SELECT PARSE_URL(u, 'HOST') FROM texts", "PARSE_URL");
+  void parseUrlHostMatchesHost() throws Exception {
+    BuiltinFunctionParity.assertParity(
+        StringFunctionTestInputs::text, "SELECT PARSE_URL(u, 'HOST') FROM texts");
   }
 
   private static void parity(String sql) throws Exception {

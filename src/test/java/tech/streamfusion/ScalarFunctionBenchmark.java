@@ -58,6 +58,19 @@ class ScalarFunctionBenchmark {
 
   private static final List<Query> SCALAR_FUNCTIONS =
       List.of(
+          new Query("EXACT_ABS_BIGINT", "bigint", "ABS(n)", "BIGINT"),
+          new Query("EXACT_SIGN_DECIMAL", "tt_decimal", "SIGN(n)", "DECIMAL(38,9)"),
+          new Query("GREATEST_RUNTIME_STRING", "text", "GREATEST(s, 'm')", "STRING"),
+          new Query("IF_BOOLEAN", "integer", "IF(n > 0, TRUE, FALSE)", "BOOLEAN"),
+          new Query("BOOLEAN_TO_STRING", "integer", "CAST(n > 0 AS STRING)", "STRING"),
+          new Query("LIKE_ESCAPE", "text", "s LIKE '%!_%' ESCAPE '!'", "BOOLEAN"),
+          new Query("REGEXP_COUNT", "text", "REGEXP_COUNT(s, 'a')", "INT"),
+          new Query("PARSE_URL", "text", "PARSE_URL(CONCAT('http://example.org/', s), 'PATH')", "STRING"),
+          new Query("PRINTF_BIGINT", "bigint", "PRINTF('n=%020d', n)", "STRING"),
+          new Query("BTRIM_DYNAMIC", "text", "BTRIM(s, LEFT(s, 1))", "STRING"),
+          new Query("IS_ALPHA", "text", "IS_ALPHA(s)", "BOOLEAN"),
+          new Query("STARTSWITH_BINARY", "tt_bytes", "STARTSWITH(b,b)", "BOOLEAN"),
+          new Query("REGEXP_EXTRACT_ALL", "text", "REGEXP_EXTRACT_ALL(s, '(a)', 1)", "ARRAY<STRING>"),
           new Query("HASH_CODE_STRING", "text", "HASH_CODE(s)", "INT"),
           new Query("HASH_CODE_BIGINT", "bigint", "HASH_CODE(n)", "INT"),
           new Query("HASH_CODE_DECIMAL", "tt_decimal", "HASH_CODE(n)", "INT"),

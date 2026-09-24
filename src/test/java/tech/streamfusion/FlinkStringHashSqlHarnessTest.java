@@ -54,10 +54,10 @@ class FlinkStringHashSqlHarnessTest {
   }
 
   @Test
-  void dynamicSha2BitLengthFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void dynamicSha2BitLengthMatchesHost() throws Exception {
+    BuiltinFunctionParity.assertParity(
         FlinkStringHashSqlHarnessTest::environment,
-        "SELECT SHA2(s, bits) FROM strings", "literal bit length");
+        "SELECT SHA2(s, bits) FROM strings");
   }
 
   @ParameterizedTest

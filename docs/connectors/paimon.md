@@ -273,8 +273,11 @@ or `table.optimizer.reuse-sub-plan-enabled` restores independent native readers.
 
 `PaimonSourceSharingTest` checks three-sink projection union, identical projections, repeated
 compilation, disabled sharing, distinct scans, mixed native/Flink branches, and snapshot-to-tail
-results including deletes and nulls for both formats, with chained and network edges. It also
-checks window closure on every shared branch after a new commit.
+results including deletes and nulls for both formats, with chained and network edges. The admitted
+ABS projection participates in three-consumer sharing; a STRING-to-BOOLEAN TRY_CAST projection
+retains a separate host branch and two native consumers. Both shapes execute snapshot/tail
+comparisons against Flink. The suite also checks window closure on every shared branch after a
+new commit.
 Paimon's unchanged `ContinuousFileStoreITCase.testSourceReuseWithScanPushDown` passes its `Reused`
 assertion and its filter/limit separation assertions. Cross-sink sharing requires the deployed
 planner hook; installing a program into an already constructed stock planner still optimizes each

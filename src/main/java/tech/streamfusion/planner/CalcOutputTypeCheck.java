@@ -61,18 +61,26 @@ final class CalcOutputTypeCheck {
       if (notInferable != null) {
         return notInferable;
       }
-      return mismatch(Data.importSchema(allocator, outputSchema, null).getFields(), declared);
+      return mismatch(Data.importSchema(allocator, outputSchema, null).getFields(), declared, encoded);
     } catch (NativeException compileFailure) {
       return "expression does not compile natively: " + compileFailure.getMessage();
     }
   }
 
-  private static String mismatch(List<Field> inferred, RowType declared) {
+  private static String mismatch(List<Field> inferred, RowType declared, RexExpression encoded) {
     if (inferred.size() != declared.getFieldCount()) {
       return inferred.size() + " projections for " + declared.getFieldCount() + " declared columns";
     }
     for (int i = 0; i < inferred.size(); i++) {
       Field actual = inferred.get(i);
+      if (encoded.isBinaryStringProjection(i)
+          && actual.getType() instanceof org.apache.arrow.vector.types.pojo.ArrowType.Binary
+          && (declared.getTypeAt(i).getTypeRoot()
+                  == org.apache.flink.table.types.logical.LogicalTypeRoot.VARCHAR
+              || declared.getTypeAt(i).getTypeRoot()
+                  == org.apache.flink.table.types.logical.LogicalTypeRoot.CHAR)) {
+        continue;
+      }
       if (!ArrowConversion.readsAs(actual, declared.getTypeAt(i))) {
         return String.format(
             "projection `%s` evaluates natively as %s but the plan declares %s",

@@ -18,6 +18,18 @@ import org.junit.jupiter.api.Test;
 
 class JsonStringIdentityTest {
   @Test
+  void formattedCharactersKeepTheirUtf16IdentityForConsumers() {
+    var types = new JavaTypeFactoryImpl();
+    var rex = new RexBuilder(types);
+    var function = new org.apache.calcite.sql.SqlFunction("PRINTF",
+        org.apache.calcite.sql.SqlKind.OTHER_FUNCTION, null, null, null,
+        org.apache.calcite.sql.SqlFunctionCategory.STRING);
+    var call = rex.makeCall(types.createSqlType(SqlTypeName.VARCHAR), function,
+        List.of(rex.makeLiteral("%c"), rex.makeInputRef(types.createSqlType(SqlTypeName.INTEGER), 0)));
+    assertTrue(JsonStringIdentity.containsSensitiveString(call));
+  }
+
+  @Test
   void onlyFinalRootsCanExposeJavaStringsWithoutAnotherConsumer() {
     var types = new JavaTypeFactoryImpl();
     var rex = new RexBuilder(types);

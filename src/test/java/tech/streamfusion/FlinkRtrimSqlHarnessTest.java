@@ -19,10 +19,9 @@ class FlinkRtrimSqlHarnessTest {
   }
 
   @Test
-  void dynamicTrimSetsFallBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void javaBackedDynamicTrimSetsMatchHost() throws Exception {
+    BuiltinFunctionParity.assertParity(
         TextTimeFunctionTestInputs::parameters,
-        "SELECT id, RTRIM(s, p) FROM inputs",
-        "literal trim set");
+        "SELECT id, RTRIM(s, p) FROM inputs");
   }
 }

@@ -19,8 +19,17 @@ default via a JVM upcall (and why that's not a fallback), what's opt-in, and wha
 fallback.
 
 - **Unsupported function/operator** outside the admitted set normally declines the whole Calc.
-  A [SQL/JSON Calc](#sqljson-evaluation) can instead use Flink generation for its complete program,
+  A [SQL/JSON Calc](#sqljson-evaluation) or a Calc containing the collection-returning string
+  functions below can instead use Flink generation for its complete program,
   subject to the host code generator and the verified batch bridge types.
+
+## LIKE ESCAPE and SIMILAR TO
+
+LIKE/NOT LIKE with an explicit literal or per-row ESCAPE, and SIMILAR TO/NOT SIMILAR TO,
+run Flink's generated SQL-pattern evaluator through the batch JVM bridge. Pattern grammar,
+Unicode, NULLs and invalid-escape failures are Flink's own. AND/OR consumers fuse with these
+expressions so invalid patterns are not evaluated on rows that Flink short-circuits; filtered-out
+batches do not evaluate projections. Existing two-argument LIKE keeps its current native path.
 
 ## COALESCE
 
@@ -45,8 +54,9 @@ This retains Flink's branch casts, call counts and code-generation evaluation or
 user-defined function named IF retains its own implementation. Unsupported children retain
 the existing admission rules. SQL parity tests cover exact numerics, strings, temporal and
 binary values, nullable conditions, nested expressions, errors and multiple batches.
-The admitted result types are numeric, character, DATE, TIME, plain TIMESTAMP and binary.
-BOOLEAN, TIMESTAMP_LTZ and complex result types retain fallback because their IF overloads
+The admitted result types are BOOLEAN, numeric, character, DATE, TIME, plain TIMESTAMP and binary.
+BOOLEAN branches preserve TRUE/FALSE/NULL conditions, nullable results, nested predicates and
+unselected failing branches across batches. TIMESTAMP_LTZ and complex result types retain fallback because their IF overloads
 are not registered by the released Flink code generator.
 
 The release benchmark below measures this coverage change against the previous full Flink
@@ -113,7 +123,8 @@ As with Flink's generated random fields, stream state belongs to the running ope
 not keyed checkpoint state.
 
 Floating-point unary negation also runs natively, including `-RAND(seed)`, and preserves signed
-zero, infinities, NaN and NULL. Integer and DECIMAL unary negation retain their existing fallback.
+zero, infinities, NaN and NULL. Integer and DECIMAL unary negation use Flink-generated
+expressions through the batch JVM bridge inside native Calc.
 
 Release diagnostic on Apple M1 Max, JDK 17/Flink 2.2.1: two million rows, parallelism 1,
 two warmups and five interleaved trials, with rowwise source/sink and both transposes asserted:
@@ -249,8 +260,9 @@ These functions run entirely in Rust by default, in projections, predicates, and
 | `SHA224(s)`, `SHA256(s)`, `SHA384(s)`, `SHA512(s)` | Lowercase hexadecimal SHA-2 of the UTF-8 bytes; NULL input produces NULL. |
 | `SHA2(s, bit_length)` | The two-argument form with a literal bit length of 224, 256, 384, or 512; equivalent to the corresponding fixed-width function. |
 
-A non-literal or NULL `SHA2` bit length, and other bit lengths, are not admitted. A dynamic bit length
-falls back; literal values are checked exactly, including `BIGINT`, without truncating to 32 bits.
+A dynamic `SHA2` bit length uses Flink-generated code through the batch JVM bridge, preserving
+NULLs and the released host's unsupported-algorithm failure. Literal values are checked exactly,
+including `BIGINT`, without truncating to 32 bits; unsupported or NULL literal widths fall back.
 For example, `SHA2(s, CAST(4294967520 AS BIGINT))` falls back and retains Flink's unsupported-algorithm
 failure instead of being treated as SHA-224. Flink 2.2 does not expose hash
 overloads with an explicit character set. Binary/collection concatenation is outside this
@@ -465,6 +477,10 @@ These scalar rules are separate from grouping-key equality and sort ordering.
 
 ## Casts
 
+BOOLEAN to STRING, bounded VARCHAR and CHAR runs Flink's cast executor through the batch JVM
+bridge inside native Calc. TRUE/FALSE use uppercase text, NULL stays NULL, and bounded targets
+retain Flink's truncation and CHAR padding. TRY_CAST follows the same released cast rules.
+
 Native, unconditionally, with no host involvement:
 
 - **Widening numeric** — integer→wider integer, integer→float/double, float→double.
@@ -513,7 +529,8 @@ an unselected failing cast. Default-mode casts nested under AND/OR still fall ba
 that Flink's row short-circuiting suppresses errors on unselected rows; legacy-mode
 casts can compose under AND/OR because malformed input returns NULL. A bare expression
 encoder without table configuration declines this cast instead of guessing the mode.
-BOOLEAN-to-string and BOOLEAN TRY_CAST remain unsupported.
+STRING-to-BOOLEAN TRY_CAST remains unsupported. The reverse BOOLEAN-to-character casts use
+the host-exact path described above.
 
 ### Integer/string casts
 
@@ -589,6 +606,18 @@ Boolean-to-string casts and other pairs not listed above. Temporal casts now use
 expressions; see [temporal functions](temporal-functions.md).
 
 ## Decimal arithmetic
+
+### Exact unary and integral functions
+
+Integer and DECIMAL unary minus, ABS and SIGN execute Flink's generated expression code through
+the existing batch JVM bridge. Integral FLOOR, CEIL and TRUNCATE use the same path, including
+per-row TRUNCATE positions. This retains resolved widths, decimal precision/scale, NULL handling,
+and Java overflow behavior, including ABS of the minimum INT/BIGINT value. Adjacent supported
+host expressions fuse before crossing the Arrow boundary. These are host-evaluated functions
+inside a columnar native Calc, not pure-Rust kernels.
+
+DECIMAL FLOOR/CEIL retain fallback: the released-host collection path has unverified decimal
+precision behavior. Existing floating-point gates and decimal TRUNCATE/ROUND kernels are unchanged.
 
 ### Decimal ROUND, TRUNCATE and literals
 
@@ -673,9 +702,13 @@ benchmark results and do not disable otherwise verified expressions.
 
 ### STARTSWITH
 
+Binary overloads of STARTSWITH and ENDSWITH use released Flink code through the batch JVM
+bridge. They compare bytes directly, retaining empty-prefix/suffix and NULL behavior, and never
+decode binary inputs as text. Literal and runtime binary operands are supported within the
+generated expression.
+
 Two character arguments, literal or column. Matches a literal prefix, including Unicode and
 empty strings; any NULL argument returns NULL. Wildcard characters have no special meaning.
-Binary operands fall back.
 
 ### ENDSWITH
 
@@ -735,7 +768,18 @@ Character strings and binary columns are encoded as padded RFC 4648 Base64 witho
 Strings use their UTF-8 bytes; binary inputs preserve every byte, including invalid UTF-8.
 Both overloads share the direct-output encoder. Empty input stays empty and NULL propagates.
 VARBINARY literals are native; fixed-size BINARY literals retain the literal encoder's fallback.
-FROM_BASE64 falls back.
+
+`FROM_BASE64` accepts character and binary inputs through Flink-generated evaluation. Invalid
+encoding raises the same host exception; empty input and NULL retain their host results. Decoded
+STRING values may contain arbitrary bytes. Final scalar STRING projections therefore travel as
+Arrow Binary and are read as Flink StringData without UTF-8 normalization. Consumers such as
+comparison, length, casts and re-encoding fuse in Flink before Arrow export. Sensitive STRING
+results crossing another relational operator, feeding a native columnar sink, or contained in
+whole-Calc complex outputs retain fallback rather than exposing invalid Arrow Utf8. Row sinks
+can consume the final decoded bytes through the Arrow-to-RowData transpose.
+
+`IS_DECIMAL`, `IS_DIGIT` and `IS_ALPHA` use the same generated evaluator, preserving Flink syntax
+and Unicode classification, including non-nullable FALSE for NULL and empty input.
 
 ### UNHEX
 
@@ -743,11 +787,18 @@ Character inputs produce BYTES. Either hex letter case is accepted; invalid byte
 
 ### GREATEST
 
-Integers, BOOLEAN and matching-precision/scale DECIMAL are native, with strict NULL propagation. Strings require ASCII literals or CASE results composed entirely of ASCII literals. Unrestricted string columns fall back: Flink uses UTF-16 order for Java-backed strings and byte order after binary materialization. Floating point and mixed decimal scales fall back.
+Integers, BOOLEAN and matching-precision/scale DECIMAL retain their Rust kernels and strict NULL
+propagation. Character results, mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
+Flink-generated expressions through the batch JVM bridge, preserving coercions and nanoseconds.
+Runtime strings use that bridge when the Calc reads an external DataStream whose conversion
+produces Java-backed strings. Unknown or binary-backed input representations retain fallback:
+Flink can use UTF-16 ordering before serialization and byte ordering afterward. Floating-point
+extrema retain fallback.
 
 ### LEAST
 
-Uses the same type and ASCII-proof gates as GREATEST, with strict NULL propagation and minimum comparison.
+Uses the same kernels, generated-expression paths and string-representation gates as GREATEST,
+with strict NULL propagation and minimum comparison.
 
 ### INITCAP
 
@@ -759,7 +810,11 @@ Three character arguments. Mappings use Unicode codepoints, not graphemes. The f
 
 ### BTRIM
 
-One-argument space trimming and two-argument character-set trimming with a literal set are native. Empty sets preserve the input and NULL propagates. Column trim sets fall back because Flink can change their meaning after an exchange when the first set character is a space.
+One-argument space trimming and two-argument character-set trimming with a literal set retain
+their Rust kernels. Empty sets preserve the input and NULL propagates. Per-row sets use Flink's
+generated evaluator when the Calc reads a proven external Java-string conversion. Unknown or
+binary-backed representations retain fallback because Flink can change set behavior after an
+exchange when the first set character is a space.
 
 ### TRIM
 
@@ -770,7 +825,11 @@ Column trim sets fall back for the same Flink representation-dependent behavior 
 
 ### ELT
 
-An INTEGER index and character alternatives are admitted. The index is 1-based; out-of-range and NULL indices return NULL. Only the selected alternative's NULL matters. Other index types and binary alternatives fall back: Flink casts its boxed index to Integer after its bounds check. Explicit casts to INTEGER follow the existing cast rules.
+The binary-result overload also runs through Flink-generated code. Dynamic INT indices retain
+one-based selection, out-of-range NULLs and NULL operands. Multiple binary result columns retain
+independent byte arrays across rows and batches.
+
+An INTEGER index and character alternatives are admitted. The index is 1-based; out-of-range and NULL indices return NULL. Only the selected alternative's NULL matters. Other index types fall back: Flink casts its boxed index to Integer after its bounds check. Explicit casts to INTEGER follow the existing cast rules.
 
 ### URL_ENCODE
 
@@ -779,6 +838,22 @@ Character strings use Java form encoding: space becomes `+`, ASCII alphanumerics
 ### OVERLAY
 
 Character strings and integer positions, widened to BIGINT without losing bits. Preserves Java UTF-16 positions, length narrowing/overflow, and substring errors. Non-positive or beyond-end starts return the source; zero/negative lengths omit the suffix. Split surrogate pairs encode as `?`, like Flink. Any NULL argument returns NULL.
+
+### PARSE_URL
+
+The two- and three-argument overloads use Flink's generated evaluator through the batch JVM
+bridge, including runtime URL parts and query keys. Java URL component spelling, raw percent
+escapes, duplicate query keys, absent components and NULL/invalid-input behavior remain Flink's.
+No Rust URL normalization or query decoding is substituted.
+
+### PRINTF
+
+PRINTF uses Flink's generated formatter through the batch JVM bridge for supported scalar
+arguments, including STRING, integral and DECIMAL values and per-row formats. Argument indices,
+width, precision, locale, NULLs and invalid-format results follow the selected Flink runtime.
+Because character formatting can produce isolated UTF-16 surrogates, consumers fuse with PRINTF
+before Arrow conversion; a sensitive string crossing another operator retains the existing
+representation-protection fallback. Direct final projections are supported.
 
 ### URL_DECODE
 
@@ -829,8 +904,9 @@ date/time, interval, supported timestamp types, and recursively nested ARRAY/ROW
 those leaves. Nested arguments use Flink internal views over the imported Arrow batch; generated
 results are copied into owned Arrow output vectors before that batch closes. The callback still
 crosses JNI once per batch, including multi-column results and filtering.
-MAP/MULTISET boundary values, including maps nested inside an array or row, remain explicit
-fallback. Constructing containers internally is allowed when the resulting boundary types are
+MAPs with character keys and character values are also admitted, including inside ARRAY/ROW.
+Other MAP and MULTISET boundary types remain explicit fallback.
+Constructing containers internally is allowed when the resulting boundary types are
 admitted. Unsupported host code generation
 and UDF signatures retain explicit fallback. Flink 2.2.1 rejects dynamic JSON_EXISTS paths;
 that host failure is preserved. No configuration opt-in is required.
@@ -1239,7 +1315,11 @@ Same input and boundary rules as LPAD, with padding appended on the right. Dynam
 
 ### SPLIT_INDEX
 
-Character separators and TINYINT/SMALLINT/INTEGER indices may be dynamic. Indices are zero-based; negative/out-of-range indices, empty input, or any NULL produce NULL. Whole separators preserve empty tokens. An empty separator uses Java Character.isWhitespace, including tabs and line separators but excluding non-breaking spaces. Numeric separators and BIGINT indices fall back.
+Character separators and TINYINT/SMALLINT/INTEGER indices may be dynamic. Indices are zero-based; negative/out-of-range indices, empty input, or any NULL produce NULL. Whole separators preserve empty tokens. An empty separator uses Java Character.isWhitespace, including tabs and line separators but excluding non-breaking spaces. Numeric separator overloads use Flink-generated code and interpret the integer as a character code. BIGINT indices with character separators fall back.
+
+Generated scalar helpers keep operand computations within the same Flink evaluator, retaining
+intermediate StringData representation. This also preserves the released host's failure for a
+computed empty trim set instead of silently changing it through a string conversion.
 
 ### Temporal parsing, extraction and rounding
 
@@ -1250,13 +1330,31 @@ by default. See the complete [temporal function inventory](temporal-functions.md
 
 ### LTRIM
 
-One-argument space trimming and two-argument trimming with a literal Unicode character set are native. Empty sets preserve the input; NULL propagates. Dynamic trim sets fall back because Flink semantics depend on whether strings are Java-backed or binary-backed.
+One-argument space trimming and literal Unicode sets retain their Rust kernels. Per-row sets
+use the same generated evaluator and source-representation gate as BTRIM. Empty sets preserve
+the input and NULL propagates.
 
 ### RTRIM
 
-Uses the same literal-set gate as LTRIM, trimming from the right. Dynamic trim sets fall back; one-argument space trimming is native.
+Uses the same literal kernels and per-row set admission as LTRIM, trimming from the right.
 
 ## Case folding & regex
+
+`REGEXP_EXTRACT_ALL` and `STR_TO_MAP` use Flink-generated evaluation. ARRAY/MAP results use
+the whole-Calc batch JVM route with owned Arrow output vectors; scalar consumers can stay in
+one generated expression. Capture groups, unmatched optional groups, empty matches, invalid
+patterns/indices, NULL containers/elements, regex map delimiters, duplicate keys and missing
+values follow released Flink. Filters run before projections, including all-filtered batches.
+ARRAY and MAP lookups and cardinality inside the Calc retain the host's internal values.
+Character results from these functions crossing another relational operator retain the string
+identity fallback, as do whole-Calc character outputs containing arbitrary Base64-decoded bytes.
+The operator remains columnar; these functions themselves execute on the JVM.
+
+REGEXP, REGEXP_REPLACE, REGEXP_COUNT, REGEXP_INSTR and REGEXP_SUBSTR use Flink-generated
+expressions through the batch JVM bridge for literal and per-row patterns. Java lookaround,
+backreferences, UTF-16 positions, empty matches, literal replacement strings, invalid-pattern
+behavior and resolved INT/BOOLEAN/STRING types are retained. AND/OR consumers fuse with these
+calls to preserve Flink evaluation order. These functions do not use Rust's regex engine.
 
 **Native by default — not a fallback.** `UPPER`/`LOWER` and `REGEXP_EXTRACT` run natively by default
 via a columnar JVM upcall to Flink's own string routines — `BinaryStringData` case folding and
@@ -1314,9 +1412,9 @@ A number of otherwise-admitted functions decline when called with an argument sh
 implementation can't handle, even though the function itself is supported:
 
 - An **unsupported literal type** anywhere in the expression.
-- **`TRIM`** — dynamic trim sets; all directions with literal sets are native.
+- **`TRIM`** — dynamic SQL trim sets; all directions with literal sets are native. Per-row
+  BTRIM/LTRIM/RTRIM sets use their documented external-Java-string admission.
 - **`POSITION`** — a `FROM` start offset.
-- **`SPLIT_INDEX`** — the numeric separator overload.
 - **`CURRENT_WATERMARK`** — requires a Calc watermark context; unsupported in standalone join or UNNEST residuals.
 - **Collection subscripts:** non-INT ARRAY indexes and literal indexes below one; runtime MAP keys
   of floating, collection or mismatched types; nullable non-compact decimal/timestamp MAP keys.
@@ -1325,6 +1423,38 @@ implementation can't handle, even though the function itself is supported:
 
 See [Configuration](../configuration.md) for the full `allowIncompatible` flag surface referenced
 throughout this page.
+
+## Generated helper performance
+
+The generated functions above extend the expressions that can stay inside a columnar island.
+They are correctness/coverage work, not standalone scalar speedups: Flink still evaluates each
+row inside the batch callback. A release-only diagnostic on Apple M4 Pro on 2026-09-21 used 200,000 rows,
+64-byte text/binary payloads, parallelism 1, one warmup and three alternating measured runs per
+engine. Matched-source identity controls and both row/Arrow transposes remain in the measured
+path. Every query verifies native Calc admission before timing.
+
+| Expression workload | Flink seconds | Native seconds | Throughput ratio |
+|---|---:|---:|---:|
+| BIGINT ABS | 0.094 | 0.117 | 0.806x |
+| DECIMAL SIGN | 0.096 | 0.153 | 0.630x |
+| Runtime STRING GREATEST | 0.103 | 0.145 | 0.709x |
+| BOOLEAN IF | 0.095 | 0.104 | 0.911x |
+| BOOLEAN to STRING | 0.093 | 0.110 | 0.844x |
+| LIKE ESCAPE | 0.106 | 0.132 | 0.799x |
+| REGEXP_COUNT | 0.138 | 0.171 | 0.808x |
+| PARSE_URL | 0.134 | 0.174 | 0.771x |
+| PRINTF BIGINT | 0.168 | 0.184 | 0.913x |
+| Dynamic BTRIM | 0.117 | 0.178 | 0.659x |
+| IS_ALPHA | 0.096 | 0.136 | 0.706x |
+| Binary STARTSWITH | 0.089 | 0.131 | 0.681x |
+| REGEXP_EXTRACT_ALL | 0.200 | 0.279 | 0.718x |
+
+These short local timings measure the cost of the new coverage. They do not establish a gain
+for an entire native pipeline, and every standalone workload here is slower than Flink. The
+bridge is retained to allow composition with existing native operators; future performance
+claims require measuring that complete pipeline. Reproduce with `ScalarFunctionBenchmark`
+under `-Pbench`, `SF_BENCHMARK=true`, `-Dscalar.rows=200000 -Dscalar.bytes=64` and
+`-Dscalar.warmup=1 -Dscalar.runs=3`, selecting the corresponding `scalar.functions` names.
 
 ## Flink 1.18 compatibility
 

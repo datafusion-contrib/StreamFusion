@@ -16,12 +16,11 @@ class FlinkToBase64SqlHarnessTest {
   }
 
   @Test
-  void unverifiedOverloadsFallBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void fromBase64NullableBranchesMatchHost() throws Exception {
+    BuiltinFunctionParity.assertParity(
         StringFunctionTestInputs::encodings,
         "SELECT FROM_BASE64(CASE WHEN s IS NULL THEN CAST(NULL AS STRING) ELSE 'YQ==' END) FROM"
-            + " encodings",
-        "FROM_BASE64");
+            + " encodings");
   }
 
   private static void parity(String sql) throws Exception {

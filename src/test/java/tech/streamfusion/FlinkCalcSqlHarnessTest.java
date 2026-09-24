@@ -155,11 +155,15 @@ class FlinkCalcSqlHarnessTest {
   }
 
   @Test
+  void parseUrlProjectionMatchesHost() throws Exception {
+    BuiltinFunctionParity.assertParity(
+        FlinkCalcSqlHarnessTest::environment, "SELECT PARSE_URL(s, 'HOST') FROM f");
+  }
+
+  @Test
   void unsupportedProjectionFunctionFallsBack() throws Exception {
-    // A function the expression encoder does not admit makes the whole Calc fall back, and the
-    // fallback reason names the offending function (ticket 29).
     NativeParity.assertFallbackReasonContains(
-        FlinkCalcSqlHarnessTest::environment, "SELECT PARSE_URL(s, 'HOST') FROM f", "PARSE_URL");
+        FlinkCalcSqlHarnessTest::environment, "SELECT TRY_CAST(s AS BOOLEAN) FROM f", "TRY_CAST");
   }
 
   @Test
@@ -354,16 +358,15 @@ class FlinkCalcSqlHarnessTest {
   @Test
   void absFloatMatchesHost() throws Exception {
     // ABS over a double expression (the E-notation literal forces DOUBLE; goes negative for some
-    // rows). Integer ABS stays on host (overflow edge).
+    // rows).
     NativeParity.assertParity(
         FlinkCalcSqlHarnessTest::environment, "SELECT ABS(v - 25.5E0) FROM f");
   }
 
   @Test
-  void absIntegerFallsBack() throws Exception {
-    // Integer ABS is not admitted (INT_MIN overflow edge), so it falls back, naming ABS.
-    NativeParity.assertFallbackReasonContains(
-        FlinkCalcSqlHarnessTest::environment, "SELECT ABS(v) FROM f", "ABS");
+  void absIntegerMatchesHost() throws Exception {
+    BuiltinFunctionParity.assertParity(
+        FlinkCalcSqlHarnessTest::environment, "SELECT ABS(v), ABS(v - 25) FROM f");
   }
 
   @Test

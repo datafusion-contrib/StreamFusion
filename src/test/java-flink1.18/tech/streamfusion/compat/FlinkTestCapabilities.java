@@ -11,6 +11,11 @@ public final class FlinkTestCapabilities {
   private static final java.util.Set<String> ABSENT_SQL_FUNCTIONS =
       java.util.Set.of(
           "BTRIM",
+          "PRINTF",
+          "REGEXP_COUNT",
+          "REGEXP_INSTR",
+          "REGEXP_SUBSTR",
+          "REGEXP_EXTRACT_ALL",
           "ENDS_WITH",
           "ENDSWITH",
           "SPLIT",

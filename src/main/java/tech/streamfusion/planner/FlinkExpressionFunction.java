@@ -45,8 +45,17 @@ public final class FlinkExpressionFunction extends ScalarFunction
       LogicalType[] argumentTypes,
       ReadableConfig config,
       ClassLoader classLoader) {
+    this(expression, argumentTypes, config, classLoader, false);
+  }
+
+  FlinkExpressionFunction(
+      RexNode expression,
+      LogicalType[] argumentTypes,
+      ReadableConfig config,
+      ClassLoader classLoader,
+      boolean binaryStringResult) {
     this(
-        scalarBody(expression, argumentTypes, config, classLoader),
+        scalarBody(expression, argumentTypes, config, classLoader, binaryStringResult),
         argumentTypes,
         config,
         classLoader);
@@ -72,7 +81,8 @@ public final class FlinkExpressionFunction extends ScalarFunction
       RexNode expression,
       LogicalType[] argumentTypes,
       ReadableConfig config,
-      ClassLoader classLoader) {
+      ClassLoader classLoader,
+      boolean binaryStringResult) {
     var context = new Context(config, classLoader);
     var generator = new ExprCodeGenerator(context, false);
     generator.bindInput(RowType.of(argumentTypes), "input", scala.Option.empty());
@@ -85,6 +95,7 @@ public final class FlinkExpressionFunction extends ScalarFunction
             + result.nullTerm()
             + ") { return null; }\nreturn "
             + result.resultTerm()
+            + (binaryStringResult ? ".toBytes()" : "")
             + ";\n",
         null);
   }

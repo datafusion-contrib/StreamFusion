@@ -73,6 +73,10 @@ The following are host-line differences, not missing native substitutions:
   session windows remain a separate supported planner construct.
 - Several newer scalar functions and `TO_TIMESTAMP_LTZ` string/default-precision overloads are
   absent from 1.18. Tests mark only those specific host constructs N/A.
+  The function-coverage regressions specifically exclude BTRIM, binary STARTSWITH/ENDSWITH/ELT,
+  PRINTF, REGEXP_COUNT/INSTR/SUBSTR and REGEXP_EXTRACT_ALL on that released line. STR_TO_MAP,
+  Base64 decoding, exact numerics, extrema and the other available forms still run against 1.18's
+  own implementation rather than borrowing 2.2 behavior.
 - The 1.18 host planner cannot consume update/delete streams in window TVF aggregation. Those
   SQL parity cases are N/A; native retraction handling still has operator-level tests.
 - 1.18 has released host code-generation defects for nullable `TINYINT`/`SMALLINT` array lookup,
@@ -83,6 +87,15 @@ The following are host-line differences, not missing native substitutions:
 `ENCODE` on 1.18 declares `BINARY(1)` while returning variable-length bytes. That expression stays
 on Flink because the native boundary cannot treat arbitrary bytes as a one-byte fixed vector.
 The fallback parity tests check the complete bytes, including UTF-16 encodings and nulls.
+
+Scalar SQL regression tests assert native routing, resolved output schemas and collected results
+for admitted exact-numeric ABS, Java-backed string extrema and dynamic trims, BOOLEAN IF,
+PARSE_URL, dynamic SHA2, FROM_BASE64 and the released binary prefix/suffix overloads.
+The remaining floating-extrema, binary-backed string, oversized SHA2/ELT and fixed BINARY-result
+restrictions retain explicit fallback checks. Generic Calc/filter rejection fixtures use
+STRING-to-BOOLEAN TRY_CAST, which still falls back, rather than functions already admitted by
+the planner. A fallback assertion failure does not establish a result mismatch: routing and
+host/native result parity both need to pass.
 
 ## JSON and formats
 

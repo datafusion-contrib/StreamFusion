@@ -10,7 +10,7 @@ import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 
-/** Keeps Java UTF-16 JSON results inside a generated expression or at the final output boundary. */
+/** Keeps sensitive Java UTF-16 results inside a generated expression or at the final output boundary. */
 final class JsonStringIdentity {
   private JsonStringIdentity() {}
 
@@ -24,10 +24,14 @@ final class JsonStringIdentity {
       return containsSensitiveString(access.getReferenceExpr());
     }
     if (!(expression instanceof RexCall call)) return false;
+    if (call.getOperator().getName().equals("REGEXP_EXTRACT_ALL")
+        || call.getOperator().getName().equals("STR_TO_MAP")) return true;
     if (SqlTypeFamily.CHARACTER.contains(call.getType())
         && (call.getOperator().getName().equals("JSON_VALUE")
             || call.getOperator().getName().equals("JSON_QUERY")
-            || call.getOperator().getName().equals("JSON_UNQUOTE"))) {
+            || call.getOperator().getName().equals("JSON_UNQUOTE")
+            || call.getOperator().getName().equals("PRINTF")
+            || call.getOperator().getName().equals("FROM_BASE64"))) {
       return true;
     }
     return call.getOperands().stream().anyMatch(JsonStringIdentity::containsSensitiveString);
@@ -67,7 +71,27 @@ final class JsonStringIdentity {
     return false;
   }
 
-  private static boolean containsCharacter(RelDataType type) {
+  static boolean containsBinaryString(RexNode expression) {
+    if (expression instanceof RexFieldAccess access) {
+      return containsBinaryString(access.getReferenceExpr());
+    }
+    return expression instanceof RexCall call
+        && (call.getOperator().getName().equals("FROM_BASE64")
+            || call.getOperands().stream().anyMatch(JsonStringIdentity::containsBinaryString));
+  }
+
+  static boolean projectsBinaryString(RelNode node) {
+    if (node instanceof StreamPhysicalCalc calc) {
+      var program = calc.getProgram();
+      for (var projection : program.getProjectList()) {
+        RexNode expression = program.expandLocalRef(projection);
+        if (containsCharacter(expression.getType()) && containsBinaryString(expression)) return true;
+      }
+    }
+    return node.getInputs().stream().anyMatch(JsonStringIdentity::projectsBinaryString);
+  }
+
+  static boolean containsCharacter(RelDataType type) {
     if (SqlTypeFamily.CHARACTER.contains(type)) return true;
     if (type.getComponentType() != null && containsCharacter(type.getComponentType())) return true;
     if (type.getKeyType() != null && containsCharacter(type.getKeyType())) return true;
