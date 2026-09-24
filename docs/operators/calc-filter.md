@@ -911,6 +911,12 @@ Both standalone expressions are slower through the batch JVM bridge. This path a
 coverage and keeps an otherwise supported pipeline inside a native island; it is not a charset
 conversion speedup. The six literal-charset Rust kernels remain available.
 
+Generated expressions now bypass per-row reflection while invoking the same Flink evaluator.
+The [bridge optimization measurements](../optimizations/udf-columnar-upcall.md#direct-generated-expression-dispatch)
+show a larger isolated dispatch benefit, a modest dynamic ENCODE whole-job improvement and no
+material DECODE improvement. These expressions still execute on the JVM, with unchanged charset,
+surrogate, NULL and exception behavior; native Calc admission is not a Rust charset implementation.
+
 ```sh
 SF_BENCHMARK=true mvn test -Pbench -pl streamfusion-runtime -am \
   '-Dtest=ScalarFunctionBenchmark#individualFunctions' -Dsurefire.failIfNoSpecifiedTests=false \
