@@ -332,6 +332,12 @@ final class RexExpression {
   private static CalcEncoding tryEncodeCalc(Calc calc) {
     RexExpression encoder = forCalc(calc);
     boolean supported = encoder.emitCalc(calc);
+    if (supported && !encoder.rowFusion && encoder.requiresCalcRowOrder(calc.getProgram())) {
+      // Preserve native admission before selecting a different evaluation schedule. A fresh
+      // encoder must not retain descriptors or pools from the column-at-a-time attempt.
+      encoder = forCalc(calc);
+      supported = encoder.emitRowCalc(calc);
+    }
     if (!supported
         && (containsSqlJson(calc.getProgram()) || containsCollectionStringFunction(calc.getProgram()))) {
       // A failed native attempt may have populated pools and UDF bindings. Generate the complete
@@ -340,6 +346,25 @@ final class RexExpression {
       supported = encoder.emitRowCalc(calc);
     }
     return new CalcEncoding(encoder, supported);
+  }
+
+  private boolean requiresCalcRowOrder(RexProgram program) {
+    // Any JVM evaluator can throw, including independent deterministic user functions. Count
+    // native failure sites too: a later-row failure must not overtake an earlier projection.
+    long[] failures = {kinds.stream().filter(kind -> kind == KIND_UDF).count()};
+    var visitor =
+        new org.apache.calcite.rex.RexVisitorImpl<Void>(true) {
+          @Override
+          public Void visitCall(RexCall call) {
+            if (mayFailOnRow(call)) failures[0]++;
+            return super.visitCall(call);
+          }
+        };
+    if (program.getCondition() != null)
+      program.expandLocalRef(program.getCondition()).accept(visitor);
+    for (RexLocalRef project : program.getProjectList())
+      program.expandLocalRef(project).accept(visitor);
+    return failures[0] > 1;
   }
 
   private static RexExpression forCalc(Calc calc) {
@@ -1623,6 +1648,10 @@ final class RexExpression {
     if (!(node instanceof RexCall call)) {
       return false;
     }
+    return mayFailOnRow(call) || call.getOperands().stream().anyMatch(this::requiresRowShortCircuit);
+  }
+
+  private boolean mayFailOnRow(RexCall call) {
     if (call.getOperator()
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.RAND_INTEGER
         && !isIntLiteralAtLeast(call.getOperands().get(call.getOperands().size() - 1), 1)) {
@@ -1681,7 +1710,7 @@ final class RexExpression {
         && "ERROR".equals(jsonSymbol(args.get(2)))) {
       return true;
     }
-    return args.stream().anyMatch(this::requiresRowShortCircuit);
+    return false;
   }
 
   private static boolean hasNonzeroIntegerDivisor(RexCall call) {
