@@ -34,6 +34,14 @@ at that value; a retraction after overflow starts it at the negated value. NULL 
 the accumulator unchanged. This rule also applies after restore and to filtered SUMs.
 Decimal AVG has a separate accumulator whose overflow stays NULL.
 
+`TINYINT` and `SMALLINT` `SUM`/`MIN`/`MAX` retain their input width, including the local
+partials of an insert-only two-phase plan. SUM wraps on overflow at 8 or 16 bits rather
+than widening to BIGINT. Single-phase retractions subtract at the same width; MIN/MAX
+retain duplicate multiplicities until the last occurrence is removed. NULL inputs are
+ignored and all-NULL groups return NULL. FILTER and integer SUM(DISTINCT) preserve these
+rules across batches and checkpoint restore. Retracting two-phase SUM/MIN/MAX retain
+the general fallback described below.
+
 Insert-only floating MIN/MAX uses primitive comparisons, retaining the first signed zero or
 NaN on a tie. Retracting floating extrema remain subject to the type admission below.
 
@@ -145,8 +153,8 @@ set travels as a trailing view column — its distinct `(value, count)` entries 
 structs, the Arrow form of Flink's serialized `MapView` partial — and the global folds the entries
 into its per-key distinct state with multiplicities, so a value repeating across bundles counts
 once. Scope: `COUNT(DISTINCT)` over bigint/int/smallint/tinyint/float/double/string/decimal,
-`SUM(DISTINCT)` over bigint/int (the merge folds in set-iteration order, so order-sensitive
-float/double sums stay on the host).
+`SUM(DISTINCT)` over bigint/int/smallint/tinyint (the merge folds in set-iteration order, so
+order-sensitive float/double sums stay on the host).
 
 **Per-aggregate `FILTER (WHERE …)` rides the split too**, on plain and distinct aggregates alike:
 the predicate is a boolean column the local gates every fold on, so the merge stays filter-blind.
@@ -190,7 +198,7 @@ agrees byte-for-byte with Flink's — this table is that guardrail; anything mar
 | INT | ✓ ² | ✓ ¹ | ✓ | ✓ | ✓ |
 | SMALLINT / TINYINT | ✓ ² | ✓ ¹ | ✓ | ✓ | ✓ |
 | DOUBLE | ✓ | ✓ | ✓ | ✓ | ✓ |
-| FLOAT (REAL) | ✓ ³ | ✓ ³ | ✓ | ✓ | ✓ |
+| FLOAT (REAL) | ✗ | ✓ ³ | ✗ | ✗ | ✓ |
 | DECIMAL | ✓ ⁴ | ✓ ⁴ | ✓ | ✓ | ✓ |
 | CHAR / VARCHAR | ✗ | ✗ | ✓ ⁵ | ✓ ⁵ | ✓ |
 | TIMESTAMP / TIMESTAMP_LTZ | - | - | Yes | Yes | Yes |
@@ -203,10 +211,10 @@ narrow input type and wraps at that type's width on every step, instead of DataF
 sum — the host's exact "store the running sum in the input type, cast back each step" semantics,
 pinned by an overflow-boundary parity test.
 
-³ **`SUM`/`AVG` over FLOAT** use custom accumulators for host-exact precision: `SUM` accumulates in
-4-byte float (rounding every step) rather than DataFusion's widening double sum; `AVG` sums in
-double and narrows the quotient to float, as Flink's `FloatAvgAggFunction` does. Both fold rows in
-the same order as the host, so results are bit-identical.
+³ **`AVG` over FLOAT** sums in double and narrows the quotient to float, as Flink's
+`FloatAvgAggFunction` does. Non-windowed FLOAT SUM/MIN/MAX still fail the planner's
+running-value type gate; support for those types in other aggregate operators does not admit
+them here.
 
 ⁴ **DECIMAL** carries type-preserving `MIN`/`MAX`/`COUNT` over the column's own precision/scale,
 `SUM` as an i128 running sum reported as `DECIMAL(38, s)`, and `AVG` as that sum divided by the
@@ -248,11 +256,11 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 **Local group aggregate (two-phase local half) only:**
 
 - Any aggregate other than SUM/MIN/MAX/COUNT/AVG.
-- A SUM/MIN/MAX value type outside bigint/int/double/decimal (MIN/MAX also admit strings and
-  timestamps), or an AVG value type outside
+- A SUM/MIN/MAX value type outside bigint/int/smallint/tinyint/double/decimal (MIN/MAX also admit
+  strings and timestamps), or an AVG value type outside
   bigint/int/smallint/tinyint/float/double/decimal.
 - A `COUNT(DISTINCT)` value type outside bigint/int/smallint/tinyint/float/double/string/decimal,
-  or a `SUM(DISTINCT)` value outside bigint/int; `MIN`/`MAX`/`AVG` over `DISTINCT`.
+  or a `SUM(DISTINCT)` value outside bigint/int/smallint/tinyint; `MIN`/`MAX`/`AVG` over `DISTINCT`.
 - A partial whose declared type differs from what the native side emits — defensive only, not
   reachable from Flink's own planner.
 - A retracting input with any aggregate other than plain COUNT/AVG.
@@ -260,13 +268,43 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 **Global group aggregate (two-phase merge) only:**
 
 - Any merge other than SUM/MIN/MAX/COUNT/AVG.
-- A partial column outside bigint/int/double/decimal (strings and timestamps allowed under MIN/MAX).
+- A partial column outside bigint/int/smallint/tinyint/double/decimal (strings and timestamps
+  allowed under MIN/MAX).
 - An AVG whose partial pair isn't `(bigint, bigint)` for an integer average, `(double, bigint)` for
   float/double, or `(decimal(38, s), bigint)` for decimal.
 - A distinct merge outside the local half's `COUNT`/`SUM(DISTINCT)` scope.
 - A retracting merge with any aggregate other than plain COUNT/AVG (those merge natively, the
   `count1` partial driving per-key liveness).
 - An unsupported grouping-key or output column type.
+
+## Narrow integer validation and timing
+
+`FlinkNarrowGroupAggregateSqlHarnessTest` compares values, resolved schemas and native plans with
+released Flink 2.2.1 and 1.18.1. Cases include overflow in both directions, NULL-only and empty
+inputs, FILTER, DISTINCT, multiple partial bundles, and the single-phase retracting changelog.
+Native tests additionally cover memory snapshots and RocksDB checkpoint/reopen with duplicate
+extrema, wrapping sums and distinct multiplicities.
+
+`NarrowGroupAggregateBenchmark` measures SUM/MIN/MAX over both narrow integer columns, with
+2,000,000 runtime rows, 64 keys, and NULLs every seventh row. A local ARM64/JDK 17 run on Flink
+2.2.1 (2026-09-24) used the release native build with mimalloc, one warmup and three interleaved
+measured trials per engine. Both row/Arrow transposes and the row sink are included; the
+two-phase bundle size is 1024.
+
+| Plan | Flink median (s) | Native median (s) | Flink/native |
+|---|---|---|---|
+| Single-phase | 0.783 | 0.914 | 0.856x |
+| Two-phase | 0.767 | 0.664 | 1.156x |
+
+The single-phase standalone query is slower in this diagnostic; two-phase benefits from local
+partial aggregation. This coverage also permits narrow aggregates inside larger native pipelines;
+these measurements do not establish a general speedup.
+
+```sh
+SF_BENCHMARK=true mvn test -Pbench -pl streamfusion-runtime -am \
+  -Dtest=NarrowGroupAggregateBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dnarrow.warmup=1 -Dnarrow.runs=3
+```
 
 ## Timestamp extrema validation and timing
 

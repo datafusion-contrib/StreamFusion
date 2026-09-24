@@ -25,6 +25,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class FlinkVariableTopNSqlHarnessTest {
+  private static final int MINI_BATCH_SIZE = 37;
+
   @ParameterizedTest
   @ValueSource(
       strings = {
@@ -214,8 +216,14 @@ class FlinkVariableTopNSqlHarnessTest {
             + " k, COUNT(*) AS n FROM src GROUP BY k)) WHERE rn <= k";
     NativeParity.assertOrderedKindedParity(() -> environment(false, false), sql);
     NativeParity.assertChangelogParity(() -> environment(false, false), sql);
+    // Seed both aggregate phases before other keys can propose a different first bound.
+    List<Row> prefix = new ArrayList<>();
+    for (int i = 0; i < MINI_BATCH_SIZE * MINI_BATCH_SIZE; i++) {
+      prefix.add(Row.of(5L, 0L, (long) i));
+    }
     NativeParity.assertFallbackReasonContains(
-        () -> environment(false, true), sql,
+        () -> environment(false, true, prefix),
+        sql.replace("ORDER BY n DESC", "ORDER BY n DESC, k ASC"),
         "changing bounds require unchanged upstream mini-batch changelog order");
   }
 
@@ -268,7 +276,7 @@ class FlinkVariableTopNSqlHarnessTest {
     if (miniBatch) {
       table.getConfig().set("table.exec.mini-batch.enabled", "true");
       table.getConfig().set("table.exec.mini-batch.allow-latency", "1 s");
-      table.getConfig().set("table.exec.mini-batch.size", "37");
+      table.getConfig().set("table.exec.mini-batch.size", Integer.toString(MINI_BATCH_SIZE));
     }
     List<Row> rows = new ArrayList<>();
     for (long k : new long[] {-4, -2, -1, 0, 1, 2, 3, 200}) {
@@ -318,16 +326,21 @@ class FlinkVariableTopNSqlHarnessTest {
   }
 
   private static TableEnvironment environment(boolean nullable, boolean miniBatch) {
+    return environment(nullable, miniBatch, List.of());
+  }
+
+  private static TableEnvironment environment(
+      boolean nullable, boolean miniBatch, List<Row> prefix) {
     var env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     var table = StreamTableEnvironment.create(env);
     if (miniBatch) {
       table.getConfig().set("table.exec.mini-batch.enabled", "true");
       table.getConfig().set("table.exec.mini-batch.allow-latency", "1 s");
-      table.getConfig().set("table.exec.mini-batch.size", "37");
+      table.getConfig().set("table.exec.mini-batch.size", Integer.toString(MINI_BATCH_SIZE));
     }
-    List<Row> rows = new ArrayList<>();
-    long id = 0;
+    List<Row> rows = new ArrayList<>(prefix);
+    long id = prefix.size();
     for (long key : new long[] {Long.MIN_VALUE, -4, -3, -2, -1, 0, 1, 2, 3, 200, Long.MAX_VALUE}) {
       for (Long value : new Long[] {50L, 30L, null, 30L, 10L, 60L}) {
         rows.add(Row.of(key, value, id++));

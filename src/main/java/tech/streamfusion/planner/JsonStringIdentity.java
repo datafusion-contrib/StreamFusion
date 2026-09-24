@@ -31,6 +31,10 @@ final class JsonStringIdentity {
             || call.getOperator().getName().equals("JSON_QUERY")
             || call.getOperator().getName().equals("JSON_UNQUOTE")
             || call.getOperator().getName().equals("PRINTF")
+            // Runtime charsets include CESU-8, which can return isolated UTF-16 surrogates.
+            || call.getOperator().getName().equals("DECODE")
+                && call.getOperands().size() == 2
+                && !(call.getOperands().get(1) instanceof RexLiteral)
             || call.getOperator().getName().equals("FROM_BASE64"))) {
       return true;
     }

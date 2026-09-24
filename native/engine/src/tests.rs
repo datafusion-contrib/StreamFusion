@@ -3253,6 +3253,66 @@ fn group_batch(keys: Vec<i64>, values: Vec<i64>) -> RecordBatch {
     group_changelog(keys, values.into_iter().map(Some).collect(), kinds)
 }
 
+fn narrow_group_changelog(code: i64, values: Vec<Option<i64>>, kinds: Vec<i8>) -> RecordBatch {
+    let data_type = value_data_type(code);
+    let values = arrow::compute::cast(&Int64Array::from(values), &data_type).unwrap();
+    RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key0", DataType::Int64, false),
+            Field::new("value0", data_type, true),
+            Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+        ])),
+        vec![
+            Arc::new(Int64Array::from(vec![1; kinds.len()])),
+            values,
+            Arc::new(Int8Array::from(kinds)),
+        ],
+    )
+    .unwrap()
+}
+
+#[test]
+fn narrow_group_sums_and_extrema_restore_then_retract() {
+    for (code, max, min) in [(5, 127, -128), (4, 32767, -32768)] {
+        let kinds = vec![0, 1, 2, 9];
+        let mut agg = GroupAggregator::new(kinds.clone(), vec![code; 4], vec![1; 4], vec![0], true);
+        let seed =
+            narrow_group_changelog(code, vec![Some(max), Some(1), Some(max), None], vec![0; 4]);
+        let out = agg.update(&seed, 0).unwrap();
+        let assert_last = |out: &RecordBatch, expected: [Option<i64>; 4]| {
+            for (column, value) in expected.into_iter().enumerate() {
+                assert_eq!(out.column(column + 1).data_type(), &value_data_type(code));
+                let widened =
+                    arrow::compute::cast(out.column(column + 1), &DataType::Int64).unwrap();
+                let array = widened.as_any().downcast_ref::<Int64Array>().unwrap();
+                assert_eq!(array.iter().last().unwrap(), value);
+            }
+        };
+        assert_last(&out, [Some(-1), Some(1), Some(max), Some(min)]);
+        let mut restored = GroupAggregator::restore(
+            kinds,
+            vec![code; 4],
+            vec![1; 4],
+            vec![0],
+            true,
+            &agg.snapshot(),
+            0,
+        );
+        for (value, expected) in [
+            (Some(max), [Some(min), Some(1), Some(max), Some(min)]),
+            (Some(max), [Some(1); 4]),
+            (Some(1), [None; 4]),
+            (None, [None; 4]),
+        ] {
+            let batch = narrow_group_changelog(code, vec![value], vec![3]);
+            let actual = restored.update(&batch, 0).unwrap();
+            assert_eq!(actual, agg.update(&batch, 0).unwrap());
+            assert_last(&actual, expected);
+        }
+        assert_eq!(restored.staged_keys(), 0);
+    }
+}
+
 #[test]
 fn local_group_extremes_preserve_append_only_and_retracting_results() {
     let make =
@@ -7899,6 +7959,50 @@ mod rocksdb_group_multisets {
                 &group_timestamp_changelog(vec![value], vec![3]),
                 0,
             );
+        }
+    }
+
+    #[test]
+    fn narrow_group_rocks_checkpoint_preserves_wrapping_sums_and_multisets() {
+        for (code, max) in [(5, 127), (4, 32767)] {
+            let make =
+                || GroupAggregator::new(vec![0, 1, 2, 9], vec![code; 4], vec![1; 4], vec![0], true);
+            let codec = || {
+                GroupStateCodec::new(
+                    vec![0, 1, 2, 9],
+                    vec![value_data_type(code); 4],
+                    vec![1; 4],
+                    vec![-1; 4],
+                )
+            };
+            let store =
+                RocksGroupStore::create(store_config("narrow-integers", 0), codec()).unwrap();
+            let mut rocks = make().with_backend(store);
+            let mut memory = make();
+            let seed =
+                narrow_group_changelog(code, vec![Some(max), Some(1), Some(max), None], vec![0; 4]);
+            assert_parity(&mut rocks, &mut memory, &seed, 0);
+            let snapshot = snapshot_dir("narrow-integers");
+            let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+            drop(rocks);
+            let store = RocksGroupStore::open_merged(
+                store_config("narrow-integers-reopen", 0),
+                codec(),
+                &[(snapshot, manifest.snapshot_id)],
+                0..=127,
+                true,
+                0,
+            )
+            .unwrap();
+            let mut rocks = make().with_backend(store);
+            for value in [Some(max), Some(max), Some(1), None] {
+                assert_parity(
+                    &mut rocks,
+                    &mut memory,
+                    &narrow_group_changelog(code, vec![value], vec![3]),
+                    0,
+                );
+            }
         }
     }
 

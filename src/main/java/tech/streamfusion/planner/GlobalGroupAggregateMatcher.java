@@ -25,7 +25,7 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  * partial column), and an AVG folds its pre-summed sum partial into the ordinary AVG state while the
  * count partial bumps the state's non-null count — so the final emit (divide, truncate toward zero,
  * cast back to the value type) is byte-identical to the single-phase AVG. Scope matches the local
- * half: bigint/int/double partials, and grouping keys the boundary carries.
+ * half: integer/double/decimal partials, and grouping keys the boundary carries.
  */
 final class GlobalGroupAggregateMatcher {
 
@@ -86,11 +86,11 @@ final class GlobalGroupAggregateMatcher {
                 && LocalGroupAggregateMatcher.supportedDistinctValueType(valueType);
         boolean sumDistinct =
             kind == WindowAggregateMatcher.KIND_SUM
-                && (valueType == SqlTypeName.BIGINT || valueType == SqlTypeName.INTEGER)
+                && GroupAggregateMatcher.isIntegerType(valueType)
                 && partialType == valueType;
         if (!countDistinct && !sumDistinct) {
           return "global group aggregate: distinct merges are COUNT (over set-carriable value"
-              + " types) and SUM (over bigint/int)";
+              + " types) and SUM (over integers)";
         }
         continue;
       }
@@ -132,7 +132,7 @@ final class GlobalGroupAggregateMatcher {
         continue;
       }
       if (partialCode(partialRel) < 0) {
-        return "global group aggregate: partial columns must be bigint/int/double/decimal, or a"
+        return "global group aggregate: partial columns must be integer/double/decimal, or a"
             + " string/timestamp under MIN/MAX";
       }
     }
@@ -177,6 +177,10 @@ final class GlobalGroupAggregateMatcher {
         return 1;
       case INTEGER:
         return 2;
+      case SMALLINT:
+        return 4;
+      case TINYINT:
+        return 5;
       case DECIMAL:
         // A decimal SUM partial arrives pre-widened to DECIMAL(38, s); MIN/MAX keep DECIMAL(p, s).
         // The packed code carries the partial's own precision/scale either way.

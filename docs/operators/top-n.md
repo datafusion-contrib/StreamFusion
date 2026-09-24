@@ -147,7 +147,11 @@ Partition-invariant update-fast coverage also verifies rescaling, restored TTL t
 N=1, and retained overflow ties. A retained-metrics SQL test requires nonempty native Top-N
 input and output. Mini-batch aggregate comparisons use an explicit tie-breaker because each
 engine may emit a bundle's groups in a different map order; tied arrivals are checked with
-ordered per-record changelogs. Computed-key tests additionally compare exact ordered changelogs
+ordered per-record changelogs. The changing-bound aggregate fallback check also starts with
+enough rows of one key to flush both aggregate phases before any other bound can arrive.
+This keeps its first bound and nonempty materialized result independent of processing-time
+bundle boundaries, including when both executions use only Flink.
+Computed-key tests additionally compare exact ordered changelogs
 and mini-batch materializations for arithmetic, integral casts, COALESCE and composite partitions.
 Forced SQL failures after a completed checkpoint verify continuation on memory and RocksDB for
 append-only input and grouped retractions. Native operator metrics require nonempty Top-N input

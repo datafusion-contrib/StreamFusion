@@ -92,11 +92,10 @@ class FlinkDecodeSqlHarnessTest {
   }
 
   @Test
-  void dynamicCharsetFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void dynamicCharsetMatchesHost() throws Exception {
+    BuiltinFunctionParity.assertParity(
         TextTimeFunctionTestInputs::parameters,
         "SELECT id, DECODE(ENCODE(s, 'UTF-8'), CASE WHEN n > 0 THEN 'UTF-8' ELSE 'ASCII' END) FROM"
-            + " inputs",
-        "literal charset");
+            + " inputs");
   }
 }
