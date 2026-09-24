@@ -163,6 +163,8 @@ class ScalarFunctionBenchmark {
                   new Query("ENCODE_UTF16", "tt_text", "ENCODE(s, 'UTF-16')", "BYTES"),
                   new Query("ENCODE_UTF16BE", "tt_text", "ENCODE(s, 'UTF-16BE')", "BYTES"),
                   new Query("ENCODE_UTF16LE", "tt_text", "ENCODE(s, 'UTF-16LE')", "BYTES"),
+                  new Query("ENCODE_DYNAMIC", "tt_charset", "ENCODE(s, c)", "BYTES"),
+                  new Query("DECODE_DYNAMIC", "tt_charset", "DECODE(b, c)", "STRING"),
                   new Query("DECODE_UTF16", "tt_utf16", "DECODE(b, 'UTF-16')"),
                   new Query("DECODE_UTF16BE", "tt_utf16be", "DECODE(b, 'UTF-16BE')"),
                   new Query("DECODE_UTF16LE", "tt_utf16le", "DECODE(b, 'UTF-16LE')"),

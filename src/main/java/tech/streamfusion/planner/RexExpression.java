@@ -373,7 +373,7 @@ final class RexExpression {
 
   private boolean emitCalc(Calc calc) {
     RexProgram program = calc.getProgram();
-    if (binaryUdfCallCount(program) > 1) return emitRowCalc(calc);
+    if (binaryUdfCallCount(program) > 1 || containsRuntimeCharset(program)) return emitRowCalc(calc);
     projectionRoot = null;
     if (program.getCondition() != null) {
       RexNode condition =
@@ -400,6 +400,27 @@ final class RexExpression {
     }
     outputNames = calc.getRowType().getFieldNames().toArray(new String[0]);
     return true;
+  }
+
+  private static boolean containsRuntimeCharset(RexProgram program) {
+    // Charset resolution can fail per row. Evaluate the filter and projections together so a
+    // later row's invalid name cannot overtake the first failing expression in Flink's order.
+    return program.getCondition() != null
+            && containsRuntimeCharset(program.expandLocalRef(program.getCondition()))
+        || program.getProjectList().stream()
+            .anyMatch(project -> containsRuntimeCharset(program.expandLocalRef(project)));
+  }
+
+  private static boolean containsRuntimeCharset(RexNode node) {
+    if (node instanceof org.apache.calcite.rex.RexFieldAccess access) {
+      return containsRuntimeCharset(access.getReferenceExpr());
+    }
+    return node instanceof RexCall call
+        && ((call.getOperator().getName().equals("ENCODE")
+                || call.getOperator().getName().equals("DECODE"))
+            && call.getOperands().size() == 2
+            && !(call.getOperands().get(1) instanceof RexLiteral)
+            || call.getOperands().stream().anyMatch(RexExpression::containsRuntimeCharset));
   }
 
   private static int binaryUdfCallCount(RexProgram program) {

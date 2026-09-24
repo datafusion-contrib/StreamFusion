@@ -867,7 +867,15 @@ Character input and a literal UTF-8, US-ASCII, ISO-8859-1, UTF-16, UTF-16BE, or 
 charset (including JDK aliases). Returns BYTES, preserves NULL, and replaces unmappable
 characters with `?` in ASCII/Latin-1. UTF-16 emits a big-endian BOM for non-empty strings;
 UTF-16BE/LE emit no BOM. Empty strings produce empty bytes in all six charsets.
-Other or dynamic charsets fall back.
+Other literal charsets fall back. A runtime character expression for the charset runs through
+Flink's generated evaluator in the native Calc's batch JVM bridge. It uses the TaskManager
+JDK's charset implementations and aliases, including non-UTF charsets, without a Rust
+charset-name approximation. The complete Calc filter and projection list are generated together
+to preserve Flink's row and projection evaluation order, including the first charset error when
+several expressions or rows would fail. Calcs using only the six verified literal charsets
+retain their Rust kernels. NULL arguments return NULL; illegal or unsupported runtime names
+raise Flink's `UnsupportedEncodingException` only when the expression is evaluated. Flink 1.18
+still declares direct ENCODE results as BINARY(1), so that output boundary retains fallback.
 
 ### DECODE
 
@@ -876,7 +884,39 @@ grouping for malformed sequences; ASCII replaces each non-ASCII byte; Latin-1 ma
 UTF-16 detects and consumes an initial BOM, defaulting to big-endian without one. UTF-16BE/LE
 use their fixed byte order and retain the BOM as a character. Malformed surrogate pairs and
 odd trailing bytes follow JDK UnicodeDecoder grouping, including consuming a high surrogate
-and a following non-low code unit together. NULL stays NULL. Other or dynamic charsets fall back.
+and a following non-low code unit together. NULL stays NULL. Other literal charsets fall back.
+
+Runtime charset expressions use the same generated evaluator as ENCODE, preserving JDK
+replacement grouping, aliases and runtime errors. CASE branches, NULL arguments and rows removed
+by a filter retain Flink's evaluation behavior. Charsets such as CESU-8 can produce isolated
+UTF-16 surrogates: comparisons, LIKE and other consumers remain fused with DECODE before Arrow
+conversion. A potentially sensitive string crossing another operator retains the existing
+string-identity fallback; direct final projections and consumers within the Calc are supported.
+
+`FlinkDynamicCharsetSqlHarnessTest` checks released Flink 2.2.1 and 1.18.1 with runtime sources:
+standard and extended JDK charsets, aliases, NULLs, malformed sequences, CESU-8 surrogates,
+filtered and empty batches, untaken CASE branches, and invalid-name exception order.
+
+A local ARM64/JDK 17 diagnostic on Flink 2.2.1 (2026-09-24) used the release native build with
+mimalloc, 2,000,000 rows, 264-byte Unicode text, NULLs every seventh row, and per-row UTF-8,
+UTF-16LE and windows-1252 names. One warmup precedes three interleaved measured trials; the
+runtime source, row sink and both row/Arrow transposes remain in the measured path.
+
+| Runtime expression | Flink median (s) | Native Calc median (s) | Flink/native |
+|---|---|---|---|
+| ENCODE | 1.438 | 2.821 | 0.510x |
+| DECODE | 1.212 | 2.013 | 0.602x |
+
+Both standalone expressions are slower through the batch JVM bridge. This path adds semantic
+coverage and keeps an otherwise supported pipeline inside a native island; it is not a charset
+conversion speedup. The six literal-charset Rust kernels remain available.
+
+```sh
+SF_BENCHMARK=true mvn test -Pbench -pl streamfusion-runtime -am \
+  '-Dtest=ScalarFunctionBenchmark#individualFunctions' -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dscalar.functions=ENCODE_DYNAMIC,DECODE_DYNAMIC -Dscalar.warmup=1 -Dscalar.runs=3 \
+  -Dscalar.unicode=true -Dscalar.nullEvery=7
+```
 
 ### SQL/JSON evaluation
 

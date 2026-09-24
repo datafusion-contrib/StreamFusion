@@ -35,11 +35,10 @@ class FlinkEncodeSqlHarnessTest {
   }
 
   @Test
-  void dynamicCharsetFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void dynamicCharsetMatchesHost() throws Exception {
+    assertEncodingParity(
         TextTimeFunctionTestInputs::parameters,
-        "SELECT id, ENCODE(s, CASE WHEN n > 0 THEN 'UTF-8' ELSE 'ASCII' END) FROM inputs",
-        "literal charset");
+        "SELECT id, ENCODE(s, CASE WHEN n > 0 THEN 'UTF-8' ELSE 'ASCII' END) FROM inputs");
   }
 
   private static void assertEncodingParity(
@@ -49,7 +48,7 @@ class FlinkEncodeSqlHarnessTest {
     if (tech.streamfusion.compat.FlinkTestCapabilities.VARIABLE_LENGTH_ENCODE) {
       NativeParity.assertParity(environment, sql);
     } else {
-      NativeParity.assertFallbackReasonContains(environment, sql, "plan declares BINARY(1)");
+      NativeParity.assertFallbackReasonContains(environment, sql, "BINARY(1)");
     }
   }
 }

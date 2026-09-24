@@ -48,7 +48,19 @@ final class TextTimeBenchmarkInputs {
       payload(unicode ? " |\u4e2daB\ud83d\ude00| " : " |abCd| efGh| ", bytes),
       payload(unicode ? " |\u00e9dE\ud83d\ude42| " : " |deFg| abCd| ", bytes)
     };
-    if (input.equals("tt_json_array")) {
+    if (input.equals("tt_charset")) {
+      String[] charsets = {"UTF-8", "UTF-16LE", "windows-1252"};
+      byte[][] encoded = new byte[charsets.length][];
+      for (int i = 0; i < encoded.length; i++) {
+        encoded[i] = text[0].getBytes(java.nio.charset.Charset.forName(charsets[i]));
+      }
+      tables.createTemporaryView("inputs", env.fromSequence(0, rows - 1)
+          .map(i -> Row.of(isNull(i, nullEvery) ? null : text[0],
+              isNull(i, nullEvery) ? null : encoded[(int) (i % encoded.length)],
+              charsets[(int) (i % charsets.length)]))
+          .returns(Types.ROW_NAMED(new String[] {"s", "b", "c"},
+              Types.STRING, Types.PRIMITIVE_ARRAY(Types.BYTE), Types.STRING)));
+    } else if (input.equals("tt_json_array")) {
       tables.createTemporaryView(
           "inputs",
           env.fromSequence(0, rows - 1)
