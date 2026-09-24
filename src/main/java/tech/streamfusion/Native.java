@@ -12,6 +12,13 @@ import org.slf4j.LoggerFactory;
 /** Entry point to the native data plane. Holds the methods backed by the Rust library. */
 public final class Native {
 
+  /** Synchronously imports a batch from borrowed C structs; imported buffers have independent ownership. */
+  @FunctionalInterface
+  public interface BatchReceiver {
+    void accept(long arrayAddress, long schemaAddress);
+  }
+
+
   private static final String LIBRARY_NAME = "streamfusion";
   private static final String NATIVE_RESOURCE_PREFIX =
       "/tech/streamfusion/native/";
@@ -1644,19 +1651,17 @@ public final class Native {
       long inArrayAddress,
       long inSchemaAddress,
       long nowMillis,
-      long outArrayAddress,
-      long outSchemaAddress);
+      BatchReceiver receiver);
 
   public static native void pushRightRocksDBUpdatingJoiner(
       long handle,
       long inArrayAddress,
       long inSchemaAddress,
       long nowMillis,
-      long outArrayAddress,
-      long outSchemaAddress);
+      BatchReceiver receiver);
 
   public static native void flushRocksDBUpdatingJoiner(
-      long handle, long outArrayAddress, long outSchemaAddress);
+      long handle, BatchReceiver receiver);
 
   public static native String[] checkpointRocksDBUpdatingJoiner(
       long handle, String snapshotDirectory);
@@ -2531,8 +2536,7 @@ public final class Native {
       long inArrayAddress,
       long inSchemaAddress,
       long nowMillis,
-      long outArrayAddress,
-      long outSchemaAddress);
+      BatchReceiver receiver);
 
   /** Pushes a right batch, exporting the join changelog (left columns, right columns, row kind). */
   public static native void pushRightUpdatingJoiner(
@@ -2540,11 +2544,10 @@ public final class Native {
       long inArrayAddress,
       long inSchemaAddress,
       long nowMillis,
-      long outArrayAddress,
-      long outSchemaAddress);
+      BatchReceiver receiver);
 
   public static native void flushUpdatingJoiner(
-      long handle, long outArrayAddress, long outSchemaAddress);
+      long handle, BatchReceiver receiver);
 
   /** Releases an updating joiner handle. */
   public static native void closeUpdatingJoiner(long handle);

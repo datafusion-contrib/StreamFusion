@@ -53,6 +53,13 @@ confirmed and where we deliberately differ.
   established incremental state path instead of adding an Arroyo-style batch execution plan:
   duplicate counts, mini-batch flushing, state TTL and restore already share Flink's contract.
   There is no invented equality key, broadcast build side or output-cardinality limit.
+  INNER candidate expansion uses bounded row/byte chunks and a synchronous JNI batch receiver.
+  Arroyo drains a DataFusion batch stream; our incremental probe retains its opposite-side state
+  borrow only for the current task-thread call. A synchronous receiver avoids parking that borrow
+  across JNI calls or accumulating a queue of all output batches. Comet's C Data ownership model
+  still applies: the receiver moves the exported array into Arrow Java, and borrowed stack C structs
+  are released before returning. Downstream exceptions are cleared during native resource unwind
+  and rethrown unchanged by the JNI guard. Flink keeps operator lifecycle and checkpoint ownership.
 - **Row↔Arrow transpose at host edges.** RisingWave (`StreamChunk`) and Proton
   (ClickHouse `Block`) are columnar end to end; we transpose to/from Flink `RowData`
   at native↔host boundaries ([divergences/08](08-columnar-flow-transitions.md)),

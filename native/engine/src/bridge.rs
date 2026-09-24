@@ -1,5 +1,44 @@
 use crate::*;
 pub(crate) use streamfusion_bridge::bridge::*;
+
+/// The receiver imports synchronously; its Arrow buffers may outlive these borrowed C structs.
+pub(crate) fn emit_record_batch(
+    env: &mut JNIEnv,
+    receiver: &jni::objects::JObject,
+    batch: RecordBatch,
+) -> Result<(), DataFusionError> {
+    if batch.num_rows() == 0 {
+        return Ok(());
+    }
+    let mut array = FFI_ArrowArray::empty();
+    let mut schema = FFI_ArrowSchema::empty();
+    let array_address = &mut array as *mut FFI_ArrowArray as jlong;
+    let schema_address = &mut schema as *mut FFI_ArrowSchema as jlong;
+    export_record_batch(batch, array_address, schema_address);
+    if let Err(error) = env.call_method(
+        receiver,
+        "accept",
+        "(JJ)V",
+        &[
+            jni::objects::JValue::Long(array_address),
+            jni::objects::JValue::Long(schema_address),
+        ],
+    ) {
+        if env.exception_check().unwrap_or(false) {
+            let throwable = env.exception_occurred().expect("capture output exception");
+            env.exception_clear()
+                .expect("clear output exception before Arrow release");
+            let throwable = env
+                .new_global_ref(throwable)
+                .expect("retain output exception");
+            std::panic::resume_unwind(Box::new(JavaException(throwable)));
+        }
+        return Err(DataFusionError::Execution(format!(
+            "emit join batch: {error}"
+        )));
+    }
+    Ok(())
+}
 /// Panics behind the guard so the containment itself is testable from Java. Without an entrypoint
 /// that deliberately fails, the only way to tell a contained panic from a process abort is to crash
 /// a real job.

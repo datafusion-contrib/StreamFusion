@@ -1,11 +1,17 @@
 package tech.streamfusion.operator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.apache.arrow.c.ArrowArray;
+import org.apache.arrow.c.ArrowSchema;
+import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
@@ -23,6 +29,7 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import tech.streamfusion.Native;
 
 /** The columnar updating INNER join: Arrow batches in on both sides, a changelog of batches out. */
 @ExtendWith(CoalescingOff.class)
@@ -97,17 +104,115 @@ class NativeColumnarUpdatingJoinOperatorTest {
   }
 
   @Test
+  void duplicateFanoutCrossesJniAsBoundedBatches() throws Exception {
+    for (boolean miniBatch : new boolean[] {false, true}) {
+      try (BufferAllocator allocator = new RootAllocator();
+          KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+              harness =
+                  new KeyedTwoInputStreamOperatorTestHarness<>(
+                      rawKeyedOperator(miniBatch, 10000),
+                      batch -> 0,
+                      batch -> 0,
+                      Types.INT,
+                      MAX_PARALLELISM,
+                      1,
+                      0)) {
+        harness.setup(new ArrowBatchSerializer());
+        harness.open();
+        RowData[] right =
+            java.util.stream.IntStream.range(0, 5000)
+                .mapToObj(i -> row(RowKind.INSERT, 1, 100))
+                .toArray(RowData[]::new);
+        harness.processElement2(
+            new StreamRecord<>(
+                miniBatch ? appendBatch(allocator, RIGHT, right) : batch(allocator, RIGHT, right)));
+        RowData[] left = {row(RowKind.INSERT, 1, 10), row(RowKind.INSERT, 1, 20)};
+        harness.processElement1(
+            new StreamRecord<>(
+                miniBatch ? appendBatch(allocator, LEFT, left) : batch(allocator, LEFT, left)));
+        if (miniBatch) harness.processWatermark1(new Watermark(1));
+        long rows = 0;
+        int batches = 0;
+        for (Object value : harness.getOutput()) {
+          if (value instanceof StreamRecord<?> record
+              && record.getValue() instanceof ArrowBatch batch) {
+            assertTrue(batch.rowCount() <= 4096);
+            rows += batch.rowCount();
+            batches++;
+          }
+        }
+        assertEquals(10000, rows);
+        assertEquals(3, batches);
+        List<List<Object>> changes = collect(harness);
+        assertEquals(
+            5000,
+            changes.stream().filter(c -> c.equals(change(RowKind.INSERT, 1, 10, 1, 100))).count());
+        assertEquals(
+            5000,
+            changes.stream().filter(c -> c.equals(change(RowKind.INSERT, 1, 20, 1, 100))).count());
+      }
+    }
+  }
+
+  @Test
+  void callbackFailurePreservesThrowableAndReleasesBorrowedArrowData() throws Exception {
+    for (boolean importOutput : new boolean[] {false, true}) {
+      NativeColumnarUpdatingJoinOperator operator = rawKeyedOperator();
+      try (BufferAllocator allocator = new RootAllocator();
+          KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+              harness =
+                  new KeyedTwoInputStreamOperatorTestHarness<>(
+                      operator, batch -> 0, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0)) {
+        harness.setup(new ArrowBatchSerializer());
+        harness.open();
+        harness.processElement2(
+            new StreamRecord<>(batch(allocator, RIGHT, row(RowKind.INSERT, 1, 100))));
+        IllegalStateException expected =
+            new IllegalStateException("downstream rejected join output");
+        try (VectorSchemaRoot in = batch(allocator, LEFT, row(RowKind.INSERT, 1, 10)).root();
+            ArrowArray array = ArrowArray.allocateNew(allocator);
+            ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
+          Data.exportVectorSchemaRoot(allocator, in, null, array, schema);
+          assertSame(
+              expected,
+              assertThrows(
+                  IllegalStateException.class,
+                  () ->
+                      Native.pushLeftUpdatingJoiner(
+                          operator.handle,
+                          array.memoryAddress(),
+                          schema.memoryAddress(),
+                          0,
+                          (outArray, outSchema) -> {
+                            if (importOutput) {
+                              try (ArrowArray a = ArrowArray.wrap(outArray);
+                                  ArrowSchema s = ArrowSchema.wrap(outSchema);
+                                  VectorSchemaRoot out =
+                                      Data.importVectorSchemaRoot(allocator, a, s, null)) {
+                                assertEquals(1, out.getRowCount());
+                              }
+                            }
+                            throw expected;
+                          })));
+        }
+        assertEquals(0, allocator.getAllocatedMemory());
+      }
+    }
+  }
+
+  @Test
   void uniqueInputsShareOneLogicalCountBoundaryAcrossBothSides() throws Exception {
     try (BufferAllocator allocator = new RootAllocator();
-        KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch> harness =
-            new KeyedTwoInputStreamOperatorTestHarness<>(
-                rawKeyedOperator(true, 4),
-                batch -> 0,
-                batch -> 0,
-                Types.INT,
-                MAX_PARALLELISM,
-                1,
-                0)) {
+        KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+            harness =
+                new KeyedTwoInputStreamOperatorTestHarness<>(
+                    rawKeyedOperator(true, 4),
+                    batch -> 0,
+                    batch -> 0,
+                    Types.INT,
+                    MAX_PARALLELISM,
+                    1,
+                    0)) {
       harness.setup(new ArrowBatchSerializer());
       harness.open();
       harness.processElement2(

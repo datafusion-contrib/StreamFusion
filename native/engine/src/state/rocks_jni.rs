@@ -1256,8 +1256,7 @@ fn push_rocksdb_updating_joiner(
     in_array: jlong,
     in_schema: jlong,
     now: jlong,
-    out_array: jlong,
-    out_schema: jlong,
+    receiver: jni::objects::JObject,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
         let joiner = unsafe { &mut *(handle as *mut RocksUpdatingJoiner) };
@@ -1267,10 +1266,12 @@ fn push_rocksdb_updating_joiner(
         // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
         let result = {
             let batch = import_record_batch(in_array, in_schema);
-            joiner.push(&batch, is_left, now)
+            joiner.push_to(&batch, is_left, now, &mut |out| {
+                crate::bridge::emit_record_batch(&mut env, &receiver, out)
+            })
         };
         match result {
-            Ok(out) => export_record_batch(out, out_array, out_schema),
+            Ok(()) => (),
             Err(e) => throw_memory_limit(&mut env, &e.to_string()),
         }
     })
@@ -1284,12 +1285,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_pushLeftRocksDBUpdatingJoin
     in_array: jlong,
     in_schema: jlong,
     now: jlong,
-    out_array: jlong,
-    out_schema: jlong,
+    receiver: jni::objects::JObject,
 ) {
-    push_rocksdb_updating_joiner(
-        env, handle, true, in_array, in_schema, now, out_array, out_schema,
-    )
+    push_rocksdb_updating_joiner(env, handle, true, in_array, in_schema, now, receiver)
 }
 
 #[no_mangle]
@@ -1300,12 +1298,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_pushRightRocksDBUpdatingJoi
     in_array: jlong,
     in_schema: jlong,
     now: jlong,
-    out_array: jlong,
-    out_schema: jlong,
+    receiver: jni::objects::JObject,
 ) {
-    push_rocksdb_updating_joiner(
-        env, handle, false, in_array, in_schema, now, out_array, out_schema,
-    )
+    push_rocksdb_updating_joiner(env, handle, false, in_array, in_schema, now, receiver)
 }
 
 #[no_mangle]
@@ -1313,12 +1308,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBUpdatingJoiner<
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
-    out_array: jlong,
-    out_schema: jlong,
+    receiver: jni::objects::JObject,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
-        match unsafe { &mut *(handle as *mut RocksUpdatingJoiner) }.flush_mini_batch() {
-            Ok(out) => export_record_batch(out, out_array, out_schema),
+        match unsafe { &mut *(handle as *mut RocksUpdatingJoiner) }.flush_mini_batch_to(
+            &mut |out| crate::bridge::emit_record_batch(&mut env, &receiver, out),
+        ) {
+            Ok(()) => (),
             Err(e) => throw_memory_limit(&mut env, &e.to_string()),
         }
     })

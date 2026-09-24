@@ -4796,6 +4796,231 @@ fn inner_joiner() -> UpdatingJoiner {
     )
 }
 
+#[test]
+fn updating_join_streams_duplicate_fanout_and_retractions_in_bounded_chunks() {
+    let mut joiner = inner_joiner();
+    joiner
+        .push(
+            &changelog_join_batch(vec![1; 5000], vec![10; 5000], vec![0; 5000]),
+            false,
+            0,
+        )
+        .unwrap();
+    let input = changelog_join_batch(vec![1; 4], vec![20; 4], vec![0, 1, 2, 3]);
+    let mut counts = [0; 4];
+    let mut chunks = 0;
+    joiner
+        .push_to(&input, true, 0, &mut |batch| {
+            assert!(batch.num_rows() <= 4096);
+            for kind in row_kinds(&batch) {
+                counts[kind as usize] += 1;
+            }
+            assert!(values(&batch, 1).iter().all(|v| *v == 20));
+            assert!(values(&batch, 3).iter().all(|v| *v == 10));
+            chunks += 1;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(counts, [5000; 4]);
+    assert!(chunks > 1);
+    assert_eq!(
+        joiner
+            .push(&changelog_join_batch(vec![1], vec![30], vec![0]), false, 0)
+            .unwrap()
+            .num_rows(),
+        0
+    );
+}
+
+#[test]
+fn updating_join_filtered_fanout_fits_a_small_temporary_budget() {
+    let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(64 * 1024));
+    let mut joiner = UpdatingJoiner::new(
+        vec![0],
+        vec![0],
+        JoinKind::Inner,
+        kv_schema(),
+        kv_schema(),
+        Some(JoinPredicate {
+            kinds: vec![6, 0, 0],
+            payload: vec![10, 1, 3],
+            child_counts: vec![2, 0, 0],
+            longs: vec![],
+            doubles: vec![],
+            strings: vec![],
+            compiled: None,
+        }),
+    );
+    joiner
+        .memory
+        .attach_pool("filtered-join", &pool, 0)
+        .unwrap();
+    joiner
+        .push_to(
+            &changelog_join_batch(vec![1; 1024], vec![10; 1024], vec![0; 1024]),
+            false,
+            0,
+            &mut |_| panic!("no left rows yet"),
+        )
+        .unwrap();
+    joiner
+        .push_to(
+            &changelog_join_batch(vec![1; 512], vec![5; 512], vec![0; 512]),
+            true,
+            0,
+            &mut |_| panic!("every candidate fails 5 > 10"),
+        )
+        .unwrap();
+    assert_eq!(pool.reserved(), joiner.memory.state_bytes);
+    drop(joiner);
+    assert_eq!(pool.reserved(), 0);
+}
+
+#[test]
+fn updating_join_output_failure_releases_candidate_reservations() {
+    let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(2 * 1024 * 1024));
+    let mut joiner = inner_joiner();
+    joiner.memory.attach_pool("failed-join", &pool, 0).unwrap();
+    joiner
+        .push(
+            &changelog_join_batch(vec![1; 5000], vec![10; 5000], vec![0; 5000]),
+            false,
+            0,
+        )
+        .unwrap();
+    let error = joiner
+        .push_to(
+            &changelog_join_batch(vec![1], vec![20], vec![0]),
+            true,
+            0,
+            &mut |_| Err(DataFusionError::Execution("downstream failure".into())),
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("downstream failure"));
+    assert_eq!(pool.reserved(), joiner.memory.state_bytes);
+    drop(joiner);
+    assert_eq!(pool.reserved(), 0);
+}
+
+#[test]
+fn updating_join_mini_batch_flush_streams_without_reassembling_fanout() {
+    let mut joiner = inner_joiner().with_mini_batch(true);
+    joiner
+        .push(&append_join_batch(vec![1; 5000], vec![10; 5000]), false, 0)
+        .unwrap();
+    joiner
+        .push(&append_join_batch(vec![1; 3], vec![20; 3]), true, 0)
+        .unwrap();
+    let mut rows = 0;
+    let mut chunks = 0;
+    joiner
+        .flush_mini_batch_to(&mut |batch| {
+            assert!(batch.num_rows() <= 4096);
+            rows += batch.num_rows();
+            chunks += 1;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(rows, 15000);
+    assert_eq!(chunks, 4);
+    assert_eq!(joiner.flush_mini_batch().unwrap().num_rows(), 0);
+}
+
+#[test]
+fn updating_join_chunks_wide_strings_before_reaching_the_row_limit() {
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("k", DataType::Int64, false),
+        Field::new("s", DataType::Utf8, false),
+    ]));
+    let text = "x".repeat(128 * 1024);
+    let batch = |rows| {
+        RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int64Array::from(vec![1; rows])),
+                Arc::new(StringArray::from(vec![text.as_str(); rows])),
+            ],
+        )
+        .unwrap()
+    };
+    let mut joiner = UpdatingJoiner::new(
+        vec![0],
+        vec![0],
+        JoinKind::Inner,
+        schema.clone(),
+        schema.clone(),
+        None,
+    );
+    joiner
+        .push_to(&batch(64), false, 0, &mut |_| unreachable!())
+        .unwrap();
+    let mut rows = 0;
+    let mut chunks = 0;
+    joiner
+        .push_to(&batch(1), true, 0, &mut |out| {
+            assert!(out.get_array_memory_size() < 8 * 1024 * 1024);
+            assert_eq!(
+                out.column(1)
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .unwrap()
+                    .value(0),
+                text
+            );
+            rows += out.num_rows();
+            chunks += 1;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(rows, 64);
+    assert!(chunks > 1);
+}
+
+#[test]
+fn updating_join_single_oversized_pair_requires_available_budget() {
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("k", DataType::Int64, false),
+        Field::new("s", DataType::Utf8, false),
+    ]));
+    let text = "x".repeat(4 * 1024 * 1024);
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(Int64Array::from(vec![1])),
+            Arc::new(StringArray::from(vec![text])),
+        ],
+    )
+    .unwrap();
+    for budget in [8 * 1024 * 1024, 64 * 1024 * 1024] {
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(budget));
+        let mut joiner = UpdatingJoiner::new(
+            vec![0],
+            vec![0],
+            JoinKind::Inner,
+            schema.clone(),
+            schema.clone(),
+            None,
+        );
+        joiner
+            .memory
+            .attach_pool("oversized-join", &pool, 0)
+            .unwrap();
+        joiner
+            .push_to(&batch, false, 0, &mut |_| unreachable!())
+            .unwrap();
+        let mut rows = 0;
+        let result = joiner.push_to(&batch, true, 0, &mut |out| {
+            rows += out.num_rows();
+            assert_eq!(out.num_rows(), 1);
+            Ok(())
+        });
+        assert_eq!(result.is_ok(), budget == 64 * 1024 * 1024);
+        assert_eq!(rows, usize::from(result.is_ok()));
+        drop(joiner);
+        assert_eq!(pool.reserved(), 0);
+    }
+}
+
 // A `[k, v, $row_kind$]` changelog batch (k join key at col 0) for the updating-join tests.
 fn changelog_join_batch(k: Vec<i64>, v: Vec<i64>, kinds: Vec<i8>) -> RecordBatch {
     RecordBatch::try_new(
