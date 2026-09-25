@@ -536,3 +536,41 @@ its own 1.18 procedure fixtures cover that released API. The common 1.20 corpus 
 The historical-schema timeout in that probe passes focused reruns and remains selected in the
 shared compatibility regressions. The two release lines therefore have different Paimon test
 corpora; a green 1.18 run does not claim that the full 1.20 common corpus passes on 1.18.
+
+## Complete SQL invocation inventory
+
+Set `FLINK_SUITE_SQL_INVENTORY=true` for a runtime run to record each JUnit invocation's SQL,
+planner mode, complete-plan admission counts, fallback reasons and translation failures.
+The optional observer preserves upstream inputs, assertions and existing native execution contracts.
+It records batch and intentionally unmodified planners as well as streaming planners.
+
+Each executed JUnit case carries an invocation identifier that joins its XML outcome to exactly
+one JSON observation under `diagnostics/runtime/sql-inventory`. Parameterized cases retain their
+JUnit unique ID and display name. The inventory generator rejects missing, duplicate, stale or
+wrong-line observations. Skipped cases remain visible without claiming execution.
+
+```sh
+FLINK_VERSION=1.18.1 FLINK_SUITE_SQL_INVENTORY=true bin/flink-suite.sh runtime
+python3 dev/flink-suite/sql_inventory.py \
+  --reports .flink-suite/1.18/flink-1.18.1/flink-table/flink-table-planner/target/surefire-reports \
+  --evidence .flink-suite/1.18/diagnostics/runtime/sql-inventory \
+  --line 1.18 --revision "$(git rev-parse HEAD)" --output .flink-suite/1.18/sql-inventory
+```
+
+The **Upstream Flink suite** workflow's manual `sql_inventory` option runs only the two planner
+runtime legs and retains
+CSV/JSON inventories alongside the original reports and observations. Its labels describe:
+
+- **accelerated**: native substitution was admitted during execution translation and the test
+  passed. This uses the all-or-nothing island policy; it is planner evidence, not a throughput
+  measurement or a new per-operator native-work contract. EXPLAIN-only plans earn no execution credit.
+- **not accelerated**: batch, deliberately preserved stock plans, source/constant-only plans,
+  validation/API fixtures without an execution plan, upstream skips/failures, or documented non-goals.
+- **should be accelerated**: an in-scope streaming coverage gap, categorized by its recorded
+  reason. A test with several queries can contain both native plans and remaining gaps; the
+  inventory retains that distinction instead of treating one native query as proof for every query.
+
+Categories and notes are generated from the observed admission decisions. The complete raw
+plans, SQL and invocation identities remain in JSON for review. This inventory extends the
+coverage accounting tracked in [#168](https://github.com/datafusion-contrib/StreamFusion/issues/168);
+the stricter, bounded execution contracts continue to run independently.

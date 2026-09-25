@@ -70,7 +70,11 @@ fi
 readonly CONTRACT_FILE="${AGENT_ROOT}/src/main/resources/native-execution${CONTRACT_SUFFIX}.tsv"
 readonly NATIVE_REPORT_ROOT="${SUITE_ROOT}/native-execution/${SUITE_MODE}"
 readonly DIAGNOSTIC_ROOT="${SUITE_ROOT}/diagnostics/${SUITE_MODE}"
-readonly FLINK_MODULE_CONFIG="-Dstreamfusion.flink-suite.native-rocksdb=${NATIVE_STATE_SUITE} -Dstreamfusion.flink-suite.flink-line=${FLINK_LINE} -Duser.timezone=UTC -Djava.library.path=${STREAMFUSION_BUILD_ROOT}/native/target/debug --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED -Djunit.platform.reflection.search.useLegacySemantics=true -javaagent:${AGENT_JAR}"
+SQL_INVENTORY_CONFIG=""
+if [[ "${FLINK_SUITE_SQL_INVENTORY:-false}" == "true" ]]; then
+  SQL_INVENTORY_CONFIG="-Dstreamfusion.flink-suite.sql-inventory=${DIAGNOSTIC_ROOT}/sql-inventory"
+fi
+readonly FLINK_MODULE_CONFIG="${SQL_INVENTORY_CONFIG} -Dstreamfusion.flink-suite.native-rocksdb=${NATIVE_STATE_SUITE} -Dstreamfusion.flink-suite.flink-line=${FLINK_LINE} -Duser.timezone=UTC -Djava.library.path=${STREAMFUSION_BUILD_ROOT}/native/target/debug --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED -Djunit.platform.reflection.search.useLegacySemantics=true -javaagent:${AGENT_JAR}"
 readonly CONNECTOR_MODULE_CONFIG="-XX:+IgnoreUnrecognizedVMOptions --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/sun.nio.cs=ALL-UNNAMED --add-opens=java.base/sun.security.action=ALL-UNNAMED --add-opens=java.base/sun.util.calendar=ALL-UNNAMED --add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED -Djdk.reflect.useDirectMethodHandle=false -Dio.netty.tryReflectionSetAccessible=true ${FLINK_MODULE_CONFIG}"
 # Paimon 2.0 compiles its Flink-1 shared sources against 1.20.1, including APIs
 # guarded by version adapters. Execute the compiled tests on the requested host API.
@@ -445,6 +449,10 @@ readonly STREAMFUSION_CLASSPATH
 echo "Running the upstream Flink ${SUITE_MODE} suite with StreamFusion enabled..."
 mkdir -p "${NATIVE_REPORT_ROOT}"
 mkdir -p "${DIAGNOSTIC_ROOT}"
+if [[ "${FLINK_SUITE_SQL_INVENTORY:-false}" == "true" ]]; then
+  mkdir -p "${DIAGNOSTIC_ROOT}/sql-inventory"
+  find "${DIAGNOSTIC_ROOT}/sql-inventory" -type f -name '*.json' -delete
+fi
 find "${DIAGNOSTIC_ROOT}" -maxdepth 1 -type f -delete
 find "${NATIVE_REPORT_ROOT}" -maxdepth 1 -type f -name '*.tsv' -delete
 mkdir -p "${REPORT_ROOT}"

@@ -71,6 +71,23 @@ public final class StreamFusionSuiteAgent {
     PaimonTestWatch.initialize(System.err);
     new AgentBuilder.Default()
         .with(AgentBuilder.Listener.StreamWriting.toSystemError().withTransformationsOnly())
+        .type(named("org.apache.maven.surefire.junitplatform.RunListenerAdapter"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder
+                    .visit(Advice.to(StartSqlInventory.class).on(named("executionStarted")))
+                    .visit(Advice.to(FinishSqlInventory.class).on(named("executionFinished"))))
+        .type(named("org.apache.flink.table.api.internal.TableEnvironmentImpl"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(
+                    Advice.to(RecordSql.class)
+                        .on(namedOneOf("executeSql", "sqlQuery", "explainSql", "compilePlanSql")
+                            .and(takesArgument(0, String.class)))))
+        .type(named("org.apache.flink.table.planner.delegation.PlannerBase"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(Advice.to(RecordTranslation.class).on(named("translate"))))
         .type(named("org.apache.paimon.flink.FlinkTestBase"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -113,7 +130,9 @@ public final class StreamFusionSuiteAgent {
         .type(named("tech.streamfusion.planner.PhysicalPlanScan"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
-                builder.visit(Advice.to(RecordFallback.class).on(named("recordFallback"))))
+                builder
+                    .visit(Advice.to(RecordFallback.class).on(named("recordFallback")))
+                    .visit(Advice.to(RecordSqlPlan.class).on(named("optimizeConfigured"))))
         .type(namedOneOf(NativeExecution.testClasses()))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -233,6 +252,53 @@ public final class StreamFusionSuiteAgent {
                     Advice.to(ReportNativePaimonSnapshot.class)
                         .on(named("next").and(takesArguments(0)))))
         .installOn(instrumentation);
+  }
+
+  public static final class StartSqlInventory {
+    @Advice.OnMethodExit
+    static void exit(@Advice.Argument(0) Object identifier) throws Exception {
+      SqlInventory.started(identifier);
+    }
+  }
+
+  public static final class FinishSqlInventory {
+    @Advice.OnMethodEnter
+    static void enter(@Advice.Argument(0) Object identifier, @Advice.Argument(1) Object result)
+        throws Exception {
+      SqlInventory.finished(identifier, result);
+    }
+  }
+
+  public static final class RecordSql {
+    @Advice.OnMethodEnter
+    static void enter(@Advice.Origin("#m") String method, @Advice.Argument(0) String sql) {
+      SqlInventory.sql(method, sql);
+    }
+
+    @Advice.OnMethodExit(onThrowable = Throwable.class)
+    static void exit(@Advice.Origin("#m") String method, @Advice.Thrown Throwable failure) {
+      SqlInventory.failed(method, failure);
+    }
+  }
+
+  public static final class RecordTranslation {
+    @Advice.OnMethodEnter
+    static void enter(@Advice.This Object planner) {
+      SqlInventory.translating(planner);
+    }
+
+    @Advice.OnMethodExit(onThrowable = Throwable.class)
+    static void exit(@Advice.Thrown Throwable failure) {
+      SqlInventory.failed("translate", failure);
+      SqlInventory.translated();
+    }
+  }
+
+  public static final class RecordSqlPlan {
+    @Advice.OnMethodExit
+    static void exit(@Advice.This Object scan, @Advice.Return Object roots) throws Exception {
+      SqlInventory.plan(scan, roots);
+    }
   }
 
   public static final class RequireNativeExecution {
@@ -440,6 +506,7 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodEnter
     static void enter(@Advice.Argument(0) Object context) {
       try {
+        SqlInventory.planner(context, requiresUnmodifiedFlinkPlan());
         if (requiresUnmodifiedFlinkPlan()) {
           return;
         }
@@ -481,11 +548,7 @@ public final class StreamFusionSuiteAgent {
         if (StreamFusionSuiteAgent.reportActivation()) {
           System.err.println("StreamFusion enabled for upstream Flink streaming planner tests");
         }
-      } catch (ClassNotFoundException
-          | NoSuchMethodException
-          | NoSuchFieldException
-          | IllegalAccessException
-          | InvocationTargetException e) {
+      } catch (Exception e) {
         throw new IllegalStateException("StreamFusion planner installation failed", e);
       }
     }

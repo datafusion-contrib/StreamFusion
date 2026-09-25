@@ -4,7 +4,12 @@ on:
   push:
     branches: [main]
   pull_request: {}
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      sql_inventory:
+        description: 'Run both planner SQL corpora with complete invocation inventories'
+        type: boolean
+        default: false
   schedule:
     - cron: "17 7 * * 1"
 
@@ -23,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [runtime, formats, parquet, orc, kafka, paimon, delta, state]
+        suite: ${{ inputs.sql_inventory && fromJSON('["runtime"]') || fromJSON('["runtime", "formats", "parquet", "orc", "kafka", "paimon", "delta", "state"]') }}
         line: ['2.2', '1.18']
         exclude:
           - suite: delta
@@ -58,9 +63,19 @@ jobs:
       - name: Run unchanged upstream suite with StreamFusion
         env:
           FLINK_VERSION: ${{ matrix.version }}
+          FLINK_SUITE_SQL_INVENTORY: ${{ inputs.sql_inventory || false }}
         run: |
           set -o pipefail
           bin/flink-suite.sh "${{ matrix.suite }}" 2>&1 | tee upstream-suite.log
+
+      - name: Require a complete SQL inventory
+        if: ${{ always() && inputs.sql_inventory }}
+        run: |
+          python3 dev/flink-suite/sql_inventory.py \
+            --reports .flink-suite/${{ matrix.line }}/flink-${{ matrix.version }}/flink-table/flink-table-planner/target/surefire-reports \
+            --evidence .flink-suite/${{ matrix.line }}/diagnostics/runtime/sql-inventory \
+            --line '${{ matrix.line }}' --revision '${{ github.sha }}' \
+            --output .flink-suite/${{ matrix.line }}/sql-inventory
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -70,11 +85,13 @@ jobs:
             upstream-suite.log
             .flink-suite/**/native-execution/
             .flink-suite/**/diagnostics/
+            .flink-suite/**/sql-inventory/
             .flink-suite/**/target/surefire-reports/
           include-hidden-files: true
           retention-days: 7
 
   legacy-delta-audit:
+    if: ${{ !inputs.sql_inventory }}
     name: Delta 3.3 / Flink 1.18 host audit
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -101,7 +118,7 @@ jobs:
 
   all-tests:
     name: All upstream integration tests
-    if: ${{ always() }}
+    if: ${{ always() && !inputs.sql_inventory }}
     needs: [upstream-suite, legacy-delta-audit]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
