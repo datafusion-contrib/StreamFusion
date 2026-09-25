@@ -82,8 +82,9 @@ public final class StreamFusionSuiteAgent {
             (builder, type, classLoader, module, protectionDomain) ->
                 builder.visit(
                     Advice.to(RecordSql.class)
-                        .on(namedOneOf("executeSql", "sqlQuery", "explainSql", "compilePlanSql")
-                            .and(takesArgument(0, String.class)))))
+                        .on(
+                            namedOneOf("executeSql", "sqlQuery", "explainSql", "compilePlanSql")
+                                .and(takesArgument(0, String.class)))))
         .type(named("org.apache.flink.table.planner.delegation.PlannerBase"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->

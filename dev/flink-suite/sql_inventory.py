@@ -11,7 +11,7 @@ import re
 import xml.etree.ElementTree as ET
 
 MARKER = re.compile(r"StreamFusion SQL inventory: ([0-9a-f-]{36})")
-BOUNDARIES = {"Sink", "LegacySink", "TableSourceScan", "LegacyTableSourceScan", "DataStreamScan", "Values", "IntermediateTableScan"}
+BOUNDARIES = {"Sink", "LegacySink", "TableSourceScan", "LegacyTableSourceScan", "DataStreamScan", "Values", "IntermediateTableScan", "PreparedLegacySink"}
 
 
 def category(reason: str) -> str:
@@ -26,13 +26,19 @@ def category(reason: str) -> str:
         return 'sql-json'
     if any(x in text for x in ('unsupported function', 'unsupported cast', 'calc:', 'filter:', 'expression')):
         return 'scalar-expression'
-    if any(x in text for x in ('top-n', 'rank', 'dedup')):
+    if any(x in text for x in ('top-n', 'rank', 'dedup', 'limit:')):
         return 'rank-and-deduplication'
+    if any(x in text for x in ('mlpredict', 'vectorsearch', 'asynccalc')):
+        return 'async-and-model-functions'
+    if 'watermark' in text:
+        return 'watermark'
+    if 'no native substitution' in text and 'sort' in text:
+        return 'ordering'
     if 'window' in text:
         return 'window'
     if any(x in text for x in ('lookup', 'temporal join', 'join')):
         return 'join'
-    if any(x in text for x in ('aggregate', 'aggregation')):
+    if any(x in text for x in ('aggregate', 'aggregation', 'group by:')):
         return 'aggregation'
     if any(x in text for x in ('unnest', 'correlate')):
         return 'table-function'
@@ -61,11 +67,81 @@ def execution_plans(record: dict) -> list[dict]:
     return plans
 
 
+def features(record: dict) -> list[str]:
+    operators = {op for plan in record['plans'] for op in plan['operators']}
+    families = []
+    for family, patterns in (
+        ('async-and-model-functions', ('AsyncCalc', 'MLPredict', 'VectorSearch')),
+        ('pattern-matching', ('Match',)),
+        ('table-function', ('Correlate', 'Unnest', 'TableAggregate')),
+        ('window', ('Window',)),
+        ('over-aggregation', ('OverAggregate',)),
+        ('join', ('Join',)),
+        ('rank-and-deduplication', ('Rank', 'Deduplicate', 'SortLimit', 'Limit')),
+        ('aggregation', ('Aggregate',)),
+        ('scalar-expression', ('Calc', 'Filter')),
+        ('set-operation', ('Union', 'Expand')),
+        ('ordering', ('Sort',)),
+        ('changelog', ('Changelog', 'DropUpdate')),
+        ('watermark', ('Watermark',)),
+    ):
+        if any(pattern in operator for pattern in patterns for operator in operators):
+            families.append(family)
+    return families or ['source-or-constant-only']
+
+
+def non_execution(record: dict) -> tuple[str, str, str]:
+    identity = record['junit_id']
+    def method_is(*names):
+        return any(':' + name + delimiter in identity for name in names for delimiter in ('(', '%5B'))
+
+    # These branches are taken only without a translated/optimized plan. The release
+    # fixtures explicitly return early, check schemas, or assert API validation errors.
+    early_return = (
+        ('TableEnvironmentITCase', ('testExecuteInsertOverwrite', 'testExecuteSqlAndToDataStream',
+                                   'testExecuteSqlWithInsertOverwrite', 'testFromToDataStreamAndExecuteSql',
+                                   'testStatementSetWithOverwrite', 'testStatementSetWithSameSinkTableNames',
+                                   'testToDataStreamAndExecuteSql')),
+        ('GroupWindowITCase', ('testEventTimeSessionWindow', 'testEventTimeTumblingWindowWithAllowLateness',
+                               'testDistinctAggWithMergeOnEventTimeSessionGroupWindow')),
+        ('LookupJoinITCase', ('testLookupCacheSharingAcrossSubtasks',)),
+        ('AsyncLookupJoinITCase', ('testLookupCacheSharingAcrossSubtasks',)),
+        ('CatalogTableITCase', ('testInsertWithAggregateSource',)),
+    )
+    for cls, methods in early_return:
+        if f'.{cls}]' in identity and method_is(*methods):
+            return 'not accelerated', 'upstream-early-return', 'Upstream returns before query execution for this parameter variant; JUnit reports a pass.'
+    if '.runtime.batch.' in identity or (record['planners'] and all(p['mode'] == 'BATCH' for p in record['planners'])):
+        return 'not accelerated', 'batch', 'Batch-only fixture; no execution translation observed for this variant.'
+    if '.planner.functions.' in identity:
+        return 'not accelerated', 'api-validation', 'Built-in function fixture stops at Table API validation before execution translation.'
+    if method_is('testNonStaticClassScalarFunction', 'testLeftOuterJoinWithPredicates', 'testLateralJoinWithScalarFunction'):
+        return 'not accelerated', 'api-validation', 'Upstream asserts a Table API validation error before execution translation.'
+    if method_is('testProctimeCascadeWindowAgg', 'testUnnestWithOrdinalityAliasColumnNames'):
+        return 'not accelerated', 'schema-only', 'Upstream checks the resolved schema without executing the query.'
+    if method_is('testFromAndToDataStreamBypassConversion'):
+        return 'not accelerated', 'datastream-bypass', 'Upstream verifies that a DataStream round trip bypasses SQL planning; no SQL computation.'
+    if method_is('testTableConfigInheritsEnvironmentSettings'):
+        return 'not accelerated', 'configuration-only', 'Checks inherited TableEnvironment configuration; no query execution.'
+    if method_is('testGetTablesFromGivenCatalogDatabase'):
+        return 'not accelerated', 'catalog-or-metadata', 'Checks catalog table listings directly; no query execution.'
+    statements = [s['statement'].lstrip().upper() for s in record['sql']]
+    if statements and all(re.match(r'(CREATE|DROP|ALTER|SHOW|DESCRIBE|USE|EXPLAIN)\b', s) for s in statements):
+        return 'not accelerated', 'catalog-or-metadata', 'Only DDL, metadata or explain statements observed; no execution translation.'
+    if statements and any(s.startswith('CALL ') for s in statements):
+        return 'not accelerated', 'procedure-call', 'Calls a host procedure; no relational SQL execution plan observed.'
+    return 'not accelerated', 'no-execution-plan', 'No execution translation observed; catalog/API/validation or directly evaluated fixture. See SQL and invocation evidence.'
+
+
 def classify(record: dict, outcome: str) -> tuple[str, str, str]:
     if outcome == 'skipped':
         return 'not accelerated', 'upstream-skip', 'Upstream skipped this invocation; no execution.'
     if outcome != 'passed':
         return 'not accelerated', 'test-failure', 'Test did not pass; do not credit acceleration coverage.'
+    translations = record['translations']
+    translation_failures = [e for e in record['operation_failures'] if e['operation'] == 'translate']
+    if translations and len(translation_failures) == len(translations):
+        return 'not accelerated', 'validation-or-host-error', 'Every execution translation failed as expected by this passing fixture: ' + translation_failures[0]['error']
     plans = execution_plans(record)
     native = [p for p in plans if p['substitutions'] > 0]
     host = [p for p in plans if p['substitutions'] == 0]
@@ -86,8 +162,7 @@ def classify(record: dict, outcome: str) -> tuple[str, str, str]:
             note = f'{len(native)} native and {len(host)} host plans in this invocation. ' + note
         return label, ', '.join(categories), note
     if native:
-        return 'accelerated', 'native-plan', f'{len(native)} execution plan(s) admitted native substitution; upstream assertions passed.' + (f' {boundary} additional source/constant-only plan(s).' if boundary else '')
-    translations = record['translations']
+        return 'accelerated', features(record)[0], f'{len(native)} execution plan(s) admitted native substitution ({", ".join(features(record))}); upstream assertions passed.' + (f' {boundary} additional source/constant-only plan(s).' if boundary else '')
     if translations and all('BatchPlanner' in p for p in translations):
         return 'not accelerated', 'batch', 'Executed with Flink BatchPlanner; StreamFusion targets streaming SQL.'
     if any(p['unmodified'] for p in record['planners']):
@@ -99,7 +174,7 @@ def classify(record: dict, outcome: str) -> tuple[str, str, str]:
     if record['plans']:
         return 'not accelerated', 'plan-only', 'Native planning was observed outside execution translation (for example EXPLAIN); no execution credited.'
     if not translations:
-        return 'not accelerated', 'no-execution-plan', 'No execution translation observed; catalog/API/validation or directly evaluated fixture. See SQL and invocation evidence.'
+        return non_execution(record)
     return 'should be accelerated', 'unobserved-streaming-plan', 'Streaming translation occurred without an observed StreamFusion admission decision; investigate harness or planner coverage.'
 
 
@@ -118,8 +193,11 @@ def collect(reports: Path, evidence: Path, line: str) -> list[dict]:
     for path in sorted(reports.rglob('TEST-*.xml')):
         suite = ET.parse(path).getroot()
         cases = suite.findall('testcase')
-        if len(cases) != int(suite.get('tests', '-1')):
-            raise ValueError(f'Incomplete JUnit report: {path}')
+        declared = [int(suite.get(key, '0')) for key in ('tests', 'failures', 'errors', 'skipped')]
+        observed = [len(cases)] + [sum(case.find(key) is not None for case in cases)
+                                  for key in ('failure', 'error', 'skipped')]
+        if suite.tag != 'testsuite' or declared != observed:
+            raise ValueError(f'Incomplete or inconsistent JUnit report: {path}')
         for index, case in enumerate(cases):
             classname = case.get('classname', suite.get('name', ''))
             if '.' not in classname and suite.get('name', '').endswith('.' + classname):
@@ -141,11 +219,13 @@ def collect(reports: Path, evidence: Path, line: str) -> list[dict]:
             rows.append({
                 'flink_line': line, 'test_class': classname, 'test_name': case.get('name', ''),
                 'display_name': record['display_name'], 'outcome': outcome, 'label': label,
-                'category': group, 'note': note, 'invocation_id': record['invocation_id'],
+                'category': group, 'features': ', '.join(features(record)) if record['plans'] else '', 'note': note, 'invocation_id': record['invocation_id'],
                 'junit_id': record['junit_id'], 'report': path.name, 'case_index': index,
                 'native_plans': sum(p['substitutions'] > 0 for p in execution_plans(record)),
                 'host_plans': sum(p['substitutions'] == 0 for p in execution_plans(record)),
                 'sql': record['sql'], 'plans': record['plans'], 'operation_failures': record['operation_failures'],
+                'planners': record['planners'], 'translations': record['translations'],
+                'junit_source': record.get('source', ''), 'junit_status': record.get('junit_status', ''),
             })
     if not rows:
         raise ValueError('No upstream JUnit cases found')
@@ -160,8 +240,8 @@ def write(rows: list[dict], output: Path, revision: str) -> None:
                'labels_passed': dict(Counter(r['label'] for r in rows if r['outcome'] == 'passed')),
                'categories_passed': dict(Counter(r['category'] for r in rows if r['outcome'] == 'passed'))}
     (output / 'inventory.json').write_text(json.dumps({'schema_version': 1, 'summary': summary, 'tests': rows}, indent=2) + '\n')
-    fields = [key for key in rows[0] if key not in ('sql', 'plans', 'operation_failures')]
-    with (output / 'inventory.csv').open('w', newline='') as stream:
+    fields = [key for key in rows[0] if key not in ('sql', 'plans', 'operation_failures', 'planners', 'translations')]
+    with (output / 'inventory.csv').open('w', newline='', encoding='utf-8', errors='backslashreplace') as stream:
         writer = csv.DictWriter(stream, fields, extrasaction='ignore')
         writer.writeheader()
         writer.writerows(rows)

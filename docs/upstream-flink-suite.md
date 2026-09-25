@@ -539,6 +539,9 @@ corpora; a green 1.18 run does not claim that the full 1.20 common corpus passes
 
 ## Complete SQL invocation inventory
 
+The [searchable SQL inventory](sql-inventory/index.md) labels every invocation from the full
+Flink 1.18.1 and 2.2.1 planner runtime corpora, with per-line CSV and compressed JSON downloads.
+
 Set `FLINK_SUITE_SQL_INVENTORY=true` for a runtime run to record each JUnit invocation's SQL,
 planner mode, complete-plan admission counts, fallback reasons and translation failures.
 The optional observer preserves upstream inputs, assertions and existing native execution contracts.
@@ -547,7 +550,9 @@ It records batch and intentionally unmodified planners as well as streaming plan
 Each executed JUnit case carries an invocation identifier that joins its XML outcome to exactly
 one JSON observation under `diagnostics/runtime/sql-inventory`. Parameterized cases retain their
 JUnit unique ID and display name. The inventory generator rejects missing, duplicate, stale or
-wrong-line observations. Skipped cases remain visible without claiming execution.
+wrong-line observations and inconsistent XML counts. Skipped cases remain visible without claiming
+execution. Expected translation failures and parameter variants that return before executing a
+query receive no native coverage credit.
 
 ```sh
 FLINK_VERSION=1.18.1 FLINK_SUITE_SQL_INVENTORY=true bin/flink-suite.sh runtime
@@ -574,3 +579,19 @@ Categories and notes are generated from the observed admission decisions. The co
 plans, SQL and invocation identities remain in JSON for review. This inventory extends the
 coverage accounting tracked in [#168](https://github.com/datafusion-contrib/StreamFusion/issues/168);
 the stricter, bounded execution contracts continue to run independently.
+
+To publish both validated inventories as a standalone searchable report:
+
+```sh
+python3 dev/flink-suite/render_sql_inventory.py \
+  --inventory .flink-suite/1.18/sql-inventory/inventory.json \
+  --inventory .flink-suite/2.2/sql-inventory/inventory.json \
+  --output docs/sql-inventory \
+  --flink-repository /path/to/flink
+```
+
+The optional Flink clone supplies verified source links at the release tags; no checkout or source
+change is required. CSVs escape unpaired Unicode surrogates from negative string fixtures while
+JSON preserves the exact values. The report distinguishes observed planner gaps from batch,
+metadata, schema, API-validation and early-return cases. It retains mixed native/fallback invocations
+as coverage targets whenever an in-scope query remains on the host.

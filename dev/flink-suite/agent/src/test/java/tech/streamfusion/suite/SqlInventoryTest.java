@@ -19,7 +19,8 @@ class SqlInventoryTest {
     try {
       SqlInventory.started(identifier);
       SqlInventory.translating(this);
-      SqlInventory.plan(new Scan(), List.of(new StreamPhysicalNativeCalc(), new StreamPhysicalCalc()));
+      SqlInventory.plan(
+          new Scan(), List.of(new StreamPhysicalNativeCalc(), new StreamPhysicalCalc()));
       SqlInventory.translated();
       SqlInventory.finished(identifier, new Result());
       try (var paths = Files.list(directory)) {
@@ -35,25 +36,51 @@ class SqlInventoryTest {
   }
 
   public static class Identifier {
-    public boolean isTest() { return true; }
-    public String getUniqueId() { return "case[backend=heap]"; }
-    public String getDisplayName() { return "case"; }
-    public Optional<String> getSource() { return Optional.of("fixture"); }
+    public boolean isTest() {
+      return true;
+    }
+
+    public String getUniqueId() {
+      return "case[backend=heap]";
+    }
+
+    public String getDisplayName() {
+      return "case";
+    }
+
+    public Optional<String> getSource() {
+      return Optional.of("fixture");
+    }
   }
 
   public static class Result {
-    public String getStatus() { return "SUCCESSFUL"; }
-    public Optional<Throwable> getThrowable() { return Optional.empty(); }
+    public String getStatus() {
+      return "SUCCESSFUL";
+    }
+
+    public Optional<Throwable> getThrowable() {
+      return Optional.empty();
+    }
   }
 
   public static class Scan {
-    public int substitutions() { return 1; }
-    public List<String> operatorTypes() { return List.of("StreamPhysicalCalc"); }
-    public List<String> fallbackReasons() { return List.of("Calc: unsupported function/operator: AS"); }
+    public int substitutions() {
+      return 1;
+    }
+
+    public List<String> operatorTypes() {
+      return List.of("StreamPhysicalCalc");
+    }
+
+    public List<String> fallbackReasons() {
+      return List.of("Calc: unsupported function/operator: AS");
+    }
   }
 
   public static class StreamPhysicalCalc {
-    public List<Object> getInputs() { return List.of(); }
+    public List<Object> getInputs() {
+      return List.of();
+    }
   }
 
   public static class StreamPhysicalNativeCalc extends StreamPhysicalCalc {}

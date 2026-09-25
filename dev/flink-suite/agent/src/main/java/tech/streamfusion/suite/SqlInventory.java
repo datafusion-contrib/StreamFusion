@@ -5,8 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -21,7 +21,8 @@ public final class SqlInventory {
   public static synchronized void started(Object identifier) throws Exception {
     if (directory() == null || !(boolean) call(identifier, "isTest")) return;
     String uniqueId = call(identifier, "getUniqueId").toString();
-    if (active != null) throw new AssertionError("SQL inventory requires serial tests: " + uniqueId);
+    if (active != null)
+      throw new AssertionError("SQL inventory requires serial tests: " + uniqueId);
     active = new Scope();
     active.data.put("schema_version", 1);
     active.data.put("invocation_id", active.id);
@@ -45,7 +46,8 @@ public final class SqlInventory {
     active.data.put("junit_status", call(result, "getStatus").toString());
     active.data.put("junit_failure", call(result, "getThrowable").toString());
     Files.createDirectories(directory());
-    Files.writeString(directory().resolve(active.id + ".json"), json(active.data) + "\n", StandardCharsets.UTF_8);
+    Files.writeString(
+        directory().resolve(active.id + ".json"), json(active.data) + "\n", StandardCharsets.UTF_8);
     System.out.println(MARKER + active.id);
     active = null;
   }
@@ -54,9 +56,12 @@ public final class SqlInventory {
     if (active == null) return;
     Object config = call(context, "getTableConfig");
     ClassLoader loader = context.getClass().getClassLoader();
-    Class<?> optionType = Class.forName("org.apache.flink.configuration.ConfigOption", true, loader);
-    Object modeOption = Class.forName("org.apache.flink.configuration.ExecutionOptions", true, loader)
-        .getField("RUNTIME_MODE").get(null);
+    Class<?> optionType =
+        Class.forName("org.apache.flink.configuration.ConfigOption", true, loader);
+    Object modeOption =
+        Class.forName("org.apache.flink.configuration.ExecutionOptions", true, loader)
+            .getField("RUNTIME_MODE")
+            .get(null);
     Object mode = config.getClass().getMethod("get", optionType).invoke(config, modeOption);
     active.planners.add(Map.of("mode", mode.toString(), "unmodified", unmodified));
   }
@@ -72,15 +77,19 @@ public final class SqlInventory {
     for (Object root : (List<?>) roots) {
       List<String> operators = new ArrayList<>();
       operators(root, operators, new IdentityHashMap<>());
-      finalRoots.add(Map.of("operators", operators, "native_operators",
-          operators.stream().filter(name -> name.startsWith("StreamPhysicalNative")).count()));
+      finalRoots.add(
+          Map.of(
+              "operators",
+              operators,
+              "native_operators",
+              operators.stream().filter(name -> name.startsWith("StreamPhysicalNative")).count()));
     }
     plan.put("roots", finalRoots);
     active.plans.add(plan);
   }
 
-  private static void operators(Object node, List<String> names, IdentityHashMap<Object, Boolean> seen)
-      throws Exception {
+  private static void operators(
+      Object node, List<String> names, IdentityHashMap<Object, Boolean> seen) throws Exception {
     if (seen.put(node, Boolean.TRUE) != null) return;
     names.add(node.getClass().getSimpleName());
     for (Object input : (List<?>) call(node, "getInputs")) operators(input, names, seen);
@@ -104,7 +113,12 @@ public final class SqlInventory {
   public static synchronized void failed(String operation, Throwable failure) {
     if (active != null && failure != null) {
       String message = failure.toString();
-      active.failures.add(Map.of("operation", operation, "error", message.substring(0, Math.min(message.length(), 4000))));
+      active.failures.add(
+          Map.of(
+              "operation",
+              operation,
+              "error",
+              message.substring(0, Math.min(message.length(), 4000))));
     }
   }
 

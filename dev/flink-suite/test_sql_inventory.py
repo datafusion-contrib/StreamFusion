@@ -1,4 +1,5 @@
 import importlib.util
+import csv
 import json
 from pathlib import Path
 import tempfile
@@ -42,6 +43,31 @@ class SqlInventoryTest(unittest.TestCase):
     def test_failure_never_earns_acceleration_credit(self):
         self.assertEqual('test-failure', inventory.classify(record([plan(1)]), 'failure')[1])
 
+    def test_expected_translation_errors_are_not_execution_coverage(self):
+        observation = record([plan(1)], ['StreamPlanner'])
+        observation['operation_failures'] = [dict(operation='translate', error='Expected validation error')]
+        self.assertEqual('validation-or-host-error', inventory.classify(observation, 'passed')[1])
+
+    def test_statement_set_roots_keep_a_host_gap(self):
+        event = plan(2, ['Calc: unsupported function/operator: AS'])
+        event['roots'] = [dict(operators=['StreamPhysicalNativeCalc'], native_operators=1),
+                          dict(operators=['StreamPhysicalCalc'], native_operators=0)]
+        result = inventory.classify(record([event]), 'passed')
+        self.assertEqual('should be accelerated', result[0])
+        self.assertIn('1 native and 1 host', result[2])
+
+    def test_non_execution_notes_do_not_override_executed_queries(self):
+        observation = record()
+        observation['junit_id'] = '[class:org.apache.flink.table.api.TableEnvironmentITCase]/[test-template:testExecuteInsertOverwrite()]/[test-template-invocation:#1]'
+        self.assertEqual('upstream-early-return', inventory.classify(observation, 'passed')[1])
+        observation['plans'] = [plan(1)]
+        self.assertEqual('accelerated', inventory.classify(observation, 'passed')[0])
+
+    def test_legacy_junit_parameter_names_receive_fixture_notes(self):
+        observation = record()
+        observation['junit_id'] = '[engine:junit-vintage]/[runner:org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase]/[test:testProctimeCascadeWindowAgg%5BStateBackend=HEAP%5D(org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase)]'
+        self.assertEqual('schema-only', inventory.classify(observation, 'passed')[1])
+
     def fixture(self, root, observation, marker=True):
         reports, evidence = root / 'reports', root / 'evidence'
         reports.mkdir(); evidence.mkdir()
@@ -63,6 +89,23 @@ class SqlInventoryTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'missing evidence'):
                 inventory.collect(reports, evidence, '2.2')
 
+    def test_duplicate_parameterized_names_keep_distinct_observations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first = record([plan(1)])
+            second = record([plan(0, ['state backend: not verified'])])
+            second['invocation_id'] = '22345678-1234-1234-1234-123456789012'
+            reports, evidence = self.fixture(Path(directory), first)
+            path = reports / 'TEST-case.xml'
+            tree = ET.parse(path)
+            tree.getroot().set('tests', '2')
+            case = ET.SubElement(tree.getroot(), 'testcase', classname='CalcITCase', name='test')
+            ET.SubElement(case, 'system-out').text = 'StreamFusion SQL inventory: ' + second['invocation_id']
+            tree.write(path)
+            (evidence / (second['invocation_id'] + '.json')).write_text(json.dumps(second))
+            rows = inventory.collect(reports, evidence, '2.2')
+            self.assertEqual(['accelerated', 'should be accelerated'], [r['label'] for r in rows])
+            self.assertEqual(2, len({r['invocation_id'] for r in rows}))
+
     def test_missing_agent_and_stale_evidence_fail(self):
         with tempfile.TemporaryDirectory() as directory:
             reports, evidence = self.fixture(Path(directory), record(), marker=False)
@@ -73,4 +116,28 @@ class SqlInventoryTest(unittest.TestCase):
             extra = record(); extra['invocation_id'] = '22345678-1234-1234-1234-123456789012'
             (evidence / (extra['invocation_id'] + '.json')).write_text(json.dumps(extra))
             with self.assertRaisesRegex(ValueError, 'unmatched/stale'):
+                inventory.collect(reports, evidence, '2.2')
+
+    def test_unicode_negative_fixtures_export_losslessly_in_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            observation = record([plan(1)])
+            observation['display_name'] = 'lone surrogate \ude00; valid emoji \U0001f600'
+            reports, evidence = self.fixture(root, observation)
+            rows = inventory.collect(reports, evidence, '2.2')
+            inventory.write(rows, root / 'output', 'revision')
+            exported = json.loads((root / 'output/inventory.json').read_text())
+            self.assertEqual(observation['display_name'], exported['tests'][0]['display_name'])
+            with (root / 'output/inventory.csv').open() as stream:
+                row = next(csv.DictReader(stream))
+            self.assertEqual('lone surrogate \\ude00; valid emoji \U0001f600', row['display_name'])
+
+    def test_incomplete_xml_counts_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            reports, evidence = self.fixture(Path(directory), record())
+            path = reports / 'TEST-case.xml'
+            tree = ET.parse(path)
+            tree.getroot().set('tests', '2')
+            tree.write(path)
+            with self.assertRaisesRegex(ValueError, 'Incomplete or inconsistent'):
                 inventory.collect(reports, evidence, '2.2')
