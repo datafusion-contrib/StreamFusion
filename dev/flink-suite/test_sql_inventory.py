@@ -56,6 +56,37 @@ class SqlInventoryTest(unittest.TestCase):
         self.assertEqual('should be accelerated', result[0])
         self.assertIn('1 native and 1 host', result[2])
 
+    def test_native_write_does_not_hide_a_host_connector_read(self):
+        event = plan(1)
+        event['roots'] = [dict(operators=['StreamPhysicalNativeFileSink', 'StreamPhysicalTableSourceScan'], native_operators=1,
+                              host_boundaries=[dict(operator='StreamPhysicalTableSourceScan', implementation='org.apache.flink.table.planner.connectors.ExternalDynamicSource')]),
+                          dict(operators=['StreamPhysicalTableSourceScan'], native_operators=0,
+                              host_boundaries=[dict(operator='StreamPhysicalTableSourceScan', implementation='org.apache.flink.connector.file.table.FileSystemTableSource', connector='filesystem', format='parquet')])]
+        observation = record([event])
+        sql = inventory.classify(observation, 'passed')
+        self.assertEqual('accelerated', sql[0])
+        result = inventory.classify_connectors(observation, sql)
+        self.assertEqual(('should be accelerated', 'connector-boundary'), result[:2])
+        self.assertIn('filesystem/parquet source', result[2])
+        self.assertNotIn('ExternalDynamicSource', result[2])
+        self.assertEqual(('not accelerated', 'validation-or-host-error', 'expected'), inventory.classify_connectors(observation, ('not accelerated', 'validation-or-host-error', 'expected')))
+
+    def test_parameter_variants_in_separate_report_directories_are_retained(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = record([plan(1)])
+            second = record([plan(0, ['unsupported function'])])
+            second['invocation_id'] = '22345678-1234-1234-1234-123456789012'
+            reports, evidence = self.fixture(root, first)
+            nested = reports / 'flink-1.18'
+            nested.mkdir()
+            xml = (reports / 'TEST-case.xml').read_text().replace(first['invocation_id'], second['invocation_id'])
+            (nested / 'TEST-case.xml').write_text(xml)
+            (evidence / (second['invocation_id'] + '.json')).write_text(json.dumps(second))
+            rows = inventory.collect(reports, evidence, '2.2', 'paimon')
+            self.assertEqual({'TEST-case.xml', 'flink-1.18/TEST-case.xml'}, {r['report'] for r in rows})
+            self.assertEqual({'paimon'}, {r['suite'] for r in rows})
+
     def test_non_execution_notes_do_not_override_executed_queries(self):
         observation = record()
         observation['junit_id'] = '[class:org.apache.flink.table.api.TableEnvironmentITCase]/[test-template:testExecuteInsertOverwrite()]/[test-template-invocation:#1]'

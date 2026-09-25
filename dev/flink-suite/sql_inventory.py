@@ -11,6 +11,7 @@ import re
 import xml.etree.ElementTree as ET
 
 MARKER = re.compile(r"StreamFusion SQL inventory: ([0-9a-f-]{36})")
+CONNECTOR_SUITES = {'formats', 'parquet', 'orc', 'kafka', 'paimon', 'delta'}
 BOUNDARIES = {"Sink", "LegacySink", "TableSourceScan", "LegacyTableSourceScan", "DataStreamScan", "Values", "IntermediateTableScan", "PreparedLegacySink"}
 
 
@@ -61,7 +62,7 @@ def execution_plans(record: dict) -> list[dict]:
         roots = event.get('roots')
         if roots:
             for root in roots:
-                plans.append(dict(event, operators=root['operators'], substitutions=root['native_operators']))
+                plans.append(dict(event, operators=root['operators'], substitutions=root['native_operators'], host_boundaries=root.get('host_boundaries', [])))
         else:
             plans.append(event)
     return plans
@@ -69,8 +70,10 @@ def execution_plans(record: dict) -> list[dict]:
 
 def features(record: dict) -> list[str]:
     operators = {op for plan in record['plans'] for op in plan['operators']}
+    operators.update(op for plan in record['plans'] for root in plan.get('roots', []) for op in root['operators'])
     families = []
     for family, patterns in (
+        ('connector-boundary', ('NativeFileSink', 'NativeKafka', 'NativePaimon', 'NativeDelta')),
         ('async-and-model-functions', ('AsyncCalc', 'MLPredict', 'VectorSearch')),
         ('pattern-matching', ('Match',)),
         ('table-function', ('Correlate', 'Unnest', 'TableAggregate')),
@@ -178,6 +181,32 @@ def classify(record: dict, outcome: str) -> tuple[str, str, str]:
     return 'should be accelerated', 'unobserved-streaming-plan', 'Streaming translation occurred without an observed StreamFusion admission decision; investigate harness or planner coverage.'
 
 
+def classify_connectors(record: dict, result: tuple[str, str, str]) -> tuple[str, str, str]:
+    label, group, note = result
+    if label == 'not accelerated' and group != 'source-or-constant-only':
+        return result
+    retained = []
+    for plan in execution_plans(record):
+        for boundary in plan.get('host_boundaries', []):
+            connector = boundary.get('connector', '')
+            implementation = boundary['implementation']
+            if not connector and implementation.startswith('org.apache.paimon.'):
+                connector = 'paimon'
+            if connector not in ('filesystem', 'kafka', 'upsert-kafka', 'paimon', 'delta'):
+                continue
+            format_name = boundary.get('format', boundary.get('value.format', boundary.get('file.format', '')))
+            if format_name.startswith('test'):
+                continue
+            role = 'source' if boundary['operator'].endswith('Scan') else 'sink'
+            retained.append(f'{connector}{"/" + format_name if format_name else ""} {role} ({implementation.rsplit(".", 1)[-1]})')
+    if not retained:
+        return result
+    groups = set(group.split(', ')) if label == 'should be accelerated' else set()
+    groups.add('connector-boundary')
+    detail = '; '.join(dict.fromkeys(retained))
+    return 'should be accelerated', ', '.join(sorted(groups)), note + ' Retained host connector boundary: ' + detail + '. Native admission of SQL computation does not cover this source/sink path.'
+
+
 def collect(reports: Path, evidence: Path, line: str, suite_name: str = 'runtime') -> list[dict]:
     records = {}
     for path in sorted(evidence.glob('*.json')):
@@ -215,10 +244,14 @@ def collect(reports: Path, evidence: Path, line: str, suite_name: str = 'runtime
                     raise ValueError(f'{path.name} case {index}: duplicate or missing evidence {key}')
                 used.add(key)
                 record = records[key]
-            label, group, note = classify(record, outcome)
+            result = classify(record, outcome)
+            sql_label = result[0]
+            if suite_name in CONNECTOR_SUITES:
+                result = classify_connectors(record, result)
+            label, group, note = result
             rows.append({
                 'flink_line': line, 'suite': suite_name, 'test_class': classname, 'test_name': case.get('name', ''),
-                'display_name': record['display_name'], 'outcome': outcome, 'label': label,
+                'display_name': record['display_name'], 'outcome': outcome, 'label': label, 'sql_label': sql_label,
                 'category': group, 'features': ', '.join(features(record)) if record['plans'] else '', 'note': note, 'invocation_id': record['invocation_id'],
                 'junit_id': record['junit_id'], 'report': path.relative_to(reports).as_posix(), 'case_index': index,
                 'native_plans': sum(p['substitutions'] > 0 for p in execution_plans(record)),

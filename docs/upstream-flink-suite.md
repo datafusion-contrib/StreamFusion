@@ -611,3 +611,10 @@ The report renderer accepts several inventories for each Flink line when their s
 It adds a suite filter and retains each row's engine revision. Optional `--kafka-repository`,
 `--paimon-repository` and `--delta-repository` arguments verify source links against the same pinned
 release tags as the runner. Repeated input for the same line and suite is rejected.
+
+In connector inventories, retained streaming filesystem, Kafka, Paimon or Delta boundaries also
+count as `should be accelerated`, even if the SQL computation or another connector boundary is
+native. The `sql_label` column retains the SQL-only classification. Notes name the remaining host
+implementation and format, and `native_components` names what did accelerate. Internal DataStream,
+collect, values and test-format boundaries are excluded from these connector targets. Expected
+translation errors, batch and non-executing fixtures keep their existing exclusions.
