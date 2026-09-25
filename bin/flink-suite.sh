@@ -607,6 +607,16 @@ else
 fi
 readonly TEST_STATUS=$?
 
+INVENTORY_STATUS=0
+if [[ "${FLINK_SUITE_SQL_INVENTORY:-false}" == "true" ]]; then
+  python3 "${REPO_ROOT}/dev/flink-suite/sql_inventory.py" \
+    --reports "${REPORT_ROOT}" --evidence "${DIAGNOSTIC_ROOT}/sql-inventory" \
+    --line "${FLINK_LINE}" --suite "${SUITE_MODE}" \
+    --revision "$(git -C "${REPO_ROOT}" rev-parse HEAD)" \
+    --output "${SUITE_ROOT}/sql-inventory/${SUITE_MODE}"
+  INVENTORY_STATUS=$?
+fi
+
 if [[ "${SUITE_MODE}" == "state" && ${TEST_STATUS} -eq 0 ]]; then
   for required_marker in \
     "StreamFusion enabled for upstream Flink streaming planner tests" \
@@ -673,4 +683,6 @@ if [[ "${SUITE_MODE}" == "paimon" && "${FLINK_LINE}" == "1.18" && -z "${FLINK_SU
   done < "${PAIMON_118_SHARED_TESTS}"
 fi
 python3 "${REPO_ROOT}/dev/flink-suite/summarize.py" "${SUMMARY_ARGS[@]}"
-exit $?
+SUMMARY_STATUS=$?
+if [[ ${SUMMARY_STATUS} -ne 0 ]]; then exit "${SUMMARY_STATUS}"; fi
+exit "${INVENTORY_STATUS}"

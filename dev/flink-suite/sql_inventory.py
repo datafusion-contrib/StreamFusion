@@ -178,7 +178,7 @@ def classify(record: dict, outcome: str) -> tuple[str, str, str]:
     return 'should be accelerated', 'unobserved-streaming-plan', 'Streaming translation occurred without an observed StreamFusion admission decision; investigate harness or planner coverage.'
 
 
-def collect(reports: Path, evidence: Path, line: str) -> list[dict]:
+def collect(reports: Path, evidence: Path, line: str, suite_name: str = 'runtime') -> list[dict]:
     records = {}
     for path in sorted(evidence.glob('*.json')):
         record = json.loads(path.read_text())
@@ -217,12 +217,15 @@ def collect(reports: Path, evidence: Path, line: str) -> list[dict]:
                 record = records[key]
             label, group, note = classify(record, outcome)
             rows.append({
-                'flink_line': line, 'test_class': classname, 'test_name': case.get('name', ''),
+                'flink_line': line, 'suite': suite_name, 'test_class': classname, 'test_name': case.get('name', ''),
                 'display_name': record['display_name'], 'outcome': outcome, 'label': label,
                 'category': group, 'features': ', '.join(features(record)) if record['plans'] else '', 'note': note, 'invocation_id': record['invocation_id'],
-                'junit_id': record['junit_id'], 'report': path.name, 'case_index': index,
+                'junit_id': record['junit_id'], 'report': path.relative_to(reports).as_posix(), 'case_index': index,
                 'native_plans': sum(p['substitutions'] > 0 for p in execution_plans(record)),
                 'host_plans': sum(p['substitutions'] == 0 for p in execution_plans(record)),
+                'native_components': ', '.join(sorted({op.removeprefix('StreamPhysicalNative')
+                    for plan in execution_plans(record) for op in plan['operators']
+                    if op.startswith('StreamPhysicalNative')})),
                 'sql': record['sql'], 'plans': record['plans'], 'operation_failures': record['operation_failures'],
                 'planners': record['planners'], 'translations': record['translations'],
                 'junit_source': record.get('source', ''), 'junit_status': record.get('junit_status', ''),
@@ -254,10 +257,11 @@ def main() -> None:
     parser.add_argument('--reports', type=Path, required=True)
     parser.add_argument('--evidence', type=Path, required=True)
     parser.add_argument('--line', choices=['1.18', '2.2'], required=True)
+    parser.add_argument('--suite', default='runtime', choices=['runtime', 'diagnostic', 'state', 'formats', 'parquet', 'orc', 'kafka', 'paimon', 'delta'])
     parser.add_argument('--revision', required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    write(collect(args.reports, args.evidence, args.line), args.output, args.revision)
+    write(collect(args.reports, args.evidence, args.line, args.suite), args.output, args.revision)
 
 
 if __name__ == '__main__':

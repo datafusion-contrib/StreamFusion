@@ -542,7 +542,7 @@ corpora; a green 1.18 run does not claim that the full 1.20 common corpus passes
 The [searchable SQL inventory](sql-inventory/index.md) labels every invocation from the full
 Flink 1.18.1 and 2.2.1 planner runtime corpora, with per-line CSV and compressed JSON downloads.
 
-Set `FLINK_SUITE_SQL_INVENTORY=true` for a runtime run to record each JUnit invocation's SQL,
+Set `FLINK_SUITE_SQL_INVENTORY=true` for a selected suite to record each JUnit invocation's SQL,
 planner mode, complete-plan admission counts, fallback reasons and translation failures.
 The optional observer preserves upstream inputs, assertions and existing native execution contracts.
 It records batch and intentionally unmodified planners as well as streaming planners.
@@ -562,9 +562,12 @@ python3 dev/flink-suite/sql_inventory.py \
   --line 1.18 --revision "$(git rev-parse HEAD)" --output .flink-suite/1.18/sql-inventory
 ```
 
-The **Upstream Flink suite** workflow's manual `sql_inventory` option runs only the two planner
-runtime legs and retains
-CSV/JSON inventories alongside the original reports and observations. Its labels describe:
+The **Upstream Flink suite** workflow's manual `sql_inventory` option defaults to the two planner
+runtime legs. Set `inventory_scope=connectors` to select formats, Parquet, ORC, Kafka, Paimon and
+the supported Flink 2.2 Delta leg, or `all` to include every normal suite. The runner joins the
+selected suite's reports automatically and writes `sql-inventory/<suite>` alongside its original
+reports and observations. Inventory completeness failures fail the runner even when upstream
+assertions pass. Its labels describe:
 
 - **accelerated**: native substitution was admitted during execution translation and the test
   passed. This uses the all-or-nothing island policy; it is planner evidence, not a throughput
@@ -595,3 +598,9 @@ change is required. CSVs escape unpaired Unicode surrogates from negative string
 JSON preserves the exact values. The report distinguishes observed planner gaps from batch,
 metadata, schema, API-validation and early-return cases. It retains mixed native/fallback invocations
 as coverage targets whenever an in-scope query remains on the host.
+
+Connector invocations also retain the specific native physical components admitted in their
+execution plans. A native SQL Calc does not establish native connector decode or encode: inspect
+the components and final source/sink operators separately. Existing per-invocation Delta write
+contracts and suite-level Parquet/ORC/Paimon markers remain independent checks. The inventory
+does not turn a suite-level marker into evidence for every invocation in that suite.

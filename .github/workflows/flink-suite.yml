@@ -7,9 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       sql_inventory:
-        description: 'Run both planner SQL corpora with complete invocation inventories'
+        description: 'Record complete per-invocation SQL admission inventories'
         type: boolean
         default: false
+      inventory_scope:
+        description: 'Suites selected when sql_inventory is enabled'
+        type: choice
+        options: [runtime, connectors, all]
+        default: runtime
   schedule:
     - cron: "17 7 * * 1"
 
@@ -28,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: ${{ inputs.sql_inventory && fromJSON('["runtime"]') || fromJSON('["runtime", "formats", "parquet", "orc", "kafka", "paimon", "delta", "state"]') }}
+        suite: ${{ inputs.sql_inventory && inputs.inventory_scope == 'connectors' && fromJSON('["formats", "parquet", "orc", "kafka", "paimon", "delta"]') || inputs.sql_inventory && inputs.inventory_scope != 'all' && fromJSON('["runtime"]') || fromJSON('["runtime", "formats", "parquet", "orc", "kafka", "paimon", "delta", "state"]') }}
         line: ['2.2', '1.18']
         exclude:
           - suite: delta
@@ -67,15 +72,6 @@ jobs:
         run: |
           set -o pipefail
           bin/flink-suite.sh "${{ matrix.suite }}" 2>&1 | tee upstream-suite.log
-
-      - name: Require a complete SQL inventory
-        if: ${{ always() && inputs.sql_inventory }}
-        run: |
-          python3 dev/flink-suite/sql_inventory.py \
-            --reports .flink-suite/${{ matrix.line }}/flink-${{ matrix.version }}/flink-table/flink-table-planner/target/surefire-reports \
-            --evidence .flink-suite/${{ matrix.line }}/diagnostics/runtime/sql-inventory \
-            --line '${{ matrix.line }}' --revision '${{ github.sha }}' \
-            --output .flink-suite/${{ matrix.line }}/sql-inventory
 
       - uses: actions/upload-artifact@v4
         if: always()
