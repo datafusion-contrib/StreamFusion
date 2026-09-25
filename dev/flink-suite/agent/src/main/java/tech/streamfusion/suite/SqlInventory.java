@@ -1,5 +1,6 @@
 package tech.streamfusion.suite;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -76,11 +77,14 @@ public final class SqlInventory {
     List<Object> finalRoots = new ArrayList<>();
     for (Object root : (List<?>) roots) {
       List<String> operators = new ArrayList<>();
-      operators(root, operators, new IdentityHashMap<>());
+      List<Object> boundaries = new ArrayList<>();
+      operators(root, operators, boundaries, new IdentityHashMap<>());
       finalRoots.add(
           Map.of(
               "operators",
               operators,
+              "host_boundaries",
+              boundaries,
               "native_operators",
               operators.stream().filter(name -> name.startsWith("StreamPhysicalNative")).count()));
     }
@@ -89,10 +93,48 @@ public final class SqlInventory {
   }
 
   private static void operators(
-      Object node, List<String> names, IdentityHashMap<Object, Boolean> seen) throws Exception {
+      Object node,
+      List<String> names,
+      List<Object> boundaries,
+      IdentityHashMap<Object, Boolean> seen)
+      throws Exception {
     if (seen.put(node, Boolean.TRUE) != null) return;
     names.add(node.getClass().getSimpleName());
-    for (Object input : (List<?>) call(node, "getInputs")) operators(input, names, seen);
+    String name = node.getClass().getSimpleName();
+    if (name.equals("StreamPhysicalTableSourceScan")
+        || name.equals("StreamPhysicalLegacyTableSourceScan")
+        || name.equals("StreamPhysicalSink")
+        || name.equals("StreamPhysicalLegacySink")
+        || name.equals("PreparedLegacySink")) {
+      Object owner = name.endsWith("Scan") ? call(node, "getTable") : node;
+      boolean legacy = name.contains("Legacy");
+      Object implementation =
+          call(owner, name.endsWith("Scan") ? "tableSource" : legacy ? "sink" : "tableSink");
+      Map<?, ?> options = Map.of();
+      String optionsError = null;
+      if (!legacy || name.endsWith("Scan")) {
+        Object table =
+            legacy
+                ? call(owner, "catalogTable")
+                : call(call(owner, "contextResolvedTable"), "getResolvedTable");
+        try {
+          options = (Map<?, ?>) call(table, "getOptions");
+        } catch (InvocationTargetException e) {
+          // DataStream/collect tables deliberately reject option access.
+          optionsError = e.getCause().toString();
+        }
+      }
+      Map<String, Object> boundary = new LinkedHashMap<>();
+      boundary.put("operator", name);
+      boundary.put("implementation", implementation.getClass().getName());
+      if (optionsError != null) boundary.put("options_error", optionsError);
+      for (String key : List.of("connector", "format", "value.format", "file.format")) {
+        if (options.containsKey(key)) boundary.put(key, options.get(key));
+      }
+      boundaries.add(boundary);
+    }
+    for (Object input : (List<?>) call(node, "getInputs"))
+      operators(input, names, boundaries, seen);
   }
 
   public static synchronized void sql(String method, String statement) {

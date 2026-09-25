@@ -601,6 +601,13 @@ as coverage targets whenever an in-scope query remains on the host.
 
 Connector invocations also retain the specific native physical components admitted in their
 execution plans. A native SQL Calc does not establish native connector decode or encode: inspect
-the components and final source/sink operators separately. Existing per-invocation Delta write
+the components and final source/sink operators separately. Observations include the implementation
+class and connector/format identifiers of retained host boundaries, without copying arbitrary
+connector options. Existing per-invocation Delta write
 contracts and suite-level Parquet/ORC/Paimon markers remain independent checks. The inventory
 does not turn a suite-level marker into evidence for every invocation in that suite.
+
+The report renderer accepts several inventories for each Flink line when their suites are distinct.
+It adds a suite filter and retains each row's engine revision. Optional `--kafka-repository`,
+`--paimon-repository` and `--delta-repository` arguments verify source links against the same pinned
+release tags as the runner. Repeated input for the same line and suite is rejected.

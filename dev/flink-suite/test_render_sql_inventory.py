@@ -53,3 +53,18 @@ class RenderSqlInventoryTest(unittest.TestCase):
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(0, result.returncode)
             self.assertIn('Incomplete inventory', result.stderr)
+
+    def test_distinct_suites_merge_without_losing_invocations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, _ = self.fixture(root)
+            data = json.loads(path.read_text())
+            data['tests'][0]['suite'] = 'formats'
+            data['tests'][0]['invocation_id'] = 'format-invocation'
+            second = root / 'formats.json'
+            second.write_text(json.dumps(data))
+            output = root / 'report'
+            subprocess.run([sys.executable, str(RENDER), '--inventory', str(path), '--inventory', str(second), '--output', str(output)], check=True)
+            raw = json.loads(gzip.decompress((output / 'flink-2.2.json.gz').read_bytes()))
+            self.assertEqual(2, raw['summary']['cases'])
+            self.assertEqual({'runtime', 'formats'}, {t['suite'] for t in raw['tests']})

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -20,7 +21,11 @@ class SqlInventoryTest {
       SqlInventory.started(identifier);
       SqlInventory.translating(this);
       SqlInventory.plan(
-          new Scan(), List.of(new StreamPhysicalNativeCalc(), new StreamPhysicalCalc()));
+          new Scan(),
+          List.of(
+              new StreamPhysicalNativeCalc(),
+              new StreamPhysicalSink(false),
+              new StreamPhysicalSink(true)));
       SqlInventory.translated();
       SqlInventory.finished(identifier, new Result());
       try (var paths = Files.list(directory)) {
@@ -29,6 +34,13 @@ class SqlInventoryTest {
         assertTrue(json.contains("\"native_operators\":1"));
         assertTrue(json.contains("\"native_operators\":0"));
         assertTrue(json.contains("\"during_translation\":true"));
+        assertTrue(json.contains("\"connector\":\"kafka\""));
+        assertTrue(json.contains("\"format\":\"json\""));
+        assertTrue(!json.contains("password"));
+        assertTrue(
+            json.contains(
+                "\"options_error\":\"java.lang.UnsupportedOperationException: internal collect"
+                    + " table\""));
       }
     } finally {
       System.clearProperty("streamfusion.flink-suite.sql-inventory");
@@ -84,4 +96,29 @@ class SqlInventoryTest {
   }
 
   public static class StreamPhysicalNativeCalc extends StreamPhysicalCalc {}
+
+  public static class StreamPhysicalSink extends StreamPhysicalCalc {
+    private final boolean internal;
+
+    StreamPhysicalSink(boolean internal) {
+      this.internal = internal;
+    }
+
+    public Object tableSink() {
+      return this;
+    }
+
+    public Object contextResolvedTable() {
+      return this;
+    }
+
+    public Object getResolvedTable() {
+      return this;
+    }
+
+    public Map<String, String> getOptions() {
+      if (internal) throw new UnsupportedOperationException("internal collect table");
+      return Map.of("connector", "kafka", "format", "json", "password", "not-in-inventory");
+    }
+  }
 }
