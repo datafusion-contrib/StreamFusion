@@ -4,23 +4,23 @@ import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLookupJoin;
-import org.apache.flink.table.planner.plan.schema.TableSourceTable;
 import org.apache.flink.types.RowKind;
 import tech.streamfusion.compat.FlinkLookupCompat;
 import tech.streamfusion.compat.LookupKeys;
 
 /**
  * Recognizes the processing-time lookup joins the native operator runs: {@code probe JOIN dim FOR
- * SYSTEM_TIME AS OF probe.proctime ON probe.k = dim.key}. The native operator keeps the query inside
- * the columnar island — the probe batches stay Arrow — while the row-level join core is Flink's own
- * generated lookup runner (key building over field references and constants, the connector's real
- * sync or async lookup function, pre-filter, projection/filter on the temporal table, and the
- * residual non-equi condition), so the result is byte-identical to the host across all those shapes.
+ * SYSTEM_TIME AS OF probe.proctime ON probe.k = dim.key}. The native operator keeps the query
+ * inside the columnar island — the probe batches stay Arrow — while the row-level join core is
+ * Flink's own generated lookup runner (key building over field references and constants, the
+ * connector's real sync or async lookup function, pre-filter, projection/filter on the temporal
+ * table, and the residual non-equi condition), so the result is byte-identical to the host across
+ * all those shapes.
  *
- * <p>Admitted for a lookup against a non-legacy {@link TableSourceTable}, INNER or LEFT join, with no
- * upsert materialization (a keyed-state lookup over a changelog probe — the island is insert-only
- * anyway). See https://github.com/datafusion-contrib/StreamFusion/issues/18 for the remaining
- * follow-up (bounded-dim preload).
+ * <p>Admitted for a lookup against a supported table source, INNER or LEFT join, with no upsert
+ * materialization (a keyed-state lookup over a changelog probe — the island is insert-only anyway).
+ * See https://github.com/datafusion-contrib/StreamFusion/issues/18 for the remaining follow-up
+ * (bounded-dim preload).
  */
 final class LookupJoinMatcher {
 
@@ -44,8 +44,8 @@ final class LookupJoinMatcher {
     if (join.joinType() != JoinRelType.INNER && join.joinType() != JoinRelType.LEFT) {
       return "lookup join: only INNER and LEFT are supported";
     }
-    if (!(unwrapTable(join.temporalTable()) instanceof TableSourceTable)) {
-      return "lookup join: temporal table is not a (non-legacy) table source";
+    if (!FlinkLookupCompat.supportsTable(join.temporalTable())) {
+      return "lookup join: temporal table is not a supported lookup table source";
     }
     return FlinkLookupCompat.unsupportedKeyShape(lookupKeys(join));
   }
@@ -60,11 +60,6 @@ final class LookupJoinMatcher {
 
   static RelOptTable temporalTable(StreamPhysicalLookupJoin join) {
     return join.temporalTable();
-  }
-
-  private static Object unwrapTable(RelOptTable table) {
-    TableSourceTable source = table.unwrap(TableSourceTable.class);
-    return source != null ? source : table;
   }
 
   static RelNode substitute(StreamPhysicalLookupJoin join, PlanContext ctx) {

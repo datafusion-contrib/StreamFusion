@@ -475,8 +475,9 @@ contracts require native work for admitted queries on both backends. Selectors c
 `state=HEAP&splitDistinct=false&changelog=false`; a missing field or ambiguous match fails the
 invocation. `changelog` reads the fixture's actual randomized execution-environment setting.
 Enabled changelog state requires its explicit planning fallback; the suite does not turn off
-upstream checkpoint randomization. Legacy lookup-source variants likewise require the existing
-legacy-source fallback, while modern source variants must process rows natively. The summarizer
+upstream checkpoint randomization. Both legacy and modern lookup-source variants require native
+lookup work. Legacy scalar-registration lifecycle, combined-function and code-generation-split
+fixtures also require native Calc/filter work. The summarizer
 resolves old Surefire simple class names against the enclosing fully qualified suite name and
 still requires one evidence record per executed invocation.
 The separate state suite replaces legacy programmatic RocksDB selection with StreamFusion's

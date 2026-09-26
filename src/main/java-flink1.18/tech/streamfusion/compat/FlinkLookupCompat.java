@@ -30,6 +30,15 @@ import org.apache.flink.table.types.logical.RowType;
 public final class FlinkLookupCompat {
   private FlinkLookupCompat() {}
 
+  public static boolean supportsTable(org.apache.calcite.plan.RelOptTable table) {
+    return table instanceof org.apache.flink.table.planner.plan.schema.TableSourceTable
+        || table
+                instanceof
+                org.apache.flink.table.planner.plan.schema.LegacyTableSourceTable<?> legacy
+            && legacy.tableSource()
+                instanceof org.apache.flink.table.sources.LookupableTableSource<?>;
+  }
+
   public static LookupKeys lookupKeys(StreamPhysicalLookupJoin join) {
     Map<Integer, LookupJoinUtil.LookupKey> keys = new HashMap<>();
     scala.collection.JavaConverters.mapAsJavaMapConverter(join.allLookupKeys())
