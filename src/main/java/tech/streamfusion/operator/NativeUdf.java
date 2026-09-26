@@ -35,6 +35,7 @@ import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.binary.BinaryStringData;
 import org.apache.flink.table.functions.FunctionContext;
 import org.apache.flink.table.functions.ScalarFunction;
+import tech.streamfusion.planner.FlinkExpressionFunction;
 
 /**
  * The JVM half of native UDF support (the StreamFusion analog of datafusion-comet's {@code
@@ -114,6 +115,7 @@ public final class NativeUdf {
     final boolean[] argAsStringData;
     final int fixedArity;
     final Class<?> varArgComponent;
+    final FlinkExpressionFunction generated;
 
     Registered(ScalarFunction function, Method eval, int[] argTypes, int returnType) {
       this.function = function;
@@ -121,6 +123,12 @@ public final class NativeUdf {
       this.argTypes = argTypes;
       this.returnType = returnType;
       Class<?>[] params = eval.getParameterTypes();
+      this.generated =
+          function instanceof FlinkExpressionFunction expression
+                  && eval.getName().equals("eval")
+                  && Arrays.equals(params, new Class<?>[] {Object[].class})
+              ? expression
+              : null;
       this.fixedArity = eval.isVarArgs() ? params.length - 1 : params.length;
       this.varArgComponent = eval.isVarArgs() ? params[params.length - 1].getComponentType() : null;
       this.argAsStringData = new boolean[argTypes.length];
@@ -430,27 +438,37 @@ public final class NativeUdf {
             columns[a] = readColumn(argVectors[a], udf.argTypes[a], udf.argAsStringData[a], rows);
           }
         }
-        Object[] args = new Object[arity];
+        Object[] args = udf.generated == null ? new Object[arity] : null;
         Object[] invokeArgs =
-            udf.varArgComponent == null ? args : new Object[udf.fixedArity + 1];
+            udf.generated != null || udf.varArgComponent == null
+                ? args
+                : new Object[udf.fixedArity + 1];
         Object varArgs =
-            udf.varArgComponent == null
+            udf.generated != null || udf.varArgComponent == null
                 ? null
                 : Array.newInstance(udf.varArgComponent, arity - udf.fixedArity);
         if (varArgs != null) {
           invokeArgs[udf.fixedArity] = varArgs;
         }
         for (int row = 0; row < rows; row++) {
-          for (int a = 0; a < arity; a++) {
-            args[a] = columns[a][row];
-          }
-          if (varArgs != null) {
-            System.arraycopy(args, 0, invokeArgs, 0, udf.fixedArity);
-            for (int a = udf.fixedArity; a < arity; a++) {
-              Array.set(varArgs, a - udf.fixedArity, args[a]);
+          Object value;
+          if (udf.generated != null) {
+            try {
+              value = udf.generated.evalColumns(columns, row);
+            } catch (Throwable failure) {
+              // Use the same exception handover as reflective calls, including checked failures.
+              throw new InvocationTargetException(failure);
             }
+          } else {
+            for (int a = 0; a < arity; a++) args[a] = columns[a][row];
+            if (varArgs != null) {
+              System.arraycopy(args, 0, invokeArgs, 0, udf.fixedArity);
+              for (int a = udf.fixedArity; a < arity; a++) {
+                Array.set(varArgs, a - udf.fixedArity, args[a]);
+              }
+            }
+            value = udf.eval.invoke(udf.function, invokeArgs);
           }
-          Object value = udf.eval.invoke(udf.function, invokeArgs);
           if (rowWriter == null) {
             writeValue(result, udf.returnType, row, value);
           } else {

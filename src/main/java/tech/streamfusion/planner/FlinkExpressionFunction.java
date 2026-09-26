@@ -198,18 +198,27 @@ public final class FlinkExpressionFunction extends ScalarFunction
 
   public Object eval(Object... arguments) throws Exception {
     for (int i = 0; i < arguments.length; i++) {
-      Object value = arguments[i];
-      if (value instanceof String text) {
-        value = StringData.fromString(text);
-      } else if (value instanceof BigDecimal decimal) {
-        DecimalType type = (DecimalType) argumentTypes[i];
-        value =
-            tech.streamfusion.arrow.DecimalAccessor.fromInternalValue(
-                decimal, type.getPrecision(), type.getScale());
-      }
-      input.setField(i, value);
+      setArgument(i, arguments[i]);
     }
     return evaluator.eval(input);
+  }
+
+  /** Evaluate a materialized batch row without repacking it into reflective varargs. */
+  public Object evalColumns(Object[][] columns, int row) throws Exception {
+    for (int i = 0; i < columns.length; i++) setArgument(i, columns[i][row]);
+    return evaluator.eval(input);
+  }
+
+  private void setArgument(int position, Object value) {
+    if (value instanceof String text) {
+      value = StringData.fromString(text);
+    } else if (value instanceof BigDecimal decimal) {
+      DecimalType type = (DecimalType) argumentTypes[position];
+      value =
+          tech.streamfusion.arrow.DecimalAccessor.fromInternalValue(
+              decimal, type.getPrecision(), type.getScale());
+    }
+    input.setField(position, value);
   }
 
   @Override
