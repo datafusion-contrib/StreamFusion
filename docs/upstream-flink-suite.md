@@ -148,8 +148,8 @@ require completed native async lookup batches across every executed backend, obj
 output-order and cache variant. These counters are recorded after the host-delegating columnar
 operator completes its batch; merely opening the operator earns no credit.
 The 1.18 contracts also cover legacy upsert sinks after joins and Top-N: native heap/native
-RocksDB variants must perform join/rank work, while stock RocksDB or changelog-state variants
-must report their explicit backend fallback. The host still validates and consumes the original
+RocksDB variants, including automatically adapted stock RocksDB selections, must perform join/rank
+work. Changelog-state variants must report their explicit backend fallback. The host still validates and consumes the original
 proven sink keys.
 Calc contracts also cover numeric-to-boolean predicates, IN and SEARCH predicates, quoted LIKE
 patterns, and reuse of one RAND value across expressions. Each requires nonempty native Calc or
@@ -469,9 +469,9 @@ Shared Top-N fixtures retain a key-selector copy method on both lines without re
 newer interface declaration, so changing-bound checkpoint and rescaling comparisons compile
 against the released 1.18 API too.
 
-The 1.18 runtime suite preserves the upstream fixture's heap or stock RocksDB selection.
-Its execution contracts require native work for admitted heap cases and the explicit backend
-fallback for stock RocksDB cases. Selectors can combine inherited fixture parameters, such as
+The 1.18 runtime suite leaves the upstream fixture's heap or stock RocksDB selection unchanged.
+Production planning transparently adapts stock RocksDB to StreamFusion's native backend. Its execution
+contracts require native work for admitted queries on both backends. Selectors can combine inherited fixture parameters, such as
 `state=HEAP&splitDistinct=false&changelog=false`; a missing field or ambiguous match fails the
 invocation. `changelog` reads the fixture's actual randomized execution-environment setting.
 Enabled changelog state requires its explicit planning fallback; the suite does not turn off

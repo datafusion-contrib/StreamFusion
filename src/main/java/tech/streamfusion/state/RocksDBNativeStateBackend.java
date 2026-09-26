@@ -19,6 +19,7 @@ import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
 import org.apache.flink.runtime.state.IncrementalKeyedStateHandle.HandleAndLocalPath;
 import org.apache.flink.runtime.state.IncrementalRemoteKeyedStateHandle;
 import org.apache.flink.runtime.state.KeyedStateHandle;
+import org.apache.flink.runtime.state.StateBackend;
 import org.apache.flink.runtime.state.StreamStateHandle;
 import tech.streamfusion.compat.FlinkStateBackendCompat;
 import tech.streamfusion.compat.KeyedBackendContext;
@@ -40,7 +41,12 @@ public final class RocksDBNativeStateBackend extends FlinkStateBackendCompat {
   private final double writeBufferRatio;
 
   RocksDBNativeStateBackend(ReadableConfig config, ClassLoader classLoader) {
-    super(config, classLoader);
+    this(config, configuredDelegate(config, classLoader));
+  }
+
+  /** Retains the user's configured host backend when the planner selects native RocksDB. */
+  public RocksDBNativeStateBackend(ReadableConfig config, StateBackend delegate) {
+    super(delegate);
     this.nativeOptions = FlinkRocksDBOptions.from(config);
     this.incrementalCheckpoints = config.get(CheckpointingOptions.INCREMENTAL_CHECKPOINTS);
     this.localDirectories = config.get(RocksDBOptionsCompat.LOCAL_DIRECTORIES);

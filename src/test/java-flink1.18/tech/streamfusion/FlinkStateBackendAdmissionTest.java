@@ -13,18 +13,27 @@ import tech.streamfusion.compat.FlinkTestSources;
 
 class FlinkStateBackendAdmissionTest {
   private static final String GROUP = "SELECT k, SUM(v) FROM t GROUP BY k";
-  private static final String REASON =
-      "state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB"
-          + " backend";
 
   @Test
-  void explicitStockRocksBackendDeclinesKeyedSqlBeforeExecution() throws Exception {
-    NativeParity.assertFallbackReasonContains(() -> environment(true, false), GROUP, REASON);
+  void explicitStockRocksBackendAcceleratesKeyedSql() throws Exception {
+    NativeParity.assertChangelogParity(() -> environment(true, false), GROUP);
   }
 
   @Test
-  void configuredStockRocksBackendDeclinesKeyedSqlBeforeExecution() throws Exception {
-    NativeParity.assertFallbackReasonContains(() -> environment(false, true), GROUP, REASON);
+  void configuredStockRocksBackendAcceleratesKeyedSql() throws Exception {
+    NativeParity.assertChangelogParity(() -> environment(false, true), GROUP);
+  }
+
+  @Test
+  void legacyStockRocksBackendAcceleratesKeyedSql() throws Exception {
+    NativeParity.assertChangelogParity(
+        () ->
+            environment(
+                new org.apache.flink.contrib.streaming.state.RocksDBStateBackend(
+                    new org.apache.flink.runtime.state.memory.MemoryStateBackend()),
+                false,
+                false),
+        GROUP);
   }
 
   @Test
@@ -56,13 +65,19 @@ class FlinkStateBackendAdmissionTest {
 
   private static TableEnvironment environment(
       boolean explicitRocks, boolean configuredRocks, boolean changelog) {
+    return environment(
+        explicitRocks ? new EmbeddedRocksDBStateBackend() : null, configuredRocks, changelog);
+  }
+
+  private static TableEnvironment environment(
+      org.apache.flink.runtime.state.StateBackend backend, boolean configuredRocks, boolean changelog) {
     Configuration configuration = new Configuration();
     if (configuredRocks) configuration.set(StateBackendOptions.STATE_BACKEND, "rocksdb");
     StreamExecutionEnvironment env =
         StreamExecutionEnvironment.getExecutionEnvironment(configuration);
     env.setParallelism(1);
     env.enableChangelogStateBackend(changelog);
-    if (explicitRocks) env.setStateBackend(new EmbeddedRocksDBStateBackend());
+    if (backend != null) env.setStateBackend(backend);
     StreamTableEnvironment table = StreamTableEnvironment.create(env);
     table.createTemporaryView(
         "t",

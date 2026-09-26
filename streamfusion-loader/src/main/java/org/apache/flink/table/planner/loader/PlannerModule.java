@@ -81,6 +81,7 @@ public class PlannerModule {
                   "org.apache.commons.lang3",
                   "org.apache.commons.math3",
                   "org.apache.commons.text",
+                  "org.rocksdb",
                   "org.apache.hadoop"))
           .toArray(String[]::new);
 
