@@ -110,7 +110,27 @@ class PaimonSinkParityTest {
     FileStoreTable nativeTable = insertFixture(warehouse, "PARTITIONED BY (pt)", options, 1, true);
     FileStoreTable stockTable = insertFixture(warehouse, "PARTITIONED BY (pt)", options, 1, false);
 
-    assertSameTables(stockTable, nativeTable, false, ROWS);
+    // Crossing the writer limit finishes existing native files; stock Paimon rewrites them.
+    // Arrival order may therefore change file boundaries, even when every row is identical.
+    assertSameRows(stockTable, nativeTable, ROWS);
+    assertEquals(
+        PaimonTestTables.dataFiles(stockTable).keySet(),
+        PaimonTestTables.dataFiles(nativeTable).keySet());
+    for (List<DataFileMeta> files : PaimonTestTables.dataFiles(nativeTable).values()) {
+      long next = 0;
+      for (DataFileMeta file :
+          files.stream()
+              .sorted(java.util.Comparator.comparingLong(DataFileMeta::minSequenceNumber))
+              .toList()) {
+        assertEquals(next, file.minSequenceNumber());
+        next += file.rowCount();
+        assertEquals(next - 1, file.maxSequenceNumber());
+        assertEquals(nativeTable.schema().id(), file.schemaId());
+        assertEquals(0, file.level());
+        assertEquals(PaimonTestTables.fileFormat(), file.fileFormat());
+      }
+    }
+    assertBucketsMatchPaimonsExtractor(stockTable);
     assertBucketsMatchPaimonsExtractor(nativeTable);
     NativeAppendSinkWriteTest.assertNativeFiles(nativeTable);
   }
@@ -1660,10 +1680,8 @@ class PaimonSinkParityTest {
   private static void assertSameTables(
       FileStoreTable expected, FileStoreTable actual, boolean absoluteSequenceNumbers, int rows)
       throws Exception {
+    assertSameRows(expected, actual, rows);
     RowType rowType = expected.rowType();
-    List<String> expectedRows = PaimonTestTables.readRows(expected, rowType);
-    assertEquals(rows, expectedRows.size());
-    assertEquals(expectedRows, PaimonTestTables.readRows(actual, rowType));
     Map<String, List<DataFileMeta>> expectedFiles = PaimonTestTables.dataFiles(expected);
     Map<String, List<DataFileMeta>> actualFiles = PaimonTestTables.dataFiles(actual);
     assertEquals(expectedFiles.keySet(), actualFiles.keySet());
@@ -1676,6 +1694,13 @@ class PaimonSinkParityTest {
           destination);
     }
     assertEquals(PaimonTestTables.footers(expected), PaimonTestTables.footers(actual));
+  }
+
+  private static void assertSameRows(FileStoreTable expected, FileStoreTable actual, int rows)
+      throws Exception {
+    List<String> expectedRows = PaimonTestTables.readRows(expected, expected.rowType());
+    assertEquals(rows, expectedRows.size());
+    assertEquals(expectedRows, PaimonTestTables.readRows(actual, expected.rowType()));
   }
 
   private static List<String> describeAll(

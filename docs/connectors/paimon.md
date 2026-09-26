@@ -414,7 +414,10 @@ and absolute sequence numbers can differ from a stock run after the transition. 
 buckets, schema, codecs, and sequence-number progression within each bucket writer are preserved.
 The focused `NativeAppendSinkWriteTest` checks multiple checkpoints, writer refresh/reopen, disk
 limits, native footers, and spill cleanup; `PaimonSinkParityTest` covers SQL, coordinator commits,
-and checkpoint failure/recovery.
+and checkpoint failure/recovery. Its many-writer transition case compares complete row results
+and destination buckets, verifies native encoding and continuous sequence ranges, and permits
+different file boundaries. Cases without that transition also compare per-file statistics and
+footer layout against the stock twin.
 The [release spill diagnostic](../optimizations/paimon-append-spill.md) measured **1.12× throughput**
 against the previous native path that reverted to Java spilling and encoding.
 
