@@ -3,3 +3,4 @@ tech.streamfusion.TestAsyncLookupTableFactory
 tech.streamfusion.CountingBlackholeTableFactory
 tech.streamfusion.KindCapturingUpsertTableFactory
 tech.streamfusion.ChangelogParquetTableFactory
+tech.streamfusion.PrunedTransposeBenchmark$Factory
