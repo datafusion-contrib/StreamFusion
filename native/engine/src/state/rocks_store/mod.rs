@@ -8,6 +8,8 @@
 //! last-write timestamp as a fixed 8-byte prefix so the compaction filter never parses the row.
 
 pub(crate) mod interval_buffer;
+#[cfg(test)]
+mod join_record_tests;
 pub(crate) mod keep_first_dedup_store;
 pub(crate) mod over_agg_store;
 pub(crate) mod session_agg_store;
