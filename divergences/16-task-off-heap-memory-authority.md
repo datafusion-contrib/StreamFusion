@@ -22,6 +22,10 @@ real runtime cap, rather than only a process-sizing hint.
 - Each native operator receives an owner handle. Its DataFusion `MemoryPool` crosses JNI when the
   operator's per-bundle footprint grows or shrinks, so all operators share unused headroom.
 - The shared Arrow allocator reserves and releases bytes with Arrow buffer lifetimes.
+- Updating INNER JOIN candidates reserve a conservative decode/filter footprint before growing
+  their bounded buffers. Reservations share the operator's pool, flush earlier on budget pressure,
+  and return output-buffer accounting to Arrow Java at the synchronous handoff. Candidate indices
+  remain reserved while reusable, and RAII releases the reservation on errors and unwind.
 - A denied reservation surfaces as `NativeMemoryLimitException` and names the Flink setting to
   increase. Metrics expose capacity, current/available/peak bytes, denials, and Arrow usage.
 

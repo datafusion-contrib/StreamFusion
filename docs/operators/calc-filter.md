@@ -23,6 +23,32 @@ fallback.
   functions below can instead use Flink generation for its complete program,
   subject to the host code generator and the verified batch bridge types.
 
+## Failure order across rows
+
+After the usual expression admission checks, a Calc with multiple potentially failing
+evaluations uses Flink's generated evaluator for its complete filter and projection list.
+Each JVM expression is conservatively treated as potentially failing, including deterministic
+user functions. Native failure sites also count: exact division/remainder with an unproven
+nonzero divisor, strict string-to-integer/boolean casts, invalid random bounds, INSTR indices,
+extreme decimal rounding scales and throwing SQL/JSON policies.
+
+This keeps an error in a later input row from overtaking an earlier row's projection error.
+For example, with rows `[1, 2]`, `SELECT f(id), g(id)` must report `g(1)` if it fails,
+even when `f(2)` also fails. The same rule applies between filters and projections. The
+generated evaluator preserves predicate-before-projection order, untaken branches, NULLs and
+empty filtered results. It still receives and returns Arrow batches, and retains the existing
+bridge type and string-representation restrictions; a program that cannot be generated safely
+falls back. Unsupported functions and shared stateful-UDF gates are checked before this choice.
+In particular, a complete-row evaluator cannot emit the arbitrary binary-backed STRING from
+`FROM_BASE64`. Projecting that string alongside another potentially failing evaluation retains
+fallback (`binary-backed STRING requires a final scalar projection`); a single such projection
+keeps its existing native byte-preserving path.
+
+This scheduling change prioritizes failure parity, with no throughput improvement claimed.
+Regression tests compare error class/message and execution route against released Flink for
+INT, BIGINT, DECIMAL and STRING results, native casts, nested expressions, and one-row and
+multi-row batches, including errors after earlier complete batches.
+
 ## LIKE ESCAPE and SIMILAR TO
 
 LIKE/NOT LIKE with an explicit literal or per-row ESCAPE, and SIMILAR TO/NOT SIMILAR TO,
@@ -910,6 +936,12 @@ runtime source, row sink and both row/Arrow transposes remain in the measured pa
 Both standalone expressions are slower through the batch JVM bridge. This path adds semantic
 coverage and keeps an otherwise supported pipeline inside a native island; it is not a charset
 conversion speedup. The six literal-charset Rust kernels remain available.
+
+Generated expressions now bypass per-row reflection while invoking the same Flink evaluator.
+The [bridge optimization measurements](../optimizations/udf-columnar-upcall.md#direct-generated-expression-dispatch)
+show a larger isolated dispatch benefit, a modest dynamic ENCODE whole-job improvement and no
+material DECODE improvement. These expressions still execute on the JVM, with unchanged charset,
+surrogate, NULL and exception behavior; native Calc admission is not a Rust charset implementation.
 
 ```sh
 SF_BENCHMARK=true mvn test -Pbench -pl streamfusion-runtime -am \

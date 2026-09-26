@@ -4,7 +4,17 @@ on:
   push:
     branches: [main]
   pull_request: {}
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      sql_inventory:
+        description: 'Record complete per-invocation SQL admission inventories'
+        type: boolean
+        default: false
+      inventory_scope:
+        description: 'Suites selected when sql_inventory is enabled'
+        type: choice
+        options: [runtime, connectors, all]
+        default: runtime
   schedule:
     - cron: "17 7 * * 1"
 
@@ -23,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [runtime, formats, parquet, orc, kafka, paimon, delta, state]
+        suite: ${{ inputs.sql_inventory && inputs.inventory_scope == 'connectors' && fromJSON('["formats", "parquet", "orc", "kafka", "paimon", "delta"]') || inputs.sql_inventory && inputs.inventory_scope != 'all' && fromJSON('["runtime"]') || fromJSON('["runtime", "formats", "parquet", "orc", "kafka", "paimon", "delta", "state"]') }}
         line: ['2.2', '1.18']
         exclude:
           - suite: delta
@@ -58,6 +68,7 @@ jobs:
       - name: Run unchanged upstream suite with StreamFusion
         env:
           FLINK_VERSION: ${{ matrix.version }}
+          FLINK_SUITE_SQL_INVENTORY: ${{ inputs.sql_inventory || false }}
         run: |
           set -o pipefail
           bin/flink-suite.sh "${{ matrix.suite }}" 2>&1 | tee upstream-suite.log
@@ -70,11 +81,13 @@ jobs:
             upstream-suite.log
             .flink-suite/**/native-execution/
             .flink-suite/**/diagnostics/
+            .flink-suite/**/sql-inventory/
             .flink-suite/**/target/surefire-reports/
           include-hidden-files: true
           retention-days: 7
 
   legacy-delta-audit:
+    if: ${{ !inputs.sql_inventory }}
     name: Delta 3.3 / Flink 1.18 host audit
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -101,7 +114,7 @@ jobs:
 
   all-tests:
     name: All upstream integration tests
-    if: ${{ always() }}
+    if: ${{ always() && !inputs.sql_inventory }}
     needs: [upstream-suite, legacy-delta-audit]
     runs-on: ubuntu-24.04
     timeout-minutes: 5

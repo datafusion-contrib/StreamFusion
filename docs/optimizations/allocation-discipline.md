@@ -23,10 +23,20 @@ kernel instead of a row loop at all.
 
 - The running `OVER` aggregate replaced a DataFusion update-batch-then-evaluate call per row with a
   small typed running state folded directly (**~2.6x**, `945d3da`).
-- The INNER updating join gathers all of a batch's candidate pairs, evaluates the residual predicate
-  columnar in one pass, and emits by `filter_record_batch` — one convert/eval per batch instead of
+- The INNER updating join gathers bounded chunks of candidate pairs, evaluates the residual predicate
+  columnar in one pass, and emits by `filter_record_batch` — one convert/eval per chunk instead of
   per row (q9 0.39x → ~1.0x, `4429e2f`); associated rows in the residual path bulk-decode in one
   `convert_rows` call (q7 0.33x → 0.74x, `ed74dac`).
+  Candidate chunks now stop at 4,096 rows or an 8 MiB decode/filter estimate, and flush earlier
+  when the task reservation cannot grow. The JNI receiver imports each chunk synchronously,
+  including mini-batch flush output; no complete fanout is reassembled. This bounds transient
+  candidate memory even when a residual predicate rejects every pair. It does not bound retained
+  state or residual-function scratch allocation. See [regular join](../operators/joins/regular-join.md#bounded-inner-output).
+  A September 24, 2026 ARM64/JDK 17 release+mimalloc comparison used the unchanged
+  `CrossJoinBenchmark` (100,000 input rows crossed with 16 rows, both transposes, row sink,
+  two warmups and five interleaved host/native trials per build). The native median moved from
+  0.203549 s on main to 0.216456 s with bounded output (+6.3% elapsed time); host medians were
+  0.193179 s and 0.195739 s. This is a memory-robustness tradeoff, not a throughput improvement.
 - The session aggregator segments each key's rows into gap-connected runs so a run pays one value
   slice and one accumulator update, with the merge scan a bounded O(log n) range probe (**9.4x** on
   dense sessions, `62dffda`).

@@ -1,6 +1,5 @@
 package tech.streamfusion.operator;
 
-import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.arrow.memory.BufferAllocator;
@@ -57,11 +56,10 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
     NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     buffer = new ArrayList<>(batchSize);
-    inputSerializer = new RowDataSerializer(sourceType == null ? rowType : sourceType);
+    inputSerializer = new RowDataSerializer(rowType);
     flushLatencyMs = NativeConfig.transposeFlushLatencyMs();
     flushDeadline = Long.MIN_VALUE;
-    // When the planner pruned the transpose, present each wide source row as the narrowed schema so
-    // the converter builds and fills only the read columns/sub-fields.
+    // Prune before taking ownership so unused payload is neither copied nor buffered.
     projector = sourceType == null ? null : PrunedRowData.of(sourceType, rowType);
     numInputRows = getMetricGroup().counter("numInputRows");
     numOutputBatches = getMetricGroup().counter("numOutputBatches");
@@ -75,7 +73,15 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
     // a deep copy rather than retaining the caller's mutable view.
     boolean wasEmpty = buffer.isEmpty();
     numInputRows.inc();
-    buffer.add(inputSerializer.copy(element.getValue()));
+    if (projector == null) {
+      buffer.add(inputSerializer.copy(element.getValue()));
+    } else {
+      try {
+        buffer.add(inputSerializer.copy(projector.replaceRow(element.getValue())));
+      } finally {
+        projector.clear();
+      }
+    }
     if (buffer.size() >= batchSize) {
       flush();
     } else if (wasEmpty && flushLatencyMs > 0) {
@@ -127,31 +133,11 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
     if (buffer.isEmpty()) {
       return;
     }
-    List<RowData> rows = projector == null ? buffer : projected();
     long started = System.nanoTime();
-    VectorSchemaRoot root = RowDataArrowConverter.write(rows, rowType, allocator, carryRowKind);
+    VectorSchemaRoot root = RowDataArrowConverter.write(buffer, rowType, allocator, carryRowKind);
     conversionTime.inc(System.nanoTime() - started);
     numOutputBatches.inc();
     ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(root));
     buffer.clear();
-  }
-
-  /**
-   * The buffer presented through the pruning projector — a reused, zero-copy view repointed per row.
-   * Safe because the converter reads each row inline (into the Arrow vectors) before requesting the
-   * next, so the shared projector is never observed at two positions at once.
-   */
-  private List<RowData> projected() {
-    return new AbstractList<RowData>() {
-      @Override
-      public RowData get(int index) {
-        return projector.replaceRow(buffer.get(index));
-      }
-
-      @Override
-      public int size() {
-        return buffer.size();
-      }
-    };
   }
 }

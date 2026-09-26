@@ -18,12 +18,10 @@ import org.apache.flink.types.RowKind;
  * field is matched to the source by name (names are unique within a row type), so {@link #getRow}
  * returns a child {@code PrunedRowData} over the source struct rather than the full struct.
  *
- * <p>Used by the entry transpose for nested projection pushdown: the converter, driven by the
- * pruned schema, builds and fills only the Arrow columns the native region actually reads — the
- * unread fields of a wide source row (e.g. a Nexmark {@code bid.channel}/{@code bid.url}) never
- * touch Arrow. Reusable like Flink's {@link org.apache.flink.table.data.utils.ProjectedRowData}
- * (which is top-level only): {@link #replaceRow} repoints it, and the converter reads each row
- * inline before the next.
+ * <p>The entry transpose copies this view with the pruned schema before buffering it, so unread
+ * fields are neither copied nor retained. Reusable like Flink's {@link
+ * org.apache.flink.table.data.utils.ProjectedRowData} (which is top-level only): {@link #replaceRow}
+ * repoints it, and {@link #clear} releases all borrowed rows after the copy.
  */
 public final class PrunedRowData extends tech.streamfusion.compat.ProjectedRowDataCompat {
 
@@ -61,6 +59,14 @@ public final class PrunedRowData extends tech.streamfusion.compat.ProjectedRowDa
   public PrunedRowData replaceRow(RowData row) {
     this.row = row;
     return this;
+  }
+
+  /** Release borrowed parent and nested rows after their projected fields have been consumed. */
+  public void clear() {
+    row = null;
+    for (PrunedRowData child : children) {
+      if (child != null) child.clear();
+    }
   }
 
   @Override

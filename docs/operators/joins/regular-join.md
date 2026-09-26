@@ -35,9 +35,10 @@ Zero-column physical inputs also fall back because the retained-row codec requir
 
 This is a singleton streaming join, not a broadcast or time-bounded join. Without configured
 state TTL it retains both sides indefinitely, as Flink does. It uses the existing native state
-memory budget; it has no separate cardinality cap or spillable candidate-pair buffer. A cross
-product can emit `left_count * right_count` rows, and a residual predicate is evaluated after
-candidate generation. The RocksDB backend does not remove this per-bucket matching cost.
+memory budget; it has no separate state-cardinality cap or spillable candidate-pair buffer. A cross
+product can emit `left_count * right_count` rows. Candidate generation and residual filtering use
+the bounded INNER output chunks described below. The RocksDB backend does not remove the total
+per-bucket matching work.
 Its persistent state also retains whole-bucket values, coalesced at bundle boundaries. A
 per-record layout with complete-bucket hydration reduced write volume but regressed release
 state-microbenchmark throughput, so it was not adopted. See the [backend tradeoff](../../backends/rocksdb.md)
@@ -61,6 +62,25 @@ Flink may decorrelate a null-safe EXISTS/NOT EXISTS query into INNER/outer joins
 Those plans are admitted under the same rules; native coverage is checked on the actual physical
 plan. Differential tests cover STRING, INT/BIGINT, DECIMAL and TIMESTAMP(9), mixed keys,
 residual predicates, duplicate matches and changelog updates/deletes at parallelism 2.
+
+## Bounded INNER output
+
+INNER joins gather at most 4,096 candidate pairs or approximately 8 MiB of estimated decoding and
+filtering work per chunk. The estimate includes both payload rows, offsets, null masks and room
+for the filtered result. A single oversized pair is processed alone only if its reservation fits
+the task budget. Reservations grow before candidate buffers and decoding allocations; budget
+pressure can trigger an earlier flush, and a pair that cannot fit fails with the native memory
+limit exception. These are internal physical chunk limits, not Flink logical mini-batch settings.
+
+Each chunk is filtered and synchronously handed through JNI to the downstream Arrow consumer.
+Immediate input and mini-batch flush use the same streaming output path; they never concatenate
+all matching output into one batch. Candidate reservations are released on error, cancellation
+unwind and completion, while imported output buffers belong to the downstream Arrow allocator.
+Row kinds, duplicate multiplicities, TTL, state layout and checkpoint boundaries are unchanged.
+
+This bounds candidate expansion, not total retained join state or arbitrary residual-UDF scratch
+memory. Input payload encoding and RocksDB bucket hydration remain batch-level operations.
+Outer, SEMI and ANTI joins retain their existing output construction.
 
 ## Mini-batch coalescing
 

@@ -24,6 +24,29 @@ import org.junit.jupiter.api.Test;
 class FlinkRegularJoinSqlHarnessTest {
 
   @Test
+  void hotKeyResidualJoinMatchesHostAcrossOutputChunks() throws Exception {
+    for (String condition : new String[] {"a.v < b.v", "a.v > b.v"}) {
+      NativeParity.assertParity(
+          FlinkRegularJoinSqlHarnessTest::hotKeyEnvironment,
+          "SELECT a.k, a.v, b.v FROM hot_left a JOIN hot_right b ON a.k = b.k AND " + condition);
+    }
+  }
+
+  private static TableEnvironment hotKeyEnvironment() {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    StreamTableEnvironment table = StreamTableEnvironment.create(env);
+    var type = Types.ROW_NAMED(new String[] {"k", "v"}, Types.INT, Types.LONG);
+    Row[] left =
+        java.util.stream.IntStream.range(0, 32).mapToObj(i -> Row.of(1, 100L)).toArray(Row[]::new);
+    Row[] right =
+        java.util.stream.IntStream.range(0, 257).mapToObj(i -> Row.of(1, 10L)).toArray(Row[]::new);
+    table.createTemporaryView("hot_left", fromData(env, type, left));
+    table.createTemporaryView("hot_right", fromData(env, type, right));
+    return table;
+  }
+
+  @Test
   void innerJoinOfAppendStreamsMatchesHost() throws Exception {
     NativeParity.assertParity(
         FlinkRegularJoinSqlHarnessTest::environment,
