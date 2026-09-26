@@ -22,10 +22,8 @@ import org.apache.flink.table.types.logical.RowType;
  * {@code parquet.bloom.filter.enabled} are dead in stock Flink, and ignoring them here is exactly
  * the host behavior.
  *
- * <p>Timestamps gate hard: Flink's default encoding is INT96 ({@code write.int64.timestamp=false}),
- * which the Rust parquet writer cannot produce, and with {@code utc-timezone=false} even INT64
- * values are shifted through the JVM's local timezone — semantics not safely reproducible off-JVM.
- * A table with timestamp columns therefore accelerates only when both flags are explicitly true.
+ * <p>INT96 preserves local-calendar conversion through a batched JVM callback. INT64 requires UTC
+ * encoding; its local-time conversion remains outside native admission.
  */
 final class ParquetSinkTranslator {
 
@@ -158,11 +156,8 @@ final class ParquetSinkTranslator {
           + " count the native writer cannot preserve";
     }
     if (hasTimestamp) {
-      if (!"true".equalsIgnoreCase(options.get("parquet.write.int64.timestamp"))) {
-        return "Flink writes timestamps as INT96 unless parquet.write.int64.timestamp=true, and the"
-            + " native writer cannot produce INT96";
-      }
-      if (!"true".equalsIgnoreCase(options.get("parquet.utc-timezone"))) {
+      if ("true".equalsIgnoreCase(options.get("parquet.write.int64.timestamp"))
+          && !"true".equalsIgnoreCase(options.get("parquet.utc-timezone"))) {
         return "parquet.utc-timezone=false shifts timestamp values through the JVM local timezone,"
             + " which the native writer does not reproduce";
       }
@@ -229,6 +224,14 @@ final class ParquetSinkTranslator {
       Map<String, String> options, HadoopConfigLookup hadoopConfig) {
     Map<String, String> config = new LinkedHashMap<>();
     config.put("schema.shape", tech.streamfusion.compat.FileSinkCompat.parquetSchemaShape());
+    config.put(
+        "timestamp.int96",
+        Boolean.toString(!"true".equalsIgnoreCase(options.get("parquet.write.int64.timestamp"))));
+    config.put(
+        "timestamp.local",
+        Boolean.toString(
+            !"true".equalsIgnoreCase(options.get("parquet.write.int64.timestamp"))
+                && !"true".equalsIgnoreCase(options.get("parquet.utc-timezone"))));
 
     for (String booleanOption :
         List.of("parquet.write.int64.timestamp", "parquet.utc-timezone")) {
@@ -328,7 +331,9 @@ final class ParquetSinkTranslator {
     }
 
     String unit =
-        effectiveValue(options, "parquet.timestamp.time.unit", hadoopConfig, "micros");
+        Boolean.parseBoolean(config.get("timestamp.int96"))
+            ? "micros"
+            : effectiveValue(options, "parquet.timestamp.time.unit", hadoopConfig, "micros");
     switch (unit.toLowerCase(Locale.ROOT)) {
       case "millis":
       case "micros":

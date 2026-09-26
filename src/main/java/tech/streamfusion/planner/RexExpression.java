@@ -455,11 +455,8 @@ final class RexExpression {
           @Override
           public Void visitCall(RexCall call) {
             if (call.getType().getSqlTypeName() == SqlTypeName.VARBINARY
-                && call.getOperator()
-                    instanceof
-                    org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction function
-                && function.getDefinition()
-                    instanceof org.apache.flink.table.functions.ScalarFunction) {
+                && tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator())
+                    != null) {
               count[0]++;
             }
             return super.visitCall(call);
@@ -932,9 +929,7 @@ final class RexExpression {
                     || JsonStringIdentity.containsSensitiveString(operand))) {
       return emitHostExpression(call, true);
     }
-    if (call.getOperator()
-            instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction function
-        && function.getDefinition() instanceof org.apache.flink.table.functions.ScalarFunction) {
+    if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null) {
       return emitUdf(call);
     }
     if (switch (call.getKind()) {
@@ -2454,9 +2449,7 @@ final class RexExpression {
   private static boolean containsDecimalUdf(RexNode node) {
     if (!(node instanceof RexCall call)) return false;
     if (call.getType().getSqlTypeName() == SqlTypeName.DECIMAL
-        && call.getOperator()
-            instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction function
-        && function.getDefinition() instanceof org.apache.flink.table.functions.ScalarFunction) {
+        && tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null) {
       return true;
     }
     return call.getOperands().stream().anyMatch(RexExpression::containsDecimalUdf);
@@ -2464,9 +2457,7 @@ final class RexExpression {
 
   private static boolean containsScalarUdf(RexNode node) {
     if (!(node instanceof RexCall call)) return false;
-    if (call.getOperator()
-            instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction function
-        && function.getDefinition() instanceof org.apache.flink.table.functions.ScalarFunction) {
+    if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null) {
       return true;
     }
     return call.getOperands().stream().anyMatch(RexExpression::containsScalarUdf);
@@ -2925,17 +2916,13 @@ final class RexExpression {
   }
 
   private Method checkedUdfMethod(RexCall call) {
-    org.apache.flink.table.functions.FunctionDefinition def =
-        ((org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction) call.getOperator())
-            .getDefinition();
-    if (!(def instanceof org.apache.flink.table.functions.ScalarFunction)) {
+    var scalar = tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator());
+    if (scalar == null) {
       return rejectUdfMethod("unsupported function/operator: " + call.getOperator().getName());
     }
-    if (def instanceof org.apache.flink.table.functions.SpecializedFunction) {
+    if (scalar instanceof org.apache.flink.table.functions.SpecializedFunction) {
       return rejectUdfMethod("UDF specialization requires Flink's code-generation context");
     }
-    org.apache.flink.table.functions.ScalarFunction scalar =
-        (org.apache.flink.table.functions.ScalarFunction) def;
     SqlTypeName resultType = call.getType().getSqlTypeName();
     if (!rowFusion && resultType == SqlTypeName.VARBINARY && ++binaryUdfCalls > 1) {
       return rejectUdfMethod("multiple binary UDF calls may share mutable result buffers");
@@ -2966,9 +2953,7 @@ final class RexExpression {
   private boolean validateGeneratedExpression(RexNode node) {
     if (!(node instanceof RexCall call)) return true;
     if (!validateHostStringInputs(call)) return false;
-    if (call.getOperator()
-            instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction function
-        && function.getDefinition() instanceof org.apache.flink.table.functions.ScalarFunction
+    if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null
         && checkedUdfMethod(call) == null) {
       return false;
     }
@@ -3007,9 +2992,7 @@ final class RexExpression {
   private boolean emitUdf(RexCall call) {
     Method eval = checkedUdfMethod(call);
     if (eval == null) return false;
-    var scalar = (org.apache.flink.table.functions.ScalarFunction)
-        ((org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction) call.getOperator())
-            .getDefinition();
+    var scalar = tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator());
     if (!claimUdfEvaluation(scalar)) return false;
     int returnCode = udfTypeCode(call.getType());
     List<RexNode> args = call.getOperands();

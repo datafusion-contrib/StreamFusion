@@ -4,6 +4,7 @@ use streamfusion_bridge::prelude::*;
 use streamfusion_bridge::{self as bridge, flink_text, json_string, *};
 streamfusion_bridge::link_allocator!();
 mod files;
+mod int96_writer;
 mod reader;
 #[allow(unused_imports)]
 use files::*;

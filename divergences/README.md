@@ -70,6 +70,8 @@ host — verified by the parity harness.
 - [42 — Ordered grouped values](42-ordered-group-values.md) — Flink NULL, arrival-order, duplicate-retraction and SINGLE_VALUE cardinality contracts within the existing Arrow aggregate.
 - [43 — Retracting window buffers](43-retracting-window-buffers.md) — preserve change signs through window assignment and match Flink's signed partials, NULL counts and group liveness.
 
+- [45 — Parquet INT96 encoding](45-parquet-int96-writer.md) — use released parquet-rs column writers for INT96 leaves and retain Arrow writers for other leaves; a batched JVM conversion preserves Flink’s local calendar semantics.
+
 ## Resolved: early per-operator transposition (historical)
 
 Early on, native operators were substituted individually with Arrow↔RowData transposed at each

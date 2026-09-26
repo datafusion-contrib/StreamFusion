@@ -9,8 +9,10 @@ resolution, and per-scheme quirks (R2 equal part sizes, local temp-file rename) 
 
 ## What we do instead
 
-Only the byte encoding is native. The Rust side uses parquet-rs' standard `ArrowWriter` through a
-bounded one-MiB JNI bridge, plus the batch partition-splitter (Arroyo's `partitioning.rs` shape).
+Only the byte encoding is native. The Rust side uses parquet-rs through a bounded one-MiB JNI
+bridge, plus the batch partition-splitter (Arroyo's `partitioning.rs` shape). Ordinary schemas use
+`ArrowWriter`; INT96 schemas use the hybrid column writer described in
+[45 — Parquet INT96 encoding](45-parquet-int96-writer.md).
 Everything else is Flink's own machinery, reused verbatim:
 `StreamingFileWriter`/`Buckets` for rolling and the pending-file exactly-once commit,
 `RecoverableWriter` streams over Flink's FileSystem plugins for the actual IO, and
@@ -44,7 +46,7 @@ path) remains the theoretical optimum and is tracked as a follow-up issue.
 
 The written files are row-identical and schema-identical to the host's (forced Flink-shaped
 descriptor: minimal fixed-width decimals at every precision, INT_8/INT_16 annotations, TIME_MILLIS,
-INT64 timestamps flagged unadjusted; parquet-mr-matched effective settings: snappy default,
+INT64 timestamps flagged unadjusted or legacy INT96 timestamps; parquet-mr-matched effective settings: snappy default,
 untruncated chunk statistics, byte-bounded row groups, zstd level 3). Byte-level identity is not
 defined for Parquet across writers and is deliberately not chased: `created_by` names the writer,
 dictionary pages are labeled `RLE_DICTIONARY`+`PLAIN` where parquet-mr v1 labels the same layout

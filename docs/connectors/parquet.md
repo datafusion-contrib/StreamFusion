@@ -15,18 +15,19 @@ changelog tailing. ORC uses the same file lifecycle through its separate [ORC mo
 The sink accepts **any filesystem Flink has a plugin for** (`file:`/`s3:`/`gs:`/`abfs:`/`hdfs:`/…).
 The native side only encodes Parquet bytes; Flink's own recoverable output streams do the I/O, so
 filesystem plugins, credentials, exactly-once commit, bucket assignment, file naming, and partition
-commit all remain Flink's own code. Each open Flink part file owns one standard parquet-rs
-`ArrowWriter`. It consumes Arrow batches directly and sends encoded bytes through a reusable,
-bounded one-MiB JNI bridge. StreamFusion does not maintain a separate low-level Parquet writer and
-does not transpose the batches through Java rows before writing them.
+commit all remain Flink's own code. Each open Flink part file owns a parquet-rs writer.
+INT64 files use the standard `ArrowWriter`. INT96 files combine its Arrow column encoders with
+parquet-rs' typed INT96 encoder, preserving nested definition/repetition levels. Both consume
+Arrow batches directly and send encoded bytes through a reusable, bounded one-MiB JNI bridge,
+without transposing the batches through Java rows.
 
 Flink also owns file rolling. Part files roll on checkpoints, configured size, rollover time, or
 inactivity using the normal `sink.rolling-policy.*` options. Size checks observe the bytes already
 drained to Flink's stream, so—as with the stock bulk writer—the visible size advances at completed
 row-group granularity. `BulkWriter.flush()` is intentionally a no-op: the standard Arrow writer
-closes its active row group and writes the footer when Flink finishes the part file. There is no
-custom column-chunk flush path, so the active row group may remain in the writer until its normal
-row-group threshold or file finalization.
+closes its active row group and writes the footer when Flink finishes the part file. The INT96
+adapter also closes row groups at the configured byte threshold, checking every 1,024 input rows.
+Its pending timestamp values and levels count toward that threshold.
 
 Writer admission is whitelist-first. Supported tables translate the effective DDL-over-Hadoop
 configuration for compression, row-group/page/dictionary sizes, dictionary encoding,
@@ -42,8 +43,7 @@ The partitioned SQL parity test compares stock and native footer schemas and row
 
 Falls back to Flink on:
 
-- Timestamp columns without `'parquet.write.int64.timestamp' = 'true'` or
-  `'parquet.utc-timezone' = 'true'` set.
+- INT64 timestamp columns without `'parquet.utc-timezone' = 'true'` set.
 - Unsupported leaf types such as `RAW` and intervals, including when nested.
 - Tables where every column is a partition key, leaving a zero-column file schema.
 - `'auto-compaction' = 'true'`.
@@ -73,7 +73,17 @@ to its configured physical unit and matches Flink's Java `long` overflow at that
 An explicitly selected INT64 nanosecond unit therefore still cannot represent dates outside roughly
 1677–2262; use microseconds for wide SQL dates when six fractional digits suffice. This physical
 format limit does not affect the lossless representation inside operators and checkpoints.
-The existing INT64/precision admission rules still apply.
+With `parquet.write.int64.timestamp=false` (the host default), the sink writes INT96 instead.
+As in Flink, `parquet.timestamp.time.unit` is ignored for INT96, including unrecognized values.
+It preserves the complete millisecond/fraction value as a Julian day and nanoseconds within the
+day, matching Flink's truncating division and remainder even before 1970. INT96 does not narrow
+the value through an i64 epoch-nanosecond intermediate. Nested timestamps, null/empty collections,
+partition projection and sliced batches use the same encoding. For INT96 local-timezone output,
+one JVM callback per timestamp column converts the millisecond/fraction pairs using Flink's
+`TimestampData.toTimestamp()` and the host writer's Julian-day arithmetic. This preserves default
+JVM timezone, daylight-saving gaps/overlaps and the legacy calendar before 1582. The result is a
+column of twelve-byte values, encoded by the native writer without a rowwise table transpose.
+INT64 local-timezone output remains outside admission.
 
 ## Flink 1.18 file schema
 

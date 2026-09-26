@@ -35,6 +35,71 @@ class FlinkParquetSinkSqlHarnessTest {
     assertEquals(sorted(readBack(hostDirectory)), sorted(readBack(nativeDirectory)));
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void int96SqlSinkMatchesHost(boolean utc) throws Exception {
+    Path stock = Files.createTempDirectory("int96-host");
+    Path nativePath = Files.createTempDirectory("int96-native");
+    writeTimestampInsert(stock, false, utc);
+    writeTimestampInsert(nativePath, true, utc);
+    assertEquals(timestampFileRows(stock), timestampFileRows(nativePath));
+  }
+
+  private static void writeTimestampInsert(Path directory, boolean useNative, boolean utc)
+      throws Exception {
+    var env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    env.enableCheckpointing(100);
+    var table = StreamTableEnvironment.create(env);
+    table.createTemporaryView(
+        "timestamps",
+        fromData(
+            env,
+            Types.ROW_NAMED(new String[] {"id", "ts"}, Types.INT, Types.LOCAL_DATE_TIME),
+            Row.of(1, java.time.LocalDateTime.parse("1969-12-31T23:59:59.123456789")),
+            Row.of(2, java.time.LocalDateTime.parse("0001-01-01T00:00:00.999999999")),
+            Row.of(3, (Object) null)),
+        Schema.newBuilder()
+            .column("id", DataTypes.INT())
+            .column("ts", DataTypes.TIMESTAMP(9))
+            .build());
+    table.executeSql(
+        "CREATE TABLE pq (id INT, ts TIMESTAMP(9)) PARTITIONED BY (id) WITH ("
+            + "'connector'='filesystem', 'format'='parquet', 'path'='"
+            + directory.toUri()
+            + "', 'parquet.timestamp.time.unit'='unused-for-int96', 'parquet.utc-timezone'='"
+            + utc
+            + "')");
+    var scan = useNative ? NativePlanner.install(table) : null;
+    table.executeSql("INSERT INTO pq SELECT * FROM timestamps").await();
+    if (useNative)
+      assertTrue(scan.substitutions() > 0, "INT96 sink fell back: " + scan.fallbackReasons());
+  }
+
+  private static List<String> timestampFileRows(Path directory) throws Exception {
+    var rows = new ArrayList<String>();
+    try (var files = Files.walk(directory)) {
+      for (Path file :
+          files
+              .filter(Files::isRegularFile)
+              .filter(f -> f.getFileName().toString().startsWith("part-"))
+              .toList()) {
+        try (var reader =
+            org.apache.parquet.hadoop.ParquetReader.builder(
+                    new org.apache.parquet.hadoop.example.GroupReadSupport(),
+                    new org.apache.hadoop.fs.Path(file.toUri()))
+                .build()) {
+          org.apache.parquet.example.data.Group row;
+          while ((row = reader.read()) != null)
+            rows.add(file.getParent().getFileName() + ":" + row);
+        }
+      }
+    }
+    assertEquals(3, rows.size());
+    rows.sort(String::compareTo);
+    return rows;
+  }
+
   private static void writeInsert(Path directory, boolean useNative) throws Exception {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);

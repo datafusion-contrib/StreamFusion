@@ -147,6 +147,8 @@ struct EncoderConfig {
     enable_dictionary: bool,
     writer_version: parquet::file::properties::WriterVersion,
     timestamp_unit: arrow::datatypes::TimeUnit,
+    int96: bool,
+    local_timestamps: bool,
     schema_shape: SchemaShape,
 }
 
@@ -183,6 +185,8 @@ impl EncoderConfig {
             enable_dictionary: true,
             writer_version: WriterVersion::PARQUET_1_0,
             timestamp_unit: arrow::datatypes::TimeUnit::Microsecond,
+            int96: false,
+            local_timestamps: false,
             schema_shape: SchemaShape::Flink,
         };
         for (key, value) in keys.iter().zip(values) {
@@ -206,6 +210,10 @@ impl EncoderConfig {
                         other => panic!("unsupported parquet writer version {other}"),
                     }
                 }
+                "timestamp.local" => {
+                    config.local_timestamps = value.parse().expect("invalid local timestamp flag")
+                }
+                "timestamp.int96" => config.int96 = value.parse().expect("invalid INT96 flag"),
                 "timestamp.unit" => config.timestamp_unit = parse_timestamp_unit(value),
                 "schema.shape" => {
                     config.schema_shape = match value.as_str() {
@@ -256,6 +264,28 @@ fn parse_timestamp_unit(value: &str) -> arrow::datatypes::TimeUnit {
         "nanos" => arrow::datatypes::TimeUnit::Nanosecond,
         other => panic!("unsupported parquet timestamp unit {other}"),
     }
+}
+
+pub(crate) const INT96_META_KEY: &str = "streamfusion:parquet_int96";
+
+fn int96_field(field: &Field) -> Field {
+    let mut metadata = field.metadata().clone();
+    let data_type = match field.data_type() {
+        data_type if streamfusion_bridge::timestamp::is_timestamp(data_type) => {
+            metadata.insert(INT96_META_KEY.into(), "true".into());
+            DataType::FixedSizeBinary(12)
+        }
+        DataType::Struct(fields) => {
+            DataType::Struct(fields.iter().map(|f| Arc::new(int96_field(f))).collect())
+        }
+        DataType::List(field) => DataType::List(Arc::new(int96_field(field))),
+        DataType::Map(field, sorted) => DataType::Map(Arc::new(int96_field(field)), *sorted),
+        other => other.clone(),
+    };
+    field
+        .clone()
+        .with_data_type(data_type)
+        .with_metadata(metadata)
 }
 
 /// The type a written column takes on: timestamps land in INT64 at the configured unit (or the
@@ -314,10 +344,52 @@ fn write_field(
     source.clone().with_data_type(data_type)
 }
 
+struct LocalTimestampEncoder {
+    vm: jni::JavaVM,
+    class: jni::objects::GlobalRef,
+}
+
+impl LocalTimestampEncoder {
+    fn encode(&self, source: &streamfusion_bridge::timestamp::TimestampColumn) -> Vec<u8> {
+        let mut env = self
+            .vm
+            .get_env()
+            .expect("Parquet writer must run on a JVM thread");
+        env.with_local_frame(4, |env| -> jni::errors::Result<Vec<u8>> {
+            let mut parts = vec![0_i64; source.len() * 2];
+            for row in 0..source.len() {
+                if !source.is_null(row) {
+                    let value = source.value(row).unwrap();
+                    parts[row * 2] = value.millis();
+                    parts[row * 2 + 1] = i64::from(value.nano_of_milli());
+                }
+            }
+            let input =
+                env.new_long_array(parts.len().try_into().expect("timestamp column too large"))?;
+            env.set_long_array_region(&input, 0, &parts)?;
+            let class: &jni::objects::JClass = self.class.as_obj().into();
+            let output = env
+                .call_static_method(
+                    class,
+                    "localInt96",
+                    "([J)[B",
+                    &[jni::objects::JValue::Object(input.as_ref())],
+                )?
+                .l()?;
+            env.convert_byte_array(jni::objects::JByteArray::from(output))
+        })
+        .expect("Flink local INT96 conversion failed")
+    }
+}
+
 /// Converts one column to its write type. Unit narrowing floors the value (Flink's TimestampData
 /// keeps a non-negative sub-millisecond part, so its arithmetic floors too); a plain `/` would
 /// round pre-1970 values toward zero and diverge from the host by one unit.
-fn convert_column(column: &ArrayRef, target: &DataType) -> ArrayRef {
+fn convert_column_with_timestamp(
+    column: &ArrayRef,
+    target: &DataType,
+    local: Option<&LocalTimestampEncoder>,
+) -> ArrayRef {
     use arrow::array::{
         ListArray, MapArray, StructArray, Time32SecondArray, Time64MicrosecondArray,
         Time64NanosecondArray,
@@ -329,6 +401,36 @@ fn convert_column(column: &ArrayRef, target: &DataType) -> ArrayRef {
         return column.clone();
     }
     match (column.data_type(), target) {
+        (source, DataType::FixedSizeBinary(12))
+            if streamfusion_bridge::timestamp::is_timestamp(source) =>
+        {
+            let source =
+                streamfusion_bridge::timestamp::TimestampColumn::try_new(column.as_ref()).unwrap();
+            let mut builder = arrow::array::FixedSizeBinaryBuilder::with_capacity(source.len(), 12);
+            let local_bytes = local.map(|encoder| encoder.encode(&source));
+            for row in 0..source.len() {
+                if source.is_null(row) {
+                    builder.append_null();
+                    continue;
+                }
+                if let Some(bytes) = &local_bytes {
+                    builder
+                        .append_value(&bytes[row * 12..(row + 1) * 12])
+                        .unwrap();
+                    continue;
+                }
+                let value = source.value(row).unwrap();
+                // Java division/remainder truncate toward zero, including dates before 1970.
+                let julian = (value.millis() / 86_400_000 + 2_440_588) as i32;
+                let nanos =
+                    (value.millis() % 86_400_000) * 1_000_000 + i64::from(value.nano_of_milli());
+                let mut bytes = [0; 12];
+                bytes[..8].copy_from_slice(&nanos.to_le_bytes());
+                bytes[8..].copy_from_slice(&julian.to_le_bytes());
+                builder.append_value(bytes).unwrap();
+            }
+            Arc::new(builder.finish())
+        }
         (DataType::FixedSizeBinary(_), DataType::Binary) => {
             arrow::compute::cast(column, target).expect("failed to convert fixed-size binary")
         }
@@ -341,7 +443,9 @@ fn convert_column(column: &ArrayRef, target: &DataType) -> ArrayRef {
                 .columns()
                 .iter()
                 .zip(target_fields.iter())
-                .map(|(child, field)| convert_column(child, field.data_type()))
+                .map(|(child, field)| {
+                    convert_column_with_timestamp(child, field.data_type(), local)
+                })
                 .collect();
             Arc::new(StructArray::new(
                 target_fields.clone(),
@@ -357,7 +461,7 @@ fn convert_column(column: &ArrayRef, target: &DataType) -> ArrayRef {
             Arc::new(ListArray::new(
                 target_field.clone(),
                 source.offsets().clone(),
-                convert_column(source.values(), target_field.data_type()),
+                convert_column_with_timestamp(source.values(), target_field.data_type(), local),
                 source.nulls().cloned(),
             ))
         }
@@ -370,9 +474,10 @@ fn convert_column(column: &ArrayRef, target: &DataType) -> ArrayRef {
                 DataType::Struct(fields) => fields,
                 other => panic!("map entry field was not a struct: {other:?}"),
             };
-            let entries = convert_column(
+            let entries = convert_column_with_timestamp(
                 &(Arc::new(source.entries().clone()) as ArrayRef),
                 target_field.data_type(),
+                local,
             );
             let entries = entries
                 .as_any()
@@ -495,6 +600,9 @@ fn host_parquet_type(field: &Field, shape: SchemaShape) -> parquet::schema::type
         Repetition::REQUIRED
     };
     let builder = match data_type {
+        DataType::FixedSizeBinary(12) if field.metadata().contains_key(INT96_META_KEY) => {
+            ParquetType::primitive_type_builder(field.name(), PhysicalType::INT96)
+        }
         DataType::Boolean => {
             ParquetType::primitive_type_builder(field.name(), PhysicalType::BOOLEAN)
         }
@@ -672,10 +780,50 @@ fn with_field_id(
     }
 }
 
-/// Encodes Arrow batches through parquet-rs' standard Arrow writer. The output still belongs to
+enum EncoderWriter<W: std::io::Write + Send> {
+    Arrow(parquet::arrow::ArrowWriter<W>),
+    Int96(crate::int96_writer::Int96Writer<W>),
+}
+
+impl<W: std::io::Write + Send> EncoderWriter<W> {
+    fn write(&mut self, batch: &RecordBatch) -> parquet::errors::Result<()> {
+        match self {
+            Self::Arrow(w) => w.write(batch),
+            Self::Int96(w) => w.write(batch),
+        }
+    }
+    fn bytes_written(&self) -> usize {
+        match self {
+            Self::Arrow(w) => w.bytes_written(),
+            Self::Int96(w) => w.bytes_written(),
+        }
+    }
+    fn in_progress_size(&self) -> usize {
+        match self {
+            Self::Arrow(w) => w.in_progress_size(),
+            Self::Int96(w) => w.in_progress_size(),
+        }
+    }
+    fn finish(&mut self) -> parquet::errors::Result<()> {
+        match self {
+            Self::Arrow(w) => w.finish().map(|_| ()),
+            Self::Int96(w) => w.finish(),
+        }
+    }
+    fn inner_mut(&mut self) -> &mut W {
+        match self {
+            Self::Arrow(w) => w.inner_mut(),
+            Self::Int96(w) => w.inner_mut(),
+        }
+    }
+}
+
+/// Encodes Arrow batches through parquet-rs' Arrow or INT96 column writers. Output belongs to
 /// Flink: production supplies a [`JniParquetOutput`] backed by the current Java-owned part file.
 pub(crate) struct ParquetEncoder<W: std::io::Write + Send> {
-    writer: Option<parquet::arrow::ArrowWriter<W>>,
+    writer: Option<EncoderWriter<W>>,
+    local_timestamps: bool,
+    timestamp_converter: Option<LocalTimestampEncoder>,
     input_schema: SchemaRef,
     changelog_input_schema: Option<SchemaRef>,
     write_schema: SchemaRef,
@@ -702,11 +850,16 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
         let data_fields = projection
             .iter()
             .map(|&index| {
-                write_field(
+                let field = write_field(
                     full_schema.field(index),
                     config.timestamp_unit,
                     config.schema_shape,
-                )
+                );
+                if config.int96 {
+                    int96_field(&field)
+                } else {
+                    field
+                }
             })
             .collect::<Vec<_>>();
         let write_fields: Vec<Field> = if changelog {
@@ -754,22 +907,41 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
             )
             .build()
             .expect("failed to build parquet schema");
-        let descriptor = parquet::schema::types::SchemaDescriptor::new(Arc::new(root));
-
-        let options = parquet::arrow::arrow_writer::ArrowWriterOptions::new()
-            .with_properties(config.writer_properties())
-            .with_parquet_schema(descriptor)
-            // Flink files do not embed Arrow's schema metadata. The Parquet descriptor above is
-            // deliberately the reader-visible schema, including the changelog string column.
-            .with_skip_arrow_metadata(true);
-        let writer = parquet::arrow::ArrowWriter::try_new_with_options(
-            output,
-            write_schema.clone(),
-            options,
-        )
-        .expect("failed to create parquet encoder");
+        let root = Arc::new(root);
+        let has_int96 = parquet::schema::types::SchemaDescriptor::new(root.clone())
+            .columns()
+            .iter()
+            .any(|column| column.physical_type() == parquet::basic::Type::INT96);
+        let writer = if has_int96 {
+            EncoderWriter::Int96(
+                crate::int96_writer::Int96Writer::new(
+                    output,
+                    write_schema.clone(),
+                    root,
+                    config.writer_properties(),
+                    config.block_size,
+                )
+                .expect("failed to create INT96 encoder"),
+            )
+        } else {
+            let descriptor = parquet::schema::types::SchemaDescriptor::new(root);
+            let options = parquet::arrow::arrow_writer::ArrowWriterOptions::new()
+                .with_properties(config.writer_properties())
+                .with_parquet_schema(descriptor)
+                .with_skip_arrow_metadata(true);
+            EncoderWriter::Arrow(
+                parquet::arrow::ArrowWriter::try_new_with_options(
+                    output,
+                    write_schema.clone(),
+                    options,
+                )
+                .expect("failed to create parquet encoder"),
+            )
+        };
         ParquetEncoder {
             writer: Some(writer),
+            local_timestamps: config.local_timestamps,
+            timestamp_converter: None,
             input_schema,
             changelog_input_schema,
             write_schema,
@@ -800,6 +972,10 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
     }
 
     pub(crate) fn write(&mut self, batch: &RecordBatch) {
+        assert!(
+            !self.local_timestamps || self.timestamp_converter.is_some(),
+            "local INT96 requires the host converter"
+        );
         let mut columns = Vec::with_capacity(self.write_schema.fields().len());
         if self.changelog {
             columns.push(parquet_row_kinds(
@@ -816,7 +992,13 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
                         .iter()
                         .skip(usize::from(self.changelog)),
                 )
-                .map(|(&index, field)| convert_column(batch.column(index), field.data_type())),
+                .map(|(&index, field)| {
+                    convert_column_with_timestamp(
+                        batch.column(index),
+                        field.data_type(),
+                        self.timestamp_converter.as_ref(),
+                    )
+                }),
         );
         let batch = RecordBatch::try_new(self.write_schema.clone(), columns)
             .expect("write batch did not match the write schema");
@@ -925,7 +1107,7 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_nativeBuildV
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_createParquetEncoder<'local>(
     env: JNIEnv<'local>,
-    _class: JClass<'local>,
+    class: JClass<'local>,
     schema_address: jlong,
     partition_columns: JIntArray<'local>,
     config_keys: JObjectArray<'local>,
@@ -941,14 +1123,21 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_createParque
         let values = required_strings(&mut env, &config_values);
         let output = JniParquetOutput::new(&mut env, output, chunk)
             .expect("failed to create parquet output bridge");
-        into_handle(ParquetEncoder::new(
+        let mut encoder = ParquetEncoder::new(
             output,
             schema,
             &partition_columns,
             &keys,
             &values,
             changelog != 0,
-        ))
+        );
+        if encoder.local_timestamps {
+            encoder.timestamp_converter = Some(LocalTimestampEncoder {
+                vm: env.get_java_vm().expect("JVM"),
+                class: env.new_global_ref(class).expect("Parquet defining class"),
+            });
+        }
+        into_handle(encoder)
     })
 }
 
@@ -1128,6 +1317,60 @@ mod parquet_encoder_tests {
             file.extend_from_slice(&chunk[..n]);
         }
         file
+    }
+
+    #[test]
+    fn int96_mixed_columns_preserve_nested_levels_and_multiple_row_groups() {
+        use arrow::array::{ListArray, StructArray, TimestampNanosecondArray};
+        use arrow::buffer::{NullBuffer, OffsetBuffer};
+        let ts = Arc::new(Field::new(
+            "element",
+            DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None),
+            true,
+        ));
+        let list_field = Arc::new(Field::new("times", DataType::List(ts.clone()), true));
+        let timestamps: ArrayRef = Arc::new(TimestampNanosecondArray::from(vec![
+            Some(123456789),
+            None,
+            Some(-1),
+        ]));
+        let list: ArrayRef = Arc::new(ListArray::new(
+            ts,
+            OffsetBuffer::new(vec![0, 0, 0, 3].into()),
+            timestamps,
+            Some(NullBuffer::from(vec![false, true, true])),
+        ));
+        let fields = vec![list_field].into();
+        let column: ArrayRef = Arc::new(StructArray::new(fields, vec![list], None));
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("nested", column.data_type().clone(), true),
+            Field::new("id", DataType::Int32, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![column, Arc::new(Int32Array::from(vec![1, 2, 3]))],
+        )
+        .unwrap();
+        let (actual, metadata) = read_back(encode(
+            schema,
+            &[],
+            &[("timestamp.int96", "true"), ("block.size", "1")],
+            &[batch.clone(), batch.clone()],
+        ));
+        assert_eq!(metadata.num_row_groups(), 2);
+        assert_eq!(
+            metadata
+                .file_metadata()
+                .schema_descr()
+                .column(0)
+                .physical_type(),
+            PhysicalType::INT96
+        );
+        assert_eq!(actual.iter().map(RecordBatch::num_rows).sum::<usize>(), 6);
+        let expected =
+            arrow::compute::concat_batches(&batch.schema(), &[batch.clone(), batch]).unwrap();
+        let actual = arrow::compute::concat_batches(&expected.schema(), &actual).unwrap();
+        assert_eq!(actual, expected);
     }
 
     fn read_back(file: Vec<u8>) -> (Vec<RecordBatch>, parquet::file::metadata::ParquetMetaData) {

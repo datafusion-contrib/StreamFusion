@@ -10,6 +10,18 @@ import org.apache.flink.table.planner.plan.logical.WindowSpec;
 public final class FlinkCompat {
   private FlinkCompat() {}
 
+  public static org.apache.flink.table.functions.ScalarFunction scalarFunction(
+      org.apache.calcite.sql.SqlOperator operator) {
+    if (operator
+            instanceof
+            org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction function
+        && function.getDefinition()
+            instanceof org.apache.flink.table.functions.ScalarFunction scalar) {
+      return scalar;
+    }
+    return null;
+  }
+
   public static final boolean GLOBAL_TTL_EMITS_UNCHANGED = true;
 
   public static int groupWindowTimeColumn(
