@@ -145,13 +145,18 @@ operators retain the RocksDB delegate, and native incremental checkpoints retain
 RocksDB path. The projection's snapshot owns its copied state before live entries are cleared.
 It temporarily consumes JVM heap proportional to the canonical serialized state.
 
-For 1.18 native stateful jobs use StreamFusion's native memory or native RocksDB backend. A stock
-RocksDB delegate cannot carry StreamFusion's synthetic canonical key-group keys on this line.
-The planner keeps keyed operators on Flink for that backend and other unverified custom backends,
-with an explicit fallback reason; stateless operators remain eligible.
+For 1.18 native stateful jobs, stock RocksDB selections are transparently replaced by StreamFusion's
+native RocksDB backend during native planning. Programmatic embedded and legacy instances retain
+their configured host delegate and checkpoint-storage semantics. Custom backend subclasses,
+RocksDB options factories and memory factories remain explicit keyed-SQL fallbacks. The version
+adapter reads Flink's private resolved-option snapshot because its public API has no export for
+previously configured options; inaccessible or changed fields cause a fallback, never defaulted
+options. The isolated planner resolves RocksDB option classes from Flink's host classloader,
+matching the retained backend. Stateless operators remain eligible.
 The full real-cluster recovery and cross-line upgrade matrix remains tracked in the issues above.
 
-Flink 1.18's changelog state wrapper remains a planning fallback for keyed native operators,
+Flink's changelog state wrapper remains unsupported on both 1.18 and 2.2 and is a planning
+fallback for keyed native operators,
 even when it wraps heap state. Its log replay recomputes key groups from serialized keys, which
 does not preserve StreamFusion's explicit canonical partition/group pairing. Stateless native
 operators remain admitted. Keep `state.changelog.enabled=false` for native keyed execution;
@@ -159,6 +164,6 @@ the upstream suite retains Flink's randomization and asserts this fallback when 
 
 The 1.18 state admission check recognizes the final StreamFusion RocksDB backend across the
 host/planner classloader boundary. A matching backend loaded by the host remains eligible for
-native keyed operators; stock RocksDB and changelog-state exclusions still apply. The loader
+native keyed operators; custom-backend and changelog-state exclusions still apply. The loader
 regression creates the backend through the normal host configuration before checking the native
 aggregate plan, matching image submission rather than a single-classloader unit fixture.

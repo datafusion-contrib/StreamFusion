@@ -179,6 +179,7 @@ def main() -> int:
     parser.add_argument("--contracts", type=pathlib.Path, default=CONTRACT_FILE)
     parser.add_argument("--require-all-contracts", action="store_true")
     parser.add_argument("--require-contract-prefix", action="append", default=[])
+    parser.add_argument("--require-contract-classes", type=pathlib.Path)
     parser.add_argument("--require-test", action="append", default=[])
     parser.add_argument("--require-test-class", action="append", default=[])
     parser.add_argument("--require-test-method", action="append", default=[])
@@ -280,6 +281,9 @@ def main() -> int:
         args.native_reports, executed, contracts, audit["execution_evidence"]
     )
     required = set(contracts) if args.require_all_contracts else set()
+    if args.require_contract_classes:
+        classes = set(args.require_contract_classes.read_text().splitlines())
+        required.update(test for test in contracts if test.split("#", 1)[0] in classes)
     for prefix in args.require_contract_prefix:
         matching = {test for test in contracts if test.startswith(prefix)}
         if not matching:

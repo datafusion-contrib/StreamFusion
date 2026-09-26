@@ -53,6 +53,20 @@ class FlinkLineSelectionTest(unittest.TestCase):
                 self.assertIn(diagnostic, result.stderr)
                 self.assertFalse(root.exists())
 
+    def test_invalid_shard_selection_fails_before_building(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "suite"
+            for mode, shard, selector in (("runtime", "0", ""), ("state", "1", ""),
+                                          ("runtime", "1", "CalcITCase")):
+                result = subprocess.run(
+                    ["bash", str(RUNNER), mode], capture_output=True, text=True,
+                    env={**os.environ, "FLINK_SUITE_ROOT": str(root), "FLINK_SUITE_SHARD": shard,
+                         "FLINK_SUITE_TEST": selector},
+                )
+                self.assertEqual(2, result.returncode, result.stderr)
+                self.assertIn("FLINK_SUITE_SHARD", result.stderr)
+                self.assertFalse(root.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

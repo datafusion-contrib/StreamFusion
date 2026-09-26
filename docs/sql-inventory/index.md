@@ -31,6 +31,12 @@ Use the suite filter to inspect runtime and connector corpora separately. The pr
 | runtime | 1.18 | 5,661 | 1,342 | 1,834 | 2,485 | 25 | 0 |
 | runtime | 2.2 | 8,571 | 3,090 | 2,822 | 2,659 | 48 | 0 |
 
+The checked-in observations predate transparent stock RocksDB selection on 1.18 and the explicit
+2.2 changelog-state admission guard. Their labels remain evidence of those recorded runs. In
+particular, the 805 recorded 1.18 backend blockers include 234 stock-RocksDB cases and 571
+changelog-state cases; these are invocation counts, not distinct SQL features. Re-run the unchanged
+suites to measure the new coverage; do not relabel historical observations as newly accelerated.
+
 ## Streaming coverage targets
 
 Counts are passing test invocations, including parameter variants; the same missing feature can affect many cases. Categories overlap when a case has several blockers.

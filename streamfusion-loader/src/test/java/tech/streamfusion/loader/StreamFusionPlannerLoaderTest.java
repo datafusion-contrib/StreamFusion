@@ -127,13 +127,19 @@ class StreamFusionPlannerLoaderTest {
     assertEquals(List.of(6, 8, 10), collectInts(tableEnvironment.executeSql(sql)));
   }
 
-  @Test
-  void installsNativeStatefulPlannerWithConfiguredHostBackend() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"rocksdb", "tech.streamfusion.state.RocksDBNativeStateBackendFactory"})
+  void installsNativeStatefulPlannerWithConfiguredHostBackend(String backend) throws Exception {
+    assertEquals(
+        Class.forName("org.rocksdb.CompressionType"),
+        Class.forName(
+            "org.rocksdb.CompressionType",
+            false,
+            PlannerModule.getInstance().getSubmoduleClassLoader()));
     org.apache.flink.configuration.Configuration configuration =
         new org.apache.flink.configuration.Configuration();
     configuration.set(
-        org.apache.flink.configuration.StateBackendOptions.STATE_BACKEND,
-        "tech.streamfusion.state.RocksDBNativeStateBackendFactory");
+        org.apache.flink.configuration.StateBackendOptions.STATE_BACKEND, backend);
     TableEnvironment table =
         TableEnvironment.create(
             EnvironmentSettings.newInstance()

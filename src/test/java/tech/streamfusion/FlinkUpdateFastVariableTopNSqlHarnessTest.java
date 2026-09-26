@@ -92,7 +92,8 @@ class FlinkUpdateFastVariableTopNSqlHarnessTest {
     NativeParity.assertFallbackReasonContains(
         () -> {
           var table = environment(false);
-          table.getConfig().setIdleStateRetention(java.time.Duration.ofSeconds(1));
+          // Verify TTL admission without expiring rows at different wall times in the two jobs.
+          table.getConfig().setIdleStateRetention(java.time.Duration.ofHours(1));
           return table;
         },
         query(bound, true, false),

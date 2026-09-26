@@ -16,20 +16,27 @@ import org.apache.flink.runtime.state.ttl.TtlTimeProvider;
 public abstract class FlinkStateBackendCompat implements StateBackend {
   protected final StateBackend delegate;
 
-  public static String unsupportedNativeStateReason(
+  public static String prepareNativeStateBackend(
       org.apache.flink.streaming.api.environment.StreamExecutionEnvironment environment,
       ReadableConfig tableConfig) {
+    boolean configuredChangelog =
+        tableConfig
+            .getOptional(org.apache.flink.configuration.StateChangelogOptions.ENABLE_STATE_CHANGE_LOG)
+            .orElse(false);
     boolean changelog =
         environment == null
-            ? tableConfig
-                .getOptional(
-                    org.apache.flink.configuration.StateChangelogOptions.ENABLE_STATE_CHANGE_LOG)
-                .orElse(false)
-            : environment.isChangelogStateBackendEnabled()
-                == org.apache.flink.util.TernaryBoolean.TRUE;
+            ? configuredChangelog
+            : environment.isChangelogStateBackendEnabled().getOrDefault(configuredChangelog);
+    if (environment != null && environment.getStateBackend() != null) {
+      changelog |=
+          environment.getStateBackend().getClass().getName()
+              .equals("org.apache.flink.state.changelog.ChangelogStateBackend");
+    }
     if (changelog) {
       return "state backend: Flink 1.18 changelog state is not verified for native keyed state";
     }
+    String replacementFailure = RocksDBBackendSelection.install(environment, tableConfig);
+    if (replacementFailure != null) return replacementFailure;
     StateBackend backend = environment == null ? null : environment.getStateBackend();
     if (backend instanceof org.apache.flink.runtime.state.hashmap.HashMapStateBackend
         || backend instanceof org.apache.flink.runtime.state.memory.MemoryStateBackend
@@ -64,8 +71,12 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
         + " RocksDB backend";
   }
 
-  protected FlinkStateBackendCompat(ReadableConfig config, ClassLoader classLoader) {
-    delegate = new EmbeddedRocksDBStateBackend().configure(config, classLoader);
+  protected static StateBackend configuredDelegate(ReadableConfig config, ClassLoader classLoader) {
+    return new EmbeddedRocksDBStateBackend().configure(config, classLoader);
+  }
+
+  protected FlinkStateBackendCompat(StateBackend delegate) {
+    this.delegate = delegate;
   }
 
   protected abstract <K> CheckpointableKeyedStateBackend<K> createNativeKeyedBackend(

@@ -110,6 +110,10 @@ A controlled-clock oracle exposed different retained rows after checkpoint and e
 combination is not admitted until those clocks match. The remaining work is tracked in
 [#104](https://github.com/datafusion-contrib/StreamFusion/issues/104).
 
+The SQL fallback check uses a one-hour positive TTL so independent host/native-enabled jobs do
+not compare rows that expired at different wall-clock times. Expiry and checkpoint clock semantics
+are checked by the controlled-clock operator tests.
+
 With mini-batching, independently changing retracting or update-fast bounds require input whose per-record order
 is preserved: changelog sources through projections, filters, exchanges and batch markers qualify.
 Upstream aggregates or other stateful operators fall back because their bundle emission order can

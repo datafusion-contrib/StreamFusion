@@ -8,14 +8,28 @@ import org.apache.flink.state.rocksdb.EmbeddedRocksDBStateBackend;
 public abstract class FlinkStateBackendCompat implements StateBackend {
   protected final StateBackend delegate;
 
-  public static String unsupportedNativeStateReason(
+  public static String prepareNativeStateBackend(
       org.apache.flink.streaming.api.environment.StreamExecutionEnvironment environment,
       ReadableConfig tableConfig) {
-    return null;
+    boolean configuredChangelog =
+        tableConfig
+            .getOptional(org.apache.flink.configuration.StateChangelogOptions.ENABLE_STATE_CHANGE_LOG)
+            .orElse(false);
+    boolean changelog =
+        environment == null
+            ? configuredChangelog
+            : environment.isChangelogStateBackendEnabled().getOrDefault(configuredChangelog);
+    return changelog
+        ? "state backend: Flink 2.2 changelog state is not verified for native keyed state"
+        : null;
   }
 
-  protected FlinkStateBackendCompat(ReadableConfig config, ClassLoader classLoader) {
-    delegate = new EmbeddedRocksDBStateBackend().configure(config, classLoader);
+  protected static StateBackend configuredDelegate(ReadableConfig config, ClassLoader classLoader) {
+    return new EmbeddedRocksDBStateBackend().configure(config, classLoader);
+  }
+
+  protected FlinkStateBackendCompat(StateBackend delegate) {
+    this.delegate = delegate;
   }
 
   protected abstract <K> CheckpointableKeyedStateBackend<K> createNativeKeyedBackend(

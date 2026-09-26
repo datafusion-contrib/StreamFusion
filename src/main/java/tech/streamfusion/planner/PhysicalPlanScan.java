@@ -116,15 +116,16 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     operatorTypes.clear();
     fallbackReasons.clear();
     substitutions = 0;
-    keyedStateUnsupportedReason =
-        tech.streamfusion.compat.FlinkStateBackendCompat.unsupportedNativeStateReason(
-            executionEnvironment, ShortcutUtils.unwrapTableConfig(roots.get(0)));
+    keyedStateUnsupportedReason = null;
     roots.forEach(this::record);
     // Master switch: with native acceleration off, substitute nothing — the query runs on the host.
     if (!NativeConfig.nativeEnabled()) {
       LOG.info("StreamFusion native acceleration is disabled; the plan runs on Flink");
       return roots;
     }
+    keyedStateUnsupportedReason =
+        tech.streamfusion.compat.FlinkStateBackendCompat.prepareNativeStateBackend(
+            executionEnvironment, ShortcutUtils.unwrapTableConfig(roots.get(0)));
     if (roots.stream().anyMatch(PhysicalPlanScan::deltaJoinForceWouldReject)) {
       recordFallback(
           "delta join: table.optimizer.delta-join.strategy is FORCE but this optimizer block"

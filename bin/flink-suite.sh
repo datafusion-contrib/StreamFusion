@@ -61,6 +61,16 @@ readonly UNSHADED_BRIDGE_POM="${SUITE_ROOT}/flink-table-calcite-bridge-${FLINK_V
 readonly UNSHADED_SQL_PARSER_JAR="${SUITE_ROOT}/flink-sql-parser-${FLINK_VERSION}-unshaded.jar"
 readonly UNSHADED_SQL_PARSER_POM="${SUITE_ROOT}/flink-sql-parser-${FLINK_VERSION}-effective.pom"
 readonly SUITE_MODE="${1:-runtime}"
+if [[ -n "${FLINK_SUITE_SHARD:-}" ]]; then
+  case "${FLINK_SUITE_SHARD}" in
+    1|2|3|4) ;;
+    *) echo "FLINK_SUITE_SHARD must be 1, 2, 3 or 4." >&2; exit 2 ;;
+  esac
+  if [[ "${SUITE_MODE}" != "runtime" || -n "${FLINK_SUITE_TEST:-}" ]]; then
+    echo "FLINK_SUITE_SHARD requires a full runtime suite, without FLINK_SUITE_TEST." >&2
+    exit 2
+  fi
+fi
 CONTRACT_SUFFIX="${STREAMFUSION_ARTIFACT_SUFFIX}"
 NATIVE_STATE_SUITE=false
 if [[ "${SUITE_MODE}" == "state" ]]; then NATIVE_STATE_SUITE=true; fi
@@ -100,6 +110,10 @@ if [[ -n "${FLINK_SUITE_TEST:-}" ]]; then
 fi
 
 case "${SUITE_MODE}" in
+  prepare)
+    TEST_MODULES="flink-table/flink-table-planner"
+    FORMAT_COMPILE_MODULES="${FORMAT_MODULES},${PARQUET_MODULE},${ORC_MODULE}"
+    ;;
   config)
     printf '%s\n' "flink.version=${FLINK_VERSION}" "flink.line=${FLINK_LINE}" \
       "kafka.version=${KAFKA_CONNECTOR_VERSION}" "kafka.tag=${KAFKA_CONNECTOR_TAG}" \
@@ -198,7 +212,7 @@ case "${SUITE_MODE}" in
     exit $?
     ;;
   *)
-    echo "Usage: $0 [config|runtime|diagnostic|state|formats|parquet|orc|kafka|paimon|delta|all]" >&2
+    echo "Usage: $0 [config|prepare|runtime|diagnostic|state|formats|parquet|orc|kafka|paimon|delta|all]" >&2
     exit 2
     ;;
 esac
@@ -260,7 +274,7 @@ if [[ "${SUITE_MODE}" == "delta" ]]; then
   fi
 fi
 
-if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" == "true" ]]; then
+if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" == "true" || "${FLINK_SUITE_REUSE_COMMON_BUILD:-false}" == "true" ]]; then
   for required in "${AGENT_JAR}" "${CLASSPATH_FILE}" "${UNSHADED_PLANNER_JAR}"; do
     if [[ ! -f "${required}" ]]; then
       echo "Cannot reuse the suite build; missing artifact: ${required}" >&2
@@ -284,18 +298,18 @@ if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" == "true" ]]; then
     echo "Cannot reuse the ORC-suite build; run bin/flink-suite.sh orc once without FLINK_SUITE_REUSE_BUILD." >&2
     exit 2
   fi
-  if [[ "${SUITE_MODE}" == "kafka" ]] \
+  if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" == "true" && "${SUITE_MODE}" == "kafka" ]] \
       && [[ ! -f "${KAFKA_CONNECTOR_ROOT}/flink-connector-kafka/target/test-classes/org/apache/flink/streaming/connectors/kafka/table/KafkaTableITCase.class" ]]; then
     echo "Cannot reuse the Kafka-suite build; run bin/flink-suite.sh kafka once without FLINK_SUITE_REUSE_BUILD." >&2
     exit 2
   fi
-  if [[ "${SUITE_MODE}" == "paimon" ]] \
+  if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" == "true" && "${SUITE_MODE}" == "paimon" ]] \
       && { [[ ! -f "${PAIMON_ROOT}/${PAIMON_MODULE}/target/test-classes/org/apache/paimon/flink/ReadWriteTableITCase.class" ]] \
         || ! grep -q 'streamfusion-paimon' "${CLASSPATH_FILE}"; }; then
     echo "Cannot reuse the Paimon-suite build; run bin/flink-suite.sh paimon once without FLINK_SUITE_REUSE_BUILD." >&2
     exit 2
   fi
-  if [[ "${SUITE_MODE}" == "paimon" && "${FLINK_LINE}" == "1.18" ]] \
+  if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" == "true" && "${SUITE_MODE}" == "paimon" && "${FLINK_LINE}" == "1.18" ]] \
       && [[ ! -f "${PAIMON_ROOT}/${PAIMON_LINE_MODULE}/target/test-classes/org/apache/paimon/flink/procedure/ProcedurePositionalArgumentsITCase.class" ]]; then
     echo "Cannot reuse the Paimon 1.18 suite before its version-specific tests have been compiled." >&2
     exit 2
@@ -362,7 +376,7 @@ else
   echo "Building and installing StreamFusion and its supported connector/format modules against the source-suite planner..."
   streamfusion_profiles="paimon"
   streamfusion_modules="streamfusion-core,streamfusion-kafka,streamfusion-json,streamfusion-csv,streamfusion-raw,streamfusion-avro,streamfusion-avro-confluent-registry,streamfusion-protobuf,streamfusion-parquet,streamfusion-orc,streamfusion-paimon"
-  if [[ "${SUITE_MODE}" == "delta" ]]; then
+  if [[ "${SUITE_MODE}" == "delta" || ( "${SUITE_MODE}" == "prepare" && "${FLINK_LINE}" == "2.2" ) ]]; then
     streamfusion_profiles+=",delta"
     streamfusion_modules+=",streamfusion-delta"
   fi
@@ -376,7 +390,7 @@ else
     -f "${REPO_ROOT}/dev/flink-suite/classpath-pom.xml" "${STREAMFUSION_LINE_PROFILES[@]}" \
     dependency:build-classpath -Dmdep.outputFile="${CLASSPATH_FILE}" || exit $?
 
-  if [[ "${SUITE_MODE}" == "formats" || "${SUITE_MODE}" == "parquet" || "${SUITE_MODE}" == "orc" ]]; then
+  if [[ -n "${FORMAT_COMPILE_MODULES}" ]]; then
     echo "Compiling the untouched upstream Flink format integration tests..."
     flink_mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
       -Dmaven.repo.local="${SUITE_MAVEN_REPO}" -Didea.version=streamfusion-suite \
@@ -384,6 +398,9 @@ else
       -am -Dfast -DskipTests process-test-classes || exit $?
   fi
 
+fi
+
+if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" != "true" ]]; then
   if [[ "${SUITE_MODE}" == "kafka" ]]; then
     echo "Compiling the untouched upstream Kafka connector SQL integration tests..."
     kafka_mvn -B -ntp -s "${MAVEN_SETTINGS}" \
@@ -406,6 +423,21 @@ else
   fi
 fi
 python3 "${REPO_ROOT}/bin/check-flink-suite-classpath.py" "${CLASSPATH_FILE}" "${FLINK_LINE}" || exit $?
+if [[ "${SUITE_MODE}" == "prepare" ]]; then
+  python3 "${REPO_ROOT}/dev/flink-suite/runtime_shards.py" plan \
+    --classes "${FLINK_ROOT}/flink-table/flink-table-planner/target/test-classes" \
+    --baseline "${REPO_ROOT}/dev/flink-suite/runtime-durations-${FLINK_LINE}.tsv" \
+    --contracts "${CONTRACT_FILE}" \
+    --output "${SUITE_ROOT}/runtime-shards.json" || exit $?
+  echo "Shared Flink ${FLINK_VERSION} and StreamFusion build is ready."
+  exit 0
+fi
+
+if [[ -n "${FLINK_SUITE_SHARD:-}" ]]; then
+  shard_selector="$(python3 "${REPO_ROOT}/dev/flink-suite/runtime_shards.py" select \
+    --plan "${SUITE_ROOT}/runtime-shards.json" --shard "${FLINK_SUITE_SHARD}")" || exit $?
+  TEST_SELECTOR_ARGS=("-Dtest=${shard_selector}")
+fi
 STREAMFUSION_CLASSPATH="$(tr ':' ',' < "${CLASSPATH_FILE}")"
 if [[ "${SUITE_MODE}" != "paimon" ]]; then
   # Paimon's provided connector API is supplied by its own suite. Do not install its optional
@@ -659,8 +691,12 @@ if [[ "${SUITE_MODE}" == "runtime" || "${SUITE_MODE}" == "diagnostic" ]]; then
   if [[ "${FLINK_LINE}" == "2.2" ]]; then
     SUMMARY_ARGS+=(--xfail "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testCurrentDate")
   fi
-  if [[ -z "${FLINK_SUITE_TEST:-}" ]]; then
+  if [[ -z "${FLINK_SUITE_TEST:-}" && -z "${FLINK_SUITE_SHARD:-}" ]]; then
     SUMMARY_ARGS+=(--require-contract-prefix org.apache.flink.)
+  fi
+  if [[ -n "${FLINK_SUITE_SHARD:-}" ]]; then
+    SUMMARY_ARGS+=(--require-contract-classes "${SUITE_ROOT}/runtime-shard-classes.txt")
+    printf '%s\n' "${shard_selector}" | tr ',' '\n' > "${SUITE_ROOT}/runtime-shard-classes.txt"
   fi
 fi
 if [[ "${SUITE_MODE}" == "delta" && -z "${FLINK_SUITE_TEST:-}" ]]; then
@@ -685,4 +721,10 @@ fi
 python3 "${REPO_ROOT}/dev/flink-suite/summarize.py" "${SUMMARY_ARGS[@]}"
 SUMMARY_STATUS=$?
 if [[ ${SUMMARY_STATUS} -ne 0 ]]; then exit "${SUMMARY_STATUS}"; fi
+if [[ -n "${FLINK_SUITE_SHARD:-}" ]]; then
+  python3 "${REPO_ROOT}/dev/flink-suite/runtime_shards.py" verify \
+    --plan "${SUITE_ROOT}/runtime-shards.json" --shard "${FLINK_SUITE_SHARD}" \
+    --audit "${DIAGNOSTIC_ROOT}/execution-audit.json" \
+    --output "${DIAGNOSTIC_ROOT}/shard-coverage.json" || exit $?
+fi
 exit "${INVENTORY_STATUS}"

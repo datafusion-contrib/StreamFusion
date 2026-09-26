@@ -56,6 +56,14 @@ See [the timestamp contract](https://github.com/datafusion-contrib/StreamFusion/
   exists only in another block, even if Flink's statement-wide check accepts the statement. The
   fallback reason names the optimizer block. `AUTO` and `NONE` are unaffected by this guard.
 
+## State-backend admission
+
+Flink's changelog state backend is unsupported for native keyed operators on both supported lines.
+Enabling it makes an affected query fall back in full; stateless queries remain eligible. This is
+separate from the SQL changelog row kinds used by updating queries. On 1.18, stock RocksDB selections
+are automatically adapted to [native RocksDB](../backends/rocksdb.md); unverified custom backends and
+custom RocksDB factories still cause keyed SQL to fall back.
+
 ## Idle-state TTL
 
 `table.exec.state.ttl` runs **natively** everywhere Flink applies `StateTtlConfig`: non-windowed

@@ -246,11 +246,11 @@ class RocksDBNativeStateBackendOperatorTest {
         .getJobManagerOwnedState();
   }
 
-  private static RocksDBNativeStateBackend backend() {
+  private RocksDBNativeStateBackend backend() {
     return backend(true);
   }
 
-  private static RocksDBNativeStateBackend backend(boolean incremental) {
+  protected RocksDBNativeStateBackend backend(boolean incremental) {
     Configuration config = new Configuration();
     config.set(CheckpointingOptions.INCREMENTAL_CHECKPOINTS, incremental);
     return new RocksDBNativeStateBackend(
