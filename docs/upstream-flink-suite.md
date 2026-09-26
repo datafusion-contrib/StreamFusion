@@ -321,7 +321,9 @@ The validated Flink 2.2.1 baseline is 8,619 tests: 8,570 passed, 48 skipped by F
 failures or errors, and the one independently reproduced `CURRENT_DATE` xfail described above.
 The September 19, 2026 Flink 1.18.1 runtime baseline is 5,686 cases: 5,661 passed, 25 upstream
 skips and no failures or errors. Its 65 execution contracts passed, with 31 native and 34
-expected-fallback invocations; uncontracted cases remain unclassified. The full 1.18 state run
+expected-fallback invocations. The newer [invocation inventory](sql-inventory/index.md) classifies
+the full runtime corpus using observed planner admission; only those execution contracts assert
+native work or expected fallback explicitly. The full 1.18 state run
 has 1,120 passed and 16 upstream skips, with 18 native and 12 expected-fallback witnesses.
 The format baseline is 185 tests: 175 passed and 10 skipped by Flink. The Kafka SQL baseline is 86
 tests, all passed. The Parquet sink baseline is 8 tests, all passed, including the suite's explicit
@@ -540,7 +542,12 @@ corpora; a green 1.18 run does not claim that the full 1.20 common corpus passes
 ## Complete SQL invocation inventory
 
 The [searchable SQL inventory](sql-inventory/index.md) labels every invocation from the full
-Flink 1.18.1 and 2.2.1 planner runtime corpora, with per-line CSV and compressed JSON downloads.
+Flink 1.18.1 and 2.2.1 planner runtime corpora and the selected upstream format, Parquet, ORC,
+Kafka, Paimon and Flink 2.2 Delta suites, with per-line CSV and compressed JSON downloads.
+Use the suite filter to recover the original 5,661 and 8,571 passing runtime cases. Connector
+corpora add 353 and 584 passing cases respectively; the selected Paimon classes differ by release
+as documented above. This snapshot excludes the separate state-backend suite and legacy Delta
+1.18 host audit.
 
 Set `FLINK_SUITE_SQL_INVENTORY=true` for a selected suite to record each JUnit invocation's SQL,
 planner mode, complete-plan admission counts, fallback reasons and translation failures.
@@ -548,7 +555,7 @@ The optional observer preserves upstream inputs, assertions and existing native 
 It records batch and intentionally unmodified planners as well as streaming planners.
 
 Each executed JUnit case carries an invocation identifier that joins its XML outcome to exactly
-one JSON observation under `diagnostics/runtime/sql-inventory`. Parameterized cases retain their
+one JSON observation under `diagnostics/<suite>/sql-inventory`. Parameterized cases retain their
 JUnit unique ID and display name. The inventory generator rejects missing, duplicate, stale or
 wrong-line observations and inconsistent XML counts. Skipped cases remain visible without claiming
 execution. Expected translation failures and parameter variants that return before executing a
@@ -559,7 +566,7 @@ FLINK_VERSION=1.18.1 FLINK_SUITE_SQL_INVENTORY=true bin/flink-suite.sh runtime
 python3 dev/flink-suite/sql_inventory.py \
   --reports .flink-suite/1.18/flink-1.18.1/flink-table/flink-table-planner/target/surefire-reports \
   --evidence .flink-suite/1.18/diagnostics/runtime/sql-inventory \
-  --line 1.18 --revision "$(git rev-parse HEAD)" --output .flink-suite/1.18/sql-inventory
+  --line 1.18 --revision "$(git rev-parse HEAD)" --output .flink-suite/1.18/sql-inventory/runtime
 ```
 
 The **Upstream Flink suite** workflow's manual `sql_inventory` option defaults to the two planner
@@ -583,18 +590,20 @@ plans, SQL and invocation identities remain in JSON for review. This inventory e
 coverage accounting tracked in [#168](https://github.com/datafusion-contrib/StreamFusion/issues/168);
 the stricter, bounded execution contracts continue to run independently.
 
-To publish both validated inventories as a standalone searchable report:
+To publish validated inventories as a standalone searchable report, repeat `--inventory` for
+each line and suite:
 
 ```sh
 python3 dev/flink-suite/render_sql_inventory.py \
-  --inventory .flink-suite/1.18/sql-inventory/inventory.json \
-  --inventory .flink-suite/2.2/sql-inventory/inventory.json \
+  --inventory .flink-suite/1.18/sql-inventory/runtime/inventory.json \
+  --inventory .flink-suite/2.2/sql-inventory/runtime/inventory.json \
+  --inventory .flink-suite/2.2/sql-inventory/kafka/inventory.json \
   --output docs/sql-inventory \
   --flink-repository /path/to/flink
 ```
 
 The optional Flink clone supplies verified source links at the release tags; no checkout or source
-change is required. CSVs escape unpaired Unicode surrogates from negative string fixtures while
+change is required. CSVs escape NUL and unpaired Unicode surrogates from negative string fixtures while
 JSON preserves the exact values. The report distinguishes observed planner gaps from batch,
 metadata, schema, API-validation and early-return cases. It retains mixed native/fallback invocations
 as coverage targets whenever an in-scope query remains on the host.
@@ -618,3 +627,5 @@ native. The `sql_label` column retains the SQL-only classification. Notes name t
 implementation and format, and `native_components` names what did accelerate. Internal DataStream,
 collect, values and test-format boundaries are excluded from these connector targets. Expected
 translation errors, batch and non-executing fixtures keep their existing exclusions.
+Direct Java serializer and DataStream/legacy DataSet format tests receive `format-api` and
+`non-sql-program` exclusions: these upstream fixtures bypass SQL admission entirely.

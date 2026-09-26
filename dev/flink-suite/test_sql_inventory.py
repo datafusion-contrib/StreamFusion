@@ -99,6 +99,16 @@ class SqlInventoryTest(unittest.TestCase):
         observation['junit_id'] = '[engine:junit-vintage]/[runner:org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase]/[test:testProctimeCascadeWindowAgg%5BStateBackend=HEAP%5D(org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase)]'
         self.assertEqual('schema-only', inventory.classify(observation, 'passed')[1])
 
+    def test_connector_non_sql_fixtures_have_specific_exclusions(self):
+        observation = record()
+        observation['junit_id'] = '[class:org.apache.flink.formats.csv.DataStreamCsvITCase]/[method:testCustomBulkWriter()]'
+        self.assertEqual('non-sql-program', inventory.classify(observation, 'passed')[1])
+        observation['plans'] = [plan(1)]
+        self.assertEqual('accelerated', inventory.classify(observation, 'passed')[0])
+        observation = record()
+        observation['sql'] = [dict(statement='CREATE TABLE T(a INT)'), dict(statement='DESC T')]
+        self.assertEqual('catalog-or-metadata', inventory.classify(observation, 'passed')[1])
+
     def fixture(self, root, observation, marker=True):
         reports, evidence = root / 'reports', root / 'evidence'
         reports.mkdir(); evidence.mkdir()
@@ -153,7 +163,7 @@ class SqlInventoryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             observation = record([plan(1)])
-            observation['display_name'] = 'lone surrogate \ude00; valid emoji \U0001f600'
+            observation['display_name'] = 'lone surrogate \ude00; valid emoji \U0001f600; NUL \0'
             reports, evidence = self.fixture(root, observation)
             rows = inventory.collect(reports, evidence, '2.2')
             inventory.write(rows, root / 'output', 'revision')
@@ -161,7 +171,7 @@ class SqlInventoryTest(unittest.TestCase):
             self.assertEqual(observation['display_name'], exported['tests'][0]['display_name'])
             with (root / 'output/inventory.csv').open() as stream:
                 row = next(csv.DictReader(stream))
-            self.assertEqual('lone surrogate \\ude00; valid emoji \U0001f600', row['display_name'])
+            self.assertEqual('lone surrogate \\ude00; valid emoji \U0001f600; NUL \\u0000', row['display_name'])
 
     def test_incomplete_xml_counts_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:

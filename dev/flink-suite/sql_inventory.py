@@ -128,8 +128,13 @@ def non_execution(record: dict) -> tuple[str, str, str]:
         return 'not accelerated', 'configuration-only', 'Checks inherited TableEnvironment configuration; no query execution.'
     if method_is('testGetTablesFromGivenCatalogDatabase'):
         return 'not accelerated', 'catalog-or-metadata', 'Checks catalog table listings directly; no query execution.'
+    if not record['sql'] and '.formats.' in identity:
+        if any('.' + cls + ']' in identity for cls in ('AvroSerializerConcurrencyCheckInactiveITCase', 'AvroKryoSerializerTests')):
+            return 'not accelerated', 'format-api', 'Exercises the Java serializer directly; no SQL planner or native format admission path.'
+        if any('.' + cls + ']' in identity for cls in ('AvroBulkFormatITCase', 'AvroExternalJarProgramITCase', 'AvroOutputFormatITCase', 'AvroStreamingFileSinkITCase', 'CsvBulkWriterIT', 'DataStreamCsvITCase')):
+            return 'not accelerated', 'non-sql-program', 'Exercises format I/O through a DataStream or legacy DataSet program; bypasses the SQL planner and its native admission path.'
     statements = [s['statement'].lstrip().upper() for s in record['sql']]
-    if statements and all(re.match(r'(CREATE|DROP|ALTER|SHOW|DESCRIBE|USE|EXPLAIN)\b', s) for s in statements):
+    if statements and all(re.match(r'(CREATE|DROP|ALTER|SHOW|DESC|DESCRIBE|USE|EXPLAIN)\b', s) for s in statements):
         return 'not accelerated', 'catalog-or-metadata', 'Only DDL, metadata or explain statements observed; no execution translation.'
     if statements and any(s.startswith('CALL ') for s in statements):
         return 'not accelerated', 'procedure-call', 'Calls a host procedure; no relational SQL execution plan observed.'
@@ -270,6 +275,11 @@ def collect(reports: Path, evidence: Path, line: str, suite_name: str = 'runtime
     return rows
 
 
+def csv_row(row: dict) -> dict:
+    return {key: value.replace('\0', r'\u0000') if isinstance(value, str) else value
+            for key, value in row.items()}
+
+
 def write(rows: list[dict], output: Path, revision: str) -> None:
     output.mkdir(parents=True, exist_ok=True)
     summary = {'revision': revision, 'cases': len(rows), 'outcomes': dict(Counter(r['outcome'] for r in rows)),
@@ -280,7 +290,7 @@ def write(rows: list[dict], output: Path, revision: str) -> None:
     with (output / 'inventory.csv').open('w', newline='', encoding='utf-8', errors='backslashreplace') as stream:
         writer = csv.DictWriter(stream, fields, extrasaction='ignore')
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(csv_row(row) for row in rows)
     (output / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
     print(json.dumps(summary, indent=2))
 

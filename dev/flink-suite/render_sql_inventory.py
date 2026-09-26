@@ -9,6 +9,7 @@ import gzip
 import subprocess
 import json
 from pathlib import Path
+from sql_inventory import csv_row
 
 HTML = '''<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -37,7 +38,7 @@ let page=0, selected=[];const size=100,labels=['accelerated','not accelerated','
 const categories=[...new Set(data.tests.flatMap(t=>t.category.split(', ')))].sort();
 for(const suite of [...new Set(data.tests.map(t=>t.suite))].sort()){const o=document.createElement('option');o.textContent=suite;$('suite').append(o)}
 for(const c of categories){const o=document.createElement('option');o.textContent=c;$('category').append(o)}
-for(const p of data.provenance){const a=document.createElement('a');a.href=p.csv;a.textContent=`Flink ${p.line} CSV`;const span=document.createElement('p');const raw=document.createElement('a');raw.href=`flink-${p.line}.json.gz`;raw.textContent='full JSON';span.append(a,document.createTextNode(' · '),raw,document.createTextNode(` · StreamFusion ${p.revision.slice(0,12)} · ${p.cases.toLocaleString()} reported invocations`));$('provenance').append(span)}
+for(const p of data.provenance){const a=document.createElement('a');a.href=p.csv;a.textContent=`Flink ${p.line} CSV`;const span=document.createElement('p');const raw=document.createElement('a');raw.href=`flink-${p.line}.json.gz`;raw.textContent='full JSON';span.append(a,document.createTextNode(' · '),raw,document.createTextNode(` · StreamFusion ${p.revisions.map(r=>r.slice(0,12)).join(', ')} · ${p.cases.toLocaleString()} reported invocations`));$('provenance').append(span)}
 function update(){page=0;const q=$('search').value.toLowerCase();selected=data.tests.filter(t=>(!$('suite').value||t.suite===$('suite').value)&&(!$('line').value||t.line===$('line').value)&&(!$('label').value||t.label===$('label').value)&&(!$('category').value||t.category.split(', ').includes($('category').value))&&(!$('outcome').value||t.outcome===$('outcome').value)&&(!q||[t.test,t.variant,t.note,t.category,t.features,t.components,t.suite].join(' ').toLowerCase().includes(q)));
 $('counts').replaceChildren();for(const label of labels){const b=document.createElement('button'),n=document.createElement('strong');n.textContent=selected.filter(t=>t.label===label).length.toLocaleString();b.append(n,document.createTextNode(label));b.onclick=()=>{$('label').value=label;update()};$('counts').append(b)}render()}
 function render(){$('rows').replaceChildren();for(const t of selected.slice(page*size,(page+1)*size)){const tr=document.createElement('tr');const line=document.createElement('td');line.textContent=t.line;const suite=document.createElement('small');suite.textContent=t.suite;line.append(suite);const name=document.createElement('td');if(t.source){const link=document.createElement('a');link.href=t.source;link.textContent=t.test;name.append(link)}else{name.textContent=t.test}const variant=document.createElement('small');variant.textContent=t.variant;name.append(variant);const label=document.createElement('td');const tag=document.createElement('span');tag.textContent=t.label;tag.className='tag '+(t.label==='accelerated'?'accelerated':t.label==='should be accelerated'?'gap':'muted');const cat=document.createElement('small');cat.textContent=t.category;label.append(tag,cat);const note=document.createElement('td');note.textContent=t.note;const detail=document.createElement('details'),title=document.createElement('summary'),text=document.createElement('small');title.textContent='Evidence';text.textContent=`Outcome: ${t.outcome}; SQL label: ${t.sqlLabel}; native plans: ${t.native}; host plans: ${t.host}; features: ${t.features}; admitted native components: ${t.components||'none observed'}; invocation: ${t.id||'not executed'}`;detail.append(title,text);note.append(detail);tr.append(line,name,label,note);$('rows').append(tr)}$('total').textContent=`${selected.length.toLocaleString()} matching invocations`;$('page').textContent=`Page ${page+1} of ${Math.max(1,Math.ceil(selected.length/size))}`;$('previous').disabled=page===0;$('next').disabled=(page+1)*size>=selected.length}
@@ -135,7 +136,7 @@ def main():
         with (args.output / filename).open('w', newline='', encoding='utf-8', errors='backslashreplace') as stream:
             writer = csv.DictWriter(stream, fields, extrasaction='ignore')
             writer.writeheader()
-            writer.writerows(tests)
+            writer.writerows(csv_row(test) for test in tests)
         data['provenance'].append(dict(line=line, csv=filename, **summary))
         for t in tests:
             data['tests'].append(dict(line=line, suite=t['suite'], test=t['test_class']+'#'+t['test_name'],
@@ -152,7 +153,7 @@ def main():
     for p in data['provenance']:
         counts = p['labels_passed']
         summary.append(f"| [{p['line']}]({p['csv']}) | {p['outcomes'].get('passed',0):,} | {counts.get('accelerated',0):,} | {counts.get('should be accelerated',0):,} | {counts.get('not accelerated',0):,} |")
-    summary += ['', '## Suites', '', '| Suite | Flink | Passed | Accelerated | Should be accelerated | Not accelerated | Skipped | Failed |', '|---|---|---:|---:|---:|---:|---:|---:|']
+    summary += ['', '## Suites', '', 'Use the suite filter to inspect the original runtime corpus separately from the selected connector/format corpora. Connector labels include retained streaming source/sink gaps; `sql_label` preserves the SQL-only result and `native_components` records what did accelerate. Direct Java format tests and DataStream/legacy DataSet programs bypass SQL admission and are classified separately.', '', '| Suite | Flink | Passed | Accelerated | Should be accelerated | Not accelerated | Skipped | Failed |', '|---|---|---:|---:|---:|---:|---:|---:|']
     for suite, line in sorted({(t['suite'], t['line']) for t in data['tests']}):
         tests = [t for t in data['tests'] if t['suite'] == suite and t['line'] == line]
         outcomes = Counter(t['outcome'] for t in tests)
@@ -173,7 +174,7 @@ def main():
         summary += [args.run_note, '']
     for p in data['provenance']:
         summary.append(f"- Flink {p['line']}: StreamFusion revisions `{', '.join(p['revisions'])}`; {p['cases']:,} reported cases; outcomes `{p['outcomes']}`.")
-    summary += ['', 'CSV exports escape unpaired Unicode surrogates as `\\uXXXX`; the compressed JSON preserves the exact strings. The JSON also contains observed SQL, original/final plan operators, fallback reasons, planner modes and translation errors. Native/host plan counts describe planning attempts; a passing negative fixture whose translations all fail receives no execution credit.', '', 'Native SQL admission does not imply that every source, sink or format accelerated. Inspect admitted native components and final plan operators for connector boundaries. Existing native-work contracts remain separate evidence.', '', 'See [the upstream suite](../upstream-flink-suite.md#complete-sql-invocation-inventory) for reproduction, evidence semantics and the separate native-work contracts. Follow-up coverage accounting is tracked in [#168](https://github.com/datafusion-contrib/StreamFusion/issues/168).', '']
+    summary += ['', 'CSV exports escape NUL and unpaired Unicode surrogates as `\\uXXXX`; the compressed JSON preserves the exact strings. The JSON also contains observed SQL, original/final plan operators, fallback reasons, planner modes and translation errors. Native/host plan counts describe planning attempts; a passing negative fixture whose translations all fail receives no execution credit.', '', 'Native SQL admission does not imply that every source, sink or format accelerated. Inspect admitted native components and final plan operators for connector boundaries. Existing native-work contracts remain separate evidence.', '', 'See [the upstream suite](../upstream-flink-suite.md#complete-sql-invocation-inventory) for reproduction, evidence semantics and the separate native-work contracts. Follow-up coverage accounting is tracked in [#168](https://github.com/datafusion-contrib/StreamFusion/issues/168).', '']
     (args.output / 'index.md').write_text('\n'.join(summary))
 
 

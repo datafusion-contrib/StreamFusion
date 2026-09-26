@@ -14,7 +14,7 @@ RENDER = Path(__file__).with_name('render_sql_inventory.py')
 class RenderSqlInventoryTest(unittest.TestCase):
     def fixture(self, root):
         row = dict(flink_line='2.2', test_class='org.apache.flink.TestITCase', test_name='test',
-                   display_name='</script><script>alert(1)</script>\ude00', outcome='passed',
+                   display_name='</script><script>alert(1)</script>\0\ude00', outcome='passed',
                    label='should be accelerated', category='window', features='window',
                    note='Unsupported window', invocation_id='invocation', native_plans=0, host_plans=1)
         data = dict(schema_version=1, tests=[row], summary=dict(revision='revision', cases=1,
@@ -36,7 +36,7 @@ class RenderSqlInventoryTest(unittest.TestCase):
             self.assertEqual(row['display_name'], raw['tests'][0]['display_name'])
             with (output / 'flink-2.2.csv').open() as stream:
                 exported = next(csv.DictReader(stream))
-            self.assertTrue(exported['display_name'].endswith('\\ude00'))
+            self.assertTrue(exported['display_name'].endswith('\\u0000\\ude00'))
             self.assertIn('| [2.2](flink-2.2.csv) | 1 | 0 | 1 | 0 |', (output / 'index.md').read_text())
 
     def test_duplicate_or_incomplete_inputs_are_rejected(self):
