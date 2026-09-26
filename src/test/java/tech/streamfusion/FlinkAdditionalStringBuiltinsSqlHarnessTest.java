@@ -19,12 +19,14 @@ class FlinkAdditionalStringBuiltinsSqlHarnessTest {
 
   @Test
   void base64StringAndBinaryInputsPreserveInvalidEncodingAndNulls() throws Exception {
-    BuiltinFunctionParity.assertParity(this::base64Environment,
+    NativeParity.assertFallbackReasonContains(this::base64Environment,
         "SELECT FROM_BASE64(s), FROM_BASE64(b), FROM_BASE64(s) = '?', "
             + "CHAR_LENGTH(FROM_BASE64(s)), TO_BASE64(FROM_BASE64(s)), "
-            + "CAST(FROM_BASE64(s) AS BYTES) FROM src");
-    BuiltinFunctionParity.assertParity(this::base64Environment,
-        "SELECT FROM_BASE64(s), SHA2(s,bits) FROM src WHERE n = 99");
+            + "CAST(FROM_BASE64(s) AS BYTES) FROM src",
+        "binary-backed STRING requires a final scalar projection");
+    NativeParity.assertFallbackReasonContains(this::base64Environment,
+        "SELECT FROM_BASE64(s), SHA2(s,bits) FROM src WHERE n = 99",
+        "binary-backed STRING requires a final scalar projection");
   }
 
   @Test
