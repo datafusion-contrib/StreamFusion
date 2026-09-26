@@ -89,7 +89,8 @@ Java agent then installs StreamFusion whenever an upstream test creates a stream
 loads the native library at that moment the way a TaskManager loads it once at startup, so no
 upstream job pays the first-load latency inside its first native task; batch planners remain stock
 Flink. The default run executes the planner module's unchanged `*ITCase`
-runtime integration suite serially in one fork, then summarizes Surefire failures. Serial execution
+runtime integration suite with one active test JVM, then summarizes Surefire failures. Flink 1.18
+starts a fresh fork per class; the 2.2 planner reuses its fork, as configured upstream. Serial execution
 keeps concurrently created MiniClusters from exhausting a developer machine or CI runner.
 
 The experimental 1.18 runner selects Flink `release-1.18.1`, Kafka connector `v3.2.0-rc1`, and
@@ -287,15 +288,17 @@ FLINK_SUITE_TEST='org.apache.paimon.flink.AppendTableITCase#testPartitionDynamic
 The Flink checkout remains byte-for-byte unchanged. Every push to `main` and every pull request
 runs all eight upstream suites in GitHub Actions: planner runtime, formats, Parquet, ORC, Kafka,
 Paimon, Delta and state/recovery. The weekly schedule and manual dispatch run the same complete matrix.
-Each run rebuilds StreamFusion from that revision in the isolated suite directory and uploads
-its complete build/test log with the commit SHA. These checks complement the released-artifact
+Each run rebuilds StreamFusion once per Flink line from that revision in the isolated suite directory
+and shares the prepared build with its test jobs. Each job uploads its complete test log with the
+commit SHA. These checks complement the released-artifact
 SQL parity tests in ordinary CI; a passing local Maven suite alone does not establish upstream
 integration compatibility.
 
 Merges to `main` require **All CI tests** and **All upstream integration tests**, enforced by
 the repository's **Require all test suites** ruleset with no bypass actors, including administrators.
 The first check waits for Rust, Java/SQL parity, every format/connector module, both Paimon formats,
-Delta and the deployed Flink image integration job. The second waits for all eight upstream suites.
+Delta and the deployed Flink image integration job. The second waits for both shared builds,
+every selected upstream suite, the complete runtime-shard coverage checks, and the legacy Delta host audit.
 Each check runs even when a dependency fails and succeeds only when every dependency succeeds;
 failed, cancelled or unexpectedly skipped jobs cannot produce a green aggregate check. Matrix
 additions are included automatically; new independent test jobs must be added to the corresponding
@@ -368,10 +371,56 @@ All invocations' reports contribute to the result and native execution checks; a
 failure remains blocking, including a process timeout without a finished JUnit report.
 Explicit `FLINK_SUITE_TEST` selectors keep their requested grouping for diagnosis.
 
-The upstream workflow caches Rust dependencies in the isolated source build's native target
-directory, where this runner actually compiles them. It still rebuilds changed workspace crates.
-The runner builds the complete native workspace once before packaging Java modules; Maven then
-reuses those freshly built libraries instead of rebuilding Rust for each module's feature set.
+## Shared builds and runtime shards
+
+CI prepares one common build for each pinned Flink line. It builds the untouched Flink planner,
+StreamFusion's native workspace and Java payloads, and the upstream format test classes. The 2.2
+build also includes the Delta payload. Kafka and Paimon compile their own test fixtures in their
+consumer jobs, reusing the common build. The isolated Maven repository at `.flink-suite/<line>/m2`
+is cached separately by platform, JDK, Flink version and build inputs; `setup-java`'s ordinary
+Maven cache serves the injection-agent build. Rust dependencies are cached in the isolated source
+build's actual native target directory. Every run still rebuilds current StreamFusion code.
+
+A compressed artifact transfers the clean Flink checkout, compiled classes, Maven artifacts,
+injection agent and native libraries. It excludes Cargo intermediates and previous test reports
+or execution evidence. Consumers require the same revision, Flink version and platform, relocate
+the generated classpath to their checkout, and validate the payload manifests before testing.
+The artifact is shared within that workflow run; successful test results are never reused.
+
+The runtime suite runs in four jobs per version. `runtime_shards.py` discovers the compiled
+top-level `*ITCase` classes selected by the planner's upstream Surefire configuration, and assigns
+each complete class to one shard. It balances historical durations from
+`runtime-durations-<line>.tsv`; newly discovered classes receive an estimated duration and are
+included automatically. The timings and reported-case counts come from the September 25 1.18
+inventory run and September 26 2.2 CI run, excluding injection-agent unit tests.
+
+Every shard retains serial execution inside its test JVMs and the upstream fork-reuse policy.
+It requires all execution contracts belonging to its classes, including every recorded native
+or fallback invocation. Coverage verification requires the baseline number of reported cases per
+class, including skips: 5,686 for 1.18.1 and 8,619 for 2.2.1 in total. A missing class, lost parameter
+variant, overlapping shard, changed plan or missing shard fails the required aggregate check.
+When intentionally upgrading the pinned corpus, regenerate timings and counts from a complete
+unsharded run; do not lower counts to accept an incomplete run.
+
+```bash
+python3 dev/flink-suite/runtime_shards.py record \
+  --reports .flink-suite/1.18/flink-1.18.1/flink-table/flink-table-planner/target/surefire-reports \
+  --output dev/flink-suite/runtime-durations-1.18.tsv
+```
+
+Local full and focused commands retain their existing behavior. To prepare once and run one of
+the four CI shards locally:
+
+```bash
+FLINK_VERSION=1.18.1 bin/flink-suite.sh prepare
+FLINK_VERSION=1.18.1 FLINK_SUITE_REUSE_COMMON_BUILD=true FLINK_SUITE_SHARD=1 bin/flink-suite.sh runtime
+```
+
+`FLINK_SUITE_SHARD` accepts 1–4 and cannot be combined with `FLINK_SUITE_TEST`. Use independent
+suite directories when running shards concurrently. `FLINK_SUITE_REUSE_COMMON_BUILD` skips the
+common build while still compiling connector-specific fixtures; `FLINK_SUITE_REUSE_BUILD` also
+requires and reuses those fixtures. Omit both after source changes. SQL-inventory dispatches use
+the same shards and retain separate per-shard inventories and evidence in their artifacts.
 
 ## Expected host failures in SQL parity audits
 

@@ -167,3 +167,4 @@ nav:
       - Shared native sources: optimizations/shared-native-sources.md
       - RocksDB write-through: optimizations/rocksdb-write-through.md
       - Lazy delegate state backend: optimizations/lazy-delegate-state-backend.md
+      - Upstream test builds: optimizations/upstream-test-builds.md

@@ -134,6 +134,28 @@ class NativeExecutionSummaryTest(unittest.TestCase):
     def test_unselected_contracts_are_not_required(self):
         self.assertEqual((0, 0, []), self.check({}))
 
+    def test_shard_requires_every_contract_in_its_selected_classes(self):
+        classes = self.root / "classes.txt"
+        classes.write_text(self.CALC.split("#")[0] + "\n")
+        contracts = self.root / "contracts.txt"
+        contracts.write_text(
+            f"{self.CALC}\t*\tNativeCalcOperator\n"
+            f"{self.WINDOW}\tsplitDistinct=false\tNativeColumnarWindowAggregateOperator\n"
+        )
+        full_class, method = self.CALC.split("#")
+        report = self.root / "TEST-calc.xml"
+        report.write_text(
+            f'<testsuite tests="1"><testcase classname="{full_class}" name="{method}"/></testsuite>'
+        )
+        self.record(self.CALC, "NativeCalcOperator=3")
+        arguments = ["summarize.py", str(self.root), "--contracts", str(contracts),
+                     "--native-reports", str(self.root), "--require-contract-classes", str(classes)]
+        with patch.object(sys, "argv", arguments), redirect_stdout(io.StringIO()):
+            self.assertEqual(0, summarize.main())
+        classes.write_text(classes.read_text() + self.WINDOW.split("#")[0] + "\n")
+        with patch.object(sys, "argv", arguments), redirect_stdout(io.StringIO()):
+            self.assertEqual(1, summarize.main())
+
     def test_rejects_malformed_evidence(self):
         for counts in (
             "NativeCalcOperator=-1",
