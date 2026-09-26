@@ -110,6 +110,7 @@ nav:
   - Memory management: memory-management.md
   - Native metric parity: metrics-parity.md
   - Upstream Flink suite: upstream-flink-suite.md
+  - Upstream SQL inventory: sql-inventory/index.md
   - Portable SQL audit: sql-parity-audit.md
   - Benchmarks:
       - benchmarks.md
