@@ -7,26 +7,20 @@ org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testNotIn	*	NativeF
 org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testLongProjectionList	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testIfFunction	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg	state=HEAP&changelog=false	NativeColumnarGroupAggregateOperator
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg	changelog=false	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithGroupByAndRetract	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithGroupByAndRetract	state=HEAP&changelog=false	NativeColumnarGroupAggregateOperator+NativeColumnarTopNOperator
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithGroupByAndRetract	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
+org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithGroupByAndRetract	changelog=false	NativeColumnarGroupAggregateOperator+NativeColumnarTopNOperator
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithVariableTopSize	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithVariableTopSize	state=HEAP&changelog=false	!Top-N: nullable variable rank bounds require Flink's row-access semantics
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithVariableTopSize	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
+org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithVariableTopSize	changelog=false	!Top-N: nullable variable rank bounds require Flink's row-access semantics
 org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testTumbleWindow	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testTumbleWindow	state=HEAP&splitDistinct=false&changelog=false	NativeColumnarWindowAggregateOperator|NativeColumnarLocalWindowAggregateOperator+NativeColumnarGlobalWindowAggregateOperator
-org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testTumbleWindow	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
-org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testTumbleWindow	state=HEAP&splitDistinct=true&changelog=false	!window aggregate: attached-window aggregation requires two-phase execution
+org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testTumbleWindow	splitDistinct=false&changelog=false	NativeColumnarWindowAggregateOperator|NativeColumnarLocalWindowAggregateOperator+NativeColumnarGlobalWindowAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testTumbleWindow	splitDistinct=true&changelog=false	!window aggregate: attached-window aggregation requires two-phase execution
 org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testHopWindow	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testHopWindow	state=HEAP&splitDistinct=false&changelog=false	NativeColumnarWindowAggregateOperator|NativeColumnarLocalWindowAggregateOperator+NativeColumnarGlobalWindowAggregateOperator
-org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testHopWindow	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
-org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testHopWindow	state=HEAP&splitDistinct=true&changelog=false	!window aggregate: attached-window aggregation requires two-phase execution
+org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testHopWindow	splitDistinct=false&changelog=false	NativeColumnarWindowAggregateOperator|NativeColumnarLocalWindowAggregateOperator+NativeColumnarGlobalWindowAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testHopWindow	splitDistinct=true&changelog=false	!window aggregate: attached-window aggregation requires two-phase execution
 org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testCumulateWindow	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testCumulateWindow	state=HEAP&splitDistinct=false&changelog=false	NativeColumnarWindowAggregateOperator|NativeColumnarLocalWindowAggregateOperator+NativeColumnarGlobalWindowAggregateOperator
-org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testCumulateWindow	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
-org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testCumulateWindow	state=HEAP&splitDistinct=true&changelog=false	!window aggregate: attached-window aggregation requires two-phase execution
+org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testCumulateWindow	splitDistinct=false&changelog=false	NativeColumnarWindowAggregateOperator|NativeColumnarLocalWindowAggregateOperator+NativeColumnarGlobalWindowAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testCumulateWindow	splitDistinct=true&changelog=false	!window aggregate: attached-window aggregation requires two-phase execution
 org.apache.flink.table.planner.runtime.stream.sql.AsyncLookupJoinITCase#testAsyncJoinTemporalTable	legacyTableSource=false	NativeAsyncLookupJoinOperator
 org.apache.flink.table.planner.runtime.stream.sql.AsyncLookupJoinITCase#testAsyncJoinTemporalTable	legacyTableSource=true	!lookup join: temporal table is not a (non-legacy) table source
 org.apache.flink.table.planner.runtime.stream.sql.AsyncLookupJoinITCase#testAsyncJoinTemporalTableWithRetry	legacyTableSource=false	NativeAsyncLookupJoinOperator
@@ -36,26 +30,18 @@ org.apache.flink.table.planner.runtime.stream.sql.LookupJoinITCase#testJoinTempo
 
 # Legacy upsert sinks must retain planner-proven keys after native replacement.
 org.apache.flink.table.planner.runtime.stream.table.JoinITCase#testJoinKeyEqualsGroupByKey	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.table.JoinITCase#testJoinKeyEqualsGroupByKey	state=HEAP&changelog=false	NativeColumnarUpdatingJoinOperator
-org.apache.flink.table.planner.runtime.stream.table.JoinITCase#testJoinKeyEqualsGroupByKey	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
+org.apache.flink.table.planner.runtime.stream.table.JoinITCase#testJoinKeyEqualsGroupByKey	changelog=false	NativeColumnarUpdatingJoinOperator
 org.apache.flink.table.planner.runtime.stream.table.JoinITCase#testJoinKeyNotEqualPrimaryKey	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.table.JoinITCase#testJoinKeyNotEqualPrimaryKey	state=HEAP&changelog=false	NativeColumnarUpdatingJoinOperator
-org.apache.flink.table.planner.runtime.stream.table.JoinITCase#testJoinKeyNotEqualPrimaryKey	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
+org.apache.flink.table.planner.runtime.stream.table.JoinITCase#testJoinKeyNotEqualPrimaryKey	changelog=false	NativeColumnarUpdatingJoinOperator
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithUpsertSink	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithUpsertSink	state=HEAP&changelog=false	NativeColumnarTopNOperator
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithUpsertSink	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
+org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithUpsertSink	changelog=false	NativeColumnarTopNOperator
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testNestedTopN	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testNestedTopN	state=HEAP&changelog=false	NativeColumnarTopNOperator
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testNestedTopN	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
+org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testNestedTopN	changelog=false	NativeColumnarTopNOperator
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testMultipleUnaryTopNAfterAgg	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testMultipleUnaryTopNAfterAgg	state=HEAP&changelog=false	NativeColumnarTopNOperator
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testMultipleUnaryTopNAfterAgg	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
+org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testMultipleUnaryTopNAfterAgg	changelog=false	NativeColumnarTopNOperator
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTop1WithGroupByCount	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTop1WithGroupByCount	state=HEAP&changelog=false	NativeColumnarTopNOperator
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTop1WithGroupByCount	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
+org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTop1WithGroupByCount	changelog=false	NativeColumnarTopNOperator
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testUnarySortTopNOnString	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testUnarySortTopNOnString	state=HEAP&changelog=false	NativeColumnarTopNOperator
-org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testUnarySortTopNOnString	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
+org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testUnarySortTopNOnString	changelog=false	NativeColumnarTopNOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testConstantGroupKeyWithUpsertSink	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testConstantGroupKeyWithUpsertSink	state=HEAP&changelog=false	NativeColumnarGroupAggregateOperator
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testConstantGroupKeyWithUpsertSink	state=ROCKSDB&changelog=false	!state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion RocksDB backend
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testConstantGroupKeyWithUpsertSink	changelog=false	NativeColumnarGroupAggregateOperator

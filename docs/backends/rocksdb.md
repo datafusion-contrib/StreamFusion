@@ -11,6 +11,16 @@ Select the backend with the normal Flink setting:
 state.backend.type=tech.streamfusion.state.RocksDBNativeStateBackendFactory
 ```
 
+On Flink 1.18, native SQL planning also selects this backend automatically for
+`state.backend.type=rocksdb`, the stock embedded factory, and programmatic
+`EmbeddedRocksDBStateBackend` or legacy `RocksDBStateBackend` instances. The configured host
+backend is retained for ordinary Flink operators. Incremental checkpointing, local paths,
+predefined options, previously configured RocksDB options and programmatic memory settings keep
+Flink's precedence; legacy checkpoint storage keeps its precedence too. Custom backend subclasses,
+options factories and memory factories retain the stock backend and cause keyed SQL to fall back.
+Disabled native acceleration leaves the original backend selection alone. Flink 2.2 still requires
+the explicit StreamFusion factory above to select the Rust-owned RocksDB backend.
+
 The backend translates Flink's `state.backend.rocksdb.*` options into the Rust RocksDB instance,
 including local directories, incremental checkpoints, compaction style, level and target-file
 sizes, write-buffer settings, compression, log level, and TTL compaction query cadence. Incremental
@@ -130,8 +140,8 @@ RocksDB. Native canonical savepoints use a temporary heap backend to preserve in
 synthetic keys and key-group IDs through the released host API. The snapshot takes ownership
 before live projection entries are cleared; temporary heap use scales with serialized canonical
 state. The native snapshot layout is unchanged. Use the StreamFusion native backend for this
-path. With an unwrapped stock 1.18 RocksDB delegate, native keyed operators decline during
-planning with an explicit backend diagnostic; stateless operators remain eligible. See
+path, selected automatically for stock RocksDB configurations as described above. Unverified custom
+backends still decline keyed native operators during planning; stateless operators remain eligible. See
 [Flink line compatibility](../flink-compatibility.md) for outstanding recovery validation.
 
 ## Failed and aborted checkpoints
@@ -146,7 +156,15 @@ can succeed without reopening the operator.
 Regression tests inject failures after the first upload, during native snapshot preparation and
 in the storage factory's reuse callback, and check both file cleanup and the next checkpoint.
 
-The 1.18 changelog state wrapper is also outside native keyed-state admission. Its replay assigns
-key groups from key hashes, while canonical native partitions require the saved explicit group.
-The planner declines these keyed operators with a changelog-specific reason; it does not unwrap
-the backend or bypass the changelog. Use `state.changelog.enabled=false` for native keyed jobs.
+## Changelog state backend
+
+Flink's changelog state wrapper is unsupported for native keyed state on **both 1.18 and 2.2**.
+The wrapper cannot pass the canonical native-state context handling, and log replay recomputes key
+groups from key hashes rather than preserving our explicit partition/group pairing. It also requires
+an abstract Flink keyed backend, which the Rust-owned backend does not implement. Query admission
+alone therefore does not establish checkpoint/recovery support.
+
+The planner declines keyed SQL with a changelog-specific reason and preserves the stock backend
+and changelog setting. Stateless native SQL remains eligible. Use `state.changelog.enabled=false`
+with StreamFusion's native state backends. This is unrelated to SQL insert/update/delete changelog
+rows, which supported native SQL operators handle normally.
