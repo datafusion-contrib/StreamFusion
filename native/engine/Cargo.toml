@@ -31,6 +31,7 @@ memchr.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 simd-json.workspace = true
+stacker = "0.1.24"
 zstd = "0.13"
 lz4_flex = "0.13"
 lzokay = "2.0.1"

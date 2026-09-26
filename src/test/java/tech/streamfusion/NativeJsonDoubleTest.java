@@ -2,7 +2,6 @@ package tech.streamfusion;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -12,7 +11,7 @@ import org.junit.jupiter.api.Test;
 
 class NativeJsonDoubleTest {
   @Test
-  void nativeDoubleBitsMatchJacksonBigDecimalConversion() {
+  void nativeDoubleBitsMatchTheHostProvider() {
     List<String> numbers =
         new ArrayList<>(
             List.of(
@@ -53,7 +52,7 @@ class NativeJsonDoubleTest {
               null,
               JsonValueOnEmptyOrError.NULL,
               null);
-      Double expected = value == null ? null : ((BigDecimal) value).doubleValue();
+      Double expected = value == null ? null : ((Number) value).doubleValue();
       if (expected == null) {
         assertEquals(null, actual.get(i), numbers.get(i));
       } else {

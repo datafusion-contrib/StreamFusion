@@ -80,9 +80,10 @@ impl ScalarUDFImpl for JsonValue {
         let input = as_string_array(&input)?;
         let mut output = Output::new(self.return_type, input.len());
         with_reader(|reader| {
+            let legacy = reader.legacy_semantics();
             for document in input.iter() {
                 let Some(document) = document else {
-                    output.append(Value::Null)?;
+                    output.append(Value::Null, legacy)?;
                     continue;
                 };
                 let value = match reader.read(&path, document) {
@@ -93,7 +94,7 @@ impl ScalarUDFImpl for JsonValue {
                 };
                 // Flink casts the returned Java object after applying EMPTY/ERROR policies.
                 // A scalar type mismatch must therefore fail, even with NULL ON ERROR.
-                output.append(value)?;
+                output.append(value, legacy)?;
             }
             finish(output.finish(), scalar)
         })
@@ -158,7 +159,7 @@ impl Output {
         }
     }
 
-    fn append(&mut self, value: Value<'_>) -> Result<()> {
+    fn append(&mut self, value: Value<'_>, legacy: bool) -> Result<()> {
         match (self, value) {
             (Self::Varchar(output), value) => output.append_option(value.text()),
             (Self::Boolean(output), Value::Null) => output.append_null(),
@@ -171,12 +172,22 @@ impl Output {
                         .map_err(|_| type_error("java.lang.Integer", value))?,
                 );
             }
+            (Self::Double(output), Value::LegacyFloat(value)) => output.append_value(value),
             (Self::Double(output), Value::Number(raw)) if is_decimal(raw) => {
                 output.append_value(decimal_double(raw)?);
             }
             (Self::Boolean(_), value) => return Err(type_error("java.lang.Boolean", value)),
             (Self::Integer(_), value) => return Err(type_error("java.lang.Integer", value)),
-            (Self::Double(_), value) => return Err(type_error("java.math.BigDecimal", value)),
+            (Self::Double(_), value) => {
+                return Err(type_error(
+                    if legacy {
+                        "java.lang.Double"
+                    } else {
+                        "java.math.BigDecimal"
+                    },
+                    value,
+                ));
+            }
         }
         Ok(())
     }
@@ -198,6 +209,7 @@ fn is_decimal(raw: &str) -> bool {
 fn type_error(target: &str, value: Value<'_>) -> datafusion::common::DataFusionError {
     let source = match value {
         Value::Boolean(_) => "java.lang.Boolean",
+        Value::LegacyFloat(_) => "java.lang.Double",
         Value::String(_) | Value::DecodedString(_) => "java.lang.String",
         Value::Number(raw) if is_decimal(raw) => "java.math.BigDecimal",
         Value::Number(raw) if raw.parse::<i32>().is_ok() => "java.lang.Integer",

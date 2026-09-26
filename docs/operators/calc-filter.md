@@ -1318,20 +1318,23 @@ the missing member's path, while the surrounding expression stays in the native 
 FALSE, TRUE and UNKNOWN policies continue to use the Rust parser.
 
 These JSON functions use native first-document parsing and validate unselected fields too.
-Admission first probes the shaded Jackson runtime once per class loader: version 2.18.2,
-the default thread-local recycler pool, and successful buffer acquisition, cross-factory
-reuse and release are required. Missing methods/classes, a different version or pool,
+Admission first probes the shaded Jackson runtime once per class loader: Flink 2.2 requires
+Jackson 2.18.2 and its default thread-local recycler pool; Flink 1.18 requires Jackson 2.14.2
+and thread-local buffer recycling. Both require successful buffer acquisition, cross-factory
+reuse and release. Missing methods/classes, a different version or pool,
 or probe failure decline the native parser for JSON_VALUE, JSON_EXISTS and IS JSON; Calc
 can use Flink generation when the host runtime and batch boundary types support it.
 JobManagers and TaskManagers must use the same verified shaded Jackson runtime.
-They currently admit JDK 17, 21, 24 and 25, selecting the corresponding Unicode version for
+The 2.2 profile admits JDK 17, 21, 24 and 25, selecting the corresponding Unicode version for
 Jackson's token-termination rules; other JDKs use Flink generation in Calc. The profile is selected on the
-JobManager, so TaskManagers must use the same JSON parsing rules. Jackson's resource limits
+JobManager, so TaskManagers must use the same JSON parsing rules. Jackson 2.18.2's resource limits
 (1000 nesting levels, 1000 number digits, 20 million UTF-16 string units, 50,000 member-name
 units) also apply to unselected values. Its numeric boundary has a buffer-dependent exception:
 the slow parser can accept an extra digit. Native evaluation uses the task thread's actual
 Jackson input-buffer capacity and preserves its growth, including invalid input and SIMD
-parsing. A batch exchanges this capacity through JNI; documents and results remain native.
+parsing. A batch exchanges this capacity through JNI; documents and results remain native. The 1.18
+profile uses the same reader on JDK 17, with Double numeric semantics and without the newer
+token/depth limits. Deep legacy nesting grows the native stack as needed.
 See the [SQL/JSON parser note](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/32-sql-json-definite-paths.md)
 and [per-function benchmarks](../benchmarks/scalar-functions.md).
 
@@ -1504,9 +1507,9 @@ under `-Pbench`, `SF_BENCHMARK=true`, `-Dscalar.rows=200000 -Dscalar.bytes=64` a
 
 ## Flink 1.18 compatibility
 
-The 1.18 development build disables unverified Jackson buffer emulation and runs SQL/JSON through
-the whole-Calc JVM route, once per Arrow batch. Decimal JSON constructors use that route as well.
-See
+The 1.18 development build uses the shared native SQL/JSON reader with its verified Jackson
+2.14.2/JDK 17 profile. Decimal JSON constructors retain the whole-Calc JVM route, once per
+Arrow batch, to preserve that release's decimal spelling. See
 [Flink line compatibility](../flink-compatibility.md) for host-only syntax differences.
 
 ### Legacy ENCODE result representation

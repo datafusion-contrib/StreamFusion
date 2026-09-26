@@ -66,6 +66,10 @@ public final class NativeJsonRuntime {
     return JsonRuntimeCompat.verifiedFactory(factory);
   }
 
+  public boolean legacySemantics() {
+    return JsonRuntimeCompat.LEGACY_SQL_JSON;
+  }
+
   public int bufferSize() {
     return buffer.length;
   }

@@ -131,10 +131,20 @@ impl<'a> Path<'a> {
         self.apply_policy(self.parse_with_buffer(input, 4000))
     }
 
+    #[cfg(test)]
     fn parse_with_buffer<'s>(
         &self,
         input: &'s str,
         buffer_size: usize,
+    ) -> Result<(Value<'s>, bool), ()> {
+        self.parse_with_profile(input, buffer_size, false)
+    }
+
+    fn parse_with_profile<'s>(
+        &self,
+        input: &'s str,
+        buffer_size: usize,
+        legacy: bool,
     ) -> Result<(Value<'s>, bool), ()> {
         let mut parser = Parser {
             input,
@@ -142,6 +152,7 @@ impl<'a> Path<'a> {
             identifier: self.identifier,
             legacy_decimal_exponent: self.legacy_decimal_exponent,
             buffer_size,
+            legacy,
         };
         parser.whitespace();
         let root_null = parser.remaining().starts_with("null");
@@ -187,6 +198,7 @@ pub(super) enum Value<'a> {
     String(&'a str),
     DecodedString(&'a str),
     Number(&'a str),
+    LegacyFloat(f64),
     Boolean(bool),
 }
 
@@ -196,6 +208,11 @@ impl Value<'_> {
             Self::String(value) => Some(unescape(value)),
             Self::DecodedString(value) => Some(Cow::Borrowed(value)),
             Self::Number(value) => Some(number_text(value)),
+            Self::LegacyFloat(value) => {
+                let mut bytes = Vec::new();
+                streamfusion_bridge::jdk_double::jdk_double_to_string(*value, &mut bytes);
+                Some(Cow::Owned(String::from_utf8(bytes).unwrap()))
+            }
             Self::Boolean(value) => Some(Cow::Borrowed(if *value { "true" } else { "false" })),
             _ => None,
         }
@@ -209,6 +226,7 @@ struct Parser<'a> {
     identifier: &'static regex::Regex,
     legacy_decimal_exponent: bool,
     buffer_size: usize,
+    legacy: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -240,12 +258,21 @@ impl<'a> Parser<'a> {
         let selected = path.is_some_and(|steps| steps.is_empty());
         let value = match self.peek().ok_or(())? {
             b'{' | b'[' => {
-                if depth >= 1000 {
+                if !self.legacy && depth >= 1000 {
                     return Err(());
+                }
+                // Jackson 2.14 has no nesting limit. Grow the stack rather than aborting
+                // the task JVM on deeply nested documents in that profile.
+                if self.legacy && depth % 64 == 0 {
+                    return stacker::maybe_grow(128 * 1024, 2 * 1024 * 1024, || {
+                        self.container(path, depth + 1)
+                    });
                 }
                 return self.container(path, depth + 1);
             }
-            b'"' => Value::String(self.string(20_000_000)?),
+            b'"' => {
+                Value::String(self.string(if self.legacy { usize::MAX } else { 20_000_000 })?)
+            }
             b't' => {
                 self.literal("true")?;
                 Value::Boolean(true)
@@ -258,7 +285,14 @@ impl<'a> Parser<'a> {
                 self.literal("null")?;
                 Value::Null
             }
-            b'-' | b'0'..=b'9' => Value::Number(self.number(depth == 0)?),
+            b'-' | b'0'..=b'9' => {
+                let raw = self.number(depth == 0)?;
+                if self.legacy && raw.contains(['.', 'e', 'E']) {
+                    Value::LegacyFloat(raw.parse::<f64>().map_err(|_| ())?)
+                } else {
+                    Value::Number(raw)
+                }
+            }
             _ => return Err(()),
         };
         Ok(if matches!(path, Some([Step::Wildcard])) {
@@ -307,7 +341,7 @@ impl<'a> Parser<'a> {
         loop {
             self.whitespace();
             let matches = if object {
-                let key = self.string(50_000)?;
+                let key = self.string(if self.legacy { usize::MAX } else { 50_000 })?;
                 self.whitespace();
                 if !self.consume(b':') {
                     return Err(());
@@ -415,24 +449,26 @@ impl<'a> Parser<'a> {
             if exponent_digits == 0 {
                 return Err(());
             }
-            let digits = self.input[exponent_start..self.pos].trim_start_matches('0');
-            let exponent = if digits.is_empty() {
-                0
-            } else {
-                digits.parse::<i64>().map_err(|_| ())?
-            };
-            // Below 500 chars Jackson uses the JDK constructor. JDK 17 caps the exponent
-            // itself; later admitted JDKs and FastDoubleParser only require the scale to fit.
-            if self.legacy_decimal_exponent
-                && self.pos - start < 500
-                && exponent > i64::from(i32::MAX)
-            {
-                return Err(());
+            if !self.legacy {
+                let digits = self.input[exponent_start..self.pos].trim_start_matches('0');
+                let exponent = if digits.is_empty() {
+                    0
+                } else {
+                    digits.parse::<i64>().map_err(|_| ())?
+                };
+                // Below 500 chars Jackson uses the JDK constructor. JDK 17 caps the exponent
+                // itself; later admitted JDKs and FastDoubleParser only require the scale to fit.
+                if self.legacy_decimal_exponent
+                    && self.pos - start < 500
+                    && exponent > i64::from(i32::MAX)
+                {
+                    return Err(());
+                }
+                let scale = (fraction as i64)
+                    .checked_sub(if negative { -exponent } else { exponent })
+                    .ok_or(())?;
+                i32::try_from(scale).map_err(|_| ())?;
             }
-            let scale = (fraction as i64)
-                .checked_sub(if negative { -exponent } else { exponent })
-                .ok_or(())?;
-            i32::try_from(scale).map_err(|_| ())?;
         }
         let number = &self.input[start..self.pos];
         if !self.number_length_valid(start, integer, fraction, exponent_digits)
@@ -450,6 +486,9 @@ impl<'a> Parser<'a> {
         fraction: usize,
         exponent: usize,
     ) -> bool {
+        if self.legacy {
+            return true;
+        }
         let digits = integer + fraction + exponent;
         if digits <= 1000 {
             return true;
@@ -586,6 +625,26 @@ mod tests {
 
     fn path(text: &str) -> Path<'_> {
         Path::parse(text, "13.0").unwrap()
+    }
+
+    #[test]
+    fn legacy_profile_uses_double_values_and_pre_constraint_limits() {
+        let root = path("$");
+        let mut legacy = Reader::new(4000).with_legacy_semantics(true);
+        for (raw, expected) in [
+            ("1.2300", "1.23"),
+            ("-0.0", "-0.0"),
+            ("1e309", "Infinity"),
+            ("1e-9999999999", "0.0"),
+        ] {
+            assert_eq!(legacy.read(&root, raw).unwrap().text().unwrap(), expected);
+        }
+        let long = "1".repeat(1001);
+        assert!(legacy.read(&root, &long).is_ok());
+        assert!(Reader::new(4000).read(&root, &long).is_err());
+        let member = format!("{{\"{}\":1}}", "x".repeat(50_001));
+        assert!(legacy.read(&root, &member).is_ok());
+        assert!(Reader::new(4000).read(&root, &member).is_err());
     }
 
     #[test]

@@ -1725,7 +1725,8 @@ final class RexExpression {
     } catch (LinkageError incompatibleJackson) {
       // Loading the runtime class itself may fail before available() can run.
     }
-    return reject("SQL/JSON requires Jackson 2.18.2 with a shared thread-local token buffer");
+    return reject(
+        "SQL/JSON requires the verified Jackson runtime with a shared thread-local token buffer");
   }
 
   private boolean emitJsonValue(RexCall call) {

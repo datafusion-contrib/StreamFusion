@@ -7,6 +7,7 @@ pub(crate) struct Reader {
     buffers: Buffers,
     tape: Option<Tape<'static>>,
     buffer_size: usize,
+    legacy: bool,
 }
 
 impl Reader {
@@ -16,7 +17,17 @@ impl Reader {
             buffers: Buffers::default(),
             tape: Some(Tape::null()),
             buffer_size,
+            legacy: false,
         }
+    }
+
+    pub fn with_legacy_semantics(mut self, legacy: bool) -> Self {
+        self.legacy = legacy;
+        self
+    }
+
+    pub fn legacy_semantics(&self) -> bool {
+        self.legacy
     }
 
     pub fn buffer_size(&self) -> usize {
@@ -46,7 +57,7 @@ impl Reader {
             }
         }
         if !candidate(input) {
-            return path.parse_with_buffer(input, self.buffer_size);
+            return path.parse_with_profile(input, self.buffer_size, self.legacy);
         }
         self.scratch.clear();
         self.scratch.extend_from_slice(input.as_bytes());
@@ -63,7 +74,7 @@ impl Reader {
         self.tape = Some(tape.reset());
         match value {
             Some(value) => Ok(value),
-            None => path.parse_with_buffer(input, self.buffer_size),
+            None => path.parse_with_profile(input, self.buffer_size, self.legacy),
         }
     }
 }

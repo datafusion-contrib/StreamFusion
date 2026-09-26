@@ -7,6 +7,8 @@ import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.util.BufferRe
 public final class JsonRuntimeCompat {
   private JsonRuntimeCompat() {}
 
+  public static final boolean LEGACY_SQL_JSON = false;
+
   public static final boolean ACCEPTS_ARRAY_ROOTS = true;
 
   public static final boolean PRESERVES_DECIMAL_SCALE = true;

@@ -86,7 +86,7 @@ Unmapped JDK versions are declined rather than silently using the build machine'
 
 ## Resource-limit boundary
 
-Jackson's published limits are 1000 number digits, 1000 nesting levels, 20 million UTF-16
+For the Jackson 2.18.2 profile, published limits are 1000 number digits, 1000 nesting levels, 20 million UTF-16
 string units and 50,000 member-name units. Those limits are checked even outside the selected
 subtree. There is a host implementation quirk beyond the documented number limit:
 `ReaderBasedJsonParser._parseNumber2` represents an absent fraction/exponent length as -1,
@@ -102,13 +102,24 @@ the default in 2.18.2 used by Flink's `SqlJsonUtils`. Jackson 2.17.0 changed the
 pool, and 2.17.1 reverted it; another default cannot be assumed to share task-thread state.
 
 Before encoding JSON_VALUE, JSON_EXISTS or IS JSON, the planner checks a result cached once
-per class loader. The probe requires version 2.18.2 and the thread-local pool, constructs a
+per class loader. On Flink 2.2 the probe requires version 2.18.2 and the thread-local pool. It constructs a
 runtime, returns its buffer and verifies that a second default factory acquires the same
 recycler and buffer. Construction/release failures, missing classes/methods and other linkage
 errors decline the expressions during planning. Factory initialization is lazy so those
 failures are caught by the probe rather than escaping static initialization. An upgrade
 requires re-verifying this contract and the parity fixtures before widening the version gate.
 Planning and task JVMs must carry the same verified shaded Jackson classes and pool strategy.
+
+Flink 1.18 uses this same reader with a Jackson 2.14.2 profile. Its small Java adapter verifies
+`USE_THREAD_LOCAL_FOR_BUFFER_RECYCLING`, and the shared identity probe checks that both factories
+borrow the same buffer. Jackson 2.14 has no pool-release method, so the adapter only returns the
+character buffer. That profile uses floating-point JSON values (including signed zero and overflow)
+instead of BigDecimal, reuses the shared JDK 17 double formatter, and omits the token/depth limits
+introduced after 2.14. The legacy recursive reader uses the released `stacker` crate to grow
+its stack for deep nesting instead of risking a native stack overflow. Native admission currently requires JDK 17 for this profile; other runtimes
+keep the host evaluator. The parser, SIMD selection, path handling and batch lifecycle are shared;
+there is no second legacy parser. Both profiles run the same direct JNI buffer-history fixture,
+with expected values supplied by their released Flink SQL/JSON provider.
 
 Inputs of at most 32768 UTF-16 units grow
 the capacity before parsing, including invalid input and rows handled by SIMD; larger inputs
