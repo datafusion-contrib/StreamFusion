@@ -39,6 +39,10 @@ memory budget; it has no separate state-cardinality cap or spillable candidate-p
 product can emit `left_count * right_count` rows. Candidate generation and residual filtering use
 the bounded INNER output chunks described below. The RocksDB backend does not remove the total
 per-bucket matching work.
+Its persistent state also retains whole-bucket values, coalesced at bundle boundaries. A
+per-record layout with complete-bucket hydration reduced write volume but regressed release
+state-microbenchmark throughput, so it was not adopted. See the [backend tradeoff](../../backends/rocksdb.md)
+for the measurements and remaining access-pattern constraint.
 
 [Interval join](interval-join.md), [window join](window-join.md), [temporal table
 join](temporal-join.md), and [lookup join](lookup-join.md) all state their admission conditions as a
