@@ -21,7 +21,10 @@ pub(crate) fn with_reader<T>(evaluate: impl FnOnce(&mut Reader) -> Result<T>) ->
     env.with_local_frame(4, |env| -> jni::errors::Result<_> {
         let runtime = env.new_object("tech/streamfusion/operator/NativeJsonRuntime", "()V", &[])?;
         let size = env.call_method(&runtime, "bufferSize", "()I", &[])?.i()?;
-        let mut reader = Reader::new(size as usize);
+        let legacy = env
+            .call_method(&runtime, "legacySemantics", "()Z", &[])?
+            .z()?;
+        let mut reader = Reader::new(size as usize).with_legacy_semantics(legacy);
         let result = evaluate(&mut reader);
         // Publish growth even if an ON ERROR/EMPTY policy fails the expression.
         env.call_method(

@@ -73,6 +73,10 @@ final class CalcOutputTypeCheck {
     }
     for (int i = 0; i < inferred.size(); i++) {
       Field actual = inferred.get(i);
+      if (encoded.isVariableBinaryProjection(i)
+          && actual.getType() instanceof org.apache.arrow.vector.types.pojo.ArrowType.Binary
+          && declared.getTypeAt(i).getTypeRoot()
+              == org.apache.flink.table.types.logical.LogicalTypeRoot.BINARY) continue;
       if (encoded.isBinaryStringProjection(i)
           && actual.getType() instanceof org.apache.arrow.vector.types.pojo.ArrowType.Binary
           && (declared.getTypeAt(i).getTypeRoot()

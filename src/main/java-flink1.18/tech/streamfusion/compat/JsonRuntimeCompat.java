@@ -7,16 +7,22 @@ import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.util.BufferRe
 public final class JsonRuntimeCompat {
   private JsonRuntimeCompat() {}
 
+  public static final boolean LEGACY_SQL_JSON = true;
+
   public static final boolean ACCEPTS_ARRAY_ROOTS = false;
 
   public static final boolean PRESERVES_DECIMAL_SCALE = false;
 
   public static boolean verifiedFactory(JsonFactory factory) {
-    return false;
+    var version = factory.version();
+    return version.getMajorVersion() == 2
+        && version.getMinorVersion() == 14
+        && version.getPatchLevel() == 2
+        && Runtime.version().feature() == 17
+        && factory.isEnabled(JsonFactory.Feature.USE_THREAD_LOCAL_FOR_BUFFER_RECYCLING);
   }
 
   public static void releaseToPool(BufferRecycler recycler) {
-    // Flink 1.18's Jackson predates recycler pools; verifiedFactory disables native buffer
-    // emulation.
+    // Jackson 2.14 keeps its recycler in a thread-local SoftReference; no pool release API.
   }
 }

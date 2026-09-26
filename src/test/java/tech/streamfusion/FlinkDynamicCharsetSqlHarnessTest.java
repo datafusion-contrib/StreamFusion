@@ -10,18 +10,12 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import tech.streamfusion.compat.FlinkTestCapabilities;
 
 class FlinkDynamicCharsetSqlHarnessTest {
   @Test
   void runtimeEncodeUsesJdkCharsetsAliasesAndNulls() throws Exception {
     String sql = "SELECT ENCODE(s,c) FROM src";
-    if (FlinkTestCapabilities.VARIABLE_LENGTH_ENCODE) {
-      BuiltinFunctionParity.assertParity(FlinkDynamicCharsetSqlHarnessTest::samples, sql);
-    } else {
-      NativeParity.assertFallbackReasonContains(
-          FlinkDynamicCharsetSqlHarnessTest::samples, sql, "BINARY(1)");
-    }
+    BuiltinFunctionParity.assertParity(FlinkDynamicCharsetSqlHarnessTest::samples, sql);
   }
 
   @Test
@@ -59,9 +53,7 @@ class FlinkDynamicCharsetSqlHarnessTest {
               UnsupportedEncodingException.class,
               charset,
               NativeFailureParity.Phase.ROW_EVALUATION,
-              expression.startsWith("ENCODE") && !FlinkTestCapabilities.VARIABLE_LENGTH_ENCODE
-                  ? NativeFailureParity.Route.FALLBACK
-                  : NativeFailureParity.Route.NATIVE);
+              NativeFailureParity.Route.NATIVE);
     }
   }
 
@@ -71,22 +63,18 @@ class FlinkDynamicCharsetSqlHarnessTest {
         () -> invalid("not-a-charset"),
         "SELECT DECODE(CASE WHEN n = 1 THEN CAST(NULL AS BYTES) ELSE b END,c),"
             + " CASE WHEN n = 1 THEN 'ok' ELSE DECODE(b,c) END FROM src");
-    if (FlinkTestCapabilities.VARIABLE_LENGTH_ENCODE) {
-      BuiltinFunctionParity.assertParity(
-          () -> invalid("not-a-charset"),
-          "SELECT ENCODE(CASE WHEN n = 1 THEN CAST(NULL AS STRING) ELSE s END,c),"
-              + " CASE WHEN n = 1 THEN CAST(NULL AS BYTES) ELSE ENCODE(s,c) END FROM src");
-    }
+    BuiltinFunctionParity.assertParity(
+        () -> invalid("not-a-charset"),
+        "SELECT ENCODE(CASE WHEN n = 1 THEN CAST(NULL AS STRING) ELSE s END,c),"
+            + " CASE WHEN n = 1 THEN CAST(NULL AS BYTES) ELSE ENCODE(s,c) END FROM src");
   }
 
   @Test
   void emptyFilteredBatchesDoNotResolveInvalidCharsets() throws Exception {
     BuiltinFunctionParity.assertParity(
         () -> invalid("not-a-charset"), "SELECT DECODE(b,c) FROM src WHERE n = 99");
-    if (FlinkTestCapabilities.VARIABLE_LENGTH_ENCODE) {
-      BuiltinFunctionParity.assertParity(
-          () -> invalid("not-a-charset"), "SELECT ENCODE(s,c) FROM src WHERE n = 99");
-    }
+    BuiltinFunctionParity.assertParity(
+        () -> invalid("not-a-charset"), "SELECT ENCODE(s,c) FROM src WHERE n = 99");
   }
 
   @Test
@@ -98,9 +86,7 @@ class FlinkDynamicCharsetSqlHarnessTest {
                     Row.of(1, "abc", new byte[] {65}, "not-a-charset"),
                     Row.of(2, "abc", new byte[] {65}, "UTF-8")));
     BuiltinFunctionParity.assertParity(input, "SELECT DECODE(b,c) FROM src WHERE n = 2");
-    if (FlinkTestCapabilities.VARIABLE_LENGTH_ENCODE) {
-      BuiltinFunctionParity.assertParity(input, "SELECT ENCODE(s,c) FROM src WHERE n = 2");
-    }
+    BuiltinFunctionParity.assertParity(input, "SELECT ENCODE(s,c) FROM src WHERE n = 2");
   }
 
   @ParameterizedTest

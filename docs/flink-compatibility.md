@@ -84,9 +84,12 @@ The following are host-line differences, not missing native substitutions:
   TIME conversion also rejects some pre-epoch timestamp casts. Those host-oracle cases are
   explicitly N/A in the shared parity suite; neighboring valid cases still execute.
 
-`ENCODE` on 1.18 declares `BINARY(1)` while returning variable-length bytes. That expression stays
-on Flink because the native boundary cannot treat arbitrary bytes as a one-byte fixed vector.
-The fallback parity tests check the complete bytes, including UTF-16 encodings and nulls.
+`ENCODE` on 1.18 declares `BINARY(1)` while returning variable-length bytes. The shared batched
+Calc evaluator preserves the host expression and public schema while carrying affected output
+columns as Arrow Binary internally. Fused consumers and row sinks preserve the full bytes;
+stateful/operator boundaries and native sinks that would interpret those columns as fixed-width
+remain explicit fallbacks. An explicit cast to BYTES can establish an ordinary variable-width
+boundary. Genuine fixed-width inputs and casts are not globally retyped.
 
 Scalar SQL regression tests assert native routing, resolved output schemas and collected results
 for admitted exact-numeric ABS, Java-backed string extrema and dynamic trims, BOOLEAN IF,
@@ -118,10 +121,13 @@ Flink 1.18 cannot generate `JSON_QUERY` with a column-valued path. Those cases a
 same host planning failure, then exercise the nested bridge with a literal selector; 2.2
 retains the dynamic selectors.
 
-The 1.18 Jackson runtime has no verified recycler-buffer contract for native SQL/JSON parsing.
-Its probe disables that parser path and the existing whole-Calc JVM evaluator handles the
-expressions through one callback per Arrow batch. Decimal-bearing `JSON_STRING` and `JSON_OBJECT`
-also use the selected host evaluator so decimal scale and spelling match that release.
+Both lines use the same native SQL/JSON reader. The 1.18 adapter verifies Jackson 2.14.2's
+thread-local recycler on JDK 17; the 2.2 adapter verifies Jackson 2.18.2's thread-local pool.
+The shared reader selects the host's numeric and parsing-limit semantics: 1.18 uses Java Double
+values for floating JSON numbers and predates Jackson's newer token/depth limits, while 2.2
+uses BigDecimal values and those limits. Unsupported runtimes retain the batched host evaluator.
+Decimal-bearing `JSON_STRING` and `JSON_OBJECT` on 1.18 still use the host evaluator so decimal
+scale and spelling match that release.
 
 JSON, CDC JSON and CSV encoders carry the selected line's decimal-node semantics into the native
 formatter. The older Jackson node factory strips decimal trailing zeros even when plain-number

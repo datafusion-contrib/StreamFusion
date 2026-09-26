@@ -27,6 +27,35 @@ import org.junit.jupiter.params.provider.ValueSource;
 class NativeJsonBufferHistoryTest {
   private static final JsonFactory FACTORY = new JsonFactory();
 
+  @org.junit.jupiter.api.Test
+  void numericSemanticsMatchEachHostsProviderAcrossBatches() {
+    var documents = new ArrayList<String>();
+    for (String number :
+        List.of(
+            "-0.0",
+            "1.2300",
+            "1e23",
+            "4.9e-324",
+            "1e309",
+            "1e2147483648",
+            "1e-2147483648",
+            "0e9999999999",
+            "1".repeat(1001))) {
+      documents.add("{\"a\":" + number + "}");
+    }
+    var random = new java.util.Random(1844);
+    documents.add("{\"a\":1,\"nested\":" + "[".repeat(4096) + "0" + "]".repeat(4096) + "}");
+    for (int i = 0; i < 2053; i++) {
+      double value = Double.longBitsToDouble(random.nextLong());
+      if (Double.isFinite(value)) documents.add("{\"a\":" + Double.toString(value) + "}");
+    }
+    for (int batchSize : new int[] {1, 513, documents.size()}) {
+      assertEquals(
+          withBuffer(4000, () -> hostRows(documents, false)),
+          withBuffer(4000, () -> nativeRows(documents, false, batchSize)));
+    }
+  }
+
   @ParameterizedTest
   @ValueSource(ints = {144, 145, 146, 147})
   void documentPredicatesUseTheActualRecycledBuffer(int op) {
@@ -80,7 +109,9 @@ class NativeJsonBufferHistoryTest {
     }
     List<String> fresh = withBuffer(4000, () -> hostRows(documents, exists));
     List<String> grown = withBuffer(32768, () -> hostRows(documents, exists));
-    assertNotEquals(fresh, grown, "The fixture must exercise Jackson's history dependence");
+    if (!tech.streamfusion.compat.JsonRuntimeCompat.LEGACY_SQL_JSON)
+      assertNotEquals(fresh, grown, "The fixture must exercise Jackson's history dependence");
+    else assertEquals(fresh, grown, "Jackson 2.14 has no token-length constraint");
     for (int size : new int[] {4000, 8000, 16000, 32768}) {
       assertEquals(
           withBuffer(size, () -> hostRows(documents, exists)),
@@ -277,7 +308,7 @@ class NativeJsonBufferHistoryTest {
     BufferRecycler recycler = FACTORY._getBufferRecycler();
     char[] buffer = recycler.allocCharBuffer(BufferRecycler.CHAR_TOKEN_BUFFER);
     recycler.releaseCharBuffer(BufferRecycler.CHAR_TOKEN_BUFFER, buffer);
-    recycler.releaseToPool();
+    tech.streamfusion.compat.JsonRuntimeCompat.releaseToPool(recycler);
     return buffer.length;
   }
 
@@ -290,7 +321,7 @@ class NativeJsonBufferHistoryTest {
     } finally {
       recycler.allocCharBuffer(BufferRecycler.CHAR_TOKEN_BUFFER);
       recycler.releaseCharBuffer(BufferRecycler.CHAR_TOKEN_BUFFER, original);
-      recycler.releaseToPool();
+      tech.streamfusion.compat.JsonRuntimeCompat.releaseToPool(recycler);
     }
   }
 }

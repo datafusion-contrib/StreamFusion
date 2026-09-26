@@ -898,15 +898,16 @@ Character input and a literal UTF-8, US-ASCII, ISO-8859-1, UTF-16, UTF-16BE, or 
 charset (including JDK aliases). Returns BYTES, preserves NULL, and replaces unmappable
 characters with `?` in ASCII/Latin-1. UTF-16 emits a big-endian BOM for non-empty strings;
 UTF-16BE/LE emit no BOM. Empty strings produce empty bytes in all six charsets.
-Other literal charsets fall back. A runtime character expression for the charset runs through
+On Flink 2.2, other literal charsets fall back. A runtime character expression for the charset runs through
 Flink's generated evaluator in the native Calc's batch JVM bridge. It uses the TaskManager
 JDK's charset implementations and aliases, including non-UTF charsets, without a Rust
 charset-name approximation. The complete Calc filter and projection list are generated together
 to preserve Flink's row and projection evaluation order, including the first charset error when
-several expressions or rows would fail. Calcs using only the six verified literal charsets
-retain their Rust kernels. NULL arguments return NULL; illegal or unsupported runtime names
+several expressions or rows would fail. On Flink 2.2, Calcs using only the six verified literal
+charsets retain their Rust kernels. NULL arguments return NULL; illegal or unsupported runtime names
 raise Flink's `UnsupportedEncodingException` only when the expression is evaluated. Flink 1.18
-still declares direct ENCODE results as BINARY(1), so that output boundary retains fallback.
+declares direct ENCODE results as BINARY(1); its generated Calc carries the complete bytes as
+Arrow Binary at final projections (see [legacy representation](#legacy-encode-result-representation)).
 
 ### DECODE
 
@@ -1349,20 +1350,23 @@ the missing member's path, while the surrounding expression stays in the native 
 FALSE, TRUE and UNKNOWN policies continue to use the Rust parser.
 
 These JSON functions use native first-document parsing and validate unselected fields too.
-Admission first probes the shaded Jackson runtime once per class loader: version 2.18.2,
-the default thread-local recycler pool, and successful buffer acquisition, cross-factory
-reuse and release are required. Missing methods/classes, a different version or pool,
+Admission first probes the shaded Jackson runtime once per class loader: Flink 2.2 requires
+Jackson 2.18.2 and its default thread-local recycler pool; Flink 1.18 requires Jackson 2.14.2
+and thread-local buffer recycling. Both require successful buffer acquisition, cross-factory
+reuse and release. Missing methods/classes, a different version or pool,
 or probe failure decline the native parser for JSON_VALUE, JSON_EXISTS and IS JSON; Calc
 can use Flink generation when the host runtime and batch boundary types support it.
 JobManagers and TaskManagers must use the same verified shaded Jackson runtime.
-They currently admit JDK 17, 21, 24 and 25, selecting the corresponding Unicode version for
+The 2.2 profile admits JDK 17, 21, 24 and 25, selecting the corresponding Unicode version for
 Jackson's token-termination rules; other JDKs use Flink generation in Calc. The profile is selected on the
-JobManager, so TaskManagers must use the same JSON parsing rules. Jackson's resource limits
+JobManager, so TaskManagers must use the same JSON parsing rules. Jackson 2.18.2's resource limits
 (1000 nesting levels, 1000 number digits, 20 million UTF-16 string units, 50,000 member-name
 units) also apply to unselected values. Its numeric boundary has a buffer-dependent exception:
 the slow parser can accept an extra digit. Native evaluation uses the task thread's actual
 Jackson input-buffer capacity and preserves its growth, including invalid input and SIMD
-parsing. A batch exchanges this capacity through JNI; documents and results remain native.
+parsing. A batch exchanges this capacity through JNI; documents and results remain native. The 1.18
+profile uses the same reader on JDK 17, with Double numeric semantics and without the newer
+token/depth limits. Deep legacy nesting grows the native stack as needed.
 See the [SQL/JSON parser note](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/32-sql-json-definite-paths.md)
 and [per-function benchmarks](../benchmarks/scalar-functions.md).
 
@@ -1535,8 +1539,17 @@ under `-Pbench`, `SF_BENCHMARK=true`, `-Dscalar.rows=200000 -Dscalar.bytes=64` a
 
 ## Flink 1.18 compatibility
 
-The 1.18 development build disables unverified Jackson buffer emulation and runs SQL/JSON through
-the whole-Calc JVM route, once per Arrow batch. Decimal JSON constructors use that route as well.
-`ENCODE` stays on Flink because that release declares `BINARY(1)` for a variable-length result;
-UTF-8 and UTF-16 fallback tests retain the complete host bytes. See
+The 1.18 development build uses the shared native SQL/JSON reader with its verified Jackson
+2.14.2/JDK 17 profile. Decimal JSON constructors retain the whole-Calc JVM route, once per
+Arrow batch, to preserve that release's decimal spelling. See
 [Flink line compatibility](../flink-compatibility.md) for host-only syntax differences.
+
+### Legacy ENCODE result representation
+
+On Flink 1.18, SQL `ENCODE` reports `BINARY(1)` despite returning variable-length bytes.
+The shared generated Calc evaluator keeps its original expressions and external schema, but
+uses Arrow Binary for affected scalar output columns. This preserves charset resolution,
+nulls, byte arrays, casts and row/projection evaluation order without changing ordinary fixed
+BINARY columns. Final projections and fused scalar consumers accelerate; an affected fixed-width
+result crossing into another operator or a native sink falls back before execution. Casting the
+result to BYTES establishes a normal variable-length boundary.
