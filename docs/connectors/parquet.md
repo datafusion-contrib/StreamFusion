@@ -74,6 +74,7 @@ An explicitly selected INT64 nanosecond unit therefore still cannot represent da
 1677–2262; use microseconds for wide SQL dates when six fractional digits suffice. This physical
 format limit does not affect the lossless representation inside operators and checkpoints.
 With `parquet.write.int64.timestamp=false` (the host default), the sink writes INT96 instead.
+As in Flink, `parquet.timestamp.time.unit` is ignored for INT96, including unrecognized values.
 It preserves the complete millisecond/fraction value as a Julian day and nanoseconds within the
 day, matching Flink's truncating division and remainder even before 1970. INT96 does not narrow
 the value through an i64 epoch-nanosecond intermediate. Nested timestamps, null/empty collections,

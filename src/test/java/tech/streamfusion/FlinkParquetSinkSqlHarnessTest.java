@@ -67,7 +67,7 @@ class FlinkParquetSinkSqlHarnessTest {
         "CREATE TABLE pq (id INT, ts TIMESTAMP(9)) PARTITIONED BY (id) WITH ("
             + "'connector'='filesystem', 'format'='parquet', 'path'='"
             + directory.toUri()
-            + "', 'parquet.utc-timezone'='"
+            + "', 'parquet.timestamp.time.unit'='unused-for-int96', 'parquet.utc-timezone'='"
             + utc
             + "')");
     var scan = useNative ? NativePlanner.install(table) : null;

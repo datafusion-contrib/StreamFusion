@@ -275,6 +275,7 @@ class ParquetSinkTranslatorTest {
     assertTrue(fallback(options, SIMPLE, List.of()).contains("writer.version"));
 
     options = baseOptions();
+    options.put("parquet.write.int64.timestamp", "true");
     options.put("parquet.timestamp.time.unit", "seconds");
     assertTrue(fallback(options, SIMPLE, List.of()).contains("time.unit"));
   }
@@ -305,9 +306,11 @@ class ParquetSinkTranslatorTest {
             "parquet.enable.dictionary", "false",
             "parquet.writer.version", "PARQUET_2_0",
             "parquet.timestamp.time.unit", "nanos");
+    Map<String, String> options = baseOptions();
+    options.put("parquet.write.int64.timestamp", "true");
     ParquetSinkTranslator.Result result =
         ParquetSinkTranslator.translate(
-            baseOptions(), SIMPLE, List.of(), cluster::get);
+            options, SIMPLE, List.of(), cluster::get);
     assertTrue(result.fallbackReason == null, result.fallbackReason);
     Map<String, String> config = new HashMap<>();
     String[] keys = result.encoderKeys();

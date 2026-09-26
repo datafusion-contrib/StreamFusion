@@ -331,7 +331,9 @@ final class ParquetSinkTranslator {
     }
 
     String unit =
-        effectiveValue(options, "parquet.timestamp.time.unit", hadoopConfig, "micros");
+        Boolean.parseBoolean(config.get("timestamp.int96"))
+            ? "micros"
+            : effectiveValue(options, "parquet.timestamp.time.unit", hadoopConfig, "micros");
     switch (unit.toLowerCase(Locale.ROOT)) {
       case "millis":
       case "micros":

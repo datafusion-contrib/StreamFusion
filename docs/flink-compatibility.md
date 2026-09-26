@@ -103,6 +103,13 @@ changelog restrictions still apply. Parquet sinks admit the host's INT96 timesta
 both UTC and local-time modes; selecting INT64 is no longer required for native writing. Local
 INT96 uses the host's timestamp/calendar conversion once per column batch.
 
+Targeted validation of these adapters passed 262 unchanged upstream 1.18 UDF/lookup
+invocations; all 26 audited execution contracts processed rows natively, including the legacy
+variants. The focused Java regression selection passed 129 tests (two skipped) on 1.18 and
+124 on a clean 2.2 build. The unchanged 1.18 Parquet suite passed all eight cases; the four
+INT96 timestamp sink plans were admitted without fallback, and that test class created a native
+writer. These scoped runs do not replace the full-suite inventory above.
+
 ## JSON and formats
 
 The shared nested ARRAY/ROW JSON parity fixtures use each release line's collection-source
