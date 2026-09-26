@@ -97,6 +97,12 @@ STRING-to-BOOLEAN TRY_CAST, which still falls back, rather than functions alread
 the planner. A fallback assertion failure does not establish a result mismatch: routing and
 host/native result parity both need to pass.
 
+Legacy scalar registrations and legacy synchronous/asynchronous lookup sources use the shared
+native operators through the 1.18 planner adapters. Existing UDF type/specialization and lookup
+changelog restrictions still apply. Parquet sinks admit the host's INT96 timestamp encoding in
+both UTC and local-time modes; selecting INT64 is no longer required for native writing. Local
+INT96 uses the host's timestamp/calendar conversion once per column batch.
+
 ## JSON and formats
 
 The shared nested ARRAY/ROW JSON parity fixtures use each release line's collection-source
