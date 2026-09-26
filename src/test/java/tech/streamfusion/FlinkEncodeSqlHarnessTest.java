@@ -11,9 +11,14 @@ class FlinkEncodeSqlHarnessTest {
   }
 
   @Test
-  void unverifiedFormsFallBackBeforeExecution() throws Exception {
-    NativeParity.assertFallback(
-        StringFunctionTestInputs::encodings, "SELECT id, ENCODE(s, 'UTF-32') FROM encodings");
+  void additionalCharsetsFollowTheSelectedEvaluator() throws Exception {
+    if (tech.streamfusion.compat.FlinkTestCapabilities.VARIABLE_LENGTH_ENCODE) {
+      NativeParity.assertFallback(
+          StringFunctionTestInputs::encodings, "SELECT id, ENCODE(s, 'UTF-32') FROM encodings");
+    } else {
+      NativeParity.assertParity(
+          StringFunctionTestInputs::encodings, "SELECT id, ENCODE(s, 'UTF-32') FROM encodings");
+    }
   }
 
   @Test
@@ -45,10 +50,6 @@ class FlinkEncodeSqlHarnessTest {
       java.util.function.Supplier<org.apache.flink.table.api.TableEnvironment> environment,
       String sql)
       throws Exception {
-    if (tech.streamfusion.compat.FlinkTestCapabilities.VARIABLE_LENGTH_ENCODE) {
-      NativeParity.assertParity(environment, sql);
-    } else {
-      NativeParity.assertFallbackReasonContains(environment, sql, "BINARY(1)");
-    }
+    NativeParity.assertParity(environment, sql);
   }
 }

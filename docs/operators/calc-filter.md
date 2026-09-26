@@ -872,15 +872,16 @@ Character input and a literal UTF-8, US-ASCII, ISO-8859-1, UTF-16, UTF-16BE, or 
 charset (including JDK aliases). Returns BYTES, preserves NULL, and replaces unmappable
 characters with `?` in ASCII/Latin-1. UTF-16 emits a big-endian BOM for non-empty strings;
 UTF-16BE/LE emit no BOM. Empty strings produce empty bytes in all six charsets.
-Other literal charsets fall back. A runtime character expression for the charset runs through
+On Flink 2.2, other literal charsets fall back. A runtime character expression for the charset runs through
 Flink's generated evaluator in the native Calc's batch JVM bridge. It uses the TaskManager
 JDK's charset implementations and aliases, including non-UTF charsets, without a Rust
 charset-name approximation. The complete Calc filter and projection list are generated together
 to preserve Flink's row and projection evaluation order, including the first charset error when
-several expressions or rows would fail. Calcs using only the six verified literal charsets
-retain their Rust kernels. NULL arguments return NULL; illegal or unsupported runtime names
+several expressions or rows would fail. On Flink 2.2, Calcs using only the six verified literal
+charsets retain their Rust kernels. NULL arguments return NULL; illegal or unsupported runtime names
 raise Flink's `UnsupportedEncodingException` only when the expression is evaluated. Flink 1.18
-still declares direct ENCODE results as BINARY(1), so that output boundary retains fallback.
+declares direct ENCODE results as BINARY(1); its generated Calc carries the complete bytes as
+Arrow Binary at final projections (see [legacy representation](#legacy-encode-result-representation)).
 
 ### DECODE
 
@@ -1505,6 +1506,15 @@ under `-Pbench`, `SF_BENCHMARK=true`, `-Dscalar.rows=200000 -Dscalar.bytes=64` a
 
 The 1.18 development build disables unverified Jackson buffer emulation and runs SQL/JSON through
 the whole-Calc JVM route, once per Arrow batch. Decimal JSON constructors use that route as well.
-`ENCODE` stays on Flink because that release declares `BINARY(1)` for a variable-length result;
-UTF-8 and UTF-16 fallback tests retain the complete host bytes. See
+See
 [Flink line compatibility](../flink-compatibility.md) for host-only syntax differences.
+
+### Legacy ENCODE result representation
+
+On Flink 1.18, SQL `ENCODE` reports `BINARY(1)` despite returning variable-length bytes.
+The shared generated Calc evaluator keeps its original expressions and external schema, but
+uses Arrow Binary for affected scalar output columns. This preserves charset resolution,
+nulls, byte arrays, casts and row/projection evaluation order without changing ordinary fixed
+BINARY columns. Final projections and fused scalar consumers accelerate; an affected fixed-width
+result crossing into another operator or a native sink falls back before execution. Casting the
+result to BYTES establishes a normal variable-length boundary.

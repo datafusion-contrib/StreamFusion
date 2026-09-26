@@ -151,6 +151,7 @@ final class RexExpression {
   private final List<Integer> udfIdSlots = new ArrayList<>();
 
   private final List<Integer> projectionRoots = new ArrayList<>();
+  private final java.util.Set<Integer> variableBinaryProjections = new java.util.HashSet<>();
   private final java.util.Set<Integer> binaryStringProjections = new java.util.HashSet<>();
   private int conditionRoot = -1;
   private String[] outputNames = new String[0];
@@ -373,7 +374,13 @@ final class RexExpression {
 
   private boolean emitCalc(Calc calc) {
     RexProgram program = calc.getProgram();
-    if (binaryUdfCallCount(program) > 1 || containsRuntimeCharset(program)) return emitRowCalc(calc);
+    if (binaryUdfCallCount(program) > 1
+        || containsRuntimeCharset(program)
+        || program.getProjectList().stream()
+            .anyMatch(ref -> LegacyBinaryResults.containsEncode(program.expandLocalRef(ref)))
+        || program.getCondition() != null
+            && LegacyBinaryResults.containsEncode(program.expandLocalRef(program.getCondition())))
+      return emitRowCalc(calc);
     projectionRoot = null;
     if (program.getCondition() != null) {
       RexNode condition =
@@ -558,7 +565,10 @@ final class RexExpression {
             && JsonStringIdentity.containsBinaryString(projection)) {
           return reject("binary-backed STRING requires a final scalar projection");
         }
-        if (rowCalcTypeCode(projection.getType()) < 0)
+        if (LegacyBinaryResults.variableResult(projection))
+          variableBinaryProjections.add(projections.size());
+        if (rowCalcTypeCode(projection.getType()) < 0
+            && !LegacyBinaryResults.variableResult(projection))
           return reject("row-fused UDF output type is not supported: " + projection.getType());
         projections.add(projection.accept(remap));
       }
@@ -569,6 +579,20 @@ final class RexExpression {
       var resultType =
           org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalRowType(
               calc.getRowType());
+      if (!variableBinaryProjections.isEmpty()) {
+        var fields = new java.util.ArrayList<>(resultType.getFields());
+        for (int index : variableBinaryProjections) {
+          var field = fields.get(index);
+          fields.set(
+              index,
+              new org.apache.flink.table.types.logical.RowType.RowField(
+                  field.getName(),
+                  new org.apache.flink.table.types.logical.VarBinaryType(
+                      field.getType().isNullable(),
+                      org.apache.flink.table.types.logical.VarBinaryType.MAX_LENGTH)));
+        }
+        resultType = new org.apache.flink.table.types.logical.RowType(fields);
+      }
       var function =
           new FlinkExpressionFunction(
               projections,
@@ -612,6 +636,10 @@ final class RexExpression {
   /** The pre-order node index of each projection tree's root. */
   int[] projectionRoots() {
     return toIntArray(projectionRoots);
+  }
+
+  boolean isVariableBinaryProjection(int index) {
+    return variableBinaryProjections.contains(index);
   }
 
   boolean isBinaryStringProjection(int index) {

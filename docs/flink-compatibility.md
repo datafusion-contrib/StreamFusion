@@ -84,9 +84,12 @@ The following are host-line differences, not missing native substitutions:
   TIME conversion also rejects some pre-epoch timestamp casts. Those host-oracle cases are
   explicitly N/A in the shared parity suite; neighboring valid cases still execute.
 
-`ENCODE` on 1.18 declares `BINARY(1)` while returning variable-length bytes. That expression stays
-on Flink because the native boundary cannot treat arbitrary bytes as a one-byte fixed vector.
-The fallback parity tests check the complete bytes, including UTF-16 encodings and nulls.
+`ENCODE` on 1.18 declares `BINARY(1)` while returning variable-length bytes. The shared batched
+Calc evaluator preserves the host expression and public schema while carrying affected output
+columns as Arrow Binary internally. Fused consumers and row sinks preserve the full bytes;
+stateful/operator boundaries and native sinks that would interpret those columns as fixed-width
+remain explicit fallbacks. An explicit cast to BYTES can establish an ordinary variable-width
+boundary. Genuine fixed-width inputs and casts are not globally retyped.
 
 Scalar SQL regression tests assert native routing, resolved output schemas and collected results
 for admitted exact-numeric ABS, Java-backed string extrema and dynamic trims, BOOLEAN IF,

@@ -154,6 +154,11 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   }
 
   private RelNode substitute(RelNode root, Set<String> repeatedSources, boolean finalOutput) {
+    if (LegacyBinaryResults.crossesBoundary(root, finalOutput)) {
+      recordFallback(
+          "legacy ENCODE variable bytes require a final projection or fused scalar consumer");
+      return root;
+    }
     if (JsonStringIdentity.crossesOperatorBoundary(root, finalOutput)) {
       recordFallback("JSON string identity requires a final projection or a fused scalar consumer");
       return root;
@@ -163,9 +168,13 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     RelNode substituted = rewrite(root, new PlanContext(this, repeatedSources));
     if (root instanceof org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink
         && substituted instanceof ColumnarInput
-        && JsonStringIdentity.projectsBinaryString(root)) {
+        && (JsonStringIdentity.projectsBinaryString(root)
+            || LegacyBinaryResults.reachesSink(root))) {
       substitutions = previousSubstitutions;
-      recordFallback("binary-backed STRING requires a row sink");
+      recordFallback(
+          LegacyBinaryResults.reachesSink(root)
+              ? "legacy ENCODE variable bytes require a row sink"
+              : "binary-backed STRING requires a row sink");
       return root;
     }
     // Whole-query all-or-nothing: every native operator but a source/sink is Arrow → Arrow.
