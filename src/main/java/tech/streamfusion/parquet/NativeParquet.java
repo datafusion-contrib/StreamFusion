@@ -6,7 +6,11 @@ import tech.streamfusion.NativeExtensionLoader;
 public final class NativeParquet {
 
   static {
-    NativeExtensionLoader.load(NativeParquet.class, "parquet", NativeParquet::nativeBuildVersion, NativeParquet::liveNativeHandles);
+    NativeExtensionLoader.load(
+        NativeParquet.class,
+        "parquet",
+        NativeParquet::nativeBuildVersion,
+        NativeParquet::liveNativeHandles);
   }
 
   private NativeParquet() {}
@@ -30,6 +34,23 @@ public final class NativeParquet {
   public static native void closeParquetDecoder(long handle);
 
   public static native long parquetDecoderMaxRowGroupBytes(long handle);
+
+  /** Flink's local-calendar INT96 conversion, evaluated once per Arrow timestamp column. */
+  public static byte[] localInt96(long[] parts) {
+    var bytes =
+        java.nio.ByteBuffer.allocate(Math.multiplyExact(parts.length / 2, 12))
+            .order(java.nio.ByteOrder.LITTLE_ENDIAN);
+    for (int index = 0; index < parts.length; index += 2) {
+      var timestamp =
+          org.apache.flink.table.data.TimestampData.fromEpochMillis(
+                  parts[index], (int) parts[index + 1])
+              .toTimestamp();
+      long millis = timestamp.getTime();
+      long nanos = ((millis % 86_400_000L) / 1_000L) * 1_000_000_000L + timestamp.getNanos();
+      bytes.putLong(nanos).putInt((int) (millis / 86_400_000L + 2_440_588L));
+    }
+    return bytes.array();
+  }
 
   public static native long createParquetEncoder(
       long schemaAddress,

@@ -126,13 +126,22 @@ class ParquetSinkTranslatorTest {
   }
 
   @Test
-  void timestampsFallBackWithoutInt64OptIn() {
+  void timestampsUseInt96WithoutInt64OptIn() {
     RowType rowType =
         RowType.of(
             new LogicalType[] {new IntType(), new TimestampType(3)},
             new String[] {"id", "ts"});
-    String reason = fallback(baseOptions(), rowType, List.of());
-    assertTrue(reason.contains("INT96"), reason);
+    Map<String, String> options = baseOptions();
+    options.put("parquet.utc-timezone", "true");
+    assertEquals("true", encoderConfig(options, rowType, List.of()).get("timestamp.int96"));
+  }
+
+  @Test
+  void defaultInt96UsesTheHostLocalCalendar() {
+    RowType rowType = RowType.of(new TimestampType(9));
+    var config = encoderConfig(baseOptions(), rowType, List.of());
+    assertEquals("true", config.get("timestamp.int96"));
+    assertEquals("true", config.get("timestamp.local"));
   }
 
   @Test
@@ -167,7 +176,8 @@ class ParquetSinkTranslatorTest {
             new LogicalType[] {new IntType(), new TimestampType(3)},
             new String[] {"id", "ts"});
     assertTrue(
-        ParquetSinkTranslator.translate(baseOptions(), rowType, List.of("ts")).fallbackReason == null);
+        ParquetSinkTranslator.translate(baseOptions(), rowType, List.of("ts")).fallbackReason
+            == null);
   }
 
   @Test
@@ -188,7 +198,7 @@ class ParquetSinkTranslatorTest {
   }
 
   @Test
-  void nestedTimestampStillRequiresTheFlinkInt64Settings() {
+  void nestedTimestampUsesInt96WithUtc() {
     RowType nested =
         RowType.of(
             new LogicalType[] {new TimestampType(3)}, new String[] {"created"});
@@ -196,7 +206,8 @@ class ParquetSinkTranslatorTest {
         RowType.of(new LogicalType[] {nested}, new String[] {"details"});
     Map<String, String> options = baseOptions();
     options.remove("parquet.write.int64.timestamp");
-    assertTrue(fallback(options, rowType, List.of()).contains("INT96"));
+    options.put("parquet.utc-timezone", "true");
+    assertEquals("true", encoderConfig(options, rowType, List.of()).get("timestamp.int96"));
   }
 
   @Test
@@ -264,6 +275,7 @@ class ParquetSinkTranslatorTest {
     assertTrue(fallback(options, SIMPLE, List.of()).contains("writer.version"));
 
     options = baseOptions();
+    options.put("parquet.write.int64.timestamp", "true");
     options.put("parquet.timestamp.time.unit", "seconds");
     assertTrue(fallback(options, SIMPLE, List.of()).contains("time.unit"));
   }
@@ -294,9 +306,11 @@ class ParquetSinkTranslatorTest {
             "parquet.enable.dictionary", "false",
             "parquet.writer.version", "PARQUET_2_0",
             "parquet.timestamp.time.unit", "nanos");
+    Map<String, String> options = baseOptions();
+    options.put("parquet.write.int64.timestamp", "true");
     ParquetSinkTranslator.Result result =
         ParquetSinkTranslator.translate(
-            baseOptions(), SIMPLE, List.of(), cluster::get);
+            options, SIMPLE, List.of(), cluster::get);
     assertTrue(result.fallbackReason == null, result.fallbackReason);
     Map<String, String> config = new HashMap<>();
     String[] keys = result.encoderKeys();
@@ -318,7 +332,10 @@ class ParquetSinkTranslatorTest {
   void unsupportedClusterWriterSettingFallsBack() {
     ParquetSinkTranslator.Result result =
         ParquetSinkTranslator.translate(
-            baseOptions(), SIMPLE, List.of(), key -> "parquet.validation".equals(key) ? "true" : null);
+            baseOptions(),
+            SIMPLE,
+            List.of(),
+            key -> "parquet.validation".equals(key) ? "true" : null);
     assertTrue(result.fallbackReason.contains("validation"), result.fallbackReason);
   }
 

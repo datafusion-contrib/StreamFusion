@@ -37,7 +37,7 @@ batch; it does not overlap I/O across batches or claim that a connector performs
 
 Same equi-key/type conditions as the [regular join](regular-join.md): a supported-type equi-key and
 null-dropping keys (LEFT is the only non-INNER shape here). The temporal table itself must be a
-non-legacy `TableSourceTable`. Projection/filter on the temporal table, the pre-filter, the residual
+modern `TableSourceTable`, or on Flink 1.18 a legacy `LookupableTableSource`. Projection/filter on the temporal table, the pre-filter, the residual
 condition, and constant lookup keys are all native — the operator drives Flink's own generated
 runner, so none of these narrow admission further.
 
@@ -80,7 +80,9 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
 
 The development profile adapts Flink 1.18's generated lookup runners and lifecycle to the same
 Arrow batch operators. Async capacity, timeout and cleanup remain enforced. Key-ordered async
-lookup is N/A on that host line; it is not counted as a planner fallback. Legacy table-source
-lookup providers stay on Flink. The unchanged 1.18 upstream lookup suites include both legacy
-and modern providers; execution contracts distinguish their fallback and native routes. See
+lookup is N/A on that host line; it is not counted as a planner fallback. Legacy lookup sources
+use Flink's released provider resolution and generated runners, including external-row conversion,
+key ordering, synchronous/asynchronous selection and the host's retry behavior. Their probes and
+results retain the same Arrow batch boundaries as modern providers. The 1.18 upstream execution
+contracts require native work for both legacy and modern lookup providers. See
 [Flink line compatibility](../../flink-compatibility.md) for validation status.

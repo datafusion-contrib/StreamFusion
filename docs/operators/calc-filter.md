@@ -149,6 +149,11 @@ unaffected. The execution audit pins both these host routes and the native route
 job parameters, combined functions and code-generation splitting. Alias admission remains part
 of the [coverage backlog](https://github.com/datafusion-contrib/StreamFusion/issues/110).
 
+Flink 1.18's deprecated `registerFunction` scalar wrapper is admitted alongside the modern
+function definition. Both use the same signature, specialization and shared-stateful-call gates,
+and preserve the registered instance's constructor state, job parameters and open/close lifecycle.
+Legacy wrapper subclasses that specialize functions during code generation stay on Flink.
+
 Java `ScalarFunction` calls use the existing columnar JVM bridge: Arrow argument columns enter
 the function once per batch and an Arrow result column returns to the native island. Supported
 external Java types are `String`, boxed/primitive numeric and boolean values, `BigDecimal` for

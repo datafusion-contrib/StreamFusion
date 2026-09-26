@@ -36,12 +36,6 @@ class FlinkParquetSinkFallbackTest {
   }
 
   @Test
-  void int96TimestampsFallBack() {
-    // Flink's default timestamp encoding, which the native writer cannot produce.
-    assertFallsBack("", "v INT, ts TIMESTAMP(3)", "INT96");
-  }
-
-  @Test
   void localTimezoneTimestampsFallBack() {
     assertFallsBack(
         ", 'parquet.write.int64.timestamp' = 'true'",
