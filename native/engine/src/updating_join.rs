@@ -54,6 +54,122 @@ pub(crate) struct UpdatingJoiner<S: KeyedStateStore<JoinBucket> = MemoryJoinStor
 /// differential profile's system-allocator signal vs Flink's pooled BinaryRowData.
 pub(crate) type JoinBucket = ahash::HashMap<ByteKey, RowMeta>;
 
+const INNER_JOIN_CHUNK_ROWS: usize = 4096;
+const INNER_JOIN_CHUNK_BYTES: usize = 8 * 1024 * 1024;
+
+struct InnerJoinCandidates<'a> {
+    input: Vec<usize>,
+    other: Vec<&'a ByteKey>,
+    kinds: Vec<i8>,
+    bytes: usize,
+    reservation: Option<MemoryReservation>,
+}
+
+impl<'a> InnerJoinCandidates<'a> {
+    fn new(reservation: Option<MemoryReservation>) -> Self {
+        Self {
+            input: Vec::new(),
+            other: Vec::new(),
+            kinds: Vec::new(),
+            bytes: 0,
+            reservation,
+        }
+    }
+
+    fn index_bytes(&self) -> usize {
+        self.input.capacity() * std::mem::size_of::<usize>()
+            + self.other.capacity() * std::mem::size_of::<&ByteKey>()
+            + self.kinds.capacity()
+    }
+
+    fn reserve(&self, bytes: usize) -> Result<(), DataFusionError> {
+        if let Some(reservation) = &self.reservation {
+            if bytes > reservation.size() {
+                // Grow geometrically to avoid one JVM reservation call per candidate.
+                let capacity = bytes.checked_next_power_of_two().unwrap_or(bytes);
+                if reservation.try_resize(capacity).is_err() {
+                    reservation.try_resize(bytes)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn add(
+        &mut self,
+        row: usize,
+        other: &'a ByteKey,
+        kind: i8,
+        bytes: usize,
+    ) -> Result<(), DataFusionError> {
+        let capacity = (self.input.len() + 1).next_power_of_two().max(4);
+        let indices =
+            (capacity * (2 * std::mem::size_of::<usize>() + 1) + 8).max(self.index_bytes());
+        self.reserve(
+            self.bytes
+                .saturating_add(bytes)
+                .saturating_add(indices)
+                .saturating_add(4096),
+        )?;
+        self.input.push(row);
+        self.other.push(other);
+        self.kinds.push(kind);
+        self.bytes = self.bytes.saturating_add(bytes);
+        Ok(())
+    }
+
+    fn emit(
+        &mut self,
+        is_left: bool,
+        payloads: &Rows,
+        input_converter: &RowConverter,
+        other_converter: &RowConverter,
+        schema: &SchemaRef,
+        predicate: &mut Option<JoinPredicate>,
+        emit: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if self.input.is_empty() {
+            return Ok(());
+        }
+        let parser = other_converter.parser();
+        let other = other_converter.convert_rows(self.other.iter().map(|r| parser.parse(&r.0)))?;
+        let input = input_converter.convert_rows(self.input.iter().map(|&r| payloads.row(r)))?;
+        let (mut columns, remaining) = if is_left {
+            (input, other)
+        } else {
+            (other, input)
+        };
+        columns.extend(remaining);
+        let data = RecordBatch::try_new(schema.clone(), columns)?;
+        let mask = predicate
+            .as_mut()
+            .map(|p| BooleanArray::from(p.evaluate_batch(schema, &data)));
+        let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
+        fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
+        let mut columns = data.columns().to_vec();
+        columns.push(Arc::new(Int8Array::from(self.kinds.clone())));
+        let full = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)?;
+        let out = match mask {
+            Some(mask) => filter_record_batch(&full, &mask)?,
+            None => full.clone(),
+        };
+        drop(full);
+        drop(data);
+        self.input.clear();
+        self.other.clear();
+        self.kinds.clear();
+        self.bytes = 0;
+        // The receiver assumes ownership/accounting of output buffers; only reusable indices remain.
+        if let Some(reservation) = &self.reservation {
+            reservation.try_resize(self.index_bytes())?;
+        }
+        if out.num_rows() > 0 {
+            emit(out)?;
+        }
+        Ok(())
+    }
+}
+
 /// The resident default backend for a join side (see `state/` for the seam).
 pub(crate) type MemoryJoinStore = MemoryStateStore<JoinBucket>;
 
@@ -672,20 +788,37 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         is_left: bool,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
-        self.clock_ms = now_ms;
-        self.maybe_sweep(now_ms);
-        if self.mini_batch {
-            return self.push_mini_batch(batch, is_left, now_ms);
-        }
-        self.push_immediate(batch, is_left, now_ms)
+        let mut outputs = Vec::new();
+        self.push_to(batch, is_left, now_ms, &mut |out| {
+            outputs.push(out);
+            Ok(())
+        })?;
+        Self::collected_output(outputs)
     }
 
-    fn push_immediate(
+    pub(crate) fn push_to(
         &mut self,
         batch: &RecordBatch,
         is_left: bool,
         now_ms: i64,
-    ) -> Result<RecordBatch, DataFusionError> {
+        emit: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.clock_ms = now_ms;
+        self.maybe_sweep(now_ms);
+        if self.mini_batch {
+            self.push_mini_batch(batch, is_left, now_ms)?;
+            return Ok(());
+        }
+        self.push_immediate_to(batch, is_left, now_ms, emit)
+    }
+
+    fn push_immediate_to(
+        &mut self,
+        batch: &RecordBatch,
+        is_left: bool,
+        now_ms: i64,
+        emit: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
         let arity = data_arity(batch);
         let key_indices: &[usize] = if is_left {
             &self.left_keys
@@ -722,13 +855,12 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             })
             .collect();
 
-        // INNER keeps no degree and never mutates the probe (other) side, so the whole batch's rows are
-        // independent: each probes a fixed other-side state. That lets us gather every candidate pair,
-        // decode/evaluate the residual predicate once per batch, and emit by filtering — no per-row
-        // convert_rows/predicate batch, no per-pair row clone, no emit round-trip (the hot q3/q9/q23
-        // path). The per-row state machine below still serves the degree-bearing outer/semi/anti kinds.
+        // INNER probes a fixed opposite side, allowing bounded vectorized candidate chunks.
+        // Degree-bearing joins retain their per-row state machine.
         if self.kind == JoinKind::Inner {
-            return self.push_inner(is_left, batch, &payloads, &key_null, row_kinds, now_ms);
+            return self.push_inner(
+                is_left, batch, &payloads, &key_null, row_kinds, now_ms, emit,
+            );
         }
 
         let track = self.memory.tracking();
@@ -779,7 +911,7 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         self.memory
             .record(delta + self.left_state.footprint_delta() + self.right_state.footprint_delta());
         self.memory.account()?;
-        Ok(self.emit(out_left, out_right, out_kinds))
+        emit(self.emit(out_left, out_right, out_kinds))
     }
 
     fn staged_bytes_for(changes: &MiniBatchChanges<ByteKey, ByteKey>) -> usize {
@@ -979,6 +1111,29 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
     }
 
     pub(crate) fn flush_mini_batch(&mut self) -> Result<RecordBatch, DataFusionError> {
+        let mut outputs = Vec::new();
+        self.flush_mini_batch_to(&mut |out| {
+            outputs.push(out);
+            Ok(())
+        })?;
+        Self::collected_output(outputs)
+    }
+
+    fn collected_output(outputs: Vec<RecordBatch>) -> Result<RecordBatch, DataFusionError> {
+        let mut nonempty: Vec<_> = outputs.into_iter().filter(|b| b.num_rows() > 0).collect();
+        if nonempty.is_empty() {
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
+        }
+        if nonempty.len() == 1 {
+            return Ok(nonempty.pop().unwrap());
+        }
+        concat_batches(&nonempty[0].schema(), nonempty.iter()).map_err(DataFusionError::from)
+    }
+
+    pub(crate) fn flush_mini_batch_to(
+        &mut self,
+        emit: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
         let staged_bytes = if self.memory.tracking() {
             self.staging_bytes()
         } else {
@@ -1018,7 +1173,6 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                     .map_err(DataFusionError::from)?,
             )
         };
-        let mut outputs = Vec::new();
         // Flink processes right first for INNER/LEFT/FULL and left first for RIGHT. Besides being
         // observable for outer-join changelogs, processing the dimension-like side first is the Q3
         // win: all person rows become resident before the auction bundle probes them.
@@ -1030,16 +1184,10 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         };
         for (batch, is_left) in ordered {
             if let Some(batch) = batch {
-                let out = self.push_immediate(&batch, is_left, self.clock_ms)?;
-                if out.num_rows() > 0 {
-                    outputs.push(out);
-                }
+                self.push_immediate_to(&batch, is_left, self.clock_ms, emit)?;
             }
         }
-        if outputs.is_empty() {
-            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
-        }
-        concat_batches(&outputs[0].schema(), outputs.iter()).map_err(DataFusionError::from)
+        Ok(())
     }
 
     /// Rebuilds the joined changelog batch from the emitted byte rows: one vectorized `convert_rows`
@@ -1075,13 +1223,7 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             .expect("failed to build updating-join changelog batch")
     }
 
-    /// Batched INNER push (the common case for q3/q9/q23). Because INNER keeps no degree and never
-    /// touches the probe side, every input row associates against the same fixed other-side state, so
-    /// the rows are independent: gather all candidate `[left.., right..]` pairs for the batch, decode
-    /// and evaluate the residual predicate once, and emit by filtering. Byte-identical to the per-row
-    /// `process_inner_outer` path (same match order, multiplicity, and per-row RowKind) but with one
-    /// pair of `convert_rows` and one predicate eval per batch instead of per row, and the output built
-    /// directly by `filter_record_batch` (no per-pair `OwnedRow` clone or emit round-trip).
+    /// Emits bounded candidate chunks while the opposite-side state remains stable.
     fn push_inner(
         &mut self,
         is_left: bool,
@@ -1090,46 +1232,82 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         key_null: &[bool],
         row_kinds: Option<&Int8Array>,
         now_ms: i64,
-    ) -> Result<RecordBatch, DataFusionError> {
-        // Split the two state stores so the input side can be mutated while the probe side is borrowed
-        // (INNER never mutates the probe side, so the gathered match rows stay valid for the batch).
+        emit: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
         let track = self.memory.tracking();
         let mut delta = 0isize;
         let input_ttl = self.side_ttl(is_left, now_ms);
         let other_ttl = self.side_ttl(!is_left, now_ms);
-        let key_indices: &[usize] = if is_left {
+        let key_indices = if is_left {
             &self.left_keys
         } else {
             &self.right_keys
         };
         let mut key_encoder =
             BinaryRowBatchEncoder::new(batch, key_indices, &self.key_timestamp_precisions);
+        let schema = joined_schema(&self.left_schema, &self.right_schema);
+        let (input_converter, other_converter) = if is_left {
+            (&self.left_payload, &self.right_payload)
+        } else {
+            (&self.right_payload, &self.left_payload)
+        };
+        let mut candidates = InnerJoinCandidates::new(self.memory.temporary_reservation());
         let (input_state, other_state) = if is_left {
             (&mut self.left_state, &self.right_state)
         } else {
             (&mut self.right_state, &self.left_state)
         };
-        let mut cand_input_idx: Vec<usize> = Vec::new();
-        let mut cand_other: Vec<&ByteKey> = Vec::new();
-        let mut cand_kind: Vec<i8> = Vec::new();
         for row in 0..batch.num_rows() {
             let kind = row_kinds.map_or(0, |kinds| kinds.value(row));
-            // Borrowed byte rows: probes hash these directly; a steady-state row (key and content
-            // already stored) allocates nothing — the SYS_ALLOC a differential profile flagged vs
-            // Flink's reused BinaryRowData.
             let key = key_encoder.encode(row);
             let full = payloads.row(row);
             if !key_null[row] {
                 if let Some(bucket) = other_state.get(key) {
                     for (other, meta) in bucket.iter() {
-                        // Expired probe-side entries are hidden, not deleted — see `associated`.
                         if other_ttl.expired(meta.last_write_ms) {
                             continue;
                         }
+                        // Account decoded columns plus their filtered copy, offsets and null masks.
+                        let bytes = full
+                            .as_ref()
+                            .len()
+                            .saturating_add(other.0.len())
+                            .saturating_add(schema.fields().len() * 16 + 16)
+                            .saturating_mul(3);
                         for _ in 0..meta.count.max(0) {
-                            cand_input_idx.push(row);
-                            cand_other.push(other);
-                            cand_kind.push(kind);
+                            if !candidates.input.is_empty()
+                                && (candidates.input.len() >= INNER_JOIN_CHUNK_ROWS
+                                    || candidates.bytes.saturating_add(bytes)
+                                        > INNER_JOIN_CHUNK_BYTES)
+                            {
+                                self.memory.record(delta);
+                                delta = 0;
+                                self.memory.account()?;
+                                candidates.emit(
+                                    is_left,
+                                    payloads,
+                                    input_converter,
+                                    other_converter,
+                                    &schema,
+                                    &mut self.predicate,
+                                    emit,
+                                )?;
+                            }
+                            if let Err(error) = candidates.add(row, other, kind, bytes) {
+                                if candidates.input.is_empty() {
+                                    return Err(error);
+                                }
+                                candidates.emit(
+                                    is_left,
+                                    payloads,
+                                    input_converter,
+                                    other_converter,
+                                    &schema,
+                                    &mut self.predicate,
+                                    emit,
+                                )?;
+                                candidates.add(row, other, kind, bytes)?;
+                            }
                         }
                     }
                 }
@@ -1173,77 +1351,22 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         }
         self.memory.record(delta);
         self.memory.account()?;
-        if cand_input_idx.is_empty() {
-            self.left_state.end_bundle()?;
-            self.right_state.end_bundle()?;
-            self.memory
-                .record(self.left_state.footprint_delta() + self.right_state.footprint_delta());
-            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
-        }
-
-        // Decode the matched other-side rows in one pass (releases the probe-side borrow — which
-        // must happen before the bundle ends and drops clean hydrated slots), then the input rows
-        // repeated per candidate — assembled into the joined `[left.., right..]` layout.
-        let other_conv = if is_left {
-            &self.right_payload
-        } else {
-            &self.left_payload
-        };
-        let other_parser = other_conv.parser();
-        let other_cols = other_conv
-            .convert_rows(cand_other.iter().map(|b| other_parser.parse(&b.0)))
-            .expect("decode associated rows");
-        drop(cand_other);
+        candidates.emit(
+            is_left,
+            payloads,
+            input_converter,
+            other_converter,
+            &schema,
+            &mut self.predicate,
+            emit,
+        )?;
+        drop(candidates);
         self.left_state.end_bundle()?;
         self.right_state.end_bundle()?;
         self.memory
             .record(self.left_state.footprint_delta() + self.right_state.footprint_delta());
-        let input_conv = if is_left {
-            &self.left_payload
-        } else {
-            &self.right_payload
-        };
-        let input_cols = input_conv
-            .convert_rows(cand_input_idx.iter().map(|&r| payloads.row(r)))
-            .expect("decode join input rows");
-        let joined = joined_schema(&self.left_schema, &self.right_schema);
-        let mut data_columns: Vec<ArrayRef> =
-            Vec::with_capacity(input_cols.len() + other_cols.len());
-        if is_left {
-            data_columns.extend(input_cols);
-            data_columns.extend(other_cols);
-        } else {
-            data_columns.extend(other_cols);
-            data_columns.extend(input_cols);
-        }
-        let data_batch =
-            RecordBatch::try_new(joined.clone(), data_columns).expect("build join candidate batch");
-
-        // A residual non-equi condition (Flink's `condition.apply`) is evaluated once over the whole
-        // candidate batch; no condition means every pair is a match (q3/q20/q23) — skip the filter.
-        let mask = self
-            .predicate
-            .as_mut()
-            .map(|pred| BooleanArray::from(pred.evaluate_batch(&joined, &data_batch)));
-
-        let mut fields: Vec<Field> = (0..data_batch.num_columns())
-            .map(|j| {
-                Field::new(
-                    format!("c{j}"),
-                    data_batch.column(j).data_type().clone(),
-                    true,
-                )
-            })
-            .collect();
-        fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
-        let mut columns: Vec<ArrayRef> = data_batch.columns().to_vec();
-        columns.push(Arc::new(Int8Array::from(cand_kind)));
-        let full_batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("build inner-join batch");
-        Ok(match mask {
-            Some(mask) => filter_record_batch(&full_batch, &mask).expect("filter inner-join batch"),
-            None => full_batch,
-        })
+        self.memory.account()?;
+        Ok(())
     }
 
     /// INNER/LEFT/RIGHT/FULL — a faithful port of `StreamingJoinOperator.processElement`. `is_left`
@@ -2092,13 +2215,14 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushUpdatingJoiner<'local>
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
-    out_array_address: jlong,
-    out_schema_address: jlong,
+    receiver: jni::objects::JObject<'local>,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
         let joiner = unsafe { &mut *(handle as *mut UpdatingJoiner) };
-        match joiner.flush_mini_batch() {
-            Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+        match joiner.flush_mini_batch_to(&mut |out| {
+            crate::bridge::emit_record_batch(&mut env, &receiver, out)
+        }) {
+            Ok(()) => (),
             Err(e) => throw_memory_limit(&mut env, &e.to_string()),
         }
     })
@@ -2114,18 +2238,19 @@ pub extern "system" fn Java_tech_streamfusion_Native_pushLeftUpdatingJoiner<'loc
     in_array_address: jlong,
     in_schema_address: jlong,
     now_millis: jlong,
-    out_array_address: jlong,
-    out_schema_address: jlong,
+    receiver: jni::objects::JObject<'local>,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
         let joiner = unsafe { &mut *(handle as *mut UpdatingJoiner) };
         // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
         let result = {
             let batch = import_record_batch(in_array_address, in_schema_address);
-            joiner.push(&batch, true, now_millis)
+            joiner.push_to(&batch, true, now_millis, &mut |out| {
+                crate::bridge::emit_record_batch(&mut env, &receiver, out)
+            })
         };
         match result {
-            Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+            Ok(()) => (),
             Err(e) => throw_memory_limit(&mut env, &e.to_string()),
         }
     })
@@ -2140,18 +2265,19 @@ pub extern "system" fn Java_tech_streamfusion_Native_pushRightUpdatingJoiner<'lo
     in_array_address: jlong,
     in_schema_address: jlong,
     now_millis: jlong,
-    out_array_address: jlong,
-    out_schema_address: jlong,
+    receiver: jni::objects::JObject<'local>,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
         let joiner = unsafe { &mut *(handle as *mut UpdatingJoiner) };
         // See updateTumblingAggregator: the batch's JVM release upcall must precede any throw.
         let result = {
             let batch = import_record_batch(in_array_address, in_schema_address);
-            joiner.push(&batch, false, now_millis)
+            joiner.push_to(&batch, false, now_millis, &mut |out| {
+                crate::bridge::emit_record_batch(&mut env, &receiver, out)
+            })
         };
         match result {
-            Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
+            Ok(()) => (),
             Err(e) => throw_memory_limit(&mut env, &e.to_string()),
         }
     })

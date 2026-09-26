@@ -179,6 +179,10 @@ impl OperatorMemory {
         self.reservation.is_some()
     }
 
+    pub(crate) fn temporary_reservation(&self) -> Option<MemoryReservation> {
+        self.reservation.as_ref().map(MemoryReservation::new_empty)
+    }
+
     /// The TaskContext DataFusion-executed fragments must run under: pool-bounded when a budget is
     /// attached, a plain default (unbounded, as before accounting) otherwise.
     pub(crate) fn task_ctx(&self) -> Arc<TaskContext> {

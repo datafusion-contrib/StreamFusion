@@ -55,6 +55,8 @@ public class NativeColumnarUpdatingJoinOperator
   private final long rightStateTtlMillis;
 
   private transient long[] boundPredLongs;
+  private transient Native.BatchReceiver batchReceiver;
+  private transient long emittedRows;
   private transient MiniBatchBoundary boundary;
   private transient MiniBatchMetrics miniBatchMetrics;
   private transient BatchCoalescer leftCoalescer;
@@ -244,6 +246,7 @@ public class NativeColumnarUpdatingJoinOperator
   @Override
   public void open() throws Exception {
     super.open();
+    batchReceiver = this::emitNativeBatch;
     if (miniBatch) {
       boundary = new MiniBatchBoundary(miniBatchSize);
       miniBatchMetrics = new MiniBatchMetrics(getMetricGroup());
@@ -333,9 +336,7 @@ public class NativeColumnarUpdatingJoinOperator
     BufferAllocator inAllocator =
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
     try (ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
-        ArrowSchema inSchema = ArrowSchema.allocateNew(inAllocator);
-        ArrowArray outArray = ArrowArray.allocateNew(allocator);
-        ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+        ArrowSchema inSchema = ArrowSchema.allocateNew(inAllocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
       // Flink's TtlTimeProvider clock: the processing-time service is System.currentTimeMillis in
       // production and harness-controlled in tests, so expiry is deterministic to test.
@@ -344,27 +345,39 @@ public class NativeColumnarUpdatingJoinOperator
         if (left) {
           Native.pushLeftRocksDBUpdatingJoiner(
               handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
-              outArray.memoryAddress(), outSchema.memoryAddress());
+              batchReceiver);
         } else {
           Native.pushRightRocksDBUpdatingJoiner(
               handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
-              outArray.memoryAddress(), outSchema.memoryAddress());
+              batchReceiver);
         }
       } else if (left) {
         Native.pushLeftUpdatingJoiner(
             handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
-            outArray.memoryAddress(), outSchema.memoryAddress());
+            batchReceiver);
       } else {
         Native.pushRightUpdatingJoiner(
             handle, inArray.memoryAddress(), inSchema.memoryAddress(), now,
-            outArray.memoryAddress(), outSchema.memoryAddress());
+            batchReceiver);
       }
-      VectorSchemaRoot out =
-          Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
-      if (out.getRowCount() > 0) {
-        ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
-      } else {
+    }
+  }
+
+  private void emitNativeBatch(long arrayAddress, long schemaAddress) {
+    try (ArrowArray array = ArrowArray.wrap(arrayAddress);
+        ArrowSchema schema = ArrowSchema.wrap(schemaAddress)) {
+      VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
+      if (out.getRowCount() == 0) {
         out.close();
+        return;
+      }
+      emittedRows += out.getRowCount();
+      ArrowBatch batch = new ArrowBatch(out);
+      try {
+        ColumnarRecordMetrics.emit(output, getMetricGroup(), batch);
+      } catch (RuntimeException | Error failure) {
+        batch.closeUnclaimed();
+        throw failure;
       }
     }
   }
@@ -438,24 +451,13 @@ public class NativeColumnarUpdatingJoinOperator
             : Native.updatingJoinerStagedRecords(handle, false);
     leftBundleReducedSize = saturatedInt(Math.max(0, leftBundleRows - leftRecords));
     rightBundleReducedSize = saturatedInt(Math.max(0, rightBundleRows - rightRecords));
-    try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
-        ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
-      if (direct) {
-        Native.flushRocksDBUpdatingJoiner(
-            handle, outArray.memoryAddress(), outSchema.memoryAddress());
-      } else {
-        Native.flushUpdatingJoiner(handle, outArray.memoryAddress(), outSchema.memoryAddress());
-      }
-      VectorSchemaRoot out =
-          Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
-      int outputRows = out.getRowCount();
-      miniBatchMetrics.onFlush(reason, outputRows, touchedKeys, transientBytes);
-      if (outputRows > 0) {
-        ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
-      } else {
-        out.close();
-      }
+    long before = emittedRows;
+    if (direct) {
+      Native.flushRocksDBUpdatingJoiner(handle, batchReceiver);
+    } else {
+      Native.flushUpdatingJoiner(handle, batchReceiver);
     }
+    miniBatchMetrics.onFlush(reason, emittedRows - before, touchedKeys, transientBytes);
     boundary.reset();
     leftBundleRows = 0;
     rightBundleRows = 0;
