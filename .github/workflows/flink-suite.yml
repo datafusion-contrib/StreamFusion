@@ -88,6 +88,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.94.0
       - uses: Swatinem/rust-cache@v2
         with:
+          shared-key: upstream-suite
           workspaces: native -> ../.flink-suite/${{ matrix.line }}/streamfusion-source/native/target
       - name: Build Flink and StreamFusion once
         env:

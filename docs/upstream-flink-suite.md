@@ -380,6 +380,7 @@ consumer jobs, reusing the common build. The isolated Maven repository at `.flin
 is cached separately by platform, JDK, Flink version and build inputs; `setup-java`'s ordinary
 Maven cache serves the injection-agent build. Rust dependencies are cached in the isolated source
 build's actual native target directory. Every run still rebuilds current StreamFusion code.
+The Rust cache keeps the existing `upstream-suite` key across the move to a shared preparation job.
 
 A compressed artifact transfers the clean Flink checkout, compiled classes, Maven artifacts,
 injection agent and native libraries. It excludes Cargo intermediates and previous test reports
