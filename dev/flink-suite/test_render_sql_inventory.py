@@ -68,3 +68,25 @@ class RenderSqlInventoryTest(unittest.TestCase):
             raw = json.loads(gzip.decompress((output / 'flink-2.2.json.gz').read_bytes()))
             self.assertEqual(2, raw['summary']['cases'])
             self.assertEqual({'runtime', 'formats'}, {t['suite'] for t in raw['tests']})
+
+    def test_mixed_test_preserves_whole_query_verdicts_and_separate_connector_notes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, _ = self.fixture(root)
+            data = json.loads(path.read_text())
+            data['tests'][0]['query_verdicts'] = [
+                dict(plan_index=1, root_index=1, label='accelerated', fully_accelerated=True,
+                     category='whole-query-native', note='Whole query admitted'),
+                dict(plan_index=2, root_index=1, label='should be accelerated', fully_accelerated=False,
+                     category='window', note='Whole query fell back')]
+            data['tests'][0]['connector_note'] = 'Retained rowwise source is a separate target'
+            path.write_text(json.dumps(data))
+            output = root / 'report'
+            subprocess.run([sys.executable, str(RENDER), '--inventory', str(path), '--output', str(output)], check=True)
+            with (output / 'flink-2.2-queries.csv').open() as stream:
+                queries = list(csv.DictReader(stream))
+            self.assertEqual(['True', 'False'], [q['fully_accelerated'] for q in queries])
+            self.assertEqual(['accelerated', 'should be accelerated'], [q['label'] for q in queries])
+            raw = json.loads(gzip.decompress((output / 'flink-2.2.json.gz').read_bytes()))
+            self.assertEqual('should be accelerated', raw['tests'][0]['label'])
+            self.assertEqual(2, len(raw['tests'][0]['query_verdicts']))

@@ -576,14 +576,27 @@ selected suite's reports automatically and writes `sql-inventory/<suite>` alongs
 reports and observations. Inventory completeness failures fail the runner even when upstream
 assertions pass. Its labels describe:
 
-- **accelerated**: native substitution was admitted during execution translation and the test
-  passed. This uses the all-or-nothing island policy; it is planner evidence, not a throughput
-  measurement or a new per-operator native-work contract. EXPLAIN-only plans earn no execution credit.
+- **accelerated**: the query passed whole-query admission during execution translation and the
+  test passed. Every interior operator is native; rowwise sources, sinks and perimeter transposes
+  are allowed by the [all-or-nothing policy](operators/index.md#the-all-or-nothing-island).
+  The classifier checks final root operators, not just positive substitution counts. One unsupported
+  interior operator falls back the entire query. This is planner evidence, not a throughput
+  measurement or a new per-query native-work contract. EXPLAIN-only plans earn no execution credit.
 - **not accelerated**: batch, deliberately preserved stock plans, source/constant-only plans,
   validation/API fixtures without an execution plan, upstream skips/failures, or documented non-goals.
 - **should be accelerated**: an in-scope streaming coverage gap, categorized by its recorded
-  reason. A test with several queries can contain both native plans and remaining gaps; the
-  inventory retains that distinction instead of treating one native query as proof for every query.
+  reason. A test with several queries can contain admitted queries and wholly fallen-back queries;
+  the inventory retains both verdicts instead of treating one admitted query as proof for all queries.
+
+The primary label always describes whole-query SQL admission, including in connector suites.
+Each test row has `query_verdicts` in JSON and expandable **Query plans** in the report; separate
+per-line query-plan CSVs contain one verdict per observed root. The three test labels remain a
+rollup for the original test denominator. Source/constant-only roots have no interior SQL computation.
+Plan/root indices identify observations within one invocation. Repeated optimization attempts are
+retained, so these are not distinct-query or completed-execution counts. The existing observer does
+not match individual SQL strings or translation failures to roots; fallback reasons belong to an
+optimizer call and may span several roots. A passing fixture whose translations all fail receives
+no admission credit.
 
 Categories and notes are generated from the observed admission decisions. The complete raw
 plans, SQL and invocation identities remain in JSON for review. This inventory extends the
@@ -609,8 +622,8 @@ metadata, schema, API-validation and early-return cases. It retains mixed native
 as coverage targets whenever an in-scope query remains on the host.
 
 Connector invocations also retain the specific native physical components admitted in their
-execution plans. A native SQL Calc does not establish native connector decode or encode: inspect
-the components and final source/sink operators separately. Observations include the implementation
+execution plans. A fully admitted SQL query may use rowwise source/sink boundaries; native connector
+decode or encode is a separate optimization. Observations include the implementation
 class and connector/format identifiers of retained host boundaries, without copying arbitrary
 connector options. Existing per-invocation Delta write
 contracts and suite-level Parquet/ORC/Paimon markers remain independent checks. The inventory
@@ -621,11 +634,12 @@ It adds a suite filter and retains each row's engine revision. Optional `--kafka
 `--paimon-repository` and `--delta-repository` arguments verify source links against the same pinned
 release tags as the runner. Repeated input for the same line and suite is rejected.
 
-In connector inventories, retained streaming filesystem, Kafka, Paimon or Delta boundaries also
-count as `should be accelerated`, even if the SQL computation or another connector boundary is
-native. The `sql_label` column retains the SQL-only classification. Notes name the remaining host
-implementation and format, and `native_components` names what did accelerate. Internal DataStream,
-collect, values and test-format boundaries are excluded from these connector targets. Expected
-translation errors, batch and non-executing fixtures keep their existing exclusions.
+Retained streaming filesystem, Kafka, Paimon or Delta boundaries remain targets in the separate
+`connector_label`, `connector_category` and `connector_note` columns. They never override the primary
+query-admission label. `sql_label` remains an alias of that primary label for existing consumers.
+Connector notes name the host implementation and format; `native_components` is diagnostic evidence,
+not a criterion for partial query credit. Internal DataStream, collect, values and test-format
+boundaries are excluded from connector targets. Expected translation errors, batch and non-executing
+fixtures keep their existing exclusions.
 Direct Java serializer and DataStream/legacy DataSet format tests receive `format-api` and
 `non-sql-program` exclusions: these upstream fixtures bypass SQL admission entirely.

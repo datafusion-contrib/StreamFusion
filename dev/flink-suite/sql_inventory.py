@@ -13,6 +13,7 @@ import xml.etree.ElementTree as ET
 MARKER = re.compile(r"StreamFusion SQL inventory: ([0-9a-f-]{36})")
 CONNECTOR_SUITES = {'formats', 'parquet', 'orc', 'kafka', 'paimon', 'delta'}
 BOUNDARIES = {"Sink", "LegacySink", "TableSourceScan", "LegacyTableSourceScan", "DataStreamScan", "Values", "IntermediateTableScan", "PreparedLegacySink"}
+TRANSPOSES = {'StreamPhysicalRowDataToArrow', 'StreamPhysicalArrowToRowData'}
 
 
 def category(reason: str) -> str:
@@ -56,16 +57,54 @@ def category(reason: str) -> str:
 
 def execution_plans(record: dict) -> list[dict]:
     plans = []
-    for event in record['plans']:
+    for plan_index, event in enumerate(record['plans'], 1):
         if not event['during_translation']:
             continue
         roots = event.get('roots')
         if roots:
-            for root in roots:
-                plans.append(dict(event, operators=root['operators'], substitutions=root['native_operators'], host_boundaries=root.get('host_boundaries', [])))
+            for root_index, root in enumerate(roots, 1):
+                plans.append(dict(event, plan_index=plan_index, root_index=root_index,
+                                  final_root_observed=True, operators=root['operators'],
+                                  substitutions=root['native_operators'], host_boundaries=root.get('host_boundaries', [])))
         else:
-            plans.append(event)
+            plans.append(dict(event, plan_index=plan_index, root_index=1, final_root_observed=False))
     return plans
+
+
+def classify_plan(plan: dict) -> tuple[str, str, str]:
+    if not plan['final_root_observed']:
+        return 'should be accelerated', 'unobserved-streaming-plan', 'Final query root was not recorded; substitution counts alone cannot establish whole-query admission.'
+    operators = set(plan['operators'])
+    native = {op for op in operators if op.startswith('StreamPhysicalNative')}
+    host = {op for op in operators - native - TRANSPOSES
+            if re.sub(r'^StreamPhysical', '', op) not in BOUNDARIES}
+    if native:
+        if host:
+            return 'should be accelerated', 'all-or-nothing-violation', 'Query is not fully accelerated: native operators coexist with host computation: ' + ', '.join(sorted(host))
+        return 'accelerated', 'whole-query-native', 'Entire query admitted by the all-or-nothing gate; no host computation remains between source and sink boundaries.'
+    if operators and not host and not plan['fallback_reasons']:
+        return 'not accelerated', 'source-or-constant-only', 'Source/sink/constant-only query; no interior SQL computation to accelerate.'
+    reasons = plan['fallback_reasons'] or ['No native substitution for: ' + ', '.join(sorted(re.sub(r'^StreamPhysical', '', op) for op in operators))]
+    categories = sorted({category(r) for r in reasons})
+    label = 'not accelerated' if all(c in ('python-runtime', 'distinct-split-non-goal') for c in categories) else 'should be accelerated'
+    return label, ', '.join(categories), '; '.join(dict.fromkeys(reasons))
+
+
+def query_verdicts(record: dict, outcome: str) -> list[dict]:
+    if outcome != 'passed':
+        return []
+    failures = sum(e['operation'] == 'translate' for e in record['operation_failures'])
+    if record['translations'] and failures == len(record['translations']):
+        return []
+    verdicts = []
+    for plan in execution_plans(record):
+        label, group, note = classify_plan(plan)
+        verdicts.append(dict(plan_index=plan['plan_index'], root_index=plan['root_index'],
+                             label=label, fully_accelerated=label == 'accelerated', category=group,
+                             note=note, operators=plan['operators'],
+                             reason_scope='optimizer call; may contain several roots',
+                             host_boundaries=plan.get('host_boundaries', [])))
+    return verdicts
 
 
 def features(record: dict) -> list[str]:
@@ -151,26 +190,26 @@ def classify(record: dict, outcome: str) -> tuple[str, str, str]:
     if translations and len(translation_failures) == len(translations):
         return 'not accelerated', 'validation-or-host-error', 'Every execution translation failed as expected by this passing fixture: ' + translation_failures[0]['error']
     plans = execution_plans(record)
-    native = [p for p in plans if p['substitutions'] > 0]
-    host = [p for p in plans if p['substitutions'] == 0]
+    decisions = [classify_plan(p) for p in plans]
+    native = [p for p in decisions if p[0] == 'accelerated']
+    host = [p for p in decisions if p[0] != 'accelerated']
     gaps = []
     boundary = 0
-    for plan in host:
-        operators = {re.sub(r'^StreamPhysical', '', op) for op in plan['operators']}
-        if operators and operators <= BOUNDARIES and not plan['fallback_reasons']:
+    for label, group, note in host:
+        if group == 'source-or-constant-only':
             boundary += 1
         else:
-            gaps.extend(plan['fallback_reasons'] or ['No native substitution for: ' + ', '.join(sorted(operators))])
+            gaps.append((label, group, note))
     reasons = list(dict.fromkeys(gaps))
     if reasons:
-        categories = sorted({category(r) for r in reasons})
-        label = 'not accelerated' if all(c in ('python-runtime', 'distinct-split-non-goal') for c in categories) else 'should be accelerated'
-        note = '; '.join(reasons)
+        categories = sorted({c for _, group, _ in reasons for c in group.split(', ')})
+        label = 'should be accelerated' if any(label == 'should be accelerated' for label, _, _ in reasons) else 'not accelerated'
+        note = '; '.join(note for _, _, note in reasons)
         if native:
-            note = f'{len(native)} native and {len(host)} host plans in this invocation. ' + note
+            note = f'{len(native)} fully accelerated query-plan root(s); {len(host)} other root(s) in this invocation. ' + note
         return label, ', '.join(categories), note
     if native:
-        return 'accelerated', features(record)[0], f'{len(native)} execution plan(s) admitted native substitution ({", ".join(features(record))}); upstream assertions passed.' + (f' {boundary} additional source/constant-only plan(s).' if boundary else '')
+        return 'accelerated', features(record)[0], f'All {len(native)} observed query-plan root(s) with native computation passed whole-query admission; upstream assertions passed.' + (f' {boundary} additional source/constant-only root(s).' if boundary else '')
     if translations and all('BatchPlanner' in p for p in translations):
         return 'not accelerated', 'batch', 'Executed with Flink BatchPlanner; StreamFusion targets streaming SQL.'
     if any(p['unmodified'] for p in record['planners']):
@@ -250,17 +289,21 @@ def collect(reports: Path, evidence: Path, line: str, suite_name: str = 'runtime
                 used.add(key)
                 record = records[key]
             result = classify(record, outcome)
-            sql_label = result[0]
-            if suite_name in CONNECTOR_SUITES:
-                result = classify_connectors(record, result)
             label, group, note = result
+            connector = classify_connectors(record, result) if suite_name in CONNECTOR_SUITES else None
+            queries = query_verdicts(record, outcome)
             rows.append({
                 'flink_line': line, 'suite': suite_name, 'test_class': classname, 'test_name': case.get('name', ''),
-                'display_name': record['display_name'], 'outcome': outcome, 'label': label, 'sql_label': sql_label,
+                'display_name': record['display_name'], 'outcome': outcome, 'label': label, 'sql_label': label,
+                'connector_label': connector[0] if connector else '',
+                'connector_category': connector[1] if connector else '',
+                'connector_note': connector[2] if connector else '',
                 'category': group, 'features': ', '.join(features(record)) if record['plans'] else '', 'note': note, 'invocation_id': record['invocation_id'],
                 'junit_id': record['junit_id'], 'report': path.relative_to(reports).as_posix(), 'case_index': index,
                 'native_plans': sum(p['substitutions'] > 0 for p in execution_plans(record)),
                 'host_plans': sum(p['substitutions'] == 0 for p in execution_plans(record)),
+                'fully_accelerated_query_plans': sum(q['fully_accelerated'] for q in queries),
+                'query_verdicts': queries,
                 'native_components': ', '.join(sorted({op.removeprefix('StreamPhysicalNative')
                     for plan in execution_plans(record) for op in plan['operators']
                     if op.startswith('StreamPhysicalNative')})),
@@ -286,7 +329,7 @@ def write(rows: list[dict], output: Path, revision: str) -> None:
                'labels_passed': dict(Counter(r['label'] for r in rows if r['outcome'] == 'passed')),
                'categories_passed': dict(Counter(r['category'] for r in rows if r['outcome'] == 'passed'))}
     (output / 'inventory.json').write_text(json.dumps({'schema_version': 1, 'summary': summary, 'tests': rows}, indent=2) + '\n')
-    fields = [key for key in rows[0] if key not in ('sql', 'plans', 'operation_failures', 'planners', 'translations')]
+    fields = [key for key in rows[0] if key not in ('sql', 'plans', 'operation_failures', 'planners', 'translations', 'query_verdicts')]
     with (output / 'inventory.csv').open('w', newline='', encoding='utf-8', errors='backslashreplace') as stream:
         writer = csv.DictWriter(stream, fields, extrasaction='ignore')
         writer.writeheader()

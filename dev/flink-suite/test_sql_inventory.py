@@ -18,7 +18,9 @@ def record(plans=(), translations=()):
 
 
 def plan(substitutions, reasons=(), translated=True, operators=('StreamPhysicalCalc',)):
-    return dict(substitutions=substitutions, fallback_reasons=list(reasons), during_translation=translated, operators=list(operators))
+    final = [op.replace('StreamPhysical', 'StreamPhysicalNative', 1) for op in operators] if substitutions else list(operators)
+    return dict(substitutions=substitutions, fallback_reasons=list(reasons), during_translation=translated,
+                operators=list(operators), roots=[dict(operators=final, native_operators=substitutions)])
 
 
 class SqlInventoryTest(unittest.TestCase):
@@ -29,7 +31,7 @@ class SqlInventoryTest(unittest.TestCase):
     def test_multiple_queries_keep_the_remaining_gap(self):
         result = inventory.classify(record([plan(1), plan(0, ['Calc: unsupported function/operator: AS'])]), 'passed')
         self.assertEqual('should be accelerated', result[0])
-        self.assertIn('1 native and 1 host', result[2])
+        self.assertIn('1 fully accelerated query-plan root(s); 1 other root(s)', result[2])
 
     def test_source_only_and_batch_are_not_missing_native_operators(self):
         self.assertEqual('source-or-constant-only', inventory.classify(record([plan(0, operators=('StreamPhysicalSink', 'StreamPhysicalValues'))]), 'passed')[1])
@@ -54,7 +56,30 @@ class SqlInventoryTest(unittest.TestCase):
                           dict(operators=['StreamPhysicalCalc'], native_operators=0)]
         result = inventory.classify(record([event]), 'passed')
         self.assertEqual('should be accelerated', result[0])
-        self.assertIn('1 native and 1 host', result[2])
+        self.assertIn('1 fully accelerated query-plan root(s); 1 other root(s)', result[2])
+        verdicts = inventory.query_verdicts(record([event]), 'passed')
+        self.assertEqual([True, False], [q['fully_accelerated'] for q in verdicts])
+        self.assertEqual([1, 2], [q['root_index'] for q in verdicts])
+
+    def test_native_operator_presence_does_not_prove_a_fully_native_query(self):
+        event = plan(1)
+        event['roots'][0]['operators'] = ['StreamPhysicalNativeCalc', 'StreamPhysicalGroupAggregate']
+        observation = record([event])
+        self.assertEqual(('should be accelerated', 'all-or-nothing-violation'), inventory.classify(observation, 'passed')[:2])
+        self.assertFalse(inventory.query_verdicts(observation, 'passed')[0]['fully_accelerated'])
+        del event['roots']
+        self.assertEqual('unobserved-streaming-plan', inventory.classify(observation, 'passed')[1])
+
+    def test_rowwise_perimeter_is_allowed_by_whole_query_admission(self):
+        event = plan(1)
+        event['roots'][0]['operators'] = ['StreamPhysicalSink', 'StreamPhysicalArrowToRowData',
+                                         'StreamPhysicalNativeCalc', 'StreamPhysicalRowDataToArrow',
+                                         'StreamPhysicalTableSourceScan']
+        observation = record([event])
+        self.assertTrue(inventory.query_verdicts(observation, 'passed')[0]['fully_accelerated'])
+        observation['translations'] = ['StreamPlanner']
+        observation['operation_failures'] = [dict(operation='translate', error='expected failure')]
+        self.assertEqual([], inventory.query_verdicts(observation, 'passed'))
 
     def test_native_write_does_not_hide_a_host_connector_read(self):
         event = plan(1)
@@ -70,6 +95,12 @@ class SqlInventoryTest(unittest.TestCase):
         self.assertIn('filesystem/parquet source', result[2])
         self.assertNotIn('ExternalDynamicSource', result[2])
         self.assertEqual(('not accelerated', 'validation-or-host-error', 'expected'), inventory.classify_connectors(observation, ('not accelerated', 'validation-or-host-error', 'expected')))
+        with tempfile.TemporaryDirectory() as directory:
+            reports, evidence = self.fixture(Path(directory), observation)
+            row = inventory.collect(reports, evidence, '2.2', 'parquet')[0]
+            self.assertEqual('accelerated', row['label'])
+            self.assertEqual('should be accelerated', row['connector_label'])
+            self.assertEqual([True, False], [q['fully_accelerated'] for q in row['query_verdicts']])
 
     def test_parameter_variants_in_separate_report_directories_are_retained(self):
         with tempfile.TemporaryDirectory() as directory:
