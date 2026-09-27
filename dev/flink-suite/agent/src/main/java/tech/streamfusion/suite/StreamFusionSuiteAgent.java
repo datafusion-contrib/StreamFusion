@@ -159,6 +159,7 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeAsyncLookupJoinOperator",
                 "tech.streamfusion.operator.NativeFilterOperator",
                 "tech.streamfusion.operator.NativeColumnarGroupAggregateOperator",
+                "tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator",
                 "tech.streamfusion.operator.NativeColumnarTopNOperator",
                 "tech.streamfusion.operator.NativeWindowOperatorCore",
@@ -166,7 +167,8 @@ public final class StreamFusionSuiteAgent {
         .transform(
             (builder, type, classLoader, module, protectionDomain) -> {
               builder = builder.visit(Advice.to(BindNativeExecution.class).on(named("open")));
-              if (type.getName().endsWith("NativeColumnarGroupAggregateOperator")) {
+              if (type.getName().endsWith("NativeColumnarGroupAggregateOperator")
+                  || type.getName().endsWith("NativeColumnarLocalGroupAggregateOperator")) {
                 return builder.visit(Advice.to(RecordNativeBatch.class).on(named("update")));
               }
               if (type.getName().endsWith("NativeColumnarTopNOperator")) {

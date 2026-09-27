@@ -66,6 +66,7 @@ NATIVE_OPERATORS = {
     'tech.streamfusion.operator.' + name for name in (
         'NativeCalcOperator', 'NativeLookupJoinOperator', 'NativeAsyncLookupJoinOperator',
         'NativeFilterOperator', 'NativeColumnarGroupAggregateOperator',
+        'NativeColumnarLocalGroupAggregateOperator',
         'NativeColumnarUpdatingJoinOperator', 'NativeColumnarTopNOperator',
         'NativeColumnarGlobalWindowAggregateOperator')
 }
@@ -74,6 +75,7 @@ BOUNDARY_OPERATORS = SOURCE_OPERATORS | SINK_OPERATORS | {
     'tech.streamfusion.operator.ArrowToRowDataOperator',
     'tech.streamfusion.operator.SplitByKeyGroupOperator',
     'tech.streamfusion.operator.OrderedKeyGroupReassembler',
+    'tech.streamfusion.operator.NativeColumnarMiniBatchAssignerOperator',
 }
 
 

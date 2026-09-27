@@ -58,6 +58,7 @@ def attach(audit: dict, reports: Path, inventory: Path, line: str) -> None:
     for case, row, work, bound, partition_valid in bindings:
         case.update(invocation_id=row['invocation_id'], junit_id=row['junit_id'],
                     display_name=row['display_name'],
+                    execution_contract_variant=bound[0]['variant'] if len(bound) == 1 else None,
                     native_input_rows=work, jobs=row.get('jobs'),
                     translation_details=row.get('translation_details'),
                     unattributed_native_work=row.get('unattributed_native_work'),

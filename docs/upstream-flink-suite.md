@@ -280,16 +280,20 @@ its conversion to an execution result, preserving the authoritative outcome even
 job's status lookup becomes unavailable. Results join by job ID, including those observed before
 submission returns. Repeated outcomes are deduplicated; conflicting outcomes, a successful result
 paired with a failed application status, or contradictory terminal job statuses stay unclassified.
-Unmatched results remain in `unmatched_job_results` and prevent invocation classification. Malformed
+Unmatched results remain in `unmatched_job_results` through inventory loading and the exact
+JUnit join, and prevent invocation classification. The structured partition is kept in JSON;
+CSV summaries omit it alongside other nested job evidence. Malformed
 status lists and overlapping submitted/unmatched identities fail validation. Finished-invocation
 job IDs cannot contribute results to a later invocation.
 
 For streaming native routes, every job must succeed and every native operator type in its graph
 must have positive, job-associated work. The initial explicit type list covers Calc, Filter,
-synchronous/asynchronous lookup join, columnar group aggregate, updating join, Top-N and global
+synchronous/asynchronous lookup join, columnar local/global group aggregate, updating join, Top-N and global
 window aggregate. Unsupported native types and counters for types absent from the graph remain
 unclassified. Sources, sinks, row/Arrow transposes and columnar key-group routing are permitted
-boundaries. Other resolved Flink operators alongside native work produce `mixed`. These counts
+boundaries. The columnar mini-batch assigner is also a boundary: it forwards Arrow batches
+unchanged and emits scheduling markers without per-row computation. Other resolved Flink operators
+alongside native work produce `mixed`. These counts
 establish work per operator type and job, not per individual graph node or subtask.
 
 Generated `SourceConversion` operators are also boundaries when their input paths lead only to
@@ -338,15 +342,23 @@ wrong routes, unclassified evidence and invalid/wrong-line scopes fail the summa
 embeds every requirement and the matched invocation identities, while retaining all other cases
 in its complete denominator.
 
-The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require the seven
-verified runtime variants described below. Run them with:
+Schema version 1 supports a fixed `route`. Version 2 also supports
+`route_by_contract_variant`, an exact mapping from the invocation-linked execution witness's
+`variant` to its required route. Missing or unmapped variants fail; this is not a set of interchangeable
+acceptable routes. Flink 1.18's test environment randomly enables changelog state, so its keyed
+fixtures require `native` for `changelog=false` and `full_fallback` for `changelog=true`. The same
+exact witness is independently checked against the existing execution contract. No upstream test
+configuration is changed to force a preferred route.
+
+The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require 16 and 15
+verified runtime variants respectively. Run them with:
 
 ```sh
 FLINK_VERSION=2.2.1 FLINK_SUITE_RUNTIME_AUDIT=true bin/flink-suite.sh runtime
 FLINK_VERSION=1.18.1 FLINK_SUITE_RUNTIME_AUDIT=true bin/flink-suite.sh runtime
 ```
 
-The option selects the six upstream methods, enables fresh SQL inventory collection/reporting,
+The option selects the eight upstream methods, enables fresh SQL inventory collection/reporting,
 and applies the appropriate scope automatically. Add `FLINK_SUITE_REUSE_BUILD=true` after a
 compatible suite build. A custom `FLINK_SUITE_TEST` selection must still satisfy every required
 variant; omitted variants fail. The audit option requires the runtime suite and cannot be combined
@@ -355,13 +367,25 @@ under the suite workspace. CI runs the audit before the first runtime shard on e
 line, reusing that worker's restored build. It uploads audit evidence before the full shard can
 replace reports. Audit failure fails the worker and the final upstream gate; no extra runners or
 shared-build downloads are added.
-Both bundled commands have been verified against the unchanged released suites: each reports
-nine passed cases, all seven required variants matched, and two unclassified early returns.
-The added batch `TableSinkITCase#testCollectSinkConfiguration` fixture establishes the host-failure
+The bundled Flink 2.2.1 command passes 18 cases with all 16 requirements matched; the Flink
+1.18.1 command passes 17 cases with all 15 requirements matched. Both retain two unclassified early returns.
+The batch `TableSinkITCase#testCollectSinkConfiguration` fixture establishes the host-failure
 route while its expected exception remains a passing upstream test.
 
-Broader route classification and verified upstream scopes remain part of #168; the
-published inventory remains a planning/admission report. Agent and Python tests verify the
+The keyed `AggregateITCase#testGroupByAgg` fixture covers HEAP/ROCKSDB, immediate/mini-batch
+and local/global modes. Local and global native operators must each have positive associated
+work; observing only the global half cannot establish a fully native split job. The seven Flink
+2.2 variants run natively, including both async-state settings. The six Flink 1.18 variants follow
+their recorded changelog-state setting. Split jobs record twelve local input rows and six global
+partial rows; immediate jobs record twelve global input rows.
+
+`DataStreamJavaITCase#testFromAndToChangelogStreamEventTime` verifies `mixed` on both releases
+with object reuse enabled and disabled: four native Calc input rows coexist with Flink map,
+watermark and window operators in the same successful graph. Native operator presence alone
+therefore cannot label the whole job native.
+
+Auditing remaining upstream methods and operator types remains part of #168; the published
+inventory remains a planning/admission report and no full-suite native percentage is claimed. Agent and Python tests verify the
 collection/linkage paths with synthetic observations, not additional upstream SQL coverage.
 
 An unchanged Flink 2.2.1 `batch.sql.CalcITCase#testSelectStar` run verifies the first runtime

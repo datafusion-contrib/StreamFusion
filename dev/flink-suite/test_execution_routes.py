@@ -43,6 +43,21 @@ class RuntimeRoutesTest(unittest.TestCase):
             with self.subTest(classes=classes, work=work):
                 self.assertEqual(expected, self.classify({'job': self.job(classes, work)}))
 
+    def test_split_aggregate_requires_work_from_both_native_halves(self):
+        local = 'tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator'
+        global_agg = 'tech.streamfusion.operator.NativeColumnarGroupAggregateOperator'
+        work = {'NativeColumnarLocalGroupAggregateOperator': 12,
+                'NativeColumnarGroupAggregateOperator': 5}
+        job = self.job([self.SOURCE,
+                        'tech.streamfusion.operator.NativeColumnarMiniBatchAssignerOperator',
+                        local, global_agg, self.SINK], work)
+        self.assertEqual('native', self.classify({'split': job}))
+        job['native_work'] = {'NativeColumnarGroupAggregateOperator': 5}
+        self.assertEqual('unclassified', self.classify({'split': job}))
+        job['native_work'] = work
+        job['graph']['nodes'].insert(2, dict(operator_class=self.MAP))
+        self.assertEqual('mixed', self.classify({'split': job}))
+
     def test_scan_only_requires_both_source_and_sink_without_other_operators(self):
         for classes, expected in (([self.SOURCE, self.SINK], 'scan_only'),
                                   ([self.SOURCE], 'unclassified'), ([self.SINK], 'unclassified'),
