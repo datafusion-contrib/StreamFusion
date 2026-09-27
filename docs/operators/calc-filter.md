@@ -90,6 +90,22 @@ Asia/Shanghai and America/Los_Angeles, pre-epoch fractions, DST transitions, nul
 nested selections, unselected/selected errors, empty filtered batches and native Calc work
 across 5,003 rows. Complex IF result types retain fallback.
 
+The TIMESTAMP_LTZ release benchmark on Linux x86-64 (Intel i7-12650H, JDK 17,
+released Flink 2.2.1, mimalloc) uses 2,000,000 runtime rows, NULL every seventh row,
+parallelism 1, two warmups and five interleaved measurements per engine. The source
+emits rows and the sink is `blackhole`; the harness asserts native Calc and both transposes.
+
+| TIMESTAMP_LTZ(9) workload | Flink median (s) | Native median (s) | Flink/native |
+| --- | ---: | ---: | ---: |
+| Identity control | 0.277110 | 0.963528 | 0.288x |
+| `IF(ts IS NULL, CAST(TO_TIMESTAMP_LTZ(0,3) AS TIMESTAMP_LTZ(9)), ts)` | 0.292844 | 1.008045 | 0.291x |
+
+These standalone row-fed measurements show no speedup. The similar identity-control cost
+supports retaining this small admission extension for native pipeline composition, with no
+new timestamp evaluator or buffer-ownership machinery. Reproduce with `ScalarFunctionBenchmark`,
+`-Pbench`, `-Dscalar.functions=IF_TIMESTAMP_LTZ`, `-Dscalar.rows=2000000`,
+`-Dscalar.nullEvery=7`, `-Dscalar.warmup=2`, and `-Dscalar.runs=5`, setting `SF_BENCHMARK=true`.
+
 The release benchmark below measures this coverage change against the previous full Flink
 fallback, using `ScalarFunctionBenchmark` on Apple Silicon/JDK 17 with mimalloc,
 parallelism 1, 2,000,000 runtime rows, NULL every seventh row, two warmups and five
