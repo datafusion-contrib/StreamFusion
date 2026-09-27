@@ -106,6 +106,17 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
         })
     }
 
+    pub(super) fn copy_preserves_order(&self, capacity: usize) -> bool {
+        self.buckets.len() == capacity
+            && self.buckets.iter().all(|bucket| {
+                !bucket.tree
+                    && std::iter::successors(bucket.first, |&index| self.nodes[index].next)
+                        .take(9)
+                        .count()
+                        <= 8
+            })
+    }
+
     pub(super) fn len(&self) -> usize {
         self.nodes.len()
     }

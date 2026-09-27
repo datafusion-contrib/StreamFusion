@@ -144,6 +144,33 @@ mod distinct_set_tests {
     use super::*;
 
     #[test]
+    fn decimal_view_repeated_counts_preserve_null_and_filtered_arrival_order() {
+        let mut buffer = DecimalViewBuffer::new(0);
+        let mut expected = DecimalMapOrder::new(0);
+        for (value, count) in [
+            (Some(5), 0),
+            (Some(8), 1),
+            (Some(5), 3),
+            (None, 0),
+            (Some(8), 0),
+            (Some(8), 2),
+            (Some(11), -1),
+            (Some(11), 4),
+        ] {
+            expected.insert_optional(value);
+            buffer.merge(value, count);
+            assert_eq!(
+                buffer.order.iter().collect::<Vec<_>>(),
+                expected.iter().collect::<Vec<_>>()
+            );
+        }
+        assert_eq!(buffer.counts.len(), 3);
+        assert_eq!(buffer.counts[&5], 3);
+        assert_eq!(buffer.counts[&8], 3);
+        assert_eq!(buffer.counts[&11], 4);
+    }
+
+    #[test]
     fn nan_payloads_share_counts_through_merge_restore_and_retraction() {
         for (datatype, first, second, zero, negative_zero) in [
             (
@@ -1088,12 +1115,21 @@ impl DecimalViewBuffer {
     }
 
     fn merge(&mut self, value: Option<i128>, count: i64) {
-        self.order.insert_optional(value);
         if let Some(value) = value {
             if count > 0 {
-                *self.counts.entry(value).or_default() += count;
+                match self.counts.entry(value) {
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
+                        *entry.get_mut() += count;
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        self.order.insert_optional(Some(value));
+                        entry.insert(count);
+                    }
+                }
+                return;
             }
         }
+        self.order.insert_optional(value);
     }
 
     fn bytes(&self) -> usize {
@@ -3250,7 +3286,9 @@ impl LocalGroupAggregator {
                     let DataType::Decimal128(precision, scale) = value_type else {
                         unreachable!()
                     };
-                    let transported = entry.decimal_orders.as_ref().unwrap()[group].copied();
+                    let original = &entry.decimal_orders.as_ref().unwrap()[group];
+                    let copied = original.copy_if_reordered();
+                    let transported = copied.as_ref().unwrap_or(original);
                     for value in transported.iter() {
                         let scalar = ScalarValue::Decimal128(value, *precision, *scale);
                         counts.push(entry.states[source].decimal_distinct_count(&scalar));

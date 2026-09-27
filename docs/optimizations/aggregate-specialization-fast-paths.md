@@ -526,3 +526,42 @@ The hint and its extra per-row capacity check were removed: this experiment did
 not establish enough benefit to justify adding allocation policy and accounting
 complexity. Map growth remains a profiling signal, not proof that preallocation
 is the right optimization.
+
+
+### Reuse unchanged decimal transport order
+
+Flink's decimal view transport copies a map using its expected-size bucket count.
+When that bucket count equals the existing one and every bin is a list of at most
+eight entries, replaying insertion preserves the existing iteration order. The
+local aggregate can traverse that order directly. Changed bucket counts, tree
+bins and longer lists still construct the host-compatible copy. A resize can
+leave a long list even without a tree bin, so checking only the tree flag would
+be insufficient: copying can turn that list into a tree and move its root.
+This follows the released Flink map serializer and
+[OpenJDK 17 insertion behavior](https://github.com/openjdk/jdk17u/blob/jdk-17.0.14%2B7/src/java.base/share/classes/java/util/HashMap.java).
+
+The global merge also skips insertion into the ordering structure when an existing
+positive-membership entry already proves the value is present. NULL and zero-count
+entries retain their ordering updates, including a filtered entry that becomes
+positive later. Decimal overflow therefore continues to observe the same merge
+sequence. These changes avoid redundant ordering work without replacing the
+membership maps or changing the wire representation.
+
+Native validation passes 589 tests with one ignored. Ordering fixtures compare the
+optimized path with a full copy at every input prefix, and a regression case covers
+a long list left by resizing that treeifies during transport. Further checks cover
+NULL and filtered zero-count entries followed by positive and repeated counts.
+
+A matched-resource 20M-row wide-AVG diagnostic reduces native median from
+14.524 s (14.449–14.831) to 14.286 s (14.215–14.402), about 1.6%.
+Flink controls are 13.408 s (13.286–13.463) and 13.399 s (13.246–13.500).
+This uses release+mimalloc, JDK 17/Flink 2.2.1, Core i7-12650H/Linux,
+2 GiB heap, parallelism one, 64 groups, 1024-row mini-batches, two warmups
+and five alternating trials, row source/sink and both transposes. It includes
+the preceding IPC-buffer optimization in both native measurements. Native
+still trails Flink by about 6.6%, so the wide-AVG performance gap remains open.
+
+The 2M-row COUNT/SUM control is 1.395 s native (1.363–1.408) against
+1.401 s Flink (1.362–1.440), effectively tied. Focused SQL validation passes
+70 cases on Flink 2.2.1; Flink 1.18.1 passes 56 with 14 documented
+host-capability skips. Decimal ordering and DISTINCT AVG checks pass on both.
