@@ -78,6 +78,7 @@ class StatefulRecoveryMatrixTest {
     long budget = (bigKey ? 32L : 16L) << 20;
     try (var recovery =
         new PortableSqlRecovery(backend, input, type, schema, true, 4096, 6144, 8192)
+            .withExecutionMetrics()
             .withTaskOffHeapBytes(budget)) {
       var runs =
           NativeFailureParity.run(
@@ -113,7 +114,7 @@ class StatefulRecoveryMatrixTest {
   void cancellationAfterCompletedState(boolean nativeRun, boolean rocks) throws Exception {
     String backend = rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap";
     String id = "cancel-" + (nativeRun ? "native" : "host") + "-" + (rocks ? "rocksdb" : "memory");
-    try (var recovery = new PortableSqlRecovery(backend).holdAfterInput()) {
+    try (var recovery = new PortableSqlRecovery(backend).withExecutionMetrics().holdAfterInput()) {
       var table = configure(nativeRun ? recovery.get() : recovery.uninterrupted(), 5, 3);
       if (nativeRun) tech.streamfusion.planner.NativePlanner.install(table);
       var query =
@@ -152,6 +153,8 @@ class StatefulRecoveryMatrixTest {
                 passed,
                 "expectedOutcome",
                 "CANCELLATION_CLEANUP",
+                "nativeExecution",
+                recovery.nativeExecution(),
                 "expectedRoute",
                 nativeRun ? "NATIVE" : "HOST",
                 "configuration",
@@ -230,6 +233,7 @@ class StatefulRecoveryMatrixTest {
     String backend = rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap";
     try (var recovery =
         new PortableSqlRecovery(backend, input, type, schema, true, 4, 8)
+            .withExecutionMetrics()
             .withTaskOffHeapBytes(budgetBytes)) {
       var runs =
           NativeFailureParity.run(
@@ -302,7 +306,8 @@ class StatefulRecoveryMatrixTest {
             .column("text_value", DataTypes.STRING())
             .build();
     String backend = rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap";
-    try (var recovery = new PortableSqlRecovery(backend, input, type, schema, true, 6, 12)) {
+    try (var recovery =
+        new PortableSqlRecovery(backend, input, type, schema, true, 6, 12).withExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
               () -> configure(recovery.uninterrupted(), batchRows, miniBatchRows),
@@ -378,7 +383,8 @@ class StatefulRecoveryMatrixTest {
             .build();
     String backend = rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap";
     var zone = java.time.ZoneId.of(zoneName);
-    try (var recovery = new PortableSqlRecovery(backend, input, type, schema, false, 4, 8)) {
+    try (var recovery =
+        new PortableSqlRecovery(backend, input, type, schema, false, 4, 8).withExecutionMetrics()) {
       java.util.function.UnaryOperator<org.apache.flink.table.api.TableEnvironment> configure =
           table -> {
             configure(table, 5, 3);
@@ -468,6 +474,7 @@ class StatefulRecoveryMatrixTest {
     Map<Integer, Long> watermarks = Map.of(4, -1001L, 8, 999L, 12, 3999L);
     try (var recovery =
         new PortableSqlRecovery(backend, input, type, schema, false, 4, 8)
+            .withExecutionMetrics()
             .withWatermarks(watermarks)) {
       java.util.function.UnaryOperator<org.apache.flink.table.api.TableEnvironment> configure =
           table -> {
@@ -579,7 +586,8 @@ class StatefulRecoveryMatrixTest {
             .column("keep_row", DataTypes.BOOLEAN())
             .build();
     String backend = rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap";
-    try (var recovery = new PortableSqlRecovery(backend, input, type, schema, true, 4, 8)) {
+    try (var recovery =
+        new PortableSqlRecovery(backend, input, type, schema, true, 4, 8).withExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
               () -> configure(recovery.uninterrupted(), batchRows, miniBatchRows),
@@ -694,6 +702,17 @@ class StatefulRecoveryMatrixTest {
                   runs.nativeRun().fallbackReasons().toString());
             }
           },
+          () -> {
+            var observations = recovery.nativeExecution();
+            if (expectedRoute == NativeFailureParity.Route.FALLBACK)
+              assertTrue(observations.isEmpty(), observations.toString());
+            else {
+              var required =
+                  (List<?>) settings.getOrDefault("requiredOperators", List.of(operator));
+              for (Object name : required)
+                RecoveryExecutionMetrics.assertConsumed(observations, name.toString());
+            }
+          },
           recovery::verifyRepeatedRecovery,
           () -> SharedFlinkCluster.assertNativeMemoryReleased(id),
           () -> {
@@ -728,6 +747,9 @@ class StatefulRecoveryMatrixTest {
           "observedNativePoolCapacityBytes",
           tech.streamfusion.operator.TaskOffHeapMemory.capacityBytes());
       configuration.putAll(settings);
+      Map<String, Object> nativeOutcome =
+          new java.util.LinkedHashMap<>(SqlAuditHarness.outcome(runs.nativeRun()));
+      nativeOutcome.put("execution", recovery.nativeExecution());
       RESULTS.put(
           id
               + "-arrow"
@@ -750,7 +772,7 @@ class StatefulRecoveryMatrixTest {
               "expectedOutcome", expectedFailure ? "ROW_EVALUATION_FAILURE" : "MATERIALIZED_PARITY",
               "configuration", configuration,
               "host", SqlAuditHarness.outcome(runs.host()),
-              "native", SqlAuditHarness.outcome(runs.nativeRun()),
+              "native", nativeOutcome,
               "nativePlan", runs.nativeRun().plan(),
               "materializedResultsEqual",
                   SqlAuditHarness.materialized(runs.host().rows())

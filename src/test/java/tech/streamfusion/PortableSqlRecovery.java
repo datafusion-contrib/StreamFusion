@@ -42,6 +42,7 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
   private java.nio.file.Path checkpoints;
   private java.nio.file.Path restoreFrom;
   private StreamExecutionEnvironment executionEnvironment;
+  private RecoveryExecutionMetrics executionMetrics;
   private final List<String> runIds = new java.util.ArrayList<>();
 
   PortableSqlRecovery() {
@@ -110,6 +111,16 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     org.junit.jupiter.api.Assertions.assertEquals(1, proof.activeSources.get());
   }
 
+  PortableSqlRecovery withExecutionMetrics() {
+    if (!runIds.isEmpty()) throw new IllegalStateException("configure metrics before execution");
+    executionMetrics = new RecoveryExecutionMetrics();
+    return this;
+  }
+
+  List<Map<String, Object>> nativeExecution() {
+    return executionMetrics == null ? List.of() : executionMetrics.nativeOperators();
+  }
+
   PortableSqlRecovery withRescaleDeployment(
       int parallelism, java.nio.file.Path checkpoints, java.nio.file.Path restoreFrom) {
     if (!runIds.isEmpty()) throw new IllegalStateException("configure deployment before execution");
@@ -170,7 +181,9 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     config.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_ATTEMPTS, boundaries.length);
     config.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_DELAY, Duration.ofMillis(10));
     StreamExecutionEnvironment env;
-    if (taskOffHeapBytes > 0) {
+    if (executionMetrics != null) {
+      env = executionMetrics.environment(config, parallelism, taskOffHeapBytes);
+    } else if (taskOffHeapBytes > 0) {
       // The shared test cluster owns its TaskManager configuration; use a private deployment
       // when the scenario must change that process-wide budget.
       config.set(org.apache.flink.configuration.DeploymentOptions.TARGET, "local");
@@ -261,7 +274,11 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
 
   @Override
   public void close() {
-    runIds.forEach(PROOFS::remove);
+    try {
+      if (executionMetrics != null) executionMetrics.close();
+    } finally {
+      runIds.forEach(PROOFS::remove);
+    }
   }
 
   private static final class RecoveringSource

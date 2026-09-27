@@ -131,6 +131,7 @@ class StatefulSqlRescaleTest {
             .build();
     try (var recovery =
         new PortableSqlRecovery(backend, input, type, schema, true)
+            .withExecutionMetrics()
             .holdAfterInput()
             .withRescaleDeployment(parallelism, checkpoints, restore)) {
       var table = (StreamTableEnvironment) recovery.uninterrupted();
@@ -180,6 +181,10 @@ class StatefulSqlRescaleTest {
       var client = env.executeAsync(graph);
       try {
         recovery.awaitCompletedInput();
+        if (nativeRun)
+          RecoveryExecutionMetrics.assertConsumed(
+              recovery.nativeExecution(), "NativeColumnarGroupAggregate");
+        else assertTrue(recovery.nativeExecution().isEmpty());
         if (expected != null) {
           long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
           while (!expected.equals(materialized(output)) && System.nanoTime() < deadline)
@@ -249,6 +254,8 @@ class StatefulSqlRescaleTest {
               recovery.observations(),
               "operatorIds",
               ids,
+              "nativeExecution",
+              recovery.nativeExecution(),
               "keyGroupRanges",
               ranges,
               "plan",

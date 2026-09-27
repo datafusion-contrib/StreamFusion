@@ -127,7 +127,7 @@ semantics; host/native agreement alone is insufficient for those cases.
 
 ## Combined stateful recovery matrix
 
-`StatefulRecoveryMatrixTest` begins the bounded matrix in
+`StatefulRecoveryMatrixTest` and `StatefulSqlRescaleTest` implement the bounded matrix in
 [#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its 56 completed-result/failure cases
 include INT/BIGINT group keys with DECIMAL(20,2) SUM and STRING COUNT DISTINCT, using memory
 and the native RocksDB backend. Twelve changelog records include duplicate 12-KiB strings,
@@ -294,7 +294,22 @@ mini-batches of 3. JOIN, Top-N, window and Calc matrix cases still restore at fi
 parallelism; these tests do not claim their rescaling coverage or cross-version state
 compatibility.
 
-Per-case native row-counter evidence remains to be added to the combined matrix in #250.
-The current records prove plans, results and recovery; rescale cases additionally prove
-nonempty native keyed checkpoint state. They do not yet record executed native row counts
-for every fixed-parallelism scenario. General accounting remains tracked by #168.
+Each matrix scenario now owns a local test cluster with Flink's retained in-memory metrics
+reporter, following the existing operator-metrics tests. The cluster lives through both
+reference and native executions so counters from completed, failed and restored attempts
+remain available until evidence is recorded. Requested task budgets configure that cluster;
+no per-job setting is assumed to resize a shared TaskManager.
+
+The reports record native operator names, job IDs, subtask/attempt identifiers and existing
+`numRecordsIn`/`numRecordsOut` counters. Every required native compute operator must have
+consumed rows; expected fallback cases must have no native operator metrics. Cancellation
+and rescale cases also require consumed-row evidence before cancellation. These checks run
+independently of value/type and route assertions. Counter observations belong to execution
+evidence, not configuration. Metrics retain per-attempt observations rather than claiming
+that their sum is a universally replay-free row total. Cleanup checks still run while the
+cluster is alive, before its metrics and other resources are closed. This reuses current
+Flink I/O accounting; broader accounting coverage remains tracked by #168.
+
+With metrics enabled, all 104 required checks and 12 opt-in stress cases pass on each
+released Flink line (116 total per release), including the portable SQL and transpose
+configuration regressions. Both execution-counter artifacts were inspected.
