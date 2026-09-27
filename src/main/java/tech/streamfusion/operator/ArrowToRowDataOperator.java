@@ -19,8 +19,9 @@ import tech.streamfusion.compat.FlinkStreamOperator;
  * the boundary. It consumes (and closes) each batch it receives.
  *
  * <p>The Arrow reader exposes a reusable view backed by the input batch. Chained Flink operators
- * are allowed to retain a collected {@code RowData}, and closing this batch invalidates every such
- * view, so the boundary deep-copies each row before handing it back to the rowwise runtime.
+ * are allowed to retain a collected {@code RowData}. With object reuse disabled Flink's chained
+ * output copies the view synchronously; with reuse enabled this boundary supplies the owned copy.
+ * Network outputs serialize synchronously before the batch closes.
  */
 public class ArrowToRowDataOperator extends FlinkStreamOperator<RowData>
     implements OneInputStreamOperator<ArrowBatch, RowData> {
@@ -38,7 +39,8 @@ public class ArrowToRowDataOperator extends FlinkStreamOperator<RowData>
   @Override
   public void open() throws Exception {
     super.open();
-    outputSerializer = new RowDataSerializer(rowType);
+    outputSerializer = getExecutionConfig().isObjectReuseEnabled()
+        ? new RowDataSerializer(rowType) : null;
     numInputBatches = getMetricGroup().counter("numInputBatches");
     numOutputRows = getMetricGroup().counter("numOutputRows");
     convertTime = getMetricGroup().counter("convertTime");
@@ -59,7 +61,7 @@ public class ArrowToRowDataOperator extends FlinkStreamOperator<RowData>
         if (kinds != null) {
           row.setRowKind(RowKind.fromByteValue(kinds.get(i)));
         }
-        output.collect(new StreamRecord<>(outputSerializer.copy(row)));
+        output.collect(new StreamRecord<>(outputSerializer == null ? row : outputSerializer.copy(row)));
       }
     }
     convertTime.inc(System.nanoTime() - started);

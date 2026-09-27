@@ -28,7 +28,10 @@ serialized operator configuration rather than process-global state before a stab
   row-to-Arrow boundary. Must be positive. Read from the job's Flink configuration at planning
   time and serialized into the operator; the same-named JVM property is a fallback. Watermarks,
   checkpoints, end-of-input and the latency timer can flush a smaller batch. This does not set
-  Flink's logical mini-batch size or the post-exchange coalescer's target size.
+  Flink's logical mini-batch size or the post-exchange coalescer's target size. Accepted rows are
+  copied directly into owned Arrow storage, including partial batches; operator close releases
+  any unflushed buffers. Its `conversionTime` counter estimates row-write time using random 1/64
+  sampling, plus exact allocation and batch-finalization timing.
 - **`-Dstreamfusion.exchange.zeroCopyLocal=...`** — vouch for a single-TaskManager deployment so the
   columnar exchange can hand off batches by ownership transfer instead of Arrow IPC on a same-process
   edge. See [Zero-copy local shuffle](optimizations/zero-copy-local-shuffle.md).
