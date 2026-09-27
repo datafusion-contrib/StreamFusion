@@ -133,6 +133,90 @@ class SqlInventoryTest {
     }
   }
 
+  @Test
+  void jobResultsAreDeduplicatedAndStayWithTheirSubmittingInvocation() throws Exception {
+    System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
+    try {
+      var identifier = new Identifier();
+      SqlInventory.started(identifier);
+      Object scope = SqlInventory.submitting();
+      var success =
+          new JobClient("success", java.util.concurrent.CompletableFuture.completedFuture(null));
+      SqlInventory.submitted(scope, success, null);
+      SqlInventory.submitted(scope, success, null);
+      SqlInventory.submitted(
+          scope, new JobClient("pending", new java.util.concurrent.CompletableFuture<>()), null);
+      SqlInventory.submitted(
+          scope,
+          new JobClient(
+              "failed",
+              java.util.concurrent.CompletableFuture.failedFuture(
+                  new IllegalStateException("job failed"))),
+          null);
+      SqlInventory.submitted(
+          scope,
+          new JobClient("unavailable", null) {
+            @Override
+            public java.util.concurrent.CompletableFuture<?> getJobExecutionResult() {
+              throw new UnsupportedOperationException("detached client");
+            }
+          },
+          null);
+      SqlInventory.finished(identifier, new Result());
+      SqlInventory.started(identifier);
+      SqlInventory.submitted(
+          scope,
+          new JobClient("late", java.util.concurrent.CompletableFuture.completedFuture(null)),
+          null);
+      SqlInventory.finished(identifier, new Result());
+      try (var paths = Files.list(directory)) {
+        var reports =
+            paths
+                .map(
+                    path -> {
+                      try {
+                        return Files.readString(path);
+                      } catch (java.io.IOException failure) {
+                        throw new java.io.UncheckedIOException(failure);
+                      }
+                    })
+                .toList();
+        assertTrue(
+            reports.stream()
+                .anyMatch(json -> json.contains("\"success\":{\"status\":\"SUCCEEDED\"}")));
+        assertTrue(
+            reports.stream()
+                .anyMatch(json -> json.contains("\"pending\":{\"status\":\"SUBMITTED\"}")));
+        assertTrue(
+            reports.stream()
+                .anyMatch(json -> json.contains("java.lang.IllegalStateException: job failed")));
+        assertTrue(reports.stream().anyMatch(json -> json.contains("\"status\":\"UNAVAILABLE\"")));
+        assertTrue(reports.stream().anyMatch(json -> json.contains("\"jobs\":{}")));
+        assertTrue(reports.stream().noneMatch(json -> json.contains("\"late\"")));
+      }
+    } finally {
+      System.clearProperty("streamfusion.flink-suite.sql-inventory");
+    }
+  }
+
+  public static class JobClient {
+    private final String id;
+    private final java.util.concurrent.CompletableFuture<?> result;
+
+    JobClient(String id, java.util.concurrent.CompletableFuture<?> result) {
+      this.id = id;
+      this.result = result;
+    }
+
+    public String getJobID() {
+      return id;
+    }
+
+    public java.util.concurrent.CompletableFuture<?> getJobExecutionResult() {
+      return result;
+    }
+  }
+
   public static class Identifier {
     public boolean isTest() {
       return true;

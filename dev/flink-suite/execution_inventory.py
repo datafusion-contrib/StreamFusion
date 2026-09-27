@@ -17,6 +17,12 @@ def attach(audit: dict, reports: Path, inventory: Path, line: str) -> None:
         case = cases.get((row['report'], row['case_index']))
         if case is None or case['test'] != row['test_class'] + '#' + row['test_name']:
             raise ValueError('Inventory testcase identity does not match execution audit')
+        jobs = row.get('jobs')
+        if jobs is not None and (not isinstance(jobs, dict) or any(
+                not isinstance(job, str) or not job or not isinstance(result, dict)
+                or result.get('status') not in ('SUBMITTED', 'SUCCEEDED', 'RESULT_FAILED', 'UNAVAILABLE')
+                for job, result in jobs.items())):
+            raise ValueError(f"{case['test']}: invalid job-result observations")
         work = row['native_work']
         links = row['execution_contracts']
         if row['outcome'] == 'skipped' and not row['invocation_id']:
@@ -52,7 +58,7 @@ def attach(audit: dict, reports: Path, inventory: Path, line: str) -> None:
     # Do not mark a partial join as exact when a later record fails validation.
     for case, row, work, bound in bindings:
         case.update(invocation_id=row['invocation_id'], junit_id=row['junit_id'],
-                    native_input_rows=work)
+                    native_input_rows=work, jobs=row.get('jobs'))
         for witness in bound:
             witness.update(invocation_id=row['invocation_id'], report=row['report'],
                            case_index=row['case_index'])

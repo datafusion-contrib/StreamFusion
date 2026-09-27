@@ -39,6 +39,7 @@ public final class SqlInventory {
     active.data.put("operation_failures", active.failures);
     active.data.put("native_work", active.nativeWork);
     active.data.put("execution_contracts", active.contracts);
+    active.data.put("jobs", active.jobs);
     System.out.println(MARKER + active.id);
   }
 
@@ -47,6 +48,7 @@ public final class SqlInventory {
     if (active == null || !active.data.get("junit_id").equals(call(identifier, "getUniqueId"))) {
       throw new AssertionError("Missing or mismatched SQL inventory invocation");
     }
+    snapshotJobs(active);
     active.data.put("junit_status", call(result, "getStatus").toString());
     active.data.put("junit_failure", call(result, "getThrowable").toString());
     Files.createDirectories(directory());
@@ -55,6 +57,48 @@ public final class SqlInventory {
     System.out.println(MARKER + active.id);
     OPERATORS.values().removeIf(scope -> scope == active);
     active = null;
+  }
+
+  public static synchronized Object submitting() {
+    return active;
+  }
+
+  public static synchronized void submitted(Object token, Object client, Throwable failure)
+      throws Exception {
+    if (token == null || token != active) return;
+    if (failure != null) {
+      failed("executeAsync", failure);
+      return;
+    }
+    if (client == null) return;
+    String job = call(client, "getJobID").toString();
+    if (active.jobs.containsKey(job)) return;
+    active.jobs.put(job, new LinkedHashMap<>(Map.of("status", "SUBMITTED")));
+    try {
+      active.jobResults.put(
+          job, (java.util.concurrent.CompletableFuture<?>) call(client, "getJobExecutionResult"));
+    } catch (ReflectiveOperationException | ClassCastException unavailable) {
+      active.jobs.get(job).put("status", "UNAVAILABLE");
+      active.jobs.get(job).put("failure", unavailable.toString());
+    }
+  }
+
+  private static void snapshotJobs(Scope scope) {
+    scope.jobResults.forEach(
+        (job, completion) -> {
+          if (!completion.isDone()) return;
+          Map<String, Object> observation = scope.jobs.get(job);
+          try {
+            completion.join();
+            observation.put("status", "SUCCEEDED");
+          } catch (java.util.concurrent.CompletionException
+              | java.util.concurrent.CancellationException error) {
+            Throwable cause = error;
+            while (cause.getCause() != null) cause = cause.getCause();
+            observation.put("status", "RESULT_FAILED");
+            observation.put("failure", cause.toString());
+          }
+        });
   }
 
   public static synchronized void opened(Object operator) {
@@ -229,6 +273,8 @@ public final class SqlInventory {
     final List<Object> failures = new ArrayList<>();
     final Map<String, Long> nativeWork = new java.util.TreeMap<>();
     final List<Object> contracts = new ArrayList<>();
+    final Map<String, Map<String, Object>> jobs = new LinkedHashMap<>();
+    final Map<String, java.util.concurrent.CompletableFuture<?>> jobResults = new LinkedHashMap<>();
     int translationDepth;
   }
 }

@@ -219,6 +219,17 @@ work. Skipped cases need no fabricated identity. The join publishes exact associ
 when all links validate, and retains uncontracted row observations without yet assigning them
 a route.
 
+The observer also records streaming-environment `executeAsync` jobs under the invocation
+that entered submission. Repeated overload callbacks deduplicate by job ID, and a submission
+returning after its originating invocation ended cannot attach to the next case. At invocation
+completion the observer samples the job-result futures without blocking: `SUCCEEDED` means a
+completed result, `SUBMITTED` means the future is still pending, `RESULT_FAILED` preserves an
+exceptional/cancelled result request, and `UNAVAILABLE` records a client that cannot expose it.
+A failed result request alone is not labelled a failed host job. The raw inventory and joined
+audit retain these observations separately from JUnit outcomes and native work. Runtime graph
+association and execution-route classification are still pending; plan translation alone does
+not establish host execution.
+
 For direct summary calls, use `--sql-inventory <directory> --flink-line 2.2` (or `1.18`).
 Broader route classification and supported-scope completeness remain part of #168; the
 published inventory remains a planning/admission report. Agent and Python tests verify the

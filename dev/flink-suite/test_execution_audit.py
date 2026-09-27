@@ -205,6 +205,21 @@ class ExecutionAuditTest(unittest.TestCase):
         self.assertEqual("failed", audit["status"])
         self.assertTrue(any("Wrong schema" in p for p in audit["validation_problems"]))
 
+    def test_job_observations_are_retained_and_validated(self):
+        self.cases(("Uncontracted#query", "passed"))
+        jobs = {"job-1": {"status": "SUCCEEDED"}, "job-2": {"status": "SUBMITTED"}}
+        args = self.inventory(dict(native_work={}, execution_contracts=[], jobs=jobs))
+        status, audit = self.run_audit(*args)
+        self.assertEqual(0, status)
+        self.assertEqual(jobs, audit["testcases"][0]["jobs"])
+        path = next((self.root / "inventory").glob("*.json"))
+        record = json.loads(path.read_text())
+        record["jobs"]["job-1"]["status"] = "invented"
+        path.write_text(json.dumps(record))
+        status, audit = self.run_audit(*args)
+        self.assertEqual(1, status)
+        self.assertTrue(any("invalid job-result" in p for p in audit["validation_problems"]))
+
     def test_uncontracted_work_is_retained_without_inventing_route_or_skip_evidence(self):
         self.cases(("Uncontracted#query", "passed"), ("Skipped#query", "skipped"))
         args = self.inventory(dict(native_work={"NativeCalcOperator": 3}, execution_contracts=[]), None)

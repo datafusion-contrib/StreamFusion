@@ -200,6 +200,7 @@ public final class StreamFusionSuiteAgent {
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder
+                    .visit(Advice.to(RecordSubmittedJob.class).on(named("executeAsync")))
                     .visit(
                         Advice.to(InstallNativeRocksDB.class)
                             .on(named("configure").and(takesArguments(2))))
@@ -299,6 +300,20 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodExit
     static void exit(@Advice.This Object scan, @Advice.Return Object roots) throws Exception {
       SqlInventory.plan(scan, roots);
+    }
+  }
+
+  public static final class RecordSubmittedJob {
+    @Advice.OnMethodEnter
+    static Object enter() {
+      return SqlInventory.submitting();
+    }
+
+    @Advice.OnMethodExit(onThrowable = Throwable.class)
+    static void exit(
+        @Advice.Enter Object scope, @Advice.Return Object client, @Advice.Thrown Throwable failure)
+        throws Exception {
+      SqlInventory.submitted(scope, client, failure);
     }
   }
 
