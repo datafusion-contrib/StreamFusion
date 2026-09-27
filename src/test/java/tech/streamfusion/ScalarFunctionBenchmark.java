@@ -108,6 +108,13 @@ class ScalarFunctionBenchmark {
               "tt_decimal_array",
               "CAST(a AS ARRAY<FLOAT>)",
               "ARRAY<FLOAT>"),
+          new Query("TAN_EXACT", "numbers", "TAN(CAST(n AS DOUBLE))", "DOUBLE"),
+          new Query("COSH_EXACT", "numbers", "COSH(CAST(n % 20 AS DOUBLE))", "DOUBLE"),
+          new Query(
+              "FLOAT_TRUNCATE_EXACT",
+              "numbers",
+              "TRUNCATE(CAST(n AS DOUBLE) / 7E0, CAST(n % 4 AS INT))",
+              "DOUBLE"),
           new Query("POWER_EXACT", "numbers", "POWER(CAST(n AS DOUBLE), 0.5)", "DOUBLE"),
           new Query("FROM_UNIXTIME_DEFAULT", "tt_unix_time", "FROM_UNIXTIME(n)", "STRING"),
           new Query(
