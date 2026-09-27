@@ -81,6 +81,7 @@ class FlinkDistinctAverageSqlHarnessTest {
   @ParameterizedTest
   @ValueSource(
       strings = {
+        "SELECT k, AVG(DISTINCT d), COUNT(*) FROM src GROUP BY k",
         "SELECT k, AVG(DISTINCT t), AVG(DISTINCT b), AVG(DISTINCT CAST(d AS DECIMAL(19,2))),"
             + " COUNT(*) FROM src GROUP BY k",
         "SELECT k, AVG(DISTINCT b), COUNT(DISTINCT b), SUM(DISTINCT b), AVG(t), COUNT(DISTINCT t)"
@@ -101,11 +102,7 @@ class FlinkDistinctAverageSqlHarnessTest {
   }
 
   @org.junit.jupiter.api.Test
-  void twoPhaseWideDecimalAndRetractingDistinctKeepFallback() throws Exception {
-    NativeParity.assertFallbackReasonContains(
-        () -> twoPhaseEnvironment(false),
-        "SELECT k, AVG(DISTINCT d) FROM src GROUP BY k",
-        "DECIMAL precision <= 19");
+  void twoPhaseRetractingDistinctKeepsFallback() throws Exception {
     NativeParity.assertFallbackReasonContains(
         () -> twoPhaseEnvironment(true),
         "SELECT k, AVG(DISTINCT b) FROM src GROUP BY k",

@@ -18,10 +18,11 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import tech.streamfusion.planner.NativePlanner;
 
-class FlinkWideDecimalGroupOrderSqlHarnessTest {
+class FlinkWideDecimalTimestampSqlHarnessTest {
   @ParameterizedTest
-  @CsvSource({"2,5,1", "3,5,7", "7,17,0", "17,31,0"})
-  void overflowSensitiveGroupOrderingMatchesHost(int keys, int bundle, int seed) throws Exception {
+  @CsvSource({"3,false", "9,false", "9,true"})
+  void timestampGroups(int precision, boolean ltz) throws Exception {
+    int keys = 7, bundle = 17, seed = 0;
     Supplier<TableEnvironment> source =
         () -> {
           var env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -38,7 +39,15 @@ class FlinkWideDecimalGroupOrderSqlHarnessTest {
                 new BigDecimal[] {
                   large, large.subtract(BigDecimal.valueOf(3)), large.negate(), null
                 }) {
-              for (int key = 0; key < keys; key++) rows.add(Row.of(key, value));
+              for (int key = 0; key < keys; key++)
+                rows.add(
+                    Row.of(
+                        ltz
+                            ? java.time.Instant.ofEpochSecond(
+                                1_700_000_000L, (key + 1L) * (precision == 3 ? 1_000_000L : 1L))
+                            : java.time.LocalDateTime.of(2024, 1, 1, 0, 0)
+                                .plusNanos((key + 1L) * (precision == 3 ? 1_000_000L : 1L)),
+                        value));
             }
           }
           java.util.Collections.shuffle(rows, new java.util.Random(seed));
@@ -48,8 +57,14 @@ class FlinkWideDecimalGroupOrderSqlHarnessTest {
                   fromData(
                       env,
                       rows,
-                      Types.ROW_NAMED(new String[] {"k", "d"}, Types.INT, Types.BIG_DEC)),
-                  Schema.newBuilder().column("k", INT()).column("d", DECIMAL(38, 0)).build()));
+                      Types.ROW_NAMED(
+                          new String[] {"k", "d"},
+                          ltz ? Types.INSTANT : Types.LOCAL_DATE_TIME,
+                          Types.BIG_DEC)),
+                  Schema.newBuilder()
+                      .column("k", ltz ? TIMESTAMP_LTZ(precision) : TIMESTAMP(precision))
+                      .column("d", DECIMAL(38, 0))
+                      .build()));
           return table;
         };
     for (String aggregate : List.of("SUM", "AVG")) {

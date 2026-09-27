@@ -77,12 +77,13 @@ class FlinkGroupIdentityOrderingTest {
           return table;
         };
     var results = new java.util.HashSet<java.util.Map<java.util.List<Object>, Long>>();
-    for (int trial = 0; trial < 8; trial++) {
+    for (int trial = 0; trial < 9; trial++) {
       var table = source.get();
       String sql = "SELECT k, SUM(DISTINCT d), COUNT(*) FROM src GROUP BY k";
       String plan = NativePlanner.explain(source.get(), sql);
-      assertTrue(plan.contains("LocalGroupAggregate"), plan);
-      assertTrue(plan.contains("GlobalGroupAggregate"), plan);
+      assertTrue(plan.contains("NativeColumnarLocalGroupAggregate"), plan);
+      assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
+      var scan = trial == 8 ? NativePlanner.install(table) : null;
       var result = new java.util.HashMap<java.util.List<Object>, Long>();
       try (var rows = table.executeSql(sql).collect()) {
         while (rows.hasNext()) {
@@ -99,6 +100,7 @@ class FlinkGroupIdentityOrderingTest {
           else result.put(fields, count);
         }
       }
+      if (scan != null) assertTrue(scan.substitutions() > 0);
       results.add(result);
     }
     BigDecimal large = BigDecimal.TEN.pow(37).multiply(BigDecimal.valueOf(9));

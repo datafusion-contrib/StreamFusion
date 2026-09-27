@@ -333,9 +333,6 @@ final class LocalGroupAggregateMatcher {
     return (GroupAggregateMatcher.isIntegerType(value.getSqlTypeName())
             && partial.getSqlTypeName() == value.getSqlTypeName())
         || (value.getSqlTypeName() == SqlTypeName.DECIMAL
-            // Even the sum of every positive distinct unscaled value fits DECIMAL(38) at p <= 19.
-            // Wider domains can overflow differently as the host/native maps enumerate values.
-            && value.getPrecision() <= 19
             && isWidenedDecimal(partial, value));
   }
 
@@ -345,7 +342,6 @@ final class LocalGroupAggregateMatcher {
         && ((GroupAggregateMatcher.isIntegerType(value.getSqlTypeName())
                 && sum.getSqlTypeName() == SqlTypeName.BIGINT)
             || (value.getSqlTypeName() == SqlTypeName.DECIMAL
-                && value.getPrecision() <= 19
                 && isWidenedDecimal(sum, value)));
   }
 

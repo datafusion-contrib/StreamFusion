@@ -23,6 +23,8 @@ class DistinctAggregateBenchmark {
   private static final boolean AVERAGE = Boolean.getBoolean("distinct.average");
   private static final boolean TWO_PHASE =
       Boolean.parseBoolean(System.getProperty("distinct.twoPhase", Boolean.toString(!AVERAGE)));
+  private static final int DECIMAL_PRECISION =
+      Integer.getInteger("distinct.precision", TWO_PHASE ? 19 : 20);
   private static final String SQL =
       AVERAGE
           ? "INSERT INTO sink SELECT k, AVG(DISTINCT t), AVG(DISTINCT b), AVG(DISTINCT amount) FROM"
@@ -56,10 +58,11 @@ class DistinctAggregateBenchmark {
     }
     System.out.printf(
         Locale.ROOT,
-        "[distinct-aggregate] average=%s two_phase=%s rows=%d Flink=%.6fs Native=%.6fs"
+        "[distinct-aggregate] average=%s two_phase=%s precision=%d rows=%d Flink=%.6fs Native=%.6fs"
             + " flink_trials=%s native_trials=%s%n",
         AVERAGE,
         TWO_PHASE,
+        DECIMAL_PRECISION,
         ROWS,
         median(times[0]),
         median(times[1]),
@@ -121,13 +124,13 @@ class DistinctAggregateBenchmark {
                 .column("k", DataTypes.INT())
                 .column("t", DataTypes.TINYINT())
                 .column("b", DataTypes.BIGINT())
-                .column("amount", DataTypes.DECIMAL(TWO_PHASE ? 19 : 20, 2))
+                .column("amount", DataTypes.DECIMAL(DECIMAL_PRECISION, 2))
                 .build()
             : Schema.newBuilder()
                 .column("k", DataTypes.INT())
                 .column("b", DataTypes.BOOLEAN())
                 .column("ts", DataTypes.TIMESTAMP_LTZ(9))
-                .column("amount", DataTypes.DECIMAL(19, 2))
+                .column("amount", DataTypes.DECIMAL(DECIMAL_PRECISION, 2))
                 .build());
     table.executeSql(
         (AVERAGE

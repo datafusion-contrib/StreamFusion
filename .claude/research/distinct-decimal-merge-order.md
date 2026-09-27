@@ -1,8 +1,8 @@
 # Wide-decimal DISTINCT merge ordering
 
-Remaining work in #231: two-phase SUM/AVG DISTINCT over DECIMAL precision 20–38.
-The current precision-19 limit is still necessary. This is an implementation investigation,
-not a decision to exclude the issue's DECIMAL(20,2) case.
+Investigation for #231: two-phase SUM/AVG DISTINCT over DECIMAL precision 20–38.
+The ordering, buffering, retention and recovery contracts below now support wider admission;
+`docs/operators/group-by.md` records current coverage and benchmark results.
 
 ## Released-host evidence
 
@@ -181,5 +181,7 @@ emission with released BinaryRow HashMaps, including NULLs, duplicates and retai
 
 With the planner gate temporarily widened for verification, all 32 shuffled SUM/AVG configurations,
 three timestamp-group configurations (SUM and AVG each), and the exact-hash valid-outcome probe
-pass on both released Flink versions. The production gate was restored after those probes; final
-configuration/checkpoint admission review and the end-to-end benchmark remain before widening it.
+pass on both released Flink versions. After these probes, positive-retention reads and writes
+were deferred to the bundle-flush clock, with memory/RocksDB checkpoint regressions. Wider
+admission now passes the combined 58-case SQL suite on Flink 2.2.1 and 57 cases with one host
+capability skip on 1.18.1. The permanent identity-collision test also checks native results.
