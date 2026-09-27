@@ -1,6 +1,7 @@
 use crate::*;
 
 mod decimal_map_order;
+mod java_map_order;
 use decimal_map_order::DecimalMapOrder;
 mod ordered_value;
 use ordered_value::{is_ordered_value, OrderedValueState};

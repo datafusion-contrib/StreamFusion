@@ -474,7 +474,11 @@ output and reserves bounded scratch space for wide-decimal view copies; a reject
 leaves the bundle intact. Multi-key transport/bundle ordering still needs verification before
 admission. Shuffled runtime-source probes confirmed that local group emission order can change
 final overflow results; ordering values inside each group's membership map alone is insufficient.
-The planner gate is unchanged.
+The shared ordering core also matches 15 released-host binary-group fixtures, including bucket
+collision trees and resize splits. Distinct binary keys with identical full hashes introduce
+JVM identity-based ordering: overflow-sensitive stock Flink jobs can then return different final
+SUMs for identical input. Tests for that case check valid host outcomes; deterministic cases
+continue to require exact parity. The planner gate is unchanged.
 
 The eight new SQL cases pass on Flink 2.2.1 and 1.18.1, along with the existing two-phase
 suite (28 cases on 2.2.1; 27 passed and one released-host capability skip on 1.18.1).

@@ -58,8 +58,8 @@ fixture does not justify admitting all values of that type.
 
 ## Native ordering model
 
-`native/engine/src/group_agg/decimal_map_order.rs` now implements insert-only decimal
-membership order, including BigDecimal-compatible hashing, signed hash comparisons,
+`native/engine/src/group_agg/decimal_map_order.rs` supplies decimal hashing and delegates
+insert-only membership order to the reusable `java_map_order.rs` core, including BigDecimal-compatible hashing, signed hash comparisons,
 collision chains, red/black tree insertion, root placement, resize splits, tree-to-list
 transitions, and serializer-sized copies. It uses indexed Rust nodes and reports owned
 vector capacity for later memory-accounting integration. The local aggregate now uses it for wide-decimal views; the planner admission gate has not
@@ -141,3 +141,27 @@ regressions with runtime input and explicit local/global host-plan assertions. T
 native parity regressions when the ordering implementation is complete. A combined SUM+AVG
 query over the same decimal argument rewrites to DISTINCT SUM0 in this host and was excluded
 from the isolated transport probe because that aggregate form already falls back.
+
+## Shared group-order model and exact-hash ties
+
+The bucket/list/tree machinery now accepts caller-supplied spread hashes and tie ordering,
+so group emission and decimal membership can share the same rotations and resize semantics.
+Fifteen `group-map-order.json` fixtures cover 880 BinaryRowData BIGINT/NULL insertions,
+duplicates, collision trees and resize splits. They verify released Flink hashes and map
+iteration in Java and the shared core in Rust. The 55 decimal fixtures still pass unchanged.
+The group fixtures intentionally have distinct complete hashes for unequal keys: BinaryRowData
+is not Comparable, so equal-hash tree ties use JVM object identity, unlike DecimalData.
+
+A separate released-host probe built sixteen distinct BIGINT BinaryRowData keys with complete
+hash zero. Reconstructing the same key sequence 64 times produced 64 map orders in JDK 17.
+With those keys, three repetitions of [9e37, 9e37-3, -9e37, NULL], Random(0) shuffle, count
+bundles of 31 and one-hour latency, eight stock Flink 2.2.1 SQL jobs produced four different
+final result sets. No native operator was installed. This is actual aggregate nondeterminism
+when overflow makes JVM identity-dependent group order observable, not a native discrepancy.
+
+`FlinkGroupIdentityOrderingTest` retains those exact keys and input. It asserts the two-phase
+plan, colliding hashes, final key/count multiplicities, and that each SUM is one of the valid
+host results (-9e37 or 9e37-3). It deliberately does not require a particular number of distinct
+outputs across runs. Deterministic cases retain exact host/native parity. For this identity-tie
+case a deterministic native tie order can select a valid host ordering; it cannot reproduce an
+independent host run's object identities. Group-emission integration remains pending.
