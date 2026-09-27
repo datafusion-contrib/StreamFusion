@@ -196,13 +196,249 @@ unclassified. This is the audit denominator, not an overall acceleration percent
 Validated evidence retains the fixture selector, per-operator native input counts, expected
 contract and recorded fallback reasons. Routes distinguish native work, mixed native work plus
 recorded fallback, full fallback, and unclassified evidence. Counts are explicitly evidence-record
-counts: parameterized XML cases and witness files share method-level totals but do not have a
-common invocation identifier, so the artifact does not invent one-to-one matches. A satisfied
+counts when SQL inventory is disabled: parameterized XML cases and witness files then share
+only method-level totals, so the artifact does not invent one-to-one matches. A satisfied
 individual record cannot override stale/duplicate evidence or a failed overall summary.
 
-Outside the declared contracts, passing cases remain unclassified. The artifact does not infer
-batch-only, deliberately unmodified, scan-only or host-failure routes from class names or JUnit
-outcomes. Those classifications and broader per-invocation collection remain
+When SQL inventory collection is enabled, raw invocation JSON now also contains `native_work`:
+nonempty row counts from the existing instrumented operator callbacks, including invocations
+without an explicit execution contract. Opening an operator or observing an empty batch earns
+no work. Bindings are removed when the invocation finishes, so later callbacks from an already
+bound operator cannot credit a subsequent test. This retains the suite's serial-invocation
+requirement and existing instrumented-operator coverage; an empty map is not proof of fallback.
+
+The inventory's `execution_contracts` entries link each written witness filename (`record_id`)
+and its test/fixture selector to the inventory's exact invocation UUID. The legacy four-field
+TSV format remains unchanged. When SQL inventory is enabled, the runner passes it and the
+released Flink line to the summary, which joins witnesses to `execution-audit.json` by the
+invocation marker and report/case index. Parameterized method suffixes are normalized for
+contract lookup while each invocation retains its full identity. Every executed contracted
+case needs exactly one matching test/fixture witness; duplicate, missing, stale or unmatched
+links fail the summary. Witness row counts cannot exceed the enclosing invocation's observed
+work. Skipped cases need no fabricated identity. The join publishes exact associations only
+when all links validate, and retains uncontracted row observations without yet assigning them
+a route.
+
+The observer also records streaming-environment `executeAsync` jobs under the invocation
+that entered submission. Repeated overload callbacks deduplicate by job ID, and a submission
+returning after its originating invocation ended cannot attach to the next case. At invocation
+completion the observer samples the job-result futures without blocking: `SUCCEEDED` means a
+completed result, `SUBMITTED` means the future is still pending, `RESULT_FAILED` preserves an
+exceptional/cancelled result request, and `UNAVAILABLE` records a client that cannot expose it.
+A failed result request alone is not labelled a failed host job. After a result future completes,
+the observer requests the client's job status asynchronously and samples that future at invocation
+completion as `job_status`. Pending status requests do not delay the test; failed requests remain
+`job_status_error` observations. This distinguishes an explicit `FAILED` job status from cancelled
+jobs and result/status retrieval failures. The raw inventory and joined
+audit retain these observations separately from JUnit outcomes and native work. Submission
+snapshots attach the stream graph's job type, node names, parallelism, operator factories and
+declared operator classes and input edges to that job ID. Reflection failures remain explicit observations.
+These snapshots describe the submitted graph, not proof that each node processed records.
+For Flink's generated operator factories, the observer reads the generated class name directly;
+it does not request class loading, which would trigger source compilation during observation.
+
+`translation_details` retains each translation's planner class, outcome, physical-plan indices
+and returned root count alongside the original planner-name list. Pipeline creation matches the
+actual transformation objects against those returned roots. The submitted graph records
+`sql_translation_ids` and `sql_translation_complete`; completeness requires every pipeline input
+to have one observed origin and every root of each selected translation to be included. Partial,
+missing and ambiguous matches stay explicitly incomplete. These links are scoped to the current
+invocation and are not inferred from which plan was recorded most recently. Full-fallback and
+deliberately unmodified routes use these links.
+
+Direct DataStream submission also records links at stream-graph generation. The observer follows
+transformation inputs from terminal roots and requires every input path to reach an observed SQL
+translation root. Sources outside those roots, ambiguous origins, partial multi-root translations,
+cycles and observation errors keep the link incomplete. Successful links record
+`sql_translation_link_kind=transformation_inputs`; this permits downstream DataStream wrappers
+without assuming that unrelated branches came from SQL.
+
+Native callbacks with a Flink job metric ID accumulate under that job, including callbacks
+that arrive before submission returns its client. At invocation completion, matching jobs
+receive their `native_work`; unknown job IDs remain in `unmatched_native_jobs`. Callbacks
+without a job metric ID remain in `unattributed_native_work`. The invocation-level aggregate
+retains all these observations for existing contracts, but only associated counters establish
+work for a particular job. Job IDs from finished invocations cannot receive credit in later
+invocations, including newly opened operators. The joined audit validates positive integer work
+counts and requires the associated, unmatched and unattributed counters to sum exactly to the
+invocation total. An unmatched job ID cannot also appear among submitted jobs. Invalid partitions
+fail the join before it publishes any exact case associations.
+
+The separate `runtime_route` field recognizes `skipped`, `native`, `mixed`, `full_fallback`,
+`unmodified_plan`, `scan_only`,
+`batch_host_only` and `host_failure`; unresolved evidence remains `unclassified`.
+Batch host-only requires a nonempty set of successful job results, a submitted batch graph for
+every job, resolved Flink operator classes or Flink's `CodeGenOperatorFactory` for every graph node,
+and a complete partition with
+no native work. Pending results, graph observation errors, unknown operator classes and older
+inventories without counter partitions remain `unclassified`. A host-failure route requires
+at least one exceptional execution result with an explicit `FAILED` job status or a matching
+Flink `JobResult` application status of `FAILED`, resolved Flink operator classes in every submitted batch/streaming graph,
+no native work, and all other jobs either successful or similarly confirmed failed. Cancelled,
+suspended or pending jobs cannot establish this route. The agent observes `JobResult` before
+its conversion to an execution result, preserving the authoritative outcome even after an archived
+job's status lookup becomes unavailable. Results join by job ID, including those observed before
+submission returns. Repeated outcomes are deduplicated; conflicting outcomes, a successful result
+paired with a failed application status, or contradictory terminal job statuses stay unclassified.
+Unmatched results remain in `unmatched_job_results` through inventory loading and the exact
+JUnit join, and prevent invocation classification. The structured partition is kept in JSON;
+CSV summaries omit it alongside other nested job evidence. Malformed
+status lists and overlapping submitted/unmatched identities fail validation. Finished-invocation
+job IDs cannot contribute results to a later invocation.
+
+For streaming native routes, every job must succeed and every native operator type in its graph
+must have positive, job-associated work. The initial explicit type list covers Calc, Filter,
+synchronous/asynchronous lookup join, columnar local/global group aggregate, updating join, Top-N and global
+window aggregate. Unsupported native types and counters for types absent from the graph remain
+unclassified. Sources, sinks, row/Arrow transposes and columnar key-group routing are permitted
+boundaries. The columnar mini-batch assigner is also a boundary: it forwards Arrow batches
+unchanged and emits scheduling markers without per-row computation. Other resolved Flink operators
+alongside native work produce `mixed`. These counts
+establish work per operator type and job, not per individual graph node or subtask.
+
+Generated `SourceConversion` operators are also boundaries when their input paths lead only to
+known sources. Generated `SinkConversion`, Flink output conversion and sink constraint enforcers
+qualify when their output paths lead only through those adapters to known terminal sinks. Generated
+classes require Flink's code-generation factory identity. Classification checks each graph node's
+position, so a converter with the same class name elsewhere remains host computation. Missing or
+invalid edges and cycles cannot establish these additional boundaries.
+
+`scan_only` requires a successful streaming graph containing both source and sink operators,
+with every node in the explicit StreamSource/SourceOperator/StreamSink/CollectSinkOperator/
+SinkWriterOperator/table SinkOperator list or a verified conversion boundary, and no native work. Generic maps,
+misplaced converters and unknown classes do not establish scan-only execution. Multiple native/scan-only/mixed jobs roll up to
+`mixed` when their routes differ. Pending or unclassified jobs and any unattributed/unmatched
+native work keep the entire invocation unclassified. Batch/streaming mixtures remain unclassified.
+These are execution observations, independent of JUnit success and existing contract verdicts;
+they do not replace the published planning/admission labels.
+
+`full_fallback` requires a successful host-only streaming job with a complete translation link.
+Every linked translation must have succeeded, and every referenced physical-plan observation
+must come from translation, contain only host roots and record nonempty fallback reasons.
+Missing, duplicate or invalid translation identities, absent reasons, EXPLAIN-only plans and
+native plan roots cannot establish this route. `runtime_fallback_reasons` retains the validated
+reasons by job ID. Native and full-fallback jobs in the same invocation produce `mixed`; a
+full-fallback job alongside a scan-only job remains full fallback.
+
+`unmodified_plan` requires a successful host-only streaming job whose linked translations all
+come from planners explicitly created with preservation enabled. The observer binds that choice
+to each actual planner instance and copies it into `translation_details.planner_configuration`,
+including planners created before an invocation starts. A preserved planner elsewhere in the
+same test cannot classify an ordinary planner's job. Batch jobs retain their batch route; an
+explicitly preserved streaming plan takes precedence over scan-only classification.
+
+For direct summary calls, use `--sql-inventory <directory> --flink-line 2.2` (or `1.18`).
+Add repeatable `--require-runtime-route-prefix <class#method-prefix>` options to declare the
+scope that must have classified runtime evidence. Every matching parameterized case must be
+classified; an empty prefix, a prefix matching no cases, missing inventory or an unclassified
+case fails the summary and retains the failed artifact. The artifact records these prefixes
+and `testcases_by_runtime_route` counts over the complete JUnit denominator, including skips
+and cases outside the selected scope. Contract-scope counts remain separate.
+
+Use `--runtime-route-scope <json>` to require exact fixture variants instead of entire method
+prefixes. The versioned scope declares a Flink line and cases with canonical `test` method,
+exact JUnit `display_name`, positive `count` and expected `route`. Missing or duplicate variants,
+wrong routes, unclassified evidence and invalid/wrong-line scopes fail the summary. The audit
+embeds every requirement and the matched invocation identities, while retaining all other cases
+in its complete denominator.
+
+Schema version 1 supports a fixed `route`. Version 2 also supports
+`route_by_contract_variant`, an exact mapping from the invocation-linked execution witness's
+`variant` to its required route. Missing or unmapped variants fail; this is not a set of interchangeable
+acceptable routes. Flink 1.18's test environment randomly enables changelog state, so its keyed
+fixtures require `native` for `changelog=false` and `full_fallback` for `changelog=true`. The same
+exact witness is independently checked against the existing execution contract. No upstream test
+configuration is changed to force a preferred route.
+
+The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require 16 and 15
+verified runtime variants respectively. Run them with:
+
+```sh
+FLINK_VERSION=2.2.1 FLINK_SUITE_RUNTIME_AUDIT=true bin/flink-suite.sh runtime
+FLINK_VERSION=1.18.1 FLINK_SUITE_RUNTIME_AUDIT=true bin/flink-suite.sh runtime
+```
+
+The option selects the eight upstream methods, enables fresh SQL inventory collection/reporting,
+and applies the appropriate scope automatically. Add `FLINK_SUITE_REUSE_BUILD=true` after a
+compatible suite build. A custom `FLINK_SUITE_TEST` selection must still satisfy every required
+variant; omitted variants fail. The audit option requires the runtime suite and cannot be combined
+with runtime sharding. The commands retain complete reports, inventory and the execution audit
+under the suite workspace. CI runs the audit before the first runtime shard on each released
+line, reusing that worker's restored build. It uploads audit evidence before the full shard can
+replace reports. Audit failure fails the worker and the final upstream gate; no extra runners or
+shared-build downloads are added.
+The bundled Flink 2.2.1 command passes 18 cases with all 16 requirements matched; the Flink
+1.18.1 command passes 17 cases with all 15 requirements matched. Both retain two unclassified early returns.
+The batch `TableSinkITCase#testCollectSinkConfiguration` fixture establishes the host-failure
+route while its expected exception remains a passing upstream test.
+
+The keyed `AggregateITCase#testGroupByAgg` fixture covers HEAP/ROCKSDB, immediate/mini-batch
+and local/global modes. Local and global native operators must each have positive associated
+work; observing only the global half cannot establish a fully native split job. The seven Flink
+2.2 variants run natively, including both async-state settings. The six Flink 1.18 variants follow
+their recorded changelog-state setting. Split jobs record twelve local input rows and six global
+partial rows; immediate jobs record twelve global input rows.
+
+`DataStreamJavaITCase#testFromAndToChangelogStreamEventTime` verifies `mixed` on both releases
+with object reuse enabled and disabled: four native Calc input rows coexist with Flink map,
+watermark and window operators in the same successful graph. Native operator presence alone
+therefore cannot label the whole job native.
+
+Auditing remaining upstream methods and operator types remains part of #168; the published
+inventory remains a planning/admission report and no full-suite native percentage is claimed. Agent and Python tests verify the
+collection/linkage paths with synthetic observations, not additional upstream SQL coverage.
+
+An unchanged Flink 2.2.1 `batch.sql.CalcITCase#testSelectStar` run verifies the first runtime
+scope: one passed invocation, one successful batch job with `FINISHED` status, one complete
+translation-to-pipeline link, zero native work and a `batch_host_only` route. The explicit
+`--require-runtime-route-prefix org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testSelectStar`
+summary check passes. Its source-conversion and Calc nodes use generated names without a package
+prefix; their Flink factory establishes host origin. This is one batch execution check, not
+native SQL coverage or a claim that the entire batch suite has been audited.
+The same unchanged test and required scope also pass on Flink 1.18.1: one successful batch
+invocation and complete translation link. Its separate job-status request was unavailable;
+that error remains visible and does not replace the completed execution result.
+
+The unchanged Flink 2.2.1 `stream.sql.CalcITCase#testLongProjectionList` also passes its explicit
+runtime audit scope: one invocation, one successful job and three native Calc input rows matched
+to both its job ID and existing exact contract witness, with no unassociated work. The submitted
+graph retains both Arrow transposes. The runtime classifier reports `native` after verifying
+the source-conversion and sink-adaptation boundaries by their graph edges; the existing native
+contract remains satisfied. This fixture submits its converted
+DataStream directly, bypassing SQL executor pipeline creation. A rerun verifies a complete link
+to translation 0 through `transformation_inputs`, while preserving the same three job-associated
+native rows.
+The same streaming contract and required scope pass on Flink 1.18.1 with one invocation, three
+job-associated native rows, verified conversion boundaries and a complete direct-submission translation link.
+
+The unchanged Flink 2.2.1 `stream.table.CalcITCase#testInlineScalarFunction` verifies full
+fallback for both HEAP and ROCKSDB variants: two passed invocations and two completed host jobs,
+each linked to `Calc: unsupported function/operator: AS`, with zero native work. Both the existing
+fallback contracts and the required runtime route prefix pass.
+The same two variants and required route prefix pass on Flink 1.18.1 with the same reason.
+Those two invocations have no legacy method contract on 1.18; their runtime classification comes
+from completed job and linked translation evidence. Across these three selected methods the
+runtime denominator is four passed invocations per released line, not the full upstream suite.
+
+The unchanged Flink 2.2.1 `TableEnvironmentITCase#testFromToDataStreamAndExecuteSql` passes all
+three variants. `StreamTableEnvironment:isStream=true` runs three successful host jobs with
+complete links to preserved planners and classifies as `unmodified_plan`. The two
+`TableEnvironment` variants return before job execution and remain unclassified. The complete
+JUnit denominator is retained; passing those early-return variants does not establish SQL
+execution, and requiring the entire method prefix would correctly fail on their missing routes.
+Flink 1.18.1 has the same three passed variants and classifications; its streaming variant runs
+two successful jobs with preserved-planner links.
+
+The unchanged `stream.sql.CalcITCase#testSelectStarFromNestedTable` passes on both released
+lines with one successful source/conversion/table-sink job, no native work and a `scan_only`
+route. It verifies that nested rows at host boundaries do not earn native execution credit.
+Across all five selected methods, each line has eight passed JUnit invocations: six classified
+runtime routes and two explicitly unclassified early returns. No full-suite percentage is inferred
+from this selection.
+
+Outside the declared contracts, cases without the runtime evidence above remain
+unclassified. The artifact does not infer routes from test class names or JUnit outcomes.
+Broader verified invocation scopes and boundary classification remain
 [#168](https://github.com/datafusion-contrib/StreamFusion/issues/168). Agent unit-test output is
 outside the suite's report/evidence directories and contributes no SQL cases. The summary writes
 failed artifacts for missing or malformed reports/evidence and retains process failures; an
