@@ -80,10 +80,31 @@ This retains Flink's branch casts, call counts and code-generation evaluation or
 user-defined function named IF retains its own implementation. Unsupported children retain
 the existing admission rules. SQL parity tests cover exact numerics, strings, temporal and
 binary values, nullable conditions, nested expressions, errors and multiple batches.
-The admitted result types are BOOLEAN, numeric, character, DATE, TIME, plain TIMESTAMP and binary.
+The admitted result types are BOOLEAN, numeric, character, DATE, TIME, TIMESTAMP,
+TIMESTAMP_LTZ and binary.
 BOOLEAN branches preserve TRUE/FALSE/NULL conditions, nullable results, nested predicates and
-unselected failing branches across batches. TIMESTAMP_LTZ and complex result types retain fallback because their IF overloads
-are not registered by the released Flink code generator.
+unselected failing branches across batches. TIMESTAMP_LTZ uses the same selection paths:
+matching branch types select native timestamp values, while mixed precisions retain Flink's
+generated branch casts. Its regression matrix covers precisions 0/3/6/9 in UTC,
+Asia/Shanghai and America/Los_Angeles, pre-epoch fractions, DST transitions, nullable and
+nested selections, unselected/selected errors, empty filtered batches and native Calc work
+across 5,003 rows. Complex IF result types retain fallback.
+
+The TIMESTAMP_LTZ release benchmark on Linux x86-64 (Intel i7-12650H, JDK 17,
+released Flink 2.2.1, mimalloc) uses 2,000,000 runtime rows, NULL every seventh row,
+parallelism 1, two warmups and five interleaved measurements per engine. The source
+emits rows and the sink is `blackhole`; the harness asserts native Calc and both transposes.
+
+| TIMESTAMP_LTZ(9) workload | Flink median (s) | Native median (s) | Flink/native |
+| --- | ---: | ---: | ---: |
+| Identity control | 0.277110 | 0.963528 | 0.288x |
+| `IF(ts IS NULL, CAST(TO_TIMESTAMP_LTZ(0,3) AS TIMESTAMP_LTZ(9)), ts)` | 0.292844 | 1.008045 | 0.291x |
+
+These standalone row-fed measurements show no speedup. The similar identity-control cost
+supports retaining this small admission extension for native pipeline composition, with no
+new timestamp evaluator or buffer-ownership machinery. Reproduce with `ScalarFunctionBenchmark`,
+`-Pbench`, `-Dscalar.functions=IF_TIMESTAMP_LTZ`, `-Dscalar.rows=2000000`,
+`-Dscalar.nullEvery=7`, `-Dscalar.warmup=2`, and `-Dscalar.runs=5`, setting `SF_BENCHMARK=true`.
 
 The release benchmark below measures this coverage change against the previous full Flink
 fallback, using `ScalarFunctionBenchmark` on Apple Silicon/JDK 17 with mimalloc,
