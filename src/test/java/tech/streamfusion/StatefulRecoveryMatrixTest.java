@@ -14,13 +14,26 @@ import org.apache.flink.types.RowKind;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+@org.junit.jupiter.api.extension.ExtendWith(tech.streamfusion.operator.CoalescingOff.class)
 @org.junit.jupiter.api.parallel.Execution(org.junit.jupiter.api.parallel.ExecutionMode.SAME_THREAD)
 class StatefulRecoveryMatrixTest {
   private static final Map<String, Map<String, Object>> RESULTS = new java.util.TreeMap<>();
 
-  @ParameterizedTest(name = "group-{0}-rocks={1}")
-  @CsvSource({"false,false", "true,false", "false,true", "true,true"})
-  void groupedTypesAcrossTwoRestores(boolean bigKey, boolean rocks) {
+  @ParameterizedTest(name = "group-bigint={0}-rocks={1}-arrow={2}-mini={3}")
+  @CsvSource({
+    "false,false,1024,0",
+    "true,false,1024,0",
+    "false,true,1024,0",
+    "true,true,1024,0",
+    "false,false,1,0",
+    "false,false,5,3",
+    "false,false,64,3",
+    "false,true,1,0",
+    "false,true,5,3",
+    "false,true,64,3"
+  })
+  void groupedTypesAcrossTwoRestores(
+      boolean bigKey, boolean rocks, int batchRows, int miniBatchRows) {
     String text = "long-string-".repeat(1024);
     List<Row> input = new ArrayList<>();
     input.add(row(bigKey, RowKind.INSERT, 1, "1.25", text));
@@ -51,8 +64,8 @@ class StatefulRecoveryMatrixTest {
     try (var recovery = new PortableSqlRecovery(backend, input, type, schema, true, 4, 8)) {
       var runs =
           NativeFailureParity.run(
-              recovery::uninterrupted,
-              recovery,
+              () -> configure(recovery.uninterrupted(), batchRows, miniBatchRows),
+              () -> configure(recovery.get(), batchRows, miniBatchRows),
               "SELECT k, SUM(amount), COUNT(DISTINCT text_value) FROM recovery_input GROUP BY k");
       Map<List<Object>, Long> expected =
           Map.of(
@@ -64,14 +77,25 @@ class StatefulRecoveryMatrixTest {
           expected,
           "group-" + (bigKey ? "bigint" : "int") + "-" + (rocks ? "rocksdb" : "memory"),
           backend,
+          batchRows,
+          miniBatchRows,
           List.of(4, 8),
           "NativeColumnarGroupAggregate");
     }
   }
 
-  @ParameterizedTest(name = "join-rocks={0}")
-  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
-  void updatingJoinAcrossTwoRestores(boolean rocks) {
+  @ParameterizedTest(name = "join-rocks={0}-arrow={1}-mini={2}")
+  @CsvSource({
+    "false,1024,0",
+    "true,1024,0",
+    "false,1,3",
+    "false,5,0",
+    "false,64,3",
+    "true,1,3",
+    "true,5,0",
+    "true,64,3"
+  })
+  void updatingJoinAcrossTwoRestores(boolean rocks, int batchRows, int miniBatchRows) {
     String left = "left-payload-".repeat(1024);
     String right = "right-payload-".repeat(1024);
     List<Row> input =
@@ -112,8 +136,8 @@ class StatefulRecoveryMatrixTest {
     try (var recovery = new PortableSqlRecovery(backend, input, type, schema, true, 6, 12)) {
       var runs =
           NativeFailureParity.run(
-              recovery::uninterrupted,
-              recovery,
+              () -> configure(recovery.uninterrupted(), batchRows, miniBatchRows),
+              () -> configure(recovery.get(), batchRows, miniBatchRows),
               "SELECT l.k, l.amount, l.text_value, r.amount, r.text_value FROM recovery_input l"
                   + " JOIN recovery_input r ON l.k = r.k AND l.amount < r.amount"
                   + " WHERE l.side_id = 0 AND r.side_id = 1");
@@ -129,6 +153,8 @@ class StatefulRecoveryMatrixTest {
           expected,
           "join-" + (rocks ? "rocksdb" : "memory"),
           backend,
+          batchRows,
+          miniBatchRows,
           List.of(6, 12),
           "NativeColumnarUpdatingJoin");
     }
@@ -144,6 +170,8 @@ class StatefulRecoveryMatrixTest {
       Map<List<Object>, Long> expected,
       String id,
       String backend,
+      int batchRows,
+      int miniBatchRows,
       List<Integer> boundaries,
       String operator) {
     boolean passed = false;
@@ -160,7 +188,7 @@ class StatefulRecoveryMatrixTest {
       passed = true;
     } finally {
       RESULTS.put(
-          id,
+          id + "-arrow" + batchRows + "-mini" + miniBatchRows,
           Map.of(
               "passed", passed,
               "configuration",
@@ -174,9 +202,11 @@ class StatefulRecoveryMatrixTest {
                       "checkpointOffsets",
                       boundaries,
                       "physicalBatchRows",
-                      1024,
-                      "logicalMiniBatch",
-                      false),
+                      batchRows,
+                      "logicalMiniBatchRows",
+                      miniBatchRows,
+                      "exchangeCoalesceRows",
+                      0),
               "host", SqlAuditHarness.outcome(runs.host()),
               "native", SqlAuditHarness.outcome(runs.nativeRun()),
               "nativePlan", runs.nativeRun().plan(),
@@ -185,6 +215,17 @@ class StatefulRecoveryMatrixTest {
                       .equals(SqlAuditHarness.materialized(runs.nativeRun().rows())),
               "recovery", recovery.observations()));
     }
+  }
+
+  private static org.apache.flink.table.api.TableEnvironment configure(
+      org.apache.flink.table.api.TableEnvironment table, int batchRows, int miniBatchRows) {
+    table.getConfig().set("streamfusion.transpose.batchRows", Integer.toString(batchRows));
+    table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(miniBatchRows > 0));
+    table
+        .getConfig()
+        .set("table.exec.mini-batch.size", Integer.toString(Math.max(1, miniBatchRows)));
+    table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+    return table;
   }
 
   @org.junit.jupiter.api.AfterAll

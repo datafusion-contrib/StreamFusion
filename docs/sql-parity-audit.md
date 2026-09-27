@@ -128,13 +128,13 @@ semantics; host/native agreement alone is insufficient for those cases.
 ## Combined stateful recovery matrix
 
 `StatefulRecoveryMatrixTest` begins the bounded matrix in
-[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current six cases
-include four combinations of INT/BIGINT group keys with DECIMAL(20,2) SUM and STRING COUNT DISTINCT, using memory
+[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current 18 cases
+include INT/BIGINT group keys with DECIMAL(20,2) SUM and STRING COUNT DISTINCT, using memory
 and the native RocksDB backend. Twelve changelog records include duplicate 12-KiB strings,
 NULLs, removal of the final duplicate, group deletion and recreation. The reference executes
 uninterrupted; the native run fails only after checkpoints containing source offsets 4 and 8
 have completed, then restores twice. The checkpointed source has a stable UID. The final rows must be `(1, -4.50, 0)` and
-`(2, -0.50, 1)`, with a DECIMAL(38,2) sum. Two more cases exercise an updating JOIN
+`(2, -0.50, 1)`, with a DECIMAL(38,2) sum. Additional cases exercise an updating JOIN
 on memory and native RocksDB state. One checkpointed source routes side-tagged changelogs
 to the two inputs. Duplicate hot-key rows, 13/14-KiB STRING payloads, DECIMAL(20,2) values,
 NULLs and an `l.amount < r.amount` residual cross checkpoints at offsets 6 and 12. A
@@ -159,11 +159,27 @@ Add `-Pflink-1.18` for the other released dependency line. The matrix writes
 `streamfusion-runtime/target/sql-audit/stateful-recovery.json`, including configuration,
 result comparison, result types, native plan, fallback reasons and recovery observations,
 even when a validation assertion fails. CI retains this file with the existing portable SQL
-audit artifact. All six recovery cases pass on each of Flink 2.2.1 and 1.18.1. The shared-harness change
+audit artifact. All 18 recovery cases and four transpose-configuration tests pass on each of Flink 2.2.1
+and 1.18.1 (22 tests per release). The shared-harness change
 also passed all 38 existing portable-audit cases on each release.
 
-This initial slice uses parallelism 1, physical batches of up to 1,024 rows, and no logical
-mini-batching. Event-time/window/Top-N, Calc filtering, independent physical/logical
-batch variants, rescaling in both directions, budget/timezone variants, failed/cancelled-run
-cleanup and a larger explicit stress profile remain in #250. Passing these six cases does
-not establish those combinations or cross-version state compatibility.
+The required matrix runs each row below with memory and native RocksDB state, at parallelism
+1. Arrow row limits and Flink logical mini-batch sizes are independent:
+
+| Operator / keys | Arrow row limit / logical mini-batch rows (0 means disabled) |
+| --- | --- |
+| GROUP BY / INT | 1024/0, 1/0, 5/3, 64/3 |
+| GROUP BY / BIGINT | 1024/0 |
+| Updating JOIN / INT | 1024/0, 1/3, 5/0, 64/3 |
+
+The job-scoped `streamfusion.transpose.batchRows` option controls physical row-to-Arrow
+batches. Post-exchange coalescing is disabled in these cases so it cannot recombine the
+selected boundaries. Logical mini-batch latency is one hour: count triggers and checkpoint
+flushes determine the tested bundles. A separate serialized-operator test checks actual
+emission sizes for limits 1, 5 and 64, including a partial batch flushed by a watermark.
+The default row limit remains 1024 for other jobs.
+
+Event-time/window/Top-N, dedicated Calc conversion/filtering cases, rescaling in both
+directions, budget/timezone variants, failed/cancelled-run cleanup and a larger explicit
+stress profile remain in #250. Passing these cases does not establish those combinations
+or cross-version state compatibility.
