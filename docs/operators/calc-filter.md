@@ -647,8 +647,37 @@ and Java overflow behavior, including ABS of the minimum INT/BIGINT value. Adjac
 host expressions fuse before crossing the Arrow boundary. These are host-evaluated functions
 inside a columnar native Calc, not pure-Rust kernels.
 
-DECIMAL FLOOR/CEIL retain fallback: the released-host collection path has unverified decimal
-precision behavior. Existing floating-point gates and decimal TRUNCATE/ROUND kernels are unchanged.
+DECIMAL FLOOR/CEIL/CEILING run inside verified scalar consumers using one fused generated
+expression, so the intermediate decimal does not cross Arrow before its consumer executes.
+This covers STRING and integral casts, predicates, nested selections, and DECIMAL results whose
+precision is normalized by a non-identity cast, exact arithmetic or Flink's IF branch casts.
+Precision 12/18/19/20/38, positive/negative/exact/NULL values, large precision-38 values,
+selected and unselected failures, empty filtered batches and native work over 5,003 rows
+are covered by the runtime regressions.
+
+Direct rounded DECIMAL results and decimal-preserving consumers such as ABS or COALESCE retain
+fallback: Flink's FLOOR/CEIL return a decimal with value-dependent precision, which can fail the
+released host's binary-writer precision assertion. Normalizing it at an Arrow boundary would hide
+that host behavior. The same gate applies to whole-Calc generated execution, including JSON
+compositions. Collection and ROW consumers of DECIMAL FLOOR/CEIL remain outside the verified
+scalar boundary. Existing floating-point gates and decimal TRUNCATE/ROUND kernels are unchanged.
+
+Release+mimalloc measurements on Linux x86-64 (Intel i7-12650H, JDK 17, Flink 2.2.1),
+with two million runtime rows, NULL every seventh row, parallelism 1, two warmups and
+five interleaved measurements per engine, include the row source, blackhole sink and
+both asserted transposes:
+
+| DECIMAL(38,9) workload | Flink median (s) | Native median (s) | Flink/native |
+| --- | ---: | ---: | ---: |
+| Identity control | 0.276592 | 0.578956 | 0.478x |
+| `CAST(FLOOR(n) AS STRING)` | 0.600918 | 1.028703 | 0.584x |
+| `CAST(CEIL(n) AS STRING)` | 0.621295 | 1.035432 | 0.600x |
+
+These standalone projections are slower than Flink. The extension retains columnar pipeline
+composition using the existing JVM evaluator; no standalone speedup is claimed. Reproduce with
+`ScalarFunctionBenchmark`, `SF_BENCHMARK=true`, `-Pbench`,
+`-Dscalar.functions=DECIMAL_FLOOR_STRING,DECIMAL_CEIL_STRING`, `-Dscalar.rows=2000000`,
+`-Dscalar.nullEvery=7`, `-Dscalar.warmup=2`, and `-Dscalar.runs=5`.
 
 ### Decimal ROUND, TRUNCATE and literals
 
