@@ -19,6 +19,95 @@ import org.junit.jupiter.params.provider.CsvSource;
 class StatefulRecoveryMatrixTest {
   private static final Map<String, Map<String, Object>> RESULTS = new java.util.TreeMap<>();
 
+  @org.junit.jupiter.api.condition.EnabledIfSystemProperty(
+      named = "streamfusion.test.recoveryStress",
+      matches = "true")
+  @ParameterizedTest(name = "stress-seed={0}-rocks={1}-arrow={2}-mini={3}")
+  @CsvSource({
+    "20260927,false,1,0", "20260927,true,1,0",
+    "20260927,false,127,257", "20260927,true,127,257",
+    "20260927,false,4096,257", "20260927,true,4096,257",
+    "20260928,false,1,257", "20260928,true,1,257",
+    "20260928,false,127,0", "20260928,true,127,0",
+    "20260928,false,4096,0", "20260928,true,4096,0"
+  })
+  void seededGroupedStress(long seed, boolean rocks, int batchRows, int miniBatchRows) {
+    boolean bigKey = seed % 2 == 0;
+    var random = new java.util.Random(seed);
+    List<Row> prefix = new ArrayList<>();
+    for (int i = 0; i < 4096; i++) {
+      int key = random.nextInt(5) == 0 ? random.nextInt(128) : 0;
+      String amount =
+          switch (random.nextInt(5)) {
+            case 0 -> null;
+            case 1 -> "999999999999999999.99";
+            case 2 -> "-999999999999999999.99";
+            default -> BigDecimal.valueOf(random.nextInt(20001) - 10000, 2).toPlainString();
+          };
+      String text = i % 7 == 0 ? null : "é🙂".repeat(256) + random.nextInt(16);
+      prefix.add(row(bigKey, RowKind.INSERT, key, amount, text));
+    }
+    List<Row> input = new ArrayList<>(prefix);
+    java.util.Collections.shuffle(prefix, random);
+    for (Row original : prefix) {
+      Row deleted = Row.copy(original);
+      deleted.setKind(RowKind.DELETE);
+      input.add(deleted);
+    }
+    Map<List<Object>, Long> expected = new java.util.HashMap<>();
+    for (int key = 0; key < 128; key++) {
+      input.add(row(bigKey, RowKind.INSERT, key, "-1.25", "recreated"));
+      input.add(row(bigKey, RowKind.INSERT, key, "2.50", "recreated"));
+      input.add(row(bigKey, RowKind.INSERT, key, null, null));
+      input.add(row(bigKey, RowKind.INSERT, key, "-0.25", "other"));
+      expected.put(List.of(key(bigKey, key), new BigDecimal("1.00"), 2L), 1L);
+    }
+    var type =
+        Types.ROW_NAMED(
+            new String[] {"k", "amount", "text_value"},
+            bigKey ? Types.LONG : Types.INT,
+            Types.BIG_DEC,
+            Types.STRING);
+    var schema =
+        Schema.newBuilder()
+            .column("k", bigKey ? DataTypes.BIGINT() : DataTypes.INT())
+            .column("amount", DataTypes.DECIMAL(20, 2))
+            .column("text_value", DataTypes.STRING())
+            .build();
+    String backend = rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap";
+    long budget = (bigKey ? 32L : 16L) << 20;
+    try (var recovery =
+        new PortableSqlRecovery(backend, input, type, schema, true, 4096, 6144, 8192)
+            .withTaskOffHeapBytes(budget)) {
+      var runs =
+          NativeFailureParity.run(
+              () -> configure(recovery.uninterrupted(), batchRows, miniBatchRows),
+              () -> configure(recovery.get(), batchRows, miniBatchRows),
+              "SELECT k, SUM(amount), COUNT(DISTINCT text_value) FROM recovery_input GROUP BY k");
+      verify(
+          recovery,
+          runs,
+          expected,
+          "stress-group-" + seed + "-" + (rocks ? "rocksdb" : "memory"),
+          backend,
+          batchRows,
+          miniBatchRows,
+          List.of(4096, 6144, 8192),
+          "NativeColumnarGroupAggregate",
+          Map.of(
+              "seed",
+              seed,
+              "inputRows",
+              input.size(),
+              "keyType",
+              bigKey ? "BIGINT" : "INT",
+              "keyCount",
+              128,
+              "profile",
+              "stateful-recovery-stress"));
+    }
+  }
+
   @ParameterizedTest(name = "cancel-native={0}-rocks={1}")
   @CsvSource({"false,false", "false,true", "true,false", "true,true"})
   void cancellationAfterCompletedState(boolean nativeRun, boolean rocks) throws Exception {

@@ -240,6 +240,31 @@ flushes determine the tested bundles. A separate serialized-operator test checks
 emission sizes for limits 1, 5 and 64, including a partial batch flushed by a watermark.
 The default row limit remains 1024 for other jobs.
 
-Rescaling in both directions and a larger explicit
-stress profile remain in #250. Passing these cases does not establish those combinations
-or cross-version state compatibility.
+The opt-in `stateful-recovery-stress` Maven profile adds 12 seeded GROUP BY cases. Each
+executes 8,704 changelog records: 4,096 insertions skewed toward a hot key, the same records
+retracted in a seeded shuffled order, and four rows recreating each of 128 groups. Inputs
+include long Unicode strings, duplicate/null DISTINCT values, null amounts and positive and
+negative DECIMAL(20,2) limits. A separately constructed final answer requires SUM 1.00 and
+two distinct strings for every recreated group.
+
+Seed 20260927 uses INT keys and a verified 16 MiB budget; seed 20260928 uses BIGINT keys and
+32 MiB. Both run on memory and native RocksDB with Arrow limits 1, 127 and 4096. Logical
+mini-batches are respectively 0/257/257 for the first seed and 257/0/0 for the second.
+Native execution restores three completed checkpoints at source offsets 4096, 6144 and
+8192, spanning populated state, partial retraction and complete group removal. Every case
+reuses the known-result, host/native type parity, route, restored-offset and ownership
+cleanup assertions, and records its seed, row count and configuration in the audit JSON.
+All 12 stress cases pass on each of released Flink 2.2.1 and 1.18.1. They are disabled in
+the required CI matrix and impose no timing assertions.
+
+Run just the stress cases with:
+
+```bash
+mvn -Pstateful-recovery-stress -pl streamfusion-runtime -am test \
+  '-Dtest=StatefulRecoveryMatrixTest#seededGroupedStress' \
+  -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+Add `-Pflink-1.18,stateful-recovery-stress` instead to select the other released line.
+Rescaling in both directions remains in #250. Passing these cases does not establish
+rescaling or cross-version state compatibility.
