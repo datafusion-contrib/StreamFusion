@@ -128,7 +128,7 @@ semantics; host/native agreement alone is insufficient for those cases.
 ## Combined stateful recovery matrix
 
 `StatefulRecoveryMatrixTest` begins the bounded matrix in
-[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current 56 cases
+[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its 56 completed-result/failure cases
 include INT/BIGINT group keys with DECIMAL(20,2) SUM and STRING COUNT DISTINCT, using memory
 and the native RocksDB backend. Twelve changelog records include duplicate 12-KiB strings,
 NULLs, removal of the final duplicate, group deletion and recreation. The reference executes
@@ -190,6 +190,15 @@ cleanup. The shared check now also enforces zero task reservations after other t
 Both normal completion and the two expected decimal failures pass these checks. The check
 measures live ownership/reservations, not whether the native allocator returns pages to the OS.
 
+Four separate cancellation cases execute grouped SUM and COUNT DISTINCT on both engines and
+both state backends. The native jobs first restore the source at offset 32. All jobs then
+hold the source open after 96 rows until a checkpoint containing the full input completes;
+only then does the test cancel through the job client. It verifies terminal CANCELED status,
+zero active sources, and the same native ownership cleanup checks. Native cases also require
+a live native handle before cancellation. These are lifecycle checks, recorded with the
+`CANCELLATION_CLEANUP` outcome; they do not claim complete-result parity for cancelled jobs.
+Completed source offsets are included in the report.
+
 Each case independently checks materialized results against known answers, resolved result
 types, the required native operator plan, both restored offsets and failure injections, completed
 checkpoint evidence, and zero active sources after collection. Route assertions cannot
@@ -209,8 +218,8 @@ Add `-Pflink-1.18` for the other released dependency line. The matrix writes
 result comparison, result types, native plan, fallback reasons and recovery observations,
 even when a validation assertion fails. CI retains this file with the existing portable SQL
 audit artifact. All 56 recovery cases (48 native successes, six explicit fallbacks and two expected native
-failures), four transpose-configuration tests and 38 portable-audit regressions pass on each
-of Flink 2.2.1 and 1.18.1 (98 tests per release).
+failures), four cancellation cases, four transpose-configuration tests and 38 portable-audit regressions pass on each
+of Flink 2.2.1 and 1.18.1 (102 tests per release).
 
 The required matrix runs each row below with memory and native RocksDB state, at parallelism
 1. Arrow row limits and Flink logical mini-batch sizes are independent:
@@ -231,6 +240,6 @@ flushes determine the tested bundles. A separate serialized-operator test checks
 emission sizes for limits 1, 5 and 64, including a partial batch flushed by a watermark.
 The default row limit remains 1024 for other jobs.
 
-Rescaling in both directions, cancelled-run cleanup and a larger explicit
+Rescaling in both directions and a larger explicit
 stress profile remain in #250. Passing these cases does not establish those combinations
 or cross-version state compatibility.

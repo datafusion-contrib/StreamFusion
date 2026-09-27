@@ -37,6 +37,7 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
   private final boolean changelog;
   private Map<Integer, Long> watermarks = Map.of();
   private long taskOffHeapBytes;
+  private boolean holdAfterInput;
   private final List<String> runIds = new java.util.ArrayList<>();
 
   PortableSqlRecovery() {
@@ -86,6 +87,23 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
       throw new IllegalArgumentException("configure a nonnegative budget before execution");
     taskOffHeapBytes = bytes;
     return this;
+  }
+
+  PortableSqlRecovery holdAfterInput() {
+    if (!runIds.isEmpty())
+      throw new IllegalStateException("configure source hold before execution");
+    holdAfterInput = true;
+    return this;
+  }
+
+  void awaitCompletedInput() throws InterruptedException {
+    Proof proof = PROOFS.get(runIds.get(runIds.size() - 1));
+    long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
+    while (!proof.completedOffsets.contains(input.size()) && System.nanoTime() < deadline)
+      Thread.sleep(10);
+    org.junit.jupiter.api.Assertions.assertTrue(
+        proof.completedOffsets.contains(input.size()), "full input checkpoint never completed");
+    org.junit.jupiter.api.Assertions.assertEquals(1, proof.activeSources.get());
   }
 
   long taskOffHeapBytes() {
@@ -141,7 +159,8 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     var stream =
         env.addSource(
-                new RecoveringSource(runId, input, recover ? boundaries : new int[0], watermarks))
+                new RecoveringSource(
+                    runId, input, recover ? boundaries : new int[0], watermarks, holdAfterInput))
             .returns(inputType)
             .uid("portable-recovery-source")
             .setMaxParallelism(128);
@@ -198,6 +217,8 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
                   proof.restoredOffset.get(),
                   "completedCheckpoints",
                   proof.completions.get(),
+                  "completedOffsets",
+                  new java.util.TreeSet<>(proof.completedOffsets),
                   "restoredOffsets",
                   List.copyOf(proof.restoredOffsets),
                   "injectedOffsets",
@@ -223,16 +244,22 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     private final List<Row> input;
     private final int[] boundaries;
     private final Map<Integer, Long> watermarks;
+    private final boolean holdAfterInput;
     private transient ListState<Integer> state;
     private transient Map<Long, Integer> snapshots;
     private int next;
 
     private RecoveringSource(
-        String runId, List<Row> input, int[] boundaries, Map<Integer, Long> watermarks) {
+        String runId,
+        List<Row> input,
+        int[] boundaries,
+        Map<Integer, Long> watermarks,
+        boolean holdAfterInput) {
       this.runId = runId;
       this.input = input;
       this.boundaries = boundaries;
       this.watermarks = watermarks;
+      this.holdAfterInput = holdAfterInput;
     }
 
     @Override
@@ -256,6 +283,7 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
           }
         }
         emitThrough(context, input.size());
+        while (running && holdAfterInput) Thread.sleep(5);
       } finally {
         proof.activeSources.decrementAndGet();
       }

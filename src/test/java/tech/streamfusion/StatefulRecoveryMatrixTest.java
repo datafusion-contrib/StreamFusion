@@ -19,6 +19,80 @@ import org.junit.jupiter.params.provider.CsvSource;
 class StatefulRecoveryMatrixTest {
   private static final Map<String, Map<String, Object>> RESULTS = new java.util.TreeMap<>();
 
+  @ParameterizedTest(name = "cancel-native={0}-rocks={1}")
+  @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+  void cancellationAfterCompletedState(boolean nativeRun, boolean rocks) throws Exception {
+    String backend = rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap";
+    String id = "cancel-" + (nativeRun ? "native" : "host") + "-" + (rocks ? "rocksdb" : "memory");
+    try (var recovery = new PortableSqlRecovery(backend).holdAfterInput()) {
+      var table = configure(nativeRun ? recovery.get() : recovery.uninterrupted(), 5, 3);
+      if (nativeRun) tech.streamfusion.planner.NativePlanner.install(table);
+      var query =
+          table.sqlQuery("SELECT k, SUM(v), COUNT(DISTINCT v) FROM recovery_input GROUP BY k");
+      String plan = query.explain();
+      var result = query.execute();
+      var client = result.getJobClient().orElseThrow();
+      boolean passed = false;
+      try (var iterator = result.collect()) {
+        try {
+          recovery.awaitCompletedInput();
+          if (nativeRun) {
+            assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
+            assertFalse(
+                NativeExtensionLoader.liveNativeHandles().isEmpty(), "no live native state");
+            assertEquals(List.of(32), recovery.observations().get(0).get("restoredOffsets"));
+          }
+        } finally {
+          client.cancel().get(30, java.util.concurrent.TimeUnit.SECONDS);
+          long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
+          var status = client.getJobStatus().get(10, java.util.concurrent.TimeUnit.SECONDS);
+          while (!status.isGloballyTerminalState() && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+            status = client.getJobStatus().get(10, java.util.concurrent.TimeUnit.SECONDS);
+          }
+          assertEquals(org.apache.flink.api.common.JobStatus.CANCELED, status);
+        }
+        assertEquals(0, recovery.observations().get(0).get("activeSources"));
+        SharedFlinkCluster.assertNativeMemoryReleased(id);
+        passed = true;
+      } finally {
+        RESULTS.put(
+            id,
+            Map.of(
+                "passed",
+                passed,
+                "expectedOutcome",
+                "CANCELLATION_CLEANUP",
+                "expectedRoute",
+                nativeRun ? "NATIVE" : "HOST",
+                "configuration",
+                Map.of(
+                    "backend",
+                    backend,
+                    "physicalBatchRows",
+                    5,
+                    "logicalMiniBatchRows",
+                    3,
+                    "parallelism",
+                    1,
+                    "checkpointBeforeCancelOffset",
+                    96),
+                "nativePlan",
+                plan,
+                "recovery",
+                recovery.observations(),
+                "cleanup",
+                Map.of(
+                    "taskReservedBytes",
+                    tech.streamfusion.operator.TaskOffHeapMemory.reservedBytes(),
+                    "arrowAllocatedBytes",
+                    tech.streamfusion.operator.NativeAllocator.SHARED.getAllocatedMemory(),
+                    "liveNativeHandles",
+                    NativeExtensionLoader.liveNativeHandles())));
+      }
+    }
+  }
+
   @ParameterizedTest(name = "group-bigint={0}-rocks={1}-arrow={2}-mini={3}-budget={4}")
   @CsvSource({
     "false,false,1024,0,0",
