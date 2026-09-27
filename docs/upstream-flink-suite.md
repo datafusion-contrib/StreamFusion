@@ -237,16 +237,33 @@ receive their `native_work`; unknown job IDs remain in `unmatched_native_jobs`. 
 without a job metric ID remain in `unattributed_native_work`. The invocation-level aggregate
 retains all these observations for existing contracts, but only associated counters establish
 work for a particular job. Job IDs from finished invocations cannot receive credit in later
-invocations, including newly opened operators. Execution-route classification remains pending;
-plan translation alone does not establish host execution.
+invocations, including newly opened operators. The joined audit validates positive integer work
+counts and requires the associated, unmatched and unattributed counters to sum exactly to the
+invocation total. An unmatched job ID cannot also appear among submitted jobs. Invalid partitions
+fail the join before it publishes any exact case associations.
+
+The separate `runtime_route` field currently recognizes `skipped` and `batch_host_only`.
+Batch host-only requires a nonempty set of successful job results, a submitted batch graph for
+every job, resolved Flink operator classes for every graph node, and a complete partition with
+no native work. Pending/exceptional results, graph observation errors, unknown operator classes,
+mixed batch/streaming submissions and older inventories without counter partitions remain
+`unclassified`. These are execution observations, independent of JUnit success and existing
+contract verdicts; they do not replace the published planning/admission labels.
 
 For direct summary calls, use `--sql-inventory <directory> --flink-line 2.2` (or `1.18`).
-Broader route classification and supported-scope completeness remain part of #168; the
+Add repeatable `--require-runtime-route-prefix <class#method-prefix>` options to declare the
+scope that must have classified runtime evidence. Every matching parameterized case must be
+classified; an empty prefix, a prefix matching no cases, missing inventory or an unclassified
+case fails the summary and retains the failed artifact. The artifact records these prefixes
+and `testcases_by_runtime_route` counts over the complete JUnit denominator, including skips
+and cases outside the selected scope. Contract-scope counts remain separate.
+
+Broader route classification and verified upstream scopes remain part of #168; the
 published inventory remains a planning/admission report. Agent and Python tests verify the
 collection/linkage paths with synthetic observations, not additional upstream SQL coverage.
 
-Outside the declared contracts, passing cases remain unclassified. The artifact does not infer
-batch-only, deliberately unmodified, scan-only or host-failure routes from class names or JUnit
+Outside the declared contracts, cases without the completed batch evidence above remain
+unclassified. The artifact does not infer deliberately unmodified, scan-only or host-failure routes from test class names or JUnit
 outcomes. Those classifications and broader per-invocation collection remain
 [#168](https://github.com/datafusion-contrib/StreamFusion/issues/168). Agent unit-test output is
 outside the suite's report/evidence directories and contributes no SQL cases. The summary writes

@@ -188,6 +188,7 @@ def main() -> int:
     parser.add_argument("--audit-output", type=pathlib.Path)
     parser.add_argument("--sql-inventory", type=pathlib.Path)
     parser.add_argument("--flink-line", choices=("2.2", "1.18"))
+    parser.add_argument("--require-runtime-route-prefix", action="append", default=[])
     args = parser.parse_args()
 
     audit = empty_audit()
@@ -293,6 +294,14 @@ def main() -> int:
             execution_inventory.attach(audit, args.reports, args.sql_inventory, args.flink_line)
         except (ValueError, KeyError, TypeError, OSError, ET.ParseError) as failure:
             execution_problems.append(f"Invalid invocation execution join: {failure}")
+    audit["scope"]["required_runtime_route_prefixes"] = args.require_runtime_route_prefix
+    for prefix in args.require_runtime_route_prefix:
+        selected = [case for case in audit["testcases"] if case["test"].startswith(prefix)]
+        if not prefix or not selected:
+            execution_problems.append(f"No testcases match required runtime route prefix {prefix!r}")
+        for case in selected:
+            if case.get("runtime_route", "unclassified") == "unclassified":
+                execution_problems.append(f"{case['test']}: required runtime route is unclassified")
     required = set(contracts) if args.require_all_contracts else set()
     if args.require_contract_classes:
         classes = set(args.require_contract_classes.read_text().splitlines())
@@ -396,6 +405,9 @@ def main() -> int:
         "unclassified_outside_contract_scope": sum(executed_tests.values()) - sum(executed.values()),
         "evidence_records": len(audit["execution_evidence"]),
         "satisfied_evidence_records_by_route": dict(sorted(valid_routes.items())),
+        "testcases_by_runtime_route": dict(sorted(Counter(
+            case.get("runtime_route", "unclassified") for case in audit["testcases"]
+        ).items())),
         "process_exit": args.process_exit,
         "result_exit": result,
     }

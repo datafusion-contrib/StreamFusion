@@ -1,6 +1,7 @@
 """Join validated execution witnesses through the inventory's exact JUnit identities."""
 from pathlib import Path
-import re
+
+import execution_routes
 
 import sql_inventory
 
@@ -27,10 +28,8 @@ def attach(audit: dict, reports: Path, inventory: Path, line: str) -> None:
         links = row['execution_contracts']
         if row['outcome'] == 'skipped' and not row['invocation_id']:
             work, links = {}, []
-        if not isinstance(work, dict) or any(
-                not isinstance(name, str) or not re.fullmatch(r'\w+', name)
-                or type(count) is not int or count <= 0 for name, count in work.items()):
-            raise ValueError(f"{case['test']}: missing or invalid native-work observations")
+        execution_routes.work_counts(work)
+        partition_valid = execution_routes.validate_partition(row)
         if not isinstance(links, list):
             raise ValueError(f"{case['test']}: missing execution-contract links")
         required = int(case['contracted'] and case['outcome'] != 'skipped')
@@ -52,15 +51,16 @@ def attach(audit: dict, reports: Path, inventory: Path, line: str) -> None:
                 raise ValueError(f'Witness exceeds invocation work: {filename}')
             used.add(filename)
             bound.append(witness)
-        bindings.append((case, row, work, bound))
+        bindings.append((case, row, work, bound, partition_valid))
     if used != set(witnesses):
         raise ValueError(f'{len(set(witnesses) - used)} execution witnesses lack exact invocation links')
     # Do not mark a partial join as exact when a later record fails validation.
-    for case, row, work, bound in bindings:
+    for case, row, work, bound, partition_valid in bindings:
         case.update(invocation_id=row['invocation_id'], junit_id=row['junit_id'],
                     native_input_rows=work, jobs=row.get('jobs'),
                     unattributed_native_work=row.get('unattributed_native_work'),
-                    unmatched_native_jobs=row.get('unmatched_native_jobs'))
+                    unmatched_native_jobs=row.get('unmatched_native_jobs'),
+                    runtime_route=execution_routes.classify(row, partition_valid))
         for witness in bound:
             witness.update(invocation_id=row['invocation_id'], report=row['report'],
                            case_index=row['case_index'])

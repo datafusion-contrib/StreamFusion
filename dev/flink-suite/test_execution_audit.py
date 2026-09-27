@@ -238,6 +238,84 @@ class ExecutionAuditTest(unittest.TestCase):
         self.assertEqual("", audit["testcases"][1]["invocation_id"])
         self.assertEqual("unclassified", audit["scope"]["outside_contract_scope"])
 
+    def batch_observation(self):
+        return dict(native_work={}, execution_contracts=[], unattributed_native_work={},
+                    unmatched_native_jobs={}, jobs={"batch-job": {"status": "SUCCEEDED",
+                    "graph": {"job_type": "BATCH", "nodes": [{"operator_class":
+                    "org.apache.flink.streaming.api.operators.StreamMap"}]}}})
+
+    def test_completed_batch_route_has_exact_denominator_and_explicit_scope(self):
+        self.cases(("Batch#query[heap]", "passed"), ("Skipped#query", "skipped"),
+                   ("Other#query", "passed"))
+        args = self.inventory(self.batch_observation(), None,
+                              dict(native_work={}, execution_contracts=[]))
+        status, audit = self.run_audit(*args, "--require-runtime-route-prefix", "Batch#")
+        self.assertEqual(0, status)
+        self.assertEqual({"batch_host_only": 1, "skipped": 1, "unclassified": 1},
+                         audit["summary"]["testcases_by_runtime_route"])
+        self.assertEqual(["Batch#"], audit["scope"]["required_runtime_route_prefixes"])
+        for prefix in ("Other#", "Absent#", ""):
+            with self.subTest(prefix=prefix):
+                status, audit = self.run_audit(*args, "--require-runtime-route-prefix", prefix)
+                self.assertEqual(1, status)
+                self.assertTrue(any("runtime route" in p for p in audit["validation_problems"]))
+        status, audit = self.run_audit("--require-runtime-route-prefix", "Batch#")
+        self.assertEqual(1, status)
+
+    def test_batch_route_requires_completed_host_graph_and_consistent_work(self):
+        self.cases(("Batch#query", "passed"))
+        changes = [
+            lambda r: r["jobs"]["batch-job"].update(status="SUBMITTED"),
+            lambda r: r["jobs"]["batch-job"].update(status="RESULT_FAILED"),
+            lambda r: r["jobs"]["batch-job"].update(status="UNAVAILABLE"),
+            lambda r: r["jobs"]["batch-job"]["graph"].update(job_type="STREAMING"),
+            lambda r: r["jobs"]["batch-job"]["graph"].update(nodes=[]),
+            lambda r: r["jobs"]["batch-job"]["graph"].update(observation_error="unavailable"),
+            lambda r: r["jobs"]["batch-job"]["graph"]["nodes"][0].update(
+                operator_class="tech.streamfusion.runtime.NativeCalcOperator"),
+            lambda r: r["jobs"]["batch-job"]["graph"]["nodes"][0].update(
+                operator_class_error="unavailable"),
+            lambda r: r.update(native_work={"NativeCalcOperator": 1},
+                               unattributed_native_work={"NativeCalcOperator": 1}),
+            lambda r: r["jobs"].update(other={"status": "SUBMITTED"}),
+        ]
+        for change in changes:
+            with self.subTest(change=changes.index(change)):
+                self.cases(("Batch#query", "passed"))
+                record = self.batch_observation()
+                change(record)
+                for path in (self.root / "inventory").glob("*.json"):
+                    path.unlink()
+                args = self.inventory(record)
+                status, audit = self.run_audit(*args)
+                self.assertEqual(0, status)
+                self.assertEqual("unclassified", audit["testcases"][0]["runtime_route"])
+
+    def test_invalid_job_partition_fails_without_publishing_partial_join(self):
+        self.cases(("Batch#query", "passed"))
+        changes = [
+            lambda r: r["jobs"]["batch-job"].update(native_work={"NativeCalcOperator": -1}),
+            lambda r: r["jobs"]["batch-job"].update(native_work={"NativeCalcOperator": True}),
+            lambda r: r.update(unattributed_native_work=None),
+            lambda r: r.update(unmatched_native_jobs={"batch-job": {}}),
+            lambda r: r.update(unmatched_native_jobs={"": {}}),
+            lambda r: r.update(native_work={"NativeCalcOperator": 2}),
+            lambda r: r.update(unattributed_native_work={"NativeCalcOperator": 2}),
+        ]
+        for change in changes:
+            with self.subTest(change=changes.index(change)):
+                self.cases(("Batch#query", "passed"))
+                record = self.batch_observation()
+                change(record)
+                for path in (self.root / "inventory").glob("*.json"):
+                    path.unlink()
+                args = self.inventory(record)
+                status, audit = self.run_audit(*args)
+                self.assertEqual(1, status)
+                self.assertNotIn("runtime_route", audit["testcases"][0])
+                self.assertTrue(any("work" in problem or "job identity" in problem
+                                    for problem in audit["validation_problems"]))
+
 
 if __name__ == "__main__":
     unittest.main()
