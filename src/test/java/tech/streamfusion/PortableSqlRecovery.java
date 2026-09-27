@@ -38,6 +38,10 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
   private Map<Integer, Long> watermarks = Map.of();
   private long taskOffHeapBytes;
   private boolean holdAfterInput;
+  private int parallelism = 1;
+  private java.nio.file.Path checkpoints;
+  private java.nio.file.Path restoreFrom;
+  private StreamExecutionEnvironment executionEnvironment;
   private final List<String> runIds = new java.util.ArrayList<>();
 
   PortableSqlRecovery() {
@@ -106,6 +110,19 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     org.junit.jupiter.api.Assertions.assertEquals(1, proof.activeSources.get());
   }
 
+  PortableSqlRecovery withRescaleDeployment(
+      int parallelism, java.nio.file.Path checkpoints, java.nio.file.Path restoreFrom) {
+    if (!runIds.isEmpty()) throw new IllegalStateException("configure deployment before execution");
+    this.parallelism = parallelism;
+    this.checkpoints = checkpoints;
+    this.restoreFrom = restoreFrom;
+    return this;
+  }
+
+  StreamExecutionEnvironment executionEnvironment() {
+    return executionEnvironment;
+  }
+
   long taskOffHeapBytes() {
     return taskOffHeapBytes;
   }
@@ -136,6 +153,15 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     PROOFS.put(runId, new Proof());
     Configuration config = new Configuration();
     config.setString("state.backend.type", stateBackend);
+    if (checkpoints != null) {
+      config.set(
+          org.apache.flink.configuration.CheckpointingOptions.CHECKPOINTS_DIRECTORY,
+          checkpoints.toUri().toString());
+      tech.streamfusion.compat.CheckpointTestConfig.retainOnCancellation(config);
+      if (restoreFrom != null)
+        tech.streamfusion.compat.CheckpointTestConfig.restore(
+            config, restoreFrom.toUri().toString());
+    }
     if (taskOffHeapBytes > 0)
       config.set(
           org.apache.flink.configuration.TaskManagerOptions.TASK_OFF_HEAP_MEMORY,
@@ -153,7 +179,9 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     } else {
       env = StreamExecutionEnvironment.getExecutionEnvironment(config);
     }
-    env.setParallelism(1);
+    executionEnvironment = env;
+    env.setParallelism(parallelism);
+    if (checkpoints != null) env.setMaxParallelism(128);
     env.enableCheckpointing(50);
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");

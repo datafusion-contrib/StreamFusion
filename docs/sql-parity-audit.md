@@ -266,5 +266,35 @@ mvn -Pstateful-recovery-stress -pl streamfusion-runtime -am test \
 ```
 
 Add `-Pflink-1.18,stateful-recovery-stress` instead to select the other released line.
-Rescaling in both directions remains in #250. Passing these cases does not establish
-rescaling or cross-version state compatibility.
+`StatefulSqlRescaleTest` adds two GROUP BY rescale cases, one for each backend. An
+uninterrupted host run processes 768 deterministic changelog rows. Native jobs retain
+completed checkpoints at offsets 256 and 512 and restore them while changing parallelism
+1→3→2 (maximum 128), then process the remaining suffix. Across 128 INT-keyed groups,
+long duplicate strings and DECIMAL values cross both restores; suffix retractions remove
+the last prefix DISTINCT value, while NULL amounts and duplicate replacement strings remain.
+Known final sums/counts and resolved types must match the host.
+
+These cases reuse the existing checkpointed file sink and released-line checkpoint
+configuration helpers. Explicit transformation UIDs keep operator identities stable across
+all three deployments, and the source restores its recorded offset. Checkpoint metadata
+must contain nonempty native aggregate state for every subtask, with exactly that subtask's
+assigned key groups. Committed file output materializes the complete changelog across
+restores; it includes pre-checkpoint output and therefore detects loss or replay in both
+operator and sink state. Jobs wait for checkpoint completion before cancellation, and
+assert source/native ownership cleanup after every deployment. The separate
+`stateful-rescale.json` artifact records configuration, source recovery, operator IDs,
+key-group ranges, types, plans and cleanup. Failed cases retain configuration and the
+completed stages' evidence.
+
+Run these cases with `-Dtest=StatefulSqlRescaleTest` and either released Flink profile.
+Both cases pass on Flink 2.2.1 and 1.18.1. Together with the matrix, transpose configuration
+and portable SQL regressions, each release passes 104 tests; the opt-in stress method is skipped.
+The rescale cases cover this grouped-state workload with Arrow limit 5 and logical
+mini-batches of 3. JOIN, Top-N, window and Calc matrix cases still restore at fixed
+parallelism; these tests do not claim their rescaling coverage or cross-version state
+compatibility.
+
+Per-case native row-counter evidence remains to be added to the combined matrix in #250.
+The current records prove plans, results and recovery; rescale cases additionally prove
+nonempty native keyed checkpoint state. They do not yet record executed native row counts
+for every fixed-parallelism scenario. General accounting remains tracked by #168.
