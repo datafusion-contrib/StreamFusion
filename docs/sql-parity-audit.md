@@ -86,6 +86,18 @@ The dialect fixtures define their own semantics explicitly:
 
 ## Results and accounting
 
+The shared `NativeParity` result comparator recursively compares MAP keys and values,
+ROW fields, and arrays by content, including nested binary arrays and NULLs. MAP entry
+order is ignored; array order and duplicates, ROW field names and row kinds are retained.
+Declared fixture results use the same recursive normalization as collected results, including
+list representations of arrays, so nested expected values remain an independent content oracle.
+Unordered comparisons count normalized rows rather than sorting their string representations;
+map iteration order cannot reorder the comparison, and duplicate result rows remain significant.
+Map normalization also retains every entry when distinct Java array keys have equal contents.
+`NativeParityTest` covers equal and changed contents without executing an engine, so its
+tests do not count as native SQL coverage. Value normalization does not replace declared
+SQL type/schema checks or native/fallback route assertions in the audit harness.
+
 The report is `streamfusion-runtime/target/sql-audit/portable-cases.json`. It records each
 expanded case's SQL, mode, table settings, required setup, comparison mode, expected outcome,
 observed execution, validation result, and both engines' failure phase, root cause, row count,

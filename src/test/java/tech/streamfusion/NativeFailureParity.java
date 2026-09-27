@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -58,7 +57,8 @@ final class NativeFailureParity {
     void assertSuccess(Route nativeRoute) {
       assertEquals(null, host.failure(), this::toString);
       assertEquals(null, nativeRun.failure(), this::toString);
-      assertEquals(sorted(host.rows()), sorted(nativeRun.rows()), this::toString);
+      assertEquals(NativeParity.multiset(host.rows()), NativeParity.multiset(nativeRun.rows()),
+          this::toString);
       assertEquals(nativeRoute, nativeRun.route(), this::toString);
     }
   }
@@ -148,11 +148,6 @@ final class NativeFailureParity {
     return observed;
   }
 
-  private static List<List<Object>> sorted(List<List<Object>> rows) {
-    List<List<Object>> copy = new ArrayList<>(rows);
-    copy.sort(Comparator.comparing(Object::toString));
-    return copy;
-  }
 
   private NativeFailureParity() {}
 }
