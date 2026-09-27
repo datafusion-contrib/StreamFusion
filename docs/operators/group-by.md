@@ -387,7 +387,11 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
 | Two-phase TIME | 0.552 | 0.690 | 0.800x |
 | Two-phase BOOLEAN | 0.560 | 0.625 | 0.896x |
 
-Single-phase DATE and BOOLEAN are approximately tied with Flink on this workload; TIME and
-all two-phase cases are slower. These additions reuse the existing typed multiset and ordered
-value state to extend native pipeline coverage. They do not establish a standalone aggregate
-speedup; reducing per-row scalar materialization remains a separate optimization opportunity.
+This baseline predates single-destination exchange forwarding and typed running extrema.
+Insert-only DATE/TIME/BOOLEAN MIN/MAX now retains one typed extreme in both local and global
+state; retracting input retains counted state. At twenty million rows, single-phase native
+medians are 2.861/2.847/2.807 s versus Flink's 3.835/3.860/3.721 s. Two-phase native medians
+are 4.544/4.330/4.263 s versus Flink's 5.070/4.943/4.749 s. See the
+[optimization ledger](../optimizations/aggregate-specialization-fast-paths.md) for profiling,
+before/after measurements, trial ranges and checkpoint compatibility. This establishes MIN/MAX
+performance for the measured workloads; other aggregate functions need separate measurements.

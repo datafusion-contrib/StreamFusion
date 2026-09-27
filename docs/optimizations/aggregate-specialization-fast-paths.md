@@ -1,6 +1,6 @@
 # Aggregate specialization fast paths
 
-**Applies to:** the two-phase local aggregate's numeric MIN/MAX, and mini-batch group-aggregate
+**Applies to:** insert-only numeric, DATE, TIME and BOOLEAN MIN/MAX, and mini-batch group-aggregate
 `DISTINCT` (q15/q16/q17-shaped queries)
 
 Two of the local aggregate's hot leaves were paying for generality their actual input doesn't need:
@@ -8,23 +8,70 @@ an insert-only MIN/MAX carrying full retraction support, and a `DISTINCT` accumu
 probe value into a `ScalarValue`. Specializing each to what its input actually requires turned into
 two of the larger single-operator wins in the ledger.
 
-## Append-only local numeric MIN/MAX keeps one running extreme
+## Insert-only fixed-width MIN/MAX keeps one running extreme
 
-The two-phase local aggregate had been giving every numeric MIN/MAX group a retractable
-`BTreeMap<value, count>`, even though the local half of an insert-only plan can only ever add
-values — it never needs to know what to fall back to when the current extreme is retracted.
-It now uses the existing scalar running MIN/MAX state when no row-kind column is present;
-retracting input, strings, decimals, and the global merge still retain the counted tree and its
-delete semantics, since those genuinely need multiset bookkeeping.
+An insert-only MIN/MAX needs one extreme per group, not a counted tree of every distinct
+value. The local aggregate uses this specialization when its input has no row-kind column.
+For single-phase and global aggregates, the planner's existing insert-only proof selects
+running MIN/MAX kinds 10/11. Numeric, DATE, millisecond TIME and BOOLEAN values use this
+path; retracting inputs and other value types retain their existing multiset semantics.
+Typed Arrow reads avoid per-row scalar construction. DATE, TIME and BOOLEAN running state
+retains the declared SQL type, including all-NULL groups and checkpoint restore.
 
-Criterion's 4096-row, 64-key MIN/MAX logical bundle rose from **9.50 to 33.89 M rows/s** (**3.57x,
-+258%**). A contemporaneous release+mimalloc q17 mini-batch A/B rose from 1.535 to
-**1.661 M events/s (+8.2%)**; the immediate path, which does not use the local pre-aggregate,
-remained approximately flat at 1.750 versus 1.745 M events/s. The matched 25-second CPU profile
-completed 180 iterations versus 163 before and removed the local aggregate's 87-sample tree search,
-68-sample tree destruction, and 37-sample aggregate-state destruction leaves; `GroupAggState::accumulate`
-fell from 55 to 31 samples. The few remaining tree samples come from the downstream global
-aggregate, whose input is retracting partial updates and so still needs the tree.
+The original numeric specialization raised Criterion's 4096-row, 64-key MIN/MAX bundle from
+9.50 to 33.89 M rows/s (3.57x). A contemporaneous release+mimalloc q17 mini-batch A/B rose
+from 1.535 to 1.661 M events/s (+8.2%). A later DATE/TIME/BOOLEAN profile found 1,163 samples
+under local update, including 177 multiset updates, 137 tree searches and 60 tree insertions.
+Removing those local operations improved two-million-row native DATE/TIME/BOOLEAN jobs from
+0.665/0.647/0.589 s to 0.517/0.492/0.492 s, with single-destination exchange forwarding enabled.
+
+Extending typed running state to the insert-only single-phase path removes its remaining
+multiset overhead. At twenty million rows, native DATE/TIME/BOOLEAN medians fell from
+4.154/4.179/3.804 s with only the local specialization to 2.861/2.847/2.807 s, reductions of
+31%, 32% and 26%. Matched final measurements follow; each cell gives median and five-trial range:
+
+| Phase / type | Flink (s) | Native (s) |
+|---|---:|---:|
+| Single / DATE | 3.835 (3.783–3.959) | 2.861 (2.837–2.865) |
+| Single / TIME | 3.860 (3.823–3.932) | 2.847 (2.836–2.862) |
+| Single / BOOLEAN | 3.721 (3.648–3.806) | 2.807 (2.775–2.860) |
+| Two / DATE | 5.070 (5.003–5.211) | 4.544 (4.508–4.747) |
+| Two / TIME | 4.943 (4.831–5.034) | 4.330 (4.303–4.352) |
+| Two / BOOLEAN | 4.749 (4.643–4.950) | 4.263 (4.238–4.282) |
+
+Configuration: release+mimalloc, Intel Core i7-12650H Linux/WSL, JDK 17, Flink 2.2.1,
+2026-09-27, parallelism one, 64 groups, one-eighth NULLs, 4,096 DATE/TIME values, two warmups
+and five alternating measured trials. Both transposes and the rowwise sink are included;
+two-phase bundles contain 1,024 rows and local zero-copy transport is disabled.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=TimestampExtremaBenchmark -Dextrema.types=DATE,TIME,BOOLEAN \
+  -Dextrema.rows=20000000 -Dextrema.warmup=2 -Dextrema.runs=5
+```
+
+At two million rows, final single-phase Flink/native medians were 0.565/0.369 s (DATE),
+0.500/0.345 s (TIME), and 0.487/0.407 s (BOOLEAN); two-phase medians were 0.654/0.566,
+0.585/0.544 and 0.632/0.568 s. The twenty-million-row two-phase results remain broadly flat
+relative to the local-only optimization; this extension primarily improves single-phase jobs.
+These measurements cover MIN/MAX, not every temporal aggregate function or parallelism.
+
+Regression tests import both typed running snapshots and previous multiset snapshots, then
+continue folding lower and higher values across restored partitions. DATE and BOOLEAN use
+the existing direct RocksDB row codec; TIME retains its existing raw snapshot fallback.
+Retracting SQL controls retain counted state. The port onto the temporal coverage branch passes 567 native tests (one ignored),
+91 SQL/exchange checks on Flink 2.2.1, and 74 on Flink 1.18.1 (17 documented host skips).
+Downstream integration also passes 587 native tests (one ignored), with 92 temporal/Boolean,
+timestamp and grouped-value SQL cases on Flink 2.2.1 and 75 on Flink 1.18.1
+(17 documented host limitations skipped).
+
+The temporal branch was measured separately after porting the optimization, with the same
+configuration at two million rows. Single-phase DATE/TIME/BOOLEAN Flink/native medians are
+0.484/0.346, 0.482/0.335 and 0.451/0.333 s; two-phase medians are 0.589/0.507,
+0.557/0.487 and 0.546/0.475 s. Native five-trial ranges are respectively 0.338–0.362,
+0.325–0.339, 0.325–0.340, 0.495–0.527, 0.482–0.489 and 0.466–0.476 s.
+Flink ranges are 0.470–0.608, 0.438–0.575, 0.432–0.500, 0.580–0.594,
+0.546–0.586 and 0.536–0.609 s. All six measured MIN/MAX cases beat their matched controls.
 
 ## Group-aggregate DISTINCT folds primitives; the changelog emit reads its cache
 

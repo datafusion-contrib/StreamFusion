@@ -277,9 +277,33 @@ impl GroupAggState {
         }
     }
 
+    fn accumulate_typed_extreme(&mut self, column: &ArrayRef, row: usize) {
+        let value = match column.data_type() {
+            DataType::Date32 => column
+                .as_any()
+                .downcast_ref::<arrow::array::Date32Array>()
+                .unwrap()
+                .value(row),
+            DataType::Time32(arrow::datatypes::TimeUnit::Millisecond) => column
+                .as_any()
+                .downcast_ref::<arrow::array::Time32MillisecondArray>()
+                .unwrap()
+                .value(row),
+            DataType::Boolean => i32::from(
+                column
+                    .as_any()
+                    .downcast_ref::<BooleanArray>()
+                    .unwrap()
+                    .value(row),
+            ),
+            _ => unreachable!("typed running extreme column"),
+        };
+        self.accumulate(Num::I32(value));
+    }
+
     fn new_local(kind: i64, value_type: &DataType, append_only: bool) -> Self {
         // The local half of an insert-only two-phase aggregate never retracts its inputs. Its
-        // numeric MIN/MAX partial therefore needs one value, not the global/retracting multiset.
+        // fixed-width MIN/MAX partial therefore needs one value, not the global/retracting multiset.
         let running_extreme = append_only
             && matches!(kind, 1 | 2)
             && matches!(
@@ -290,10 +314,13 @@ impl GroupAggState {
                     | DataType::Int8
                     | DataType::Float64
                     | DataType::Float32
+                    | DataType::Date32
+                    | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                    | DataType::Boolean
             );
         if running_extreme {
             GroupAggState::Running {
-                agg: RunningAgg::new(kind, value_type),
+                agg: RunningAgg::new(kind + 9, value_type),
                 non_null: 0,
             }
         } else {
@@ -1600,10 +1627,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .map(|(&kind, &column)| is_ordered_value(kind).then_some(column as usize))
             .collect();
         // Per aggregate, a nonnumeric MIN/MAX value column — folded as a scalar into
-        // the Extremes multiset, not through the numeric Num path.
+        // typed running state for insert-only inputs, or the Extremes multiset otherwise.
         let scalar_extreme_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| {
-                if matches!(self.kinds[i], 1 | 2) && self.value_columns[i] >= 0 {
+                if matches!(self.kinds[i], 1 | 2 | 10 | 11) && self.value_columns[i] >= 0 {
                     let col = self.value_columns[i] as usize;
                     let data_type = batch.column(col).data_type();
                     (matches!(
@@ -1793,6 +1820,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     if let Some(col_idx) = scalar_extreme_cols[i] {
                         let column = batch.column(col_idx);
                         if !column.is_null(row) {
+                            if matches!(state.aggs[i], GroupAggState::Running { .. }) {
+                                assert!(!retract, "running extrema require insert-only input");
+                                state.aggs[i].accumulate_typed_extreme(column, row);
+                                continue;
+                            }
                             let scalar = ScalarValue::try_from_array(column, row)
                                 .expect("non-numeric extreme scalar");
                             if retract {
@@ -2668,10 +2700,10 @@ impl LocalGroupAggregator {
             .map(|c| c.and_then(|c| batch.column(c).as_any().downcast_ref()))
             .collect();
         // Per aggregate, a nonnumeric MIN/MAX value column — folded as a scalar
-        // into the Extremes multiset, not through the numeric Num path.
+        // into typed running state for insert-only inputs, or the Extremes multiset otherwise.
         let scalar_extreme_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| {
-                if matches!(self.kinds[i], 1 | 2) && self.value_columns[i] >= 0 {
+                if matches!(self.kinds[i], 1 | 2 | 10 | 11) && self.value_columns[i] >= 0 {
                     let col = self.value_columns[i] as usize;
                     let data_type = batch.column(col).data_type();
                     (matches!(
@@ -2783,6 +2815,11 @@ impl LocalGroupAggregator {
                 if let Some(col_idx) = scalar_extreme_cols[i] {
                     let column = batch.column(col_idx);
                     if !column.is_null(row) {
+                        if matches!(entry.states[i], GroupAggState::Running { .. }) {
+                            assert!(!retract, "running extrema require insert-only input");
+                            entry.states[i].accumulate_typed_extreme(column, row);
+                            continue;
+                        }
                         let scalar = ScalarValue::try_from_array(column, row)
                             .expect("non-numeric extreme scalar");
                         if retract {
