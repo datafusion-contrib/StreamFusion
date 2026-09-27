@@ -911,6 +911,9 @@ are admitted alongside BYTES; embedded zero/high bytes stay binary throughout th
 
 An INTEGER index and character alternatives are admitted. The index is 1-based; out-of-range and NULL indices return NULL. Only the selected alternative's NULL matters. Other index types fall back: Flink casts its boxed index to Integer after its bounds check. Explicit casts to INTEGER follow the existing cast rules.
 
+Fixed-binary ELT regression tests assert native result parity; the unverified BIGINT index
+overload retains its explicit fallback check.
+
 ### URL_ENCODE
 
 Character strings use Java form encoding: space becomes `+`, ASCII alphanumerics and `-_. *` are preserved apart from space, and other UTF-8 bytes use uppercase percent escapes. NULL returns NULL.
