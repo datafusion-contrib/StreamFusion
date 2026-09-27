@@ -83,7 +83,7 @@ the non-null count using Flink's exact decimal division — a 38-significant-dig
 
 The one-argument forms run natively in the single-phase plan over TINYINT, SMALLINT,
 INT, BIGINT, DECIMAL, CHAR/VARCHAR, DATE, TIME, BOOLEAN, TIMESTAMP and TIMESTAMP_LTZ. Each preserves
-the input value's type and precision. Per-aggregate FILTER conditions are supported.
+the input value's type and precision. FIRST_VALUE/LAST_VALUE support per-aggregate FILTER.
 Flink 1.18.1 cannot plan CHAR or temporal FIRST_VALUE/LAST_VALUE and fails a type assertion for
 SINGLE_VALUE over TIME(0), including string casts to TIME(3) that resolve to TIME(0);
 those host limitations remain unavailable on that release. Typed TIME(3) input is supported.
@@ -106,7 +106,7 @@ Flink's separate membership/order maps can expire independently.
 SINGLE_VALUE counts every element, including NULL. Zero elements yield NULL; one element
 yields that value. A second element raises Flink's `TableRuntimeException` with the same
 cardinality diagnostic. Retraction clears the retained value and decrements the count;
-filtered-out records do not contribute to this aggregate's cardinality.
+released Flink rejects a SQL FILTER clause on SINGLE_VALUE during planning.
 
 Checkpoints preserve the scalar/count or ordered occurrences. Append-only first/last and
 SINGLE_VALUE support the enclosing group's TTL. Retracting FIRST_VALUE/LAST_VALUE with a
@@ -114,7 +114,7 @@ positive retention, including a STATE_TTL hint, fall back: Flink independently e
 value-to-order and order-to-value map entries, which a single group lifetime does not model.
 These aggregate states use the existing raw keyed snapshot path with both memory and RocksDB
 backends; the direct RocksDB accumulator-row codec does not yet encode ordered occurrences.
-Two-phase local/global plans, SINGLE_VALUE DISTINCT, DISTINCT first/last over types other
+Two-phase FIRST_VALUE/LAST_VALUE plans, SINGLE_VALUE DISTINCT, DISTINCT first/last over types other
 than STRING/VARCHAR, two-argument value/order dialects, and other value types retain explicit
 fallback gates.
 
@@ -199,11 +199,21 @@ state used by single-phase AVG DISTINCT; it does not add the local sums/counts, 
 count values appearing in several bundles more than once. Decimal sum fields must retain
 precision 38 and the input scale, and the result type must match Flink's AVG type.
 
-Distinct views are indexed by expanded native partial positions. Each preceding AVG, plain
-or DISTINCT, occupies two positions. This also fixes an existing crash when an ordinary AVG
-preceded COUNT/SUM DISTINCT in a mixed local aggregate.
+Insert-only two-phase `SINGLE_VALUE(STRING/VARCHAR)` retains a string value and an INT count
+in each local bundle. NULL increments the count. Both local accumulation and global merging
+raise Flink's cardinality exception on a second element; global checkpoints preserve that
+count even when the value is NULL. The global consumes the count partial, rather than
+counting bundles. The declared string partial must match the input type, and its count must
+be INT. Other value types and retracting SINGLE_VALUE splits remain on Flink.
+Local execution failures use the same Flink exception mapping as global aggregation, after
+releasing imported Arrow input, so cardinality failures are not reported as memory limits.
 
-**Per-aggregate `FILTER (WHERE …)` rides the split too**, on plain and distinct aggregates alike:
+Distinct views are indexed by expanded native partial positions. Each preceding AVG, plain
+or DISTINCT, and each SINGLE_VALUE occupies two positions. This also fixes an existing crash
+when an ordinary AVG preceded COUNT/SUM DISTINCT in a mixed local aggregate.
+
+**Per-aggregate `FILTER (WHERE …)` rides the split too**, on the admitted SUM/MIN/MAX/COUNT/AVG
+forms, plain and DISTINCT alike:
 the predicate is a boolean column the local gates every fold on, so the merge stays filter-blind.
 Filtered distinct instances each get their own native view/set per `(args, filter)` pair — the
 same final output as Flink's shared bitmask view, since a filtered distinct is an unfiltered
@@ -306,7 +316,7 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 
 **Local group aggregate (two-phase local half) only:**
 
-- Any aggregate other than SUM/MIN/MAX/COUNT/AVG.
+- Any aggregate other than SUM/MIN/MAX/COUNT/AVG or insert-only SINGLE_VALUE over STRING/VARCHAR.
 - A SUM/MIN/MAX value type outside bigint/int/smallint/tinyint/double/decimal (MIN/MAX also admit
   strings, DATE, TIME, BOOLEAN and timestamps), or an AVG value type outside
   bigint/int/smallint/tinyint/float/double/decimal.
@@ -553,3 +563,34 @@ measured medians of **0.821 s for Flink and 0.714 s for native (1.150x)**. Flink
 from 0.796–0.925 s; native trials ranged from 0.712–0.747 s. This is a workload-specific
 whole-job result for duplicate-heavy append-only input; it does not establish a speedup for
 high-cardinality or retracting workloads. The unsupported baseline routes this query to Flink.
+
+### Two-phase SINGLE_VALUE strings
+
+Runtime-source regressions require both native aggregate stages and compare values/types
+for mixed AVG/SINGLE_VALUE/DISTINCT accumulators, a single NULL, and empty global input.
+Error regressions use bundles of one and five rows to exercise global and local cardinality
+failures, including two NULL elements. They compare the exception type, message and phase
+against released Flink. A separate control preserves Flink's planning failure for SQL
+FILTER on SINGLE_VALUE. Native tests verify INT partial counts, checkpoint restoration of
+NULL cardinality, and the host's zero/negative-count merge expressions.
+
+`GroupedValueBenchmark` accepts `-Dgrouped.value.single=true` for an insert-only split
+SINGLE_VALUE query. Every row has a unique key, so each group has exactly one element
+(including NULL); this avoids benchmarking a query that must fail cardinality validation.
+The benchmark asserts both native aggregate stages and both row/Arrow transposes, retains
+the rowwise source and blackhole sink, and uses parallelism one with 1,024-row bundles.
+Two warmups precede five alternating measured runs per engine.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=GroupedValueBenchmark -Dgrouped.value.single=true \
+  -Dgrouped.value.rows=200000 -Dgrouped.value.warmup=2 -Dgrouped.value.runs=5
+```
+
+The combined grouped-value, two-phase and DISTINCT SQL suites pass 100 tests on Flink 2.2.1
+and 85 with 15 host-capability skips on Flink 1.18.1. The native core suite passes 568 tests
+with one ignored. On Intel Core i7-12650H, Linux/WSL, JDK 17 and Flink 2.2.1 (2026-09-27),
+release+mimalloc measured 200,000 rows/keys with one-eighth NULLs: median **0.374 s for Flink
+and 0.327 s for native (1.144x)**. Flink trials ranged from 0.370–0.483 s; native trials ranged
+from 0.293–0.444 s. The ranges overlap, so this short workload establishes coverage with a
+modestly faster observed median, not a general speedup. The unsupported baseline uses Flink.

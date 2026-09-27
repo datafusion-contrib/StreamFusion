@@ -201,7 +201,7 @@ pub(crate) fn rocks_group_supported(
     value_types: &[DataType],
     state_types: &[DataType],
 ) -> bool {
-    !kinds.iter().any(|kind| matches!(kind, 12..=16 | 19 | 20))
+    !kinds.iter().any(|kind| matches!(kind, 12..=16 | 19..=21))
         && rocks_row_supported(state_types)
         && kinds.iter().zip(value_types).all(|(&kind, value_type)| {
             !matches!(kind, 7 | 9 | 17 | 18)

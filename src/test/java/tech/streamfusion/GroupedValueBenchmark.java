@@ -21,20 +21,25 @@ class GroupedValueBenchmark {
   private static final int WARMUP = Integer.getInteger("grouped.value.warmup", 2);
   private static final int RUNS = Integer.getInteger("grouped.value.runs", 5);
   private static final boolean DISTINCT = Boolean.getBoolean("grouped.value.distinct");
+  private static final boolean SINGLE = Boolean.getBoolean("grouped.value.single");
   private static final String SQL =
-      "INSERT INTO sink SELECT k, FIRST_VALUE("
-          + (DISTINCT ? "DISTINCT " : "")
-          + "v), LAST_VALUE("
-          + (DISTINCT ? "DISTINCT " : "")
-          + "v) FROM inputs GROUP BY k";
+      SINGLE
+          ? "INSERT INTO sink SELECT k, SINGLE_VALUE(v) FROM inputs GROUP BY k"
+          : "INSERT INTO sink SELECT k, FIRST_VALUE("
+              + (DISTINCT ? "DISTINCT " : "")
+              + "v), LAST_VALUE("
+              + (DISTINCT ? "DISTINCT " : "")
+              + "v) FROM inputs GROUP BY k";
 
   @Test
   void groupedValues() throws Exception {
-    for (boolean string : (DISTINCT ? new boolean[] {true} : new boolean[] {false, true})) {
+    for (boolean string :
+        (DISTINCT || SINGLE ? new boolean[] {true} : new boolean[] {false, true})) {
       String plan = NativePlanner.explain(environment(string), SQL);
       if (!plan.contains("NativeColumnarGroupAggregate")
           || !plan.contains("RowDataToArrow")
-          || !plan.contains("ArrowToRowData")) {
+          || !plan.contains("ArrowToRowData")
+          || (SINGLE && !plan.contains("NativeColumnarLocalGroupAggregate"))) {
         throw new IllegalStateException("Expected native aggregate and both transposes: " + plan);
       }
       double[][] times = new double[2][RUNS];
@@ -56,8 +61,9 @@ class GroupedValueBenchmark {
       double nativeTime = median(times[1]);
       System.out.printf(
           Locale.ROOT,
-          "[grouped-value] distinct=%s string=%s rows=%d Flink=%.6fs Native=%.6fs ratio=%.3fx "
-              + "flink_trials=%s native_trials=%s%n",
+          "[grouped-value] single=%s distinct=%s string=%s rows=%d Flink=%.6fs Native=%.6fs"
+              + " ratio=%.3fx flink_trials=%s native_trials=%s%n",
+          SINGLE,
           DISTINCT,
           string,
           ROWS,
@@ -81,7 +87,12 @@ class GroupedValueBenchmark {
     env.setParallelism(1);
     var table = StreamTableEnvironment.create(env);
     table.getConfig().setLocalTimeZone(ZoneOffset.UTC);
-    table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+    table.getConfig().set("table.optimizer.agg-phase-strategy", SINGLE ? "TWO_PHASE" : "ONE_PHASE");
+    if (SINGLE) {
+      table.getConfig().set("table.exec.mini-batch.enabled", "true");
+      table.getConfig().set("table.exec.mini-batch.size", "1024");
+      table.getConfig().set("table.exec.mini-batch.allow-latency", "100 ms");
+    }
     var dataType = string ? DataTypes.STRING() : DataTypes.BIGINT();
     table.createTemporaryView(
         "inputs",
@@ -89,7 +100,7 @@ class GroupedValueBenchmark {
             .map(
                 i ->
                     Row.of(
-                        (int) (i % 64),
+                        SINGLE ? i.intValue() : (int) (i % 64),
                         i / 64 % 8 == 0 ? null : string ? "value-" + (i % 1024) : i % 1024))
             .returns(
                 Types.ROW_NAMED(
@@ -99,8 +110,7 @@ class GroupedValueBenchmark {
     table.executeSql(
         "CREATE TABLE sink (k INT, first_v "
             + type
-            + ", last_v "
-            + type
+            + (SINGLE ? "" : ", last_v " + type)
             + ") WITH ('connector' = 'blackhole')");
     return table;
   }
