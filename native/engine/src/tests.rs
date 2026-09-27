@@ -8042,6 +8042,81 @@ mod rocksdb_group_multisets {
 
     // The multisets survive a native checkpoint and a fresh store opened from it.
     #[test]
+    fn typed_distinct_counts_survive_memory_and_rocks_restore() {
+        for (code, value) in [
+            (0, ScalarValue::Int64(Some(i64::MAX))),
+            (2, ScalarValue::Int32(Some(i32::MIN))),
+            (4, ScalarValue::Int16(Some(i16::MIN))),
+            (5, ScalarValue::Int8(Some(i8::MIN))),
+            (
+                4002,
+                ScalarValue::Decimal128(Some(-12345678901234567890), 20, 2),
+            ),
+            (3, ScalarValue::Utf8(Some("a\0中😀".repeat(80)))),
+        ] {
+            let make = || GroupAggregator::new(vec![7], vec![code], vec![1], vec![0], true);
+            let codec =
+                || GroupStateCodec::new(vec![7], vec![value.data_type()], vec![1], vec![-1]);
+            let batch = |values: Vec<ScalarValue>, kinds: Vec<i8>| {
+                let len = values.len();
+                RecordBatch::try_new(
+                    Arc::new(Schema::new(vec![
+                        Field::new("k", DataType::Int64, false),
+                        Field::new("v", value.data_type(), true),
+                        Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+                    ])),
+                    vec![
+                        Arc::new(Int64Array::from(vec![1; len])),
+                        ScalarValue::iter_to_array(values).unwrap(),
+                        Arc::new(Int8Array::from(kinds)),
+                    ],
+                )
+                .unwrap()
+            };
+            let store =
+                RocksGroupStore::create(store_config("typed-distinct", 0), codec()).unwrap();
+            let mut rocks = make().with_backend(store);
+            let mut memory = make();
+            let null = ScalarValue::try_from(&value.data_type()).unwrap();
+            let seed = batch(vec![value.clone(), value.clone(), null.clone()], vec![0; 3]);
+            assert_parity(&mut rocks, &mut memory, &seed, 0);
+            let mut restored = GroupAggregator::restore(
+                vec![7],
+                vec![code],
+                vec![1],
+                vec![0],
+                true,
+                &memory.snapshot(),
+                0,
+            );
+            let snapshot = snapshot_dir("typed-distinct");
+            let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+            drop(rocks);
+            let store = RocksGroupStore::open_merged(
+                store_config("typed-distinct-reopen", 0),
+                codec(),
+                &[(snapshot, manifest.snapshot_id)],
+                0..=127,
+                true,
+                0,
+            )
+            .unwrap();
+            let mut rocks = make().with_backend(store);
+            for probe in [
+                batch(vec![value.clone()], vec![3]),
+                batch(vec![value.clone()], vec![3]),
+                batch(vec![null], vec![3]),
+                batch(vec![value.clone()], vec![0]),
+            ] {
+                let expected = memory.update(&probe, 0).unwrap();
+                assert_eq!(restored.update(&probe, 0).unwrap(), expected);
+                rocks.store_mut().set_clock(0);
+                assert_eq!(rocks.update(&probe, 0).unwrap(), expected);
+            }
+        }
+    }
+
+    #[test]
     fn multiset_aggregates_survive_checkpoint_and_reopen() {
         let mut rocks = rocks_agg("restart", 0);
         let mut memory = memory_agg(0);

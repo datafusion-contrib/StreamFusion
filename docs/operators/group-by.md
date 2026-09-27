@@ -67,6 +67,12 @@ with **integer division truncating toward zero**. This is a direct port of Flink
 the non-null count using Flink's exact decimal division — a 38-significant-digit quotient then
 **HALF_UP** rescale — reporting `DECIMAL(38, max(6, s))`, `findAvgAggType`'s result type.
 
+The DISTINCT map representations and benchmark method are described under
+[typed DISTINCT multiplicities](../optimizations/aggregate-specialization-fast-paths.md#typed-distinct-multiplicities).
+Integer, decimal and string key specialization preserves the existing scalar snapshot and
+persistent-element encoding, including exact decimal metadata and string bytes; it does not
+expand the DISTINCT admission gates.
+
 ### FIRST_VALUE, LAST_VALUE and SINGLE_VALUE
 
 The one-argument forms run natively in the single-phase plan over TINYINT, SMALLINT,
