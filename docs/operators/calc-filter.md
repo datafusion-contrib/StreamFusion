@@ -691,18 +691,56 @@ Positions from -38 upward use a prepared native decimal kernel. More negative li
 use Flink's own decimal rounding through the existing columnar JVM upcall, so extreme BigDecimal
 scale/range exceptions match the host instead of being silently clamped to zero. These calls
 remain inside native Calc, but fall back when nested under AND/OR to preserve row short-circuiting.
-CASE can skip an unselected failing branch. Runtime scale columns and BIGINT scale arguments
-retain an explicit planner fallback; float/double ROUND keeps its existing compatibility gate.
-Flink 2.2.1 itself can fail when a runtime scale changes the returned DecimalData precision;
-the regression suite preserves the resulting binary-writer assertion failure through fallback.
+CASE can skip an unselected failing branch. BIGINT scale arguments retain an explicit
+planner fallback; float/double ROUND keeps its existing compatibility gate.
+
+Runtime INT scales for ROUND and TRUNCATE run inside native Calc when a verified scalar
+consumer encloses the rounding. The complete expression uses Flink-generated evaluation,
+so STRING/integer casts, comparisons, predicates, nested rounding, CASE/COALESCE and
+explicit decimal normalization see the original runtime precision and scale. Arithmetic,
+nonidentity DECIMAL casts and IF can normalize the result before it crosses Arrow.
+Negative/NULL scales, scale expansion, precision 38, input errors and AND/OR/CASE
+short-circuiting retain released Flink behavior. Positions at or above the input scale
+leave the input unchanged; extreme negative positions can throw BigDecimal's scale errors.
+
+Direct runtime-scale DECIMAL outputs, decimal-preserving selections/sign operations, and
+complex outputs remain on Flink. Its serializer can reinterpret the internal unscaled
+integer using the declared scale: for DECIMAL(20,3) `123.456` and scale 2, direct ROUND and
+TRUNCATE collect as `12.346` and `12.345`, while their STRING consumers yield `123.46` and
+`123.45`. Scale 1 changes the internal precision and triggers the host binary-writer
+assertion with assertions enabled. Tests preserve both behaviors through explicit fallback,
+including when a JSON expression would otherwise select complete-row generation.
+
+The runtime-scale release+mimalloc benchmark uses Flink 2.2.1/JDK 17 on Linux x86_64
+(Core i7-12650H), 2,000,000 row-fed records, NULL values every seventh row, runtime scales
+-3/0/2/9/12/NULL, two warmups and five alternating trials. The harness requires NativeCalc
+and both row/Arrow transposes. Median seconds:
+
+| Query | Flink | Native island | Flink/native |
+|---|---:|---:|---:|
+| DECIMAL identity | 0.261 | 0.568 | 0.459x |
+| CAST(ROUND(n,s) AS STRING) | 0.587 | 1.060 | 0.554x |
+| CAST(TRUNCATE(n,s) AS STRING) | 0.580 | 1.055 | 0.549x |
+
+The standalone queries are slower than stock Flink. This coverage reuses the existing
+generated-expression callback and decimal-boundary checks so scalar consumers can compose
+within native islands; it is not a standalone acceleration claim.
+
+```bash
+SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
+  -Dtest=ScalarFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dscalar.functions=DECIMAL_ROUND_RUNTIME_STRING,DECIMAL_TRUNCATE_RUNTIME_STRING \
+  -Dscalar.rows=2000000 -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
+```
 
 `TRUNCATE(decimal_column[, literal_integer_scale])` uses the same native fixed-width
 kernel with rounding toward zero. Positive, zero and negative positions preserve Flink's
 resolved precision/scale and NULL behavior; a position at or above the source scale retains
 the input value. Positions below -38 use Flink's generated expression through the columnar
 callback, including its extreme-scale errors. They retain the same AND/OR short-circuit
-restriction as ROUND. Integer and floating-point inputs are not admitted for TRUNCATE;
-Flink 2.2.1 rejects nonliteral TRUNCATE positions during validation. SQL tests cover
+restriction as ROUND. Runtime INT scales use the generated scalar-consumer path above.
+Integer TRUNCATE inputs use the generated path described under exact numeric functions;
+floating-point inputs retain their existing admission restrictions. SQL tests cover
 precision 38, multiple batches, filters, CASE, COALESCE and aggregate consumers, including
 projections that combine and nest truncation with DECIMAL-to-FLOAT/DOUBLE casts.
 

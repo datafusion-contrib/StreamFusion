@@ -947,7 +947,7 @@ final class RexExpression {
   }
 
   private boolean emitCall(RexCall call) {
-    if (containsDecimalIntegralRounding(call)) {
+    if (containsMetadataDependentDecimalRounding(call)) {
       if (!validateDecimalRoundingBoundary(call)) return false;
       return emitHostExpression(call, true);
     }
@@ -2445,10 +2445,10 @@ final class RexExpression {
     };
   }
 
-  private static boolean containsDecimalIntegralRounding(RexNode node) {
+  private static boolean containsMetadataDependentDecimalRounding(RexNode node) {
     return node instanceof RexCall call
-        && (isDecimalIntegralRounding(call)
-            || call.getOperands().stream().anyMatch(RexExpression::containsDecimalIntegralRounding));
+        && (isDecimalIntegralRounding(call) || isDecimalRuntimeRounding(call)
+            || call.getOperands().stream().anyMatch(RexExpression::containsMetadataDependentDecimalRounding));
   }
 
   private static boolean isDecimalIntegralRounding(RexCall call) {
@@ -2457,15 +2457,33 @@ final class RexExpression {
         && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.DECIMAL;
   }
 
+  private static boolean isDecimalRuntimeRounding(RexCall call) {
+    return (call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND
+        || call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE)
+        && call.getOperands().size() == 2
+        && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.DECIMAL
+        && !(call.getOperands().get(1) instanceof RexLiteral)
+        && isInt32(call.getOperands().get(1));
+  }
+
+  private static boolean containsRuntimeDecimalRounding(RexNode node) {
+    return node instanceof RexCall call && (isDecimalRuntimeRounding(call)
+        || call.getOperands().stream().anyMatch(RexExpression::containsRuntimeDecimalRounding));
+  }
+
   private boolean validateDecimalRoundingBoundary(RexNode node) {
-    if (!containsDecimalIntegralRounding(node)) return true;
+    if (!containsMetadataDependentDecimalRounding(node)) return true;
+    String operation = containsRuntimeDecimalRounding(node)
+        ? "DECIMAL ROUND/TRUNCATE runtime scale" : "DECIMAL FLOOR/CEIL";
     SqlTypeName type = node.getType().getSqlTypeName();
     if (type == SqlTypeName.ARRAY || type == SqlTypeName.MAP
         || type == SqlTypeName.MULTISET || type == SqlTypeName.ROW) {
-      return reject("DECIMAL FLOOR/CEIL requires a verified scalar consumer");
+      return reject(operation + " requires a verified scalar consumer");
     }
     if (unnormalizedDecimalRounding(node)) {
-      return reject("DECIMAL FLOOR/CEIL result retains value-dependent precision at the boundary");
+      return reject(operation + " result retains value-dependent precision/scale at the boundary");
     }
     return true;
   }
@@ -2473,7 +2491,7 @@ final class RexExpression {
   private static boolean unnormalizedDecimalRounding(RexNode node) {
     if (node.getType().getSqlTypeName() != SqlTypeName.DECIMAL
         || !(node instanceof RexCall call)) return false;
-    if (isDecimalIntegralRounding(call)) return true;
+    if (isDecimalIntegralRounding(call) || isDecimalRuntimeRounding(call)) return true;
     if (call.getOperator()
         == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.IF) return false;
     if (call.getKind() == SqlKind.CAST
@@ -2483,8 +2501,8 @@ final class RexExpression {
       case PLUS, MINUS, TIMES, DIVIDE, MOD -> true;
       default -> false;
     }) return false;
-    // Flink rounds into a DecimalData whose precision depends on the value. Selection and
-    // sign-only consumers can retain it; crossing Arrow here would hide the host writer assertion.
+    // Flink rounding can change DecimalData precision and scale. Selection and sign-only
+    // consumers retain that metadata; Arrow normalization would change the host writer behavior.
     return call.getOperands().stream().anyMatch(RexExpression::unnormalizedDecimalRounding);
   }
 
