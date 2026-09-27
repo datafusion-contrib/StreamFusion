@@ -7857,7 +7857,8 @@ mod rocksdb_group_multisets {
             (3, ScalarValue::Utf8(Some("a\0中😀".repeat(80)))),
         ] {
             let make = || GroupAggregator::new(vec![7], vec![code], vec![1], vec![0], true);
-            let codec = || GroupStateCodec::new(vec![7], vec![value.data_type()], vec![1], vec![-1]);
+            let codec =
+                || GroupStateCodec::new(vec![7], vec![value.data_type()], vec![1], vec![-1]);
             let batch = |values: Vec<ScalarValue>, kinds: Vec<i8>| {
                 let len = values.len();
                 RecordBatch::try_new(
@@ -7874,7 +7875,8 @@ mod rocksdb_group_multisets {
                 )
                 .unwrap()
             };
-            let store = RocksGroupStore::create(store_config("typed-distinct", 0), codec()).unwrap();
+            let store =
+                RocksGroupStore::create(store_config("typed-distinct", 0), codec()).unwrap();
             let mut rocks = make().with_backend(store);
             let mut memory = make();
             let null = ScalarValue::try_from(&value.data_type()).unwrap();

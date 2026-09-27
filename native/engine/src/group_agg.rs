@@ -1834,7 +1834,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         }
                         if let Some(strings) = distinct_string_cols[i] {
                             if !strings.is_null(row) {
-                                state.aggs[i].change_distinct_string(strings.value(row), retract, 1);
+                                state.aggs[i].change_distinct_string(
+                                    strings.value(row),
+                                    retract,
+                                    1,
+                                );
                             }
                             continue;
                         }
