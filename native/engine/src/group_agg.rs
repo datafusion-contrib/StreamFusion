@@ -205,7 +205,7 @@ mod distinct_set_tests {
 /// its emit needs (the distinct cardinality, the SUM(DISTINCT) fold, the current extreme), which
 /// the backend persists in the main row.
 pub(crate) enum GroupAggState {
-    Ordered(Box<OrderedValueState>),
+    Ordered(OrderedValueState),
     Running {
         agg: RunningAgg,
         non_null: i64,
@@ -245,7 +245,7 @@ pub(crate) enum GroupAggState {
 impl GroupAggState {
     fn new(kind: i64, value_type: &DataType) -> Self {
         match kind {
-            12..=16 => Self::Ordered(Box::new(OrderedValueState::new(kind, value_type))),
+            12..=16 => Self::Ordered(OrderedValueState::new(kind, value_type)),
             1 => GroupAggState::Extremes {
                 is_min: true,
                 counts: BTreeMap::new(),
@@ -1252,7 +1252,9 @@ pub(crate) const MULTISET_ENTRY_BYTES: usize = 64;
 /// O(1) estimated footprint of one aggregate's per-key state (multisets counted by `len`).
 pub(crate) fn group_agg_state_bytes(state: &GroupAggState) -> usize {
     let inner = match state {
-        GroupAggState::Ordered(ordered) => ordered.bytes(),
+        GroupAggState::Ordered(ordered) => {
+            ordered.bytes() - std::mem::size_of::<OrderedValueState>()
+        }
         GroupAggState::Running { .. } => 0,
         GroupAggState::Extremes { counts, .. } => counts.len() * MULTISET_ENTRY_BYTES,
         GroupAggState::Distinct { set, .. } => set.len() * MULTISET_ENTRY_BYTES,

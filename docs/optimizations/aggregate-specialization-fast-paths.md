@@ -268,3 +268,39 @@ materialization, filtered state, duplicate retractions, group recreation and int
 overflow on released Flink 2.2.1 and 1.18.1. Native tests cover typed snapshots, journal imports,
 RocksDB checkpoint/reopen, final-occurrence deletion and exact string bytes; FLOAT/DOUBLE NaN
 regressions retain their existing generic-key behavior.
+
+## Ordered values share the aggregate's inline storage
+
+FIRST_VALUE, LAST_VALUE and SINGLE_VALUE previously allocated a separate ordered-state
+object for every aggregate in every group. That object now lives directly in the aggregate
+state. On the measured 64-bit build, the enclosing state remains 144 bytes while the
+separate 128-byte allocation disappears. This removes one allocation/free pair per group
+and saves 64 MB of payload for 500,000 single-aggregate groups, excluding allocator overhead.
+Off-heap accounting subtracts the removed allocation while retaining dynamic scalar and
+retraction-queue storage. Snapshot encoding, arrival order and deletion behavior are unchanged.
+
+A 500,000-key SINGLE_VALUE profile identified state creation/destruction and allocator work
+as major costs. Release+mimalloc measurements on the temporal coverage branch use Flink 2.2.1,
+JDK 17, an i7-12650H under Linux/WSL, parallelism one, one row per key, one-eighth NULLs,
+both transposes and a rowwise sink. Three warmups precede nine alternating trials per type.
+Boxed-state TIME/BOOLEAN native medians were 0.419/0.400 s. Two inline runs measured
+0.459/0.380 s and 0.415/0.347 s respectively. The repeat is approximately flat for TIME
+and 13% faster for BOOLEAN; the first TIME run was slower and included a 1.759 s outlier.
+Matched repeat Flink medians were 0.363/0.332 s, so this change does not resolve the
+remaining SINGLE_VALUE performance gap. These short jobs remain sensitive to runtime noise.
+
+Nine-trial ranges for boxed/inline-repeat native TIME were 0.375–0.466/0.365–0.489 s;
+BOOLEAN ranges were 0.381–0.448/0.340–0.439 s. Flink ranges for those paired runs were
+0.349–0.637/0.345–0.605 s (TIME) and 0.324–0.510/0.313–0.368 s (BOOLEAN).
+
+Two-million-row FIRST_VALUE/LAST_VALUE controls (two warmups, five alternating trials)
+remain approximately flat: boxed/inline native TIME 0.613/0.603 s, BOOLEAN 0.616/0.624 s,
+BIGINT 0.676/0.674 s and STRING 1.028/1.025 s. Matched inline Flink medians were
+0.648, 0.618, 0.654 and 0.926 s. Native inline ranges were 0.599–0.655, 0.616–0.631,
+0.671–0.688 and 1.012–1.033 s respectively. The existing BIGINT/STRING controls remain
+slower than Flink. The memory-budget regression covers SINGLE_VALUE and retracting FIRST/LAST
+alongside COUNT, including over-budget rejection and full release after group deletion.
+
+Validation: 567 native tests pass (one ignored), including the expanded memory-budget case.
+The grouped-value, temporal/Boolean and columnar aggregate SQL controls pass 59 cases on
+Flink 2.2.1 and 42 on Flink 1.18.1 (17 documented host limitations skipped).

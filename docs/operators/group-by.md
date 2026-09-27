@@ -89,6 +89,10 @@ Arrow batches. Removing every contributing value yields NULL, and removing the l
 record deletes the group. Results depend on arrival order, so SQL parity fixtures use a
 controlled source rather than asserting equal results from independently reordered inputs.
 
+Ordered aggregate state now resides inline in the existing per-aggregate storage, avoiding a
+separate allocation for every group; dynamic strings and retraction queues remain accounted
+against the task memory budget. Checkpoint representation and aggregate semantics are unchanged.
+
 SINGLE_VALUE counts every element, including NULL. Zero elements yield NULL; one element
 yields that value. A second element raises Flink's `TableRuntimeException` with the same
 cardinality diagnostic. Retraction clears the retained value and decrements the count;
