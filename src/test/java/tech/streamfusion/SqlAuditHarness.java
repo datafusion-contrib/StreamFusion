@@ -207,7 +207,7 @@ final class SqlAuditHarness {
     return result;
   }
 
-  private static Map<List<Object>, Long> materialized(List<List<Object>> rows) {
+  static Map<List<Object>, Long> materialized(List<List<Object>> rows) {
     Map<List<Object>, Long> result = new HashMap<>();
     for (var row : rows) {
       long delta =
@@ -241,11 +241,12 @@ final class SqlAuditHarness {
     return record;
   }
 
-  private static Map<String, Object> outcome(NativeFailureParity.Outcome outcome) {
+  static Map<String, Object> outcome(NativeFailureParity.Outcome outcome) {
     Map<String, Object> record = new LinkedHashMap<>();
     record.put("success", outcome.failure() == null);
     record.put("phase", outcome.phase().name());
     record.put("rowCount", outcome.rows().size());
+    record.put("resultTypes", outcome.resultTypes());
     record.put("rowKinds", outcome.rows().stream().map(row -> row.get(0)).distinct().toList());
     record.put("substitutions", outcome.substitutions());
     record.put("operators", outcome.operatorTypes());

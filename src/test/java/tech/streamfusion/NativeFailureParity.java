@@ -24,7 +24,8 @@ final class NativeFailureParity {
   enum Route { HOST, NATIVE, FALLBACK, UNPLANNED }
 
   record Outcome(List<List<Object>> rows, Exception failure, Phase phase, Route route,
-      List<String> fallbackReasons, List<String> operatorTypes, int substitutions) {
+      List<String> fallbackReasons, List<String> operatorTypes, int substitutions,
+      List<String> resultTypes, String plan) {
     @Override
     public String toString() {
       return "Outcome[phase=" + phase + ", route=" + route + ", cause=" + rootCause()
@@ -64,8 +65,13 @@ final class NativeFailureParity {
   }
 
   static Comparison run(Supplier<TableEnvironment> environment, String sql) {
-    Outcome host = execute(environment, sql, false);
-    Outcome nativeRun = execute(environment, sql, true);
+    return run(environment, environment, sql);
+  }
+
+  static Comparison run(Supplier<TableEnvironment> hostEnvironment,
+      Supplier<TableEnvironment> nativeEnvironment, String sql) {
+    Outcome host = execute(hostEnvironment, sql, false);
+    Outcome nativeRun = execute(nativeEnvironment, sql, true);
     return new Comparison(host, nativeRun);
   }
 
@@ -75,12 +81,16 @@ final class NativeFailureParity {
     Phase phase = Phase.SETUP;
     Exception failure = null;
     TableResult result = null;
+    List<String> resultTypes = List.of();
+    String plan = "";
     try {
       TableEnvironment table = environment.get();
       if (nativeRun) scan = NativePlanner.install(table);
       phase = Phase.PLANNING;
       var query = table.sqlQuery(sql);
-      query.explain();
+      resultTypes = query.getResolvedSchema().getColumnDataTypes().stream()
+          .map(Object::toString).toList();
+      plan = query.explain();
       phase = Phase.SUBMISSION;
       result = query.execute();
       phase = Phase.COLLECTION;
@@ -111,7 +121,7 @@ final class NativeFailureParity {
     return new Outcome(rows, failure, phase, route,
         scan == null ? List.of() : List.copyOf(scan.fallbackReasons()),
         scan == null ? List.of() : List.copyOf(scan.operatorTypes()),
-        scan == null ? 0 : scan.substitutions());
+        scan == null ? 0 : scan.substitutions(), resultTypes, plan);
   }
 
   static Exception terminalFailure(CompletableFuture<?> completion, Exception collectionFailure) {

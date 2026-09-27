@@ -124,3 +124,41 @@ value, while `-U/-D` must remove the current value. This accommodates Flink's ke
 and native delete/insert encodings without treating `+U` as an additional live row. Batch
 sorting compares the ordered rows. Known-answer assertions additionally check fixture
 semantics; host/native agreement alone is insufficient for those cases.
+
+## Combined stateful recovery matrix
+
+`StatefulRecoveryMatrixTest` begins the bounded matrix in
+[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current four cases
+combine INT/BIGINT group keys with DECIMAL(20,2) SUM and STRING COUNT DISTINCT, using memory
+and the native RocksDB backend. Twelve changelog records include duplicate 11-KiB strings,
+NULLs, removal of the final duplicate, group deletion and recreation. The reference executes
+uninterrupted; the native run fails only after checkpoints containing source offsets 4 and 8
+have completed, then restores twice. The checkpointed source has a stable UID. The final rows must be `(1, -4.50, 0)` and
+`(2, -0.50, 1)`, with a DECIMAL(38,2) sum.
+
+Each case independently checks materialized results against known answers, resolved result
+types, the native aggregate plan, both restored offsets and failure injections, completed
+checkpoint evidence, and zero active sources after collection. Route assertions cannot
+prevent the result assertions from running. The shared recovery helper still supports the
+original 32-of-96-row portable audit with one restart in both engines.
+
+Run the cases and their helper regression suite with:
+
+```bash
+mvn -pl streamfusion-runtime -am test \
+  -Dtest=StatefulRecoveryMatrixTest,FlinkPortableSqlAuditTest \
+  -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+Add `-Pflink-1.18` for the other released dependency line. The matrix writes
+`streamfusion-runtime/target/sql-audit/stateful-recovery.json`, including configuration,
+result comparison, result types, native plan, fallback reasons and recovery observations,
+even when a validation assertion fails. CI retains this file with the existing portable SQL
+audit artifact. All four cases and all 38 existing portable-audit cases pass on each of
+Flink 2.2.1 and 1.18.1 (42 tests per release).
+
+This initial slice uses parallelism 1, physical batches of up to 1,024 rows, and no logical
+mini-batching. JOIN, event-time/window/Top-N, Calc filtering, independent physical/logical
+batch variants, rescaling in both directions, budget/timezone variants, failed/cancelled-run
+cleanup and a larger explicit stress profile remain in #250. Passing these four cases does
+not establish those combinations or cross-version state compatibility.

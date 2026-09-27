@@ -11,6 +11,7 @@ import java.util.function.Supplier;
 import org.apache.flink.api.common.state.CheckpointListener;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.RestartStrategyOptions;
@@ -29,6 +30,11 @@ import tech.streamfusion.compat.SourceFunction;
 final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoCloseable {
   private static final Map<String, Proof> PROOFS = new ConcurrentHashMap<>();
   private final String stateBackend;
+  private final List<Row> input;
+  private final TypeInformation<Row> inputType;
+  private final Schema schema;
+  private final int[] boundaries;
+  private final boolean changelog;
   private final List<String> runIds = new java.util.ArrayList<>();
 
   PortableSqlRecovery() {
@@ -36,35 +42,80 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
   }
 
   PortableSqlRecovery(String stateBackend) {
-    this.stateBackend = stateBackend;
+    this(
+        stateBackend,
+        java.util.stream.IntStream.range(0, 96).mapToObj(i -> Row.of(i % 3, (long) i)).toList(),
+        Types.ROW_NAMED(new String[] {"k", "v"}, Types.INT, Types.LONG),
+        Schema.newBuilder().column("k", DataTypes.INT()).column("v", DataTypes.BIGINT()).build(),
+        false,
+        32);
+  }
+
+  PortableSqlRecovery(
+      String backend,
+      List<Row> input,
+      TypeInformation<Row> inputType,
+      Schema schema,
+      boolean changelog,
+      int... boundaries) {
+    this.stateBackend = backend;
+    this.input = List.copyOf(input);
+    this.inputType = inputType;
+    this.schema = schema;
+    this.changelog = changelog;
+    this.boundaries = boundaries.clone();
+    int previous = 0;
+    for (int boundary : boundaries) {
+      if (boundary <= previous || boundary >= input.size())
+        throw new IllegalArgumentException(
+            "checkpoint boundaries must be ascending input prefixes");
+      previous = boundary;
+    }
   }
 
   static final class Proof {
     final AtomicBoolean failed = new AtomicBoolean();
     final AtomicInteger restoredOffset = new AtomicInteger(-1);
     final AtomicInteger completions = new AtomicInteger();
+    final java.util.Set<Integer> injected = ConcurrentHashMap.newKeySet();
+    final java.util.Set<Integer> completedOffsets = ConcurrentHashMap.newKeySet();
+    final List<Integer> restoredOffsets = new java.util.concurrent.CopyOnWriteArrayList<>();
+    final AtomicInteger activeSources = new AtomicInteger();
   }
 
   @Override
   public TableEnvironment get() {
+    return environment(true);
+  }
+
+  TableEnvironment uninterrupted() {
+    return environment(false);
+  }
+
+  private TableEnvironment environment(boolean recover) {
     String runId = UUID.randomUUID().toString();
     runIds.add(runId);
     PROOFS.put(runId, new Proof());
     Configuration config = new Configuration();
     config.setString("state.backend.type", stateBackend);
     config.set(RestartStrategyOptions.RESTART_STRATEGY, "fixed-delay");
-    config.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_ATTEMPTS, 1);
+    config.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_ATTEMPTS, boundaries.length);
     config.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_DELAY, Duration.ofMillis(10));
     var env = StreamExecutionEnvironment.getExecutionEnvironment(config);
     env.setParallelism(1);
     env.enableCheckpointing(50);
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+    var stream =
+        env.addSource(new RecoveringSource(runId, input, recover ? boundaries : new int[0]))
+            .returns(inputType)
+            .uid("portable-recovery-source")
+            .setMaxParallelism(128);
     table.createTemporaryView(
         "recovery_input",
-        env.addSource(new RecoveringSource(runId))
-            .returns(Types.ROW_NAMED(new String[] {"k", "v"}, Types.INT, Types.LONG)),
-        Schema.newBuilder().column("k", DataTypes.INT()).column("v", DataTypes.BIGINT()).build());
+        changelog
+            ? table.fromChangelogStream(stream, schema)
+            : table.fromDataStream(stream, schema));
     return table;
   }
 
@@ -81,6 +132,21 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     }
   }
 
+  void verifyRepeatedRecovery() {
+    org.junit.jupiter.api.Assertions.assertEquals(2, runIds.size());
+    Proof reference = PROOFS.get(runIds.get(0));
+    Proof recovered = PROOFS.get(runIds.get(1));
+    List<Integer> expected = java.util.Arrays.stream(boundaries).boxed().toList();
+    org.junit.jupiter.api.Assertions.assertTrue(reference.injected.isEmpty());
+    org.junit.jupiter.api.Assertions.assertEquals(expected, recovered.restoredOffsets);
+    org.junit.jupiter.api.Assertions.assertEquals(
+        java.util.Set.copyOf(expected), recovered.injected);
+    org.junit.jupiter.api.Assertions.assertTrue(recovered.completedOffsets.containsAll(expected));
+    for (String id : runIds)
+      org.junit.jupiter.api.Assertions.assertEquals(
+          0, PROOFS.get(id).activeSources.get(), "source still running after result collection");
+  }
+
   List<Map<String, Object>> observations() {
     return runIds.stream()
         .map(
@@ -92,7 +158,13 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
                   "restoredSourceOffset",
                   proof.restoredOffset.get(),
                   "completedCheckpoints",
-                  proof.completions.get());
+                  proof.completions.get(),
+                  "restoredOffsets",
+                  List.copyOf(proof.restoredOffsets),
+                  "injectedOffsets",
+                  java.util.Set.copyOf(proof.injected),
+                  "activeSources",
+                  proof.activeSources.get());
             })
         .toList();
   }
@@ -106,36 +178,49 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
       implements SourceFunction<Row>, CheckpointedFunction, CheckpointListener {
     private final String runId;
     private volatile boolean running = true;
-    private volatile boolean completedPrefix;
+    private volatile int completedOffset;
+    private final List<Row> input;
+    private final int[] boundaries;
     private transient ListState<Integer> state;
     private transient Map<Long, Integer> snapshots;
     private int next;
-    private boolean restored;
 
-    private RecoveringSource(String runId) {
+    private RecoveringSource(String runId, List<Row> input, int[] boundaries) {
       this.runId = runId;
+      this.input = input;
+      this.boundaries = boundaries;
     }
 
     @Override
     public void run(SourceContext<Row> context) throws Exception {
-      if (!restored) {
-        emitThrough(context, 32);
-        long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
-        while (running && !completedPrefix && System.nanoTime() < deadline) Thread.sleep(5);
-        if (!running) return;
-        if (!completedPrefix)
-          throw new IllegalStateException("no checkpoint captured the source prefix");
-        if (PROOFS.get(runId).failed.compareAndSet(false, true)) {
-          throw new IllegalStateException("portable source failure after completed checkpoint");
+      Proof proof = PROOFS.get(runId);
+      proof.activeSources.incrementAndGet();
+      try {
+        for (int boundary : boundaries) {
+          if (next >= boundary) continue;
+          emitThrough(context, boundary);
+          long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
+          while (running && completedOffset < boundary && System.nanoTime() < deadline)
+            Thread.sleep(5);
+          if (!running) return;
+          if (completedOffset < boundary)
+            throw new IllegalStateException("no completed checkpoint captured prefix " + boundary);
+          if (proof.injected.add(boundary)) {
+            proof.failed.set(true);
+            throw new IllegalStateException(
+                "portable source failure after checkpoint at " + boundary);
+          }
         }
+        emitThrough(context, input.size());
+      } finally {
+        proof.activeSources.decrementAndGet();
       }
-      emitThrough(context, 96);
     }
 
     private void emitThrough(SourceContext<Row> context, int end) {
       synchronized (context.getCheckpointLock()) {
         while (running && next < end) {
-          context.collect(Row.of(next % 3, (long) next));
+          context.collect(input.get(next));
           next++;
         }
       }
@@ -159,18 +244,20 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
               .getOperatorStateStore()
               .getListState(new ListStateDescriptor<>("source-offset", Integer.class));
       snapshots = new ConcurrentHashMap<>();
-      restored = context.isRestored();
-      if (restored) {
+      if (context.isRestored()) {
         for (int offset : state.get()) next = offset;
         PROOFS.get(runId).restoredOffset.set(next);
+        PROOFS.get(runId).restoredOffsets.add(next);
       }
     }
 
     @Override
     public void notifyCheckpointComplete(long id) {
-      if (snapshots.getOrDefault(id, 0) == 32) {
+      int offset = snapshots.getOrDefault(id, 0);
+      if (offset > 0) {
         PROOFS.get(runId).completions.incrementAndGet();
-        completedPrefix = true;
+        PROOFS.get(runId).completedOffsets.add(offset);
+        completedOffset = Math.max(completedOffset, offset);
       }
       snapshots.keySet().removeIf(checkpoint -> checkpoint <= id);
     }
