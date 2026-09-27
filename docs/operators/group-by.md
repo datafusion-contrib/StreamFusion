@@ -79,6 +79,12 @@ with **integer division truncating toward zero**. This is a direct port of Flink
 the non-null count using Flink's exact decimal division — a 38-significant-digit quotient then
 **HALF_UP** rescale — reporting `DECIMAL(38, max(6, s))`, `findAvgAggType`'s result type.
 
+The DISTINCT map representations and benchmark method are described under
+[typed DISTINCT multiplicities](../optimizations/aggregate-specialization-fast-paths.md#typed-distinct-multiplicities).
+Integer, decimal and string key specialization preserves the existing scalar snapshot and
+persistent-element encoding, including exact decimal metadata and string bytes; it does not
+expand the DISTINCT admission gates.
+
 ### FIRST_VALUE, LAST_VALUE and SINGLE_VALUE
 
 The one-argument forms run natively in the single-phase plan over TINYINT, SMALLINT,
@@ -488,15 +494,16 @@ For the wider-decimal release comparison, `DistinctAggregateBenchmark` accepts
 Both forms retain the same two-million-row runtime input, 64 keys, 1,024-row bundles,
 two warmups and five measured runs in alternating engine order. Native plan assertions
 require both aggregate stages and both row/Arrow transposes; output uses a rowwise blackhole
-sink. On the same Intel Core i7-12650H / Linux-WSL / JDK 17 / Flink 2.2.1 setup with
-release+mimalloc (2026-09-27), the COUNT/SUM workload with DECIMAL(38,2) measured **1.481 s
-Flink versus 4.799 s native (0.309x)**. Flink trials ranged from 1.422–1.491 s; native trials
-ranged from 4.777–4.941 s. This closes a type-coverage gap using the existing aggregate state
-path; it does not improve throughput on this workload. The separate typed-map optimization
-in #246 is not included in these results. The two-phase AVG workload (TINYINT, BIGINT and
-DECIMAL(38,2)) measured **1.577 s Flink versus 2.445 s native (0.645x)**, with trial ranges
-1.517–1.871 s and 2.419–2.666 s respectively. Both are coverage extensions and remain slower
-than Flink on these standalone workloads.
+sink. Profiling-driven specialization now includes primitive/boolean/timestamp membership,
+direct Arrow view construction, cached timestamp writer access, and allocation-free bucket
+partitioning in the host-order model. On Intel Core i7-12650H / Linux-WSL / JDK 17 / Flink 2.2.1,
+release+mimalloc (2026-09-27), COUNT/SUM with DECIMAL(38,2) improved from **4.855 s to 1.903 s
+native (2.552x)**; the contemporaneous Flink control was **1.466 s (0.771x Flink/native)**.
+Two-phase AVG with DECIMAL(38,2) improved from **2.500 s to 1.965 s native (1.272x)** versus
+**1.560 s Flink (0.794x)**. Both wide-decimal workloads still trail stock Flink. Full trial
+ranges, controls, profiles, and the remaining bottlenecks are recorded in
+[aggregate specialization](../optimizations/aggregate-specialization-fast-paths.md#distinct-averages-wide-decimals-and-timestamp-membership).
+Correctness coverage is complete; outperforming Flink on these workloads remains unfinished.
 
 A release+mimalloc diagnostic on Intel Core i7-12650H, Linux/WSL, JDK 17, Flink 2.2.1
 (2026-09-27) combines the three newly admitted aggregate forms over two million runtime rows,
@@ -554,16 +561,16 @@ view. They also verify wider-decimal native admission and fallback for retractin
 combined distinct/two-phase suites pass 49 cases on Flink 2.2.1; Flink 1.18.1 passes 48 with
 one host-capability skip. Native tests verify widened partial types, integer overflow,
 all-NULL partials, and merging duplicate membership across checkpoint restoration; the full
-native core suite passes 565 tests with one ignored.
+native core suite passes 584 tests with one ignored.
 
 `-Ddistinct.average=true -Ddistinct.twoPhase=true` selects the split benchmark, using
-DECIMAL(19,2) alongside TINYINT and BIGINT. On the same machine and released toolchain above
-(2026-09-27), release+mimalloc, two million runtime rows, 64 keys, 1,024-row bundles, two
-warmups and five alternating measured runs produced medians of **1.562 s for Flink and
-2.200 s for native (0.710x)**. Flink trials ranged from 1.545–1.891 s; native trials ranged
-from 2.194–2.356 s. The plan asserts both native aggregate stages and both row/Arrow
-transposes, and retains the rowwise blackhole sink. This is a correctness/coverage extension;
-the standalone split workload remains slower than Flink. It precedes #246's typed maps.
+DECIMAL(19,2) alongside TINYINT and BIGINT. The profiling-driven changes measured on the same
+released toolchain (2026-09-27), release+mimalloc, two million runtime rows, 64 keys, 1,024-row
+bundles, two warmups and five alternating measured runs improve native elapsed time from
+**2.265 s to 1.680 s (1.349x)**. The contemporaneous Flink median is **1.653 s**. Native trials
+range from 1.655–1.705 s and Flink from 1.585–1.754 s: this is approximately a tie, not a
+proven native win. Both native aggregate stages, both transposes, and the rowwise blackhole
+sink remain in the measured plan. See the [profiling and performance analysis](../optimizations/aggregate-specialization-fast-paths.md#distinct-averages-wide-decimals-and-timestamp-membership).
 
 ```sh
 SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
@@ -578,7 +585,7 @@ changelogs for STRING and bounded VARCHAR inputs. They cover duplicate insertion
 one versus the last occurrence, update pairs, reinsertion, NULL-only groups, independent
 filters, empty global results and positive-TTL fallback. The grouped-value suite passes
 45 cases on Flink 2.2.1 and 31 with 14 host-capability skips on Flink 1.18.1. The full native
-core suite passes 566 tests with one ignored, including a checkpoint regression that removes
+core suite passes 584 tests with one ignored, including a checkpoint regression that removes
 duplicates and reinserts values after restore. Ordered DISTINCT state uses the existing
 ordered snapshot side frames, with multiplicities in their count fields; ordinary ordered
 snapshots continue writing one per occurrence.
@@ -625,7 +632,7 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
 ```
 
 The combined grouped-value, two-phase and DISTINCT SQL suites pass 100 tests on Flink 2.2.1
-and 85 with 15 host-capability skips on Flink 1.18.1. The native core suite passes 568 tests
+and 85 with 15 host-capability skips on Flink 1.18.1. The native core suite passes 584 tests
 with one ignored. On Intel Core i7-12650H, Linux/WSL, JDK 17 and Flink 2.2.1 (2026-09-27),
 release+mimalloc measured 200,000 rows/keys with one-eighth NULLs: median **0.374 s for Flink
 and 0.327 s for native (1.144x)**. Flink trials ranged from 0.370–0.483 s; native trials ranged

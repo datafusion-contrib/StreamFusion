@@ -225,22 +225,30 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
         let old_len = self.buckets.len();
         let old = std::mem::replace(&mut self.buckets, vec![Bucket::default(); old_len * 2]);
         for (bucket, previous) in old.into_iter().enumerate() {
-            let mut groups: [Vec<usize>; 2] = [Vec::new(), Vec::new()];
+            let mut heads = [None; 2];
+            let mut tails: [Option<usize>; 2] = [None; 2];
+            let mut lengths = [0; 2];
             let mut current = previous.first;
             while let Some(index) = current {
                 current = self.nodes[index].next;
-                groups[usize::from(self.nodes[index].hash as u32 as usize & old_len != 0)]
-                    .push(index);
-            }
-            let split = !groups[0].is_empty() && !groups[1].is_empty();
-            for (side, group) in groups.iter().enumerate() {
-                let target = bucket + side * old_len;
-                for (position, &index) in group.iter().enumerate() {
-                    self.nodes[index].prev = position.checked_sub(1).map(|p| group[p]);
-                    self.nodes[index].next = group.get(position + 1).copied();
+                let side = usize::from(self.nodes[index].hash as u32 as usize & old_len != 0);
+                self.nodes[index].prev = tails[side];
+                if let Some(tail) = tails[side] {
+                    self.nodes[tail].next = Some(index);
+                } else {
+                    heads[side] = Some(index);
                 }
-                self.buckets[target].first = group.first().copied();
-                if previous.tree && group.len() > 6 {
+                tails[side] = Some(index);
+                lengths[side] += 1;
+            }
+            let split = heads.iter().all(Option::is_some);
+            for side in 0..2 {
+                let target = bucket + side * old_len;
+                if let Some(tail) = tails[side] {
+                    self.nodes[tail].next = None;
+                }
+                self.buckets[target].first = heads[side];
+                if previous.tree && lengths[side] > 6 {
                     self.buckets[target].tree = true;
                     if split {
                         self.treeify(target);
