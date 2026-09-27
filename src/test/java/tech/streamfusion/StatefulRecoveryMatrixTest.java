@@ -261,6 +261,105 @@ class StatefulRecoveryMatrixTest {
     }
   }
 
+  @ParameterizedTest(name = "window-ltz={0}-rocks={1}-zone={2}")
+  @CsvSource({
+    "false,false,UTC",
+    "false,true,UTC",
+    "true,false,UTC",
+    "true,true,UTC",
+    "false,false,Asia/Shanghai",
+    "false,true,Asia/Shanghai",
+    "true,false,Asia/Shanghai",
+    "true,true,Asia/Shanghai",
+    "false,false,America/Los_Angeles",
+    "false,true,America/Los_Angeles",
+    "true,false,America/Los_Angeles",
+    "true,true,America/Los_Angeles"
+  })
+  void eventTimeWindowsAcrossTwoRestores(boolean ltz, boolean rocks, String zoneName) {
+    long[] millis = {-1500, -1200, -500, 250, -250, 500, 1250, 1750, 1500, 2250, 2500, -500};
+    List<Row> input = new ArrayList<>();
+    for (int i = 0; i < millis.length; i++) {
+      var instant = java.time.Instant.ofEpochMilli(millis[i]);
+      Object timestamp =
+          ltz ? instant : java.time.LocalDateTime.ofInstant(instant, java.time.ZoneOffset.UTC);
+      input.add(Row.of(timestamp, i == 11 ? 99L : (long) i + 1));
+    }
+    var type =
+        Types.ROW_NAMED(
+            new String[] {"t", "v"}, ltz ? Types.INSTANT : Types.LOCAL_DATE_TIME, Types.LONG);
+    var schema =
+        Schema.newBuilder()
+            .column("t", ltz ? DataTypes.TIMESTAMP_LTZ(3) : DataTypes.TIMESTAMP(3))
+            .column("v", DataTypes.BIGINT())
+            .watermark("t", "SOURCE_WATERMARK()")
+            .build();
+    String backend = rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap";
+    var zone = java.time.ZoneId.of(zoneName);
+    Map<Integer, Long> watermarks = Map.of(4, -1001L, 8, 999L, 12, 3999L);
+    try (var recovery =
+        new PortableSqlRecovery(backend, input, type, schema, false, 4, 8)
+            .withWatermarks(watermarks)) {
+      java.util.function.UnaryOperator<org.apache.flink.table.api.TableEnvironment> configure =
+          table -> {
+            configure(table, 5, 0);
+            table.getConfig().setLocalTimeZone(zone);
+            return table;
+          };
+      var runs =
+          NativeFailureParity.run(
+              () -> configure.apply(recovery.uninterrupted()),
+              () -> configure.apply(recovery.get()),
+              "SELECT window_start, window_end, SUM(v), COUNT(*) FROM TABLE(TUMBLE(TABLE"
+                  + " recovery_input, DESCRIPTOR(t), INTERVAL '1' SECOND)) GROUP BY window_start,"
+                  + " window_end");
+      Map<List<Object>, Long> expected = new java.util.HashMap<>();
+      long[] sums = {3, 8, 10, 24, 21};
+      long[] counts = {2, 2, 2, 3, 2};
+      for (int i = 0; i < sums.length; i++) {
+        long start = (i - 2L) * 1000;
+        var displayZone = ltz ? zone : java.time.ZoneOffset.UTC;
+        expected.put(
+            List.of(
+                java.time.LocalDateTime.ofInstant(
+                    java.time.Instant.ofEpochMilli(start), displayZone),
+                java.time.LocalDateTime.ofInstant(
+                    java.time.Instant.ofEpochMilli(start + 1000), displayZone),
+                sums[i],
+                counts[i]),
+            1L);
+      }
+      verify(
+          recovery,
+          runs,
+          expected,
+          "window-"
+              + (ltz ? "ltz" : "timestamp")
+              + "-"
+              + (rocks ? "rocksdb" : "memory")
+              + "-"
+              + zoneName,
+          backend,
+          5,
+          0,
+          List.of(4, 8),
+          "NativeColumnarWindowAggregate",
+          Map.of(
+              "timeZone",
+              zoneName,
+              "timestampPrecision",
+              3,
+              "timestampType",
+              ltz ? "TIMESTAMP_LTZ" : "TIMESTAMP",
+              "watermarksAfterOffsets",
+              watermarks,
+              "expectedFallback",
+              ltz && !zoneName.equals("UTC")
+                  ? "TIMESTAMP_LTZ windows require the session-zone offset"
+                  : ""));
+    }
+  }
+
   private static void verify(
       PortableSqlRecovery recovery,
       NativeFailureParity.Comparison runs,
@@ -295,6 +394,11 @@ class StatefulRecoveryMatrixTest {
       List<Integer> boundaries,
       String operator,
       Map<String, Object> settings) {
+    String expectedFallback = (String) settings.getOrDefault("expectedFallback", "");
+    var expectedRoute =
+        expectedFallback.isEmpty()
+            ? NativeFailureParity.Route.NATIVE
+            : NativeFailureParity.Route.FALLBACK;
     boolean passed = false;
     try {
       assertAll(
@@ -303,8 +407,18 @@ class StatefulRecoveryMatrixTest {
           () -> assertEquals(expected, SqlAuditHarness.materialized(runs.host().rows())),
           () -> assertEquals(expected, SqlAuditHarness.materialized(runs.nativeRun().rows())),
           () -> assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes()),
-          () -> assertEquals(NativeFailureParity.Route.NATIVE, runs.nativeRun().route()),
-          () -> assertTrue(runs.nativeRun().plan().contains(operator), runs.nativeRun().plan()),
+          () -> assertEquals(expectedRoute, runs.nativeRun().route()),
+          () -> {
+            if (expectedFallback.isEmpty())
+              assertTrue(runs.nativeRun().plan().contains(operator), runs.nativeRun().plan());
+            else {
+              assertFalse(runs.nativeRun().plan().contains(operator), runs.nativeRun().plan());
+              assertTrue(
+                  runs.nativeRun().fallbackReasons().stream()
+                      .anyMatch(r -> r.contains(expectedFallback)),
+                  runs.nativeRun().fallbackReasons().toString());
+            }
+          },
           recovery::verifyRepeatedRecovery);
       passed = true;
     } finally {
@@ -331,6 +445,7 @@ class StatefulRecoveryMatrixTest {
           id + "-arrow" + batchRows + "-mini" + miniBatchRows,
           Map.of(
               "passed", passed,
+              "expectedRoute", expectedRoute.name(),
               "configuration", configuration,
               "host", SqlAuditHarness.outcome(runs.host()),
               "native", SqlAuditHarness.outcome(runs.nativeRun()),

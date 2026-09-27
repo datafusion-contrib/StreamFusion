@@ -128,7 +128,7 @@ semantics; host/native agreement alone is insufficient for those cases.
 ## Combined stateful recovery matrix
 
 `StatefulRecoveryMatrixTest` begins the bounded matrix in
-[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current 30 cases
+[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current 42 cases
 include INT/BIGINT group keys with DECIMAL(20,2) SUM and STRING COUNT DISTINCT, using memory
 and the native RocksDB backend. Twelve changelog records include duplicate 12-KiB strings,
 NULLs, removal of the final duplicate, group deletion and recreation. The reference executes
@@ -149,6 +149,20 @@ so timezone settings affect the checked output. Equal ordering keys have identic
 the fixture does not assume an ordering among distinguishable tied rows. These cases use
 physical row limit 5 and logical mini-batch size 3.
 
+Twelve one-second tumbling-window cases use TIMESTAMP(3)/TIMESTAMP_LTZ(3), both backends
+and the same three zones. Explicit source watermarks `-1001`, `999` and `3999` follow offsets
+4, 8 and 12. Windows close before each checkpoint while later windows retain state across
+restore. The five expected sums are `3, 8, 10, 24, 21`, with counts `2, 2, 2, 3, 2`; a final
+late row of value 99 arrives after the second restore, before the last watermark, and must
+not recreate a closed window or change those results. Both executions must emit the exact explicit
+watermark sequence and match the timezone-dependent window bounds.
+
+Eight window combinations execute natively. TIMESTAMP_LTZ under Asia/Shanghai or
+America/Los_Angeles retains the existing fixed-offset session-zone fallback, on both
+backends. Those four cases still execute the full value/type and repeated-recovery checks,
+require the specific fallback reason, and assert that the native window operator is absent.
+The evidence records expected routing independently of the comparison result.
+
 Each case independently checks materialized results against known answers, resolved result
 types, the required native operator plan, both restored offsets and failure injections, completed
 checkpoint evidence, and zero active sources after collection. Route assertions cannot
@@ -167,9 +181,9 @@ Add `-Pflink-1.18` for the other released dependency line. The matrix writes
 `streamfusion-runtime/target/sql-audit/stateful-recovery.json`, including configuration,
 result comparison, result types, native plan, fallback reasons and recovery observations,
 even when a validation assertion fails. CI retains this file with the existing portable SQL
-audit artifact. All 30 recovery cases and four transpose-configuration tests pass on each of Flink 2.2.1
-and 1.18.1 (34 tests per release). The shared-harness change
-also passed all 38 existing portable-audit cases on each release.
+audit artifact. All 42 recovery cases (38 native and four explicit fallbacks), four transpose-configuration
+tests and 38 portable-audit regressions pass on each of Flink 2.2.1 and 1.18.1 (84 tests per
+release).
 
 The required matrix runs each row below with memory and native RocksDB state, at parallelism
 1. Arrow row limits and Flink logical mini-batch sizes are independent:
@@ -180,6 +194,7 @@ The required matrix runs each row below with memory and native RocksDB state, at
 | GROUP BY / BIGINT | 1024/0 |
 | Updating JOIN / INT | 1024/0, 1/3, 5/0, 64/3 |
 | Top-N / INT, TIMESTAMP(9) or TIMESTAMP_LTZ(9) ordering | 5/3 in each of the three zones |
+| TUMBLE / TIMESTAMP(3) or TIMESTAMP_LTZ(3) event time | 5/0 in each zone; LTZ outside UTC expects fallback |
 
 The job-scoped `streamfusion.transpose.batchRows` option controls physical row-to-Arrow
 batches. Post-exchange coalescing is disabled in these cases so it cannot recombine the
@@ -188,7 +203,7 @@ flushes determine the tested bundles. A separate serialized-operator test checks
 emission sizes for limits 1, 5 and 64, including a partial batch flushed by a watermark.
 The default row limit remains 1024 for other jobs.
 
-Event-time/window recovery, dedicated Calc conversion/filtering cases, rescaling in both
+Dedicated Calc conversion/filtering cases, rescaling in both
 directions, task-budget variants, failed/cancelled-run cleanup and a larger explicit
 stress profile remain in #250. Passing these cases does not establish those combinations
 or cross-version state compatibility.

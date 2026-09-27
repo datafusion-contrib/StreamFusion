@@ -35,6 +35,7 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
   private final Schema schema;
   private final int[] boundaries;
   private final boolean changelog;
+  private Map<Integer, Long> watermarks = Map.of();
   private final List<String> runIds = new java.util.ArrayList<>();
 
   PortableSqlRecovery() {
@@ -73,6 +74,12 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     }
   }
 
+  PortableSqlRecovery withWatermarks(Map<Integer, Long> afterOffsets) {
+    if (!runIds.isEmpty()) throw new IllegalStateException("configure watermarks before execution");
+    watermarks = Map.copyOf(afterOffsets);
+    return this;
+  }
+
   static final class Proof {
     final AtomicBoolean failed = new AtomicBoolean();
     final AtomicInteger restoredOffset = new AtomicInteger(-1);
@@ -81,6 +88,7 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     final java.util.Set<Integer> completedOffsets = ConcurrentHashMap.newKeySet();
     final List<Integer> restoredOffsets = new java.util.concurrent.CopyOnWriteArrayList<>();
     final AtomicInteger activeSources = new AtomicInteger();
+    final List<Long> emittedWatermarks = new java.util.concurrent.CopyOnWriteArrayList<>();
   }
 
   @Override
@@ -107,7 +115,8 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     var stream =
-        env.addSource(new RecoveringSource(runId, input, recover ? boundaries : new int[0]))
+        env.addSource(
+                new RecoveringSource(runId, input, recover ? boundaries : new int[0], watermarks))
             .returns(inputType)
             .uid("portable-recovery-source")
             .setMaxParallelism(128);
@@ -142,9 +151,14 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     org.junit.jupiter.api.Assertions.assertEquals(
         java.util.Set.copyOf(expected), recovered.injected);
     org.junit.jupiter.api.Assertions.assertTrue(recovered.completedOffsets.containsAll(expected));
-    for (String id : runIds)
+    for (String id : runIds) {
+      org.junit.jupiter.api.Assertions.assertEquals(
+          new java.util.TreeMap<>(watermarks).values().stream().toList(),
+          PROOFS.get(id).emittedWatermarks,
+          "controlled watermark sequence");
       org.junit.jupiter.api.Assertions.assertEquals(
           0, PROOFS.get(id).activeSources.get(), "source still running after result collection");
+    }
   }
 
   List<Map<String, Object>> observations() {
@@ -164,7 +178,9 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
                   "injectedOffsets",
                   java.util.Set.copyOf(proof.injected),
                   "activeSources",
-                  proof.activeSources.get());
+                  proof.activeSources.get(),
+                  "emittedWatermarks",
+                  List.copyOf(proof.emittedWatermarks));
             })
         .toList();
   }
@@ -181,14 +197,17 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     private volatile int completedOffset;
     private final List<Row> input;
     private final int[] boundaries;
+    private final Map<Integer, Long> watermarks;
     private transient ListState<Integer> state;
     private transient Map<Long, Integer> snapshots;
     private int next;
 
-    private RecoveringSource(String runId, List<Row> input, int[] boundaries) {
+    private RecoveringSource(
+        String runId, List<Row> input, int[] boundaries, Map<Integer, Long> watermarks) {
       this.runId = runId;
       this.input = input;
       this.boundaries = boundaries;
+      this.watermarks = watermarks;
     }
 
     @Override
@@ -222,6 +241,12 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
         while (running && next < end) {
           context.collect(input.get(next));
           next++;
+          Long watermark = watermarks.get(next);
+          if (watermark != null) {
+            context.emitWatermark(
+                new org.apache.flink.streaming.api.watermark.Watermark(watermark));
+            PROOFS.get(runId).emittedWatermarks.add(watermark);
+          }
         }
       }
     }
