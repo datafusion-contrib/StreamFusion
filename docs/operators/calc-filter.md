@@ -60,10 +60,12 @@ batches do not evaluate projections. Existing two-argument LIKE keeps its curren
 ## COALESCE
 
 `COALESCE` retains the first non-NULL operand without evaluating it again. When an operand
-contains a scalar UDF or a volatile expression, the complete COALESCE expression uses Flink's
+contains a scalar UDF, a volatile expression, or a known potentially failing native expression
+(such as a strict STRING-to-INT cast), the complete COALESCE expression uses Flink's
 generated code through the existing columnar JVM bridge. This preserves call counts, nullable
 results and Flink's evaluation of later operands inside native Calc, including failures from
-operands hoisted by host code generation. Pure expressions retain their
+operands hoisted by host code generation. This includes casts hoisted from later operands
+even when an earlier operand is non-NULL. Other pure expressions retain their
 existing native CASE lowering. Runtime tests cover INT/STRING stateful UDFs, predicates, nested
 expressions, seeded random calls and multiple batches, including NOT NULL output constraints.
 

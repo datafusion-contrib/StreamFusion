@@ -457,7 +457,8 @@ required, including when an expected assertion failed.
 
 The harness checks include real Maven subprocesses with an allowed assertion followed by a fork
 crash or timeout. Run them with `mvn -f dev/flink-suite/agent/pom.xml package` followed by
-`python3 -m unittest discover -s dev/flink-suite -p 'test_*.py'`.
+`python3 -m unittest discover -s dev/flink-suite -p 'test_*.py'`. The workflow command checks
+also require Bash and `jq`, both provided on the CI runners.
 
 During development, select one or more Surefire test classes without changing the upstream checkout:
 
@@ -582,11 +583,57 @@ Maven cache serves the injection-agent build. Rust dependencies are cached in th
 build's actual native target directory. Every run still rebuilds current StreamFusion code.
 The Rust cache keeps the existing `upstream-suite` key across the move to a shared preparation job.
 
+The preparation job also caches the compiled, clean Flink checkout using an exact key containing
+the released Flink version, actual JDK version, runner platform/architecture, and build script/settings/workflow
+hash. Maven still runs the same build commands to validate and install its outputs; this is incremental
+compilation reuse, not a cached test result or a skipped StreamFusion build. A cache miss takes the
+normal cold-build path. Only preparation jobs save this cache, before any upstream tests run, and
+shared artifacts continue to exclude test reports. Main-branch runs seed caches available to PRs.
+
+This follows [Flink's own compile-and-fan-out CI pattern](https://github.com/apache/flink/blob/master/.github/workflows/template.flink-ci.yml):
+compile once, transfer build outputs, then run module groups on independent runners. Flink also
+caches Maven dependencies, compiles with Maven reactor parallelism, and trims its transferred build
+artifact. CI likewise uses `FLINK_SUITE_BUILD_THREADS=1C` for the two upstream reactor compilation
+commands, allowing one Maven build thread per CPU. Local commands default to one thread. Test forks
+and native-execution checks are unchanged; Flink's workflow is a design reference, not an additional
+dependency. The source-suite payload build skips duplicate Javadoc generation; the ordinary CI
+Java/module jobs still run the bound Javadoc check.
+
 A compressed artifact transfers the clean Flink checkout, compiled classes, Maven artifacts,
 injection agent and native libraries. It excludes Cargo intermediates and previous test reports
 or execution evidence. Consumers require the same revision, Flink version and platform, relocate
 the generated classpath to their checkout, and validate the payload manifests before testing.
 The artifact is shared within that workflow run; successful test results are never reused.
+
+Short connector suites run sequentially in one job per Flink line: formats first, then Parquet,
+ORC, Kafka, and (on 2.2 only) Delta. Formats runs first because its report cleanup spans the format
+modules. Each command retains its original selector, native-execution audit, diagnostics and log;
+a failed command does not prevent the remaining suites from running, and any failure fails the
+job. Paimon and native state suites remain independent, as do the four runtime shards per line.
+Inventory dispatches retain their runtime/connectors/all selections. New commits cancel obsolete
+runs for the same PR or main branch, following Flink's own per-ref cancellation policy. Manual SQL
+inventories have separate concurrency groups by scope so routine pushes do not cancel them. The
+latest main revision and each current PR head still require the complete suite.
+
+The required **All upstream integration tests** job checks all dependency results, then downloads
+both lines' runtime reports and runs the existing complete-shard verifier itself. Failed, cancelled
+or unexpectedly skipped dependencies fail the gate. The legacy Delta audit is intentionally skipped
+only for inventory dispatches; connector-only inventories do not request runtime artifacts.
+
+This reduces a normal upstream workflow from 28 jobs to 19 and shared-build downloads from 21 to 14,
+while retaining the complete corpus. It removes the separate coverage-verification scheduling stage.
+For context, September 27, 2026 [PR #269's upstream run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36298667226)
+spent 42.7 aggregate runner-minutes deleting preinstalled tools and 24.0 downloading/restoring shared
+builds. Its coverage jobs waited 33.9 and 36.1 minutes after the final suite completed, then took six
+and eight seconds. These are baseline CI measurements, not SQL benchmarks or promised wall-clock
+savings: queue conditions vary, cold caches still require preparation, and grouped jobs rerun their
+whole connector group when retried. Compare the first cold and subsequent warm CI runs before
+claiming an end-to-end speedup.
+
+A local Flink 2.2.1/JDK 17 validation with warm Maven/Cargo caches and four JVM-visible CPUs took
+21.4 seconds for the cached planner reactor and 237.5 seconds for complete preparation, including
+fresh StreamFusion Java packaging. This excludes archive transfer and test execution and is not a
+hosted-runner before/after comparison.
 
 The runtime suite runs in four jobs per version. `runtime_shards.py` discovers the compiled
 top-level `*ITCase` classes selected by the planner's upstream Surefire configuration, and assigns
