@@ -232,7 +232,7 @@ completion as `job_status`. Pending status requests do not delay the test; faile
 jobs and result/status retrieval failures. The raw inventory and joined
 audit retain these observations separately from JUnit outcomes and native work. Submission
 snapshots attach the stream graph's job type, node names, parallelism, operator factories and
-declared operator classes to that job ID. Reflection failures remain explicit observations.
+declared operator classes and input edges to that job ID. Reflection failures remain explicit observations.
 These snapshots describe the submitted graph, not proof that each node processed records.
 For Flink's generated operator factories, the observer reads the generated class name directly;
 it does not request class loading, which would trigger source compilation during observation.
@@ -285,10 +285,17 @@ unclassified. Sources, sinks, row/Arrow transposes and columnar key-group routin
 boundaries. Other resolved Flink operators alongside native work produce `mixed`. These counts
 establish work per operator type and job, not per individual graph node or subtask.
 
+Generated `SourceConversion` operators are also boundaries when their input paths lead only to
+known sources. Generated `SinkConversion`, Flink output conversion and sink constraint enforcers
+qualify when their output paths lead only through those adapters to known terminal sinks. Generated
+classes require Flink's code-generation factory identity. Classification checks each graph node's
+position, so a converter with the same class name elsewhere remains host computation. Missing or
+invalid edges and cycles cannot establish these additional boundaries.
+
 `scan_only` requires a successful streaming graph containing both source and sink operators,
 with every node in the explicit StreamSource/SourceOperator/StreamSink/CollectSinkOperator/
-SinkWriterOperator list and no native work. Generic maps, generated converters and unknown
-classes do not establish scan-only execution. Multiple native/scan-only/mixed jobs roll up to
+SinkWriterOperator/table SinkOperator list or a verified conversion boundary, and no native work. Generic maps,
+misplaced converters and unknown classes do not establish scan-only execution. Multiple native/scan-only/mixed jobs roll up to
 `mixed` when their routes differ. Pending or unclassified jobs and any unattributed/unmatched
 native work keep the entire invocation unclassified. Batch/streaming mixtures remain unclassified.
 These are execution observations, independent of JUnit success and existing contract verdicts;
@@ -324,7 +331,7 @@ wrong routes, unclassified evidence and invalid/wrong-line scopes fail the summa
 embeds every requirement and the matched invocation identities, while retaining all other cases
 in its complete denominator.
 
-The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require the five
+The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require the six
 verified runtime variants described below. Run them with:
 
 ```sh
@@ -332,14 +339,14 @@ FLINK_VERSION=2.2.1 FLINK_SUITE_RUNTIME_AUDIT=true bin/flink-suite.sh runtime
 FLINK_VERSION=1.18.1 FLINK_SUITE_RUNTIME_AUDIT=true bin/flink-suite.sh runtime
 ```
 
-The option selects the four upstream methods, enables fresh SQL inventory collection/reporting,
+The option selects the five upstream methods, enables fresh SQL inventory collection/reporting,
 and applies the appropriate scope automatically. Add `FLINK_SUITE_REUSE_BUILD=true` after a
 compatible suite build. A custom `FLINK_SUITE_TEST` selection must still satisfy every required
 variant; omitted variants fail. The audit option requires the runtime suite and cannot be combined
 with runtime sharding. The commands retain complete reports, inventory and the execution audit
 under the suite workspace; requiring these scopes in CI remains pending.
 Both bundled commands have been verified against the unchanged released suites: each reports
-seven passed cases, all five required variants matched, and two unclassified early returns.
+eight passed cases, all six required variants matched, and two unclassified early returns.
 
 Broader route classification and verified upstream scopes remain part of #168; the
 published inventory remains a planning/admission report. Agent and Python tests verify the
@@ -359,14 +366,14 @@ that error remains visible and does not replace the completed execution result.
 The unchanged Flink 2.2.1 `stream.sql.CalcITCase#testLongProjectionList` also passes its explicit
 runtime audit scope: one invocation, one successful job and three native Calc input rows matched
 to both its job ID and existing exact contract witness, with no unassociated work. The submitted
-graph retains both Arrow transposes. The conservative runtime classifier reports `mixed` because
-it includes Flink source conversion, sink constraint enforcement and output conversion as host
-operators; the existing native contract remains satisfied. This fixture submits its converted
+graph retains both Arrow transposes. The runtime classifier reports `native` after verifying
+the source-conversion and sink-adaptation boundaries by their graph edges; the existing native
+contract remains satisfied. This fixture submits its converted
 DataStream directly, bypassing SQL executor pipeline creation. A rerun verifies a complete link
 to translation 0 through `transformation_inputs`, while preserving the same three job-associated
-native rows. Finer boundary classification remains pending.
+native rows.
 The same streaming contract and required scope pass on Flink 1.18.1 with one invocation, three
-job-associated native rows and a complete direct-submission translation link.
+job-associated native rows, verified conversion boundaries and a complete direct-submission translation link.
 
 The unchanged Flink 2.2.1 `stream.table.CalcITCase#testInlineScalarFunction` verifies full
 fallback for both HEAP and ROCKSDB variants: two passed invocations and two completed host jobs,
@@ -384,9 +391,14 @@ complete links to preserved planners and classifies as `unmodified_plan`. The tw
 JUnit denominator is retained; passing those early-return variants does not establish SQL
 execution, and requiring the entire method prefix would correctly fail on their missing routes.
 Flink 1.18.1 has the same three passed variants and classifications; its streaming variant runs
-two successful jobs with preserved-planner links. Across all four selected methods, each line
-therefore has seven passed JUnit invocations: five classified runtime routes and two explicitly
-unclassified early returns. No full-suite percentage is inferred from this selection.
+two successful jobs with preserved-planner links.
+
+The unchanged `stream.sql.CalcITCase#testSelectStarFromNestedTable` passes on both released
+lines with one successful source/conversion/table-sink job, no native work and a `scan_only`
+route. It verifies that nested rows at host boundaries do not earn native execution credit.
+Across all five selected methods, each line has eight passed JUnit invocations: six classified
+runtime routes and two explicitly unclassified early returns. No full-suite percentage is inferred
+from this selection.
 
 Outside the declared contracts, cases without the runtime evidence above remain
 unclassified. The artifact does not infer routes from test class names or JUnit outcomes.

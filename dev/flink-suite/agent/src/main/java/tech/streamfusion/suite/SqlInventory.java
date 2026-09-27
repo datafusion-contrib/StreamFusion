@@ -91,6 +91,10 @@ public final class SqlInventory {
           entry.put("id", call(node, "getId"));
           entry.put("name", call(node, "getOperatorName"));
           entry.put("parallelism", call(node, "getParallelism"));
+          List<Object> inputs = new ArrayList<>();
+          for (Object edge : (List<?>) call(node, "getInEdges"))
+            inputs.add(call(edge, "getSourceId"));
+          entry.put("inputs", inputs);
           Object factory = call(node, "getOperatorFactory");
           if (factory != null) {
             entry.put("factory", factory.getClass().getName());

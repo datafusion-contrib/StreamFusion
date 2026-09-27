@@ -40,6 +40,7 @@ SINK_OPERATORS = {
     'org.apache.flink.streaming.api.operators.StreamSink',
     'org.apache.flink.streaming.api.operators.collect.CollectSinkOperator',
     'org.apache.flink.streaming.runtime.operators.sink.SinkWriterOperator',
+    'org.apache.flink.table.runtime.operators.sink.SinkOperator',
 }
 NATIVE_OPERATORS = {
     'tech.streamfusion.operator.' + name for name in (
@@ -54,6 +55,52 @@ BOUNDARY_OPERATORS = SOURCE_OPERATORS | SINK_OPERATORS | {
     'tech.streamfusion.operator.SplitByKeyGroupOperator',
     'tech.streamfusion.operator.OrderedKeyGroupReassembler',
 }
+
+
+GENERATED_FACTORY = 'org.apache.flink.table.runtime.operators.CodeGenOperatorFactory'
+SINK_ADAPTERS = {
+    'org.apache.flink.table.runtime.operators.sink.OutputConversionOperator',
+    'org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer',
+    'org.apache.flink.table.runtime.operators.sink.ConstraintEnforcer',
+}
+
+
+def boundary_adapters(nodes):
+    by_id = {}
+    for node in nodes:
+        identity = node.get('id')
+        inputs = node.get('inputs')
+        if (type(identity) is not int or identity in by_id or not isinstance(inputs, list)
+                or any(type(source) is not int for source in inputs)):
+            return set()
+        by_id[identity] = node
+    successors = {identity: [] for identity in by_id}
+    for identity, node in by_id.items():
+        for source in node['inputs']:
+            if source not in by_id:
+                return set()
+            successors[source].append(identity)
+
+    def generated(node, name):
+        return node.get('factory') == GENERATED_FACTORY and re.fullmatch(
+            name + r'\$[0-9]+', node['operator_class']) is not None
+
+    def reaches_boundary(identity, source_side, visiting):
+        if identity in visiting:
+            return False
+        node = by_id[identity]
+        links = node['inputs'] if source_side else successors[identity]
+        endpoints = SOURCE_OPERATORS if source_side else SINK_OPERATORS
+        if node['operator_class'] in endpoints:
+            return not links
+        allowed = (generated(node, 'SourceConversion') if source_side else
+                   node['operator_class'] in SINK_ADAPTERS or generated(node, 'SinkConversion'))
+        return bool(allowed and links and all(
+            reaches_boundary(parent, source_side, visiting | {identity}) for parent in links))
+
+    return {identity for identity, node in by_id.items()
+            if node['operator_class'] not in SOURCE_OPERATORS | SINK_OPERATORS
+            and (reaches_boundary(identity, True, set()) or reaches_boundary(identity, False, set()))}
 
 
 def linked_translations(row, result):
@@ -124,9 +171,12 @@ def job_route(result, row=None):
     classes = {node['operator_class'] for node in nodes}
     host_classes = {node['operator_class'] for node in nodes
                     if node['operator_class'].startswith('org.apache.flink.')
-                    or node.get('factory') == 'org.apache.flink.table.runtime.operators.CodeGenOperatorFactory'}
+                    or node.get('factory') == GENERATED_FACTORY}
+    adapters = boundary_adapters(nodes)
     native = classes & NATIVE_OPERATORS
-    host = classes - BOUNDARY_OPERATORS - native
+    host = {node['operator_class'] for node in nodes
+            if node['operator_class'] not in BOUNDARY_OPERATORS | native
+            and node.get('id') not in adapters}
     if not host <= host_classes:
         return 'unclassified'
     work = result.get('native_work', {})
@@ -146,7 +196,9 @@ def job_route(result, row=None):
                             and detail['planner_configuration'].get('unmodified') is True
                             for detail in translations):
         return 'unmodified_plan'
-    if classes <= SOURCE_OPERATORS | SINK_OPERATORS and classes & SOURCE_OPERATORS and classes & SINK_OPERATORS:
+    if (all(node['operator_class'] in SOURCE_OPERATORS | SINK_OPERATORS
+            or node.get('id') in adapters for node in nodes)
+            and classes & SOURCE_OPERATORS and classes & SINK_OPERATORS):
         return 'scan_only'
     if row is not None and linked_fallback_reasons(row, result):
         return 'full_fallback'

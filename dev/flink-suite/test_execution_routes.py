@@ -76,12 +76,47 @@ class RuntimeRoutesTest(unittest.TestCase):
         job['graph']['job_type'] = 'BATCH'
         generated = job['graph']['nodes'][1]
         self.assertEqual('unclassified', self.classify({'batch': job}))
+
         generated['factory'] = 'other.CodeGenOperatorFactory'
         self.assertEqual('unclassified', self.classify({'batch': job}))
         generated['factory'] = 'org.apache.flink.table.runtime.operators.CodeGenOperatorFactory'
         self.assertEqual('batch_host_only', self.classify({'batch': job}))
         generated['operator_class'] = ''
         self.assertEqual('unclassified', self.classify({'batch': job}))
+
+    def chain(self, classes, work=None):
+        job = self.job(classes, work)
+        for index, node in enumerate(job['graph']['nodes']):
+            node.update(id=index, inputs=[] if index == 0 else [index - 1])
+            if '$' in node['operator_class']:
+                node['factory'] = routes.GENERATED_FACTORY
+        return job
+
+    def test_conversion_boundaries_require_graph_position(self):
+        work = {'NativeCalcOperator': 3}
+        for sink_conversion in ('SinkConversion$6',
+                                'org.apache.flink.table.runtime.operators.sink.OutputConversionOperator'):
+            job = self.chain([self.SOURCE, 'SourceConversion$4', self.CALC, sink_conversion, self.SINK], work)
+            self.assertEqual('native', self.classify({'job': job}))
+        # The same generated class at the source and inside the computation must not
+        # make the interior instance disappear from the host portion of the graph.
+        interior = self.chain([self.SOURCE, 'SourceConversion$4', self.CALC,
+                               'SourceConversion$4', self.SINK], work)
+        self.assertEqual('mixed', self.classify({'job': interior}))
+        interior = self.chain([self.SOURCE, 'SinkConversion$6', self.CALC, self.SINK], work)
+        self.assertEqual('mixed', self.classify({'job': interior}))
+        missing_edges = self.chain([self.SOURCE, 'SourceConversion$4', self.CALC, self.SINK], work)
+        del missing_edges['graph']['nodes'][1]['inputs']
+        self.assertEqual('mixed', self.classify({'job': missing_edges}))
+
+    def test_scan_only_can_include_verified_source_and_sink_conversions(self):
+        job = self.chain([self.SOURCE, 'SourceConversion$4', 'SinkConversion$6', self.SINK])
+        self.assertEqual('scan_only', self.classify({'job': job}))
+        job['graph']['nodes'][-1]['operator_class'] = 'org.apache.flink.table.runtime.operators.sink.SinkOperator'
+        self.assertEqual('scan_only', self.classify({'job': job}))
+        del job['graph']['nodes'][1]['factory']
+        self.assertEqual('unclassified', self.classify({'job': job}))
+
 
 
 if __name__ == '__main__':

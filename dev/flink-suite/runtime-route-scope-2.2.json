@@ -12,7 +12,7 @@
       "test": "org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testLongProjectionList",
       "display_name": "testLongProjectionList()",
       "count": 1,
-      "route": "mixed"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testInlineScalarFunction",
@@ -31,6 +31,12 @@
       "display_name": "StreamTableEnvironment:isStream=true",
       "count": 1,
       "route": "unmodified_plan"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testSelectStarFromNestedTable",
+      "display_name": "testSelectStarFromNestedTable()",
+      "count": 1,
+      "route": "scan_only"
     }
   ]
 }
