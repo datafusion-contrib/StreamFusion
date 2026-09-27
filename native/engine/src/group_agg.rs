@@ -48,6 +48,9 @@ pub(crate) enum MinMaxKey {
     Str(String),
     // i128 nanoseconds cover the complete Flink i64-millisecond range without truncation.
     Timestamp(i128),
+    Date(i32),
+    Time(i32),
+    Boolean(bool),
 }
 
 impl MinMaxKey {
@@ -67,6 +70,9 @@ impl MinMaxKey {
 
     fn from_scalar(scalar: &ScalarValue) -> Self {
         match scalar {
+            ScalarValue::Date32(Some(v)) => MinMaxKey::Date(*v),
+            ScalarValue::Time32Millisecond(Some(v)) => MinMaxKey::Time(*v),
+            ScalarValue::Boolean(Some(v)) => MinMaxKey::Boolean(*v),
             ScalarValue::Int64(Some(v)) => MinMaxKey::I64(*v),
             ScalarValue::Int32(Some(v)) => MinMaxKey::I32(*v),
             ScalarValue::Int16(Some(v)) => MinMaxKey::I16(*v),
@@ -90,6 +96,9 @@ impl MinMaxKey {
     /// Rebuilds the scalar; a decimal extreme takes its precision/scale from `result_type`.
     fn scalar(&self, result_type: &DataType) -> ScalarValue {
         match self {
+            MinMaxKey::Date(v) => ScalarValue::Date32(Some(*v)),
+            MinMaxKey::Time(v) => ScalarValue::Time32Millisecond(Some(*v)),
+            MinMaxKey::Boolean(v) => ScalarValue::Boolean(Some(*v)),
             MinMaxKey::I64(v) => ScalarValue::Int64(Some(*v)),
             MinMaxKey::I32(v) => ScalarValue::Int32(Some(*v)),
             MinMaxKey::I16(v) => ScalarValue::Int16(Some(*v)),
@@ -1847,7 +1856,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .zip(&self.value_columns)
             .map(|(&kind, &column)| is_ordered_value(kind).then_some(column as usize))
             .collect();
-        // Per aggregate, a string/timestamp MIN/MAX value column — folded as a scalar into
+        // Per aggregate, a nonnumeric MIN/MAX value column — folded as a scalar into
         // the Extremes multiset, not through the numeric Num path.
         let scalar_extreme_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| {
@@ -1856,7 +1865,12 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     let data_type = batch.column(col).data_type();
                     (matches!(
                         data_type,
-                        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+                        DataType::Utf8
+                            | DataType::LargeUtf8
+                            | DataType::Utf8View
+                            | DataType::Date32
+                            | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                            | DataType::Boolean
                     ) || streamfusion_bridge::timestamp::is_timestamp(data_type))
                     .then_some(col)
                 } else {
@@ -2886,7 +2900,7 @@ impl LocalGroupAggregator {
                 distinct_cols[i].and_then(|c| batch.column(c).as_any().downcast_ref::<Int64Array>())
             })
             .collect();
-        // Per aggregate, a string/timestamp MIN/MAX value column — folded as a scalar
+        // Per aggregate, a nonnumeric MIN/MAX value column — folded as a scalar
         // into the Extremes multiset, not through the numeric Num path.
         let scalar_extreme_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| {
@@ -2895,7 +2909,12 @@ impl LocalGroupAggregator {
                     let data_type = batch.column(col).data_type();
                     (matches!(
                         data_type,
-                        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+                        DataType::Utf8
+                            | DataType::LargeUtf8
+                            | DataType::Utf8View
+                            | DataType::Date32
+                            | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                            | DataType::Boolean
                     ) || streamfusion_bridge::timestamp::is_timestamp(data_type))
                     .then_some(col)
                 } else {

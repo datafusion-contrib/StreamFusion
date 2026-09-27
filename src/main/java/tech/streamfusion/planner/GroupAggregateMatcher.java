@@ -109,10 +109,14 @@ final class GroupAggregateMatcher {
             return "GROUP BY: AVG over an unsupported value type";
           }
         } else if (kind == KIND_MIN || kind == KIND_MAX) {
-          // MIN/MAX keep a value multiset; admit the running numerics, DECIMAL, and strings (ordered
-          // byte-lexicographically, matching Flink's BinaryStringData comparison).
-          if (!isRunningType(valueType) && valueType != SqlTypeName.DECIMAL
-              && !isStringType(valueType) && !isTimestampType(valueType)) {
+          // MIN/MAX retain typed values in a multiset, including temporal and Boolean values.
+          if (!isRunningType(valueType)
+              && valueType != SqlTypeName.DECIMAL
+              && !isStringType(valueType)
+              && !isTimestampType(valueType)
+              && valueType != SqlTypeName.DATE
+              && valueType != SqlTypeName.TIME
+              && valueType != SqlTypeName.BOOLEAN) {
             return "GROUP BY: MIN/MAX over an unsupported value type";
           }
         } else if (!isRunningType(valueType) && valueType != SqlTypeName.DECIMAL) {
@@ -133,6 +137,8 @@ final class GroupAggregateMatcher {
           CHAR,
           VARCHAR,
           DATE,
+          TIME,
+          BOOLEAN,
           TIMESTAMP,
           TIMESTAMP_WITH_LOCAL_TIME_ZONE ->
           true;
@@ -273,6 +279,14 @@ final class GroupAggregateMatcher {
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     for (int i = 0; i < codes.length; i++) {
       AggregateCall call = aggCalls.apply(i);
+      if (!call.getArgList().isEmpty()
+          && switch (call.getAggregation().getKind()) {
+            case MIN, MAX, FIRST_VALUE, LAST_VALUE, SINGLE_VALUE -> true;
+            default -> false;
+          }) {
+        codes[i] =
+            retainedValueTypeCode(inputType.getFieldList().get(call.getArgList().get(0)).getType());
+      }
       if (call.isDistinct()
           && !call.getArgList().isEmpty()
           && WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind())
@@ -284,6 +298,14 @@ final class GroupAggregateMatcher {
       }
     }
     return codes;
+  }
+
+  static int retainedValueTypeCode(RelDataType type) {
+    return switch (type.getSqlTypeName()) {
+      case TIME -> 9;
+      case BOOLEAN -> 10;
+      default -> WindowAggregateMatcher.typeCode(type);
+    };
   }
 
   static int[] keyColumns(StreamPhysicalGroupAggregate agg) {

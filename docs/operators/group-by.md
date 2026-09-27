@@ -52,6 +52,13 @@ next value, and deleting the last record removes the group. NULL values do not c
 all-NULL group reports NULL extrema. Local-zoned values compare as instants, independently of
 the session zone. The declared logical type and precision are retained on output.
 
+DATE, TIME and BOOLEAN MIN/MAX use the same retractable multiset. DATE compares epoch
+days, TIME compares its internal milliseconds (including milliseconds retained under a
+TIME(0) declaration), and FALSE sorts before TRUE. Duplicate counts, all-NULL groups,
+FILTER and typed outputs survive checkpoint/restore. Insert-only two-phase plans carry
+the same typed extrema in their partials. DATE and BOOLEAN extrema use the existing
+per-element RocksDB codec when selected; TIME retains the snapshot-blob state path.
+
 `AVG` is native: a running sum — widened to bigint for any integer input, double for float/double —
 plus the non-null count, emitting `count == 0 ? NULL : sum / count` cast back to the input type,
 with **integer division truncating toward zero**. This is a direct port of Flink's
@@ -63,8 +70,11 @@ the non-null count using Flink's exact decimal division — a 38-significant-dig
 ### FIRST_VALUE, LAST_VALUE and SINGLE_VALUE
 
 The one-argument forms run natively in the single-phase plan over TINYINT, SMALLINT,
-INT, BIGINT, DECIMAL, CHAR/VARCHAR, DATE, TIMESTAMP and TIMESTAMP_LTZ. Each preserves
+INT, BIGINT, DECIMAL, CHAR/VARCHAR, DATE, TIME, BOOLEAN, TIMESTAMP and TIMESTAMP_LTZ. Each preserves
 the input value's type and precision. Per-aggregate FILTER conditions are supported.
+Flink 1.18.1 cannot plan temporal FIRST_VALUE/LAST_VALUE and fails a type assertion for
+SINGLE_VALUE over TIME(0), including string casts to TIME(3) that resolve to TIME(0);
+those host limitations remain unavailable on that release. Typed TIME(3) input is supported.
 
 FIRST_VALUE and LAST_VALUE skip NULLs and follow arrival order within a key. Append-only
 input retains one scalar. Retracting input retains the ordered non-NULL occurrences;
@@ -129,8 +139,8 @@ float/double) plus the bigint non-null count. The local runs these as a widened-
 (the count partial bumps the non-null count), so the final divide/truncate/cast-back — including
 the cast back to a narrow integer or float result — is byte-identical to the single-phase `AVG`.
 
-Insert-only two-phase `MIN`/`MAX` also admit `TIMESTAMP` and `TIMESTAMP_LTZ`. Both halves carry
-the complete timestamp components; a partial must retain the input's logical type and precision.
+Insert-only two-phase `MIN`/`MAX` also admit DATE, TIME, BOOLEAN, `TIMESTAMP` and
+`TIMESTAMP_LTZ`. Both halves carry the complete typed value and timestamp components; a partial must retain the input's logical type and precision.
 Two-phase retracting extrema retain the shared COUNT/AVG-only gate described below.
 
 Decimal `SUM`/`MIN`/`MAX`/`AVG` carry through the split too: `SUM`'s partial is the i128 running
@@ -202,6 +212,7 @@ agrees byte-for-byte with Flink's — this table is that guardrail; anything mar
 | DECIMAL | ✓ ⁴ | ✓ ⁴ | ✓ | ✓ | ✓ |
 | CHAR / VARCHAR | ✗ | ✗ | ✓ ⁵ | ✓ ⁵ | ✓ |
 | TIMESTAMP / TIMESTAMP_LTZ | - | - | Yes | Yes | Yes |
+| DATE / TIME / BOOLEAN | - | - | Yes | Yes | Yes |
 
 ¹ **Integer `AVG`** diverges from DataFusion's native `Float64` average; a custom accumulator sums
 in int64 and truncates the cast back to the input integer type, matching Flink's `AvgAggFunction`.
@@ -257,7 +268,7 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 
 - Any aggregate other than SUM/MIN/MAX/COUNT/AVG.
 - A SUM/MIN/MAX value type outside bigint/int/smallint/tinyint/double/decimal (MIN/MAX also admit
-  strings and timestamps), or an AVG value type outside
+  strings, DATE, TIME, BOOLEAN and timestamps), or an AVG value type outside
   bigint/int/smallint/tinyint/float/double/decimal.
 - A `COUNT(DISTINCT)` value type outside bigint/int/smallint/tinyint/float/double/string/decimal,
   or a `SUM(DISTINCT)` value outside bigint/int/smallint/tinyint; `MIN`/`MAX`/`AVG` over `DISTINCT`.
@@ -268,7 +279,7 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 **Global group aggregate (two-phase merge) only:**
 
 - Any merge other than SUM/MIN/MAX/COUNT/AVG.
-- A partial column outside bigint/int/smallint/tinyint/double/decimal (strings and timestamps
+- A partial column outside bigint/int/smallint/tinyint/double/decimal (strings, DATE, TIME, BOOLEAN and timestamps
   allowed under MIN/MAX).
 - An AVG whose partial pair isn't `(bigint, bigint)` for an integer average, `(double, bigint)` for
   float/double, or `(decimal(38, s), bigint)` for decimal.
@@ -337,3 +348,40 @@ The standalone native aggregate is slower in all four cases. It currently retain
 multiset/scalar-state machinery for exact timestamp ordering and recovery. This is coverage for
 larger native pipelines, not an aggregate speedup; an append-only timestamp accumulator and
 reduced scalar materialization remain performance opportunities.
+
+## DATE, TIME and BOOLEAN validation and timing
+
+Runtime-source SQL tests check resolved output types and complete changelogs for extrema,
+FIRST_VALUE/LAST_VALUE and SINGLE_VALUE. Cases include filtered state, duplicate retractions,
+all-NULL and empty groups, group deletion/recreation, TIME(0)/TIME(3), and SINGLE_VALUE
+cardinality errors. Released Flink 2.2.1 and 1.18.1 are covered, with the 1.18 host restrictions
+above explicitly skipped. Native state tests cover snapshot recovery, exact TTL expiry,
+arrival order and the DATE/BOOLEAN RocksDB element codec. Existing string and timestamp
+regressions remain controls.
+
+The following release+mimalloc diagnostic used an Intel Core i7-12650H under Linux/WSL,
+JDK 17 and Flink 2.2.1 on 2026-09-26: two million runtime rows, 64 groups, one-eighth NULLs,
+parallelism 1, two warmups and five measured trials in alternating engine order. DATE and
+TIME cycle over 4,096 samples; BOOLEAN alternates across groups of 64 input records.
+Two-phase bundles contain 1,024 rows. Both row/Arrow transposes and the rowwise blackhole
+sink remain in the measured plan.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=TimestampExtremaBenchmark -Dextrema.types=DATE,TIME,BOOLEAN \
+  -Dextrema.rows=2000000 -Dextrema.warmup=2 -Dextrema.runs=5
+```
+
+| MIN and MAX query | Flink median (s) | Native median (s) | Flink/native ratio |
+|---|---:|---:|---:|
+| Single-phase DATE | 0.484 | 0.482 | 1.003x |
+| Single-phase TIME | 0.459 | 0.485 | 0.947x |
+| Single-phase BOOLEAN | 0.454 | 0.453 | 1.003x |
+| Two-phase DATE | 0.625 | 0.769 | 0.812x |
+| Two-phase TIME | 0.552 | 0.690 | 0.800x |
+| Two-phase BOOLEAN | 0.560 | 0.625 | 0.896x |
+
+Single-phase DATE and BOOLEAN are approximately tied with Flink on this workload; TIME and
+all two-phase cases are slower. These additions reuse the existing typed multiset and ordered
+value state to extend native pipeline coverage. They do not establish a standalone aggregate
+speedup; reducing per-row scalar materialization remains a separate optimization opportunity.

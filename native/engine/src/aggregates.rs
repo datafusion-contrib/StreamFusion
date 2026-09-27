@@ -22,6 +22,8 @@ pub(crate) fn value_data_type(code: i64) -> DataType {
         // the logical distinction is restored by the JVM output row type.
         7 | 1000..=1009 => streamfusion_bridge::timestamp::timestamp_type(),
         8 => DataType::Date32,
+        9 => DataType::Time32(arrow::datatypes::TimeUnit::Millisecond),
+        10 => DataType::Boolean,
         // A COUNT(DISTINCT) value whose Flink type has no faithful code (TIME, BOOLEAN, complex
         // types): the fold reads the actual column and the distinct set keys scalars, so the
         // declared type is immaterial there — but a fixed-type persistent element codec cannot be
@@ -993,6 +995,7 @@ pub(crate) enum RunningAgg {
     // type (the converter's Utf8). Never folded.
     MinMaxStr,
     MinMaxTimestamp,
+    MinMaxScalar(DataType),
     // FIRST_VALUE / LAST_VALUE: hold the first / most-recent non-null value seen (None until one
     // arrives → emits NULL, matching Flink, which ignores nulls in these functions).
     FirstI64(Option<i64>),
@@ -1134,6 +1137,12 @@ impl RunningAgg {
             // MIN/MAX(string) — the extreme lives in the multiset; result is the converter's Utf8.
             (1 | 2, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) => MinMaxStr,
             (1 | 2, dt) if streamfusion_bridge::timestamp::is_timestamp(dt) => MinMaxTimestamp,
+            (
+                1 | 2,
+                dt @ (DataType::Date32
+                | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                | DataType::Boolean),
+            ) => MinMaxScalar(dt.clone()),
             (k, other) => panic!("unsupported OVER aggregate kind {k} for value type {other:?}"),
         }
     }
@@ -1262,6 +1271,7 @@ impl RunningAgg {
             // Never folded — MIN/MAX state is the Extremes multiset, which emits via MinMaxKey::scalar.
             MinMaxDecimal { precision, scale } => ScalarValue::Decimal128(None, *precision, *scale),
             MinMaxStr => ScalarValue::Utf8(None),
+            MinMaxScalar(dt) => null_scalar(dt),
             MinMaxTimestamp => {
                 ScalarValue::Struct(Arc::new(streamfusion_bridge::timestamp::timestamp_array([
                     None,
@@ -1317,6 +1327,7 @@ impl RunningAgg {
             AvgDecimal { scale, .. } => DataType::Decimal128(38, (*scale).max(6)),
             MinMaxDecimal { precision, scale } => DataType::Decimal128(*precision, *scale),
             MinMaxStr => DataType::Utf8,
+            MinMaxScalar(dt) => dt.clone(),
             MinMaxTimestamp => streamfusion_bridge::timestamp::timestamp_type(),
             AvgInt { result, .. } | AvgFloat { result, .. } => result.clone(),
             AvgPartialSumInt(_) => DataType::Int64,
@@ -1371,7 +1382,7 @@ impl RunningAgg {
             },
             (AvgFloat { sum, .. }, ScalarValue::Float64(Some(v))) => *sum = *v,
             // Constant NULL extrema have a typed result but no running value to restore.
-            (agg @ (MinMaxStr | MinMaxDecimal { .. } | MinMaxTimestamp), value)
+            (agg @ (MinMaxStr | MinMaxDecimal { .. } | MinMaxTimestamp | MinMaxScalar(_)), value)
                 if value.is_null() && value.data_type() == agg.state_type() => {}
             _ => panic!("OVER state type mismatch on restore"),
         }
