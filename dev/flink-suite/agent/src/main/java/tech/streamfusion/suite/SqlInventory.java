@@ -18,6 +18,9 @@ public final class SqlInventory {
   private static Scope active;
   private static final Map<Object, OperatorBinding> OPERATORS = new java.util.WeakHashMap<>();
   private static final java.util.Set<String> FINISHED_JOBS = new java.util.HashSet<>();
+  private static final Map<Object, Map<String, Object>> PLANNER_CONTEXTS =
+      new java.util.WeakHashMap<>();
+  private static final Map<Object, Map<String, Object>> PLANNERS = new java.util.WeakHashMap<>();
 
   private SqlInventory() {}
 
@@ -233,7 +236,7 @@ public final class SqlInventory {
   }
 
   public static synchronized void planner(Object context, boolean unmodified) throws Exception {
-    if (active == null) return;
+    if (directory() == null) return;
     Object config = call(context, "getTableConfig");
     ClassLoader loader = context.getClass().getClassLoader();
     Class<?> optionType =
@@ -243,7 +246,14 @@ public final class SqlInventory {
             .getField("RUNTIME_MODE")
             .get(null);
     Object mode = config.getClass().getMethod("get", optionType).invoke(config, modeOption);
-    active.planners.add(Map.of("mode", mode.toString(), "unmodified", unmodified));
+    Map<String, Object> observation = Map.of("mode", mode.toString(), "unmodified", unmodified);
+    PLANNER_CONTEXTS.put(context, observation);
+    if (active != null) active.planners.add(observation);
+  }
+
+  public static synchronized void plannerCreated(Object context, Object planner) {
+    var observation = PLANNER_CONTEXTS.get(context);
+    if (observation != null && planner != null) PLANNERS.put(planner, observation);
   }
 
   public static synchronized void plan(Object scan, Object roots) throws Exception {
@@ -327,6 +337,8 @@ public final class SqlInventory {
       var detail = new LinkedHashMap<String, Object>();
       detail.put("id", active.translationDetails.size());
       detail.put("planner", planner.getClass().getName());
+      var configuration = PLANNERS.get(planner);
+      if (configuration != null) detail.put("planner_configuration", configuration);
       active.translationDetails.add(detail);
       return new Translation(active, detail, active.plans.size(), new IdentityHashMap<>());
     }

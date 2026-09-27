@@ -56,16 +56,15 @@ BOUNDARY_OPERATORS = SOURCE_OPERATORS | SINK_OPERATORS | {
 }
 
 
-def linked_fallback_reasons(row, result):
+def linked_translations(row, result):
     graph = result.get('graph', {})
     ids = graph.get('sql_translation_ids')
     details = row.get('translation_details')
-    plans = row.get('plans')
     if (graph.get('sql_translation_complete') is not True or not isinstance(ids, list) or not ids
             or any(type(identity) is not int or identity < 0 for identity in ids)
-            or len(set(ids)) != len(ids) or not isinstance(details, list) or not isinstance(plans, list)):
+            or len(set(ids)) != len(ids) or not isinstance(details, list)):
         return []
-    reasons = []
+    selected = []
     for identity in ids:
         matches = [detail for detail in details if isinstance(detail, dict)
                    and type(detail.get('id')) is int and detail['id'] == identity]
@@ -73,7 +72,17 @@ def linked_fallback_reasons(row, result):
             return []
         if type(matches[0].get('root_count')) is not int or matches[0]['root_count'] <= 0:
             return []
-        indices = matches[0].get('plan_indices')
+        selected.append(matches[0])
+    return selected
+
+
+def linked_fallback_reasons(row, result):
+    plans = row.get('plans')
+    if not isinstance(plans, list):
+        return []
+    reasons = []
+    for detail in linked_translations(row, result):
+        indices = detail.get('plan_indices')
         if (not isinstance(indices, list) or not indices
                 or any(type(index) is not int or not 0 <= index < len(plans) for index in indices)
                 or len(set(indices)) != len(indices)):
@@ -132,6 +141,11 @@ def job_route(result, row=None):
         return 'host_failure'
     if graph['job_type'] == 'BATCH':
         return 'batch_host_only'
+    translations = linked_translations(row, result) if row is not None else []
+    if translations and all(isinstance(detail.get('planner_configuration'), dict)
+                            and detail['planner_configuration'].get('unmodified') is True
+                            for detail in translations):
+        return 'unmodified_plan'
     if classes <= SOURCE_OPERATORS | SINK_OPERATORS and classes & SOURCE_OPERATORS and classes & SINK_OPERATORS:
         return 'scan_only'
     if row is not None and linked_fallback_reasons(row, result):
@@ -155,8 +169,12 @@ def classify(row, partition_valid):
         return routes.pop()
     if routes <= {'full_fallback', 'scan_only'}:
         return 'full_fallback'
+    if routes <= {'unmodified_plan', 'scan_only'}:
+        return 'unmodified_plan'
     if routes <= {'native', 'mixed', 'scan_only', 'full_fallback'}:
         return 'mixed'
-    if 'host_failure' in routes and routes <= {'host_failure', 'batch_host_only', 'scan_only', 'host_only', 'full_fallback'}:
+    if routes & {'native', 'mixed'} and routes <= {'native', 'mixed', 'scan_only', 'unmodified_plan', 'full_fallback'}:
+        return 'mixed'
+    if 'host_failure' in routes and routes <= {'host_failure', 'batch_host_only', 'scan_only', 'host_only', 'full_fallback', 'unmodified_plan'}:
         return 'host_failure'
     return 'unclassified'

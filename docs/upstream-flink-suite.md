@@ -243,8 +243,8 @@ actual transformation objects against those returned roots. The submitted graph 
 `sql_translation_ids` and `sql_translation_complete`; completeness requires every pipeline input
 to have one observed origin and every root of each selected translation to be included. Partial,
 missing and ambiguous matches stay explicitly incomplete. These links are scoped to the current
-invocation and are not inferred from which plan was recorded most recently. Full-fallback routes
-use these links; deliberately unmodified route classification remains pending.
+invocation and are not inferred from which plan was recorded most recently. Full-fallback and
+deliberately unmodified routes use these links.
 
 Direct DataStream submission also records links at stream-graph generation. The observer follows
 transformation inputs from terminal roots and requires every input path to reach an observed SQL
@@ -264,7 +264,8 @@ counts and requires the associated, unmatched and unattributed counters to sum e
 invocation total. An unmatched job ID cannot also appear among submitted jobs. Invalid partitions
 fail the join before it publishes any exact case associations.
 
-The separate `runtime_route` field recognizes `skipped`, `native`, `mixed`, `full_fallback`, `scan_only`,
+The separate `runtime_route` field recognizes `skipped`, `native`, `mixed`, `full_fallback`,
+`unmodified_plan`, `scan_only`,
 `batch_host_only` and `host_failure`; unresolved evidence remains `unclassified`.
 Batch host-only requires a nonempty set of successful job results, a submitted batch graph for
 every job, resolved Flink operator classes or Flink's `CodeGenOperatorFactory` for every graph node,
@@ -300,6 +301,13 @@ Missing, duplicate or invalid translation identities, absent reasons, EXPLAIN-on
 native plan roots cannot establish this route. `runtime_fallback_reasons` retains the validated
 reasons by job ID. Native and full-fallback jobs in the same invocation produce `mixed`; a
 full-fallback job alongside a scan-only job remains full fallback.
+
+`unmodified_plan` requires a successful host-only streaming job whose linked translations all
+come from planners explicitly created with preservation enabled. The observer binds that choice
+to each actual planner instance and copies it into `translation_details.planner_configuration`,
+including planners created before an invocation starts. A preserved planner elsewhere in the
+same test cannot classify an ordinary planner's job. Batch jobs retain their batch route; an
+explicitly preserved streaming plan takes precedence over scan-only classification.
 
 For direct summary calls, use `--sql-inventory <directory> --flink-line 2.2` (or `1.18`).
 Add repeatable `--require-runtime-route-prefix <class#method-prefix>` options to declare the
@@ -345,9 +353,20 @@ Those two invocations have no legacy method contract on 1.18; their runtime clas
 from completed job and linked translation evidence. Across these three selected methods the
 runtime denominator is four passed invocations per released line, not the full upstream suite.
 
+The unchanged Flink 2.2.1 `TableEnvironmentITCase#testFromToDataStreamAndExecuteSql` passes all
+three variants. `StreamTableEnvironment:isStream=true` runs three successful host jobs with
+complete links to preserved planners and classifies as `unmodified_plan`. The two
+`TableEnvironment` variants return before job execution and remain unclassified. The complete
+JUnit denominator is retained; passing those early-return variants does not establish SQL
+execution, and requiring the entire method prefix would correctly fail on their missing routes.
+Flink 1.18.1 has the same three passed variants and classifications; its streaming variant runs
+two successful jobs with preserved-planner links. Across all four selected methods, each line
+therefore has seven passed JUnit invocations: five classified runtime routes and two explicitly
+unclassified early returns. No full-suite percentage is inferred from this selection.
+
 Outside the declared contracts, cases without the runtime evidence above remain
 unclassified. The artifact does not infer routes from test class names or JUnit outcomes.
-Deliberately unmodified classification and broader per-invocation collection remain
+Broader verified invocation scopes and boundary classification remain
 [#168](https://github.com/datafusion-contrib/StreamFusion/issues/168). Agent unit-test output is
 outside the suite's report/evidence directories and contributes no SQL cases. The summary writes
 failed artifacts for missing or malformed reports/evidence and retains process failures; an

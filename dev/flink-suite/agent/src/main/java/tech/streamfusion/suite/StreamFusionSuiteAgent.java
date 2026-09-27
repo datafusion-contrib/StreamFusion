@@ -525,6 +525,7 @@ public final class StreamFusionSuiteAgent {
           .getClass()
           .getName()
           .equals("org.apache.flink.table.planner.delegation.StreamPlanner")) {
+        SqlInventory.plannerCreated(context, planner);
         return;
       }
       try {
@@ -543,6 +544,7 @@ public final class StreamFusionSuiteAgent {
       } catch (ReflectiveOperationException e) {
         throw new IllegalStateException("StreamFusion complete-plan installation failed", e);
       }
+      SqlInventory.plannerCreated(context, planner);
     }
 
     @Advice.OnMethodEnter

@@ -313,6 +313,48 @@ class SqlInventoryTest {
   }
 
   @Test
+  void retainsTheExactPlannerChoiceMadeBeforeTheInvocation() throws Exception {
+    System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
+    try {
+      var preservedContext = new PlannerContext();
+      var ordinaryContext = new PlannerContext();
+      Object preserved = new Object();
+      Object ordinary = new Object();
+      SqlInventory.planner(preservedContext, true);
+      SqlInventory.plannerCreated(preservedContext, preserved);
+      SqlInventory.planner(ordinaryContext, false);
+      SqlInventory.plannerCreated(ordinaryContext, ordinary);
+      var identifier = new Identifier();
+      SqlInventory.started(identifier);
+      Object first = SqlInventory.translating(preserved);
+      SqlInventory.translated(first, List.of(new Object()), null);
+      Object second = SqlInventory.translating(ordinary);
+      SqlInventory.translated(second, List.of(new Object()), null);
+      SqlInventory.finished(identifier, new Result());
+      try (var files = Files.list(directory)) {
+        String json = Files.readString(files.findFirst().orElseThrow());
+        assertTrue(json.contains("\"planners\":[]"), json);
+        String[] translations = json.split("\\\"id\\\":1", 2);
+        assertTrue(translations[0].contains("\"unmodified\":true"), json);
+        assertTrue(!translations[0].contains("\"unmodified\":false"), json);
+        assertTrue(translations[1].contains("\"unmodified\":false"), json);
+      }
+    } finally {
+      System.clearProperty("streamfusion.flink-suite.sql-inventory");
+    }
+  }
+
+  public static class PlannerContext {
+    public org.apache.flink.configuration.Configuration getTableConfig() {
+      var configuration = new org.apache.flink.configuration.Configuration();
+      configuration.set(
+          org.apache.flink.configuration.ExecutionOptions.RUNTIME_MODE,
+          org.apache.flink.api.common.RuntimeExecutionMode.STREAMING);
+      return configuration;
+    }
+  }
+
+  @Test
   void linksDirectDataStreamWrappersButRejectsAnUnrelatedSource() throws Exception {
     System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
     try {

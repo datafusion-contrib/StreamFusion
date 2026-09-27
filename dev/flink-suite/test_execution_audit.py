@@ -281,6 +281,27 @@ class ExecutionAuditTest(unittest.TestCase):
             self.assertEqual('unclassified', audit['testcases'][0]['runtime_route'])
             self.assertEqual({}, audit['testcases'][0]['runtime_fallback_reasons'])
 
+    def test_unmodified_route_uses_only_the_linked_planner_choice(self):
+        self.cases(('Preserved#query', 'passed'))
+        record = self.batch_observation()
+        record['jobs']['batch-job']['graph'].update(
+            job_type='STREAMING', sql_translation_complete=True, sql_translation_ids=[0])
+        record['translation_details'] = [dict(id=0, status='TRANSLATED', root_count=1,
+            planner_configuration=dict(mode='STREAMING', unmodified=True))]
+        args = self.inventory(record)
+        status, audit = self.run_audit(*args, '--require-runtime-route-prefix', 'Preserved#')
+        self.assertEqual(0, status)
+        self.assertEqual('unmodified_plan', audit['testcases'][0]['runtime_route'])
+        path = next((self.root / 'inventory').glob('*.json'))
+        raw = json.loads(path.read_text())
+        raw['translation_details'].append(dict(id=1, status='TRANSLATED', root_count=1,
+                                              planner_configuration=dict(unmodified=False)))
+        raw['jobs']['batch-job']['graph']['sql_translation_ids'] = [1]
+        path.write_text(json.dumps(raw))
+        status, audit = self.run_audit(*args, '--require-runtime-route-prefix', 'Preserved#')
+        self.assertEqual(1, status)
+        self.assertEqual('unclassified', audit['testcases'][0]['runtime_route'])
+
     def test_completed_batch_route_has_exact_denominator_and_explicit_scope(self):
         self.cases(("Batch#query[heap]", "passed"), ("Skipped#query", "skipped"),
                    ("Other#query", "passed"))
