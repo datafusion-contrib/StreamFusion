@@ -1,6 +1,94 @@
 use super::*;
 
 #[test]
+fn wide_decimal_local_views_share_order_and_keep_filtered_zero_entries() {
+    let large = 9 * 10i128.pow(37);
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Int64, false),
+            Field::new("value", DataType::Decimal128(38, 0), true),
+            Field::new("left", DataType::Boolean, false),
+            Field::new("right", DataType::Boolean, false),
+        ])),
+        vec![
+            Arc::new(Int64Array::from(vec![1; 5])),
+            Arc::new(
+                Decimal128Array::from(vec![
+                    Some(large),
+                    Some(large - 3),
+                    Some(-large),
+                    None,
+                    Some(large),
+                ])
+                .with_precision_and_scale(38, 0)
+                .unwrap(),
+            ),
+            Arc::new(BooleanArray::from(vec![true, false, true, true, false])),
+            Arc::new(BooleanArray::from(vec![false, true, false, false, true])),
+        ],
+    )
+    .unwrap();
+    for split in [1, 3, 5] {
+        let mut local = LocalGroupAggregator::new(
+            vec![7, 9, 9],
+            vec![5800; 3],
+            vec![1; 3],
+            vec![-1, 2, 3],
+            vec![0],
+            vec![0, 1, 2],
+        )
+        .with_memory_budget(1 << 20)
+        .unwrap();
+        local.update(&batch.slice(0, split)).unwrap();
+        if split < 5 {
+            local.update(&batch.slice(split, 5 - split)).unwrap();
+        }
+        assert!(local.memory.state_bytes > 0);
+        let output = local.flush();
+        assert_eq!(local.memory.state_bytes, 0);
+        for (column, expected_counts) in [
+            (4, vec![0, 2, 1, 1]),
+            (5, vec![0, 1, 1, 0]),
+            (6, vec![0, 1, 0, 1]),
+        ] {
+            let view = output
+                .column(column)
+                .as_any()
+                .downcast_ref::<arrow::array::ListArray>()
+                .unwrap();
+            let entries = view.value(0);
+            let entries = entries
+                .as_any()
+                .downcast_ref::<arrow::array::StructArray>()
+                .unwrap();
+            let values = entries
+                .column(0)
+                .as_any()
+                .downcast_ref::<Decimal128Array>()
+                .unwrap();
+            let counts = entries
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            assert_eq!(
+                values.iter().collect::<Vec<_>>(),
+                vec![None, Some(large), Some(-large), Some(large - 3)]
+            );
+            assert_eq!(counts.values().as_ref(), expected_counts.as_slice());
+        }
+        local.update(&batch.slice(1, 1)).unwrap();
+        let fresh = local.flush();
+        let view = fresh
+            .column(4)
+            .as_any()
+            .downcast_ref::<arrow::array::ListArray>()
+            .unwrap();
+        assert_eq!(view.value_length(0), 1);
+    }
+}
+
+#[test]
 fn distinct_average_partials_widen_and_merge_membership_across_restore() {
     for (code, first, second, sum, average) in [
         (

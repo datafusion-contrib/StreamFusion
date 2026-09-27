@@ -3,7 +3,7 @@
 
 #[derive(Clone)]
 struct Node {
-    key: i128,
+    key: Option<i128>,
     hash: i32,
     next: Option<usize>,
     prev: Option<usize>,
@@ -61,13 +61,13 @@ impl DecimalMapOrder {
         };
         let mut copy = Self::with_capacity(self.scale, required.next_power_of_two().min(1 << 30));
         for key in self.iter() {
-            copy.insert(key);
+            copy.insert_optional(key);
         }
         copy
     }
 
-    pub(super) fn insert(&mut self, key: i128) -> bool {
-        let hash = decimal_hash(key, self.scale);
+    pub(super) fn insert_optional(&mut self, key: Option<i128>) -> bool {
+        let hash = key.map_or(0, |key| decimal_hash(key, self.scale));
         let bucket = hash as u32 as usize & (self.buckets.len() - 1);
         let mut current = self.buckets[bucket].first;
         let tree = self.buckets[bucket].tree;
@@ -130,7 +130,7 @@ impl DecimalMapOrder {
         true
     }
 
-    pub(super) fn iter(&self) -> impl Iterator<Item = i128> + '_ {
+    pub(super) fn iter(&self) -> impl Iterator<Item = Option<i128>> + '_ {
         self.buckets.iter().flat_map(|bucket| {
             std::iter::successors(bucket.first, |&index| self.nodes[index].next)
                 .map(|index| self.nodes[index].key)
@@ -345,15 +345,15 @@ mod tests {
                     map = map.copied();
                 }
                 if position < keys.len() {
-                    map.insert(keys[position].as_str().unwrap().parse().unwrap());
+                    map.insert_optional(keys[position].as_str().map(|key| key.parse().unwrap()));
                     assert_structure(&map);
                 }
             }
-            let expected: Vec<i128> = case["order"]
+            let expected: Vec<Option<i128>> = case["order"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(|key| key.as_str().unwrap().parse().unwrap())
+                .map(|key| key.as_str().map(|key| key.parse().unwrap()))
                 .collect();
             assert_eq!(map.iter().collect::<Vec<_>>(), expected, "{}", case["name"]);
             assert!(map.bytes() >= std::mem::size_of::<DecimalMapOrder>());

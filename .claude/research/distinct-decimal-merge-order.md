@@ -6,11 +6,11 @@ not a decision to exclude the issue's DECIMAL(20,2) case.
 
 ## Released-host evidence
 
-`FlinkDistinctDecimalMergeOrderTest` uses released Flink's `MapView`, `MapSerializer`,
+`FlinkDistinctDecimalMergeOrderTest` uses released Flink's `MapView`, `NullAwareMapSerializer`,
 `DecimalDataSerializer`, and `DecimalDataUtils.add`. On JDK 17, both Flink 2.2.1 and 1.18.1
 exhibit these two independent effects:
 
-* Three equal membership maps can iterate differently after `MapSerializer.copy` or a
+* Three equal membership maps can iterate differently after `NullAwareMapSerializer.copy` or a
   serialize/deserialize round trip. With `L = 9 * 10^37`, the default map containing
   `[L, L - 3, -L]` folds SUM to `-L`; the copied/deserialized maps fold to `L - 3`.
   AVG's running sum over the original map overflows to sticky NULL, while the other maps
@@ -34,7 +34,7 @@ Reference files in the canonical Flink tree:
   `addInput` merges incoming partials into a temporary local accumulator; `finishBundle`
   merges that accumulator into durable global state. The released 2.2.1 bytecode confirms
   this extra buffering stage.
-* `flink-core/src/main/java/org/apache/flink/api/common/typeutils/base/MapSerializer.java`:
+* `flink-table/flink-table-common/src/main/java/org/apache/flink/table/dataview/NullAwareMapSerializer.java`:
   copy/deserialization creates a HashMap sized for the entry count, while a fresh MapView
   starts with a default HashMap.
 * `flink-table/flink-table-common/src/main/java/org/apache/flink/table/data/DecimalData.java`:
@@ -62,16 +62,35 @@ fixture does not justify admitting all values of that type.
 membership order, including BigDecimal-compatible hashing, signed hash comparisons,
 collision chains, red/black tree insertion, root placement, resize splits, tree-to-list
 transitions, and serializer-sized copies. It uses indexed Rust nodes and reports owned
-vector capacity for later memory-accounting integration. It is currently compiled only
-in tests; the production admission gate has not changed.
+vector capacity for later memory-accounting integration. The local aggregate now uses it for wide-decimal views; the planner admission gate has not
+changed, so this path remains inaccessible from admitted SQL until global integration is ready.
 
-The shared `src/test/resources/decimal-map-order.json` fixtures contain 45 default/copy
+The shared `src/test/resources/decimal-map-order.json` fixtures contain 55 default/copy
 scenarios. They cover random precision-38 keys at scales 0/2/18/37, duplicates, full-hash
 collisions, bucket collisions, resize boundaries and tree-to-list transitions. The Java
-regression verifies each fixture with released Flink DecimalData keys and MapSerializer;
+regression verifies each fixture with released Flink DecimalData keys and NullAwareMapSerializer;
 the Rust regression verifies the same order and checks chain/tree invariants after every
 insertion. The fixtures were initially generated with JDK 17 BigDecimal HashMap keys, and
 are checked against Flink's actual key class to avoid assuming identical tree behavior.
 
-Next, connect this ordering model to local shared views and the global temporary membership
-union. The model alone is not sufficient for native admission or end-to-end decimal parity.
+Local integration retains one order per original decimal argument, shared across filters.
+Each emitted filtered view includes the full common key order with zero counts for inactive
+members, including NULL. NULL does not contribute to SUM/AVG, but it occupies a map entry
+and can affect capacity, tree shape and iteration. The null-aware serializer-sized copy
+models the local view's transport representation. Ten additional fixtures cover NULL keys
+inserted before/inside/after zero-hash collision trees and duplicate NULL insertion.
+
+The native local regression checks shared filters, NULLs, duplicate multiplicity, scalar
+and Arrow key paths, physical batch splits, flush/reset, and tracked memory release. The
+full native suite passes 570 tests with one ignored.
+
+Next, integrate the global temporary membership union, including zero-count/NULL ordering
+entries. Do not fold those entries into durable DISTINCT membership. Before admission,
+account for temporary view-copy allocations during flush (the existing local flush releases
+retained-state accounting before constructing output) and validate the actual transport route
+end to end. Local integration alone is not sufficient for native decimal parity.
+
+For multi-key SQL validation, also check local group emission order: Flink's bundle holds
+keys in a HashMap and emits that map's entries, while the native local currently emits
+first-appearance order. This can change which partials share a count-triggered global
+bundle. A single-key fixture cannot prove the complete buffered contract for multiple keys.

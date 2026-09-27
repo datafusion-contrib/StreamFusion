@@ -6,12 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import java.math.BigDecimal;
 import java.util.Map;
 import org.apache.flink.api.common.typeutils.base.LongSerializer;
-import org.apache.flink.api.common.typeutils.base.MapSerializer;
 import org.apache.flink.core.memory.DataInputDeserializer;
 import org.apache.flink.core.memory.DataOutputSerializer;
 import org.apache.flink.table.api.dataview.MapView;
 import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.DecimalDataUtils;
+import org.apache.flink.table.dataview.NullAwareMapSerializer;
 import org.apache.flink.table.runtime.typeutils.DecimalDataSerializer;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +24,8 @@ class FlinkDistinctDecimalMergeOrderTest {
         new BigDecimal[] {large, large.subtract(BigDecimal.valueOf(3)), large.negate()}) {
       view.put(DecimalData.fromBigDecimal(value, 38, 0), 1L);
     }
-    var serializer = new MapSerializer<>(new DecimalDataSerializer(38, 0), LongSerializer.INSTANCE);
+    var serializer =
+        new NullAwareMapSerializer<>(new DecimalDataSerializer(38, 0), LongSerializer.INSTANCE);
     Map<DecimalData, Long> original = view.getMap();
     Map<DecimalData, Long> copied = serializer.copy(original);
     var output = new DataOutputSerializer(128);
@@ -68,23 +69,28 @@ class FlinkDistinctDecimalMergeOrderTest {
         int scale = fixture.get("scale").asInt();
         int copyAfter = fixture.get("copy_after").asInt();
         var serializer =
-            new MapSerializer<>(new DecimalDataSerializer(38, scale), LongSerializer.INSTANCE);
+            new NullAwareMapSerializer<>(
+                new DecimalDataSerializer(38, scale), LongSerializer.INSTANCE);
         Map<DecimalData, Long> map = new java.util.HashMap<>();
         var keys = fixture.get("keys");
         for (int position = 0; position <= keys.size(); position++) {
           if (position == copyAfter) map = serializer.copy(map);
           if (position < keys.size()) {
-            var decimal =
-                new BigDecimal(new java.math.BigInteger(keys.get(position).asText()), scale);
-            map.put(DecimalData.fromBigDecimal(decimal, 38, scale), 1L);
+            var key = keys.get(position);
+            DecimalData decimal =
+                key.isNull()
+                    ? null
+                    : DecimalData.fromBigDecimal(
+                        new BigDecimal(new java.math.BigInteger(key.asText()), scale), 38, scale);
+            map.put(decimal, 1L);
           }
         }
         var expected = new java.util.ArrayList<String>();
-        fixture.get("order").forEach(key -> expected.add(key.asText()));
+        fixture.get("order").forEach(key -> expected.add(key.isNull() ? null : key.asText()));
         assertEquals(
             expected,
             map.keySet().stream()
-                .map(key -> key.toBigDecimal().unscaledValue().toString())
+                .map(key -> key == null ? null : key.toBigDecimal().unscaledValue().toString())
                 .toList(),
             fixture.get("name").asText());
       }
