@@ -440,14 +440,14 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
 | Two-phase TIME | 0.552 | 0.690 | 0.800x |
 | Two-phase BOOLEAN | 0.560 | 0.625 | 0.896x |
 
-This baseline predates the single-destination exchange and typed local-extrema optimizations.
-With both enabled, the same two-million-row workload measures native two-phase DATE/TIME/BOOLEAN
-at 0.517/0.492/0.492 s versus matched Flink medians of 0.574/0.554/0.571 s. Insert-only local
-extrema keep one typed value rather than a multiset; retracting and global extrema retain their
-existing state semantics. See the [optimization ledger](../optimizations/aggregate-specialization-fast-paths.md)
-for profiles, trial ranges, and configuration. The single-phase path is unaffected by the local
-state optimization. At twenty million rows, single-phase DATE and TIME remain slower than Flink
-(4.154 versus 3.876 s and 4.179 versus 3.781 s), so overall performance readiness remains open.
+This baseline predates single-destination exchange forwarding and typed running extrema.
+Insert-only DATE/TIME/BOOLEAN MIN/MAX now retains one typed extreme in both local and global
+state; retracting input retains counted state. At twenty million rows, single-phase native
+medians are 2.861/2.847/2.807 s versus Flink's 3.835/3.860/3.721 s. Two-phase native medians
+are 4.544/4.330/4.263 s versus Flink's 5.070/4.943/4.749 s. See the
+[optimization ledger](../optimizations/aggregate-specialization-fast-paths.md) for profiling,
+before/after measurements, trial ranges and checkpoint compatibility. This establishes MIN/MAX
+performance for the measured workloads; other aggregate functions need separate measurements.
 
 ### Two-phase DISTINCT type coverage
 

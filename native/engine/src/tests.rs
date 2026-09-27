@@ -4378,6 +4378,48 @@ fn local_temporal_boolean_extrema_preserve_types_nulls_and_retractions() {
 }
 
 #[test]
+fn temporal_boolean_running_extrema_restore_typed_and_multiset_state() {
+    for (code, low, high) in temporal_boolean_values() {
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        for previous_kinds in [vec![1, 2], vec![10, 11]] {
+            let mut previous =
+                GroupAggregator::new(previous_kinds, vec![code; 2], vec![1; 2], vec![0], true);
+            let mut running =
+                GroupAggregator::new(vec![10, 11], vec![code; 2], vec![1; 2], vec![0], true);
+            for values in [vec![null.clone()], vec![high.clone(), high.clone()]] {
+                let input = group_scalar_changelog(values.clone(), vec![0; values.len()]);
+                assert_eq!(
+                    previous.update(&input, 0).unwrap(),
+                    running.update(&input, 0).unwrap()
+                );
+                let parts = previous
+                    .snapshot_partitions(128, &[-1])
+                    .into_values()
+                    .collect::<Vec<_>>();
+                let mut restored = GroupAggregator::restore_partitions(
+                    vec![10, 11],
+                    vec![code; 2],
+                    vec![1; 2],
+                    vec![0],
+                    true,
+                    &parts,
+                    0,
+                );
+                let probe = group_scalar_changelog(
+                    vec![low.clone(), high.clone(), null.clone()],
+                    vec![0; 3],
+                );
+                assert_eq!(
+                    restored.update(&probe, 0).unwrap(),
+                    running.update(&probe, 0).unwrap()
+                );
+                previous.update(&probe, 0).unwrap();
+            }
+        }
+    }
+}
+
+#[test]
 fn local_avg_preserves_zero_count_sum_adjustments() {
     for (code, ten, twenty, average) in [
         (
@@ -9558,6 +9600,51 @@ mod rocksdb_group_multisets {
                     0,
                 );
             }
+        }
+    }
+
+    #[test]
+    fn temporal_boolean_running_extrema_rocks_checkpoint_preserves_types() {
+        for (code, low, high) in temporal_boolean_values() {
+            let types = vec![low.data_type(); 2];
+            if code == 9 {
+                assert!(!crate::state::rocks_store::rocks_group_supported(
+                    &[10, 11],
+                    &types,
+                    &types
+                ));
+                continue;
+            }
+            let make =
+                || GroupAggregator::new(vec![10, 11], vec![code; 2], vec![1; 2], vec![0], true);
+            let codec =
+                || GroupStateCodec::new(vec![10, 11], types.clone(), vec![1; 2], vec![-1; 2]);
+            let store = RocksGroupStore::create(store_config("typed-running", 0), codec()).unwrap();
+            let mut rocks = make().with_backend(store);
+            let mut memory = make();
+            let null = ScalarValue::try_from(&low.data_type()).unwrap();
+            let seed =
+                group_scalar_changelog(vec![null.clone(), high.clone(), high.clone()], vec![0; 3]);
+            assert_parity(&mut rocks, &mut memory, &seed, 0);
+            let snapshot = snapshot_dir("typed-running");
+            let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+            drop(rocks);
+            let store = RocksGroupStore::open_merged(
+                store_config("typed-running-reopen", 0),
+                codec(),
+                &[(snapshot, manifest.snapshot_id)],
+                0..=127,
+                true,
+                0,
+            )
+            .unwrap();
+            let mut rocks = make().with_backend(store);
+            assert_parity(
+                &mut rocks,
+                &mut memory,
+                &group_scalar_changelog(vec![low, high, null], vec![0; 3]),
+                0,
+            );
         }
     }
 
