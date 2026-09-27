@@ -27,8 +27,9 @@ class TimestampExtremaBenchmark {
   @Test
   void groupedExtrema() throws Exception {
     for (boolean twoPhase : new boolean[] {false, true}) {
-      for (boolean ltz : new boolean[] {false, true}) {
-        String plan = NativePlanner.explain(environment(twoPhase, ltz), SQL);
+      for (String type :
+          System.getProperty("extrema.types", "TIMESTAMP,TIMESTAMP_LTZ").split(",")) {
+        String plan = NativePlanner.explain(environment(twoPhase, type), SQL);
         if (!plan.contains("NativeColumnarGroupAggregate")
             || !plan.contains("RowDataToArrow")
             || !plan.contains("ArrowToRowData")
@@ -39,7 +40,7 @@ class TimestampExtremaBenchmark {
         for (int trial = 0; trial < WARMUP + RUNS; trial++) {
           for (int turn = 0; turn < 2; turn++) {
             int engine = (trial + turn) % 2;
-            TableEnvironment table = environment(twoPhase, ltz);
+            TableEnvironment table = environment(twoPhase, type);
             PhysicalPlanScan scan = engine == 1 ? NativePlanner.install(table) : null;
             long start = System.nanoTime();
             table.executeSql(SQL).await();
@@ -54,10 +55,10 @@ class TimestampExtremaBenchmark {
         double nativeTime = median(times[1]);
         System.out.printf(
             Locale.ROOT,
-            "[timestamp-extrema] phase=%s ltz=%s rows=%d Flink=%.6fs Native=%.6fs ratio=%.3fx "
+            "[timestamp-extrema] phase=%s type=%s rows=%d Flink=%.6fs Native=%.6fs ratio=%.3fx "
                 + "flink_trials=%s native_trials=%s%n",
             twoPhase ? "two" : "one",
-            ltz,
+            type,
             ROWS,
             host,
             nativeTime,
@@ -75,7 +76,7 @@ class TimestampExtremaBenchmark {
     return sorted.length % 2 == 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
   }
 
-  private static TableEnvironment environment(boolean twoPhase, boolean ltz) {
+  private static TableEnvironment environment(boolean twoPhase, String type) {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment table = StreamTableEnvironment.create(env);
@@ -87,7 +88,23 @@ class TimestampExtremaBenchmark {
     table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
     table.getConfig().set("table.exec.mini-batch.size", "1024");
     LocalDateTime base = LocalDateTime.of(1969, 12, 31, 23, 59, 59, 999000001);
-    var dataType = ltz ? DataTypes.TIMESTAMP_LTZ(9) : DataTypes.TIMESTAMP(9);
+    var dataType =
+        switch (type) {
+          case "DATE" -> DataTypes.DATE();
+          case "TIME" -> DataTypes.TIME(3);
+          case "BOOLEAN" -> DataTypes.BOOLEAN();
+          case "TIMESTAMP" -> DataTypes.TIMESTAMP(9);
+          case "TIMESTAMP_LTZ" -> DataTypes.TIMESTAMP_LTZ(9);
+          default -> throw new IllegalArgumentException("Unknown extrema.types entry: " + type);
+        };
+    var valueType =
+        switch (type) {
+          case "DATE" -> Types.LOCAL_DATE;
+          case "TIME" -> Types.LOCAL_TIME;
+          case "BOOLEAN" -> Types.BOOLEAN;
+          case "TIMESTAMP_LTZ" -> Types.INSTANT;
+          default -> Types.LOCAL_DATE_TIME;
+        };
     table.createTemporaryView(
         "inputs",
         env.fromSequence(0, ROWS - 1)
@@ -96,20 +113,24 @@ class TimestampExtremaBenchmark {
                   LocalDateTime value = base.plusNanos(i % 4096 * 1_000_001);
                   return Row.of(
                       (int) (i % 64),
-                      i / 64 % 8 == 0 ? null : ltz ? value.toInstant(ZoneOffset.UTC) : value);
+                      i / 64 % 8 == 0
+                          ? null
+                          : switch (type) {
+                            case "DATE" -> base.toLocalDate().plusDays(i % 4096);
+                            case "TIME" -> java.time.LocalTime.ofNanoOfDay(i % 4096 * 1_000_000);
+                            case "BOOLEAN" -> i / 64 % 2 == 0;
+                            case "TIMESTAMP_LTZ" -> value.toInstant(ZoneOffset.UTC);
+                            default -> value;
+                          });
                 })
-            .returns(
-                Types.ROW_NAMED(
-                    new String[] {"k", "ts"},
-                    Types.INT,
-                    ltz ? Types.INSTANT : Types.LOCAL_DATE_TIME)),
+            .returns(Types.ROW_NAMED(new String[] {"k", "ts"}, Types.INT, valueType)),
         Schema.newBuilder().column("k", DataTypes.INT()).column("ts", dataType).build());
-    String type = dataType.getLogicalType().asSerializableString();
+    String sqlType = dataType.getLogicalType().asSerializableString();
     table.executeSql(
         "CREATE TABLE sink (k INT, mn "
-            + type
+            + sqlType
             + ", mx "
-            + type
+            + sqlType
             + ") WITH ('connector' = 'blackhole')");
     return table;
   }

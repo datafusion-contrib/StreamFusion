@@ -45,6 +45,12 @@
             <version>1.18.1</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-table-runtime</artifactId>
+            <version>1.18.1</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
