@@ -164,6 +164,103 @@ class StatefulRecoveryMatrixTest {
     return Row.ofKind(kind, side, key, new BigDecimal(amount), text);
   }
 
+  @ParameterizedTest(name = "topn-ltz={0}-rocks={1}-zone={2}")
+  @CsvSource({
+    "false,false,UTC",
+    "false,true,UTC",
+    "true,false,UTC",
+    "true,true,UTC",
+    "false,false,Asia/Shanghai",
+    "false,true,Asia/Shanghai",
+    "true,false,Asia/Shanghai",
+    "true,true,Asia/Shanghai",
+    "false,false,America/Los_Angeles",
+    "false,true,America/Los_Angeles",
+    "true,false,America/Los_Angeles",
+    "true,true,America/Los_Angeles"
+  })
+  void temporalTopNAcrossTwoRestores(boolean ltz, boolean rocks, String zoneName) {
+    String[] instants = {
+      "1969-12-31T23:59:59.999999999Z", "2024-03-10T10:00:00.000000001Z",
+      "2024-11-03T08:30:00.000000001Z", "1970-01-01T00:00:00.000000001Z",
+      "1969-12-31T23:59:59.999999998Z", "1969-12-31T23:59:59.999999998Z",
+      "2024-03-10T09:59:59.999999999Z", "2024-11-03T09:30:00.000000001Z",
+      "1969-12-31T23:59:59.999999997Z", "2024-03-10T09:59:59.999999998Z",
+      "2024-03-10T09:00:00.000000001Z", "2024-11-03T08:30:00.000000001Z"
+    };
+    int[] keys = {0, 1, 2, 0, 0, 0, 1, 2, 0, 1, 1, 2};
+    List<Row> input = new ArrayList<>();
+    for (int i = 0; i < instants.length; i++) {
+      var instant = java.time.Instant.parse(instants[i]);
+      Object timestamp =
+          ltz
+              ? instant
+              : java.time.LocalDateTime.ofInstant(
+                  instant, java.time.ZoneId.of("America/Los_Angeles"));
+      input.add(Row.of(keys[i], timestamp));
+    }
+    var type =
+        Types.ROW_NAMED(
+            new String[] {"k", "t"}, Types.INT, ltz ? Types.INSTANT : Types.LOCAL_DATE_TIME);
+    var schema =
+        Schema.newBuilder()
+            .column("k", DataTypes.INT())
+            .column("t", ltz ? DataTypes.TIMESTAMP_LTZ(9) : DataTypes.TIMESTAMP(9))
+            .build();
+    String backend = rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap";
+    var zone = java.time.ZoneId.of(zoneName);
+    try (var recovery = new PortableSqlRecovery(backend, input, type, schema, false, 4, 8)) {
+      java.util.function.UnaryOperator<org.apache.flink.table.api.TableEnvironment> configure =
+          table -> {
+            configure(table, 5, 3);
+            table.getConfig().setLocalTimeZone(zone);
+            return table;
+          };
+      String castType = ltz ? "TIMESTAMP(9)" : "TIMESTAMP_LTZ(9)";
+      var runs =
+          NativeFailureParity.run(
+              () -> configure.apply(recovery.uninterrupted()),
+              () -> configure.apply(recovery.get()),
+              "SELECT k, t, CAST(t AS "
+                  + castType
+                  + ") AS converted, rn FROM (SELECT k, t, ROW_NUMBER() OVER (PARTITION BY k ORDER"
+                  + " BY t) AS rn FROM recovery_input) WHERE rn <= 2");
+      Map<List<Object>, Long> expected = new java.util.HashMap<>();
+      int[] chosen = {8, 4, 10, 9, 2, 2};
+      for (int i = 0; i < chosen.length; i++) {
+        Row row = input.get(chosen[i]);
+        Object t = row.getField(1);
+        Object converted =
+            ltz
+                ? java.time.LocalDateTime.ofInstant((java.time.Instant) t, zone)
+                : ((java.time.LocalDateTime) t).atZone(zone).toInstant();
+        expected.put(List.of(row.getField(0), t, converted, (long) (i % 2 + 1)), 1L);
+      }
+      verify(
+          recovery,
+          runs,
+          expected,
+          "topn-"
+              + (ltz ? "ltz" : "timestamp")
+              + "-"
+              + (rocks ? "rocksdb" : "memory")
+              + "-"
+              + zoneName,
+          backend,
+          5,
+          3,
+          List.of(4, 8),
+          "NativeColumnarTopN",
+          Map.of(
+              "timeZone",
+              zoneName,
+              "timestampPrecision",
+              9,
+              "timestampType",
+              ltz ? "TIMESTAMP_LTZ" : "TIMESTAMP"));
+    }
+  }
+
   private static void verify(
       PortableSqlRecovery recovery,
       NativeFailureParity.Comparison runs,
@@ -174,6 +271,30 @@ class StatefulRecoveryMatrixTest {
       int miniBatchRows,
       List<Integer> boundaries,
       String operator) {
+    verify(
+        recovery,
+        runs,
+        expected,
+        id,
+        backend,
+        batchRows,
+        miniBatchRows,
+        boundaries,
+        operator,
+        Map.of());
+  }
+
+  private static void verify(
+      PortableSqlRecovery recovery,
+      NativeFailureParity.Comparison runs,
+      Map<List<Object>, Long> expected,
+      String id,
+      String backend,
+      int batchRows,
+      int miniBatchRows,
+      List<Integer> boundaries,
+      String operator,
+      Map<String, Object> settings) {
     boolean passed = false;
     try {
       assertAll(
@@ -187,26 +308,30 @@ class StatefulRecoveryMatrixTest {
           recovery::verifyRepeatedRecovery);
       passed = true;
     } finally {
+      Map<String, Object> configuration =
+          new java.util.LinkedHashMap<>(
+              Map.of(
+                  "backend",
+                  backend,
+                  "parallelism",
+                  1,
+                  "maxParallelism",
+                  128,
+                  "checkpointOffsets",
+                  boundaries,
+                  "physicalBatchRows",
+                  batchRows,
+                  "logicalMiniBatchRows",
+                  miniBatchRows,
+                  "exchangeCoalesceRows",
+                  0));
+      configuration.put("timeZone", "UTC");
+      configuration.putAll(settings);
       RESULTS.put(
           id + "-arrow" + batchRows + "-mini" + miniBatchRows,
           Map.of(
               "passed", passed,
-              "configuration",
-                  Map.of(
-                      "backend",
-                      backend,
-                      "parallelism",
-                      1,
-                      "maxParallelism",
-                      128,
-                      "checkpointOffsets",
-                      boundaries,
-                      "physicalBatchRows",
-                      batchRows,
-                      "logicalMiniBatchRows",
-                      miniBatchRows,
-                      "exchangeCoalesceRows",
-                      0),
+              "configuration", configuration,
               "host", SqlAuditHarness.outcome(runs.host()),
               "native", SqlAuditHarness.outcome(runs.nativeRun()),
               "nativePlan", runs.nativeRun().plan(),
@@ -219,6 +344,7 @@ class StatefulRecoveryMatrixTest {
 
   private static org.apache.flink.table.api.TableEnvironment configure(
       org.apache.flink.table.api.TableEnvironment table, int batchRows, int miniBatchRows) {
+    table.getConfig().setLocalTimeZone(java.time.ZoneId.of("UTC"));
     table.getConfig().set("streamfusion.transpose.batchRows", Integer.toString(batchRows));
     table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(miniBatchRows > 0));
     table

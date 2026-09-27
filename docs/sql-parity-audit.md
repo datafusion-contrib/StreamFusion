@@ -128,7 +128,7 @@ semantics; host/native agreement alone is insufficient for those cases.
 ## Combined stateful recovery matrix
 
 `StatefulRecoveryMatrixTest` begins the bounded matrix in
-[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current 18 cases
+[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current 30 cases
 include INT/BIGINT group keys with DECIMAL(20,2) SUM and STRING COUNT DISTINCT, using memory
 and the native RocksDB backend. Twelve changelog records include duplicate 12-KiB strings,
 NULLs, removal of the final duplicate, group deletion and recreation. The reference executes
@@ -141,8 +141,16 @@ NULLs and an `l.amount < r.amount` residual cross checkpoints at offsets 6 and 1
 retract/update pair turns a nonmatching value into a match; later removals and duplicate
 insertions must leave exactly three joined rows, including one row with multiplicity two.
 
+Twelve append-only Top-N cases combine TIMESTAMP(9)/TIMESTAMP_LTZ(9), both backends and
+UTC/Asia/Shanghai/America/Los_Angeles. Negative-epoch nanoseconds, identical ordering keys,
+and both Los Angeles DST transitions cross the two restores at offsets 4 and 8. Rank numbers
+and casts between the two timestamp types have independently computed expected values,
+so timezone settings affect the checked output. Equal ordering keys have identical payloads;
+the fixture does not assume an ordering among distinguishable tied rows. These cases use
+physical row limit 5 and logical mini-batch size 3.
+
 Each case independently checks materialized results against known answers, resolved result
-types, the native aggregate plan, both restored offsets and failure injections, completed
+types, the required native operator plan, both restored offsets and failure injections, completed
 checkpoint evidence, and zero active sources after collection. Route assertions cannot
 prevent the result assertions from running. The shared recovery helper still supports the
 original 32-of-96-row portable audit with one restart in both engines.
@@ -159,8 +167,8 @@ Add `-Pflink-1.18` for the other released dependency line. The matrix writes
 `streamfusion-runtime/target/sql-audit/stateful-recovery.json`, including configuration,
 result comparison, result types, native plan, fallback reasons and recovery observations,
 even when a validation assertion fails. CI retains this file with the existing portable SQL
-audit artifact. All 18 recovery cases and four transpose-configuration tests pass on each of Flink 2.2.1
-and 1.18.1 (22 tests per release). The shared-harness change
+audit artifact. All 30 recovery cases and four transpose-configuration tests pass on each of Flink 2.2.1
+and 1.18.1 (34 tests per release). The shared-harness change
 also passed all 38 existing portable-audit cases on each release.
 
 The required matrix runs each row below with memory and native RocksDB state, at parallelism
@@ -171,6 +179,7 @@ The required matrix runs each row below with memory and native RocksDB state, at
 | GROUP BY / INT | 1024/0, 1/0, 5/3, 64/3 |
 | GROUP BY / BIGINT | 1024/0 |
 | Updating JOIN / INT | 1024/0, 1/3, 5/0, 64/3 |
+| Top-N / INT, TIMESTAMP(9) or TIMESTAMP_LTZ(9) ordering | 5/3 in each of the three zones |
 
 The job-scoped `streamfusion.transpose.batchRows` option controls physical row-to-Arrow
 batches. Post-exchange coalescing is disabled in these cases so it cannot recombine the
@@ -179,7 +188,7 @@ flushes determine the tested bundles. A separate serialized-operator test checks
 emission sizes for limits 1, 5 and 64, including a partial batch flushed by a watermark.
 The default row limit remains 1024 for other jobs.
 
-Event-time/window/Top-N, dedicated Calc conversion/filtering cases, rescaling in both
-directions, budget/timezone variants, failed/cancelled-run cleanup and a larger explicit
+Event-time/window recovery, dedicated Calc conversion/filtering cases, rescaling in both
+directions, task-budget variants, failed/cancelled-run cleanup and a larger explicit
 stress profile remain in #250. Passing these cases does not establish those combinations
 or cross-version state compatibility.
