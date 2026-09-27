@@ -507,3 +507,22 @@ allocation/growth and transport remain optimization targets.
 The combined decimal/ordered-value SQL and transpose ownership suite passes 111
 checks on Flink 2.2.1; Flink 1.18.1 passes 94 with 17 documented host-capability
 skips. No failures occur on either released line.
+
+
+### Rejected local membership capacity hint
+
+A prototype reserved the previous bundle's mean DISTINCT membership count per group
+(up to 64), while still releasing every map at flush and retaining the exact Java
+decimal-order map. Reserved capacity was included in the local memory budget; 588
+native checks passed with one ignored, including a test of reservation accounting
+and release between bundles.
+
+Under the explicit 2 GiB/2M-row configuration above, five alternating trials gave
+wide AVG 1.580 s native (1.554–1.591) against 1.534 s Flink (1.487–1.684), versus
+1.567/1.521 s before. COUNT/SUM measured 1.443 s native (1.419–1.492) against
+1.371 s Flink (1.325–1.497), versus 1.469/1.380 s before. The AVG deficit was
+essentially unchanged and the small COUNT/SUM difference overlapped trial variation.
+The hint and its extra per-row capacity check were removed: this experiment did
+not establish enough benefit to justify adding allocation policy and accounting
+complexity. Map growth remains a profiling signal, not proof that preallocation
+is the right optimization.
