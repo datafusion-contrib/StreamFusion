@@ -8339,12 +8339,14 @@ mod rocksdb_group_multisets {
                 ));
                 continue;
             }
-            let make = || GroupAggregator::new(vec![1, 2], vec![code; 2], vec![1; 2], vec![0], true);
+            let make =
+                || GroupAggregator::new(vec![1, 2], vec![code; 2], vec![1; 2], vec![0], true);
             let codec = || GroupStateCodec::new(vec![1, 2], types.clone(), vec![1; 2], vec![-1; 2]);
             let store = RocksGroupStore::create(store_config("temporal-bool", 0), codec()).unwrap();
             let mut rocks = make().with_backend(store);
             let mut memory = make();
-            let seed = group_scalar_changelog(vec![high.clone(), low.clone(), low.clone()], vec![0; 3]);
+            let seed =
+                group_scalar_changelog(vec![high.clone(), low.clone(), low.clone()], vec![0; 3]);
             assert_parity(&mut rocks, &mut memory, &seed, 0);
             let snapshot = snapshot_dir("temporal-bool");
             let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();

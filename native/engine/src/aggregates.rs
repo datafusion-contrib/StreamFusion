@@ -1382,8 +1382,10 @@ impl RunningAgg {
             },
             (AvgFloat { sum, .. }, ScalarValue::Float64(Some(v))) => *sum = *v,
             // Constant NULL extrema have a typed result but no running value to restore.
-            (agg @ (MinMaxStr | MinMaxDecimal { .. } | MinMaxTimestamp | MinMaxScalar(_)), value)
-                if value.is_null() && value.data_type() == agg.state_type() => {}
+            (
+                agg @ (MinMaxStr | MinMaxDecimal { .. } | MinMaxTimestamp | MinMaxScalar(_)),
+                value,
+            ) if value.is_null() && value.data_type() == agg.state_type() => {}
             _ => panic!("OVER state type mismatch on restore"),
         }
     }
