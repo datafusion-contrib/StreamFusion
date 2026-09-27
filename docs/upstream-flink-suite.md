@@ -226,9 +226,19 @@ completion the observer samples the job-result futures without blocking: `SUCCEE
 completed result, `SUBMITTED` means the future is still pending, `RESULT_FAILED` preserves an
 exceptional/cancelled result request, and `UNAVAILABLE` records a client that cannot expose it.
 A failed result request alone is not labelled a failed host job. The raw inventory and joined
-audit retain these observations separately from JUnit outcomes and native work. Runtime graph
-association and execution-route classification are still pending; plan translation alone does
-not establish host execution.
+audit retain these observations separately from JUnit outcomes and native work. Submission
+snapshots attach the stream graph's job type, node names, parallelism, operator factories and
+declared operator classes to that job ID. Reflection failures remain explicit observations.
+These snapshots describe the submitted graph, not proof that each node processed records.
+
+Native callbacks with a Flink job metric ID accumulate under that job, including callbacks
+that arrive before submission returns its client. At invocation completion, matching jobs
+receive their `native_work`; unknown job IDs remain in `unmatched_native_jobs`. Callbacks
+without a job metric ID remain in `unattributed_native_work`. The invocation-level aggregate
+retains all these observations for existing contracts, but only associated counters establish
+work for a particular job. Job IDs from finished invocations cannot receive credit in later
+invocations, including newly opened operators. Execution-route classification remains pending;
+plan translation alone does not establish host execution.
 
 For direct summary calls, use `--sql-inventory <directory> --flink-line 2.2` (or `1.18`).
 Broader route classification and supported-scope completeness remain part of #168; the

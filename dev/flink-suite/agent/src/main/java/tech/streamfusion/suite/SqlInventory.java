@@ -16,7 +16,8 @@ import java.util.UUID;
 public final class SqlInventory {
   public static final String MARKER = "StreamFusion SQL inventory: ";
   private static Scope active;
-  private static final Map<Object, Scope> OPERATORS = new java.util.WeakHashMap<>();
+  private static final Map<Object, OperatorBinding> OPERATORS = new java.util.WeakHashMap<>();
+  private static final java.util.Set<String> FINISHED_JOBS = new java.util.HashSet<>();
 
   private SqlInventory() {}
 
@@ -40,6 +41,8 @@ public final class SqlInventory {
     active.data.put("native_work", active.nativeWork);
     active.data.put("execution_contracts", active.contracts);
     active.data.put("jobs", active.jobs);
+    active.data.put("unattributed_native_work", active.unattributedWork);
+    active.data.put("unmatched_native_jobs", active.unmatchedJobs);
     System.out.println(MARKER + active.id);
   }
 
@@ -55,25 +58,77 @@ public final class SqlInventory {
     Files.writeString(
         directory().resolve(active.id + ".json"), json(active.data) + "\n", StandardCharsets.UTF_8);
     System.out.println(MARKER + active.id);
-    OPERATORS.values().removeIf(scope -> scope == active);
+    FINISHED_JOBS.addAll(active.jobs.keySet());
+    FINISHED_JOBS.addAll(active.workByJob.keySet());
+    OPERATORS.values().removeIf(binding -> binding.scope() == active);
     active = null;
   }
 
   public static synchronized Object submitting() {
-    return active;
+    return submitting(new Object[0]);
   }
+
+  public static synchronized Object submitting(Object[] arguments) {
+    if (active == null) return null;
+    Map<String, Object> graph = new LinkedHashMap<>();
+    for (Object argument : arguments) {
+      if (argument == null
+          || !argument
+              .getClass()
+              .getName()
+              .equals("org.apache.flink.streaming.api.graph.StreamGraph")) continue;
+      try {
+        graph.put("job_type", call(argument, "getJobType").toString());
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        for (Object node : (Iterable<?>) call(argument, "getStreamNodes")) {
+          Map<String, Object> entry = new LinkedHashMap<>();
+          entry.put("id", call(node, "getId"));
+          entry.put("name", call(node, "getOperatorName"));
+          entry.put("parallelism", call(node, "getParallelism"));
+          Object factory = call(node, "getOperatorFactory");
+          if (factory != null) {
+            entry.put("factory", factory.getClass().getName());
+            try {
+              Method type =
+                  factory.getClass().getMethod("getStreamOperatorClass", ClassLoader.class);
+              type.setAccessible(true);
+              entry.put(
+                  "operator_class",
+                  ((Class<?>) type.invoke(factory, Thread.currentThread().getContextClassLoader()))
+                      .getName());
+            } catch (ReflectiveOperationException | RuntimeException unavailable) {
+              entry.put("operator_class_error", unavailable.toString());
+            }
+          }
+          nodes.add(entry);
+        }
+        nodes.sort(java.util.Comparator.comparingInt(node -> ((Number) node.get("id")).intValue()));
+        graph.put("nodes", nodes);
+      } catch (ReflectiveOperationException | RuntimeException unavailable) {
+        graph.put("observation_error", unavailable.toString());
+      }
+    }
+    return new Submission(active, graph);
+  }
+
+  private record Submission(Scope owner, Map<String, Object> graph) {}
 
   public static synchronized void submitted(Object token, Object client, Throwable failure)
       throws Exception {
-    if (token == null || token != active) return;
+    if (!(token instanceof Submission submission) || submission.owner() != active) return;
     if (failure != null) {
       failed("executeAsync", failure);
       return;
     }
     if (client == null) return;
     String job = call(client, "getJobID").toString();
-    if (active.jobs.containsKey(job)) return;
+    if (active.jobs.containsKey(job)) {
+      if (!submission.graph().isEmpty())
+        active.jobs.get(job).putIfAbsent("graph", submission.graph());
+      return;
+    }
     active.jobs.put(job, new LinkedHashMap<>(Map.of("status", "SUBMITTED")));
+    if (!submission.graph().isEmpty()) active.jobs.get(job).put("graph", submission.graph());
     try {
       active.jobResults.put(
           job, (java.util.concurrent.CompletableFuture<?>) call(client, "getJobExecutionResult"));
@@ -84,6 +139,11 @@ public final class SqlInventory {
   }
 
   private static void snapshotJobs(Scope scope) {
+    scope.workByJob.forEach(
+        (job, work) -> {
+          if (scope.jobs.containsKey(job)) scope.jobs.get(job).put("native_work", work);
+          else scope.unmatchedJobs.put(job, work);
+        });
     scope.jobResults.forEach(
         (job, completion) -> {
           if (!completion.isDone()) return;
@@ -101,17 +161,38 @@ public final class SqlInventory {
         });
   }
 
+  private record OperatorBinding(Scope scope, String job) {}
+
   public static synchronized void opened(Object operator) {
-    if (active != null) OPERATORS.putIfAbsent(operator, active);
+    if (active == null) return;
+    String job = null;
+    try {
+      Object group = call(operator, "getMetricGroup");
+      Object id = ((Map<?, ?>) call(group, "getAllVariables")).get("<job_id>");
+      if (id != null) job = id.toString();
+    } catch (ReflectiveOperationException | RuntimeException unavailable) {
+      // Some existing writer callbacks have no operator metric group. Keep their work
+      // visible, but never invent a job association from the currently active invocation.
+    }
+    if (job != null && FINISHED_JOBS.contains(job)) return;
+    OPERATORS.putIfAbsent(operator, new OperatorBinding(active, job));
   }
 
   public static synchronized boolean tracked(Object operator) {
-    return active != null && OPERATORS.get(operator) == active;
+    OperatorBinding binding = OPERATORS.get(operator);
+    return active != null && binding != null && binding.scope() == active;
   }
 
   public static synchronized void completed(Object operator, int rows) {
-    if (rows > 0 && tracked(operator))
-      active.nativeWork.merge(operator.getClass().getSimpleName(), (long) rows, Long::sum);
+    if (rows <= 0 || !tracked(operator)) return;
+    String name = operator.getClass().getSimpleName();
+    active.nativeWork.merge(name, (long) rows, Long::sum);
+    String job = OPERATORS.get(operator).job();
+    Map<String, Long> work =
+        job == null
+            ? active.unattributedWork
+            : active.workByJob.computeIfAbsent(job, unused -> new java.util.TreeMap<>());
+    work.merge(name, (long) rows, Long::sum);
   }
 
   public static synchronized void contract(String recordId, String test, String variant) {
@@ -235,7 +316,7 @@ public final class SqlInventory {
     return path == null || path.isBlank() ? null : Path.of(path);
   }
 
-  private static Object call(Object value, String name) throws Exception {
+  private static Object call(Object value, String name) throws ReflectiveOperationException {
     Method method = value.getClass().getMethod(name);
     method.setAccessible(true);
     return method.invoke(value);
@@ -272,6 +353,9 @@ public final class SqlInventory {
     final List<String> translations = new ArrayList<>();
     final List<Object> failures = new ArrayList<>();
     final Map<String, Long> nativeWork = new java.util.TreeMap<>();
+    final Map<String, Long> unattributedWork = new java.util.TreeMap<>();
+    final Map<String, Map<String, Long>> workByJob = new java.util.TreeMap<>();
+    final Map<String, Map<String, Long>> unmatchedJobs = new java.util.TreeMap<>();
     final List<Object> contracts = new ArrayList<>();
     final Map<String, Map<String, Object>> jobs = new LinkedHashMap<>();
     final Map<String, java.util.concurrent.CompletableFuture<?>> jobResults = new LinkedHashMap<>();

@@ -199,6 +199,128 @@ class SqlInventoryTest {
     }
   }
 
+  @Test
+  void attachesReleasedFlinkGraphToItsSubmittedJob() throws Exception {
+    System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
+    try {
+      var env =
+          org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
+              .getExecutionEnvironment();
+      env.setParallelism(2);
+      env.getConfig().disableClosureCleaner();
+      env.fromElements(1, 2)
+          .map(value -> value + 1)
+          .returns(org.apache.flink.api.common.typeinfo.Types.INT)
+          .addSink(new org.apache.flink.streaming.api.functions.sink.DiscardingSink<>());
+      var graph = env.getStreamGraph();
+      var identifier = new Identifier();
+      SqlInventory.started(identifier);
+      Object outer = SqlInventory.submitting();
+      Object inner = SqlInventory.submitting(new Object[] {graph});
+      var client =
+          new JobClient("graph-job", java.util.concurrent.CompletableFuture.completedFuture(null));
+      SqlInventory.submitted(inner, client, null);
+      SqlInventory.submitted(outer, client, null);
+      SqlInventory.finished(identifier, new Result());
+      try (var paths = Files.list(directory)) {
+        String json = Files.readString(paths.findFirst().orElseThrow());
+        assertTrue(json.contains("\"job_type\":\"STREAMING\""), json);
+        assertTrue(json.contains("org.apache.flink.streaming.api.operators.StreamMap"), json);
+        assertTrue(json.contains("\"parallelism\":2"), json);
+        assertTrue(json.contains("\"status\":\"SUCCEEDED\""), json);
+        assertTrue(!json.contains("observation_error"), json);
+      }
+    } finally {
+      System.clearProperty("streamfusion.flink-suite.sql-inventory");
+    }
+  }
+
+  @Test
+  void associatesEarlyOperatorWorkByJobIdAndRejectsLateOpenings() throws Exception {
+    System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
+    try {
+      var identifier = new Identifier();
+      SqlInventory.started(identifier);
+      Object submission = SqlInventory.submitting();
+      var owned = new JobOperator("owned-job");
+      NativeExecution.opened(owned);
+      NativeExecution.completed(owned, 5);
+      var unmatched = new JobOperator("missing-job");
+      NativeExecution.opened(unmatched);
+      NativeExecution.completed(unmatched, 3);
+      var withoutJob = new NativeCalcOperator();
+      NativeExecution.opened(withoutJob);
+      NativeExecution.completed(withoutJob, 1);
+      SqlInventory.submitted(
+          submission,
+          new JobClient("owned-job", java.util.concurrent.CompletableFuture.completedFuture(null)),
+          null);
+      SqlInventory.finished(identifier, new Result());
+      SqlInventory.started(identifier);
+      var late = new JobOperator("owned-job");
+      NativeExecution.opened(late);
+      NativeExecution.completed(late, 100);
+      SqlInventory.finished(identifier, new Result());
+      try (var paths = Files.list(directory)) {
+        var records =
+            paths
+                .map(
+                    path -> {
+                      try {
+                        return Files.readString(path);
+                      } catch (java.io.IOException failure) {
+                        throw new java.io.UncheckedIOException(failure);
+                      }
+                    })
+                .toList();
+        assertTrue(
+            records.stream()
+                .anyMatch(
+                    json ->
+                        json.contains(
+                            "\"owned-job\":{\"status\":\"SUCCEEDED\",\"native_work\":{\"JobOperator\":5}}")));
+        assertTrue(
+            records.stream()
+                .anyMatch(
+                    json ->
+                        json.contains(
+                            "\"unmatched_native_jobs\":{\"missing-job\":{\"JobOperator\":3}}")));
+        assertTrue(
+            records.stream()
+                .anyMatch(
+                    json ->
+                        json.contains("\"unattributed_native_work\":{\"NativeCalcOperator\":1}")));
+        assertTrue(records.stream().anyMatch(json -> json.contains("\"native_work\":{}")));
+      }
+    } finally {
+      System.clearProperty("streamfusion.flink-suite.sql-inventory");
+    }
+  }
+
+  public static class JobOperator {
+    private final String job;
+
+    JobOperator(String job) {
+      this.job = job;
+    }
+
+    public JobMetrics getMetricGroup() {
+      return new JobMetrics(job);
+    }
+  }
+
+  public static class JobMetrics {
+    private final String job;
+
+    JobMetrics(String job) {
+      this.job = job;
+    }
+
+    public Map<String, String> getAllVariables() {
+      return Map.of("<job_id>", job);
+    }
+  }
+
   public static class JobClient {
     private final String id;
     private final java.util.concurrent.CompletableFuture<?> result;

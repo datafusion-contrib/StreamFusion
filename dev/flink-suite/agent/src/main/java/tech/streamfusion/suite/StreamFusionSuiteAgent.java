@@ -305,8 +305,8 @@ public final class StreamFusionSuiteAgent {
 
   public static final class RecordSubmittedJob {
     @Advice.OnMethodEnter
-    static Object enter() {
-      return SqlInventory.submitting();
+    static Object enter(@Advice.AllArguments Object[] arguments) {
+      return SqlInventory.submitting(arguments);
     }
 
     @Advice.OnMethodExit(onThrowable = Throwable.class)

@@ -58,7 +58,9 @@ def attach(audit: dict, reports: Path, inventory: Path, line: str) -> None:
     # Do not mark a partial join as exact when a later record fails validation.
     for case, row, work, bound in bindings:
         case.update(invocation_id=row['invocation_id'], junit_id=row['junit_id'],
-                    native_input_rows=work, jobs=row.get('jobs'))
+                    native_input_rows=work, jobs=row.get('jobs'),
+                    unattributed_native_work=row.get('unattributed_native_work'),
+                    unmatched_native_jobs=row.get('unmatched_native_jobs'))
         for witness in bound:
             witness.update(invocation_id=row['invocation_id'], report=row['report'],
                            case_index=row['case_index'])

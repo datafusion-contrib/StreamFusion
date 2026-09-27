@@ -313,6 +313,8 @@ def collect(reports: Path, evidence: Path, line: str, suite_name: str = 'runtime
                 'native_work': record.get('native_work'),
                 'execution_contracts': record.get('execution_contracts'),
                 'jobs': record.get('jobs'),
+                'unattributed_native_work': record.get('unattributed_native_work'),
+                'unmatched_native_jobs': record.get('unmatched_native_jobs'),
             })
     if not rows:
         raise ValueError('No upstream JUnit cases found')
@@ -332,7 +334,7 @@ def write(rows: list[dict], output: Path, revision: str) -> None:
                'labels_passed': dict(Counter(r['label'] for r in rows if r['outcome'] == 'passed')),
                'categories_passed': dict(Counter(r['category'] for r in rows if r['outcome'] == 'passed'))}
     (output / 'inventory.json').write_text(json.dumps({'schema_version': 1, 'summary': summary, 'tests': rows}, indent=2) + '\n')
-    fields = [key for key in rows[0] if key not in ('sql', 'plans', 'operation_failures', 'planners', 'translations', 'query_verdicts', 'native_work', 'execution_contracts', 'jobs')]
+    fields = [key for key in rows[0] if key not in ('sql', 'plans', 'operation_failures', 'planners', 'translations', 'query_verdicts', 'native_work', 'execution_contracts', 'jobs', 'unattributed_native_work', 'unmatched_native_jobs')]
     with (output / 'inventory.csv').open('w', newline='', encoding='utf-8', errors='backslashreplace') as stream:
         writer = csv.DictWriter(stream, fields, extrasaction='ignore')
         writer.writeheader()

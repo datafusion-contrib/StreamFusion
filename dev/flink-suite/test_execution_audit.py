@@ -207,11 +207,20 @@ class ExecutionAuditTest(unittest.TestCase):
 
     def test_job_observations_are_retained_and_validated(self):
         self.cases(("Uncontracted#query", "passed"))
-        jobs = {"job-1": {"status": "SUCCEEDED"}, "job-2": {"status": "SUBMITTED"}}
-        args = self.inventory(dict(native_work={}, execution_contracts=[], jobs=jobs))
+        jobs = {"job-1": {"status": "SUCCEEDED", "graph": {"job_type": "STREAMING"},
+                          "native_work": {"NativeCalcOperator": 5}},
+                "job-2": {"status": "SUBMITTED"}}
+        unattributed = {"NativeWriter": 1}
+        unmatched = {"other-job": {"NativeCalcOperator": 3}}
+        args = self.inventory(dict(native_work={"NativeCalcOperator": 8, "NativeWriter": 1},
+                                   execution_contracts=[], jobs=jobs,
+                                   unattributed_native_work=unattributed,
+                                   unmatched_native_jobs=unmatched))
         status, audit = self.run_audit(*args)
         self.assertEqual(0, status)
         self.assertEqual(jobs, audit["testcases"][0]["jobs"])
+        self.assertEqual(unattributed, audit["testcases"][0]["unattributed_native_work"])
+        self.assertEqual(unmatched, audit["testcases"][0]["unmatched_native_jobs"])
         path = next((self.root / "inventory").glob("*.json"))
         record = json.loads(path.read_text())
         record["jobs"]["job-1"]["status"] = "invented"
