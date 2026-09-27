@@ -71,6 +71,18 @@ class RuntimeRoutesTest(unittest.TestCase):
         failure.update(status='RESULT_FAILED', job_status='FAILED')
         self.assertEqual('host_failure', self.classify({'success': success, 'failure': failure}))
 
+    def test_generated_classes_require_the_released_flink_factory_identity(self):
+        job = self.job([self.SOURCE, 'BatchExecCalc$2', self.SINK])
+        job['graph']['job_type'] = 'BATCH'
+        generated = job['graph']['nodes'][1]
+        self.assertEqual('unclassified', self.classify({'batch': job}))
+        generated['factory'] = 'other.CodeGenOperatorFactory'
+        self.assertEqual('unclassified', self.classify({'batch': job}))
+        generated['factory'] = 'org.apache.flink.table.runtime.operators.CodeGenOperatorFactory'
+        self.assertEqual('batch_host_only', self.classify({'batch': job}))
+        generated['operator_class'] = ''
+        self.assertEqual('unclassified', self.classify({'batch': job}))
+
 
 if __name__ == '__main__':
     unittest.main()

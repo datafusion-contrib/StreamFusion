@@ -260,7 +260,8 @@ fail the join before it publishes any exact case associations.
 The separate `runtime_route` field recognizes `skipped`, `native`, `mixed`, `scan_only`,
 `batch_host_only` and `host_failure`; unresolved evidence remains `unclassified`.
 Batch host-only requires a nonempty set of successful job results, a submitted batch graph for
-every job, resolved Flink operator classes for every graph node, and a complete partition with
+every job, resolved Flink operator classes or Flink's `CodeGenOperatorFactory` for every graph node,
+and a complete partition with
 no native work. Pending results, graph observation errors, unknown operator classes and older
 inventories without counter partitions remain `unclassified`. A host-failure route requires
 at least one exceptional result with an explicit
@@ -296,6 +297,23 @@ and cases outside the selected scope. Contract-scope counts remain separate.
 Broader route classification and verified upstream scopes remain part of #168; the
 published inventory remains a planning/admission report. Agent and Python tests verify the
 collection/linkage paths with synthetic observations, not additional upstream SQL coverage.
+
+An unchanged Flink 2.2.1 `batch.sql.CalcITCase#testSelectStar` run verifies the first runtime
+scope: one passed invocation, one successful batch job with `FINISHED` status, one complete
+translation-to-pipeline link, zero native work and a `batch_host_only` route. The explicit
+`--require-runtime-route-prefix org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testSelectStar`
+summary check passes. Its source-conversion and Calc nodes use generated names without a package
+prefix; their Flink factory establishes host origin. This is one batch execution check, not
+native SQL coverage or a claim that the entire batch suite has been audited.
+
+The unchanged Flink 2.2.1 `stream.sql.CalcITCase#testLongProjectionList` also passes its explicit
+runtime audit scope: one invocation, one successful job and three native Calc input rows matched
+to both its job ID and existing exact contract witness, with no unassociated work. The submitted
+graph retains both Arrow transposes. The conservative runtime classifier reports `mixed` because
+it includes Flink source conversion, sink constraint enforcement and output conversion as host
+operators; the existing native contract remains satisfied. This fixture submits its converted
+DataStream directly, bypassing SQL executor pipeline creation, so no translation-to-job link is
+claimed for it. Direct DataStream linkage and finer boundary classification remain pending.
 
 Outside the declared contracts, cases without the runtime evidence above remain
 unclassified. The artifact does not infer routes from test class names or JUnit outcomes.

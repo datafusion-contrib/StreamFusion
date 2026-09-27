@@ -71,12 +71,16 @@ def job_route(result):
         return 'unclassified'
     if not isinstance(nodes, list) or any(
             not isinstance(node, dict) or node.get('operator_class_error')
-            or not isinstance(node.get('operator_class'), str) for node in nodes):
+            or not isinstance(node.get('operator_class'), str) or not node['operator_class']
+            for node in nodes):
         return 'unclassified'
     classes = {node['operator_class'] for node in nodes}
+    host_classes = {node['operator_class'] for node in nodes
+                    if node['operator_class'].startswith('org.apache.flink.')
+                    or node.get('factory') == 'org.apache.flink.table.runtime.operators.CodeGenOperatorFactory'}
     native = classes & NATIVE_OPERATORS
     host = classes - BOUNDARY_OPERATORS - native
-    if any(not name.startswith('org.apache.flink.') for name in host):
+    if not host <= host_classes:
         return 'unclassified'
     work = result.get('native_work', {})
     if work:
@@ -84,7 +88,7 @@ def job_route(result):
         if confirmed_failure or graph['job_type'] != 'STREAMING' or set(work) != expected:
             return 'unclassified'
         return 'mixed' if host else 'native'
-    if native or any(not name.startswith('org.apache.flink.') for name in classes):
+    if native or not classes <= host_classes:
         return 'unclassified'
     if confirmed_failure:
         return 'host_failure'
