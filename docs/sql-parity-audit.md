@@ -124,3 +124,192 @@ value, while `-U/-D` must remove the current value. This accommodates Flink's ke
 and native delete/insert encodings without treating `+U` as an additional live row. Batch
 sorting compares the ordered rows. Known-answer assertions additionally check fixture
 semantics; host/native agreement alone is insufficient for those cases.
+
+## Combined stateful recovery matrix
+
+`StatefulRecoveryMatrixTest` and `StatefulSqlRescaleTest` implement the bounded matrix in
+[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its 56 completed-result/failure cases
+include INT/BIGINT group keys with DECIMAL(20,2) SUM and STRING COUNT DISTINCT, using memory
+and the native RocksDB backend. Twelve changelog records include duplicate 12-KiB strings,
+NULLs, removal of the final duplicate, group deletion and recreation. The reference executes
+uninterrupted; the native run fails only after checkpoints containing source offsets 4 and 8
+have completed, then restores twice. The checkpointed source has a stable UID. The final rows must be `(1, -4.50, 0)` and
+`(2, -0.50, 1)`, with a DECIMAL(38,2) sum. Additional cases exercise an updating JOIN
+on memory and native RocksDB state. One checkpointed source routes side-tagged changelogs
+to the two inputs. Duplicate hot-key rows, 13/14-KiB STRING payloads, DECIMAL(20,2) values,
+NULLs and an `l.amount < r.amount` residual cross checkpoints at offsets 6 and 12. A
+retract/update pair turns a nonmatching value into a match; later removals and duplicate
+insertions must leave exactly three joined rows, including one row with multiplicity two.
+
+Twelve append-only Top-N cases combine TIMESTAMP(9)/TIMESTAMP_LTZ(9), both backends and
+UTC/Asia/Shanghai/America/Los_Angeles. Negative-epoch nanoseconds, identical ordering keys,
+and both Los Angeles DST transitions cross the two restores at offsets 4 and 8. Rank numbers
+and casts between the two timestamp types have independently computed expected values,
+so timezone settings affect the checked output. Equal ordering keys have identical payloads;
+the fixture does not assume an ordering among distinguishable tied rows. These cases use
+physical row limit 5 and logical mini-batch size 3.
+
+Twelve one-second tumbling-window cases use TIMESTAMP(3)/TIMESTAMP_LTZ(3), both backends
+and the same three zones. Explicit source watermarks `-1001`, `999` and `3999` follow offsets
+4, 8 and 12. Windows close before each checkpoint while later windows retain state across
+restore. The five expected sums are `3, 8, 10, 24, 21`, with counts `2, 2, 2, 3, 2`; a final
+late row of value 99 arrives after the second restore, before the last watermark, and must
+not recreate a closed window or change those results. Both executions must emit the exact explicit
+watermark sequence and match the timezone-dependent window bounds.
+
+Eight window combinations execute natively. TIMESTAMP_LTZ under Asia/Shanghai or
+America/Los_Angeles retains the existing fixed-offset session-zone fallback, on both
+backends. Those four cases still execute the full value/type and repeated-recovery checks,
+require the specific fallback reason, and assert that the native window operator is absent.
+The evidence records expected routing independently of the comparison result.
+
+Ten Calc-before-GROUP-BY cases exercise INT-to-BIGINT boundary keys, STRING-to-DECIMAL(20,2)
+rounding, whitespace, NULLs, Unicode distinct values and retractions across two restores.
+The first two source rows are filtered out: the one-row Arrow variants therefore exercise
+Calc batches with no surviving rows. Malformed values on filtered rows must never affect
+the aggregate. Six cases run native Calc and aggregation with independent physical/logical
+batch sizes. Two relational STRING-filter variants retain the representation-sensitive
+ordering fallback and still verify the known recovered result.
+
+The remaining two Calc cases deliberately overflow an ordinary STRING-to-DECIMAL cast after
+the second restore. Both engines must raise `NumberFormatException` with the overflow
+diagnostic during row evaluation; these are expected failures, not successful empty-result
+comparisons. The report records the expected outcome separately from routing. Both restored
+offsets and zero active sources are asserted for the failing native executions as well.
+
+Four additional GROUP BY cases run in private local deployments with 4 MiB or 8 MiB of
+TaskManager task off-heap memory, on both state backends. A per-job setting submitted to
+the shared test cluster would not change that cluster's process budget, so the tests assert
+the executed pool capacity as well as the requested configuration. These cases retain the
+same long strings, two restores, five-row physical limit and three-row logical mini-batches.
+
+Every matrix case reuses the suite's native cleanup check after execution. It waits briefly
+for asynchronous cleanup and requires no live native handles, zero Arrow allocator bytes
+and zero task off-heap reservations; all three observations are recorded alongside source
+cleanup. The shared check now also enforces zero task reservations after other test cases.
+Both normal completion and the two expected decimal failures pass these checks. The check
+measures live ownership/reservations, not whether the native allocator returns pages to the OS.
+
+Four separate cancellation cases execute grouped SUM and COUNT DISTINCT on both engines and
+both state backends. The native jobs first restore the source at offset 32. All jobs then
+hold the source open after 96 rows until a checkpoint containing the full input completes;
+only then does the test cancel through the job client. It verifies terminal CANCELED status,
+zero active sources, and the same native ownership cleanup checks. Native cases also require
+a live native handle before cancellation. These are lifecycle checks, recorded with the
+`CANCELLATION_CLEANUP` outcome; they do not claim complete-result parity for cancelled jobs.
+Completed source offsets are included in the report.
+
+Each case independently checks materialized results against known answers, resolved result
+types, the required native operator plan, both restored offsets and failure injections, completed
+checkpoint evidence, and zero active sources after collection. Route assertions cannot
+prevent the result assertions from running. The shared recovery helper still supports the
+original 32-of-96-row portable audit with one restart in both engines.
+
+Run the cases and their helper regression suite with:
+
+```bash
+mvn -pl streamfusion-runtime -am test \
+  -Dtest=StatefulRecoveryMatrixTest,FlinkPortableSqlAuditTest \
+  -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+Add `-Pflink-1.18` for the other released dependency line. The matrix writes
+`streamfusion-runtime/target/sql-audit/stateful-recovery.json`, including configuration,
+result comparison, result types, native plan, fallback reasons and recovery observations,
+even when a validation assertion fails. CI retains this file with the existing portable SQL
+audit artifact. All 56 recovery cases (48 native successes, six explicit fallbacks and two expected native
+failures), four cancellation cases, four transpose-configuration tests and 38 portable-audit regressions pass on each
+of Flink 2.2.1 and 1.18.1 (102 tests per release).
+
+The required matrix runs each row below with memory and native RocksDB state, at parallelism
+1. Arrow row limits and Flink logical mini-batch sizes are independent:
+
+| Operator / keys | Arrow row limit / logical mini-batch rows (0 means disabled) |
+| --- | --- |
+| GROUP BY / INT | 1024/0, 1/0, 5/3, 64/3; extra 5/3 cases with 4 MiB and 8 MiB budgets |
+| GROUP BY / BIGINT | 1024/0 |
+| Updating JOIN / INT | 1024/0, 1/3, 5/0, 64/3 |
+| Top-N / INT, TIMESTAMP(9) or TIMESTAMP_LTZ(9) ordering | 5/3 in each of the three zones |
+| TUMBLE / TIMESTAMP(3) or TIMESTAMP_LTZ(3) event time | 5/0 in each zone; LTZ outside UTC expects fallback |
+| Calc → GROUP BY / INT-to-BIGINT keys | 1/0, 5/3, 64/3 native; 1/3 string fallback; 1/0 expected overflow failure |
+
+The job-scoped `streamfusion.transpose.batchRows` option controls physical row-to-Arrow
+batches. Post-exchange coalescing is disabled in these cases so it cannot recombine the
+selected boundaries. Logical mini-batch latency is one hour: count triggers and checkpoint
+flushes determine the tested bundles. A separate serialized-operator test checks actual
+emission sizes for limits 1, 5 and 64, including a partial batch flushed by a watermark.
+The default row limit remains 1024 for other jobs.
+
+The opt-in `stateful-recovery-stress` Maven profile adds 12 seeded GROUP BY cases. Each
+executes 8,704 changelog records: 4,096 insertions skewed toward a hot key, the same records
+retracted in a seeded shuffled order, and four rows recreating each of 128 groups. Inputs
+include long Unicode strings, duplicate/null DISTINCT values, null amounts and positive and
+negative DECIMAL(20,2) limits. A separately constructed final answer requires SUM 1.00 and
+two distinct strings for every recreated group.
+
+Seed 20260927 uses INT keys and a verified 16 MiB budget; seed 20260928 uses BIGINT keys and
+32 MiB. Both run on memory and native RocksDB with Arrow limits 1, 127 and 4096. Logical
+mini-batches are respectively 0/257/257 for the first seed and 257/0/0 for the second.
+Native execution restores three completed checkpoints at source offsets 4096, 6144 and
+8192, spanning populated state, partial retraction and complete group removal. Every case
+reuses the known-result, host/native type parity, route, restored-offset and ownership
+cleanup assertions, and records its seed, row count and configuration in the audit JSON.
+All 12 stress cases pass on each of released Flink 2.2.1 and 1.18.1. They are disabled in
+the required CI matrix and impose no timing assertions.
+
+Run just the stress cases with:
+
+```bash
+mvn -Pstateful-recovery-stress -pl streamfusion-runtime -am test \
+  '-Dtest=StatefulRecoveryMatrixTest#seededGroupedStress' \
+  -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+Add `-Pflink-1.18,stateful-recovery-stress` instead to select the other released line.
+`StatefulSqlRescaleTest` adds two GROUP BY rescale cases, one for each backend. An
+uninterrupted host run processes 768 deterministic changelog rows. Native jobs retain
+completed checkpoints at offsets 256 and 512 and restore them while changing parallelism
+1→3→2 (maximum 128), then process the remaining suffix. Across 128 INT-keyed groups,
+long duplicate strings and DECIMAL values cross both restores; suffix retractions remove
+the last prefix DISTINCT value, while NULL amounts and duplicate replacement strings remain.
+Known final sums/counts and resolved types must match the host.
+
+These cases reuse the existing checkpointed file sink and released-line checkpoint
+configuration helpers. Explicit transformation UIDs keep operator identities stable across
+all three deployments, and the source restores its recorded offset. Checkpoint metadata
+must contain nonempty native aggregate state for every subtask, with exactly that subtask's
+assigned key groups. Committed file output materializes the complete changelog across
+restores; it includes pre-checkpoint output and therefore detects loss or replay in both
+operator and sink state. Jobs wait for checkpoint completion before cancellation, and
+assert source/native ownership cleanup after every deployment. The separate
+`stateful-rescale.json` artifact records configuration, source recovery, operator IDs,
+key-group ranges, types, plans and cleanup. Failed cases retain configuration and the
+completed stages' evidence.
+
+Run these cases with `-Dtest=StatefulSqlRescaleTest` and either released Flink profile.
+Both cases pass on Flink 2.2.1 and 1.18.1. Together with the matrix, transpose configuration
+and portable SQL regressions, each release passes 104 tests; the opt-in stress method is skipped.
+The rescale cases cover this grouped-state workload with Arrow limit 5 and logical
+mini-batches of 3. JOIN, Top-N, window and Calc matrix cases still restore at fixed
+parallelism; these tests do not claim their rescaling coverage or cross-version state
+compatibility.
+
+Each matrix scenario now owns a local test cluster with Flink's retained in-memory metrics
+reporter, following the existing operator-metrics tests. The cluster lives through both
+reference and native executions so counters from completed, failed and restored attempts
+remain available until evidence is recorded. Requested task budgets configure that cluster;
+no per-job setting is assumed to resize a shared TaskManager.
+
+The reports record native operator names, job IDs, subtask/attempt identifiers and existing
+`numRecordsIn`/`numRecordsOut` counters. Every required native compute operator must have
+consumed rows; expected fallback cases must have no native operator metrics. Cancellation
+and rescale cases also require consumed-row evidence before cancellation. These checks run
+independently of value/type and route assertions. Counter observations belong to execution
+evidence, not configuration. Metrics retain per-attempt observations rather than claiming
+that their sum is a universally replay-free row total. Cleanup checks still run while the
+cluster is alive, before its metrics and other resources are closed. This reuses current
+Flink I/O accounting; broader accounting coverage remains tracked by #168.
+
+With metrics enabled, all 104 required checks and 12 opt-in stress cases pass on each
+released Flink line (116 total per release), including the portable SQL and transpose
+configuration regressions. Both execution-counter artifacts were inspected.

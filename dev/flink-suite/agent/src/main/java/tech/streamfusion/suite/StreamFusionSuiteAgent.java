@@ -89,6 +89,18 @@ public final class StreamFusionSuiteAgent {
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder.visit(Advice.to(RecordTranslation.class).on(named("translate"))))
+        .type(named("org.apache.flink.table.planner.delegation.DefaultExecutor"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(Advice.to(RecordSqlPipeline.class).on(named("createPipeline"))))
+        .type(named("org.apache.flink.streaming.api.graph.StreamGraphGenerator"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(Advice.to(RecordGeneratedPipeline.class).on(named("generate"))))
+        .type(named("org.apache.flink.runtime.jobmaster.JobResult"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(Advice.to(RecordJobResult.class).on(named("toJobExecutionResult"))))
         .type(named("org.apache.paimon.flink.FlinkTestBase"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -147,6 +159,7 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeAsyncLookupJoinOperator",
                 "tech.streamfusion.operator.NativeFilterOperator",
                 "tech.streamfusion.operator.NativeColumnarGroupAggregateOperator",
+                "tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator",
                 "tech.streamfusion.operator.NativeColumnarTopNOperator",
                 "tech.streamfusion.operator.NativeWindowOperatorCore",
@@ -154,7 +167,8 @@ public final class StreamFusionSuiteAgent {
         .transform(
             (builder, type, classLoader, module, protectionDomain) -> {
               builder = builder.visit(Advice.to(BindNativeExecution.class).on(named("open")));
-              if (type.getName().endsWith("NativeColumnarGroupAggregateOperator")) {
+              if (type.getName().endsWith("NativeColumnarGroupAggregateOperator")
+                  || type.getName().endsWith("NativeColumnarLocalGroupAggregateOperator")) {
                 return builder.visit(Advice.to(RecordNativeBatch.class).on(named("update")));
               }
               if (type.getName().endsWith("NativeColumnarTopNOperator")) {
@@ -200,6 +214,7 @@ public final class StreamFusionSuiteAgent {
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder
+                    .visit(Advice.to(RecordSubmittedJob.class).on(named("executeAsync")))
                     .visit(
                         Advice.to(InstallNativeRocksDB.class)
                             .on(named("configure").and(takesArguments(2))))
@@ -284,14 +299,39 @@ public final class StreamFusionSuiteAgent {
 
   public static final class RecordTranslation {
     @Advice.OnMethodEnter
-    static void enter(@Advice.This Object planner) {
-      SqlInventory.translating(planner);
+    static Object enter(@Advice.This Object planner) {
+      return SqlInventory.translating(planner);
     }
 
     @Advice.OnMethodExit(onThrowable = Throwable.class)
-    static void exit(@Advice.Thrown Throwable failure) {
+    static void exit(
+        @Advice.Enter Object token,
+        @Advice.Return Object outputs,
+        @Advice.Thrown Throwable failure) {
       SqlInventory.failed("translate", failure);
-      SqlInventory.translated();
+      SqlInventory.translated(token, outputs, failure);
+    }
+  }
+
+  public static final class RecordSqlPipeline {
+    @Advice.OnMethodExit
+    static void exit(@Advice.Argument(0) Object inputs, @Advice.Return Object graph) {
+      SqlInventory.pipeline(inputs, graph);
+    }
+  }
+
+  public static final class RecordGeneratedPipeline {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.FieldValue("transformations") Object inputs, @Advice.Return Object graph) {
+      SqlInventory.generatedPipeline(inputs, graph);
+    }
+  }
+
+  public static final class RecordJobResult {
+    @Advice.OnMethodEnter
+    static void enter(@Advice.This Object result) {
+      SqlInventory.jobResult(result);
     }
   }
 
@@ -299,6 +339,20 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodExit
     static void exit(@Advice.This Object scan, @Advice.Return Object roots) throws Exception {
       SqlInventory.plan(scan, roots);
+    }
+  }
+
+  public static final class RecordSubmittedJob {
+    @Advice.OnMethodEnter
+    static Object enter(@Advice.AllArguments Object[] arguments) {
+      return SqlInventory.submitting(arguments);
+    }
+
+    @Advice.OnMethodExit(onThrowable = Throwable.class)
+    static void exit(
+        @Advice.Enter Object scope, @Advice.Return Object client, @Advice.Thrown Throwable failure)
+        throws Exception {
+      SqlInventory.submitted(scope, client, failure);
     }
   }
 
@@ -484,6 +538,7 @@ public final class StreamFusionSuiteAgent {
           .getClass()
           .getName()
           .equals("org.apache.flink.table.planner.delegation.StreamPlanner")) {
+        SqlInventory.plannerCreated(context, planner);
         return;
       }
       try {
@@ -502,6 +557,7 @@ public final class StreamFusionSuiteAgent {
       } catch (ReflectiveOperationException e) {
         throw new IllegalStateException("StreamFusion complete-plan installation failed", e);
       }
+      SqlInventory.plannerCreated(context, planner);
     }
 
     @Advice.OnMethodEnter
