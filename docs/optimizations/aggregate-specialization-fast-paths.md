@@ -475,3 +475,35 @@ performance-blocked. Its reproduction explicitly sets `grouped.value.twoPhase=fa
 
 The direct-emission port passes 587 native tests (one ignored), 82 selected SQL cases on
 Flink 2.2.1, and 65 on Flink 1.18.1 (17 documented host skips).
+
+
+### Shared transpose follow-up
+
+With direct Arrow entry writes and reduced exit copies, a fresh release+mimalloc build
+on the same Linux/Core i7-12650H uses JDK 17, Flink 2.2.1, a 2 GiB heap, parallelism
+one, 2M rows, 64 groups, two warmups and five alternating trials. Both transposes and
+the row source/sink remain in the measured path. The two-phase mini-batch size is 1024;
+every seventh input is NULL. `DistinctAggregateBenchmark` uses precision 38 and scale 2.
+
+| Query | Stock Flink median (range), s | Native median (range), s | Flink/native |
+| --- | ---: | ---: | ---: |
+| COUNT/SUM DISTINCT | 1.380 (1.334–1.423) | 1.469 (1.445–1.506) | 0.939x |
+| AVG DISTINCT | 1.521 (1.465–1.584) | 1.567 (1.556–1.636) | 0.971x |
+
+Both wide-decimal cases still trail Flink and remain pending optimization. These
+measurements use an explicit 2 GiB heap; the historical measurements above are not
+a matched before/after control for attributing gains to this transpose change.
+
+A separate 20M-row diagnostic with async-profiler (`ctimer`, 1 ms, DWARF native
+stacks), one warmup and two measured trials collected 39,870 samples across both
+engines and startup. The native membership update was the deepest StreamFusion
+frame for 1,933 samples; decimal-order insertion accounted for 678, local updates
+702, and local flushes 583. Hash-table growth appeared in 570 leaf samples.
+Arrow batch deserialization, coalescing and serialization also contributed
+681, 614 and 572 deepest-StreamFusion-frame samples. These are profiling counts,
+not isolated runtime shares or unprofiled speedup measurements; membership
+allocation/growth and transport remain optimization targets.
+
+The combined decimal/ordered-value SQL and transpose ownership suite passes 111
+checks on Flink 2.2.1; Flink 1.18.1 passes 94 with 17 documented host-capability
+skips. No failures occur on either released line.
