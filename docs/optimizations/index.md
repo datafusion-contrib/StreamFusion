@@ -10,6 +10,11 @@ iterations, earlier steps are summarized as history within that page rather than
 their own — this ledger tracks what the code does today, not a commit-by-commit changelog (that's
 what `git log` is for).
 
+CI build reuse and runner scheduling are documented separately in the
+[upstream-suite guide](../upstream-flink-suite.md#shared-builds-and-runtime-shards): compiled Flink
+caching, shared build artifacts, grouped connector suites and combined coverage verification.
+Those measurements describe CI job counts and elapsed time, not SQL execution throughput.
+
 ## How these numbers are measured
 
 - **Benchmark-gated**: a change that doesn't move the numbers is rejected, not merged with an

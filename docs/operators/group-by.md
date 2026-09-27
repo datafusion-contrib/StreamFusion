@@ -79,6 +79,12 @@ with **integer division truncating toward zero**. This is a direct port of Flink
 the non-null count using Flink's exact decimal division — a 38-significant-digit quotient then
 **HALF_UP** rescale — reporting `DECIMAL(38, max(6, s))`, `findAvgAggType`'s result type.
 
+The DISTINCT map representations and benchmark method are described under
+[typed DISTINCT multiplicities](../optimizations/aggregate-specialization-fast-paths.md#typed-distinct-multiplicities).
+Integer, decimal and string key specialization preserves the existing scalar snapshot and
+persistent-element encoding, including exact decimal metadata and string bytes; it does not
+expand the DISTINCT admission gates.
+
 ### FIRST_VALUE, LAST_VALUE and SINGLE_VALUE
 
 The one-argument forms run natively in the single-phase plan over TINYINT, SMALLINT,
@@ -94,6 +100,15 @@ a retraction removes the oldest matching occurrence, including when values repea
 Arrow batches. Removing every contributing value yields NULL, and removing the last
 record deletes the group. Results depend on arrival order, so SQL parity fixtures use a
 controlled source rather than asserting equal results from independently reordered inputs.
+
+Ordered aggregate state now resides inline in the existing per-aggregate storage, avoiding a
+separate allocation for every group; dynamic strings and retraction queues remain accounted
+against the task memory budget. Checkpoint representation and aggregate semantics are unchanged.
+
+An immediate group with one unfiltered SINGLE_VALUE emits directly from its accumulator
+without a duplicate cached result or temporary tuple vector. A later touch reconstructs
+the preceding result from that accumulator. Filtered and mixed aggregates retain their cache;
+mini-batch emission and snapshot formats are unchanged.
 
 SINGLE_VALUE counts every element, including NULL. Zero elements yield NULL; one element
 yields that value. A second element raises Flink's `TableRuntimeException` with the same
@@ -414,10 +429,26 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
 | Two-phase TIME | 0.552 | 0.690 | 0.800x |
 | Two-phase BOOLEAN | 0.560 | 0.625 | 0.896x |
 
-Single-phase DATE and BOOLEAN are approximately tied with Flink on this workload; TIME and
-all two-phase cases are slower. These additions reuse the existing typed multiset and ordered
-value state to extend native pipeline coverage. They do not establish a standalone aggregate
-speedup; reducing per-row scalar materialization remains a separate optimization opportunity.
+This baseline predates single-destination exchange forwarding and typed running extrema.
+Insert-only DATE/TIME/BOOLEAN MIN/MAX now retains one typed extreme in both local and global
+state; retracting input retains counted state. At twenty million rows, single-phase native
+medians are 2.861/2.847/2.807 s versus Flink's 3.835/3.860/3.721 s. Two-phase native medians
+are 4.544/4.330/4.263 s versus Flink's 5.070/4.943/4.749 s. See the
+[optimization ledger](../optimizations/aggregate-specialization-fast-paths.md) for profiling,
+before/after measurements, trial ranges and checkpoint compatibility. This establishes MIN/MAX
+performance for the measured workloads; other aggregate functions need separate measurements.
+
+`GroupedValueBenchmark` accepts `-Dgrouped.value.types=TIME,BOOLEAN` for first/last and
+`-Dgrouped.value.single=true` for SINGLE_VALUE, which assigns each row its own key.
+The default first/last workload remains BIGINT/STRING; all these measurements use one phase.
+The [output allocation optimization](../optimizations/aggregate-specialization-fast-paths.md)
+removes a temporary tuple vector per emitted update. On the downstream integration branch,
+TIME/BOOLEAN first/last now beats Flink at twenty million rows and is approximately tied at
+two million. This branch independently measures two-million-row TIME/BOOLEAN first/last at
+0.573/0.551 s versus Flink 0.613/0.573 s after the shared transpose optimization.
+SINGLE_VALUE at 500,000 unique keys now measures 0.373/0.328 s for TIME/BOOLEAN versus
+Flink 0.402/0.363 s; independent repeats and one-million-row trials also beat the matched
+controls. The ledger records before/after controls, configurations, and trial ranges.
 
 ### Two-phase DISTINCT type coverage
 
@@ -449,13 +480,19 @@ both native aggregate stages and both row/Arrow transposes with a rowwise blackh
 Median elapsed time was **1.400 s for Flink and 4.563 s for native (0.307x)**. Native trials
 ranged from 4.449–4.625 s; Flink trials ranged from 1.379–1.526 s. This is a coverage extension
 using existing state and view handling; the standalone workload is substantially slower,
-and no performance improvement is claimed. The run precedes the separate typed-DISTINCT-map
-optimization in #246.
+and no performance improvement was established by that baseline. It predates typed maps,
+column readers and direct partial-view builders. The current implementation specializes BOOLEAN
+and full-range timestamp membership as well as the existing primitive maps, and caches the
+transpose timestamp layout. See the [optimization ledger](../optimizations/aggregate-specialization-fast-paths.md)
+for current comparisons and validation. With the same two-million-row workload and an explicit
+2 GiB heap, the optimized native median is **1.186 s versus Flink 1.416 s**. At twenty million
+rows, native is **11.199 s versus Flink 12.235 s**; both comparisons retain the row source/sink,
+transposes, and both aggregate stages.
 
 ```sh
 SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
   -Dtest=DistinctAggregateBenchmark -Ddistinct.rows=2000000 \
-  -Ddistinct.warmup=2 -Ddistinct.runs=5
+  -Ddistinct.warmup=2 -Ddistinct.runs=5 -Dsf.extraJvmArgs=-Xmx2g
 ```
 
 ### Single-phase DISTINCT averages
@@ -468,6 +505,9 @@ The new cases and existing grouped/count-distinct suites pass on both released F
 32 cases on 2.2.1; 31 passed and one host-capability skip on 1.18.1. Native checks cover raw
 sum/membership restoration, duplicate retractions, sticky decimal overflow, typed RocksDB
 checkpoint/reopen, and memory↔RocksDB canonical-partition migration.
+The current integrated branch passes 573 native tests (one ignored). Its focused DISTINCT SQL
+suites pass 54 cases on Flink 2.2.1 and 53 on Flink 1.18.1, with one documented host-capability
+skip on 1.18.
 
 The existing `DistinctAggregateBenchmark` accepts `-Ddistinct.average=true` to compare
 single-phase AVG DISTINCT over TINYINT, BIGINT and DECIMAL(20,2), retaining runtime rows,
@@ -482,10 +522,19 @@ Flink trials ranged from 6.346–6.591 s; native trials ranged from 2.769–2.96
 routes this unsupported AVG DISTINCT query entirely to Flink. These are workload-specific
 whole-job results, including the unchanged row/Arrow perimeter, and precede #246's typed maps.
 
+After integrating the typed-column DISTINCT path and shared transpose optimizations, the
+same 2M-row workload with an explicit 2 GiB heap measures **2.609 s native versus 6.574 s
+Flink (2.519x)**. Native trials range 2.596–2.633 s and Flink trials 6.554–6.616 s; all other
+configuration above is unchanged. The explicit heap setting makes this a fresh matched-resource
+comparison rather than a claimed isolated speedup over the earlier run.
+At 5M rows with the same configuration, native measures **6.399 s (6.354–6.508) versus
+Flink 16.267 s (16.054–16.322), 2.542x**. The native advantage persists as the input grows.
+
 ```sh
 SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
   -Dtest=DistinctAggregateBenchmark -Ddistinct.average=true \
-  -Ddistinct.rows=2000000 -Ddistinct.warmup=2 -Ddistinct.runs=5
+  -Ddistinct.rows=2000000 -Ddistinct.warmup=2 -Ddistinct.runs=5 \
+  -Dsf.extraJvmArgs=-Xmx2g
 ```
 
 ### Two-phase DISTINCT averages

@@ -6,7 +6,6 @@ import static tech.streamfusion.compat.FlinkTestSources.fromData;
 
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.function.Supplier;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -49,7 +48,7 @@ final class BuiltinFunctionParity {
     assertTrue(
         scan.operatorTypes().stream().anyMatch(name -> name.contains("Calc")),
         "No native Calc: " + scan.operatorTypes());
-    assertEquals(expected, actual, sql);
+    assertEquals(NativeParity.multiset(expected), NativeParity.multiset(actual), sql);
   }
 
   private static List<List<Object>> collect(TableEnvironment table, String sql) throws Exception {
@@ -64,7 +63,6 @@ final class BuiltinFunctionParity {
         rows.add(fields);
       }
     }
-    rows.sort(Comparator.comparing(Object::toString));
     return rows;
   }
 }
