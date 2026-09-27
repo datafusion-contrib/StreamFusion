@@ -233,6 +233,12 @@ public final class FlinkExpressionFunction extends ScalarFunction
     return evaluator.eval(input);
   }
 
+  /** Preserve materialized argument semantics without reflective varargs dispatch. */
+  public Object evalColumns(Object[][] columns, int row) throws Exception {
+    for (int i = 0; i < columns.length; i++) setArgument(i, columns[i][row]);
+    return evaluator.eval(input);
+  }
+
   /** Evaluate a borrowed Arrow row while its argument batch remains open. */
   public Object evalRow(RowData row) throws Exception {
     return evaluator.eval(row);

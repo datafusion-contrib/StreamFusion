@@ -22,8 +22,12 @@ cleanup continues through function-close exceptions and retains those failures f
 
 ## Direct generated-expression dispatch
 
-Known, final internal Flink expression evaluators receive a reusable Arrow-backed `RowData` view
-of the imported argument batch and invoke the same released Flink generated code. This avoids
+Known, final internal Flink expression evaluators without top-level string arguments receive a
+reusable Arrow-backed `RowData` view of the imported argument batch and invoke the same released
+Flink generated code. Generated expressions with string arguments retain typed column
+materialization and Java-backed `StringData`: Flink's UTF-16 comparison, string identity and
+empty-string trim behavior depend on this representation. They still call the generated
+evaluator directly, without reflective dispatch. The borrowed path avoids
 materializing `Object[][]` argument columns, repacking a generic row, reflective varargs packing,
 and `Method.invoke` on every row. The borrowed view remains inside the imported batch's lifetime;
 each result is written before advancing to the next row. Generic user functions retain their
@@ -102,3 +106,31 @@ the small control drift does not close the remaining native deficit. The source-
 control measured 0.660 s native versus 0.410 s stock in the final run. The unchanged benchmark's
 input alternates canonical timestamp strings; other timestamp spellings and NULL/error behavior
 are covered by parity tests, not by this performance measurement.
+
+
+### String representation regression fix
+
+Full Java CI exposed representation-sensitive regressions when generated string
+callbacks borrowed Arrow rows: supplementary Unicode extrema compared UTF-8 bytes
+instead of Java UTF-16, constant-folded JSON string identity changed, and dynamic
+trim with an empty string could divide by zero in Flink's byte access. String
+arguments now use the original typed materialization and Java-backed `StringData`
+while retaining direct generated dispatch. Non-string arguments can still borrow
+Arrow rows. Existing extrema, JSON identity and trim SQL tests cover these cases.
+
+With this correction, canonical timestamp TRY_CAST remains faster than Flink.
+Release+mimalloc, JDK 17/Flink 2.2.1, Core i7-12650H, 2M rows, parallelism one,
+2 GiB heap, two warmups and five alternating trials, row source/sink and both
+transposes give:
+
+| Query | Flink median (range), s | Native median (range), s | Flink/native |
+| --- | ---: | ---: | ---: |
+| STRING to TIMESTAMP(9) | 3.406 (3.392–3.434) | 0.632 (0.625–0.643) | 5.386x |
+| STRING to TIMESTAMP_LTZ(9) | 3.500 (3.457–3.538) | 0.656 (0.652–0.667) | 5.336x |
+| String identity control | 0.407 (0.393–0.430) | 0.482 (0.465–0.510) | 0.846x |
+
+These results supersede the borrowed-string input measurements for this fixture;
+they do not establish a win for every generated string callback.
+
+The focused regression suite passes all 109 checks on Flink 2.2.1 and 93 on
+Flink 1.18.1, with 16 documented host-capability skips and no failures.

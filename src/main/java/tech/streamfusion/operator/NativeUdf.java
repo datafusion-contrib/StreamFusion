@@ -419,10 +419,11 @@ public final class NativeUdf {
                 : null;
         var rowResult =
             rowWriter == null ? null : new org.apache.flink.table.data.GenericRowData(1);
-        // Generated evaluators accept a borrowed Arrow row. Reflective UDFs retain their typed
-        // column loops: per-value vector dispatch previously cost 14% of q21's parity run.
+        // Generated string arguments retain Java-backed StringData semantics, including UTF-16
+        // comparison and identity. Other generated arguments can borrow the imported Arrow row.
         tech.streamfusion.arrow.ArrowReader generatedReader =
-            udf.generated == null ? null
+            udf.generated == null || Arrays.stream(udf.argTypes).anyMatch(type -> type == TYPE_STRING)
+                ? null
                 : tech.streamfusion.arrow.ArrowConversion.createArrowReader(
                     in, org.apache.flink.table.types.logical.RowType.of(udf.generated.argumentTypes()));
         Object[][] columns = generatedReader == null ? new Object[arity][] : null;
@@ -461,7 +462,9 @@ public final class NativeUdf {
           Object value;
           if (udf.generated != null) {
             try {
-              value = udf.generated.evalRow(generatedReader.read(row));
+              value = generatedReader == null
+                  ? udf.generated.evalColumns(columns, row)
+                  : udf.generated.evalRow(generatedReader.read(row));
             } catch (Throwable failure) {
               // Use the same exception handover as reflective calls, including checked failures.
               throw new InvocationTargetException(failure);
