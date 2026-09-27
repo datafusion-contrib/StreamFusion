@@ -109,6 +109,11 @@ are ignored, and filtered instances have independent membership. Checkpoints ret
 order and multiplicities. These DISTINCT forms require zero state retention because
 Flink's separate membership/order maps can expire independently.
 
+Ordered aggregate state now resides inline in the existing per-aggregate storage, avoiding a
+separate allocation for every group; dynamic strings and retraction queues remain accounted
+against the task memory budget. Checkpoint representation and aggregate semantics are unchanged.
+
+
 SINGLE_VALUE counts every element, including NULL. Zero elements yield NULL; one element
 yields that value. A second element raises Flink's `TableRuntimeException` with the same
 cardinality diagnostic. Retraction clears the retained value and decrements the count;

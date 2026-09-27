@@ -3072,32 +3072,34 @@ fn session_state_partitions_and_restores_by_flink_key_group() {
 
 #[test]
 fn group_state_over_budget_fails_and_deletes_release() {
-    // A generous budget: inserts fit, and retracting every record shrinks the tracking to zero.
-    let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true)
-        .with_memory_budget(1 << 20)
+    for kind in [0, 14, 15, 16] {
+        // A generous budget: inserts fit, and retracting every record shrinks the tracking to zero.
+        let mut agg = GroupAggregator::new(vec![kind], vec![0], vec![1], vec![0], true)
+            .with_memory_budget(1 << 20)
+            .unwrap();
+        agg.update(
+            &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![0, 0]),
+            0,
+        )
         .unwrap();
-    agg.update(
-        &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![0, 0]),
-        0,
-    )
-    .unwrap();
-    assert!(agg.memory.state_bytes > 0);
-    agg.update(
-        &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![3, 3]),
-        0,
-    )
-    .unwrap();
-    assert_eq!(agg.memory.state_bytes, 0); // both groups deleted -> fully released
+        assert!(agg.memory.state_bytes > 0);
+        agg.update(
+            &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![3, 3]),
+            0,
+        )
+        .unwrap();
+        assert_eq!(agg.memory.state_bytes, 0); // both groups deleted -> fully released
 
-    let mut tight = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true)
-        .with_memory_budget(128)
-        .unwrap();
-    let keys: Vec<i64> = (0..100).collect();
-    let values: Vec<Option<i64>> = keys.iter().map(|&k| Some(k)).collect();
-    let err = tight
-        .update(&group_changelog(keys, values, vec![0; 100]), 0)
-        .unwrap_err();
-    assert!(err.to_string().contains("task off-heap"), "{err}");
+        let mut tight = GroupAggregator::new(vec![kind], vec![0], vec![1], vec![0], true)
+            .with_memory_budget(128)
+            .unwrap();
+        let keys: Vec<i64> = (0..100).collect();
+        let values: Vec<Option<i64>> = keys.iter().map(|&k| Some(k)).collect();
+        let err = tight
+            .update(&group_changelog(keys, values, vec![0; 100]), 0)
+            .unwrap_err();
+        assert!(err.to_string().contains("task off-heap"), "{err}");
+    }
 }
 
 #[test]
