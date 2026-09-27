@@ -234,6 +234,8 @@ audit retain these observations separately from JUnit outcomes and native work. 
 snapshots attach the stream graph's job type, node names, parallelism, operator factories and
 declared operator classes to that job ID. Reflection failures remain explicit observations.
 These snapshots describe the submitted graph, not proof that each node processed records.
+For Flink's generated operator factories, the observer reads the generated class name directly;
+it does not request class loading, which would trigger source compilation during observation.
 
 Native callbacks with a Flink job metric ID accumulate under that job, including callbacks
 that arrive before submission returns its client. At invocation completion, matching jobs

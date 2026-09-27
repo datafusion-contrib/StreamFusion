@@ -89,13 +89,7 @@ public final class SqlInventory {
           if (factory != null) {
             entry.put("factory", factory.getClass().getName());
             try {
-              Method type =
-                  factory.getClass().getMethod("getStreamOperatorClass", ClassLoader.class);
-              type.setAccessible(true);
-              entry.put(
-                  "operator_class",
-                  ((Class<?>) type.invoke(factory, Thread.currentThread().getContextClassLoader()))
-                      .getName());
+              entry.put("operator_class", operatorClass(factory));
             } catch (ReflectiveOperationException | RuntimeException unavailable) {
               entry.put("operator_class_error", unavailable.toString());
             }
@@ -112,6 +106,19 @@ public final class SqlInventory {
   }
 
   private record Submission(Scope owner, Map<String, Object> graph) {}
+
+  static String operatorClass(Object factory) throws ReflectiveOperationException {
+    if (factory
+        .getClass()
+        .getName()
+        .equals("org.apache.flink.table.runtime.operators.CodeGenOperatorFactory")) {
+      return call(call(factory, "getGeneratedClass"), "getClassName").toString();
+    }
+    Method type = factory.getClass().getMethod("getStreamOperatorClass", ClassLoader.class);
+    type.setAccessible(true);
+    return ((Class<?>) type.invoke(factory, Thread.currentThread().getContextClassLoader()))
+        .getName();
+  }
 
   public static synchronized void submitted(Object token, Object client, Throwable failure)
       throws Exception {

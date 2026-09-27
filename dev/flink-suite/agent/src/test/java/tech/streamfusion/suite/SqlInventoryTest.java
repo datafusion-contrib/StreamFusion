@@ -239,6 +239,19 @@ class SqlInventoryTest {
   }
 
   @Test
+  void readsGeneratedOperatorIdentityWithoutCompilingItsSource() throws Exception {
+    var generated =
+        new org.apache.flink.table.runtime.generated.GeneratedOperator<
+            org.apache.flink.streaming.api.operators.StreamOperator<Integer>>(
+            "GeneratedCalc",
+            "not valid Java: compilation must not run",
+            new Object[0],
+            new org.apache.flink.configuration.Configuration());
+    var factory = new org.apache.flink.table.runtime.operators.CodeGenOperatorFactory<>(generated);
+    assertTrue(SqlInventory.operatorClass(factory).equals("GeneratedCalc"));
+  }
+
+  @Test
   void attachesReleasedFlinkGraphToItsSubmittedJob() throws Exception {
     System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
     try {
