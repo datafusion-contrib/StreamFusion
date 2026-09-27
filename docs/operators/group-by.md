@@ -477,7 +477,13 @@ through JNI for matching binary-key hashes. The retained bucket allocation remai
 between bundles. Shuffled runtime-source probes pass with this integration; ordering values
 inside each group's membership map alone was insufficient. The shared ordering core matches
 18 released-host binary-group fixtures, including bucket collision trees, resize splits and
-clear/reuse. Final admission and benchmark validation remain in progress. Distinct binary keys with identical full hashes introduce
+clear/reuse. With positive retention, the wide-decimal global stage retains and accounts
+for incoming Arrow batches until flush, then reads and refreshes durable state using the
+flush clock, matching Flink's temporary-bundle merge. Recovery regressions cover buffered
+SUM, AVG and COUNT together through raw snapshots, canonical migration and RocksDB reopen.
+Operator tests on both released Flink lines verify flush-time expiry and refresh across a
+checkpoint with memory and direct RocksDB state.
+Final admission and benchmark validation remain in progress. Distinct binary keys with identical full hashes introduce
 JVM identity-based ordering: overflow-sensitive stock Flink jobs can then return different final
 SUMs for identical input. Tests for that case check valid host outcomes; deterministic cases
 continue to require exact parity. The planner gate is unchanged.

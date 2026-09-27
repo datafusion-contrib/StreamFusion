@@ -1525,6 +1525,11 @@ pub(crate) struct GroupAggregator<S: KeyedStateStore<GroupKeyState> = MemoryGrou
     staged_key_batches: Vec<RecordBatch>,
     staged_bytes: usize,
     decimal_views: HashMap<ByteKey, Vec<Option<DecimalViewBuffer>>>,
+    deferred_batches: Vec<(RecordBatch, usize)>,
+    deferred_keys: HashMap<ByteKey, ()>,
+    deferred_bytes: usize,
+    draining_deferred: bool,
+    last_input_ms: i64,
     pub(crate) memory: OperatorMemory,
 }
 
@@ -1624,6 +1629,11 @@ impl GroupAggregator {
             staged_key_batches: Vec::new(),
             staged_bytes: 0,
             decimal_views: HashMap::default(),
+            deferred_batches: Vec::new(),
+            deferred_keys: HashMap::default(),
+            deferred_bytes: 0,
+            draining_deferred: false,
+            last_input_ms: 0,
             filter_columns,
             count_columns,
             distinct_view_columns,
@@ -1676,6 +1686,11 @@ impl GroupAggregator {
             staged_key_batches: self.staged_key_batches,
             staged_bytes: self.staged_bytes,
             decimal_views: self.decimal_views,
+            deferred_batches: self.deferred_batches,
+            deferred_keys: self.deferred_keys,
+            deferred_bytes: self.deferred_bytes,
+            draining_deferred: self.draining_deferred,
+            last_input_ms: self.last_input_ms,
             memory: self.memory,
         }
     }
@@ -1688,7 +1703,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     }
 
     pub(crate) fn staged_keys(&self) -> usize {
-        self.staged_order.len()
+        self.staged_order.len() + self.deferred_keys.len()
     }
 
     /// The backing store, for backend-specific control paths (checkpointing a persistent store).
@@ -1707,7 +1722,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     }
 
     pub(crate) fn staging_bytes(&self) -> usize {
-        self.staged_bytes
+        self.staged_bytes + self.deferred_bytes
     }
 
     pub(crate) fn with_key_timestamp_precisions(
@@ -1810,6 +1825,38 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         self.snapshot_cache = None;
+        self.last_input_ms = now_ms;
+        if self.mini_batch
+            && self.ttl_ms > 0
+            && !self.draining_deferred
+            && self.kinds.iter().enumerate().any(|(i, kind)| {
+                matches!(kind, 9 | 17)
+                    && self.distinct_view_columns[i] >= 0
+                    && matches!(self.value_types[i], DataType::Decimal128(p, _) if p > 19)
+            })
+        {
+            // The host reads retained global state only when its temporary bundle is merged.
+            let mut added = batch.get_array_memory_size() + std::mem::size_of::<RecordBatch>();
+            let mut encoder = BinaryRowBatchEncoder::new(
+                batch,
+                &self.key_columns,
+                &self.key_timestamp_precisions,
+            );
+            for row in 0..batch.num_rows() {
+                let key = encoder.encode(row);
+                if !self.deferred_keys.contains_key(key) {
+                    added += byte_key_bytes(key);
+                    self.deferred_keys.insert(ByteKey::from(key), ());
+                }
+            }
+            self.deferred_bytes += added;
+            self.deferred_batches.push((batch.clone(), added));
+            if self.memory.tracking() {
+                self.memory.record(added as isize);
+            }
+            self.memory.account()?;
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
+        }
         let ttl = StateTtl::new(self.ttl_ms, now_ms);
         // The sweep reclaims groups no later row ever touches. Once per TTL period bounds its
         // amortized cost at one map walk per period; it must not run mid-bundle, where removing a
@@ -2391,6 +2438,39 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     /// current logical mini-batch. Key columns are gathered directly from retained Arrow inputs;
     /// only one row per emitted transition is copied into the compact output.
     pub(crate) fn flush_mini_batch(&mut self) -> Result<RecordBatch, DataFusionError> {
+        self.flush_mini_batch_at(self.last_input_ms)
+    }
+
+    pub(crate) fn flush_mini_batch_at(
+        &mut self,
+        now_ms: i64,
+    ) -> Result<RecordBatch, DataFusionError> {
+        let batches = std::mem::take(&mut self.deferred_batches);
+        self.deferred_keys = HashMap::default();
+        self.draining_deferred = true;
+        let result = (|| {
+            for (batch, bytes) in batches {
+                let result = self.update(&batch, now_ms);
+                drop(batch);
+                self.deferred_bytes -= bytes;
+                if self.memory.tracking() {
+                    self.memory.forget(bytes);
+                }
+                result?;
+                self.memory.account_shrink();
+            }
+            Ok::<(), DataFusionError>(())
+        })();
+        self.draining_deferred = false;
+        if self.memory.tracking() {
+            self.memory.forget(self.deferred_bytes);
+        }
+        self.deferred_bytes = 0;
+        result?;
+        self.finish_mini_batch()
+    }
+
+    fn finish_mini_batch(&mut self) -> Result<RecordBatch, DataFusionError> {
         if !self.mini_batch || self.staged_order.is_empty() {
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
@@ -3816,12 +3896,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushGroupAggregator<'local
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
+    now_millis: jlong,
     out_array_address: jlong,
     out_schema_address: jlong,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
         let aggregator = unsafe { &mut *(handle as *mut GroupAggregator) };
-        match aggregator.flush_mini_batch() {
+        match aggregator.flush_mini_batch_at(now_millis) {
             Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
             Err(e) => throw_memory_limit(&mut env, &e.to_string()),
         }

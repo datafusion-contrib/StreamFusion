@@ -1,6 +1,58 @@
 use super::*;
 
 #[test]
+fn wide_distinct_retention_reads_state_at_flush_and_refreshes_at_flush() {
+    let mut local = LocalGroupAggregator::new(
+        vec![9, 18, 7],
+        vec![5800; 3],
+        vec![1; 3],
+        vec![],
+        vec![0],
+        vec![0, 1, 2],
+    );
+    let mut global =
+        GroupAggregator::new(vec![9, 17, 7], vec![5800; 3], vec![1, 2, 3], vec![0], true)
+            .with_distinct_view_columns(vec![4, 5, 6])
+            .with_mini_batch()
+            .with_state_ttl(100)
+            .with_memory_budget(1 << 20)
+            .unwrap();
+    for (arrivals, flush, sum, count, kinds) in [
+        (vec![(1, 0)], 10, 1, 1, vec![0]),
+        (vec![(2, 90)], 120, 2, 1, vec![0]),
+        (vec![(2, 200)], 215, 2, 1, vec![1, 2]),
+        (vec![(2, 300), (3, 320)], 340, 5, 2, vec![0]),
+    ] {
+        for (value, arrival) in arrivals {
+            local
+                .update(&group_scalar_changelog(
+                    vec![ScalarValue::Decimal128(Some(value), 38, 0)],
+                    vec![0],
+                ))
+                .unwrap();
+            assert_eq!(
+                global.update(&local.flush(), arrival).unwrap().num_rows(),
+                0
+            );
+        }
+        assert_eq!(global.staged_keys(), 1);
+        assert!(global.staging_bytes() > 0);
+        let output = global.flush_mini_batch_at(flush).unwrap();
+        assert_eq!(
+            row_kind_column(&output).unwrap().values().as_ref(),
+            kinds.as_slice()
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(output.column(1), output.num_rows() - 1).unwrap(),
+            ScalarValue::Decimal128(Some(sum), 38, 0)
+        );
+        assert_eq!(*values(&output, 3).last().unwrap(), count);
+        assert_eq!(global.staged_keys(), 0);
+        assert_eq!(global.staging_bytes(), 0);
+    }
+}
+
+#[test]
 fn wide_decimal_local_emission_matches_binary_group_order_across_flushes() {
     let fixtures: serde_json::Value = serde_json::from_str(include_str!(
         "../../../src/test/resources/group-map-order.json"
@@ -8969,6 +9021,178 @@ mod rocksdb_group_multisets {
                 assert_eq!(rocks.update(&batch, 0).unwrap(), expected);
                 assert_eq!(exported.update(&batch, 0).unwrap(), expected);
             }
+        }
+    }
+
+    #[test]
+    fn buffered_wide_distinct_retention_uses_rocks_flush_clock() {
+        let make = || {
+            GroupAggregator::new(vec![9, 17, 7], vec![5800; 3], vec![1, 2, 3], vec![0], true)
+                .with_distinct_view_columns(vec![4, 5, 6])
+                .with_mini_batch()
+                .with_state_ttl(100)
+        };
+        let codec = GroupStateCodec::new(
+            vec![9, 17, 7],
+            vec![DataType::Decimal128(38, 0); 3],
+            vec![1, 2, 3],
+            vec![4, 5, 6],
+        );
+        let store = RocksGroupStore::create(store_config("wide-retention", 100), codec).unwrap();
+        let mut rocks = make().with_backend(store);
+        let mut memory = make();
+        let mut local = LocalGroupAggregator::new(
+            vec![9, 18, 7],
+            vec![5800; 3],
+            vec![1; 3],
+            vec![],
+            vec![0],
+            vec![0, 1, 2],
+        );
+        for (arrivals, flush, kinds) in [
+            (vec![(1, 0)], 10, vec![0]),
+            (vec![(2, 90)], 120, vec![0]),
+            (vec![(2, 200)], 215, vec![1, 2]),
+            (vec![(2, 300), (3, 320)], 340, vec![0]),
+        ] {
+            for (value, arrival) in arrivals {
+                local
+                    .update(&group_scalar_changelog(
+                        vec![ScalarValue::Decimal128(Some(value), 38, 0)],
+                        vec![0],
+                    ))
+                    .unwrap();
+                let partial = local.flush();
+                rocks.store_mut().set_clock(arrival);
+                rocks.update(&partial, arrival).unwrap();
+                memory.update(&partial, arrival).unwrap();
+            }
+            rocks.store_mut().set_clock(flush);
+            let actual = rocks.flush_mini_batch_at(flush).unwrap();
+            assert_eq!(actual, memory.flush_mini_batch_at(flush).unwrap());
+            assert_eq!(
+                row_kind_column(&actual).unwrap().values().as_ref(),
+                kinds.as_slice()
+            );
+            assert_eq!(rocks.staging_bytes(), 0);
+        }
+    }
+
+    #[test]
+    fn buffered_wide_distinct_views_survive_rocks_and_raw_checkpoints() {
+        let kinds = vec![9, 17, 7];
+        let types = vec![5800; 3];
+        let columns = vec![1, 2, 3];
+        let views = vec![4, 5, 6];
+        let make = || {
+            GroupAggregator::new(kinds.clone(), types.clone(), columns.clone(), vec![0], true)
+                .with_distinct_view_columns(views.clone())
+                .with_mini_batch()
+        };
+        let codec = || {
+            GroupStateCodec::new(
+                kinds.clone(),
+                vec![DataType::Decimal128(38, 0); 3],
+                columns.clone(),
+                views.clone(),
+            )
+        };
+        let mut local = LocalGroupAggregator::new(
+            vec![9, 18, 7],
+            types.clone(),
+            vec![1; 3],
+            vec![],
+            vec![0],
+            vec![0, 1, 2],
+        );
+        let mut memory = make();
+        let store = RocksGroupStore::create(store_config("wide-buffer", 0), codec()).unwrap();
+        let mut rocks = make().with_backend(store);
+        let large = 9 * 10i128.pow(37);
+        for value in [Some(large), Some(-large), Some(large - 3), None] {
+            local
+                .update(&group_scalar_changelog(
+                    vec![ScalarValue::Decimal128(value, 38, 0)],
+                    vec![0],
+                ))
+                .unwrap();
+            let partial = local.flush();
+            assert_eq!(memory.update(&partial, 0).unwrap().num_rows(), 0);
+            assert_eq!(rocks.update(&partial, 0).unwrap().num_rows(), 0);
+        }
+        let expected = memory.flush_mini_batch().unwrap();
+        assert_eq!(rocks.flush_mini_batch().unwrap(), expected);
+        assert_eq!(
+            ScalarValue::try_from_array(expected.column(1), 0).unwrap(),
+            ScalarValue::Decimal128(Some(-large), 38, 0)
+        );
+        assert!(expected.column(2).is_null(0));
+        assert_eq!(values(&expected, 3), vec![3]);
+        let raw = memory
+            .snapshot_partitions(128, &[-1])
+            .into_values()
+            .collect::<Vec<_>>();
+        let snapshot = snapshot_dir("wide-buffer");
+        let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+        drop(rocks);
+        let store = RocksGroupStore::open_merged(
+            store_config("wide-buffer-reopen", 0),
+            codec(),
+            &[(snapshot, manifest.snapshot_id)],
+            0..=127,
+            true,
+            0,
+        )
+        .unwrap();
+        let mut rocks = make().with_backend(store);
+        let canonical = rocks
+            .canonical_partitions()
+            .unwrap()
+            .into_values()
+            .collect::<Vec<_>>();
+        let restore = |snapshots: &[Vec<u8>]| {
+            GroupAggregator::restore_partitions(
+                kinds.clone(),
+                types.clone(),
+                columns.clone(),
+                vec![0],
+                true,
+                snapshots,
+                0,
+            )
+            .with_distinct_view_columns(views.clone())
+            .with_mini_batch()
+        };
+        let mut from_raw = restore(&raw);
+        let mut from_canonical = restore(&canonical);
+        let store =
+            RocksGroupStore::create(store_config("wide-buffer-import", 0), codec()).unwrap();
+        let mut imported = make().with_backend(store);
+        imported.import_partitions(&raw, 0).unwrap();
+        for bundle in [
+            vec![Some(large), Some(7)],
+            vec![None, Some(large), Some(7)],
+            vec![Some(-large), Some(9)],
+        ] {
+            for value in bundle {
+                local
+                    .update(&group_scalar_changelog(
+                        vec![ScalarValue::Decimal128(value, 38, 0)],
+                        vec![0],
+                    ))
+                    .unwrap();
+                let partial = local.flush();
+                memory.update(&partial, 0).unwrap();
+                rocks.update(&partial, 0).unwrap();
+                from_raw.update(&partial, 0).unwrap();
+                from_canonical.update(&partial, 0).unwrap();
+                imported.update(&partial, 0).unwrap();
+            }
+            let expected = memory.flush_mini_batch().unwrap();
+            assert_eq!(rocks.flush_mini_batch().unwrap(), expected);
+            assert_eq!(from_raw.flush_mini_batch().unwrap(), expected);
+            assert_eq!(from_canonical.flush_mini_batch().unwrap(), expected);
+            assert_eq!(imported.flush_mini_batch().unwrap(), expected);
         }
     }
 
