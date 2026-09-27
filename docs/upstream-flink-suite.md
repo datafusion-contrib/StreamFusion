@@ -200,6 +200,20 @@ counts: parameterized XML cases and witness files share method-level totals but 
 common invocation identifier, so the artifact does not invent one-to-one matches. A satisfied
 individual record cannot override stale/duplicate evidence or a failed overall summary.
 
+When SQL inventory collection is enabled, raw invocation JSON now also contains `native_work`:
+nonempty row counts from the existing instrumented operator callbacks, including invocations
+without an explicit execution contract. Opening an operator or observing an empty batch earns
+no work. Bindings are removed when the invocation finishes, so later callbacks from an already
+bound operator cannot credit a subsequent test. This retains the suite's serial-invocation
+requirement and existing instrumented-operator coverage; an empty map is not proof of fallback.
+
+The inventory's `execution_contracts` entries link each written witness filename (`record_id`)
+and its test/fixture selector to the inventory's exact invocation UUID. The legacy four-field
+TSV format remains unchanged. Joining these links into `execution-audit.json`, classifying all
+observed routes and enforcing completeness across declared scopes remain part of #168; the
+current published inventory remains a planning/admission report. Agent tests verify these new
+collection and linkage paths with synthetic callbacks, not additional upstream SQL coverage.
+
 Outside the declared contracts, passing cases remain unclassified. The artifact does not infer
 batch-only, deliberately unmodified, scan-only or host-failure routes from class names or JUnit
 outcomes. Those classifications and broader per-invocation collection remain

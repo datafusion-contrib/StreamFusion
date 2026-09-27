@@ -47,6 +47,92 @@ class SqlInventoryTest {
     }
   }
 
+  @Test
+  void collectsUncontractedWorkWithoutCreditingOpeningOrLateCallbacks() throws Exception {
+    System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
+    Identifier identifier = new Identifier();
+    Object operator = new NativeCalcOperator();
+    try {
+      SqlInventory.started(identifier);
+      NativeExecution.opened(operator);
+      org.junit.jupiter.api.Assertions.assertEquals(
+          7, NativeExecution.batchRows(operator, new Batch()));
+      NativeExecution.completed(operator, 0);
+      Thread task = new Thread(() -> NativeExecution.completed(operator, 7));
+      task.start();
+      task.join();
+      SqlInventory.finished(identifier, new Result());
+      SqlInventory.started(identifier);
+      NativeExecution.completed(operator, 99);
+      NativeExecution.completed(new NativeCalcOperator(), 99);
+      NativeExecution.opened(new NativeCalcOperator());
+      org.junit.jupiter.api.Assertions.assertEquals(
+          0, NativeExecution.batchRows(operator, new Batch()));
+      SqlInventory.finished(identifier, new Result());
+      try (var paths = Files.list(directory)) {
+        var reports =
+            paths
+                .map(
+                    path -> {
+                      try {
+                        return Files.readString(path);
+                      } catch (java.io.IOException failure) {
+                        throw new java.io.UncheckedIOException(failure);
+                      }
+                    })
+                .toList();
+        org.junit.jupiter.api.Assertions.assertEquals(2, reports.size());
+        assertTrue(
+            reports.stream()
+                .anyMatch(json -> json.contains("\"native_work\":{\"NativeCalcOperator\":7}")));
+        assertTrue(reports.stream().anyMatch(json -> json.contains("\"native_work\":{}")));
+      }
+    } finally {
+      System.clearProperty("streamfusion.flink-suite.sql-inventory");
+    }
+  }
+
+  @Test
+  void linksContractWitnessToExactInventoryInvocation() throws Exception {
+    Path witnesses = directory.resolve("witnesses");
+    Path inventory = directory.resolve("inventory");
+    System.setProperty("streamfusion.flink-suite.sql-inventory", inventory.toString());
+    System.setProperty("streamfusion.flink-suite.native-reports", witnesses.toString());
+    try {
+      var identifier = new Identifier();
+      SqlInventory.started(identifier);
+      var scope =
+          NativeExecution.begin(
+              "org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testLongProjectionList",
+              new Object());
+      Object operator = new NativeCalcOperator();
+      NativeExecution.opened(operator);
+      NativeExecution.completed(operator, 7);
+      NativeExecution.finish(scope);
+      SqlInventory.finished(identifier, new Result());
+      try (var files = Files.list(witnesses);
+          var records = Files.list(inventory)) {
+        String witness =
+            files.findFirst().orElseThrow().getFileName().toString().replace(".tsv", "");
+        String json = Files.readString(records.findFirst().orElseThrow());
+        assertTrue(json.contains("\"record_id\":\"" + witness + "\""));
+        assertTrue(json.contains("\"native_work\":{\"NativeCalcOperator\":7}"));
+        assertTrue(json.contains("\"variant\":\"*\""));
+      }
+    } finally {
+      System.clearProperty("streamfusion.flink-suite.sql-inventory");
+      System.clearProperty("streamfusion.flink-suite.native-reports");
+    }
+  }
+
+  public static class NativeCalcOperator {}
+
+  public static class Batch {
+    public int getRowCount() {
+      return 7;
+    }
+  }
+
   public static class Identifier {
     public boolean isTest() {
       return true;

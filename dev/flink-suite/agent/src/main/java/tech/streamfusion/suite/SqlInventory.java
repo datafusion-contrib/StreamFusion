@@ -16,6 +16,7 @@ import java.util.UUID;
 public final class SqlInventory {
   public static final String MARKER = "StreamFusion SQL inventory: ";
   private static Scope active;
+  private static final Map<Object, Scope> OPERATORS = new java.util.WeakHashMap<>();
 
   private SqlInventory() {}
 
@@ -36,6 +37,8 @@ public final class SqlInventory {
     active.data.put("sql", active.sql);
     active.data.put("translations", active.translations);
     active.data.put("operation_failures", active.failures);
+    active.data.put("native_work", active.nativeWork);
+    active.data.put("execution_contracts", active.contracts);
     System.out.println(MARKER + active.id);
   }
 
@@ -50,7 +53,26 @@ public final class SqlInventory {
     Files.writeString(
         directory().resolve(active.id + ".json"), json(active.data) + "\n", StandardCharsets.UTF_8);
     System.out.println(MARKER + active.id);
+    OPERATORS.values().removeIf(scope -> scope == active);
     active = null;
+  }
+
+  public static synchronized void opened(Object operator) {
+    if (active != null) OPERATORS.putIfAbsent(operator, active);
+  }
+
+  public static synchronized boolean tracked(Object operator) {
+    return active != null && OPERATORS.get(operator) == active;
+  }
+
+  public static synchronized void completed(Object operator, int rows) {
+    if (rows > 0 && tracked(operator))
+      active.nativeWork.merge(operator.getClass().getSimpleName(), (long) rows, Long::sum);
+  }
+
+  public static synchronized void contract(String recordId, String test, String variant) {
+    if (active != null)
+      active.contracts.add(Map.of("record_id", recordId, "test", test, "variant", variant));
   }
 
   public static synchronized void planner(Object context, boolean unmodified) throws Exception {
@@ -205,6 +227,8 @@ public final class SqlInventory {
     final List<Object> sql = new ArrayList<>();
     final List<String> translations = new ArrayList<>();
     final List<Object> failures = new ArrayList<>();
+    final Map<String, Long> nativeWork = new java.util.TreeMap<>();
+    final List<Object> contracts = new ArrayList<>();
     int translationDepth;
   }
 }

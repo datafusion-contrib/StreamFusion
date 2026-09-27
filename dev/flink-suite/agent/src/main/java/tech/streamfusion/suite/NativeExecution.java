@@ -147,6 +147,7 @@ public final class NativeExecution {
   }
 
   public static synchronized void opened(Object operator) {
+    SqlInventory.opened(operator);
     if (active != null) {
       OPERATORS.putIfAbsent(operator, active);
     }
@@ -162,6 +163,7 @@ public final class NativeExecution {
     if (rows <= 0) {
       return;
     }
+    SqlInventory.completed(operator, rows);
     synchronized (NativeExecution.class) {
       Scope scope = OPERATORS.get(operator);
       if (scope != null && scope == active) {
@@ -171,7 +173,7 @@ public final class NativeExecution {
   }
 
   private static synchronized boolean tracked(Object operator) {
-    return OPERATORS.containsKey(operator);
+    return OPERATORS.containsKey(operator) || SqlInventory.tracked(operator);
   }
 
   public static int batchRows(Object operator, Object root) throws ReflectiveOperationException {
@@ -207,8 +209,9 @@ public final class NativeExecution {
     try {
       Path directory = Path.of(reportDirectory);
       Files.createDirectories(directory);
+      String recordId = UUID.randomUUID().toString();
       Files.writeString(
-          directory.resolve(UUID.randomUUID() + ".tsv"),
+          directory.resolve(recordId + ".tsv"),
           scope.test
               + "\t"
               + scope.variant
@@ -219,6 +222,7 @@ public final class NativeExecution {
                   .encodeToString(
                       String.join("\n", scope.fallbacks).getBytes(StandardCharsets.UTF_8))
               + "\n");
+      SqlInventory.contract(recordId, scope.test, scope.variant);
     } catch (IOException e) {
       throw new AssertionError("Cannot write native execution evidence", e);
     }
