@@ -61,6 +61,36 @@ class FlinkDistinctDecimalMergeOrderTest {
     assertNull(foldAverageSum(buffer.getMap()));
   }
 
+  @Test
+  void nativeOrderingFixturesMatchReleasedDecimalDataKeys() throws Exception {
+    try (var input = getClass().getResourceAsStream("/decimal-map-order.json")) {
+      for (var fixture : new com.fasterxml.jackson.databind.ObjectMapper().readTree(input)) {
+        int scale = fixture.get("scale").asInt();
+        int copyAfter = fixture.get("copy_after").asInt();
+        var serializer =
+            new MapSerializer<>(new DecimalDataSerializer(38, scale), LongSerializer.INSTANCE);
+        Map<DecimalData, Long> map = new java.util.HashMap<>();
+        var keys = fixture.get("keys");
+        for (int position = 0; position <= keys.size(); position++) {
+          if (position == copyAfter) map = serializer.copy(map);
+          if (position < keys.size()) {
+            var decimal =
+                new BigDecimal(new java.math.BigInteger(keys.get(position).asText()), scale);
+            map.put(DecimalData.fromBigDecimal(decimal, 38, scale), 1L);
+          }
+        }
+        var expected = new java.util.ArrayList<String>();
+        fixture.get("order").forEach(key -> expected.add(key.asText()));
+        assertEquals(
+            expected,
+            map.keySet().stream()
+                .map(key -> key.toBigDecimal().unscaledValue().toString())
+                .toList(),
+            fixture.get("name").asText());
+      }
+    }
+  }
+
   private static BigDecimal foldSum(Map<DecimalData, Long> values) {
     DecimalData sum = null;
     for (DecimalData value : values.keySet()) {

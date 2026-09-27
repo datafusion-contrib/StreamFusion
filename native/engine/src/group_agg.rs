@@ -1,5 +1,7 @@
 use crate::*;
 
+#[cfg(test)]
+mod decimal_map_order;
 mod ordered_value;
 use ordered_value::{is_ordered_value, OrderedValueState};
 

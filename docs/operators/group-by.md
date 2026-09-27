@@ -461,7 +461,10 @@ regression also demonstrates that copying/serializing the same membership map ca
 its iteration order and overflow result. Flink's global stage first unions local views in
 a temporary map, then merges that map at bundle flush; immediate per-view folding is not
 equivalent for wide decimals. Matching only the local view order is insufficient. These
-ordering and buffering contracts must be preserved before widening the admission gate.
+ordering and buffering contracts must be preserved before widening the admission gate. A
+test-only native ordering model is checked against 45 shared released-host fixtures covering
+resizes, collision trees, copies and duplicate insertions; integration with the buffered
+global merge remains pending.
 
 The eight new SQL cases pass on Flink 2.2.1 and 1.18.1, along with the existing two-phase
 suite (28 cases on 2.2.1; 27 passed and one released-host capability skip on 1.18.1).

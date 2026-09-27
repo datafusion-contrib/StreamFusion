@@ -55,3 +55,23 @@ restore must retain the existing running sum rather than refold it in arbitrary 
 Keep the planner fallback until runtime-source SQL tests exercise those contracts on both
 released Flink lines. The issue's precision-20 example remains open; a small non-overflowing
 fixture does not justify admitting all values of that type.
+
+## Native ordering model
+
+`native/engine/src/group_agg/decimal_map_order.rs` now implements insert-only decimal
+membership order, including BigDecimal-compatible hashing, signed hash comparisons,
+collision chains, red/black tree insertion, root placement, resize splits, tree-to-list
+transitions, and serializer-sized copies. It uses indexed Rust nodes and reports owned
+vector capacity for later memory-accounting integration. It is currently compiled only
+in tests; the production admission gate has not changed.
+
+The shared `src/test/resources/decimal-map-order.json` fixtures contain 45 default/copy
+scenarios. They cover random precision-38 keys at scales 0/2/18/37, duplicates, full-hash
+collisions, bucket collisions, resize boundaries and tree-to-list transitions. The Java
+regression verifies each fixture with released Flink DecimalData keys and MapSerializer;
+the Rust regression verifies the same order and checks chain/tree invariants after every
+insertion. The fixtures were initially generated with JDK 17 BigDecimal HashMap keys, and
+are checked against Flink's actual key class to avoid assuming identical tree behavior.
+
+Next, connect this ordering model to local shared views and the global temporary membership
+union. The model alone is not sufficient for native admission or end-to-end decimal parity.
