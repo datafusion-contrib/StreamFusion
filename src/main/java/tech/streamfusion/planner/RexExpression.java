@@ -2179,10 +2179,17 @@ final class RexExpression {
       add(KIND_INTEGER_TO_STRING, pad ? -length : length, 1);
       return emit(call.getOperands().get(0));
     }
-    if (tryCast
-        && targetType == SqlTypeName.DECIMAL
-        && (source == SqlTypeName.VARCHAR || source == SqlTypeName.CHAR)) {
-      return emitHostExpression(call, true);
+    if (tryCast && (source == SqlTypeName.VARCHAR || source == SqlTypeName.CHAR)) {
+      if (targetType == SqlTypeName.BOOLEAN) {
+        // TRY_CAST catches conversion failures, not failures while evaluating its input.
+        return requiresRowShortCircuit(call.getOperands().get(0))
+            ? emitHostExpression(call, true)
+            : emitBuiltinCall(call, 160);
+      }
+      if (switch (targetType) {
+        case DECIMAL, DATE, TIME, TIMESTAMP, TIMESTAMP_WITH_LOCAL_TIME_ZONE -> true;
+        default -> false;
+      }) return emitHostExpression(call, true);
     }
     if (tryCast && !(source == SqlTypeName.DECIMAL && targetType == SqlTypeName.DECIMAL)) {
       return reject("unsupported TRY_CAST " + source + "→" + targetType);

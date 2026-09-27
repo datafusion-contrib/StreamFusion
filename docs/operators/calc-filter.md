@@ -560,8 +560,11 @@ an unselected failing cast. Default-mode casts nested under AND/OR still fall ba
 that Flink's row short-circuiting suppresses errors on unselected rows; legacy-mode
 casts can compose under AND/OR because malformed input returns NULL. A bare expression
 encoder without table configuration declines this cast instead of guessing the mode.
-STRING-to-BOOLEAN TRY_CAST remains unsupported. The reverse BOOLEAN-to-character casts use
-the host-exact path described above.
+`TRY_CAST(s AS BOOLEAN)` uses the same native parser with NULL on invalid input,
+independently of legacy mode. It composes under NOT, COALESCE, AND/OR and filters.
+When its input expression can fail, the existing generated-expression callback preserves
+Flink's input evaluation errors: TRY_CAST only catches conversion failures. The reverse
+BOOLEAN-to-character casts use the host-exact path described above.
 
 ### Integer/string casts
 
@@ -583,9 +586,52 @@ through JNI. Successful results and NULL-on-error policies match as well.
 Integer formatting uses canonical decimal text, including signed minima and zero.
 `VARCHAR(n)` truncates to `n` characters; `CHAR(n)` also pads shorter results with spaces.
 Legacy mode leaves the formatted text unchanged regardless of the declared length, matching
-Flink. Other TRY_CAST pairs, except the DECIMAL forms below, still fall back. Bare encoders without table configuration
+Flink. Other TRY_CAST pairs, except the BOOLEAN and temporal forms described here and
+the DECIMAL forms below, still fall back. Bare encoders without table configuration
 decline mode-dependent casts. See the [kernel ledger](../optimizations/scalar-function-kernels.md)
 for the release benchmark against the previous host-cast path.
+
+### Temporal TRY_CAST
+
+`TRY_CAST` from STRING/VARCHAR/CHAR to DATE, TIME, TIMESTAMP and TIMESTAMP_LTZ
+uses Flink's generated conversion through the existing columnar callback. Malformed
+text and rejected conversions return NULL; errors in the input expression still
+propagate. Flink 1.18.1 accepts `24:00:00` as an internal TIME but throws
+`DateTimeException` during external collection; native execution preserves that failure.
+Flink 2.2.1 returns NULL for the same TRY_CAST. CASE and filters suppress unselected failing expressions. Default and legacy
+cast modes use their configured Flink rules. TIMESTAMP_LTZ interprets local text in the
+configured table time zone, including DST gaps and overlaps.
+
+Runtime-source parity covers DATE, TIME(0/3), TIMESTAMP(0/3/6/9) and
+TIMESTAMP_LTZ(0/3/6/9), NULL and NOT NULL character inputs, invalid dates, year/range
+boundaries, pre-epoch nanoseconds, UTC, Asia/Shanghai and America/Los_Angeles.
+Multi-batch tests verify NativeCalc input/output counters as well as values.
+Binary TRY_CAST remains outside this whitelist.
+
+A release+mimalloc benchmark on Flink 2.2.1/JDK 17, Linux x86_64 (Core i7-12650H),
+uses 2,000,000 row-fed records, NULL every seventh row, two warmups and five alternating
+trials. NativeCalc and both row/Arrow transposes are required by the harness. Median
+elapsed seconds (ratio = Flink/native):
+
+| Query | Flink | Native island | Ratio |
+|---|---:|---:|---:|
+| Boolean-text identity | 0.413 | 0.687 | 0.600x |
+| Timestamp-text identity | 0.404 | 0.652 | 0.620x |
+| TRY_CAST to BOOLEAN | 0.411 | 0.560 | 0.733x |
+| TRY_CAST to TIMESTAMP(9) | 3.073 | 3.982 | 0.772x |
+| TRY_CAST to TIMESTAMP_LTZ(9) | 3.123 | 4.003 | 0.780x |
+
+These standalone queries are slower than stock Flink. Coverage is retained because it
+reuses the existing Boolean kernel and generated temporal conversion, adding no new
+runtime machinery and allowing these expressions to compose inside an existing native
+island. This is not a standalone acceleration claim.
+
+```bash
+SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
+  -Dtest=ScalarFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dscalar.functions=TRY_STRING_TO_BOOLEAN,TRY_STRING_TO_TIMESTAMP,TRY_STRING_TO_TIMESTAMP_LTZ \
+  -Dscalar.rows=2000000 -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
+```
 
 ### DECIMAL TRY_CAST
 

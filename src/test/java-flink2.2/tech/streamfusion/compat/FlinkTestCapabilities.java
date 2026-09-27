@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assumptions;
 
 /** Explicit N/A checks for syntax or host operations absent from the selected released line. */
 public final class FlinkTestCapabilities {
+  public static final boolean TIME_TRY_CAST_REJECTS_OUT_OF_RANGE = true;
   private FlinkTestCapabilities() {}
 
   public static final boolean CHECKPOINT_REUSE_NOTIFICATION = true;
