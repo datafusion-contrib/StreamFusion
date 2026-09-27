@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
@@ -89,6 +90,53 @@ class NativeParityTest {
     assertComparableNotEquals(Map.of("a", new Integer[] {1}), Map.of("a", new Long[] {1L}));
     assertComparableEquals(null, null);
     assertComparableNotEquals(null, Map.of());
+  }
+
+  @Test
+  void normalizesListFixturesAndPreviouslyNormalizedValues() {
+    Object fixture = List.of(Row.of(Map.of("a", new Integer[] {1, null, 2})));
+    Object collected = new Object[] {Row.of(Map.of("a", new Integer[] {1, null, 2}))};
+    assertComparableEquals(fixture, collected);
+    Object normalized = NativeParity.comparableValue(collected);
+    assertEquals(normalized, NativeParity.comparableValue(normalized));
+    assertComparableNotEquals(fixture, List.of(Row.of(Map.of("a", new Integer[] {1, 2, null}))));
+  }
+
+  @Test
+  void unorderedRowsIgnoreMapIterationOrderButRetainDuplicateRows() {
+    Map<String, Integer> first = new LinkedHashMap<>();
+    first.put("Aa", 1);
+    first.put("BB", 9);
+    Map<String, Integer> second = new LinkedHashMap<>();
+    second.put("Aa", 2);
+    second.put("BB", 0);
+    Map<String, Integer> reversedFirst = new LinkedHashMap<>();
+    reversedFirst.put("BB", 9);
+    reversedFirst.put("Aa", 1);
+    Map<String, Integer> reversedSecond = new LinkedHashMap<>();
+    reversedSecond.put("BB", 0);
+    reversedSecond.put("Aa", 2);
+    List<List<Object>> expected = List.of(List.of(first), List.of(second), List.of(first));
+    List<List<Object>> actual =
+        List.of(List.of(reversedSecond), List.of(reversedFirst), List.of(reversedFirst));
+    assertEquals(NativeParity.multiset(expected), NativeParity.multiset(actual));
+    assertNotEquals(NativeParity.multiset(expected), NativeParity.multiset(actual.subList(0, 2)));
+  }
+
+  @Test
+  void mapNormalizationDoesNotOverwriteEqualContentArrayKeys() {
+    Map<Object, Object> left = new LinkedHashMap<>();
+    left.put(new int[] {1}, "first");
+    left.put(new int[] {1}, "second");
+    left.put(new int[] {1}, "second");
+    Map<Object, Object> right = new LinkedHashMap<>();
+    right.put(new int[] {1}, "second");
+    right.put(new int[] {1}, "first");
+    right.put(new int[] {1}, "second");
+    assertComparableEquals(left, right);
+    assertComparableNotEquals(left, Map.of(new int[] {1}, "second"));
+    right.remove(right.keySet().iterator().next());
+    assertComparableNotEquals(left, right);
   }
 
   private static void assertComparableEquals(Object left, Object right) {

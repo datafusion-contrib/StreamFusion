@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -169,8 +168,7 @@ final class SqlAuditHarness {
         result(spec.comparison(), runs.nativeRun().rows()),
         runs.toString());
     if (!spec.golden().isEmpty()) {
-      Map<List<Object>, Long> expected = new HashMap<>();
-      spec.golden().forEach(row -> expected.merge(row, 1L, Long::sum));
+      Map<List<Object>, Long> expected = NativeParity.multiset(spec.golden());
       assertEquals(
           expected,
           spec.comparison() == Comparison.KEYED_FIRST_FIELD
@@ -185,7 +183,7 @@ final class SqlAuditHarness {
       case MATERIALIZED -> materialized(rows);
       case KEYED_FIRST_FIELD -> keyed(rows);
       case ORDERED_CHANGELOG -> rows;
-      case KINDED_MULTISET -> rows.stream().sorted(Comparator.comparing(Object::toString)).toList();
+      case KINDED_MULTISET -> NativeParity.multiset(rows);
     };
   }
 

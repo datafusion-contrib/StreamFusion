@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
@@ -39,7 +38,7 @@ final class NativeParity {
     assertTrue(
         scan.substitutions() > 0,
         "query did not route to native; parity check is moot; reasons=" + scan.fallbackReasons());
-    assertEquals(sorted(host), sorted(nativeRows), "native result differs from host");
+    assertEquals(multiset(host), multiset(nativeRows), "native result differs from host");
   }
 
   /**
@@ -49,7 +48,7 @@ final class NativeParity {
    * and is invisible to a kind-blind row compare — yet with state TTL enabled Flink emits exactly
    * such pairs where it would otherwise suppress. Requires deterministic input order and bundle
    * boundaries; parallelism 1 alone does not prevent file scheduling or processing-time markers from
-   * changing intermediate updates (output order-insensitivity still comes from the sort).
+   * changing intermediate updates (the output comparison still ignores order and retains counts).
    */
   static void assertKindedParity(Supplier<TableEnvironment> environment, String sql)
       throws Exception {
@@ -61,7 +60,7 @@ final class NativeParity {
       throws Exception {
     List<List<Object>> host = collectKinded(environment.get(), sql);
     if (expected != null) {
-      assertEquals(sorted(new ArrayList<>(expected)), sorted(host), "unexpected host changelog");
+      assertEquals(multiset(expected), multiset(host), "unexpected host changelog");
     }
 
     TableEnvironment nativeEnvironment = environment.get();
@@ -71,7 +70,7 @@ final class NativeParity {
     assertTrue(
         scan.substitutions() > 0,
         "query did not route to native; parity check is moot; reasons=" + scan.fallbackReasons());
-    assertEquals(sorted(host), sorted(nativeRows), "kinded changelog differs from host");
+    assertEquals(multiset(host), multiset(nativeRows), "kinded changelog differs from host");
   }
 
   static void assertOrderedKindedParity(Supplier<TableEnvironment> environment, String sql)
@@ -208,17 +207,25 @@ final class NativeParity {
     return rows;
   }
 
-  private static List<List<Object>> sorted(List<List<Object>> rows) {
-    rows.sort(Comparator.comparing(Object::toString));
-    return rows;
+  static Map<List<Object>, Long> multiset(List<List<Object>> rows) {
+    Map<List<Object>, Long> counts = new HashMap<>();
+    for (List<Object> row : rows) {
+      counts.merge(row.stream().map(NativeParity::comparableValue).toList(), 1L, Long::sum);
+    }
+    return counts;
   }
 
   /** Java arrays compare by identity; compare binary and collection outputs by content. */
   static Object comparableValue(Object value) {
+    if (value instanceof List<?> list) {
+      return list.stream().map(NativeParity::comparableValue).toList();
+    }
     if (value instanceof Map<?, ?> map) {
-      Map<Object, Object> values = new HashMap<>();
-      map.forEach((key, element) -> values.put(comparableValue(key), comparableValue(element)));
-      return values;
+      Map<List<Object>, Long> entries = new HashMap<>();
+      // Array keys that are distinct to Java can normalize to equal contents. Retain every entry.
+      map.forEach((key, element) -> entries.merge(
+          java.util.Arrays.asList(comparableValue(key), comparableValue(element)), 1L, Long::sum));
+      return new ComparableMap(entries);
     }
     if (value instanceof Row row) {
       Row values = Row.copy(row);
@@ -246,4 +253,6 @@ final class NativeParity {
     }
     return value;
   }
+
+  private record ComparableMap(Map<List<Object>, Long> entries) {}
 }
