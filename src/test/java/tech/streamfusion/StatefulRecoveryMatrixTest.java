@@ -81,7 +81,7 @@ class StatefulRecoveryMatrixTest {
             .withExecutionMetrics()
             .withTaskOffHeapBytes(budget)) {
       var runs =
-          NativeFailureParity.run(
+          NativeFailureParity.runRecovery(
               () -> configure(recovery.uninterrupted(), batchRows, miniBatchRows),
               () -> configure(recovery.get(), batchRows, miniBatchRows),
               "SELECT k, SUM(amount), COUNT(DISTINCT text_value) FROM recovery_input GROUP BY k");
@@ -236,7 +236,7 @@ class StatefulRecoveryMatrixTest {
             .withExecutionMetrics()
             .withTaskOffHeapBytes(budgetBytes)) {
       var runs =
-          NativeFailureParity.run(
+          NativeFailureParity.runRecovery(
               () -> configure(recovery.uninterrupted(), batchRows, miniBatchRows),
               () -> configure(recovery.get(), batchRows, miniBatchRows),
               "SELECT k, SUM(amount), COUNT(DISTINCT text_value) FROM recovery_input GROUP BY k");
@@ -309,7 +309,7 @@ class StatefulRecoveryMatrixTest {
     try (var recovery =
         new PortableSqlRecovery(backend, input, type, schema, true, 6, 12).withExecutionMetrics()) {
       var runs =
-          NativeFailureParity.run(
+          NativeFailureParity.runRecovery(
               () -> configure(recovery.uninterrupted(), batchRows, miniBatchRows),
               () -> configure(recovery.get(), batchRows, miniBatchRows),
               "SELECT l.k, l.amount, l.text_value, r.amount, r.text_value FROM recovery_input l"
@@ -393,7 +393,7 @@ class StatefulRecoveryMatrixTest {
           };
       String castType = ltz ? "TIMESTAMP(9)" : "TIMESTAMP_LTZ(9)";
       var runs =
-          NativeFailureParity.run(
+          NativeFailureParity.runRecovery(
               () -> configure.apply(recovery.uninterrupted()),
               () -> configure.apply(recovery.get()),
               "SELECT k, t, CAST(t AS "
@@ -483,7 +483,7 @@ class StatefulRecoveryMatrixTest {
             return table;
           };
       var runs =
-          NativeFailureParity.run(
+          NativeFailureParity.runRecovery(
               () -> configure.apply(recovery.uninterrupted()),
               () -> configure.apply(recovery.get()),
               "SELECT window_start, window_end, SUM(v), COUNT(*) FROM TABLE(TUMBLE(TABLE"
@@ -589,7 +589,7 @@ class StatefulRecoveryMatrixTest {
     try (var recovery =
         new PortableSqlRecovery(backend, input, type, schema, true, 4, 8).withExecutionMetrics()) {
       var runs =
-          NativeFailureParity.run(
+          NativeFailureParity.runRecovery(
               () -> configure(recovery.uninterrupted(), batchRows, miniBatchRows),
               () -> configure(recovery.get(), batchRows, miniBatchRows),
               "SELECT converted_key, SUM(converted_amount), COUNT(DISTINCT text_value), COUNT(*)"
