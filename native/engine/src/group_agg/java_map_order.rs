@@ -31,6 +31,11 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
         }
     }
 
+    pub(super) fn clear(&mut self) {
+        self.buckets.fill(Bucket::default());
+        self.nodes = Vec::new();
+    }
+
     pub(super) fn insert(&mut self, key: K, hash: i32) -> bool {
         let bucket = hash as u32 as usize & (self.buckets.len() - 1);
         let mut current = self.buckets[bucket].first;
@@ -311,12 +316,16 @@ mod tests {
         .unwrap();
         for case in fixtures.as_array().unwrap() {
             let mut map = JavaMapOrder::with_capacity(16);
-            for (value, hash) in case["values"]
+            for (index, (value, hash)) in case["values"]
                 .as_array()
                 .unwrap()
                 .iter()
                 .zip(case["hashes"].as_array().unwrap())
+                .enumerate()
             {
+                if case["clear_after"].as_u64() == Some(index as u64) {
+                    map.clear();
+                }
                 map.insert(
                     value.as_str().map(|v| v.parse::<i64>().unwrap()),
                     hash.as_i64().unwrap() as i32,

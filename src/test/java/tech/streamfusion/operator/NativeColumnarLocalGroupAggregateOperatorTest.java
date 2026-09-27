@@ -2,7 +2,9 @@ package tech.streamfusion.operator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Random;
 import org.apache.arrow.memory.BufferAllocator;
@@ -11,23 +13,28 @@ import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
+import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.data.TimestampData;
+import org.apache.flink.table.data.binary.BinaryRowData;
+import org.apache.flink.table.data.writer.BinaryRowWriter;
 import org.apache.flink.table.types.logical.BigIntType;
+import org.apache.flink.table.types.logical.DecimalType;
+import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.logical.TimestampType;
 import org.junit.jupiter.api.Test;
 
 class NativeColumnarLocalGroupAggregateOperatorTest {
 
   private static final RowType INPUT =
       RowType.of(
-          new LogicalType[] {new BigIntType(), new BigIntType()},
-          new String[] {"key", "value"});
+          new LogicalType[] {new BigIntType(), new BigIntType()}, new String[] {"key", "value"});
   private static final RowType PARTIAL =
       RowType.of(
-          new LogicalType[] {new BigIntType(), new BigIntType()},
-          new String[] {"key", "sum"});
+          new LogicalType[] {new BigIntType(), new BigIntType()}, new String[] {"key", "sum"});
 
   @Test
   void flushesAtExactCountWhenAPhysicalBatchStraddlesTheBoundary() throws Exception {
@@ -88,6 +95,71 @@ class NativeColumnarLocalGroupAggregateOperatorTest {
     }
   }
 
+  @Test
+  void wideDecimalGroupEmissionUsesTimestampPrecisionAndRetainsBucketCapacity() throws Exception {
+    for (int precision : new int[] {3, 9}) {
+      for (boolean ltz : new boolean[] {false, true}) {
+        LogicalType keyType =
+            ltz ? new LocalZonedTimestampType(precision) : new TimestampType(precision);
+        RowType input = RowType.of(new LogicalType[] {keyType, new DecimalType(38, 0)});
+        var operator =
+            new NativeColumnarLocalGroupAggregateOperator(
+                new int[] {9},
+                new int[] {5800},
+                new int[] {1},
+                new int[] {-1},
+                new int[] {0},
+                new int[] {0},
+                new int[] {precision},
+                1000);
+        try (BufferAllocator allocator = new RootAllocator();
+            var harness = new OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch>(operator)) {
+          harness.setup(new ArrowBatchSerializer());
+          harness.open();
+          var expected = new HashMap<BinaryRowData, TimestampData>();
+          int watermark = 0;
+          for (int count : new int[] {70, 7}) {
+            expected.clear();
+            var rows = new ArrayList<RowData>();
+            for (int i = 0; i < count; i++) {
+              var timestamp =
+                  i == 0
+                      ? null
+                      : TimestampData.fromEpochMillis(
+                          1_700_000_000_000L + i, precision == 3 ? 0 : i);
+              var key = new BinaryRowData(1);
+              var writer = new BinaryRowWriter(key);
+              if (timestamp == null) writer.setNullAt(0);
+              else writer.writeTimestamp(0, timestamp, precision);
+              writer.complete();
+              expected.put(key, timestamp);
+              rows.add(
+                  GenericRowData.of(timestamp, DecimalData.fromBigDecimal(BigDecimal.ONE, 38, 0)));
+            }
+            rows.addAll(new ArrayList<>(rows.subList(0, 3)));
+            harness.processElement(
+                new StreamRecord<>(
+                    new ArrowBatch(RowDataArrowConverter.write(rows, input, allocator, false))));
+            harness.processWatermark(new Watermark(++watermark));
+            var actual = new ArrayList<TimestampData>();
+            while (!harness.getOutput().isEmpty()) {
+              Object event = harness.getOutput().poll();
+              if (event instanceof StreamRecord<?> record) {
+                try (VectorSchemaRoot root = ((ArrowBatch) record.getValue()).root()) {
+                  for (RowData row : RowDataArrowConverter.read(root, input)) {
+                    actual.add(row.isNullAt(0) ? null : row.getTimestamp(0, precision));
+                    assertThat(row.getDecimal(1, 38, 0).toBigDecimal()).isEqualByComparingTo("1");
+                  }
+                }
+              }
+            }
+            assertThat(actual).containsExactlyElementsOf(expected.values());
+          }
+        }
+      }
+    }
+  }
+
   private static OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness(long size)
       throws Exception {
     NativeColumnarLocalGroupAggregateOperator operator =
@@ -98,6 +170,7 @@ class NativeColumnarLocalGroupAggregateOperatorTest {
             new int[] {-1},
             new int[] {0},
             new int[0],
+            new int[] {-1},
             size);
     OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
         new OneInputStreamOperatorTestHarness<>(operator);

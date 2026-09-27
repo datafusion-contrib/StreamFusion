@@ -19,6 +19,8 @@ class FlinkGroupMapOrderTest {
         var hashes = new HashMap<Integer, String>();
         int index = 0;
         for (var value : fixture.get("values")) {
+          if (fixture.has("clear_after") && index == fixture.get("clear_after").asInt())
+            map.clear();
           var row = new BinaryRowData(1);
           var writer = new BinaryRowWriter(row);
           if (value.isNull()) writer.setNullAt(0);

@@ -1,6 +1,79 @@
 use super::*;
 
 #[test]
+fn wide_decimal_local_emission_matches_binary_group_order_across_flushes() {
+    let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../src/test/resources/group-map-order.json"
+    ))
+    .unwrap();
+    for case in fixtures.as_array().unwrap() {
+        let keys: Vec<Option<i64>> = case["values"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().map(|v| v.parse().unwrap()))
+            .collect();
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("key", DataType::Int64, true),
+                Field::new("value", DataType::Decimal128(38, 0), false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(keys)),
+                Arc::new(
+                    Decimal128Array::from(vec![1; case["values"].as_array().unwrap().len()])
+                        .with_precision_and_scale(38, 0)
+                        .unwrap(),
+                ),
+            ],
+        )
+        .unwrap();
+        for split in [1, usize::MAX] {
+            let mut local =
+                LocalGroupAggregator::new(vec![9], vec![5800], vec![1], vec![], vec![0], vec![0])
+                    .with_memory_budget(1 << 20)
+                    .unwrap();
+            let mut ends = Vec::new();
+            if let Some(position) = case["clear_after"].as_u64() {
+                ends.push(position as usize);
+            }
+            ends.push(batch.num_rows());
+            let mut start = 0;
+            for end in ends {
+                let count = (end - start).min(split);
+                local.update(&batch.slice(start, count)).unwrap();
+                if start + count < end {
+                    local
+                        .update(&batch.slice(start + count, end - start - count))
+                        .unwrap();
+                }
+                let output = local.try_flush().unwrap();
+                if end == batch.num_rows() {
+                    let expected: Vec<Option<i64>> = case["order"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|v| v.as_str().map(|v| v.parse().unwrap()))
+                        .collect();
+                    let actual = output
+                        .column(0)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap();
+                    assert_eq!(
+                        actual.iter().collect::<Vec<_>>(),
+                        expected,
+                        "{} split {split}",
+                        case["name"]
+                    );
+                }
+                start = end;
+            }
+        }
+    }
+}
+
+#[test]
 fn wide_decimal_local_flush_reserves_temporary_memory_before_draining() {
     let batch = group_scalar_changelog(
         (0..96)
@@ -35,7 +108,7 @@ fn wide_decimal_local_flush_reserves_temporary_memory_before_draining() {
         .downcast_ref::<arrow::array::ListArray>()
         .unwrap();
     assert_eq!(view.value_length(0), 96);
-    assert_eq!(local.memory.state_bytes, 0);
+    assert!(local.memory.state_bytes > 0 && local.memory.state_bytes < retained);
     assert_eq!(local.try_flush().unwrap().num_rows(), 0);
 }
 
@@ -246,9 +319,9 @@ fn wide_decimal_local_views_share_order_and_keep_filtered_zero_entries() {
         if split < 5 {
             local.update(&batch.slice(split, 5 - split)).unwrap();
         }
-        assert!(local.memory.state_bytes > 0);
+        let retained = local.memory.state_bytes;
         let output = local.flush();
-        assert_eq!(local.memory.state_bytes, 0);
+        assert!(local.memory.state_bytes > 0 && local.memory.state_bytes < retained);
         for (column, expected_counts) in [
             (4, vec![0, 2, 1, 1]),
             (5, vec![0, 1, 1, 0]),

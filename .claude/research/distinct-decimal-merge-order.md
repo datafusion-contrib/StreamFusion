@@ -63,7 +63,7 @@ insert-only membership order to the reusable `java_map_order.rs` core, including
 collision chains, red/black tree insertion, root placement, resize splits, tree-to-list
 transitions, and serializer-sized copies. It uses indexed Rust nodes and reports owned
 vector capacity for later memory-accounting integration. The local aggregate now uses it for wide-decimal views; the planner admission gate has not
-changed, so this path remains inaccessible from admitted SQL until global integration is ready.
+changed, so this path remains inaccessible from admitted SQL until final admission validation is complete.
 
 The shared `src/test/resources/decimal-map-order.json` fixtures contain 55 default/copy
 scenarios. They cover random precision-38 keys at scales 0/2/18/37, duplicates, full-hash
@@ -146,7 +146,7 @@ from the isolated transport probe because that aggregate form already falls back
 
 The bucket/list/tree machinery now accepts caller-supplied spread hashes and tie ordering,
 so group emission and decimal membership can share the same rotations and resize semantics.
-Fifteen `group-map-order.json` fixtures cover 880 BinaryRowData BIGINT/NULL insertions,
+Eighteen `group-map-order.json` fixtures cover 1,231 BinaryRowData BIGINT/NULL insertions,
 duplicates, collision trees and resize splits. They verify released Flink hashes and map
 iteration in Java and the shared core in Rust. The 55 decimal fixtures still pass unchanged.
 The group fixtures intentionally have distinct complete hashes for unequal keys: BinaryRowData
@@ -164,4 +164,22 @@ plan, colliding hashes, final key/count multiplicities, and that each SUM is one
 host results (-9e37 or 9e37-3). It deliberately does not require a particular number of distinct
 outputs across runs. Deterministic cases retain exact host/native parity. For this identity-tie
 case a deterministic native tie order can select a valid host ordering; it cannot reproduce an
-independent host run's object identities. Group-emission integration remains pending.
+independent host run's object identities.
+
+The local aggregate now records BinaryRow hashes on each group's first appearance and permutes
+its emitted groups through the shared ordering model. It keeps native Arrow/scalar state keys;
+BinaryRow is used only for the host-compatible hash. Declared timestamp precision travels through
+the local planner/operator/JNI constructor, as it already does for the global state boundary.
+Insertion ranks supply a deterministic valid identity ordering for exact-hash binary-key ties.
+
+Flink clears its bundle HashMap without releasing the bucket array. The native group-order model
+therefore clears nodes but preserves bucket capacity across flushes, and retains the corresponding
+memory reservation. Three new fixtures cover large-to-small bundles after clear. The native local
+integration checks every fixture through both physical key paths and accounts permutation scratch
+space before draining. A direct operator regression compares TIMESTAMP/LTZ precision 3/9 group
+emission with released BinaryRow HashMaps, including NULLs, duplicates and retained capacity.
+
+With the planner gate temporarily widened for verification, all 32 shuffled SUM/AVG configurations,
+three timestamp-group configurations (SUM and AVG each), and the exact-hash valid-outcome probe
+pass on both released Flink versions. The production gate was restored after those probes; final
+configuration/checkpoint admission review and the end-to-end benchmark remain before widening it.

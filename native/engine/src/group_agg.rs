@@ -3,6 +3,7 @@ use crate::*;
 mod decimal_map_order;
 mod java_map_order;
 use decimal_map_order::DecimalMapOrder;
+use java_map_order::JavaMapOrder;
 mod ordered_value;
 use ordered_value::{is_ordered_value, OrderedValueState};
 
@@ -2934,7 +2935,8 @@ impl GroupAggregator<RocksGroupStore> {
 /// always drained before a checkpoint barrier, so nothing is persisted here (the global keeps the
 /// durable state). This mirrors Flink's `MapBundleOperator` + `MiniBatchLocalGroupAggFunction` and
 /// RisingWave's stateless two-phase local. SUM/MIN/MAX emit NULL for an all-null group; COUNT(*)
-/// counts rows. Group order follows first appearance across the buffered batches.
+/// counts rows. Wide decimal DISTINCT views preserve the host's group-map emission order;
+/// other partials follow first appearance across buffered batches.
 pub(crate) struct LocalGroupAggregator {
     kinds: Vec<i64>,
     value_types: Vec<DataType>,
@@ -2944,6 +2946,7 @@ pub(crate) struct LocalGroupAggregator {
     // the global merge is filter-blind because the partials are already filtered here.
     filter_columns: Vec<i64>,
     key_columns: Vec<usize>,
+    key_timestamp_precisions: Vec<i32>,
     result_types: Vec<DataType>,
     // Per distinct view column (trailing the partials, in Flink's declared order), the index of the
     // aggregate whose distinct set backs it — the flush emits that set's (value, count) entries as a
@@ -2951,6 +2954,7 @@ pub(crate) struct LocalGroupAggregator {
     distinct_view_sources: Vec<i64>,
     decimal_view_groups: Vec<Vec<usize>>,
     order: Vec<LocalGroupKey>,
+    group_order: Option<JavaMapOrder<usize>>,
     states: HashMap<ByteKey, LocalGroupEntry>,
     scalar_states: HashMap<GroupKey, LocalGroupEntry>,
     key_converter: Option<RowConverter>,
@@ -3052,11 +3056,13 @@ impl LocalGroupAggregator {
             value_types,
             value_columns,
             filter_columns,
+            key_timestamp_precisions: vec![-1; key_columns.len()],
             key_columns,
             result_types,
             distinct_view_sources,
             decimal_view_groups,
             order: Vec::new(),
+            group_order: None,
             states: HashMap::default(),
             scalar_states: HashMap::default(),
             key_converter: None,
@@ -3083,6 +3089,27 @@ impl LocalGroupAggregator {
         })
     }
 
+    pub(crate) fn with_key_timestamp_precisions(mut self, precisions: Vec<i32>) -> Self {
+        self.key_timestamp_precisions = precisions;
+        self
+    }
+
+    fn note_group_order(&mut self, hash: Option<i32>) {
+        if let Some(hash) = hash {
+            let before = self.group_order.as_ref().map_or(0, JavaMapOrder::bytes);
+            let order = self
+                .group_order
+                .get_or_insert_with(|| JavaMapOrder::with_capacity(16));
+            let hash = hash as u32;
+            // BinaryRow tree ties use nondeterministic JVM identity. Insertion ranks choose
+            // one valid identity ordering; distinct hashes preserve the deterministic order.
+            order.insert(self.order.len(), (hash ^ (hash >> 16)) as i32);
+            if self.memory.tracking() {
+                self.memory.record((order.bytes() - before) as isize);
+            }
+        }
+    }
+
     /// Bounds the buffered partials by a task off-heap budget (negative = unaccounted). The buffer
     /// drains at every mini-batch flush, but a high-cardinality interval can still spike.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
@@ -3095,7 +3122,8 @@ impl LocalGroupAggregator {
                 .scalar_states
                 .iter()
                 .map(|(key, entry)| group_key_bytes(key) * 2 + local_entry_state_bytes(entry))
-                .sum::<usize>();
+                .sum::<usize>()
+            + self.group_order.as_ref().map_or(0, JavaMapOrder::bytes);
         self.memory
             .attach("local-group-aggregate", budget_bytes, current)?;
         Ok(self)
@@ -3151,6 +3179,9 @@ impl LocalGroupAggregator {
         let scalar_key_mode = *self.scalar_key_mode.get_or_insert(n == 1);
         let arrow_keys =
             (!scalar_key_mode).then(|| encode_keys(&mut self.key_converter, &key_arrays, n));
+        let mut group_hashes = (!self.decimal_view_groups.is_empty()).then(|| {
+            BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_timestamp_precisions)
+        });
         let key_batch = self.key_batches.len();
         let mut retained_key_batch = false;
         // Distinct aggregates fold the value itself into their per-bundle set, not a Num;
@@ -3222,6 +3253,7 @@ impl LocalGroupAggregator {
                                 as isize,
                         );
                     }
+                    self.note_group_order(group_hashes.as_mut().map(|encoder| encoder.hash(row)));
                     self.order.push(LocalGroupKey::Scalar(key.clone()));
                     self.scalar_states.insert(
                         key.clone(),
@@ -3256,6 +3288,7 @@ impl LocalGroupAggregator {
                                 as isize,
                         );
                     }
+                    self.note_group_order(group_hashes.as_mut().map(|encoder| encoder.hash(row)));
                     self.order.push(LocalGroupKey::Byte(owned.clone()));
                     self.states.insert(
                         owned,
@@ -3372,9 +3405,8 @@ impl LocalGroupAggregator {
         self.memory.account()
     }
 
-    /// Emits the buffered partials (`[key0.., partial0.., distinct-view0..]`, in first-appearance
-    /// order) and clears the buffer; the key types are retained so an empty flush still carries the
-    /// right schema. Each distinct view column carries its bundle set's (value, count) entries as a
+    /// Emits the buffered partials (`[key0.., partial0.., distinct-view0..]`) and clears entries.
+    /// Key types are retained so an empty flush still carries the right schema. Each distinct view column carries its bundle set's (value, count) entries as a
     /// list of structs — the wire form of Flink's serialized MapView partial — for the global to
     /// merge with multiplicities.
     #[cfg(test)]
@@ -3404,10 +3436,26 @@ impl LocalGroupAggregator {
                 // Bound geometric vector growth plus simultaneous scalar and Arrow output.
                 let output = entries * 4 * (std::mem::size_of::<ScalarValue>() + 32)
                     + (self.order.len() + 1) * self.distinct_view_sources.len() * 8;
-                reservation.try_grow(copy_peak + output)?;
+                reservation.try_grow(
+                    copy_peak + output + self.order.len() * std::mem::size_of::<usize>(),
+                )?;
             }
         }
-        let order = std::mem::take(&mut self.order);
+        let mut order = std::mem::take(&mut self.order);
+        if let Some(group_order) = &mut self.group_order {
+            let mut destinations = vec![0; order.len()];
+            for (destination, source) in group_order.iter().enumerate() {
+                destinations[source] = destination;
+            }
+            for position in 0..order.len() {
+                while destinations[position] != position {
+                    let other = destinations[position];
+                    order.swap(position, other);
+                    destinations.swap(position, other);
+                }
+            }
+            group_order.clear();
+        }
         let states = std::mem::take(&mut self.states);
         let scalar_states = std::mem::take(&mut self.scalar_states);
         let key_batches = std::mem::take(&mut self.key_batches);
@@ -3523,7 +3571,8 @@ impl LocalGroupAggregator {
         )
         .expect("failed to build local group-by partial batch");
         drop((states, scalar_states, key_batches, order));
-        self.memory.set(0);
+        self.memory
+            .set(self.group_order.as_ref().map_or(0, JavaMapOrder::bytes));
         self.memory.account_shrink();
         Ok(output)
     }
@@ -3588,6 +3637,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createLocalGroupAggregator<
     filter_columns: JIntArray<'local>,
     key_columns: JIntArray<'local>,
     distinct_view_sources: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
     memory_budget_bytes: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
@@ -3605,6 +3655,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createLocalGroupAggregator<
             key_cols,
             view_sources,
         )
+        .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
         .with_memory_budget(memory_budget_bytes);
         boxed_or_throw(&mut env, aggregator)
     })

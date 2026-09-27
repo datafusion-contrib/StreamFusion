@@ -456,6 +456,7 @@ public final class Native {
       int[] filterColumns,
       int[] keyColumns,
       int[] distinctViewSources,
+      int[] keyTimestampPrecisions,
       long memoryBudgetBytes);
 
   /** Folds a batch into the buffered per-key accumulators; emits nothing. */

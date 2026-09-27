@@ -78,7 +78,8 @@ public class StreamPhysicalNativeColumnarLocalGroupAggregate extends StreamPhysi
         valueColumns,
         filterColumns,
         keyColumns,
-        distinctViewSources);
+        distinctViewSources,
+        FlinkKeyGroupUtils.timestampPrecisions(getInput().getRowType(), keyColumns));
   }
 }
 

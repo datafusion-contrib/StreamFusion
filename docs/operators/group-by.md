@@ -471,11 +471,13 @@ Wide SUM checkpoints preserve the running sum and live count independently of me
 order, including NULL after overflow. Recovery tests cover raw snapshots, RocksDB import,
 checkpoint/reopen and export. Local flush retains its state reservation while constructing
 output and reserves bounded scratch space for wide-decimal view copies; a rejected reservation
-leaves the bundle intact. Multi-key transport/bundle ordering still needs verification before
-admission. Shuffled runtime-source probes confirmed that local group emission order can change
-final overflow results; ordering values inside each group's membership map alone is insufficient.
-The shared ordering core also matches 15 released-host binary-group fixtures, including bucket
-collision trees and resize splits. Distinct binary keys with identical full hashes introduce
+leaves the bundle intact. The local stage now emits wide-decimal groups in Flink's map order,
+including bucket capacity retained across flushes, and carries declared timestamp-key precision
+through JNI for matching binary-key hashes. The retained bucket allocation remains accounted
+between bundles. Shuffled runtime-source probes pass with this integration; ordering values
+inside each group's membership map alone was insufficient. The shared ordering core matches
+18 released-host binary-group fixtures, including bucket collision trees, resize splits and
+clear/reuse. Final admission and benchmark validation remain in progress. Distinct binary keys with identical full hashes introduce
 JVM identity-based ordering: overflow-sensitive stock Flink jobs can then return different final
 SUMs for identical input. Tests for that case check valid host outcomes; deterministic cases
 continue to require exact parity. The planner gate is unchanged.
