@@ -543,10 +543,10 @@ The released-Flink SQL checks now include split AVG DISTINCT over narrow/wide in
 DECIMAL(19,2), repeated values across multiple bundles, shared COUNT/SUM/AVG views,
 independently filtered views, empty/global results, and an ordinary AVG before a distinct
 view. They also verify fallback for wider decimals and retracting distinct splits. The
-combined distinct/two-phase suites pass 49 cases on Flink 2.2.1; Flink 1.18.1 passes 48 with
+combined distinct/two-phase suites pass 61 cases on Flink 2.2.1; Flink 1.18.1 passes 60 with
 one host-capability skip. Native tests verify widened partial types, integer overflow,
 all-NULL partials, and merging duplicate membership across checkpoint restoration; the full
-native core suite passes 565 tests with one ignored.
+native core suite passes 574 tests with one ignored.
 
 `-Ddistinct.average=true -Ddistinct.twoPhase=true` selects the split benchmark, using
 DECIMAL(19,2) alongside TINYINT and BIGINT. On the same machine and released toolchain above
@@ -554,11 +554,22 @@ DECIMAL(19,2) alongside TINYINT and BIGINT. On the same machine and released too
 warmups and five alternating measured runs produced medians of **1.562 s for Flink and
 2.200 s for native (0.710x)**. Flink trials ranged from 1.545–1.891 s; native trials ranged
 from 2.194–2.356 s. The plan asserts both native aggregate stages and both row/Arrow
-transposes, and retains the rowwise blackhole sink. This is a correctness/coverage extension;
-the standalone split workload remains slower than Flink. It precedes #246's typed maps.
+transposes, and retains the rowwise blackhole sink. This historical baseline was slower than
+Flink and preceded typed membership maps, typed column readers, direct partial-view builders,
+and the shared transpose optimizations.
+
+The integrated implementation, with an explicit 2 GiB heap and otherwise the same 2M-row
+configuration, now measures **1.275 s native (1.269–1.405) versus Flink 1.609 s (1.487–1.629)**.
+At 20M rows it measures **12.071 s native (12.030–12.261) versus Flink 13.511 s
+(13.449–13.566)**. Native takes 20.8% and 10.7% less elapsed time respectively. Both comparisons
+use two warmups and five alternating trials, retain both transposes, and assert both native
+aggregate stages. The explicit heap setting makes these fresh matched-resource comparisons;
+they do not isolate any individual optimization's contribution.
 
 ```sh
 SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
   -Dtest=DistinctAggregateBenchmark -Ddistinct.average=true -Ddistinct.twoPhase=true \
-  -Ddistinct.rows=2000000 -Ddistinct.warmup=2 -Ddistinct.runs=5
+  -Ddistinct.rows=2000000 -Ddistinct.warmup=2 -Ddistinct.runs=5 \
+  -Dsf.extraJvmArgs=-Xmx2g
+# Repeat with -Ddistinct.rows=20000000 for the sustained split comparison.
 ```
