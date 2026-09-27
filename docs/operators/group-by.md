@@ -114,6 +114,12 @@ separate allocation for every group; dynamic strings and retraction queues remai
 against the task memory budget. Checkpoint representation and aggregate semantics are unchanged.
 
 
+
+An immediate, single-phase group with one unfiltered SINGLE_VALUE emits directly from its accumulator
+without a duplicate cached result or temporary tuple vector. A later touch reconstructs
+the preceding result from that accumulator. Filtered and mixed aggregates retain their cache;
+mini-batch emission and snapshot formats are unchanged.
+
 SINGLE_VALUE counts every element, including NULL. Zero elements yield NULL; one element
 yields that value. A second element raises Flink's `TableRuntimeException` with the same
 cardinality diagnostic. Retraction clears the retained value and decrements the count;

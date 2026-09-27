@@ -744,8 +744,9 @@ pub(crate) struct GroupKeyState {
     records: i64,
     /// The tuple last emitted for this group — the per-row changelog needs the pre-update value of
     /// every touched group, and caching it halves the output materialization (the q16 profile put
-    /// ~half the operator in exactly that scalar build/clone churn). `None` after restore (the
-    /// snapshot doesn't carry it); the first touch then recomputes it from the aggregate state.
+    /// ~half the operator in exactly that scalar build/clone churn). Snapshots omit this cache.
+    /// An immediate, unfiltered single-value result also needs no duplicate tuple; when the cache
+    /// is absent, the next touch reconstructs the preimage from the aggregate state.
     last_output: Option<Vec<ScalarValue>>,
     /// `scalar_row_bytes` of the cached tuple, maintained alongside it: the state measurement
     /// runs twice per touched row, and re-walking the tuple's scalars each time was a measurable
@@ -1726,6 +1727,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         };
 
         let track = self.memory.tracking();
+        // One unfiltered SINGLE_VALUE accumulator already holds the complete result. Emit it
+        // directly; filtered groups can have many noncontributing touches, so keep their cache.
+        let single_value = self.kinds.as_slice() == [14] && self.filter_columns[0] < 0;
         let staged_key_batch = self.staged_key_batches.len();
         let mut retained_key_batch = false;
         let mut staged_delta = 0usize;
@@ -1773,7 +1777,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         let bytes = std::mem::take(&mut state.last_output_bytes);
                         (Some(cached), bytes)
                     }
-                    // Only after a restore (the snapshot doesn't carry the cache).
+                    // Restored state or immediate, unfiltered SINGLE_VALUE has no cache.
                     None => {
                         let tuple = output_of(state, &self.result_types);
                         let bytes = scalar_row_bytes(&tuple);
@@ -1976,27 +1980,41 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 }
             } else if self.store.get(key).unwrap().records > 0 {
                 let state = self.store.get_mut(key).expect("key present");
-                let new = output_of(state, &self.result_types);
-                match prev {
-                    None => {
-                        // +I — first row for the key; the emitted tuple seeds the cache.
-                        state.last_output_bytes = scalar_row_bytes(&new);
-                        output.push(0, row, new.iter().cloned());
-                        state.last_output = Some(new);
-                    }
-                    // With TTL on the no-change suppression is disabled: Flink always emits -U/+U
-                    // so downstream state keeps refreshing instead of expiring too early.
-                    Some(prev) if new != prev || ttl.enabled() => {
-                        state.last_output_bytes = scalar_row_bytes(&new);
-                        if self.generate_update_before {
-                            output.push(1, row, prev); // -U — moved out of the cache, not recomputed
+                if single_value {
+                    let value = state.aggs[0].emit(&self.result_types[0]);
+                    match prev {
+                        None => output.push(0, row, [value]),
+                        Some(prev) if value != prev[0] || ttl.enabled() => {
+                            if self.generate_update_before {
+                                output.push(1, row, prev);
+                            }
+                            output.push(2, row, [value]);
                         }
-                        output.push(2, row, new.iter().cloned()); // +U
-                        state.last_output = Some(new);
+                        Some(_) => {}
                     }
-                    Some(prev) => {
-                        state.last_output_bytes = prev_bytes;
-                        state.last_output = Some(prev); // unchanged result — suppressed
+                } else {
+                    let new = output_of(state, &self.result_types);
+                    match prev {
+                        None => {
+                            // +I — first row for the key; the emitted tuple seeds the cache.
+                            state.last_output_bytes = scalar_row_bytes(&new);
+                            output.push(0, row, new.iter().cloned());
+                            state.last_output = Some(new);
+                        }
+                        // With TTL on the no-change suppression is disabled: Flink always emits -U/+U
+                        // so downstream state keeps refreshing instead of expiring too early.
+                        Some(prev) if new != prev || ttl.enabled() => {
+                            state.last_output_bytes = scalar_row_bytes(&new);
+                            if self.generate_update_before {
+                                output.push(1, row, prev); // -U — moved out of the cache, not recomputed
+                            }
+                            output.push(2, row, new.iter().cloned()); // +U
+                            state.last_output = Some(new);
+                        }
+                        Some(prev) => {
+                            state.last_output_bytes = prev_bytes;
+                            state.last_output = Some(prev); // unchanged result — suppressed
+                        }
                     }
                 }
             } else {
