@@ -241,6 +241,13 @@ growth (102), and decimal order insertion (85) lead the remaining native work. C
 IPC, and buffer handling also contribute. The coverage stack still needs further optimization
 or an explicit maintainer decision on these measured tradeoffs before shipping it as acceleration.
 
+These timings isolate the typed-membership changes. The subsequent
+[single-destination exchange fast path](native-columnar-exchange.md) reduces the two-million-row
+native medians further to 1.556 s for wide COUNT/SUM, 1.499 s for narrow AVG, and 1.673 s for wide
+AVG. Narrow AVG then beats its matched Flink control; wide decimal aggregation still trails it.
+At twenty million rows, wide AVG improves from 18.737 s to 15.938 s, versus a 13.683 s Flink control.
+
+
 Validation: 584 native tests pass (one ignored). The selected SQL/operator suite passes all
 122 cases on released Flink 2.2.1 and 120 on released Flink 1.18.1, with two existing
 host-capability skips (state-TTL hints and session-window DISTINCT). After the final ordering
