@@ -183,6 +183,15 @@ the shared test cluster would not change that cluster's process budget, so the t
 the executed pool capacity as well as the requested configuration. These cases retain the
 same long strings, two restores, five-row physical limit and three-row logical mini-batches.
 
+The recovery matrix collects results through a test-only checkpointed sink. It copies incoming
+rows into operator state, restores them with the job, and publishes the completed attempt's rows
+through Flink job accumulators. Host and native executions use the same sink and retain full
+changelog/result and exception assertions. Teardown requires no collector initialization, avoiding
+Flink's collect-sink close-before-initialization crash
+([FLINK-39330](https://github.com/apache/flink/pull/28474)), which can kill the private cluster's
+only TaskManager and turn an expected overflow into a five-minute slot timeout. This workaround
+uses released Flink APIs and does not modify the deployed engine or its Flink dependency.
+
 Every matrix case reuses the suite's native cleanup check after execution. It waits briefly
 for asynchronous cleanup and requires no live native handles, zero Arrow allocator bytes
 and zero task off-heap reservations; all three observations are recorded alongside source
