@@ -395,3 +395,13 @@ are 4.544/4.330/4.263 s versus Flink's 5.070/4.943/4.749 s. See the
 [optimization ledger](../optimizations/aggregate-specialization-fast-paths.md) for profiling,
 before/after measurements, trial ranges and checkpoint compatibility. This establishes MIN/MAX
 performance for the measured workloads; other aggregate functions need separate measurements.
+
+`GroupedValueBenchmark` accepts `-Dgrouped.value.types=TIME,BOOLEAN` for first/last and
+`-Dgrouped.value.single=true` for SINGLE_VALUE, which assigns each row its own key.
+The default first/last workload remains BIGINT/STRING; all these measurements use one phase.
+The [output allocation optimization](../optimizations/aggregate-specialization-fast-paths.md)
+removes a temporary tuple vector per emitted update. On the downstream integration branch,
+TIME/BOOLEAN first/last now beats Flink at twenty million rows and is approximately tied at
+two million. This branch independently measures two-million-row TIME/BOOLEAN first/last at
+0.605/0.617 s versus Flink 0.659/0.637 s. SINGLE_VALUE at 500,000 unique keys still trails Flink, so the broader temporal
+coverage remains performance-blocked. The ledger records before/after controls and trial ranges.

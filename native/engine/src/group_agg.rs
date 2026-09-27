@@ -1268,6 +1268,22 @@ pub(crate) fn group_key_state_bytes(state: &GroupKeyState) -> usize {
         + std::mem::size_of::<GroupKeyState>()
 }
 
+struct GroupChanges {
+    rows: Vec<u32>,
+    results: Vec<Vec<ScalarValue>>,
+    kinds: Vec<i8>,
+}
+
+impl GroupChanges {
+    fn push(&mut self, kind: i8, row: usize, values: impl IntoIterator<Item = ScalarValue>) {
+        self.rows.push(row as u32);
+        for (column, value) in self.results.iter_mut().zip(values) {
+            column.push(value);
+        }
+        self.kinds.push(kind);
+    }
+}
+
 /// A group's current output tuple (each aggregate reports NULL while it has no live input).
 fn output_of(state: &GroupKeyState, result_types: &[DataType]) -> Vec<ScalarValue> {
     state
@@ -1684,17 +1700,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 .expect("record count partial column must be bigint")
         });
 
-        let mut out_rows: Vec<u32> = Vec::new();
-        let mut out_results: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
-        let mut out_kinds: Vec<i8> = Vec::new();
-        // Every output is caused by one input row, so its original Arrow key values can be gathered
-        // directly. This avoids making Flink BinaryRow bytes decodable just to emit a changelog row.
-        let mut push = |kind: i8, row: usize, values: Vec<ScalarValue>| {
-            out_rows.push(row as u32);
-            for (i, v) in values.into_iter().enumerate() {
-                out_results[i].push(v);
-            }
-            out_kinds.push(kind);
+        // Output keys are gathered from the input row that caused each transition.
+        let mut output = GroupChanges {
+            rows: Vec::new(),
+            results: vec![Vec::new(); num_agg],
+            kinds: Vec::new(),
         };
 
         let track = self.memory.tracking();
@@ -1958,18 +1968,18 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     None => {
                         // +I — first row for the key; the emitted tuple seeds the cache.
                         state.last_output_bytes = scalar_row_bytes(&new);
-                        state.last_output = Some(new.clone());
-                        push(0, row, new);
+                        output.push(0, row, new.iter().cloned());
+                        state.last_output = Some(new);
                     }
                     // With TTL on the no-change suppression is disabled: Flink always emits -U/+U
                     // so downstream state keeps refreshing instead of expiring too early.
                     Some(prev) if new != prev || ttl.enabled() => {
                         state.last_output_bytes = scalar_row_bytes(&new);
-                        state.last_output = Some(new.clone());
                         if self.generate_update_before {
-                            push(1, row, prev); // -U — moved out of the cache, not recomputed
+                            output.push(1, row, prev); // -U — moved out of the cache, not recomputed
                         }
-                        push(2, row, new); // +U
+                        output.push(2, row, new.iter().cloned()); // +U
+                        state.last_output = Some(new);
                     }
                     Some(prev) => {
                         state.last_output_bytes = prev_bytes;
@@ -1981,7 +1991,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 // the key ever emitted (a new key whose first merged count1 nets to zero — Flink's
                 // firstRow-and-empty case — is dropped silently).
                 if let Some(prev) = prev {
-                    push(3, row, prev); // -D
+                    output.push(3, row, prev); // -D
                 }
                 self.store.remove(key);
             }
@@ -1999,7 +2009,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 self.memory.record(delta);
             }
         }
-        drop(push);
+        let GroupChanges {
+            rows: out_rows,
+            results: mut out_results,
+            kinds: out_kinds,
+        } = output;
         self.staged_bytes += staged_delta;
         if track {
             self.memory.record(staged_delta as isize);
