@@ -1,7 +1,7 @@
 # Aggregate specialization fast paths
 
-**Applies to:** insert-only numeric, DATE, TIME and BOOLEAN MIN/MAX, and mini-batch group-aggregate
-`DISTINCT` (q15/q16/q17-shaped queries)
+**Applies to:** insert-only numeric, DATE, TIME and BOOLEAN MIN/MAX; grouped-value state and
+immediate changelog output; and mini-batch group-aggregate `DISTINCT` (q15/q16/q17-shaped queries)
 
 Two of the local aggregate's hot leaves were paying for generality their actual input doesn't need:
 an insert-only MIN/MAX carrying full retraction support, and a `DISTINCT` accumulator boxing every
@@ -304,3 +304,68 @@ alongside COUNT, including over-budget rejection and full release after group de
 Validation: 567 native tests pass (one ignored), including the expanded memory-budget case.
 The grouped-value, temporal/Boolean and columnar aggregate SQL controls pass 59 cases on
 Flink 2.2.1 and 42 on Flink 1.18.1 (17 documented host limitations skipped).
+
+## Single-result SINGLE_VALUE emits directly from its accumulator
+
+For one unfiltered SINGLE_VALUE aggregate, the accumulator already contains the complete
+result. Immediate changelog output now emits that scalar directly, avoiding a temporary
+one-element tuple vector and a duplicate cached result per live group. A later touch
+reconstructs the preceding tuple from the accumulator before applying the row. NULL counting,
+cardinality errors, deletes, TTL and snapshot encoding are unchanged. Mixed aggregates and
+filtered SINGLE_VALUE keep the existing cache; filtered groups can receive many rows that
+do not contribute to their result. Mini-batch handling is unchanged.
+
+The high-cardinality CPU profile identified state creation/destruction and allocator work.
+On the measured 64-bit build, removing the cached scalar avoids 64 bytes per live group
+(32 MB for 500,000 groups), plus retained variable-width payloads. Output column buffers
+remain in the measured path.
+
+Measurements use release+mimalloc, Flink 2.2.1, JDK 17, i7-12650H Linux/WSL, parallelism one,
+one unique key per row, one-eighth NULLs, both transposes and a rowwise sink. Five warmups
+precede nine alternating trials. Both engines and both native builds use a 2 GB Java heap
+on the 7.6 GB machine. Each cell gives median and trial range in seconds.
+
+| Workload | Native before | Native after | Flink before | Flink after |
+|---|---:|---:|---:|---:|
+| 500k / TIME | 0.382 (0.334–0.486) | 0.362 (0.333–0.415) | 0.353 (0.310–0.513) | 0.336 (0.296–0.521) |
+| 500k / BOOLEAN | 0.363 (0.343–0.463) | 0.365 (0.323–0.381) | 0.343 (0.308–0.411) | 0.337 (0.281–0.517) |
+| 500k / STRING | 0.470 (0.421–0.522) | 0.393 (0.369–0.499) | 0.445 (0.387–0.553) | 0.422 (0.390–0.566) |
+| 1m / TIME | 0.678 (0.620–0.761) | 0.629 (0.574–0.796) | 0.676 (0.556–0.856) | 0.673 (0.570–0.859) |
+| 1m / BOOLEAN | 0.668 (0.641–0.732) | 0.628 (0.589–0.710) | 0.682 (0.550–0.744) | 0.687 (0.579–0.738) |
+
+The one-million-key native medians improve 7.2% for TIME and 5.9% for BOOLEAN and beat their
+matched Flink controls. At 500,000 keys, STRING improves 16.4% and beats Flink; TIME improves
+5.2%, while BOOLEAN is flat. TIME/BOOLEAN at that smaller size still trail Flink by about 8%,
+so these results do not close the remaining temporal SINGLE_VALUE performance gap.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=GroupedValueBenchmark -Dsf.extraJvmArgs=-Xmx2g \
+  -Dgrouped.value.single=true -Dgrouped.value.types=TIME,BOOLEAN \
+  -Dgrouped.value.rows=1000000 -Dgrouped.value.warmup=5 -Dgrouped.value.runs=9
+```
+
+The earlier default-heap run allowed 8 GB on this 7.6 GB machine. It completed the
+one-million-key TIME trials at native 0.760 s versus Flink 0.656 s, then failed on a
+TaskManager heartbeat timeout before completing BOOLEAN. No OOM was observed; memory
+pressure is a suspected cause, not a confirmed diagnosis. Both comparison builds complete
+with the same 2 GB cap. Earlier 500,000-key default-heap direct-emission medians were native
+TIME/BOOLEAN 0.366/0.353 s versus Flink 0.395/0.334 s, retaining the unfavorable BOOLEAN result.
+
+FIRST_VALUE/LAST_VALUE controls retain their existing cache. An initial two-warmup TIME
+control appeared about 5% slower, so a matched five-warmup/nine-trial repeat was run.
+At two million rows, baseline/final native TIME medians are 0.627/0.629 s (ranges
+0.623–0.644/0.625–0.750 s); BOOLEAN is 0.617/0.611 s (0.607–0.628/0.606–0.613 s).
+These are approximately flat. Matched final Flink medians are 0.631/0.605 s, so these
+short workloads are approximately tied. The initial BIGINT/STRING native controls
+were 0.668/1.021 s versus earlier baseline 0.674/1.025 s; their Flink controls were
+0.619/0.914 s, retaining their existing native gap. These low-cardinality controls use
+the unchanged default heap setting because their retained keyed state is small.
+
+An independent final-build one-million-key repeat measured native TIME/BOOLEAN at
+0.658/0.625 s (ranges 0.588–0.720/0.611–0.742 s), versus matched Flink
+0.713/0.711 s (0.641–0.933/0.584–0.831 s). This confirms the benefit at that size
+without changing the unfavorable 500,000-key result.
+
+Validation: the final path passes 567 native tests (one ignored), 59 grouped-value/temporal/
+columnar SQL controls on Flink 2.2.1, and 42 on Flink 1.18.1 (17 documented host skips).
