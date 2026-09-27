@@ -128,13 +128,18 @@ semantics; host/native agreement alone is insufficient for those cases.
 ## Combined stateful recovery matrix
 
 `StatefulRecoveryMatrixTest` begins the bounded matrix in
-[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current four cases
-combine INT/BIGINT group keys with DECIMAL(20,2) SUM and STRING COUNT DISTINCT, using memory
-and the native RocksDB backend. Twelve changelog records include duplicate 11-KiB strings,
+[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current six cases
+include four combinations of INT/BIGINT group keys with DECIMAL(20,2) SUM and STRING COUNT DISTINCT, using memory
+and the native RocksDB backend. Twelve changelog records include duplicate 12-KiB strings,
 NULLs, removal of the final duplicate, group deletion and recreation. The reference executes
 uninterrupted; the native run fails only after checkpoints containing source offsets 4 and 8
 have completed, then restores twice. The checkpointed source has a stable UID. The final rows must be `(1, -4.50, 0)` and
-`(2, -0.50, 1)`, with a DECIMAL(38,2) sum.
+`(2, -0.50, 1)`, with a DECIMAL(38,2) sum. Two more cases exercise an updating JOIN
+on memory and native RocksDB state. One checkpointed source routes side-tagged changelogs
+to the two inputs. Duplicate hot-key rows, 13/14-KiB STRING payloads, DECIMAL(20,2) values,
+NULLs and an `l.amount < r.amount` residual cross checkpoints at offsets 6 and 12. A
+retract/update pair turns a nonmatching value into a match; later removals and duplicate
+insertions must leave exactly three joined rows, including one row with multiplicity two.
 
 Each case independently checks materialized results against known answers, resolved result
 types, the native aggregate plan, both restored offsets and failure injections, completed
@@ -154,11 +159,11 @@ Add `-Pflink-1.18` for the other released dependency line. The matrix writes
 `streamfusion-runtime/target/sql-audit/stateful-recovery.json`, including configuration,
 result comparison, result types, native plan, fallback reasons and recovery observations,
 even when a validation assertion fails. CI retains this file with the existing portable SQL
-audit artifact. All four cases and all 38 existing portable-audit cases pass on each of
-Flink 2.2.1 and 1.18.1 (42 tests per release).
+audit artifact. All six recovery cases pass on each of Flink 2.2.1 and 1.18.1. The shared-harness change
+also passed all 38 existing portable-audit cases on each release.
 
 This initial slice uses parallelism 1, physical batches of up to 1,024 rows, and no logical
-mini-batching. JOIN, event-time/window/Top-N, Calc filtering, independent physical/logical
+mini-batching. Event-time/window/Top-N, Calc filtering, independent physical/logical
 batch variants, rescaling in both directions, budget/timezone variants, failed/cancelled-run
-cleanup and a larger explicit stress profile remain in #250. Passing these four cases does
+cleanup and a larger explicit stress profile remain in #250. Passing these six cases does
 not establish those combinations or cross-version state compatibility.
