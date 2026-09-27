@@ -585,6 +585,7 @@ final class RexExpression {
         RexNode projection =
             RexUtil.expandSearch(
                 calc.getCluster().getRexBuilder(), null, program.expandLocalRef(ref));
+        if (!validateDecimalRoundingBoundary(projection)) return false;
         if (!validateGeneratedExpression(projection)) return false;
         if (JsonStringIdentity.containsCharacter(projection.getType())
             && JsonStringIdentity.containsBinaryString(projection)) {
@@ -946,6 +947,10 @@ final class RexExpression {
   }
 
   private boolean emitCall(RexCall call) {
+    if (containsDecimalIntegralRounding(call)) {
+      if (!validateDecimalRoundingBoundary(call)) return false;
+      return emitHostExpression(call, true);
+    }
     if ((call.getKind() == SqlKind.AND || call.getKind() == SqlKind.OR)
         && containsExactScalarFunction(call)) {
       return emitHostExpression(call, true);
@@ -2438,6 +2443,49 @@ final class RexExpression {
                           operand.getType(), call.getType()));
       default -> false;
     };
+  }
+
+  private static boolean containsDecimalIntegralRounding(RexNode node) {
+    return node instanceof RexCall call
+        && (isDecimalIntegralRounding(call)
+            || call.getOperands().stream().anyMatch(RexExpression::containsDecimalIntegralRounding));
+  }
+
+  private static boolean isDecimalIntegralRounding(RexCall call) {
+    return (call.getKind() == SqlKind.FLOOR || call.getKind() == SqlKind.CEIL)
+        && call.getOperands().size() == 1
+        && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.DECIMAL;
+  }
+
+  private boolean validateDecimalRoundingBoundary(RexNode node) {
+    if (!containsDecimalIntegralRounding(node)) return true;
+    SqlTypeName type = node.getType().getSqlTypeName();
+    if (type == SqlTypeName.ARRAY || type == SqlTypeName.MAP
+        || type == SqlTypeName.MULTISET || type == SqlTypeName.ROW) {
+      return reject("DECIMAL FLOOR/CEIL requires a verified scalar consumer");
+    }
+    if (unnormalizedDecimalRounding(node)) {
+      return reject("DECIMAL FLOOR/CEIL result retains value-dependent precision at the boundary");
+    }
+    return true;
+  }
+
+  private static boolean unnormalizedDecimalRounding(RexNode node) {
+    if (node.getType().getSqlTypeName() != SqlTypeName.DECIMAL
+        || !(node instanceof RexCall call)) return false;
+    if (isDecimalIntegralRounding(call)) return true;
+    if (call.getOperator()
+        == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.IF) return false;
+    if (call.getKind() == SqlKind.CAST
+        && !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
+            call.getOperands().get(0).getType(), call.getType())) return false;
+    if (switch (call.getKind()) {
+      case PLUS, MINUS, TIMES, DIVIDE, MOD -> true;
+      default -> false;
+    }) return false;
+    // Flink rounds into a DecimalData whose precision depends on the value. Selection and
+    // sign-only consumers can retain it; crossing Arrow here would hide the host writer assertion.
+    return call.getOperands().stream().anyMatch(RexExpression::unnormalizedDecimalRounding);
   }
 
   private static boolean containsExactScalarFunction(RexNode node) {

@@ -60,6 +60,8 @@ class ScalarFunctionBenchmark {
       List.of(
           new Query("EXACT_ABS_BIGINT", "bigint", "ABS(n)", "BIGINT"),
           new Query("EXACT_SIGN_DECIMAL", "tt_decimal", "SIGN(n)", "DECIMAL(38,9)"),
+          new Query("DECIMAL_FLOOR_STRING", "tt_decimal", "CAST(FLOOR(n) AS STRING)", "STRING"),
+          new Query("DECIMAL_CEIL_STRING", "tt_decimal", "CAST(CEIL(n) AS STRING)", "STRING"),
           new Query("GREATEST_RUNTIME_STRING", "text", "GREATEST(s, 'm')", "STRING"),
           new Query("IF_BOOLEAN", "integer", "IF(n > 0, TRUE, FALSE)", "BOOLEAN"),
           new Query("BOOLEAN_TO_STRING", "integer", "CAST(n > 0 AS STRING)", "STRING"),
