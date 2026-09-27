@@ -619,10 +619,18 @@ filter predicates and CASE consumers, including strings that parse to NULL.
 
 ### Temporal TRY_CAST
 
+Standalone TIMESTAMP/TIMESTAMP_LTZ TRY_CAST of a direct character input has an exact fast path
+inside the existing JVM batch callback for `yyyy-MM-dd HH:mm:ss` with an optional 1–9 digit
+fraction. It validates the calendar/time fields, truncates to the declared precision, and uses
+the same Java local-time and zone conversion as Flink. All other formats, invalid dates, year
+zero, and SMART-resolver cases execute the original generated Flink conversion. Composed child
+expressions also retain generated evaluation so speculative parsing cannot duplicate their
+effects or errors. See [timestamp parsing measurements](../optimizations/host-exact-builtins-upcall.md#canonical-timestamp-try_cast).
+
 `TRY_CAST` from STRING/VARCHAR/CHAR to DATE, TIME, TIMESTAMP and TIMESTAMP_LTZ
-uses Flink's generated conversion through the existing columnar callback. Malformed
-text and rejected conversions return NULL; errors in the input expression still
-propagate. Flink 1.18.1 accepts `24:00:00` as an internal TIME but throws
+uses the existing columnar callback, with the exact timestamp subset above and Flink's
+generated conversion for other cases. Malformed text and rejected conversions return NULL;
+errors in the input expression still propagate. Flink 1.18.1 accepts `24:00:00` as an internal TIME but throws
 `DateTimeException` during external collection; native execution preserves that failure.
 Flink 2.2.1 returns NULL for the same TRY_CAST. CASE and filters suppress unselected failing expressions. Default and legacy
 cast modes use their configured Flink rules. TIMESTAMP_LTZ interprets local text in the
@@ -634,8 +642,8 @@ boundaries, pre-epoch nanoseconds, UTC, Asia/Shanghai and America/Los_Angeles.
 Multi-batch tests verify NativeCalc input/output counters as well as values.
 Binary TRY_CAST remains outside this whitelist.
 
-A release+mimalloc benchmark on Flink 2.2.1/JDK 17, Linux x86_64 (Core i7-12650H),
-uses 2,000,000 row-fed records, NULL every seventh row, two warmups and five alternating
+The initial, pre-optimization release+mimalloc benchmark on Flink 2.2.1/JDK 17, Linux x86_64
+(Core i7-12650H), used 2,000,000 row-fed records, NULL every seventh row, two warmups and five alternating
 trials. NativeCalc and both row/Arrow transposes are required by the harness. Median
 elapsed seconds (ratio = Flink/native):
 
@@ -647,10 +655,10 @@ elapsed seconds (ratio = Flink/native):
 | TRY_CAST to TIMESTAMP(9) | 3.073 | 3.982 | 0.772x |
 | TRY_CAST to TIMESTAMP_LTZ(9) | 3.123 | 4.003 | 0.780x |
 
-These standalone queries are slower than stock Flink. Coverage is retained because it
-reuses the existing Boolean kernel and generated temporal conversion, adding no new
-runtime machinery and allowing these expressions to compose inside an existing native
-island. This is not a standalone acceleration claim.
+These initial standalone results were slower than stock Flink. Cached timestamp writers and
+the canonical parser now improve the timestamp cases; see the [current measurements](../optimizations/host-exact-builtins-upcall.md#canonical-timestamp-try_cast).
+Boolean TRY_CAST remains slower and keeps this coverage work in draft pending optimization.
+The parser fast path does not establish a speedup for noncanonical formats or composed expressions.
 
 ```bash
 SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \

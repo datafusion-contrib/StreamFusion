@@ -2,7 +2,11 @@ package tech.streamfusion.planner;
 
 import java.math.BigDecimal;
 import java.util.List;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.sql.type.SqlTypeFamily;
+import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.flink.api.common.functions.Function;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.data.GenericRowData;
@@ -13,6 +17,7 @@ import org.apache.flink.table.functions.ScalarFunction;
 import org.apache.flink.table.functions.UserDefinedFunction;
 import org.apache.flink.table.planner.codegen.CodeGeneratorContext;
 import org.apache.flink.table.planner.codegen.ExprCodeGenerator;
+import org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable;
 import org.apache.flink.table.runtime.generated.GeneratedFunction;
 import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.LogicalType;
@@ -89,7 +94,8 @@ public final class FlinkExpressionFunction extends ScalarFunction
     var result = generator.generateExpression(expression);
     return new Body(
         context,
-        context.reuseInputUnboxingCode()
+        canonicalTimestampPrefix(expression, context)
+            + context.reuseInputUnboxingCode()
             + result.code()
             + "\nif ("
             + result.nullTerm()
@@ -98,6 +104,30 @@ public final class FlinkExpressionFunction extends ScalarFunction
             + (binaryStringResult ? ".toBytes()" : "")
             + ";\n",
         null);
+  }
+
+  private static String canonicalTimestampPrefix(RexNode expression, Context context) {
+    if (!(expression instanceof RexCall call)
+        || call.getOperator() != FlinkSqlOperatorTable.TRY_CAST
+        || call.getOperands().size() != 1
+        || !(call.getOperands().get(0) instanceof RexInputRef input)
+        || !SqlTypeFamily.CHARACTER.contains(input.getType())) {
+      return "";
+    }
+    var target = call.getType().getSqlTypeName();
+    if (target != SqlTypeName.TIMESTAMP
+        && target != SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
+      return "";
+    }
+    String zone = target == SqlTypeName.TIMESTAMP
+        ? "null" : context.addReusableSessionTimeZone();
+    // Only a direct input can be read speculatively without duplicating a child expression's
+    // effects or errors. Unrecognized values continue through the original generated TRY_CAST.
+    return "if (!input.isNullAt(" + input.getIndex() + ")) {\n"
+        + "org.apache.flink.table.data.TimestampData sfCanonicalTimestamp = "
+        + CanonicalTimestampParser.class.getCanonicalName() + ".parse(input.getString("
+        + input.getIndex() + "), " + call.getType().getPrecision() + ", " + zone + ");\n"
+        + "if (sfCanonicalTimestamp != null) return sfCanonicalTimestamp;\n}\n";
   }
 
   private static Body rowBody(
