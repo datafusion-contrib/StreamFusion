@@ -4321,6 +4321,63 @@ fn local_group_extremes_preserve_append_only_and_retracting_results() {
 }
 
 #[test]
+fn local_temporal_boolean_extrema_preserve_types_nulls_and_retractions() {
+    for (code, low, high) in temporal_boolean_values() {
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        let make = || {
+            LocalGroupAggregator::new(
+                vec![1, 2],
+                vec![code; 2],
+                vec![1; 2],
+                vec![],
+                vec![0],
+                vec![],
+            )
+        };
+        let batch = group_scalar_changelog(
+            vec![
+                null.clone(),
+                high.clone(),
+                low.clone(),
+                low.clone(),
+                null.clone(),
+            ],
+            vec![0; 5],
+        )
+        .project(&[0, 1])
+        .unwrap();
+        for split in 1..5 {
+            let mut local = make();
+            local.update(&batch.slice(0, split)).unwrap();
+            local.update(&batch.slice(split, 5 - split)).unwrap();
+            let out = local.flush();
+            assert_eq!(ScalarValue::try_from_array(out.column(1), 0).unwrap(), low);
+            assert_eq!(ScalarValue::try_from_array(out.column(2), 0).unwrap(), high);
+            local.update(&batch.slice(0, 1)).unwrap();
+            let out = local.flush();
+            assert_eq!(ScalarValue::try_from_array(out.column(1), 0).unwrap(), null);
+            assert_eq!(ScalarValue::try_from_array(out.column(2), 0).unwrap(), null);
+        }
+        let mut local = make();
+        local
+            .update(&group_scalar_changelog(
+                vec![
+                    high.clone(),
+                    low.clone(),
+                    low.clone(),
+                    low.clone(),
+                    low.clone(),
+                ],
+                vec![0, 0, 0, 3, 3],
+            ))
+            .unwrap();
+        let out = local.flush();
+        assert_eq!(ScalarValue::try_from_array(out.column(1), 0).unwrap(), high);
+        assert_eq!(ScalarValue::try_from_array(out.column(2), 0).unwrap(), high);
+    }
+}
+
+#[test]
 fn local_avg_preserves_zero_count_sum_adjustments() {
     for (code, ten, twenty, average) in [
         (

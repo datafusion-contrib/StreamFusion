@@ -256,6 +256,24 @@ fn emit_running(agg: &RunningAgg, count: i64, result_type: &DataType) -> ScalarV
         | RunningAgg::AvgPartialSumFloat(_)
         | RunningAgg::AvgPartialSumDecimal { .. } => agg.emit(),
         _ if count == 0 => null_scalar(result_type),
+        RunningAgg::MinI32(value) | RunningAgg::MaxI32(value)
+            if matches!(result_type, DataType::Date32) =>
+        {
+            ScalarValue::Date32(*value)
+        }
+        RunningAgg::MinI32(value) | RunningAgg::MaxI32(value)
+            if matches!(
+                result_type,
+                DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+            ) =>
+        {
+            ScalarValue::Time32Millisecond(*value)
+        }
+        RunningAgg::MinI8(value) | RunningAgg::MaxI8(value)
+            if matches!(result_type, DataType::Boolean) =>
+        {
+            ScalarValue::Boolean(value.map(|v| v != 0))
+        }
         // AVG divides the running sum by the live non-null count, truncating toward zero for an
         // integer result (Flink's div) and casting back to the input type — see AvgAggFunction.
         RunningAgg::AvgInt { sum, result } => avg_int_scalar(*sum / count, result),
@@ -321,7 +339,7 @@ impl GroupAggState {
 
     fn new_local(kind: i64, value_type: &DataType, append_only: bool) -> Self {
         // The local half of an insert-only two-phase aggregate never retracts its inputs. Its
-        // numeric MIN/MAX partial therefore needs one value, not the global/retracting multiset.
+        // fixed-width MIN/MAX partial therefore needs one value, not the global/retracting multiset.
         let running_extreme = append_only
             && matches!(kind, 1 | 2)
             && matches!(
@@ -332,10 +350,20 @@ impl GroupAggState {
                     | DataType::Int8
                     | DataType::Float64
                     | DataType::Float32
+                    | DataType::Date32
+                    | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                    | DataType::Boolean
             );
         if running_extreme {
+            let storage_type = match value_type {
+                DataType::Date32 | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond) => {
+                    &DataType::Int32
+                }
+                DataType::Boolean => &DataType::Int8,
+                other => other,
+            };
             GroupAggState::Running {
-                agg: RunningAgg::new(kind, value_type),
+                agg: RunningAgg::new(kind, storage_type),
                 non_null: 0,
             }
         } else {
@@ -3015,6 +3043,37 @@ impl LocalGroupAggregator {
                 if let Some(col_idx) = scalar_extreme_cols[i] {
                     let column = batch.column(col_idx);
                     if !column.is_null(row) {
+                        if matches!(entry.states[i], GroupAggState::Running { .. }) {
+                            let value = match column.data_type() {
+                                DataType::Date32 => Num::I32(
+                                    column
+                                        .as_any()
+                                        .downcast_ref::<arrow::array::Date32Array>()
+                                        .unwrap()
+                                        .value(row),
+                                ),
+                                DataType::Time32(arrow::datatypes::TimeUnit::Millisecond) => {
+                                    Num::I32(
+                                        column
+                                            .as_any()
+                                            .downcast_ref::<arrow::array::Time32MillisecondArray>()
+                                            .unwrap()
+                                            .value(row),
+                                    )
+                                }
+                                DataType::Boolean => Num::I8(i8::from(
+                                    column
+                                        .as_any()
+                                        .downcast_ref::<BooleanArray>()
+                                        .unwrap()
+                                        .value(row),
+                                )),
+                                _ => unreachable!("local scalar running extreme type"),
+                            };
+                            assert!(!retract, "running local extrema require insert-only input");
+                            entry.states[i].accumulate(value);
+                            continue;
+                        }
                         let scalar = ScalarValue::try_from_array(column, row)
                             .expect("non-numeric extreme scalar");
                         if retract {

@@ -1,6 +1,6 @@
 # Aggregate specialization fast paths
 
-**Applies to:** the two-phase local aggregate's numeric MIN/MAX, and mini-batch group-aggregate
+**Applies to:** the two-phase local aggregate's numeric, DATE, TIME and BOOLEAN MIN/MAX, and mini-batch group-aggregate
 `DISTINCT` (q15/q16/q17-shaped queries)
 
 Two of the local aggregate's hot leaves were paying for generality their actual input doesn't need:
@@ -8,7 +8,7 @@ an insert-only MIN/MAX carrying full retraction support, and a `DISTINCT` accumu
 probe value into a `ScalarValue`. Specializing each to what its input actually requires turned into
 two of the larger single-operator wins in the ledger.
 
-## Append-only local numeric MIN/MAX keeps one running extreme
+## Append-only local fixed-width MIN/MAX keeps one running extreme
 
 The two-phase local aggregate had been giving every numeric MIN/MAX group a retractable
 `BTreeMap<value, count>`, even though the local half of an insert-only plan can only ever add
@@ -25,6 +25,35 @@ completed 180 iterations versus 163 before and removed the local aggregate's 87-
 68-sample tree destruction, and 37-sample aggregate-state destruction leaves; `GroupAggState::accumulate`
 fell from 55 to 31 samples. The few remaining tree samples come from the downstream global
 aggregate, whose input is retracting partial updates and so still needs the tree.
+
+DATE, millisecond TIME and BOOLEAN local extrema also use this path: their physical i32/i8
+extremes restore the declared SQL type on emission, including all-NULL bundles. Inputs with a
+row-kind column retain the retractable multiset. A two-million-row CPU profile found 1,163 samples
+under the local update, including 177 in multiset updates, 137 in tree searches, and 60 in tree
+insertion. Reading typed Arrow values and retaining one extreme removes those local tree operations.
+
+With the single-destination exchange optimization already enabled, release+mimalloc timings for
+two million rows improved from 0.665 to 0.517 s (DATE), 0.647 to 0.492 s (TIME), and 0.589 to
+0.492 s (BOOLEAN). Matched Flink medians were 0.574, 0.554, and 0.571 s. These use the existing
+`TimestampExtremaBenchmark`, Flink 2.2.1/JDK 17, 64 groups, parallelism one, 1,024-row mini-batches,
+two warmups and five alternating measured trials, with both transposes and the rowwise sink.
+Native ranges were 0.511–0.519, 0.491–0.502, and 0.478–0.498 s; Flink ranges were 0.567–0.593,
+0.546–0.567, and 0.553–0.609 s. The single-phase path is unchanged by this specialization.
+
+The same configuration at twenty million rows confirms the two-phase wins and exposes the
+remaining single-phase limitation. Times below are medians, with five-trial ranges in parentheses:
+
+| Phase / type | Flink (s) | Native (s) |
+|---|---:|---:|
+| Single / DATE | 3.876 (3.817–4.035) | 4.154 (4.135–4.256) |
+| Single / TIME | 3.781 (3.720–3.922) | 4.179 (4.118–4.229) |
+| Single / BOOLEAN | 3.759 (3.670–3.858) | 3.804 (3.723–3.850) |
+| Two / DATE | 5.118 (4.985–5.219) | 4.501 (4.458–4.521) |
+| Two / TIME | 4.912 (4.819–4.946) | 4.328 (4.258–4.357) |
+| Two / BOOLEAN | 4.838 (4.809–4.897) | 4.209 (4.173–4.225) |
+
+These results validate the local-state optimization, not the performance readiness of all temporal
+aggregate coverage. Single-phase DATE and TIME still trail Flink and require further optimization.
 
 ## Group-aggregate DISTINCT folds primitives; the changelog emit reads its cache
 
@@ -246,7 +275,6 @@ These timings isolate the typed-membership changes. The subsequent
 native medians further to 1.556 s for wide COUNT/SUM, 1.499 s for narrow AVG, and 1.673 s for wide
 AVG. Narrow AVG then beats its matched Flink control; wide decimal aggregation still trails it.
 At twenty million rows, wide AVG improves from 18.737 s to 15.938 s, versus a 13.683 s Flink control.
-
 
 Validation: 584 native tests pass (one ignored). The selected SQL/operator suite passes all
 122 cases on released Flink 2.2.1 and 120 on released Flink 1.18.1, with two existing
